@@ -1,4 +1,6 @@
-import { connectHiraya, HirayaSdkError, type HirayaClient, type JsonValue, type ThemeTokens } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type HirayaClient, type JsonValue } from "@hiraya/apps-sdk";
+import { bindTheme } from "@hiraya/apps-ui";
+import "@hiraya/apps-ui/styles.css";
 import { calculate, formatNumber } from "./calculator";
 import "./style.css";
 
@@ -43,6 +45,7 @@ historyList.addEventListener("click", (event) => {
 });
 
 addEventListener("keydown", (event) => {
+  if (event.target instanceof Element && event.target.closest("button, input, select, textarea")) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (/^[0-9.+\-*/%()]$/.test(event.key)) append(event.key);
   else if (event.key === "Enter" || event.key === "=") solve();
@@ -59,7 +62,7 @@ async function initializeHost(): Promise<void> {
   try {
     hiraya = await connectHiraya({ appId: APP_ID });
     const launch = await hiraya.app.getLaunchContext();
-    applyTheme(launch.theme);
+    const unsubscribeTheme = bindTheme(hiraya, launch.theme);
     const [storedHistory, storedMemory] = await Promise.all([
       hiraya.storage.get("history"),
       hiraya.storage.get("memory"),
@@ -75,7 +78,6 @@ async function initializeHost(): Promise<void> {
       if (id === "clear") clearExpression();
       if (id === "clear-history") clearHistory();
     });
-    const unsubscribeTheme = hiraya.on("theme.changed", applyTheme);
     addEventListener("pagehide", () => {
       unsubscribeCommand();
       unsubscribeTheme();
@@ -267,13 +269,6 @@ function parseHistory(value: JsonValue | undefined): HistoryItem[] {
     if (typeof candidate.expression !== "string" || typeof candidate.result !== "string" || typeof candidate.createdAt !== "number") return [];
     return [{ expression: candidate.expression.slice(0, 256), result: candidate.result.slice(0, 64), createdAt: candidate.createdAt }];
   }).slice(0, MAX_HISTORY);
-}
-
-function applyTheme(theme: ThemeTokens): void {
-  document.documentElement.dataset.theme = theme.mode;
-  for (const [name, value] of Object.entries(theme)) {
-    if (name !== "mode") document.documentElement.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
-  }
 }
 
 function describeError(error: unknown): string {

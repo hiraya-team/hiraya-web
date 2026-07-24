@@ -108,7 +108,7 @@ type Props = {
   readOnly?: boolean;
   selectionCount?: number;
   trashSupported?: boolean;
-  openWith?: readonly { id: string; label: string; onOpen: () => void }[];
+  openWith?: readonly { id: string; label: string; preferred?: boolean; onOpen: () => void; onSetPreferred?: () => void }[];
 };
 
 export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onUnpinOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [] }: Props) {
@@ -129,7 +129,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
       {selectionCount === 1 && entry.kind === "file" && onEditFile && <button type="button" role="menuitem" disabled={readOnly} onClick={onEditFile}>
         <PencilSimple size={17} /> Edit file
       </button>}
-      {selectionCount === 1 && entry.kind === "file" && openWith.length > 0 && <MenuSubmenu icon={<Package size={17} />} label="Open with" items={openWith.map((app) => ({ id: app.id, label: app.label, onSelect: app.onOpen }))} />}
+      {selectionCount === 1 && entry.kind === "file" && openWith.length > 0 && <MenuSubmenu icon={<Package size={17} />} label="Open with" items={openWith.flatMap((app) => [{ id: app.id, label: `${app.label}${app.preferred ? " (preferred)" : ""}`, onSelect: app.onOpen }, ...(app.onSetPreferred ? [{ id: `${app.id}:preferred`, label: `Always use ${app.label}`, onSelect: app.onSetPreferred }] : [])])} />}
       {selectionCount === 1 && <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onRename}>
         <PencilSimple size={17} /> Rename
         <kbd>R</kbd>

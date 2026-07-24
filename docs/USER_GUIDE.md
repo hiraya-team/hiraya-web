@@ -55,11 +55,21 @@ Production installations can check for updates in Settings. Automatic updates ch
 
 ## `.hiraya.app` apps and permissions {#apps-and-permissions}
 
+A new or empty desktop includes six trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, File Viewer, and Folder Explorer. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files.
+
+Text Editor reloads an open clean document when it changes elsewhere and preserves unsaved text with a conflict warning when the document is dirty. Its auto-save, format-on-save, font-size, and wrapping preferences start from the desktop editor settings on first launch, then remain app-local to this browser and signed-in account.
+
+Ordinary file and folder opens use these apps by default. `.hiraya.app` remains reserved for package installation and `.url` remains reserved for internet shortcuts. Use **Open with** to choose another matching installed app or make it preferred for the file's longest extension (including compound extensions). Manage or reset preferences under **Settings > Apps > File types**. Preferences and app data are local to this browser and signed-in account; they do not synchronize through a desktop. If a preferred app is unavailable, Hiraya retains the preference, reports the fallback, and opens a safe bundled default.
+
 A file ending in `.hiraya.app` is an installable Hiraya app package. Open the package to review its name, version, and requested permissions before approving it. Unsupported or malformed packages are rejected rather than run.
 
-Apps run isolated from Hiraya and the network except through approved host services. Permissions can include reading or writing only files and folders you grant, opening pickers, managing the app window, adding command-palette commands, showing notifications, reading the current theme, and using app-specific device-local storage. Permission approval is tied to the exact package version and digest; an update must be approved again.
+Apps run in opaque-origin sandboxed frames. Hiraya rejects static remote package references, blocks direct network APIs, forms, and top navigation with sandbox and Content Security Policy controls, strips ordinary app links, and terminates an app if its frame loads a different document after boot. Apps can interact with the host only through approved SDK services; there is currently no SDK service for opening an external URL. Browser enforcement is layered rather than perfect network isolation: embedded CSP enforcement and `navigate-to` are not supported by every browser, and a dynamically initiated self-navigation request can begin before the host receives the load event and removes the frame. Permissions can include reading or writing only files and folders you grant, opening pickers, managing the app window, adding command-palette commands, showing notifications, reading the current theme, and using app-specific device-local storage. Permission approval is tied to the exact package version and digest; approving an update closes every running instance of the old digest before the approval is replaced.
 
 Review installed apps and their permission names in **Settings > Apps**. Uninstalling removes approval and device-local app data, but does not delete the `.hiraya.app` package or files the app previously saved. Only install packages you trust.
+
+If an older user-installed app used an ID later reserved for a trusted system app, migration moves the original approval, manifest, digest, and every app-storage record into **Settings > Apps > Recovered app data**. Download its JSON export before removing the recovered copy.
+
+Anonymous public read-only desktops continue to use Hiraya's host previews rather than launching sandbox apps. Public sessions do not have the authenticated, account-local app installation and capability context needed to restore app windows safely.
 
 ## Export, operator backup, and recovery {#export-backup-and-recovery}
 

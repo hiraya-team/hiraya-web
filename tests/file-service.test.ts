@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import type { AppPermission, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { CapabilityStore, type FileCapabilityOperation } from "../src/apps/host/capability-store";
-import { FileService, FileServiceError, type FileSyncFunctions } from "../src/apps/host/file-service";
+import { FileService, FileServiceError, MAX_STAGED_WRITE_BYTES, MAX_STAGED_WRITE_SESSIONS, STAGED_WRITE_EXPIRY_MS, type FileSyncFunctions } from "../src/apps/host/file-service";
 import { ContentRevisionConflictError, type DesktopStateSnapshot } from "../src/lib/opfs";
-import { grantPickedFiles, grantPickedFolder } from "../src/apps/host/picker-grants";
+import { grantLaunchCapabilities, grantPickedFiles, grantPickedFolder } from "../src/apps/host/picker-grants";
 import type { DesktopEntry, FileEntry, FolderEntry } from "../src/types";
 import { desktopStateSnapshot } from "./fixtures";
 
@@ -39,10 +39,11 @@ function fixture() {
     renameEntry: async (id, name) => { calls.push(`rename:${id}`); return replace({ ...snapshot.entries.find((entry) => entry.id === id)!, name }); },
     moveEntry: async (id, parentId, position) => { calls.push(`move:${id}`); return replace({ ...snapshot.entries.find((entry) => entry.id === id)!, parentId, position }); },
     deleteEntry: async (id) => { calls.push(`delete:${id}`); snapshot = { ...snapshot, entries: snapshot.entries.filter((entry) => entry.id !== id && entry.parentId !== id) }; },
+    deleteEntries: async (ids) => { calls.push(`delete-many:${ids.join(",")}`); const selected = new Set(ids); snapshot = { ...snapshot, entries: snapshot.entries.filter((entry) => !selected.has(entry.id) && !selected.has(entry.parentId ?? "")) }; },
   };
   const capabilities = new CapabilityStore();
   const service = (instance = "app-1", permissions: AppPermission[] = ["files:read", "files:write"]) => new FileService({ appInstanceId: instance, permissions, capabilities, getSnapshot: () => snapshot, sync });
-  return { capabilities, service, calls, folder, nested, unrelated, contents, snapshot: () => snapshot };
+  return { capabilities, service, sync, calls, folder, nested, unrelated, contents, snapshot: () => snapshot };
 }
 
 async function expectCode(promise: Promise<unknown>, code: string) {
@@ -71,6 +72,16 @@ describe("app file authority", () => {
     await expectCode(h.service().createFile({ parent: folder, name: "denied.bin" }), "PERMISSION_DENIED");
   });
 
+  test("grants launch files, folders, and root through the existing capability model", async () => {
+    const h = fixture();
+    const grants = grantLaunchCapabilities(h.capabilities, "app-1", ["files:read", "files:write"], { files: [h.nested], folders: [h.folder], root: true });
+    expect(grants.files).toHaveLength(1);
+    expect(grants.folders).toHaveLength(2);
+    expect((await h.service().stat({ handle: grants.files[0] })).metadata.name).toBe("nested.bin");
+    expect(await h.service().list({ folder: grants.folders[1] })).toHaveLength(2);
+    expect(grantLaunchCapabilities(h.capabilities, "no-files", [], { files: [h.nested], root: true })).toEqual({ files: [], folders: [] });
+  });
+
   test("reads, writes and lists binary files without exposing entry IDs", async () => {
     const h = fixture();
     const folderHandle = h.capabilities.grantFolder("app-1", h.folder.id, ["stat", "read", "write", "list"]);
@@ -83,6 +94,51 @@ describe("app file authority", () => {
     const saved = await h.service().write({ handle, data: new Uint8Array([255, 0, 127]).buffer, mimeType: "image/png", expectedRevision: 7 });
     expect(saved).toMatchObject({ mimeType: "image/png", size: 3, contentRevision: 8 });
     expect([...new Uint8Array(await h.contents.get(h.nested.id)!.arrayBuffer())]).toEqual([255, 0, 127]);
+  });
+
+  test("reads and atomically commits files larger than the per-request limit", async () => {
+    const h = fixture();
+    const handle = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write"]);
+    const service = h.service();
+    const size = 4 * 1024 * 1024 + 17;
+    const session = await service.beginWrite({ handle, size, expectedRevision: 7 });
+    expect(session.chunkSize).toBe(1024 * 1024);
+    for (let offset = 0; offset < size; offset += session.chunkSize) {
+      const length = Math.min(session.chunkSize, size - offset);
+      await service.writeChunk({ uploadId: session.uploadId, offset, data: new Uint8Array(length).fill(offset / session.chunkSize).buffer });
+    }
+    expect(h.contents.get(h.nested.id)?.size).toBe(3);
+    const saved = await service.commitWrite({ uploadId: session.uploadId });
+    expect(saved).toMatchObject({ size, contentRevision: 8 });
+    const last = await service.readChunk({ handle, offset: size - 17, length: 17 });
+    expect([...new Uint8Array(last.data)]).toEqual(new Array(17).fill(4));
+    await expectCode(service.commitWrite({ uploadId: session.uploadId }), "NOT_FOUND");
+  });
+
+  test("rejects incomplete, out-of-order, oversized, and stale staged writes", async () => {
+    const h = fixture();
+    const handle = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write"]);
+    const service = h.service();
+    await expectCode(service.beginWrite({ handle, size: 1, expectedRevision: 6 }), "CONFLICT");
+    const session = await service.beginWrite({ handle, size: 2 });
+    await expectCode(service.writeChunk({ uploadId: session.uploadId, offset: 1, data: new ArrayBuffer(1) }), "INVALID_REQUEST");
+    await expectCode(service.writeChunk({ uploadId: session.uploadId, offset: 0, data: new ArrayBuffer(1024 * 1024 + 1) }), "INVALID_REQUEST");
+    await service.writeChunk({ uploadId: session.uploadId, offset: 0, data: new ArrayBuffer(1) });
+    await expectCode(service.commitWrite({ uploadId: session.uploadId }), "INVALID_REQUEST");
+    await service.abortWrite({ uploadId: session.uploadId });
+    await expectCode(service.abortWrite({ uploadId: session.uploadId }), "NOT_FOUND");
+  });
+
+  test("requires folder authority for relative paths and denies sibling or ancestor escape", async () => {
+    const h = fixture();
+    const source = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read"]);
+    await expectCode(h.service().resolve({ handle: source, path: "../secret.txt" }), "PERMISSION_DENIED");
+    const folder = h.capabilities.grantFolder("app-1", h.folder.id, ["stat", "read", "list"]);
+    const resolved = await h.service().resolve({ handle: folder, path: "nested.bin" });
+    expect(resolved).toMatchObject({ kind: "file", metadata: { name: "nested.bin" } });
+    expect((await h.service().read({ handle: resolved.metadata.handle as FileHandle })).data.byteLength).toBe(3);
+    await expectCode(h.service().resolve({ handle: folder, path: "../secret.txt" }), "NOT_FOUND");
+    expect(new Set(h.service().changedPayload([h.nested.id, h.unrelated.id, "not-granted"]).handles)).toEqual(new Set([source, resolved.metadata.handle]));
   });
 
   test("rejects forged, cross-instance and revoked handles without leaking entries", async () => {
@@ -124,6 +180,55 @@ describe("app file authority", () => {
     await expectCode(h.service("app-1", ["files:read"]).write({ handle, data: new ArrayBuffer(0) }), "PERMISSION_DENIED");
   });
 
+  test("rechecks reader, shared-offline, and connecting restrictions for every mutation RPC class", async () => {
+    for (const restriction of ["reader", "shared-offline", "connecting", "blocked"]) {
+      const h = fixture();
+      let writable = true;
+      const permissions = () => ["files:read", ...(writable ? ["files:write" as const] : [])];
+      const service = new FileService({ appInstanceId: "app-1", permissions, capabilities: h.capabilities, getSnapshot: h.snapshot, sync: h.sync });
+      const file = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write", "rename", "move", "delete"]);
+      const folder = h.capabilities.grantFolder("app-1", h.folder.id, ["stat", "read", "write", "list", "create", "rename", "move", "delete"]);
+      const root = h.capabilities.grantFolder("app-1", null, ["stat", "read", "write", "list", "create", "rename", "move", "delete"]);
+      const staged = await service.beginWrite({ handle: file, size: 1 });
+      await service.writeChunk({ uploadId: staged.uploadId, offset: 0, data: new ArrayBuffer(1) });
+      const aborted = await service.beginWrite({ handle: file, size: 1 });
+      writable = false;
+      h.capabilities.setInstanceMutationAllowed("app-1", false);
+      const calls = [
+        () => service.write({ handle: file, data: new ArrayBuffer(0) }),
+        () => service.beginWrite({ handle: file, size: 1 }),
+        () => service.writeChunk({ uploadId: aborted.uploadId, offset: 0, data: new ArrayBuffer(1) }),
+        () => service.commitWrite({ uploadId: staged.uploadId }),
+        () => service.abortWrite({ uploadId: aborted.uploadId }),
+        () => service.createFile({ parent: folder, name: `${restriction}.txt` }),
+        () => service.createFolder({ parent: root, name: restriction }),
+        () => service.rename({ handle: file, name: `${restriction}.bin` }),
+        () => service.move({ handle: file, parent: root }),
+        () => service.delete({ handle: file }),
+      ];
+      for (const call of calls) await expectCode(call(), "PERMISSION_DENIED");
+      expect(h.calls).toEqual([]);
+    }
+  });
+
+  test("bounds staged-write sessions, aggregate bytes, and idle lifetime", async () => {
+    const h = fixture();
+    const handle = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write"]);
+    const service = h.service();
+    for (let index = 0; index < MAX_STAGED_WRITE_SESSIONS; index += 1) await service.beginWrite({ handle, size: 1 });
+    await expectCode(service.beginWrite({ handle, size: 1 }), "QUOTA_EXCEEDED");
+    service.close();
+    const large = await service.beginWrite({ handle, size: MAX_STAGED_WRITE_BYTES });
+    await expectCode(service.beginWrite({ handle, size: 1 }), "QUOTA_EXCEEDED");
+    const originalNow = Date.now;
+    const started = originalNow();
+    Date.now = () => started + STAGED_WRITE_EXPIRY_MS + 1_000;
+    try {
+      await expectCode(service.abortWrite({ uploadId: large.uploadId }), "NOT_FOUND");
+      expect(await service.beginWrite({ handle, size: 1 })).toMatchObject({ chunkSize: 1024 * 1024 });
+    } finally { Date.now = originalNow; }
+  });
+
   test("denies list, create and move destinations without folder grants", async () => {
     const h = fixture();
     const noList = h.capabilities.grantFolder("app-1", h.folder.id, ["stat"]);
@@ -143,6 +248,19 @@ describe("app file authority", () => {
     expect((await h.service().move({ handle: file.handle, parent: root })).metadata.parent).toBeNull();
     await h.service().delete({ handle: folder.handle, recursive: true });
     expect(h.calls).toContain("create-file");
+  });
+
+  test("validates every multi-delete capability before making one atomic mutation", async () => {
+    const h = fixture();
+    const allowed = h.capabilities.grantFile("app-1", h.nested.id, ["delete"]);
+    const denied = h.capabilities.grantFile("app-1", h.unrelated.id, ["stat"]);
+    await expectCode(h.service().deleteMany({ handles: [allowed, denied], recursive: true }), "PERMISSION_DENIED");
+    expect(h.calls).toEqual([]);
+    expect(h.snapshot().entries.map((entry) => entry.id)).toContain(h.nested.id);
+
+    const permitted = h.capabilities.grantFile("app-1", h.unrelated.id, ["delete"]);
+    await h.service().deleteMany({ handles: [allowed, permitted], recursive: true });
+    expect(h.calls).toEqual([`delete-many:${h.nested.id},${h.unrelated.id}`]);
   });
 
   test("maps stale expected revisions to CONFLICT before writing", async () => {

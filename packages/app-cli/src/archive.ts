@@ -193,6 +193,17 @@ function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap
   const document = parse(html) as unknown as HtmlNode;
   const visit = (node: HtmlNode) => {
     const tag = node.tagName?.toLowerCase();
+    for (const name of ["src", "href", "poster", "action", "formaction", "data", "cite", "background", "manifest", "xlink:href", "srcset", "imagesrcset", "ping"]) {
+      if (tag === "base" && name === "href") continue;
+      const reference = attribute(node, name);
+      if (reference !== undefined) localReference(reference, entrypoint, `HTML ${name}`);
+    }
+    if (tag === "meta" && (attribute(node, "http-equiv") ?? "").trim().toLowerCase() === "refresh") {
+      const refresh = attribute(node, "content") ?? "";
+      const reference = refresh.match(/(?:^|;)\s*url\s*=\s*["']?([^"']+)$/i)?.[1];
+      if (reference) localReference(reference, entrypoint, "HTML refresh");
+      else throw new TypeError("App HTML must not use meta refresh navigation.");
+    }
     if (tag === "base" && attribute(node, "href") !== undefined) throw new TypeError("App HTML must not override its package base URL.");
     if (tag === "script") {
       const type = (attribute(node, "type") ?? "").toLowerCase();

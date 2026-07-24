@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { installedAppAcceptsFile, installedAppIsAvailable, packageMatchesInstall, parseInstalledApp, removeInstalledApp, replaceInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
+import { installedAppAcceptsFile, installedAppIsAvailable, packageMatchesInstall, parseInstalledApp, removeFileAssociationsForApp, removeInstalledApp, replaceInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
+import { resolveFileApp } from "../src/apps/file-associations";
 
 function install(version = "1.0.0", digest = "a".repeat(64), packageEntryId = "package-one"): InstalledApp {
-  return { appId: "test.editor", packageEntryId, digest, version, approvedAt: 10, manifest: { schemaVersion: 1, id: "test.editor", name: "Editor", version, entrypoint: "index.html", permissions: ["files:read"] } };
+  return { appId: "test.editor", source: "desktop", packageEntryId, archivePath: null, digest, version, approvedAt: 10, manifest: { schemaVersion: 1, id: "test.editor", name: "Editor", version, entrypoint: "index.html", permissions: ["files:read"] } };
 }
 
 describe("installed apps", () => {
@@ -16,9 +17,16 @@ describe("installed apps", () => {
     const first = install();
     expect(packageMatchesInstall(first, first.packageEntryId, first.digest, first.version)).toBe(true);
     expect(packageMatchesInstall(first, first.packageEntryId, "b".repeat(64), first.version)).toBe(false);
-    const updated = install("2.0.0", "b".repeat(64), "package-two");
-    expect(replaceInstalledApp([first], updated)).toEqual([updated]);
+    const updated = { ...install("2.0.0", "b".repeat(64), "package-two"), manifest: { ...install("2.0.0", "b".repeat(64), "package-two").manifest, fileTypes: [".txt"] } };
+    const apps = replaceInstalledApp([first], updated);
+    const associations = [{ matcher: ".txt", appId: first.appId, createdAt: 1 }];
+    expect(apps).toEqual([updated]);
+    expect(resolveFileApp({ name: "notes.txt", mimeType: "text/plain" }, apps, [{ id: updated.packageEntryId, kind: "file" }], associations)?.app).toEqual(updated);
     expect(removeInstalledApp([updated], updated.appId)).toEqual([]);
+  });
+
+  test("reconciles associations immediately when an app is uninstalled", () => {
+    expect(removeFileAssociationsForApp([{ matcher: ".txt", appId: "test.editor", createdAt: 1 }, { matcher: ".md", appId: "test.preview", createdAt: 2 }], "test.editor")).toEqual([{ matcher: ".md", appId: "test.preview", createdAt: 2 }]);
   });
 
   test("reports deleted and wrong-kind package entries as unavailable", () => {
@@ -35,5 +43,11 @@ describe("installed apps", () => {
     expect(installedAppAcceptsFile(associated, { name: "photo.bin", mimeType: "image/png" })).toBe(true);
     expect(installedAppAcceptsFile(associated, { name: "README.MD", mimeType: "application/octet-stream" })).toBe(true);
     expect(installedAppAcceptsFile(associated, { name: "archive.zip", mimeType: "application/zip" })).toBe(false);
+  });
+
+  test("does not remove bundled system apps from the local model", () => {
+    const system = parseInstalledApp({ ...install(), source: "system", packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app" });
+    expect(removeInstalledApp([system], system.appId)).toEqual([system]);
+    expect(installedAppIsAvailable(system, [])).toBe(true);
   });
 });

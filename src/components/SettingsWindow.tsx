@@ -18,7 +18,8 @@ import {
 import { DEFAULT_WALLPAPER, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type WallpaperPreset } from "../types";
 import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
 import type { AppWindowHeaderElements } from "./AppWindow";
-import { installedAppIsAvailable, type InstalledApp } from "../apps/installed-apps";
+import { installedAppAcceptsMatcher, installedAppIsAvailable, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
+import { SYSTEM_FILE_DEFAULTS } from "../apps/file-associations";
 import type { PwaInstallState } from "../lib/pwa-install";
 import { RoleBadge, StatusBadge } from "./VisualPrimitives";
 
@@ -89,8 +90,16 @@ type Props = {
   installState: PwaInstallState;
   serverBuildTimestamp: string | null;
   installedApps: InstalledApp[];
+  quarantinedApps: QuarantinedApp[];
   onLaunchApp: (app: InstalledApp) => void;
   onUninstallApp: (app: InstalledApp) => void;
+  onExportQuarantinedApp: (app: QuarantinedApp) => void;
+  onRemoveQuarantinedApp: (app: QuarantinedApp) => void;
+  fileAssociations: FileAssociation[];
+  onResetApp: (app: InstalledApp) => void;
+  onSetFileAssociation: (matcher: string, appId: string) => void;
+  onRemoveFileAssociation: (matcher: string) => void;
+  onResetFileAssociations: () => void;
   onListActivity: (query?: ActivityQuery) => Promise<ActivityPage>;
   onSubscribeToActivity: (listener: () => void) => () => void;
   onOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => void;
@@ -185,8 +194,16 @@ export function SettingsWindow({
   installState,
   serverBuildTimestamp,
   installedApps,
+  quarantinedApps,
   onLaunchApp,
   onUninstallApp,
+  onExportQuarantinedApp,
+  onRemoveQuarantinedApp,
+  fileAssociations,
+  onResetApp,
+  onSetFileAssociation,
+  onRemoveFileAssociation,
+  onResetFileAssociations,
   onListActivity,
   onSubscribeToActivity,
   onOpenAffectedEntries,
@@ -409,7 +426,7 @@ export function SettingsWindow({
 
             <section className="settings-section" aria-labelledby="apps-link-heading" hidden={settingsCategory !== "apps"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainAppsButtonRef} onClick={openApps}>
-                <span className="settings-row__icon"><Package size={17} /></span><span className="settings-row__copy"><strong id="apps-link-heading">Apps</strong><small>{installedApps.length ? `${installedApps.length} approved ${installedApps.length === 1 ? "app" : "apps"} on this device.` : "Manage approved app packages."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+                <span className="settings-row__icon"><Package size={17} /></span><span className="settings-row__copy"><strong id="apps-link-heading">Apps</strong><small>{installedApps.length ? `${installedApps.length} installed ${installedApps.length === 1 ? "app" : "apps"}: bundled apps and user-approved packages.` : "Manage user-approved app packages."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
             </section>
 
@@ -712,14 +729,28 @@ export function SettingsWindow({
           </div>
         ) : (
           <div className="settings-page settings-page--apps">
-            <header className="settings-page__header"><button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeApps}><ArrowLeft size={17} /></button><div><h3 ref={appsHeadingRef} tabIndex={-1}>Apps</h3><p>Approved packages and device-local data.</p></div></header>
+            <header className="settings-page__header"><button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeApps}><ArrowLeft size={17} /></button><div><h3 ref={appsHeadingRef} tabIndex={-1}>Apps</h3><p>Installed bundled apps, user-approved packages, and device-local data.</p></div></header>
             <div className="installed-app-list">
               {installedApps.map((app) => {
                 const available = installedAppIsAvailable(app, entries);
-                return <article className="installed-app" key={app.appId}><div className="installed-app__heading"><Package size={20} /><div><strong>{app.manifest.name}</strong><small>{app.appId}</small></div><span>{available ? `v${app.version}` : "Unavailable"}</span></div><p>{app.manifest.description ?? "No description provided."}</p><dl><div><dt>Permissions</dt><dd>{app.manifest.permissions.join(", ") || "None"}</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="installed-app__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunchApp(app)}><Play size={15} /> Launch</button><button className="button button--quiet" type="button" onClick={() => onUninstallApp(app)}><Trash size={15} /> Uninstall</button></div></article>;
+                return <article className="installed-app" key={app.appId}><div className="installed-app__heading"><Package size={20} /><div><strong>{app.manifest.name}</strong><small>{app.appId}</small></div><StatusBadge tone={available ? "neutral" : "danger"}>{available ? `v${app.version}` : "Unavailable"}</StatusBadge></div><p>{app.manifest.description ?? "No description provided."}</p><dl><div><dt>Source</dt><dd>{app.source === "system" ? "Bundled system app" : "Desktop package"}</dd></div><div><dt>Trust</dt><dd>{app.source === "system" ? "Trusted by Hiraya" : "Approved in this browser"}</dd></div><div><dt>Scope</dt><dd>This browser and account</dd></div><div><dt>Permissions</dt><dd>{app.manifest.permissions.join(", ") || "None"}</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="installed-app__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunchApp(app)}><Play size={15} /> Launch</button><button className="button button--quiet" type="button" onClick={() => onResetApp(app)}><ArrowClockwise size={15} /> Reset data</button>{app.source === "desktop" && <button className="button button--quiet" type="button" onClick={() => onUninstallApp(app)}><Trash size={15} /> Uninstall</button>}</div></article>;
               })}
               {!installedApps.length && <p className="theme-custom__empty">No apps are approved on this device. Open a <code>.hiraya.app</code> package to install one.</p>}
             </div>
+            {quarantinedApps.length > 0 && <section className="settings-section" aria-labelledby="recovered-apps-heading">
+              <div className="settings-section__heading"><div><h4 id="recovered-apps-heading">Recovered app data</h4><p>These user apps used IDs now reserved by trusted system apps. Hiraya preserved their original approval, manifest, digest, and browser-local storage during migration.</p></div></div>
+              <div className="installed-app-list">
+                {quarantinedApps.map((app) => <article className="installed-app" key={app.appId}><div className="installed-app__heading"><Package size={20} /><div><strong>{app.appId}</strong><small>Quarantined user package</small></div><StatusBadge tone="neutral">Recovered</StatusBadge></div><dl><div><dt>Version</dt><dd>{app.version}</dd></div><div><dt>Storage</dt><dd>{app.storage.length} {app.storage.length === 1 ? "record" : "records"}, {app.storage.reduce((total, item) => total + item.bytes, 0)} bytes</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="installed-app__actions"><button className="button button--quiet" type="button" onClick={() => onExportQuarantinedApp(app)}><DownloadSimple size={15} /> Download export</button><button className="button button--quiet" type="button" onClick={() => onRemoveQuarantinedApp(app)}><Trash size={15} /> Remove</button></div></article>)}
+              </div>
+            </section>}
+            <section className="settings-section" aria-labelledby="file-types-heading">
+              <div className="settings-section__heading"><div><h4 id="file-types-heading">File types</h4><p>Preferred handlers are local to this browser and account. Missing apps remain selected while a bundled default opens the file.</p></div><button className="button button--quiet" type="button" disabled={!fileAssociations.length} onClick={onResetFileAssociations}>Reset all</button></div>
+              <div className="settings-list">
+                {fileAssociations.map((association) => { const compatible = installedApps.filter((app) => installedAppIsAvailable(app, entries) && installedAppAcceptsMatcher(app, association.matcher)); const selected = compatible.find((app) => app.appId === association.appId); return <div className="settings-row" key={association.matcher}><span className="settings-row__copy"><strong>{association.matcher}</strong><small>{selected?.manifest.name ?? `${association.appId} (unavailable or incompatible)`}</small></span><select aria-label={`Preferred app for ${association.matcher}`} value={selected?.appId ?? association.appId} onChange={(event) => onSetFileAssociation(association.matcher, event.target.value)}>{!selected && <option value={association.appId}>{association.appId} (unavailable or incompatible)</option>}{compatible.map((app) => <option value={app.appId} key={app.appId}>{app.manifest.name}</option>)}</select><button className="button button--quiet" type="button" onClick={() => onRemoveFileAssociation(association.matcher)}>Remove</button></div>; })}
+                {!fileAssociations.length && <p className="theme-custom__empty">No preferred handlers. Use Open With on a file to choose one.</p>}
+                {SYSTEM_FILE_DEFAULTS.map((item) => <div className="settings-row" key={item.label}><span className="settings-row__copy"><strong>{item.label}</strong><small>{item.matcher}</small></span><span>{installedApps.find((app) => app.appId === item.appId)?.manifest.name ?? "Bundled default"}</span></div>)}
+              </div>
+            </section>
             <button className="inline-help-link" type="button" onClick={() => onOpenHelp("apps-and-permissions")}>App packages, permissions, and updates</button>
           </div>
         )}

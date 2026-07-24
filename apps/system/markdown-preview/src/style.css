@@ -1,0 +1,12 @@
+@import "@hiraya/system-apps-shared/styles.css";
+.preview { min-width: 0; padding: clamp(1.2rem, 4vw, 3rem); overflow: auto; }
+.preview > * { max-width: 52rem; margin-right: auto; margin-left: auto; }
+.preview h1 { padding-bottom: .5rem; border-bottom: 1px solid var(--hiraya-border); font-size: 2rem; }
+.preview h2 { margin-top: 2rem; font-size: 1.45rem; }
+.preview p, .preview li { line-height: 1.7; }
+.preview pre { padding: 1rem; overflow: auto; border: 1px solid var(--hiraya-border); border-radius: .5rem; background: var(--hiraya-surface); }
+.preview code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.preview :not(pre) > code { padding: .15em .35em; border-radius: .25rem; background: var(--hiraya-surface); }
+.preview blockquote { padding-left: 1rem; border-left: .25rem solid var(--hiraya-accent); color: var(--hiraya-text-muted); }
+.preview img { display: block; max-width: 100%; max-height: 70vh; margin: 1.2rem auto; }
+.preview a { color: var(--hiraya-accent); }

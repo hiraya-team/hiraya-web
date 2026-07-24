@@ -1,4 +1,6 @@
-import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient, type ThemeTokens } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient } from "@hiraya/apps-sdk";
+import { bindTheme } from "@hiraya/apps-ui";
+import "@hiraya/apps-ui/styles.css";
 import { extractFiles, inspectArchive, type Archive, type ArchiveEntry } from "./archive";
 import "./style.css";
 
@@ -20,8 +22,7 @@ let busy = false;
 try {
   hiraya = await connectHiraya({ appId: APP_ID, requestTimeoutMs: 120_000 });
   const launch = await hiraya.app.getLaunchContext();
-  applyTheme(launch.theme);
-  const unsubscribeTheme = hiraya.on("theme.changed", applyTheme);
+  const unsubscribeTheme = bindTheme(hiraya, launch.theme);
   addEventListener("pagehide", () => { unsubscribeTheme(); hiraya.close(); }, { once: true });
   await hiraya.window.setTitle("ZIP Browser");
   setStatus("Ready. Choose a ZIP archive to inspect.");
@@ -95,8 +96,7 @@ function renderTree(): void {
     for (const entry of children.get(parent) ?? []) {
       const row = document.createElement("div");
       row.className = "tree-row";
-      row.setAttribute("role", "treeitem");
-      row.setAttribute("aria-level", String(depth));
+      row.setAttribute("role", "listitem");
       row.style.setProperty("--depth", String(depth - 1));
       const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
@@ -216,11 +216,6 @@ function fail(error: unknown): void {
 function setStatus(message: string, danger = false): void {
   elements.status.textContent = message;
   elements.status.classList.toggle("error", danger);
-}
-
-function applyTheme(theme: ThemeTokens): void {
-  document.documentElement.dataset.theme = theme.mode;
-  for (const [name, value] of Object.entries(theme)) if (name !== "mode") document.documentElement.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
 }
 
 function icon(kind: ArchiveEntry["kind"]): HTMLElement {

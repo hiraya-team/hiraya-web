@@ -95,6 +95,14 @@ describe("app lifecycle", () => {
     service.closeInstance(second);
     expect(saving).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
+
+  test("reports a host-cancelled app close back to the requester", async () => {
+    const owner = { appId: "test.editor", instanceId: "one" };
+    const service = new AppLifecycleService(100, () => false);
+    service.open(owner, windowState, "Editor");
+    expect(await service.requestClose(owner)).toBe(false);
+    expect(service.snapshot(owner).title).toBe("Editor");
+  });
 });
 
 describe("bounded app services", () => {
@@ -146,7 +154,7 @@ describe("bounded app services", () => {
   });
 
   test("maps desktop definitions to stable light and dark app tokens", () => {
-    expect(mapThemeTokens(BUILTIN_THEMES["hiraya-dusk"].definition)).toMatchObject({ mode: "light", focus: "#96651d" });
-    expect(mapThemeTokens(BUILTIN_THEMES["midnight-glass"].definition)).toMatchObject({ mode: "dark", surface: "#17222d" });
+    expect(mapThemeTokens(BUILTIN_THEMES["hiraya-dusk"].definition)).toMatchObject({ mode: "light", background: "#f2f1eb", focus: "#96651d" });
+    expect(mapThemeTokens(BUILTIN_THEMES["midnight-glass"].definition)).toMatchObject({ mode: "dark", background: "#17222d", surface: "#17222d" });
   });
 });

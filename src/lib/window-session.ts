@@ -23,7 +23,7 @@ export function createWindowSession(apps: readonly (WindowSessionBase & Record<s
   return {
     schemaVersion: 1,
     apps: apps.flatMap((app): WindowSessionApp[] => {
-      const target = extractBuiltinAppTarget(app);
+      const target = extractBuiltinAppTarget(app.systemTarget ?? app);
       return target ? [{ bounds: app.bounds, minimized: app.minimized, zIndex: app.zIndex, ...target }] : [];
     }),
   };
@@ -90,7 +90,7 @@ export function restoreWindowSession(session: WindowSession, entries: DesktopEnt
     })
     .sort((left, right) => left.zIndex - right.zIndex)
     .map((app, index): WindowSessionApp => {
-      const { minWidth, minHeight } = builtinAppWindow(app.kind);
+      const { minWidth, minHeight } = app.kind === "system" ? { minWidth: 360, minHeight: 260 } : builtinAppWindow(app.kind);
       const projection = projectLogicalPosition(app.bounds, viewport);
       const localBounds = clampWindowBounds({ ...app.bounds, ...projection.local }, viewport, { minWidth, minHeight });
       return {

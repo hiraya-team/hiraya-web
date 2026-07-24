@@ -3724,6 +3724,12 @@ a:focus-visible {
 .installed-app dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .installed-app__actions { display: flex; justify-content: flex-end; gap: 7px; }
 .installed-app__actions .button:last-child { color: var(--theme-danger); background: var(--theme-danger-surface); }
+.settings-page--apps .settings-section { margin-top: 18px; }
+.settings-page--apps .settings-section__heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.settings-page--apps .settings-section__heading h4, .settings-page--apps .settings-section__heading p { margin: 0; }
+.settings-page--apps .settings-section__heading p { margin-top: 4px; color: var(--theme-text-muted); }
+.settings-page--apps .settings-row select { min-width: 160px; max-width: 220px; }
+@media (max-width: 620px) { .settings-page--apps .settings-section__heading, .settings-page--apps .settings-row { align-items: stretch; flex-direction: column; } .settings-page--apps .settings-row select { max-width: none; } }
 
 .image-zoom-control { color: var(--theme-text-muted); font-size: max(12px, calc(9px * var(--theme-type-scale))); }
 .image-zoom-control select { border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); color: var(--theme-text); background: var(--theme-window); font-size: max(14px, calc(10px * var(--theme-type-scale))); }

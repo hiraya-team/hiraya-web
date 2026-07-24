@@ -5,8 +5,6 @@ import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
-import { FileWindow } from "./components/FileWindow";
-import { FolderExplorer } from "./components/FolderExplorer";
 import { MoveDialog } from "./components/MoveDialog";
 import { DesktopSwitcher } from "./components/DesktopSwitcher";
 import type { CatalogQuota } from "./lib/desktop-catalog";
@@ -35,13 +33,10 @@ import {
   transferEntries,
   pasteEntries,
   readFile,
-  readFileByRelativePath,
   renameEntry,
   renameDesktop as renameDesktopMutation,
   saveCustomTheme,
   saveDesktopLayout,
-  saveEditorSettings,
-  saveTextFile,
   selectTheme,
   updateRootEntryPositions,
   updateEntryPosition,
@@ -65,13 +60,13 @@ import {
   type SyncStatus,
   type OfflineOperationProgress,
 } from "./lib/sync";
-import { clearAppStorage, DEFAULT_EDITOR_SETTINGS, installApp, listInstalledApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage, type DesktopStateSnapshot, type LocalPreferences } from "./lib/opfs";
+import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, listQuarantinedApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, removeFileAssociation, removeQuarantinedApp, resetFileAssociations, saveLocalPreferences, saveWindowSession, setFileAssociation, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage, type DesktopStateSnapshot, type LocalPreferences } from "./lib/opfs";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, decodeClipboardArchiveItem, encodeClipboardArchive, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, type DesktopRoute } from "./lib/routes";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle, type CustomTheme, type ThemeState } from "./lib/themes";
-import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EditorSettings, type EntryPosition, type FileEntry } from "./types";
+import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, reorderSurfaceSegments, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { topOverlay } from "./ui/overlay";
@@ -98,11 +93,17 @@ import { canMutateDesktop, settingsRestrictionReason, sharedOfflineMessage } fro
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
 import type { AppPackageInspection } from "@hiraya/app-cli";
+import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { isAppPackageName, RpcDispatcher } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
-import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
+import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
-import { installedAppAcceptsFile, installedAppIsAvailable, packageMatchesInstall, type InstalledApp } from "./apps/installed-apps";
+import { installedAppIsAvailable, packageMatchesInstall, removeFileAssociationsForApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
+import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
+import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "./apps/system-apps";
+import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
+import type { SystemAppTarget } from "./apps/types";
+import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
 import { COMPACT_CHROME_QUERY, MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
 import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
@@ -125,7 +126,7 @@ type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry
 type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string | null };
 type SettingsApp = BaseRunningApp & { kind: "settings" };
 type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
-type SandboxApp = BaseRunningApp & { kind: "sandbox"; fileId: string; title: string; dirty: boolean; package: AppPackageInspection; dispatcher: RpcDispatcher };
+type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
 type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
 type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[] };
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -167,6 +168,10 @@ function formatImportBytes(value: number) {
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
 }
 
+function samePermissions(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((permission) => right.includes(permission));
+}
+
 function transientMenuOpen() {
   return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .app-window__menu"));
 }
@@ -182,7 +187,7 @@ function topRunningAppInSegment(apps: RunningApp[], segment: SurfaceSegment, siz
 
 function App({ session }: { session: AuthSession | null }) {
   const commandService = useMemo(createAppCommandService, []);
-  const appLifecycle = useMemo(() => new AppLifecycleService(2_000, ({ instanceId }) => closeAppRef.current(instanceId)), []);
+  const appLifecycle = useMemo(() => new AppLifecycleService(2_000, ({ instanceId }) => closeAppRef.current(instanceId, false)), []);
   const appTheme = useMemo(() => new AppThemeService(resolveTheme(DEFAULT_THEME_STATE)), []);
   const appHostServices = useMemo(() => new AppHostServices(appLifecycle, appTheme, new AppPersistentStorageService({ get: readAppStorage, set: writeAppStorage, remove: removeAppStorage, clear: clearAppStorage })), [appLifecycle, appTheme]);
   const appCapabilities = useMemo(() => new CapabilityStore(), []);
@@ -213,7 +218,6 @@ function App({ session }: { session: AuthSession | null }) {
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
-  const [editorSettings, setEditorSettings] = useState<EditorSettings>(DEFAULT_EDITOR_SETTINGS);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
   const [exporting, setExporting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
@@ -224,6 +228,8 @@ function App({ session }: { session: AuthSession | null }) {
   const compactChrome = useMediaQuery(COMPACT_CHROME_QUERY);
   const [settingsPage, setSettingsPage] = useState<"main" | "themes" | "activity" | "apps">("main");
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [fileAssociations, setFileAssociations] = useState<FileAssociation[]>([]);
+  const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
   const [appDialogRequests, setAppDialogRequests] = useState<readonly DialogRequest[]>([]);
   const [appNotifications, setAppNotifications] = useState<readonly AppNotification[]>([]);
   const [autoUpdate, setAutoUpdate] = useState(true);
@@ -303,14 +309,13 @@ function App({ session }: { session: AuthSession | null }) {
   const restoreHistoryAppsRef = useRef<(apps: WindowTarget[]) => void>(() => undefined);
   const restoreRunningAppsRef = useRef<(session: WindowSession, entries: DesktopEntry[]) => void>(() => undefined);
   const applyOpenQueryRef = useRef<(entries: DesktopEntry[], layout: DesktopLayout) => void>(() => undefined);
-  const closeAppRef = useRef<(id: string) => void>(() => undefined);
+  const closeAppRef = useRef<(id: string, consultLifecycle?: boolean) => Promise<boolean>>(async () => false);
   const runningAppsRef = useRef<RunningApp[]>([]);
   const focusedAppIdRef = useRef<string | null>(null);
   const nextWindowZRef = useRef(1);
   const fileLoadGenerationsRef = useRef<Record<string, number>>({});
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
-  const editorSettingsSaveRef = useRef<Promise<void>>(Promise.resolve());
   const contentRevisionsRef = useRef<Record<string, number>>({});
   const activeDesktopIdRef = useRef("");
   const desktopsRef = useRef<DesktopIdentity[]>([]);
@@ -325,6 +330,15 @@ function App({ session }: { session: AuthSession | null }) {
   const updaterRef = useRef<PwaUpdater | null>(null);
   const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const restoredWindowBoundsRef = useRef(new Map<string, WindowBounds>());
+  const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
+  const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
+  const canMutateRef = useRef(false);
+  const offlineModelRef = useRef<ReturnType<typeof buildOfflineAvailability> | null>(null);
+  const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
+  const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
+  const chooseFolderImportRef = useRef<(parentId: string | null) => Promise<void>>(async () => undefined);
+  const makeAvailableOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
+  const unpinOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
   const windowCommandRef = useRef<{ maximize: (id: string) => void; move: (id: string, direction: "left" | "right" | "up" | "down") => void }>({ maximize: () => {}, move: () => {} });
   const autoUpdateRef = useRef(true);
   const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0 });
@@ -339,6 +353,7 @@ function App({ session }: { session: AuthSession | null }) {
   const routeSettings = route?.settings;
   const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
   const canMutate = canMutateDesktop(activeDesktop, syncStatus);
+  canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
   const canViewActivity = Boolean(activeDesktop?.capabilities.activity && syncStatus === "online");
@@ -358,6 +373,7 @@ function App({ session }: { session: AuthSession | null }) {
     releasableBytes: 0,
     browserStorage: null,
   }, { updatingIds: offlineProgress?.updatingIds, errors: offlineProgress?.errors }), [activeDesktopId, entries, offlineInventory, offlineProgress]);
+  offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
   const rootEntries = entryIndex.roots;
@@ -435,6 +451,9 @@ function App({ session }: { session: AuthSession | null }) {
 
   useEffect(() => appHostServices.dialogs.subscribe(setAppDialogRequests), [appHostServices]);
   useEffect(() => appHostServices.notifications.subscribe(setAppNotifications), [appHostServices]);
+  useEffect(() => {
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox") appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
+  }, [appCapabilities, canMutate]);
   useEffect(() => { if (!canViewActivity && settingsPage === "activity") setSettingsPage("main"); }, [canViewActivity, settingsPage]);
   useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
@@ -448,9 +467,26 @@ function App({ session }: { session: AuthSession | null }) {
   }, []);
   useEffect(() => {
     if (loading) return;
-    void listInstalledApps().then(setInstalledApps).catch((loadError) => {
-    console.error("Installed apps could not be loaded.", loadError);
-    setError(loadError instanceof Error ? loadError.message : "Installed apps could not be loaded.");
+    void Promise.all([listInstalledApps(), listFileAssociations(), listQuarantinedApps()]).then(async ([storedApps, associations, quarantined]) => {
+      const byId = new Map(storedApps.map((app) => [app.appId, app]));
+      const systemApps = await Promise.all(SYSTEM_APP_CATALOG.map(async (item): Promise<InstalledApp> => {
+        const response = await fetch(systemAppArchiveUrl(item));
+        if (!response.ok) throw new Error(`Could not load bundled ${item.manifest.name}.`);
+        const { inspectAppArchive } = await import("@hiraya/app-cli");
+        const inspected = await inspectAppArchive(new Uint8Array(await response.arrayBuffer()));
+        if (inspected.manifest.id !== item.manifest.id) throw new Error(`Bundled ${item.manifest.name} has the wrong identity.`);
+        const current = byId.get(item.manifest.id);
+        const install: InstalledApp = { appId: inspected.manifest.id, source: "system", packageEntryId: null, archivePath: item.archivePath, digest: inspected.digest, version: inspected.manifest.version, manifest: inspected.manifest, approvedAt: current?.approvedAt ?? Date.now() };
+        await installApp(install);
+        return install;
+      }));
+      const systemIds = new Set(systemApps.map((app) => app.appId));
+      setInstalledApps([...storedApps.filter((app) => app.source === "desktop" && !systemIds.has(app.appId)), ...systemApps]);
+      setFileAssociations(associations);
+      setQuarantinedApps(quarantined);
+    }).catch((loadError) => {
+      console.error("Installed apps could not be loaded.", loadError);
+      setError(loadError instanceof Error ? loadError.message : "Installed apps could not be loaded.");
     });
   }, [loading]);
   function setCurrentRoute(next: DesktopRoute) {
@@ -499,6 +535,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function runningAppTargets(apps = runningAppsRef.current): WindowTarget[] {
     return apps.flatMap((app): WindowTarget[] => {
+      if (app.kind === "sandbox" && app.systemTarget) return [app.systemTarget];
       const target = extractBuiltinAppTarget(app);
       return target ? [target] : [];
     });
@@ -551,7 +588,11 @@ function App({ session }: { session: AuthSession | null }) {
     if (app.kind === "file") return { ...base, fileId: app.fileId };
     if (app.kind === "explorer") return { ...base, explorerFolderId: app.folderId };
     if (app.kind === "properties") return { ...base, propertiesEntryId: app.entryId };
-    if (app.kind === "sandbox") return base;
+    if (app.kind === "sandbox") {
+      if (app.systemTarget?.targetKind === "file") return { ...base, fileId: app.systemTarget.entryId! };
+      if (app.systemTarget?.targetKind === "folder" || app.systemTarget?.targetKind === "root") return { ...base, explorerFolderId: app.systemTarget.entryId };
+      return base;
+    }
     return { ...base, settings: true };
   }
 
@@ -611,6 +652,7 @@ function App({ session }: { session: AuthSession | null }) {
     const closing = runningAppsRef.current.find((app) => app.id === id);
     if (closing?.kind === "sandbox") {
       closing.dispatcher.dispose();
+      closing.files.close();
       appCapabilities.revokeInstance(id);
     }
     const remaining = runningAppsRef.current.filter((app) => app.id !== id);
@@ -623,13 +665,18 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function requestCloseApp(id: string) {
-    if (fileDirtyRef.current[id]) {
-      void requestConfirmation({ title: "Discard unsaved changes?", message: "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }).then((confirmed) => { if (confirmed) closeApp(id); });
-      return false;
+  async function requestCloseApp(id: string, consultLifecycle = true): Promise<boolean> {
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (!target) return true;
+    if (target.kind === "sandbox" && consultLifecycle) {
+      return appLifecycle.requestClose({ appId: target.package.manifest.id, instanceId: target.id });
     }
-    closeApp(id);
-    return true;
+    const dirty = target.kind === "sandbox" ? dirtyAppIds.has(id) || appLifecycle.snapshot({ appId: target.package.manifest.id, instanceId: target.id }).dirty : Boolean(fileDirtyRef.current[id]);
+    return closeWithDirtyCheck({
+      dirty,
+      confirmDiscard: () => requestConfirmation({ title: "Discard unsaved changes?", message: target.kind === "sandbox" ? "Close this app and discard its unsaved changes?" : "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }),
+      close: () => closeApp(id),
+    });
   }
 
   function minimizeApp(id: string) {
@@ -691,27 +738,45 @@ function App({ session }: { session: AuthSession | null }) {
   function restoreRunningApps(session: WindowSession, loadedEntries: DesktopEntry[]) {
     const byId = new Map(loadedEntries.map((entry) => [entry.id, entry]));
     const restoredRoute = routeRef.current ?? normalizeDesktopRoute(parseDesktopRoute(window.location.hash), loadedEntries, activeDesktopIdRef.current);
-    const restored = restoreWindowSession(session, loadedEntries, restoredRoute, desktopSize).map((saved): RunningApp => {
+    const savedApps = restoreWindowSession(session, loadedEntries, restoredRoute, desktopSize);
+    pendingSystemRestoreRef.current = savedApps.flatMap((saved): Array<Extract<WindowSession["apps"][number], { kind: "system" }>> => {
+      if (saved.kind === "system") return [saved];
+      if (saved.kind === "explorer") return [{ ...saved, kind: "system", appId: SYSTEM_APP_IDS.folderExplorer, targetKind: saved.folderId === null ? "root" : "folder", entryId: saved.folderId }];
+      if (saved.kind === "file") {
+        const file = byId.get(saved.fileId);
+        return file?.kind === "file" ? [{ ...saved, kind: "system", appId: systemDefaultAppId(file), targetKind: "file", entryId: file.id }] : [];
+      }
+      return [];
+    });
+    const restored = savedApps.filter((saved) => saved.kind !== "system" && saved.kind !== "file" && saved.kind !== "explorer").map((saved): RunningApp => {
       if (saved.kind === "settings") return { ...saved, id: builtinAppTargetId(saved) };
-      if (saved.kind === "explorer") return { ...saved, id: builtinAppTargetId(saved) };
-      if (saved.kind === "properties") return { ...saved, id: builtinAppTargetId(saved) };
-      const file = byId.get(saved.fileId) as FileEntry;
-      return {
-        ...saved,
-        id: builtinAppTargetId(saved),
-        file,
-        editMode: Boolean(saved.editMode),
-        contentRevision: contentRevisionsRef.current[saved.fileId] ?? 0,
-        remoteChanged: false,
-      };
+      return { ...saved, id: builtinAppTargetId(saved) };
     });
     nextWindowZRef.current = Math.max(1, ...restored.map((app) => app.zIndex));
     updateRunningApps(restored);
     setFocusedApp(null);
-    for (const app of restored) {
-      if (app.kind === "file" && app.file) loadFileApp(app.id, app.file, app.contentRevision);
-    }
   }
+
+  useEffect(() => {
+    if (!installedApps.length || !pendingSystemRestoreRef.current.length) return;
+    const pending = pendingSystemRestoreRef.current;
+    pendingSystemRestoreRef.current = [];
+    for (const saved of pending) {
+      const target = saved.targetKind === "root" ? "root" : entriesRef.current.find((entry) => entry.id === saved.entryId && entry.kind === saved.targetKind);
+      if (!target) continue;
+      const current = target !== "root" && target.kind === "file" ? resolveRestoredFileApp(target, installedApps, entriesRef.current, fileAssociations, saved) : null;
+      const install = current?.app ?? installedApps.find((app) => app.appId === saved.appId);
+      const identityMatches = target === "root" || target.kind !== "file" ? !saved.digest || Boolean(install && install.appId === saved.appId && install.source === saved.source && install.digest === saved.digest && samePermissions(install.manifest.permissions, saved.permissions ?? [])) : Boolean(current);
+      if (!install || !installedAppIsAvailable(install, entriesRef.current) || !identityMatches) {
+        setNotice(`The saved handler ${saved.appId} is unavailable or changed. Open the item again to choose an available app.`);
+        continue;
+      }
+      if (current?.app.appId !== saved.appId) setNotice(`The saved handler ${saved.appId} is unavailable or no longer preferred. Restored with ${install.manifest.name}.`);
+      else if (current?.preferredUnavailable) setNotice(`Your preferred app for ${current.preferredUnavailable.matcher} is unavailable. Restored with ${install.manifest.name}.`);
+      const restoredTarget: SystemAppTarget = { ...saved, appId: install.appId, source: install.source, digest: install.digest, permissions: [...install.manifest.permissions] };
+      void launchInstalledAppRef.current(install, target, "restore").then(() => updateRunningApps((apps) => apps.map((app) => app.id === builtinAppTargetId(restoredTarget) ? { ...app, bounds: saved.bounds, minimized: saved.minimized, zIndex: saved.zIndex } : app)));
+    }
+  }, [fileAssociations, installedApps]);
 
   function restoreHistoryApps(targets: WindowTarget[]) {
     const historySegment = normalizeDesktopRoute(parseDesktopRoute(window.location.hash), entriesRef.current, activeDesktopIdRef.current);
@@ -727,8 +792,9 @@ function App({ session }: { session: AuthSession | null }) {
         continue;
       }
       if (target.kind === "explorer") {
-        if (target.folderId !== null && entriesRef.current.find((entry) => entry.id === target.folderId)?.kind !== "folder") continue;
-        restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "explorer", folderId: target.folderId });
+        const explorer = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.folderExplorer && app.source === "system");
+        const folder = target.folderId === null ? "root" : entriesRef.current.find((entry) => entry.id === target.folderId && entry.kind === "folder");
+        if (explorer && folder) void launchInstalledAppRef.current(explorer, folder, "restore");
         continue;
       }
       if (target.kind === "properties") {
@@ -736,19 +802,23 @@ function App({ session }: { session: AuthSession | null }) {
         restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "properties", entryId: target.entryId });
         continue;
       }
+      if (target.kind === "system") {
+        const launchTarget = target.targetKind === "root" ? "root" : entriesRef.current.find((entry) => entry.id === target.entryId && entry.kind === target.targetKind);
+        const current = launchTarget !== "root" && launchTarget?.kind === "file" ? resolveRestoredFileApp(launchTarget, installedApps, entriesRef.current, fileAssociations, target) : null;
+        const install = current?.app ?? installedApps.find((app) => app.appId === target.appId);
+        const identityMatches = launchTarget === "root" || launchTarget?.kind !== "file" ? !target.digest || Boolean(install && install.appId === target.appId && install.source === target.source && install.digest === target.digest && samePermissions(install.manifest.permissions, target.permissions ?? [])) : Boolean(current);
+        if (install && launchTarget && identityMatches && installedAppIsAvailable(install, entriesRef.current)) {
+          if (current?.app.appId !== target.appId) setNotice(`The saved handler ${target.appId} is unavailable or no longer preferred. Restored with ${install.manifest.name}.`);
+          else if (current?.preferredUnavailable) setNotice(`Your preferred app for ${current.preferredUnavailable.matcher} is unavailable. Restored with ${install.manifest.name}.`);
+          void launchInstalledApp(install, launchTarget, "restore");
+        }
+        else setNotice(`The saved handler ${target.appId} is unavailable or changed. Open the item again to choose an available app.`);
+        continue;
+      }
       const file = entriesRef.current.find((entry): entry is FileEntry => entry.id === target.fileId && entry.kind === "file");
       if (!file) continue;
-      const app: FileApp = {
-        ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment),
-        kind: "file",
-        fileId: file.id,
-        file,
-        editMode: Boolean(target.editMode),
-        contentRevision: contentRevisionsRef.current[file.id] ?? 0,
-        remoteChanged: false,
-      };
-      restored.push(app);
-      filesToLoad.push(app);
+      const resolution = resolveFileApp(file, installedApps, entriesRef.current, fileAssociations);
+      if (resolution) void launchInstalledAppRef.current(resolution.app, file, "restore");
     }
     updateRunningApps([...runningAppsRef.current, ...restored]);
     for (const app of filesToLoad) loadFileApp(app.id, app.file!, app.contentRevision);
@@ -789,10 +859,15 @@ function App({ session }: { session: AuthSession | null }) {
   applyLocationRouteRef.current = applyLocationRoute;
   navigateRouteRef.current = navigateRoute;
   openRouteAppsRef.current = (next) => {
-    if (next.explorerFolderId !== undefined) openExplorerWindow(next.explorerFolderId, false, !next.fileId && !next.propertiesEntryId && !next.settings);
+    if (next.explorerFolderId !== undefined) {
+      const folder = next.explorerFolderId === null ? "root" : entryIndex.byId.get(next.explorerFolderId);
+      const explorer = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.folderExplorer);
+      if (explorer && (folder === "root" || folder?.kind === "folder")) void launchInstalledApp(explorer, folder, "restore");
+    }
     if (next.fileId) {
       const entry = entryIndex.byId.get(next.fileId);
-      if (entry?.kind === "file") openFileWindow(entry, false, !next.propertiesEntryId && !next.settings);
+      const resolution = entry?.kind === "file" ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
+      if (entry?.kind === "file" && resolution) void launchInstalledApp(resolution.app, entry, "restore");
     }
     if (next.propertiesEntryId && entryIndex.byId.has(next.propertiesEntryId)) openPropertiesWindow(next.propertiesEntryId, false);
     if (next.settings) openSettingsWindow(false);
@@ -823,15 +898,23 @@ function App({ session }: { session: AuthSession | null }) {
     };
     const unsubscribe = subscribeToSync((synced) => {
       if (!active) return;
+      const previousSnapshot = appSnapshotRef.current;
+      const changedEntryIds = previousSnapshot ? new Set([
+        ...synced.entries.filter((entry) => {
+          const previous = previousSnapshot.entries.find((candidate) => candidate.id === entry.id);
+          return !previous || previous.modifiedAt !== entry.modifiedAt || previous.name !== entry.name || previous.parentId !== entry.parentId || previous.kind !== entry.kind || entry.kind === "file" && previous.kind === "file" && (previous.size !== entry.size || previous.mimeType !== entry.mimeType || previousSnapshot.sync.contentRevisions[entry.id] !== synced.sync.contentRevisions[entry.id]);
+        }).map((entry) => entry.id),
+        ...previousSnapshot.entries.filter((entry) => !synced.entries.some((candidate) => candidate.id === entry.id)).map((entry) => entry.id),
+      ]) : new Set<string>();
       contentRevisionsRef.current = synced.sync.contentRevisions;
       layoutRef.current = synced.layout;
       entriesRef.current = synced.entries;
       setLayout(synced.layout);
       setEntries(synced.entries);
-      setEditorSettings(synced.editorSettings);
       setAppearance(synced.appearance);
       const syncedIds = new Set(synced.entries.map((entry) => entry.id));
       appSnapshotRef.current = synced;
+      if (changedEntryIds.size) for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("files.changed", app.files.changedPayload(changedEntryIds));
       setSelectedIds((current) => current.filter((id) => syncedIds.has(id)));
       setContextMenu((current) => current?.type === "entry" && !syncedIds.has(current.entryId) ? null : current);
       setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
@@ -843,7 +926,10 @@ function App({ session }: { session: AuthSession | null }) {
         return current.type === "rename" ? syncedIds.has(current.entryId) ? current : null : current.entryIds.some((id) => syncedIds.has(id)) ? { ...current, entryIds: current.entryIds.filter((id) => syncedIds.has(id)) } : null;
       });
       const availableApps = runningAppsRef.current.filter((app) => {
-        if (app.kind === "sandbox") return syncedIds.has(app.fileId);
+        if (app.kind === "sandbox") {
+          if (app.systemTarget?.entryId) return syncedIds.has(app.systemTarget.entryId);
+          return app.install.source === "system" || syncedIds.has(app.packageEntryId!);
+        }
         const dependency = builtinAppEntryDependency(app);
         return !dependency || syncedIds.has(dependency.entryId);
       });
@@ -907,14 +993,13 @@ function App({ session }: { session: AuthSession | null }) {
     })
       .then(({ desktop: loadedDesktop, status: loadedStatus }) => {
         if (!active) return;
-        const { entries: loadedEntries, layout: loadedLayout, editorSettings: loadedEditorSettings, appearance: loadedAppearance, sync } = loadedDesktop;
+        const { entries: loadedEntries, layout: loadedLayout, appearance: loadedAppearance, sync } = loadedDesktop;
         contentRevisionsRef.current = sync.contentRevisions;
         appSnapshotRef.current = loadedDesktop;
         layoutRef.current = loadedLayout;
         entriesRef.current = loadedEntries;
         setLayout(loadedLayout);
         setEntries(loadedEntries);
-        setEditorSettings(loadedEditorSettings);
         setAppearance(loadedAppearance);
         setSyncStatus(loadedStatus);
         setLoading(false);
@@ -1152,7 +1237,7 @@ function App({ session }: { session: AuthSession | null }) {
     }, "replace");
     updateRunningApps((currentApps) => currentApps.map((app) => {
       const projection = projectLogicalPosition(app.bounds, desktopSize);
-      const { minWidth, minHeight } = app.kind === "sandbox" ? { minWidth: 360, minHeight: 260 } : builtinAppWindow(app.kind);
+      const { minWidth, minHeight } = app.kind === "sandbox" ? app.package.manifest.window ?? { minWidth: 360, minHeight: 260 } : builtinAppWindow(app.kind);
       const localBounds = clampWindowBounds({ ...app.bounds, ...projection.local }, desktopSize, { minWidth, minHeight });
       return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
     }));
@@ -1162,7 +1247,10 @@ function App({ session }: { session: AuthSession | null }) {
     if (loading) return;
     const currentApps = runningAppsRef.current;
     const reconciledApps = currentApps.flatMap((app): RunningApp[] => {
-      if (app.kind === "sandbox") return entryIndex.byId.has(app.fileId) ? [app] : [];
+      if (app.kind === "sandbox") {
+        const dependencyId = app.systemTarget?.entryId ?? app.packageEntryId;
+        return dependencyId === null || entryIndex.byId.has(dependencyId) ? [app] : [];
+      }
       const dependency = builtinAppEntryDependency(app);
       if (!dependency) return [app];
       const entry = entryIndex.byId.get(dependency.entryId);
@@ -1212,7 +1300,7 @@ function App({ session }: { session: AuthSession | null }) {
       ...(routePropertiesEntryId ? { propertiesEntryId: routePropertiesEntryId } : {}),
       ...(routeSettings ? { settings: true as const } : {}),
     });
-  }, [loading, routeExplorerFolderId, routeFileId, routePropertiesEntryId, routeSettings, windowSessionRestored]);
+  }, [fileAssociations, installedApps, loading, routeExplorerFolderId, routeFileId, routePropertiesEntryId, routeSettings, windowSessionRestored]);
 
   useEffect(() => {
     applyLocationRouteRef.current();
@@ -1485,6 +1573,8 @@ function App({ session }: { session: AuthSession | null }) {
     uploadPositionRef.current = position;
     directoryRef.current?.click();
   }
+  chooseUploadRef.current = chooseUpload;
+  chooseFolderImportRef.current = chooseFolderImport;
 
   function reportFolderImportError(message: string) {
     setFolderImportError(message);
@@ -1512,14 +1602,6 @@ function App({ session }: { session: AuthSession | null }) {
     const pending = layoutDraftRef.current;
     if (!pending || pending.desktopId !== desktopId) return;
     await persistLayout(pending.layout, desktopId);
-  }
-
-  function applyEditorSettings(next: EditorSettings) {
-    if (!canSettings) return;
-    setEditorSettings(next);
-    editorSettingsSaveRef.current = editorSettingsSaveRef.current
-      .then(() => saveEditorSettings(next))
-      .catch(() => { setError("The editor settings could not be saved."); });
   }
 
   async function changeTheme(themeId: string) {
@@ -1644,7 +1726,6 @@ function App({ session }: { session: AuthSession | null }) {
     layoutRef.current = desktop.layout;
     setEntries(desktop.entries);
     setLayout(desktop.layout);
-    setEditorSettings(desktop.editorSettings);
     setAppearance(desktop.appearance);
     replaceSelection("desktop", []);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.dispose();
@@ -1943,39 +2024,6 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function openExplorerWindow(folderId: string | null, syncRoute = true, focus = true) {
-    const id = builtinAppTargetId({ kind: "explorer", folderId });
-    if (runningAppsRef.current.some((app) => app.id === id)) {
-      if (focus) focusApp(id, syncRoute);
-      return false;
-    }
-    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId };
-    updateRunningApps([...runningAppsRef.current, app]);
-    if (focus) setFocusedApp(id);
-    return true;
-  }
-
-  function navigateExplorerWindow(appId: string, folderId: string | null) {
-    const nextId = builtinAppTargetId({ kind: "explorer", folderId });
-    if (nextId === appId) return;
-    const previousApps = runningAppTargets();
-    const zIndex = ++nextWindowZRef.current;
-    const existing = runningAppsRef.current.find((app) => app.id === nextId);
-    if (existing) {
-      delete fileDirtyRef.current[appId];
-      delete fileLoadGenerationsRef.current[appId];
-      updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => app.id === nextId ? { ...app, minimized: false, zIndex } : app));
-    } else {
-      updateRunningApps(runningAppsRef.current.map((app) => app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex } : app));
-    }
-    setFocusedApp(nextId);
-    const currentRoute = routeRef.current;
-    if (currentRoute && existing) {
-      const segment = segmentForApp(existing);
-      navigateRoute({ ...segment, explorerFolderId: folderId }, "push", previousApps);
-    } else if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: folderId }, "push", previousApps);
-  }
-
   function openSettingsWindow(syncRoute = true) {
     const id = builtinAppTargetId({ kind: "settings" });
     if (runningAppsRef.current.some((app) => app.id === id)) {
@@ -2008,83 +2056,69 @@ function App({ session }: { session: AuthSession | null }) {
     return true;
   }
 
-  function openFileWindow(file: FileEntry, syncRoute = true, focus = true, editMode = false) {
-    const id = builtinAppTargetId({ kind: "file", fileId: file.id });
-    if (runningAppsRef.current.some((app) => app.id === id)) {
-      if (editMode) updateRunningApps((current) => current.map((app) => app.id === id && app.kind === "file" ? { ...app, editMode: true } : app));
-      if (focus) focusApp(id, syncRoute);
-      return false;
-    }
-    const expectedRevision = contentRevisionsRef.current[file.id] ?? 0;
-    const app: FileApp = {
-      ...createAppBase(id, "file"),
-      kind: "file",
-      fileId: file.id,
-      file,
-      editMode,
-      contentRevision: expectedRevision,
-      remoteChanged: false,
-    };
-    updateRunningApps([...runningAppsRef.current, app]);
-    if (focus) setFocusedApp(id);
-    loadFileApp(id, file, expectedRevision);
-    return true;
-  }
-
-  async function openAppPackage(file: FileEntry, launchFile?: FileEntry) {
+  async function launchInstalledApp(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource: "launcher" | "file" | "restore" = target ? "file" : "launcher") {
     setError("");
     let pendingInstanceId: string | null = null;
     let pendingHost: { close(): void } | null = null;
     try {
-      const blob = await readFile(file.id);
+      const blob = install.source === "system"
+        ? await fetch(systemAppArchiveUrl({ archivePath: install.archivePath })).then((response) => {
+            if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
+            return response.blob();
+          })
+        : await readFile(install.packageEntryId);
       const { inspectAppArchive } = await import("@hiraya/app-cli");
       const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
-      const existing = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.package.manifest.id === appPackage.manifest.id);
-      if (!launchFile && existing && existing.fileId === file.id && existing.package.digest === appPackage.digest && existing.package.manifest.version === appPackage.manifest.version) { focusApp(existing.id); return; }
-      const approved = installedApps.find((item) => item.appId === appPackage.manifest.id);
-      if (!packageMatchesInstall(approved, file.id, appPackage.digest, appPackage.manifest.version)) {
-        const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
-        const confirmed = await requestConfirmation({ title: `${approved ? "Approve updated" : "Install"} ${appPackage.manifest.name}?`, message: `Requested permissions: ${permissions}. The package is isolated from Hiraya and the network except through approved host services.`, confirmLabel: approved ? "Approve update" : "Install and run" });
-        if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
-        const next: InstalledApp = { appId: appPackage.manifest.id, packageEntryId: file.id, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
-        await installApp(next);
-        setInstalledApps((current) => [...current.filter((item) => item.appId !== next.appId), next]);
-      }
-      if (existing && !launchFile) closeApp(existing.id);
-      const id = `sandbox:${file.id}:${crypto.randomUUID()}`;
+      if (appPackage.digest !== install.digest || appPackage.manifest.id !== install.appId) throw new Error(`${install.manifest.name} failed package verification.`);
+      const systemTarget: SystemAppTarget | undefined = target ? {
+         kind: "system",
+         appId: install.appId,
+         targetKind: target === "root" ? "root" : target?.kind ?? "root",
+         entryId: target === "root" || !target ? null : target.id,
+         source: install.source,
+         digest: install.digest,
+         permissions: [...install.manifest.permissions],
+       } : undefined;
+      const id = systemTarget ? builtinAppTargetId(systemTarget) : `sandbox:${install.packageEntryId}:${crypto.randomUUID()}`;
+      const existing = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === id);
+      if (existing) { focusApp(existing.id); return; }
       pendingInstanceId = id;
-      const base = createAppBase(id, "sandbox");
-      const launchHandles = launchFile && appPackage.manifest.permissions.includes("files:read")
-        ? [appCapabilities.grantFile(id, launchFile.id, appPackage.manifest.permissions.includes("files:write") ? ["stat", "read", "write"] : ["stat", "read"])]
-        : [];
+      let base = createAppBase(id, "sandbox");
+      if (appPackage.manifest.window) {
+        const window = appPackage.manifest.window;
+        const local = initialWindowBounds(desktopSize, { ...window, index: runningAppsRef.current.filter((app) => appIsInSegment(app, activeSegment)).length });
+        base = { ...base, bounds: { ...local, ...restoreLogicalPosition(local, activeSegment, desktopSize) } };
+      }
+      const effectivePermissions = () => appPackage.manifest.permissions.filter((permission) => permission !== "files:write" || canMutateRef.current);
+      appCapabilities.setInstanceMutationAllowed(id, canMutateRef.current);
+      const relativeFolder = target && target !== "root" && target.kind === "file" && install.appId === SYSTEM_APP_IDS.markdownPreview && target.parentId
+        ? entriesRef.current.find((entry): entry is FolderEntry => entry.id === target.parentId && entry.kind === "folder")
+        : undefined;
+      const markdownAtRoot = install.appId === SYSTEM_APP_IDS.markdownPreview && target && target !== "root" && target.kind === "file" && target.parentId === null;
+      const launchCapabilities = grantLaunchCapabilities(appCapabilities, id, appPackage.manifest.permissions, {
+        files: target && target !== "root" && target.kind === "file" ? [target] : [],
+        folders: target && target !== "root" && target.kind === "folder" ? [target] : relativeFolder ? [relativeFolder] : [],
+        root: target === "root" || install.source === "system" && !target || Boolean(markdownAtRoot),
+      });
       const host = appHostServices.openInstance({
         instanceId: id,
         launch: {
           protocolVersion: 1,
           appId: appPackage.manifest.id,
           launchId: crypto.randomUUID(),
-          source: launchFile ? "file" : "launcher",
-          files: launchHandles,
-          folders: [],
-          arguments: [],
+          source: launchSource,
+          files: launchCapabilities.files,
+          folders: launchCapabilities.folders,
+           arguments: install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
           theme: mapThemeTokens(activeTheme),
         },
         window: { focused: true, maximized: false, fullscreen: false, width: Math.round(base.bounds.width), height: Math.round(base.bounds.height) },
         title: appPackage.manifest.name,
       });
       pendingHost = host;
-      const runtimeHost = {
-        ...host,
-        dialogs: {
-          openFile: host.dialogs.openFile,
-          openFolder: host.dialogs.openFolder,
-          saveFile: host.dialogs.saveFile,
-          confirm: async (params: { title: string; message: string; confirmLabel?: string; destructive?: boolean }) => requestConfirmation({ title: params.title, message: params.message, confirmLabel: params.confirmLabel ?? "Confirm", danger: params.destructive }),
-        },
-      };
       const files = new FileService({
         appInstanceId: id,
-        permissions: appPackage.manifest.permissions,
+        permissions: effectivePermissions,
         capabilities: appCapabilities,
         getSnapshot: () => appSnapshotRef.current ?? (() => { throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE"); })(),
         sync: {
@@ -2094,17 +2128,46 @@ function App({ session }: { session: AuthSession | null }) {
           createFolder,
           renameEntry,
           moveEntry: moveAppEntry,
-          deleteEntry: deleteAppEntry,
+           deleteEntry: deleteAppEntry,
+           deleteEntries,
         },
         createPosition: () => positionFor(null),
       });
+      const entryIds = (handles: (FileHandle | FolderHandle)[], operation: "stat" | "write" = "stat") => handles.map((handle) => files.entryForHost(handle, operation).id);
+      const runtimeHost = {
+        ...host,
+        dialogs: {
+          openFile: host.dialogs.openFile,
+          openFolder: host.dialogs.openFolder,
+          saveFile: host.dialogs.saveFile,
+          confirm: async (params: { title: string; message: string; confirmLabel?: string; destructive?: boolean }) => requestConfirmation({ title: params.title, message: params.message, confirmLabel: params.confirmLabel ?? "Confirm", danger: params.destructive }),
+        },
+        host: {
+          openEntry: ({ handle }: { handle: FileHandle | FolderHandle }) => handleOpenRef.current(files.entryForHost(handle)),
+          importFiles: ({ parent }: { parent: FolderHandle | null }) => chooseUploadRef.current(files.folderIdForHost(parent, "create")),
+          importFolder: ({ parent }: { parent: FolderHandle | null }) => chooseFolderImportRef.current(files.folderIdForHost(parent, "create")),
+          showEntryActions: ({ handles }: { handles: (FileHandle | FolderHandle)[] }) => {
+            const ids = entryIds(handles);
+            replaceSelection(`app:${id}`, ids);
+            setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
+          },
+          getEntryStatus: ({ handles }: { handles: (FileHandle | FolderHandle)[] }) => handles.map((handle) => {
+            const status = offlineModelRef.current?.entries[files.entryForHost(handle).id];
+            return { handle, status: status?.status ?? "unavailable", pinned: status?.pinned ?? false, directlyPinned: status?.directlyPinned ?? false };
+          }),
+          setOfflinePinned: async ({ handles, pinned }: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }) => {
+            const ids = entryIds(handles);
+            if (pinned) await makeAvailableOfflineRef.current(ids); else await unpinOfflineRef.current(ids);
+          },
+        },
+      };
       const dispatcher = new RpcDispatcher({
-        permissions: appPackage.manifest.permissions,
+        permissions: effectivePermissions,
         host: runtimeHost,
         files,
         commands: new RuntimeCommandContributions(commandService, appPackage.manifest.id, (commandId) => dispatcher.emit("commands.invoked", { id: commandId })),
       });
-      const app: SandboxApp = { ...base, kind: "sandbox", fileId: file.id, title: appPackage.manifest.name, dirty: false, package: appPackage, dispatcher };
+      const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, ...(systemTarget ? { systemTarget } : {}) };
       updateRunningApps([...runningAppsRef.current, app]);
       setFocusedApp(id);
       pendingInstanceId = null;
@@ -2115,13 +2178,55 @@ function App({ session }: { session: AuthSession | null }) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
     }
   }
+  launchInstalledAppRef.current = launchInstalledApp;
+
+  async function openAppPackage(file: FileEntry, launchFile?: FileEntry) {
+    setError("");
+    try {
+      const blob = await readFile(file.id);
+      const { inspectAppArchive } = await import("@hiraya/app-cli");
+      const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
+      if (SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appPackage.manifest.id)) throw new Error("That app ID is reserved for a bundled system app.");
+      const approved = installedApps.find((item) => item.appId === appPackage.manifest.id);
+      let install = approved;
+      if (!packageMatchesInstall(approved, file.id, appPackage.digest, appPackage.manifest.version)) {
+        const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
+        const confirmed = await requestConfirmation({ title: `${approved ? "Approve updated" : "Install"} ${appPackage.manifest.name}?`, message: `Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`, confirmLabel: approved ? "Approve update" : "Install and run" });
+        if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
+        install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
+        if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
+        await installApp(install);
+        setInstalledApps((current) => [...current.filter((item) => item.appId !== install!.appId), install!]);
+      }
+      await launchInstalledApp(install!, launchFile);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    }
+  }
 
   async function removeInstalledApp(app: InstalledApp) {
+    if (app.source === "system") return;
     if (!await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true })) return;
-    for (const running of [...runningAppsRef.current]) if (running.kind === "sandbox" && running.package.manifest.id === app.appId) closeApp(running.id);
+    forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
     await uninstallApp(app.appId);
     setInstalledApps((current) => current.filter((item) => item.appId !== app.appId));
+    setFileAssociations((current) => removeFileAssociationsForApp(current, app.appId));
     setNotice(`${app.manifest.name} uninstalled`);
+  }
+
+  function exportQuarantinedApp(app: QuarantinedApp) {
+    const url = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), app }, null, 2)], { type: "application/json" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${app.appId}-quarantine.json`;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
+
+  async function discardQuarantinedApp(app: QuarantinedApp) {
+    if (!await requestConfirmation({ title: `Remove recovered data for ${app.appId}?`, message: "Download the quarantine export first if you may need this app's original manifest and local storage. This removal cannot be undone.", confirmLabel: "Remove recovered data", danger: true })) return;
+    await removeQuarantinedApp(app.appId);
+    setQuarantinedApps((current) => current.filter((item) => item.appId !== app.appId));
   }
 
   async function openInternetShortcut(file: FileEntry, popup: Window | null) {
@@ -2152,31 +2257,40 @@ function App({ session }: { session: AuthSession | null }) {
     }
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
-    const existingId = entry.kind === "folder"
-      ? builtinAppTargetId({ kind: "explorer", folderId: entry.id })
-      : builtinAppTargetId({ kind: "file", fileId: entry.id });
+    const resolution = entry.kind === "file" ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
+    const app = entry.kind === "folder" ? installedApps.find((candidate) => candidate.appId === SYSTEM_APP_IDS.folderExplorer) : resolution?.app;
+    if (!app) {
+      setError("No available app can open this item.");
+      return;
+    }
+    if (resolution?.preferredUnavailable) setNotice(`Your preferred app for ${resolution.preferredUnavailable.matcher} is unavailable. Opened with ${app.manifest.name}; change the preference in Settings > Apps > File types.`);
+    const systemTarget: SystemAppTarget | undefined = app.source === "system" ? { kind: "system", appId: app.appId, targetKind: entry.kind, entryId: entry.id } : undefined;
+    const existingId = systemTarget ? builtinAppTargetId(systemTarget) : "";
     if (runningAppsRef.current.some((app) => app.id === existingId)) {
       focusApp(existingId);
       return;
     }
     const previousApps = runningAppTargets();
-    if (entry.kind === "folder") {
-      const created = openExplorerWindow(entry.id, false);
-      navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: entry.id }, created ? "push" : "replace", previousApps);
-      return;
-    }
-    setError("");
-    const created = openFileWindow(entry, false);
-    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: entry.id }, created ? "push" : "replace", previousApps);
+    if (app.source === "desktop" && entry.kind === "file") {
+      const appPackage = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === app.packageEntryId && candidate.kind === "file");
+      if (appPackage) void openAppPackage(appPackage, entry);
+      else setError("That app package is unavailable.");
+    } else void launchInstalledApp(app, entry);
+    navigateRoute(entry.kind === "folder"
+      ? { column: currentRoute.column, row: currentRoute.row, explorerFolderId: entry.id }
+      : { column: currentRoute.column, row: currentRoute.row, fileId: entry.id }, "push", previousApps);
   }
+  handleOpenRef.current = handleOpen;
 
   function handleEditFile(file: FileEntry) {
     setContextMenu(null);
     const currentRoute = routeRef.current;
     if (!currentRoute || !fileCapabilities(file).editable) return;
+    const editor = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.textEditor);
+    if (!editor) { setError("Text Editor is unavailable."); return; }
     const previousApps = runningAppTargets();
-    const created = openFileWindow(file, false, true, true);
-    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: file.id }, created ? "push" : "replace", previousApps);
+    void launchInstalledApp(editor, file);
+    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: file.id }, "push", previousApps);
   }
 
   async function download(file: FileEntry) {
@@ -2241,6 +2355,8 @@ function App({ session }: { session: AuthSession | null }) {
     } catch (reason) { setError(reason instanceof Error ? reason.message : "The offline pin could not be removed."); }
     finally { setOfflineBusy(false); }
   }
+  makeAvailableOfflineRef.current = makeAvailableOffline;
+  unpinOfflineRef.current = unpinOffline;
 
   async function removeDownloadedCopies(rootIds?: string[]) {
     if (offlineBusy) return;
@@ -2372,15 +2488,6 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  async function save(appId: string, fileId: string, content: string) {
-    const app = runningAppsRef.current.find((candidate) => candidate.id === appId);
-    if (app?.kind !== "file" || app.fileId !== fileId) return;
-    const saved = await saveTextFile(fileId, content);
-    setEntries((current) => current.map((entry) => entry.id === saved.id ? saved : entry));
-    updateRunningApps((current) => current.map((candidate) => candidate.id === appId && candidate.kind === "file" ? { ...candidate, file: saved, contentRevision: contentRevisionsRef.current[saved.id] ?? candidate.contentRevision, remoteChanged: false } : candidate));
-    setNotice(syncStatus === "local" ? "Changes saved locally" : syncStatus === "offline" ? "Changes queued for sync" : "Changes synced");
-  }
-
   function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null) {
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
@@ -2408,7 +2515,7 @@ function App({ session }: { session: AuthSession | null }) {
     const segment = projectLogicalPosition(app.bounds, size).segment;
     const restored = restoredWindowBoundsRef.current.get(id);
     const maximized = appIsMaximized(app);
-    const fallback = initialWindowBounds(size, app.kind === "sandbox" ? { width: 820, height: 620, minWidth: 360, minHeight: 260 } : builtinAppMaximizeRestoreWindow(app.kind));
+    const fallback = initialWindowBounds(size, app.kind === "sandbox" ? app.package.manifest.window ?? { width: 820, height: 620, minWidth: 360, minHeight: 260 } : builtinAppMaximizeRestoreWindow(app.kind));
     const bounds = maximized
       ? restored ?? { ...fallback, ...restoreLogicalPosition(fallback, segment, size) }
       : { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, size), width: size.width, height: size.height };
@@ -3040,7 +3147,7 @@ function App({ session }: { session: AuthSession | null }) {
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             const title = app.kind === "sandbox" ? app.title : app.kind === "settings" ? isMobile && settingsPage !== "main" ? settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps" : "Settings" : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? folder?.name ?? activeDesktopName : file?.name ?? "Opening file";
-            const appWindow = app.kind === "sandbox" ? { minWidth: 360, minHeight: 260 } : builtinAppWindow(app.kind);
+            const appWindow = app.kind === "sandbox" ? app.package.manifest.window ?? { minWidth: 360, minHeight: 260 } : builtinAppWindow(app.kind);
             return (
               <AppWindow
                 key={app.id}
@@ -3071,72 +3178,7 @@ function App({ session }: { session: AuthSession | null }) {
                  titleArea={<div><span className="window-kicker">{app.kind === "sandbox" ? "Session app" : app.kind === "file" ? app.editMode || file && ["text", "url"].includes(fileCapabilities(file).preview) ? "Text editor" : file && fileCapabilities(file).preview === "markdown" ? "Markdown" : "Preview" : app.kind === "explorer" ? "Folder" : app.kind === "properties" ? "Properties" : "Hiraya desktop"}</span><h2 id={titleId}>{title}</h2></div>}
               >
                 {(headerElements) => <>
-                {app.kind === "file" && file && app.blob ? (
-                  <FileWindow
-                    file={file}
-                    blob={app.blob}
-                     editable={Boolean(app.editable)}
-                     editMode={app.editMode}
-                     readOnly={!canMutate}
-                     canChangeSettings={canSettings}
-                    remoteChanged={app.remoteChanged}
-                    headerActionsTarget={headerElements.actions}
-                    editorSettings={editorSettings}
-                    externalEmbeddedPreviews={externalEmbeddedPreviews === true}
-                    theme={activeTheme}
-                    onSave={(content) => save(app.id, file.id, content)}
-                    onDownload={() => void download(file)}
-                    onEdit={() => updateRunningApps((current) => current.map((candidate) => candidate.id === app.id && candidate.kind === "file" ? { ...candidate, editMode: true } : candidate))}
-                    onEditorSettingsChange={applyEditorSettings}
-                    onResolveLink={(path) => readFileByRelativePath(file.id, path)}
-                    onOpenLinkedFile={handleOpen}
-                    onDirtyChange={(dirty) => {
-                      fileDirtyRef.current[app.id] = dirty;
-                      setDirtyAppIds((current) => {
-                        if (current.has(app.id) === dirty) return current;
-                        const next = new Set(current);
-                        if (dirty) next.add(app.id); else next.delete(app.id);
-                        return next;
-                      });
-                    }}
-                  />
-                ) : app.kind === "file" && file && app.loadError ? (
-                  <div className="app-window__loading" role="alert">
-                    <span>{app.loadError}</span>
-                    <button className="button button--primary" type="button" onClick={() => loadFileApp(app.id, file, app.contentRevision)}>Retry</button>
-                  </div>
-                ) : app.kind === "file" ? <div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {file?.name ?? "file"}...</div> : null}
-                {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} />}
-                {app.kind === "explorer" && (
-                  <FolderExplorer
-                    folder={folder}
-                    rootLabel={activeDesktopName}
-                    breadcrumbs={folder ? entryIndex.ancestors(folder.id) : []}
-                    children={entryIndex.children.get(folder?.id ?? null) ?? []}
-                    selectedIds={selectionScope === app.id ? selectedIdSet : new Set()}
-                    onSelect={(entry, options) => selectEntry(app.id, entry, options)}
-                    onNavigate={(nextFolder) => navigateExplorerWindow(app.id, nextFolder?.id ?? null)}
-                    onOpen={handleOpen}
-                    onCreateFolder={(parentId) => setDialog({ type: "create-folder", parentId })}
-                    onCreateFile={(parentId) => setDialog({ type: "create-file", parentId })}
-                     onUpload={chooseUpload}
-                     onImportFolder={chooseFolderImport}
-                     onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
-                    offlineAvailability={offlineModel.entries}
-                    onMove={(entry, parentId) => void handleMoveTo(selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry], parentId)}
-                    onContextMenu={(entry, x, y) => {
-                      if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
-                      openEntryContextMenu(entry.id, x, y);
-                    }}
-                    onBlankContextMenu={(parentId, x, y) => {
-                      window.getSelection()?.removeAllRanges();
-                      replaceSelection(app.id, []);
-                      setContextMenu({ type: "desktop", parentId, x, y, position: positionFor(parentId) });
-                    }}
-                    readOnly={!canMutate}
-                    headerElements={headerElements}
-                  />
-                )}
+                {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} onNavigation={() => closeApp(app.id)} />}
                 {app.kind === "properties" && propertiesEntry && (
                   <PropertiesWindow
                     entry={propertiesEntry}
@@ -3178,11 +3220,22 @@ function App({ session }: { session: AuthSession | null }) {
                     installState={installState}
                     serverBuildTimestamp={serverBuildTimestamp}
                     installedApps={installedApps}
+                    quarantinedApps={quarantinedApps}
                     onLaunchApp={(installed) => {
-                      const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === installed.packageEntryId && candidate.kind === "file");
-                      if (entry) void openAppPackage(entry); else setError("That app package is unavailable.");
+                      if (installed.source === "system") void launchInstalledApp(installed, installed.appId === SYSTEM_APP_IDS.folderExplorer ? "root" : undefined);
+                      else {
+                        const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === installed.packageEntryId && candidate.kind === "file");
+                        if (entry) void openAppPackage(entry); else setError("That app package is unavailable.");
+                      }
                     }}
                     onUninstallApp={(installed) => void removeInstalledApp(installed)}
+                    onExportQuarantinedApp={exportQuarantinedApp}
+                    onRemoveQuarantinedApp={(app) => void discardQuarantinedApp(app)}
+                    fileAssociations={fileAssociations}
+                    onResetApp={(installed) => void requestConfirmation({ title: `Reset ${installed.manifest.name}?`, message: "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.", confirmLabel: "Reset data", danger: true }).then(async (confirmed) => { if (confirmed) { await clearAppStorage(installed.appId); setNotice(`${installed.manifest.name} data reset`); } })}
+                    onSetFileAssociation={(matcher, appId) => void setFileAssociation({ matcher, appId, createdAt: Date.now() }).then((association) => setFileAssociations((current) => [...current.filter((item) => item.matcher !== association.matcher), association].sort((a, b) => a.matcher.localeCompare(b.matcher))))}
+                    onRemoveFileAssociation={(matcher) => void removeFileAssociation(matcher).then(() => setFileAssociations((current) => current.filter((item) => item.matcher !== matcher)))}
+                    onResetFileAssociations={() => void resetFileAssociations().then(() => setFileAssociations([]))}
                     onListActivity={canViewActivity ? listActivity : async () => { throw new Error("Activity is unavailable for your role."); }}
                     onSubscribeToActivity={canViewActivity ? subscribeToActivityChanges : () => () => undefined}
                     canOpenAffectedEntries={(activity) => canOpenActivity(activity, activeDesktopIdRef.current, entriesRef.current, desktops.map((desktop) => desktop.id))}
@@ -3296,13 +3349,29 @@ function App({ session }: { session: AuthSession | null }) {
           entry={contextMenuEntry}
           onOpen={() => handleOpen(contextMenuEntry)}
           onEditFile={contextMenuEntry.kind === "file" && fileCapabilities(contextMenuEntry).editable ? () => handleEditFile(contextMenuEntry) : undefined}
-          openWith={contextMenuEntry.kind === "file" ? installedApps.filter((app) => installedAppIsAvailable(app, entries) && app.manifest.permissions.includes("files:read") && installedAppAcceptsFile(app, contextMenuEntry)).map((app) => ({
+          openWith={contextMenuEntry.kind === "file" ? matchingInstalledApps(installedApps, entries, contextMenuEntry).map((app) => ({
             id: app.appId,
             label: app.manifest.name,
+            preferred: fileAssociations.some((association) => association.appId === app.appId && associationCandidates(contextMenuEntry).includes(association.matcher)),
             onOpen: () => {
-              const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
               setContextMenu(null);
-              if (packageEntry) void openAppPackage(packageEntry, contextMenuEntry);
+              const previousApps = runningAppTargets();
+              if (app.source === "system") void launchInstalledApp(app, contextMenuEntry);
+              else {
+                const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
+                if (packageEntry) void openAppPackage(packageEntry, contextMenuEntry);
+              }
+              const currentRoute = routeRef.current;
+              if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: contextMenuEntry.id }, "push", previousApps);
+            },
+            onSetPreferred: () => {
+              const matcher = associationCandidates(contextMenuEntry)[0];
+              setContextMenu(null);
+              if (!matcher) return;
+              void setFileAssociation({ matcher, appId: app.appId, createdAt: Date.now() }).then((association) => {
+                setFileAssociations((current) => [...current.filter((item) => item.matcher !== matcher), association].sort((a, b) => a.matcher.localeCompare(b.matcher)));
+                setNotice(`${app.manifest.name} will open ${matcher} files`);
+              });
             },
           })) : undefined}
           onRename={() => { setDialog({ type: "rename", entryId: contextMenuEntry.id }); setContextMenu(null); }}
@@ -3363,12 +3432,14 @@ function App({ session }: { session: AuthSession | null }) {
           const request = appDialogRequests[0];
           const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
           if (!running) { appHostServices.dialogs.reject(request.id); return; }
+          appCapabilities.setInstanceMutationAllowed(request.owner.instanceId, canMutateRef.current);
           appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files));
         }}
         onOpenFolder={(folder) => {
           const request = appDialogRequests[0];
           const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
           if (!running) { appHostServices.dialogs.reject(request.id); return; }
+          appCapabilities.setInstanceMutationAllowed(request.owner.instanceId, canMutateRef.current);
           appHostServices.dialogs.respond(request.id, grantPickedFolder(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, folder));
         }}
         onSave={async (name, folder) => {
@@ -3376,7 +3447,7 @@ function App({ session }: { session: AuthSession | null }) {
           if (request.kind !== "saveFile") return;
           const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
           if (!running) { appHostServices.dialogs.reject(request.id); return; }
-          if (!running.package.manifest.permissions.includes("files:write")) throw new HostServiceError("The app does not have permission to create files.", "PERMISSION_DENIED");
+          if (!running.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create files on this desktop right now.", "PERMISSION_DENIED");
           const file = await createAppFile(name, folder?.id ?? null, positionFor(folder?.id ?? null), new Blob([], { type: request.params.mimeType ?? "application/octet-stream" }), request.params.mimeType);
           appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, [file])[0]);
         }}

@@ -31,6 +31,11 @@ bun run dev
 
 Prefer small changes in existing modules. Do not introduce global state or a component framework without a concrete need.
 
+## UI Skill Requirement
+
+- Before analyzing, designing, or implementing any UI-related change, invoke the `design-taste-frontend` skill and follow its complete workflow, including its audit and pre-flight requirements. This is mandatory for every UI change, however small.
+- Do not begin UI edits until the skill has been invoked. If the skill is unavailable, stop and ask the user how to proceed rather than bypassing it.
+
 ## Storage And Sync Invariants
 
 - OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.

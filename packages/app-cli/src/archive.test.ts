@@ -107,6 +107,12 @@ describe("Hiraya app archives", () => {
       '<style>@import url("https://evil.example/app.css");</style>',
       '<div style="background: url(https://evil.example/image.png)"></div>',
       '<link rel="preload" as="script" href="https://evil.example/app.js">',
+      '<img src="https://evil.example/pixel?secret=static">',
+      '<a href="https://evil.example/leave">Leave</a>',
+      '<form action="https://evil.example/submit"><button>Submit</button></form>',
+      '<button formaction="https://evil.example/submit">Submit</button>',
+      '<img srcset="https://evil.example/pixel 2x">',
+      '<meta http-equiv="refresh" content="0;url=https://evil.example/leave">',
     ];
     for (const html of htmlCases) {
       await expect(inspectAppArchive(archive({ ...appFiles(), "index.html": strToU8(html) }))).rejects.toThrow("remote reference");

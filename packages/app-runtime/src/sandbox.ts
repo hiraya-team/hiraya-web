@@ -2,7 +2,7 @@ import { APPS_PROTOCOL_VERSION, parseAppConnect, parseAppReady } from "@hiraya/a
 import type { AppPackageInspection } from "@hiraya/app-cli";
 import { RpcDispatcher } from "./dispatcher";
 
-export type MaterializedApp = { url: string; revoke(): void };
+export type MaterializedApp = { html: string; revoke(): void };
 
 export class ObjectUrlLease {
   readonly #urls: string[] = [];
@@ -25,7 +25,10 @@ export class ObjectUrlLease {
   }
 }
 
-const CSP = "default-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data:; font-src data:; media-src data:; connect-src 'none'; frame-src data:; object-src 'none'; base-uri 'none'; form-action 'none'";
+// Apps have an opaque origin. Direct fetch sinks are blocked; navigation is also denied in
+// browsers that implement navigate-to and monitored by the host as a fallback.
+export const SANDBOX_CSP = "default-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'";
+export const SANDBOX_FLAGS = "allow-scripts allow-downloads";
 const MAX_MATERIALIZED_ASSET_CHARACTERS = 64 * 1024 * 1024;
 
 export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array>, entrypoint: string) {
@@ -62,18 +65,27 @@ export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array
 
 export function materializeAppPackage(pkg: AppPackageInspection, urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL): MaterializedApp {
   const lease = new ObjectUrlLease(urls);
-  const make = (blob: Blob) => lease.create(blob);
   const resolve = createPackageAssetResolver(pkg.files, pkg.manifest.entrypoint);
   const source = new TextDecoder("utf-8", { fatal: true }).decode(pkg.files.get(pkg.manifest.entrypoint)!);
   const document = new DOMParser().parseFromString(source, "text/html");
   document.querySelectorAll("base").forEach((element) => element.remove());
+  document.querySelectorAll("meta[http-equiv]").forEach((element) => {
+    if (element.getAttribute("http-equiv")?.trim().toLowerCase() === "refresh") element.remove();
+  });
   document.querySelectorAll("iframe, frame, object, embed").forEach((element) => element.remove());
+  document.querySelectorAll("form").forEach((element) => element.removeAttribute("action"));
+  document.querySelectorAll("[formaction]").forEach((element) => element.removeAttribute("formaction"));
+  document.querySelectorAll("a, area").forEach((element) => {
+    const href = element.getAttribute("href");
+    if (href && !href.startsWith("#")) element.removeAttribute("href");
+    element.removeAttribute("target");
+  });
   const meta = document.createElement("meta");
   meta.httpEquiv = "Content-Security-Policy";
-  meta.content = CSP;
+  meta.content = SANDBOX_CSP;
   document.head.prepend(meta);
-  for (const element of document.querySelectorAll<HTMLElement>("[src], [href], [poster]")) {
-    for (const attribute of ["src", "href", "poster"]) {
+  for (const element of document.querySelectorAll<HTMLElement>("[src], [href], [poster], [srcset], [imagesrcset], [ping]")) {
+    for (const attribute of ["src", "href", "poster", "srcset", "imagesrcset", "ping"]) {
       const reference = element.getAttribute(attribute);
       if (!reference || reference.startsWith("#") || reference.startsWith("data:")) continue;
       const path = resolvePackagePath(reference, pkg.manifest.entrypoint);
@@ -99,19 +111,26 @@ export function materializeAppPackage(pkg: AppPackageInspection, urls: Pick<type
     }));
   }
   const html = `<!doctype html>\n${document.documentElement.outerHTML}`;
-  const url = make(new Blob([html], { type: "text/html" }));
   let revoked = false;
-  return { url, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };
+  return { html, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };
 }
 
 export function isAppPackageName(name: string): boolean {
   return name.toLowerCase().endsWith(".hiraya.app");
 }
 
-export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, timeoutMs = 10_000): () => void {
+export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, onNavigation?: () => void, timeoutMs = 10_000): () => void {
   let disposed = false;
   let channel: MessageChannel | null = null;
   let timer = 0;
+  let initialLoadComplete = false;
+  const onLoad = () => {
+    if (!initialLoadComplete) { initialLoadComplete = true; return; }
+    if (disposed) return;
+    dispose();
+    frame.replaceWith(document.createElement("iframe"));
+    onNavigation?.();
+  };
   const onConnect = (event: MessageEvent<unknown>) => {
     if (disposed || channel || event.source !== frame.contentWindow || !frame.contentWindow) return;
     let connect;
@@ -142,11 +161,13 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     disposed = true;
     clearTimeout(timer);
     window.removeEventListener("message", onConnect);
+    frame.removeEventListener("load", onLoad);
     channel?.port1.close();
     channel?.port2.close();
     dispatcher.dispose();
   };
   window.addEventListener("message", onConnect);
+  frame.addEventListener("load", onLoad);
   return dispose;
 }
 

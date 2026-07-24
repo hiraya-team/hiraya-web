@@ -1,0 +1,82 @@
+/* Opt in on the app body so these foundations never leak into surrounding UI. */
+:where(.hiraya-app) {
+  min-inline-size: 300px;
+  min-block-size: 100vh;
+  min-block-size: 100dvh;
+  margin: 0;
+  color: var(--hiraya-text, #f5eedc);
+  background: var(--hiraya-background, #13231f);
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-synthesis: none;
+  line-height: 1.5;
+  text-rendering: optimizeLegibility;
+}
+
+:where(.hiraya-app),
+:where(.hiraya-app *, .hiraya-app *::before, .hiraya-app *::after) {
+  box-sizing: border-box;
+}
+
+:where(.hiraya-app button, .hiraya-app input, .hiraya-app select, .hiraya-app textarea) {
+  color: inherit;
+  font: inherit;
+}
+
+:where(.hiraya-app button, .hiraya-app [type="button"], .hiraya-app [type="submit"]) {
+  cursor: pointer;
+}
+
+:where(.hiraya-app button:disabled, .hiraya-app input:disabled, .hiraya-app select:disabled, .hiraya-app textarea:disabled) {
+  cursor: not-allowed;
+}
+
+:where(.hiraya-app button, .hiraya-app input, .hiraya-app select, .hiraya-app textarea, .hiraya-app a[href], .hiraya-app [tabindex]):focus-visible {
+  outline: 3px solid var(--hiraya-focus, #fff);
+  outline-offset: 2px;
+}
+
+:where(.hiraya-stack) {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hiraya-space, 1rem);
+}
+
+:where(.hiraya-cluster) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--hiraya-space, 0.75rem);
+}
+
+:where(.hiraya-panel) {
+  border: 1px solid var(--hiraya-border, #526a60);
+  border-radius: var(--hiraya-radius, 0.75rem);
+  background: var(--hiraya-surface, #1b3029);
+}
+
+:where(.hiraya-sr-only) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 40rem) {
+  :where(.hiraya-cluster--collapse) {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :where(.hiraya-app *, .hiraya-app *::before, .hiraya-app *::after) {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

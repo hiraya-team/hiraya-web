@@ -1,5 +1,6 @@
 import {
   APPS_PROTOCOL_VERSION,
+  MAX_FILE_CHUNK_BYTES,
   parseHostInit,
   parseRpcEvent,
   parseRpcResponse,
@@ -29,6 +30,16 @@ export interface ConnectOptions {
   handshakeTimeoutMs?: number;
 }
 
+export interface FileReadAllOptions extends RequestOptions {
+  chunkSize?: number;
+}
+
+export interface FileWriteAllOptions extends RequestOptions {
+  chunkSize?: number;
+  mimeType?: string;
+  expectedRevision?: number;
+}
+
 type PendingRequest = {
   method: ServiceMethod;
   resolve(value: unknown): void;
@@ -55,18 +66,41 @@ export class HirayaClient {
   readonly files = {
     stat: (handle: FileHandle | FolderHandle, options?: RequestOptions) => this.request("files.stat", { handle }, options),
     read: (handle: FileHandle, options?: RequestOptions) => this.request("files.read", { handle }, options),
+    readChunk: (handle: FileHandle, offset: number, length: number, options?: RequestOptions) => this.request("files.readChunk", { handle, offset, length }, options),
+    readAll: (handle: FileHandle, options?: FileReadAllOptions) => this.readAll(handle, options),
     write: (handle: FileHandle, data: ArrayBuffer, options?: RequestOptions & { mimeType?: string; expectedRevision?: number }) => this.request("files.write", {
       handle,
       data,
       ...(options?.mimeType === undefined ? {} : { mimeType: options.mimeType }),
       ...(options?.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }),
     }, options),
+    beginWrite: (handle: FileHandle, size: number, options?: RequestOptions & { mimeType?: string; expectedRevision?: number }) => this.request("files.beginWrite", {
+      handle,
+      size,
+      ...(options?.mimeType === undefined ? {} : { mimeType: options.mimeType }),
+      ...(options?.expectedRevision === undefined ? {} : { expectedRevision: options.expectedRevision }),
+    }, options),
+    writeChunk: (uploadId: string, offset: number, data: ArrayBuffer, options?: RequestOptions) => this.request("files.writeChunk", { uploadId, offset, data }, options),
+    commitWrite: (uploadId: string, options?: RequestOptions) => this.request("files.commitWrite", { uploadId }, options),
+    abortWrite: (uploadId: string, options?: RequestOptions) => this.request("files.abortWrite", { uploadId }, options),
+    writeAll: (handle: FileHandle, data: ArrayBuffer, options?: FileWriteAllOptions) => this.writeAll(handle, data, options),
+    resolve: (handle: FileHandle | FolderHandle, path: string, options?: RequestOptions) => this.request("files.resolve", { handle, path }, options),
     list: (folder: FolderHandle | null = null, options?: RequestOptions) => this.request("files.list", { folder }, options),
     createFile: (params: ServiceMethods["files.createFile"]["params"], options?: RequestOptions) => this.request("files.createFile", params, options),
     createFolder: (parent: FolderHandle | null, name: string, options?: RequestOptions) => this.request("files.createFolder", { parent, name }, options),
     rename: (handle: FileHandle | FolderHandle, name: string, options?: RequestOptions) => this.request("files.rename", { handle, name }, options),
     move: (handle: FileHandle | FolderHandle, parent: FolderHandle | null, options?: RequestOptions) => this.request("files.move", { handle, parent }, options),
     delete: (handle: FileHandle | FolderHandle, recursive = false, options?: RequestOptions) => this.request("files.delete", { handle, recursive }, options),
+    deleteMany: (handles: (FileHandle | FolderHandle)[], recursive = false, options?: RequestOptions) => this.request("files.deleteMany", { handles, recursive }, options),
+  };
+
+  readonly host = {
+    openEntry: (handle: FileHandle | FolderHandle, options?: RequestOptions) => this.request("host.openEntry", { handle }, options),
+    importFiles: (parent: FolderHandle | null = null, options?: RequestOptions) => this.request("host.importFiles", { parent }, options),
+    importFolder: (parent: FolderHandle | null = null, options?: RequestOptions) => this.request("host.importFolder", { parent }, options),
+    showEntryActions: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.showEntryActions", { handles }, options),
+    getEntryStatus: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.getEntryStatus", { handles }, options),
+    setOfflinePinned: (handles: (FileHandle | FolderHandle)[], pinned: boolean, options?: RequestOptions) => this.request("host.setOfflinePinned", { handles, pinned }, options),
   };
 
   readonly dialogs = {
@@ -122,6 +156,10 @@ export class HirayaClient {
   }
 
   request<M extends ServiceMethod>(method: M, params: ServiceMethods[M]["params"], options: RequestOptions = {}): Promise<ServiceMethods[M]["result"]> {
+    return this.sendRequest(method, params, options);
+  }
+
+  private sendRequest<M extends ServiceMethod>(method: M, params: ServiceMethods[M]["params"], options: RequestOptions, transfer: Transferable[] = []): Promise<ServiceMethods[M]["result"]> {
     if (this.closed) return Promise.reject(new HirayaSdkError("The Hiraya connection is closed.", "UNAVAILABLE"));
     if (options.signal?.aborted) return Promise.reject(new HirayaSdkError("The request was aborted.", "CANCELLED"));
     const timeoutMs = options.timeoutMs ?? this.defaultTimeoutMs;
@@ -149,11 +187,42 @@ export class HirayaClient {
       });
       options.signal?.addEventListener("abort", onAbort, { once: true });
       try {
-        this.port.postMessage({ protocolVersion: APPS_PROTOCOL_VERSION, type: "request", id, method, params });
+        this.port.postMessage({ protocolVersion: APPS_PROTOCOL_VERSION, type: "request", id, method, params }, transfer);
       } catch (error) {
         finish(() => reject(error));
       }
     });
+  }
+
+  private async readAll(handle: FileHandle, options: FileReadAllOptions = {}): Promise<ServiceMethods["files.read"]["result"]> {
+    const chunkSize = fileChunkSize(options.chunkSize);
+    const stat = await this.files.stat(handle, options);
+    if (stat.kind !== "file") throw new TypeError("The handle does not reference a file.");
+    const { size, mimeType, contentRevision } = stat.metadata;
+    const data = new Uint8Array(size);
+    for (let offset = 0; offset < size; offset += chunkSize) {
+      const chunk = await this.files.readChunk(handle, offset, Math.min(chunkSize, size - offset), options);
+      if (chunk.size !== size || chunk.contentRevision !== contentRevision || chunk.mimeType !== mimeType) throw new HirayaSdkError("The file changed while it was being read.", "CONFLICT");
+      if (chunk.data.byteLength !== Math.min(chunkSize, size - offset)) throw new HirayaSdkError("The host returned an incomplete file chunk.", "INTERNAL");
+      data.set(new Uint8Array(chunk.data), offset);
+    }
+    return { data: data.buffer, mimeType };
+  }
+
+  private async writeAll(handle: FileHandle, data: ArrayBuffer, options: FileWriteAllOptions = {}) {
+    const requestedChunkSize = fileChunkSize(options.chunkSize);
+    const session = await this.files.beginWrite(handle, data.byteLength, options);
+    const chunkSize = Math.min(requestedChunkSize, session.chunkSize);
+    try {
+      for (let offset = 0; offset < data.byteLength; offset += chunkSize) {
+        const chunk = data.slice(offset, Math.min(offset + chunkSize, data.byteLength));
+        await this.sendRequest("files.writeChunk", { uploadId: session.uploadId, offset, data: chunk }, options, [chunk]);
+      }
+      return await this.files.commitWrite(session.uploadId, options);
+    } catch (error) {
+      try { await this.files.abortWrite(session.uploadId, { timeoutMs: options.timeoutMs }); } catch { /* Preserve the original transfer error. */ }
+      throw error;
+    }
   }
 
   on<E extends ServiceEvent>(event: E, listener: (payload: ServiceEvents[E]) => void): () => void {
@@ -202,6 +271,11 @@ export class HirayaClient {
   private readonly handleMessageError = () => {
     this.close();
   };
+}
+
+function fileChunkSize(value = MAX_FILE_CHUNK_BYTES): number {
+  if (!Number.isInteger(value) || value <= 0 || value > MAX_FILE_CHUNK_BYTES) throw new TypeError(`File chunk size must be between 1 and ${MAX_FILE_CHUNK_BYTES} bytes.`);
+  return value;
 }
 
 export async function connectHiraya(options: ConnectOptions = {}): Promise<HirayaClient> {

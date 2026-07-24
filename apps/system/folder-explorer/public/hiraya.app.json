@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"app.hiraya.folder-explorer","name":"Folder Explorer","version":"1.0.0","entrypoint":"index.html","description":"Browse and manage files and folders from an explicit folder or root grant.","permissions":["files:read","files:write","dialogs","window","theme"],"fileTypes":[]}

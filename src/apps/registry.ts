@@ -9,6 +9,7 @@ import type {
   FileAppTarget,
   PropertiesAppTarget,
   SettingsAppTarget,
+  SystemAppTarget,
 } from "./types";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -66,6 +67,16 @@ export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null
   if (value.kind === "explorer") return BUILTIN_APP_REGISTRY.explorer.extractTarget(value);
   if (value.kind === "properties") return BUILTIN_APP_REGISTRY.properties.extractTarget(value);
   if (value.kind === "settings") return BUILTIN_APP_REGISTRY.settings.extractTarget(value);
+  if (value.kind === "system" && typeof value.appId === "string" && value.appId.length <= 160 && ["file", "folder", "root"].includes(String(value.targetKind)) && (value.entryId === null || isValidId(value.entryId))) {
+    if (value.targetKind === "root" && value.entryId !== null || value.targetKind !== "root" && value.entryId === null) return null;
+    const identityFields = [value.source, value.digest, value.permissions];
+    const hasIdentity = identityFields.some((part) => part !== undefined);
+    if (hasIdentity && (value.source !== "system" && value.source !== "desktop" || typeof value.digest !== "string" || !/^[a-f0-9]{64}$/.test(value.digest) || !Array.isArray(value.permissions) || value.permissions.some((permission) => typeof permission !== "string") || new Set(value.permissions).size !== value.permissions.length)) return null;
+    return {
+      kind: "system", appId: value.appId, targetKind: value.targetKind, entryId: value.entryId,
+      ...(hasIdentity ? { source: value.source, digest: value.digest, permissions: [...value.permissions as string[]] } : {}),
+    } as SystemAppTarget;
+  }
   return null;
 }
 
@@ -73,12 +84,14 @@ export function builtinAppTargetId(target: BuiltinAppTarget): string {
   if (target.kind === "file") return BUILTIN_APP_REGISTRY.file.targetId(target);
   if (target.kind === "explorer") return BUILTIN_APP_REGISTRY.explorer.targetId(target);
   if (target.kind === "properties") return BUILTIN_APP_REGISTRY.properties.targetId(target);
-  return BUILTIN_APP_REGISTRY.settings.targetId();
+  if (target.kind === "settings") return BUILTIN_APP_REGISTRY.settings.targetId();
+  return `system:${target.appId}:${target.targetKind}:${target.entryId ?? "root"}`;
 }
 
 export function builtinAppEntryDependency(target: BuiltinAppTarget): BuiltinAppEntryDependency | null {
   if (target.kind === "file") return BUILTIN_APP_REGISTRY.file.entryDependency(target);
   if (target.kind === "explorer") return BUILTIN_APP_REGISTRY.explorer.entryDependency(target);
   if (target.kind === "properties") return BUILTIN_APP_REGISTRY.properties.entryDependency(target);
-  return BUILTIN_APP_REGISTRY.settings.entryDependency();
+  if (target.kind === "settings") return BUILTIN_APP_REGISTRY.settings.entryDependency();
+  return target.entryId === null ? null : { entryId: target.entryId, kind: target.targetKind === "file" ? "file" : "folder" };
 }

@@ -1,4 +1,6 @@
 export const APPS_PROTOCOL_VERSION = 1 as const;
+export const MAX_FILE_CHUNK_BYTES = 1024 * 1024;
+export const MAX_APP_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 
 const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 const VERSION = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
@@ -30,6 +32,14 @@ export interface HirayaAppManifestV1 {
   icon?: string;
   permissions: AppPermission[];
   fileTypes?: string[];
+  window?: AppManifestWindow;
+}
+
+export interface AppManifestWindow {
+  width: number;
+  height: number;
+  minWidth: number;
+  minHeight: number;
 }
 
 export interface ThemeTokens {
@@ -151,6 +161,15 @@ export interface WindowState {
   height: number;
 }
 
+export const OFFLINE_ENTRY_STATUSES = ["cached", "pinned", "protected", "partial", "unavailable", "updating", "error"] as const;
+export type OfflineEntryStatus = (typeof OFFLINE_ENTRY_STATUSES)[number];
+export interface HostEntryStatus {
+  handle: FileHandle | FolderHandle;
+  status: OfflineEntryStatus;
+  pinned: boolean;
+  directlyPinned: boolean;
+}
+
 export interface CommandDefinition {
   id: string;
   title: string;
@@ -162,13 +181,26 @@ export interface ServiceMethods {
   "app.getLaunchContext": { params: Record<string, never>; result: LaunchContext };
   "files.stat": { params: { handle: FileHandle | FolderHandle }; result: DirectoryEntry };
   "files.read": { params: { handle: FileHandle }; result: { data: ArrayBuffer; mimeType: string } };
+  "files.readChunk": { params: { handle: FileHandle; offset: number; length: number }; result: { data: ArrayBuffer; mimeType: string; size: number; contentRevision: number } };
   "files.write": { params: { handle: FileHandle; data: ArrayBuffer; mimeType?: string; expectedRevision?: number }; result: FileMetadata };
+  "files.beginWrite": { params: { handle: FileHandle; size: number; mimeType?: string; expectedRevision?: number }; result: { uploadId: string; chunkSize: number } };
+  "files.writeChunk": { params: { uploadId: string; offset: number; data: ArrayBuffer }; result: void };
+  "files.commitWrite": { params: { uploadId: string }; result: FileMetadata };
+  "files.abortWrite": { params: { uploadId: string }; result: void };
+  "files.resolve": { params: { handle: FileHandle | FolderHandle; path: string }; result: DirectoryEntry };
   "files.list": { params: { folder: FolderHandle | null }; result: DirectoryEntry[] };
   "files.createFile": { params: { parent: FolderHandle | null; name: string; data?: ArrayBuffer; mimeType?: string }; result: FileMetadata };
   "files.createFolder": { params: { parent: FolderHandle | null; name: string }; result: FolderMetadata };
   "files.rename": { params: { handle: FileHandle | FolderHandle; name: string }; result: DirectoryEntry };
   "files.move": { params: { handle: FileHandle | FolderHandle; parent: FolderHandle | null }; result: DirectoryEntry };
   "files.delete": { params: { handle: FileHandle | FolderHandle; recursive?: boolean }; result: void };
+  "files.deleteMany": { params: { handles: (FileHandle | FolderHandle)[]; recursive?: boolean }; result: void };
+  "host.openEntry": { params: { handle: FileHandle | FolderHandle }; result: void };
+  "host.importFiles": { params: { parent: FolderHandle | null }; result: void };
+  "host.importFolder": { params: { parent: FolderHandle | null }; result: void };
+  "host.showEntryActions": { params: { handles: (FileHandle | FolderHandle)[] }; result: void };
+  "host.getEntryStatus": { params: { handles: (FileHandle | FolderHandle)[] }; result: HostEntryStatus[] };
+  "host.setOfflinePinned": { params: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }; result: void };
   "dialogs.openFile": { params: { multiple?: boolean; mimeTypes?: string[] }; result: FileHandle[] | null };
   "dialogs.openFolder": { params: Record<string, never>; result: FolderHandle | null };
   "dialogs.saveFile": { params: { suggestedName?: string; mimeType?: string }; result: FileHandle | null };
@@ -206,7 +238,8 @@ const permissionSet = new Set<string>(APP_PERMISSIONS);
 const errorCodeSet = new Set<string>(HIRAYA_ERROR_CODES);
 const serviceMethodSet = new Set<string>([
   "app.getLaunchContext",
-  "files.stat", "files.read", "files.write", "files.list", "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete",
+  "files.stat", "files.read", "files.readChunk", "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite", "files.resolve", "files.list", "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
+  "host.openEntry", "host.importFiles", "host.importFolder", "host.showEntryActions", "host.getEntryStatus", "host.setOfflinePinned",
   "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm",
   "window.getState", "window.setTitle", "window.setDirty", "window.setSize", "window.setFullscreen", "window.close",
   "commands.set", "commands.clear", "notifications.show", "notifications.dismiss", "theme.get",
@@ -268,6 +301,14 @@ function relativePath(value: unknown, label: string): string {
   return path;
 }
 
+function parseFileRelativePath(value: unknown): string {
+  const path = text(value, "File relative path", 1024);
+  if (path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part.length === 0 || part.length > 255 || part !== "." && part !== ".." && !SAFE_PATH_SEGMENT.test(part))) {
+    throw new TypeError("File relative path is invalid.");
+  }
+  return path;
+}
+
 export function parsePermission(value: unknown): AppPermission {
   if (typeof value !== "string" || !permissionSet.has(value)) throw new TypeError("App permission is invalid.");
   return value as AppPermission;
@@ -285,7 +326,7 @@ export function parseFolderHandle(value: unknown): FolderHandle {
 
 export function parseManifestV1(value: unknown): HirayaAppManifestV1 {
   const manifest = record(value, "App manifest");
-  exact(manifest, ["schemaVersion", "id", "name", "version", "entrypoint", "permissions"], ["description", "icon", "fileTypes"], "App manifest");
+  exact(manifest, ["schemaVersion", "id", "name", "version", "entrypoint", "permissions"], ["description", "icon", "fileTypes", "window"], "App manifest");
   if (manifest.schemaVersion !== 1) throw new TypeError("App manifest schema version is unsupported.");
   const id = text(manifest.id, "App ID");
   if (!APP_ID.test(id)) throw new TypeError("App ID is invalid.");
@@ -307,6 +348,17 @@ export function parseManifestV1(value: unknown): HirayaAppManifestV1 {
     const fileTypes = stringArray(manifest.fileTypes, "App file types");
     if (new Set(fileTypes).size !== fileTypes.length) throw new TypeError("App file types contain duplicates.");
     result.fileTypes = fileTypes;
+  }
+  if (manifest.window !== undefined) {
+    const window = record(manifest.window, "App window");
+    exact(window, ["width", "height", "minWidth", "minHeight"], [], "App window");
+    result.window = {
+      width: number(window.width, "App window width", { integer: true, min: 1, max: 16_384 }),
+      height: number(window.height, "App window height", { integer: true, min: 1, max: 16_384 }),
+      minWidth: number(window.minWidth, "App window minimum width", { integer: true, min: 1, max: 16_384 }),
+      minHeight: number(window.minHeight, "App window minimum height", { integer: true, min: 1, max: 16_384 }),
+    };
+    if (result.window.width < result.window.minWidth || result.window.height < result.window.minHeight) throw new TypeError("App window defaults must not be smaller than its minimums.");
   }
   return result;
 }
@@ -401,13 +453,23 @@ export function parseServiceParams<M extends ServiceMethod>(method: M, value: un
   switch (method) {
     case "app.getLaunchContext": case "dialogs.openFolder": case "window.getState": case "window.close": case "commands.clear": case "storage.clear": result = empty(params, `${method} params`); break;
     case "files.stat": case "files.read": shape(["handle"]); result = { handle: method === "files.read" ? parseFileHandle(params.handle) : handle(params.handle) }; break;
+    case "files.readChunk": shape(["handle", "offset", "length"]); result = { handle: parseFileHandle(params.handle), offset: number(params.offset, "File chunk offset", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), length: number(params.length, "File chunk length", { integer: true, min: 1, max: MAX_FILE_CHUNK_BYTES }) }; break;
     case "files.write": shape(["handle", "data"], ["mimeType", "expectedRevision"]); result = { handle: parseFileHandle(params.handle), data: arrayBuffer(params.data, "File data"), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }), ...(params.expectedRevision === undefined ? {} : { expectedRevision: number(params.expectedRevision, "Expected revision", { integer: true, min: 0 }) }) }; break;
+    case "files.beginWrite": shape(["handle", "size"], ["mimeType", "expectedRevision"]); result = { handle: parseFileHandle(params.handle), size: number(params.size, "File write size", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }), ...(params.expectedRevision === undefined ? {} : { expectedRevision: number(params.expectedRevision, "Expected revision", { integer: true, min: 0 }) }) }; break;
+    case "files.writeChunk": shape(["uploadId", "offset", "data"]); { const data = arrayBuffer(params.data, "File chunk data"); if (data.byteLength > MAX_FILE_CHUNK_BYTES) throw new TypeError("File chunk data exceeds the chunk limit."); result = { uploadId: text(params.uploadId, "File upload ID", 128), offset: number(params.offset, "File chunk offset", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), data }; } break;
+    case "files.commitWrite": case "files.abortWrite": shape(["uploadId"]); result = { uploadId: text(params.uploadId, "File upload ID", 128) }; break;
+    case "files.resolve": shape(["handle", "path"]); result = { handle: handle(params.handle), path: parseFileRelativePath(params.path) }; break;
     case "files.list": shape(["folder"]); result = { folder: nullableFolder(params.folder) }; break;
     case "files.createFile": shape(["parent", "name"], ["data", "mimeType"]); result = { parent: nullableFolder(params.parent), name: text(params.name, "File name", 255), ...(params.data === undefined ? {} : { data: arrayBuffer(params.data, "File data") }), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }) }; break;
     case "files.createFolder": shape(["parent", "name"]); result = { parent: nullableFolder(params.parent), name: text(params.name, "Folder name", 255) }; break;
     case "files.rename": shape(["handle", "name"]); result = { handle: handle(params.handle), name: text(params.name, "Entry name", 255) }; break;
     case "files.move": shape(["handle", "parent"]); result = { handle: handle(params.handle), parent: nullableFolder(params.parent) }; break;
     case "files.delete": shape(["handle"], ["recursive"]); result = { handle: handle(params.handle), ...(params.recursive === undefined ? {} : { recursive: boolean(params.recursive, "Recursive delete") }) }; break;
+    case "files.deleteMany": shape(["handles"], ["recursive"]); result = { handles: handleArray(params.handles, "File handles"), ...(params.recursive === undefined ? {} : { recursive: boolean(params.recursive, "Recursive delete") }) }; break;
+    case "host.openEntry": shape(["handle"]); result = { handle: handle(params.handle) }; break;
+    case "host.importFiles": case "host.importFolder": shape(["parent"]); result = { parent: nullableFolder(params.parent) }; break;
+    case "host.showEntryActions": case "host.getEntryStatus": shape(["handles"]); result = { handles: handleArray(params.handles, "Host entry handles") }; break;
+    case "host.setOfflinePinned": shape(["handles", "pinned"]); result = { handles: handleArray(params.handles, "Host entry handles"), pinned: boolean(params.pinned, "Offline pin state") }; break;
     case "dialogs.openFile": shape([], ["multiple", "mimeTypes"]); result = { ...(params.multiple === undefined ? {} : { multiple: boolean(params.multiple, "Multiple selection") }), ...(params.mimeTypes === undefined ? {} : { mimeTypes: stringArray(params.mimeTypes, "Dialog MIME types", 32) }) }; break;
     case "dialogs.saveFile": shape([], ["suggestedName", "mimeType"]); result = { ...(params.suggestedName === undefined ? {} : { suggestedName: text(params.suggestedName, "Suggested name", 255) }), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }) }; break;
     case "dialogs.confirm": shape(["title", "message"], ["confirmLabel", "destructive"]); result = { title: text(params.title, "Dialog title", 120), message: text(params.message, "Dialog message", 2_000), ...(params.confirmLabel === undefined ? {} : { confirmLabel: text(params.confirmLabel, "Confirm label", 80) }), ...(params.destructive === undefined ? {} : { destructive: boolean(params.destructive, "Destructive confirmation") }) }; break;
@@ -432,7 +494,10 @@ export function parseServiceResult<M extends ServiceMethod>(method: M, value: un
     case "app.getLaunchContext": result = parseLaunchContext(value); break;
     case "files.stat": case "files.rename": case "files.move": result = parseDirectoryEntry(value); break;
     case "files.read": { const item = record(value, "File read result"); exact(item, ["data", "mimeType"], [], "File read result"); result = { data: arrayBuffer(item.data, "File data"), mimeType: text(item.mimeType, "File MIME type", 255) }; break; }
-    case "files.write": case "files.createFile": result = parseFileMetadata(value); break;
+    case "files.readChunk": { const item = record(value, "File chunk result"); exact(item, ["data", "mimeType", "size", "contentRevision"], [], "File chunk result"); const data = arrayBuffer(item.data, "File chunk data"); if (data.byteLength > MAX_FILE_CHUNK_BYTES) throw new TypeError("File chunk data exceeds the chunk limit."); result = { data, mimeType: text(item.mimeType, "File MIME type", 255), size: number(item.size, "File size", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), contentRevision: number(item.contentRevision, "Content revision", { integer: true, min: 0 }) }; break; }
+    case "files.beginWrite": { const item = record(value, "File write session"); exact(item, ["uploadId", "chunkSize"], [], "File write session"); result = { uploadId: text(item.uploadId, "File upload ID", 128), chunkSize: number(item.chunkSize, "File chunk size", { integer: true, min: 1, max: MAX_FILE_CHUNK_BYTES }) }; break; }
+    case "files.write": case "files.commitWrite": case "files.createFile": result = parseFileMetadata(value); break;
+    case "files.resolve": result = parseDirectoryEntry(value); break;
     case "files.list": if (!Array.isArray(value) || value.length > 10_000) throw new TypeError("File list result is invalid."); result = value.map(parseDirectoryEntry); break;
     case "files.createFolder": result = parseFolderMetadata(value); break;
     case "dialogs.openFile": if (value !== null && !Array.isArray(value)) throw new TypeError("File dialog result is invalid."); result = value === null ? null : value.map(parseFileHandle); break;
@@ -442,10 +507,25 @@ export function parseServiceResult<M extends ServiceMethod>(method: M, value: un
     case "notifications.show": { const item = record(value, "Notification result"); exact(item, ["id"], [], "Notification result"); result = { id: text(item.id, "Notification ID") }; break; }
     case "theme.get": result = parseThemeTokens(value); break;
     case "storage.get": result = value === undefined ? undefined : parseJsonValue(value); break;
-    case "files.delete": case "window.setTitle": case "window.setDirty": case "window.close": case "commands.set": case "commands.clear": case "notifications.dismiss": case "storage.set": case "storage.remove": case "storage.clear": if (value !== undefined) throw new TypeError(`${method} result must be undefined.`); result = undefined; break;
+    case "host.getEntryStatus": if (!Array.isArray(value) || value.length > 256) throw new TypeError("Host entry statuses are invalid."); result = value.map(parseHostEntryStatus); break;
+    case "files.writeChunk": case "files.abortWrite": case "files.delete": case "files.deleteMany": case "host.openEntry": case "host.importFiles": case "host.importFolder": case "host.showEntryActions": case "host.setOfflinePinned": case "window.setTitle": case "window.setDirty": case "window.close": case "commands.set": case "commands.clear": case "notifications.dismiss": case "storage.set": case "storage.remove": case "storage.clear": if (value !== undefined) throw new TypeError(`${method} result must be undefined.`); result = undefined; break;
     default: throw new TypeError("RPC method is invalid.");
   }
   return result as ServiceMethods[M]["result"];
+}
+
+function handleArray(value: unknown, label: string): (FileHandle | FolderHandle)[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 256) throw new TypeError(`${label} are invalid.`);
+  const handles = value.map(handle);
+  if (new Set(handles).size !== handles.length) throw new TypeError(`${label} contain duplicates.`);
+  return handles;
+}
+
+function parseHostEntryStatus(value: unknown): HostEntryStatus {
+  const status = record(value, "Host entry status");
+  exact(status, ["handle", "status", "pinned", "directlyPinned"], [], "Host entry status");
+  if (typeof status.status !== "string" || !(OFFLINE_ENTRY_STATUSES as readonly string[]).includes(status.status)) throw new TypeError("Host offline status is invalid.");
+  return { handle: handle(status.handle), status: status.status as OfflineEntryStatus, pinned: boolean(status.pinned, "Host pinned state"), directlyPinned: boolean(status.directlyPinned, "Host direct pin state") };
 }
 
 export function parseServiceEventPayload<E extends ServiceEvent>(event: E, value: unknown): ServiceEvents[E] {

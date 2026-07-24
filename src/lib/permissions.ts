@@ -31,7 +31,7 @@ export function localDesktopIdentity(id: string, name: string): DesktopIdentity 
 }
 
 export function canMutateDesktop(desktop: DesktopIdentity | undefined, status: string) {
-  if (!desktop?.capabilities.write || status === "connecting") return false;
+  if (!desktop?.capabilities.write || status === "connecting" || status === "blocked") return false;
   return desktop.ownership === "owned" || status === "online" || status === "local";
 }
 

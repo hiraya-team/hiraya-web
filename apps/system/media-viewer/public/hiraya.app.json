@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"app.hiraya.media-viewer","name":"Document & Media Viewer","version":"1.0.0","entrypoint":"index.html","description":"A native browser viewer for PDF, audio, and video files.","permissions":["files:read","dialogs","window","theme"],"fileTypes":["application/pdf","audio/*","video/*",".pdf",".mp3",".m4a",".ogg",".wav",".webm",".mp4",".mov"]}

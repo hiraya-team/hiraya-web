@@ -1,0 +1,5 @@
+@import "@hiraya/system-apps-shared/styles.css";
+#editor { width: 100%; min-height: 0; padding: 1rem 1.15rem; resize: none; border: 0; outline: 0; color: var(--hiraya-text); background: var(--hiraya-background); font: 14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+.compact-control { display: inline-flex; align-items: center; gap: .3rem; color: var(--hiraya-text-muted); font-size: .78rem; white-space: nowrap; }
+.compact-control select { min-width: 3.5rem; }
+@media (max-width: 700px) { .compact-control { display: none; } }

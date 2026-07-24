@@ -1,0 +1,4 @@
+@import "@hiraya/system-apps-shared/styles.css";
+.stage { position: relative; min-height: 0; overflow: auto; background-color: var(--hiraya-background); background-image: linear-gradient(45deg,var(--hiraya-surface) 25%,transparent 25%),linear-gradient(-45deg,var(--hiraya-surface) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--hiraya-surface) 75%),linear-gradient(-45deg,transparent 75%,var(--hiraya-surface) 75%); background-position: 0 0,0 8px,8px -8px,-8px 0; background-size: 16px 16px; }
+.stage img { display: block; max-width: none; margin: 2rem auto; transform: rotate(var(--rotation)); transform-origin: center; box-shadow: 0 .5rem 2rem rgb(0 0 0 / .28); }
+#zoom { min-width: 3.5rem; text-align: center; color: var(--hiraya-text-muted); }

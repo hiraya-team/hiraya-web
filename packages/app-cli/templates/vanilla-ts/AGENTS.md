@@ -18,7 +18,7 @@ This starter uses `workspace:*` for `@hiraya/apps-sdk` and `@hiraya/app-cli`, so
 
 ## Sandbox Model
 
-Hiraya loads the packaged app in a sandboxed iframe from package-owned blob URLs. The content security policy blocks network connections, remote scripts and styles, forms, plugins, and top-level navigation. Package every script, stylesheet, font, image, and media asset needed by the app. Do not rely on an origin, cookies, browser storage, OPFS, service workers, same-origin desktop internals, or direct access to `window.parent`.
+Hiraya loads the packaged app as an opaque-origin sandboxed `srcdoc` frame. Static remote references are rejected; sandbox and Content Security Policy controls block direct network APIs, remote assets, forms, plugins, and top-level navigation, and the host terminates a frame that navigates after boot. Package every script, stylesheet, font, image, and media asset needed by the app. Do not rely on an origin, cookies, browser storage, OPFS, service workers, same-origin desktop internals, direct access to `window.parent`, or ordinary links. Use only brokered SDK services. Browser support for embedded CSP enforcement and `navigate-to` is incomplete, so a dynamic self-navigation request may begin before the host observes its load and removes the frame; this is layered containment, not perfect network isolation.
 
 The only supported host boundary is the typed `MessagePort` owned by `@hiraya/apps-sdk`. Treat the host and every event payload as asynchronous. Do not build a parallel `postMessage` protocol.
 

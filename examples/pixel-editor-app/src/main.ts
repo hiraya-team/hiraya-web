@@ -3,8 +3,9 @@ import {
   HirayaSdkError,
   type FileHandle,
   type HirayaClient,
-  type ThemeTokens,
 } from "@hiraya/apps-sdk";
+import { bindTheme } from "@hiraya/apps-ui";
+import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.pixel-editor";
@@ -70,7 +71,7 @@ async function start(): Promise<void> {
   try {
     hiraya = await connectHiraya({ appId: APP_ID });
     const launch = await hiraya.app.getLaunchContext();
-    applyTheme(launch.theme);
+    const unsubscribeTheme = bindTheme(hiraya, launch.theme);
     const savedColor = await hiraya.storage.get("color");
     const savedOpacity = await hiraya.storage.get("opacity");
     if (typeof savedColor === "string" && /^#[0-9a-f]{6}$/i.test(savedColor)) setColor(savedColor);
@@ -78,7 +79,6 @@ async function start(): Promise<void> {
       elements.opacity.value = String(savedOpacity);
       elements.opacityValue.value = `${savedOpacity}%`;
     }
-    const unsubscribeTheme = hiraya.on("theme.changed", applyTheme);
     addEventListener("pagehide", () => {
       unsubscribeTheme();
       hiraya?.close();
@@ -527,13 +527,6 @@ function reportError(error: unknown, fallback: string): void {
   if (error instanceof HirayaSdkError && error.code === "CANCELLED") return;
   const message = error instanceof HirayaSdkError ? `${fallback} (${error.code}: ${error.message})` : error instanceof Error ? `${fallback} ${error.message}` : fallback;
   setStatus(message, true);
-}
-
-function applyTheme(theme: ThemeTokens): void {
-  document.documentElement.dataset.theme = theme.mode;
-  for (const [name, value] of Object.entries(theme)) {
-    if (name !== "mode") document.documentElement.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
-  }
 }
 
 function eventPixel(event: PointerEvent): { x: number; y: number } | null {

@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { seededDesktopPlugin } from "./build/seeded";
+import { systemAppsPlugin } from "./build/system-apps";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "HIRAYA_");
@@ -16,6 +17,7 @@ export default defineConfig(({ mode }) => {
     },
     plugins: [
       seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
+      systemAppsPlugin(process.cwd()),
       react(),
       VitePWA({
         injectRegister: null,
@@ -38,7 +40,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           cleanupOutdatedCaches: true,
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest}"],
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json,hiraya.app}"],
           navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:login|register|profile|logout|admin)(?:[/?]|$)/],
         },
       }),

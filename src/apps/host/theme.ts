@@ -5,7 +5,7 @@ export function mapThemeTokens(theme: ThemeDefinition): ThemeTokens {
   const { colors } = theme;
   return {
     mode: isDark(colors.window) ? "dark" : "light",
-    background: colors.shell,
+    background: colors.window,
     surface: colors.window,
     surfaceElevated: colors.windowMuted,
     text: colors.text,

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RpcDispatcher } from "./dispatcher";
-import { createPackageAssetResolver, initializeSandboxFrame, isAppPackageName, ObjectUrlLease } from "./sandbox";
+import { createPackageAssetResolver, initializeSandboxFrame, isAppPackageName, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS } from "./sandbox";
 
 function host() {
   let closed = false;
@@ -30,12 +30,13 @@ describe("app runtime", () => {
         appPort = ports[0];
       },
     };
+    const frameListeners = new Set<() => void>();
     Object.defineProperty(globalThis, "window", { configurable: true, value: {
       addEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => listeners.add(listener),
       removeEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => listeners.delete(listener),
     } });
     try {
-      const dispose = initializeSandboxFrame({ contentWindow: child } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher);
+      const dispose = initializeSandboxFrame({ contentWindow: child, addEventListener: (_type: string, listener: () => void) => frameListeners.add(listener), removeEventListener: (_type: string, listener: () => void) => frameListeners.delete(listener) } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher);
       expect(appPort).toBeUndefined();
       for (const listener of listeners) listener({ source: {}, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
       expect(appPort).toBeUndefined();
@@ -74,6 +75,54 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
+  test("rechecks effective permissions after a host authority change", async () => {
+    const service = host();
+    let permissions: Array<"files:read" | "files:write"> = ["files:read", "files:write"];
+    const calls: string[] = [];
+    const fileApi = new Proxy({}, { get: (_target, key) => async () => { calls.push(String(key)); } }) as never;
+    const runtimeHost = { ...service.value, host: { importFiles: async () => { calls.push("host.importFiles"); }, importFolder: async () => { calls.push("host.importFolder"); } } };
+    const dispatcher = new RpcDispatcher({ permissions: () => permissions, host: runtimeHost, files: fileApi });
+    permissions = ["files:read"];
+    const file = "file_0123456789abcdef";
+    const folder = "folder_0123456789abcdef";
+    const requests = [
+      ["files.write", { handle: file, data: new ArrayBuffer(0) }],
+      ["files.beginWrite", { handle: file, size: 1 }],
+      ["files.writeChunk", { uploadId: "upload-1", offset: 0, data: new ArrayBuffer(1) }],
+      ["files.commitWrite", { uploadId: "upload-1" }],
+      ["files.abortWrite", { uploadId: "upload-1" }],
+      ["files.createFile", { parent: folder, name: "file.txt" }],
+      ["files.createFolder", { parent: folder, name: "Folder" }],
+      ["files.rename", { handle: file, name: "renamed.txt" }],
+      ["files.move", { handle: file, parent: folder }],
+      ["files.delete", { handle: file }],
+      ["host.importFiles", { parent: folder }],
+      ["host.importFolder", { parent: folder }],
+    ];
+    for (const [method, params] of requests) await dispatcher.dispatch({ protocolVersion: 1, type: "request", id: String(method), method, params });
+    expect(calls).toEqual([]);
+    dispatcher.dispose();
+  });
+
+  test("retains request limits and transfers chunk response buffers", async () => {
+    const service = host();
+    const data = new Uint8Array([1, 2, 3]).buffer;
+    const fileApi = new Proxy({ readChunk: async () => ({ data, mimeType: "application/octet-stream", size: 3, contentRevision: 1 }) }, { get: (target, key) => key in target ? target[key as keyof typeof target] : async () => undefined }) as never;
+    const dispatcher = new RpcDispatcher({ permissions: ["files:read", "files:write"], host: service.value, files: fileApi, maxRequestBytes: 1024 * 1024 });
+    const channel = new MessageChannel();
+    const responses: unknown[] = [];
+    channel.port2.onmessage = ({ data: response }) => responses.push(response);
+    dispatcher.attach(channel.port1);
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "read", method: "files.readChunk", params: { handle: "file_0123456789abcdef", offset: 0, length: 3 } });
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "large", method: "files.writeChunk", params: { uploadId: "upload-1", offset: 0, data: new ArrayBuffer(1024 * 1024) } });
+    await Bun.sleep(10);
+    expect(responses).toContainEqual(expect.objectContaining({ id: "read", ok: true, result: expect.objectContaining({ data: expect.any(ArrayBuffer) }) }));
+    expect(responses).toContainEqual(expect.objectContaining({ id: "large", ok: false, error: expect.objectContaining({ code: "INVALID_REQUEST" }) }));
+    expect(data.byteLength).toBe(0);
+    dispatcher.dispose();
+    channel.port2.close();
+  });
+
   test("revokes every package URL exactly once", () => {
     const revoked: string[] = [];
     let id = 0;
@@ -84,6 +133,51 @@ describe("app runtime", () => {
     lease.revoke();
     expect(revoked).toEqual(["blob:1", "blob:2"]);
     expect(() => lease.create(new Blob())).toThrow("closed");
+  });
+
+  test("allows only opaque local blob sinks needed by package previews and downloads", () => {
+    expect(SANDBOX_CSP).toContain("img-src data: blob:");
+    expect(SANDBOX_CSP).toContain("media-src data: blob:");
+    expect(SANDBOX_CSP).toContain("frame-src data: blob:");
+    expect(SANDBOX_CSP).toContain("connect-src 'none'");
+    expect(SANDBOX_CSP).toContain("object-src 'none'");
+    expect(SANDBOX_CSP).toContain("form-action 'none'");
+    expect(SANDBOX_CSP).toContain("navigate-to 'none'");
+    expect(SANDBOX_CSP).not.toContain("script-src data: blob:");
+    expect(SANDBOX_FLAGS).toBe("allow-scripts allow-downloads");
+    expect(SANDBOX_FLAGS).not.toContain("allow-forms");
+    expect(SANDBOX_FLAGS).not.toContain("allow-popups");
+    expect(SANDBOX_FLAGS).not.toContain("allow-top-navigation");
+  });
+
+  test("terminates and replaces an app frame on navigation after its initial load", () => {
+    const listeners = new Set<() => void>();
+    const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
+    const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+    const dispatcher = new RpcDispatcher({ permissions: [], host: host().value, files });
+    let replaced = 0;
+    let navigated = 0;
+    const frame = {
+      contentWindow: {},
+      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      replaceWith: () => { replaced += 1; },
+    };
+    Object.defineProperty(globalThis, "window", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
+    Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: () => ({}) } });
+    try {
+      initializeSandboxFrame(frame as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, () => { navigated += 1; });
+      for (const listener of listeners) listener();
+      expect(replaced).toBe(0);
+      for (const listener of listeners) listener();
+      expect(replaced).toBe(1);
+      expect(navigated).toBe(1);
+      expect(listeners.size).toBe(0);
+    } finally {
+      dispatcher.dispose();
+      if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow); else delete (globalThis as { window?: unknown }).window;
+      if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument); else delete (globalThis as { document?: unknown }).document;
+    }
   });
 
   test("embeds package dependencies for an opaque sandbox origin", () => {

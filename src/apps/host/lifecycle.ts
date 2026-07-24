@@ -39,7 +39,7 @@ export class AppLifecycleService {
 
   constructor(
     private readonly handlerDeadlineMs = DEFAULT_APP_HANDLER_DEADLINE_MS,
-    private readonly onCloseRequest?: (owner: AppInstanceOwner) => void | Promise<void>,
+    private readonly onCloseRequest?: (owner: AppInstanceOwner) => boolean | void | Promise<boolean | void>,
   ) {
     if (!Number.isFinite(handlerDeadlineMs) || handlerDeadlineMs <= 0) throw new TypeError("Handler deadline must be positive.");
   }
@@ -122,7 +122,7 @@ export class AppLifecycleService {
   async requestClose(owner: AppInstanceOwner): Promise<boolean> {
     const record = this.#record(owner);
     if (record.beforeClose && await this.#runWithDeadline(record, record.beforeClose) === false) return false;
-    await this.onCloseRequest?.(owner);
+    if (await this.onCloseRequest?.(owner) === false) return false;
     return true;
   }
 

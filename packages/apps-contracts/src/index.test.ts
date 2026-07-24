@@ -38,6 +38,11 @@ describe("apps contracts", () => {
     expect(() => parseManifestV1({ ...manifest, extra: true })).toThrow("unsupported shape");
     expect(() => parseManifestV1({ ...manifest, permissions: ["files:read", "files:read"] })).toThrow("duplicates");
     expect(() => parseManifestV1({ ...manifest, entrypoint: "../index.html" })).toThrow("entrypoint");
+    expect(parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300 } }).window).toEqual({ width: 900, height: 700, minWidth: 400, minHeight: 300 });
+    expect(() => parseManifestV1({ ...manifest, window: { width: 300, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("minimums");
+    expect(() => parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300, extra: 1 } })).toThrow("unsupported shape");
+    expect(() => parseManifestV1({ ...manifest, window: { width: 900.5, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("width");
+    expect(() => parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400 } })).toThrow("unsupported shape");
   });
 
   test("brands only opaque typed handles", () => {
@@ -76,5 +81,14 @@ describe("apps contracts", () => {
     expect(() => parseServiceResult("dialogs.confirm", "yes")).toThrow("Confirmation");
     expect(parseRpcEvent({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: "save" } })).toEqual(expect.objectContaining({ payload: { id: "save" } }));
     expect(() => parseRpcEvent({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: 1 } })).toThrow("ID");
+    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r2", method: "files.readChunk", params: { handle: "file_0123456789abcdef", offset: 4, length: 1024 * 1024 } })).toEqual(expect.objectContaining({ params: expect.objectContaining({ offset: 4, length: 1024 * 1024 }) }));
+    expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r2", method: "files.readChunk", params: { handle: "file_0123456789abcdef", offset: 0, length: 1024 * 1024 + 1 } })).toThrow("length");
+    expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r3", method: "files.writeChunk", params: { uploadId: "upload-1", offset: 0, data: new ArrayBuffer(1024 * 1024 + 1) } })).toThrow("chunk limit");
+    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r4", method: "files.resolve", params: { handle: "file_0123456789abcdef", path: "../images/icon.png" } })).toEqual(expect.objectContaining({ params: expect.objectContaining({ path: "../images/icon.png" }) }));
+    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r5", method: "files.resolve", params: { handle: "folder_0123456789abcdef", path: "images/icon.png" } })).toEqual(expect.objectContaining({ params: expect.objectContaining({ handle: "folder_0123456789abcdef" }) }));
+    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r6", method: "host.setOfflinePinned", params: { handles: ["file_0123456789abcdef"], pinned: true } })).toEqual(expect.objectContaining({ params: expect.objectContaining({ pinned: true }) }));
+    expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r4", method: "files.resolve", params: { handle: "file_0123456789abcdef", path: "/secret" } })).toThrow("relative path");
+    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r7", method: "files.deleteMany", params: { handles: ["file_0123456789abcdef", "folder_0123456789abcdef"], recursive: true } })).toEqual(expect.objectContaining({ params: { handles: ["file_0123456789abcdef", "folder_0123456789abcdef"], recursive: true } }));
+    expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r8", method: "files.deleteMany", params: { handles: ["file_0123456789abcdef", "file_0123456789abcdef"] } })).toThrow("duplicates");
   });
 });

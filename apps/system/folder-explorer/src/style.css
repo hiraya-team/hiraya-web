@@ -1,0 +1,16 @@
+@import "@hiraya/system-apps-shared/styles.css";
+.app-shell { grid-template-rows: auto minmax(0,1fr) auto; }
+header { min-width: 0; }
+.breadcrumbs { display: flex; min-width: 5rem; overflow: hidden; align-items: center; gap: .2rem; color: var(--hiraya-text-muted); white-space: nowrap; }
+.breadcrumbs button { min-height: 1.8rem; padding: .15rem .3rem; overflow: hidden; border-color: transparent; background: transparent; text-overflow: ellipsis; white-space: nowrap; }
+.breadcrumbs button:disabled { color: var(--hiraya-text); opacity: 1; }
+.selection-bar { display: flex; align-items: center; gap: .45rem; min-height: 2.8rem; padding: .35rem .7rem; border-bottom: 1px solid var(--hiraya-border); background: var(--hiraya-background); }
+#selection { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.browser { position: relative; min-width: 0; min-height: 0; overflow: auto; }
+table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+th { position: sticky; z-index: 1; top: 0; padding: .55rem .75rem; color: var(--hiraya-text-muted); background: var(--hiraya-surface); font-size: .75rem; font-weight: 600; text-align: left; }
+th:first-child { width: 48%; } th:nth-child(2) { width: 22%; } th:nth-child(3) { width: 12%; } th:nth-child(4) { width: 18%; }
+td { padding: .65rem .75rem; overflow: hidden; border-bottom: 1px solid var(--hiraya-border); text-overflow: ellipsis; white-space: nowrap; }
+tr { cursor: default; } tbody tr:hover { background: var(--hiraya-surface); } tbody tr[aria-selected="true"] { background: color-mix(in srgb,var(--hiraya-accent) 18%,transparent); }
+.entry-name { display: flex; align-items: center; gap: .55rem; font-weight: 550; } .entry-icon { color: var(--hiraya-accent); font-size: 1.1rem; }
+@media (max-width: 620px) { th:nth-child(2),td:nth-child(2),th:nth-child(4),td:nth-child(4) { display: none; } th:first-child { width: 75%; } th:nth-child(3) { width: 25%; } .selection-bar { flex-wrap: wrap; } .selection-bar .spacer { display: none; } .selection-bar button { flex: 1 0 auto; } }

@@ -15,13 +15,21 @@ export type RuntimeHostContext = { close(): void; [group: string]: unknown };
 export type RuntimeFileService = {
   stat(params: ServiceMethods["files.stat"]["params"]): unknown;
   read(params: ServiceMethods["files.read"]["params"]): unknown;
+  readChunk(params: ServiceMethods["files.readChunk"]["params"]): unknown;
   write(params: ServiceMethods["files.write"]["params"]): unknown;
+  beginWrite(params: ServiceMethods["files.beginWrite"]["params"]): unknown;
+  writeChunk(params: ServiceMethods["files.writeChunk"]["params"]): unknown;
+  commitWrite(params: ServiceMethods["files.commitWrite"]["params"]): unknown;
+  abortWrite(params: ServiceMethods["files.abortWrite"]["params"]): unknown;
+  resolve(params: ServiceMethods["files.resolve"]["params"]): unknown;
   list(params: ServiceMethods["files.list"]["params"]): unknown;
   createFile(params: ServiceMethods["files.createFile"]["params"]): unknown;
   createFolder(params: ServiceMethods["files.createFolder"]["params"]): unknown;
   rename(params: ServiceMethods["files.rename"]["params"]): unknown;
   move(params: ServiceMethods["files.move"]["params"]): unknown;
   delete(params: ServiceMethods["files.delete"]["params"]): unknown;
+  deleteMany(params: ServiceMethods["files.deleteMany"]["params"]): unknown;
+  close?(): void;
 };
 
 export type RuntimeCommands = {
@@ -31,7 +39,7 @@ export type RuntimeCommands = {
 };
 
 export interface RpcDispatcherOptions {
-  permissions: Iterable<AppPermission>;
+  permissions: Iterable<AppPermission> | (() => Iterable<AppPermission>);
   host: RuntimeHostContext;
   files: RuntimeFileService;
   commands?: RuntimeCommands;
@@ -41,8 +49,10 @@ export interface RpcDispatcherOptions {
 }
 
 const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
-  "files.stat": "files:read", "files.read": "files:read", "files.list": "files:read",
-  "files.write": "files:write", "files.createFile": "files:write", "files.createFolder": "files:write", "files.rename": "files:write", "files.move": "files:write", "files.delete": "files:write",
+  "files.stat": "files:read", "files.read": "files:read", "files.readChunk": "files:read", "files.resolve": "files:read", "files.list": "files:read",
+  "files.write": "files:write", "files.beginWrite": "files:write", "files.writeChunk": "files:write", "files.commitWrite": "files:write", "files.abortWrite": "files:write", "files.createFile": "files:write", "files.createFolder": "files:write", "files.rename": "files:write", "files.move": "files:write", "files.delete": "files:write", "files.deleteMany": "files:write",
+  "host.openEntry": "files:read", "host.showEntryActions": "files:read", "host.getEntryStatus": "files:read", "host.setOfflinePinned": "files:read",
+  "host.importFiles": "files:write", "host.importFolder": "files:write",
   "dialogs.openFile": "dialogs", "dialogs.openFolder": "dialogs", "dialogs.saveFile": "dialogs", "dialogs.confirm": "dialogs",
   "window.getState": "window", "window.setTitle": "window", "window.setDirty": "window", "window.setSize": "window", "window.setFullscreen": "window", "window.close": "window",
   "commands.set": "commands", "commands.clear": "commands", "notifications.show": "notifications", "notifications.dismiss": "notifications",
@@ -50,7 +60,6 @@ const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
 };
 
 export class RpcDispatcher {
-  readonly #permissions: ReadonlySet<AppPermission>;
   readonly #maxRequestBytes: number;
   readonly #maxRequestsPerSecond: number;
   readonly #timeoutMs: number;
@@ -60,7 +69,6 @@ export class RpcDispatcher {
   #windowRequests = 0;
 
   constructor(private readonly options: RpcDispatcherOptions) {
-    this.#permissions = new Set(options.permissions);
     this.#maxRequestBytes = options.maxRequestBytes ?? 4 * 1024 * 1024;
     this.#maxRequestsPerSecond = options.maxRequestsPerSecond ?? 60;
     this.#timeoutMs = options.timeoutMs ?? 15_000;
@@ -85,6 +93,7 @@ export class RpcDispatcher {
       this.#port = null;
     }
     this.options.commands?.close?.();
+    this.options.files.close?.();
     this.options.host.close();
   }
 
@@ -100,10 +109,12 @@ export class RpcDispatcher {
       this.#takeRateToken();
       request = parseRpcRequest(value);
       const permission = METHOD_PERMISSION[request.method];
-      if (permission && !this.#permissions.has(permission)) throw rpcError("PERMISSION_DENIED", "The app does not have permission for this operation.");
+      const permissions = typeof this.options.permissions === "function" ? this.options.permissions() : this.options.permissions;
+      if (permission && !new Set(permissions).has(permission)) throw rpcError("PERMISSION_DENIED", "The app does not have permission for this operation.");
       const result = await withTimeout(this.#invoke(request), this.#timeoutMs);
       const parsed = parseServiceResult(request.method, result);
-      this.#post({ protocolVersion: APPS_PROTOCOL_VERSION, type: "response", id: request.id, ok: true, result: parsed });
+      const transfer = request.method === "files.read" || request.method === "files.readChunk" ? [(parsed as { data: ArrayBuffer }).data] : [];
+      this.#post({ protocolVersion: APPS_PROTOCOL_VERSION, type: "response", id: request.id, ok: true, result: parsed }, transfer);
     } catch (error) {
       const id = request?.id ?? requestId(value);
       if (id) this.#post({ protocolVersion: APPS_PROTOCOL_VERSION, type: "response", id, ok: false, error: sanitizeError(error) });
@@ -112,7 +123,11 @@ export class RpcDispatcher {
 
   #invoke(request: RpcRequest): unknown {
     const [group, name] = request.method.split(".");
-    if (group === "files") return this.options.files[name as keyof RuntimeFileService](request.params as never);
+    if (group === "files") {
+      const method = this.options.files[name as keyof RuntimeFileService];
+      if (typeof method !== "function") throw rpcError("METHOD_NOT_FOUND", "The requested method is not available.");
+      return method.call(this.options.files, request.params as never);
+    }
     if (group === "commands") {
       if (!this.options.commands) throw rpcError("UNAVAILABLE", "App commands are not supported by this host.");
       return name === "set" ? this.options.commands.set((request.params as ServiceMethods["commands.set"]["params"]).commands) : this.options.commands.clear();
@@ -138,8 +153,8 @@ export class RpcDispatcher {
     if (++this.#windowRequests > this.#maxRequestsPerSecond) throw rpcError("QUOTA_EXCEEDED", "The app is sending requests too quickly.");
   }
 
-  #post(value: unknown): void {
-    if (!this.#closed) this.#port?.postMessage(value);
+  #post(value: unknown, transfer: Transferable[] = []): void {
+    if (!this.#closed) this.#port?.postMessage(value, transfer);
   }
 
   readonly #onMessage = (event: MessageEvent<unknown>) => { void this.dispatch(event.data); };

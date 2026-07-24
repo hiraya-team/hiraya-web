@@ -1,0 +1,1 @@
+{"schemaVersion":1,"id":"app.hiraya.markdown-preview","name":"Markdown Preview","version":"1.0.0","entrypoint":"index.html","description":"A safe, readable preview for Markdown documents.","permissions":["files:read","dialogs","window","theme"],"fileTypes":[".md",".markdown","text/markdown"]}

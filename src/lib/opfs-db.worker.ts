@@ -9,8 +9,8 @@ import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type NewActivityRecord } from "./activity";
 import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
-import { parseInstalledApp, type InstalledApp } from "../apps/installed-apps";
-import { APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -68,6 +68,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 3) {
     db.exec(migrateSchema3To4Sql(migratedVersion));
+    migratedVersion = 4;
+  }
+  if (migratedVersion === 4) {
+    db.exec(migrateSchema4To5Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -146,15 +150,28 @@ function createSchema(db: Database) {
     CREATE TABLE activity (catalog_revision INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, action TEXT NOT NULL, source TEXT NOT NULL, summary TEXT NOT NULL, details_json TEXT NOT NULL, search_text TEXT NOT NULL);
     CREATE INDEX activity_timestamp ON activity(timestamp DESC, catalog_revision DESC);
     ${APP_STORAGE_SCHEMA_SQL.replace("PRAGMA user_version=3;", "")}
-    ${PREFERENCES_SCHEMA_SQL}
+    ${PREFERENCES_SCHEMA_SQL.replace("PRAGMA user_version=4;", "")}
+    ${APP_ASSOCIATIONS_SCHEMA_SQL}
     COMMIT;
   `);
 }
 
 function readInstalledApps(db: Database): InstalledApp[] {
   return rows(db, "SELECT * FROM installed_apps ORDER BY approved_at, app_id").map((row) => parseInstalledApp({
-    appId: stringValue(row.app_id), packageEntryId: stringValue(row.package_entry_id), digest: stringValue(row.digest),
+    appId: stringValue(row.app_id), source: stringValue(row.source), packageEntryId: nullableString(row.package_entry_id), archivePath: nullableString(row.archive_path), digest: stringValue(row.digest),
     version: stringValue(row.version), manifest: JSON.parse(stringValue(row.manifest_json)), approvedAt: numberValue(row.approved_at),
+  }));
+}
+
+function readFileAssociations(db: Database): FileAssociation[] {
+  return rows(db, "SELECT * FROM file_associations ORDER BY matcher").map((row) => parseFileAssociation({ matcher: stringValue(row.matcher), appId: stringValue(row.app_id), createdAt: numberValue(row.created_at) }));
+}
+
+function readQuarantinedApps(db: Database): QuarantinedApp[] {
+  return rows(db, "SELECT * FROM quarantined_apps ORDER BY quarantined_at, app_id").map((row) => ({
+    appId: stringValue(row.app_id), packageEntryId: stringValue(row.package_entry_id), digest: stringValue(row.digest), version: stringValue(row.version),
+    manifest: JSON.parse(stringValue(row.manifest_json)), approvedAt: numberValue(row.approved_at),
+    storage: rows(db, "SELECT key,value_json,bytes FROM quarantined_app_storage WHERE app_id=? ORDER BY key", [stringValue(row.app_id)]).map((stored) => ({ key: stringValue(stored.key), value: JSON.parse(stringValue(stored.value_json)), bytes: numberValue(stored.bytes) })),
   }));
 }
 
@@ -398,11 +415,24 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     case "installApp": {
       const install = parseInstalledApp((params as StorageDbRequests["installApp"]).install);
       db.transaction("IMMEDIATE", () => {
-        db.exec({ sql: "INSERT INTO installed_apps VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET package_entry_id=excluded.package_entry_id,digest=excluded.digest,version=excluded.version,manifest_json=excluded.manifest_json,approved_at=excluded.approved_at", bind: [install.appId, install.packageEntryId, install.digest, install.version, JSON.stringify(install.manifest), install.approvedAt] });
+        const currentSource = scalar(db, "SELECT source FROM installed_apps WHERE app_id=?", [install.appId]);
+        if (currentSource === "system" && install.source !== "system") throw new Error("Bundled system apps cannot be replaced.");
+        db.exec({ sql: "INSERT INTO installed_apps VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET source=excluded.source,package_entry_id=excluded.package_entry_id,archive_path=excluded.archive_path,digest=excluded.digest,version=excluded.version,manifest_json=excluded.manifest_json,approved_at=excluded.approved_at", bind: [install.appId, install.source, install.packageEntryId, install.archivePath, install.digest, install.version, JSON.stringify(install.manifest), install.approvedAt] });
       });
       return install as StorageDbResponses[M];
     }
-    case "uninstallApp": { db.exec({ sql: "DELETE FROM installed_apps WHERE app_id=?", bind: [(params as StorageDbRequests["uninstallApp"]).appId] }); return undefined as StorageDbResponses[M]; }
+    case "uninstallApp": { db.exec({ sql: "DELETE FROM installed_apps WHERE app_id=? AND source='desktop'", bind: [(params as StorageDbRequests["uninstallApp"]).appId] }); return undefined as StorageDbResponses[M]; }
+    case "listQuarantinedApps": return readQuarantinedApps(db) as StorageDbResponses[M];
+    case "removeQuarantinedApp": { db.exec({ sql: "DELETE FROM quarantined_apps WHERE app_id=?", bind: [(params as StorageDbRequests["removeQuarantinedApp"]).appId] }); return undefined as StorageDbResponses[M]; }
+    case "listFileAssociations": return readFileAssociations(db) as StorageDbResponses[M];
+    case "setFileAssociation": {
+      const association = parseFileAssociation((params as StorageDbRequests["setFileAssociation"]).association);
+      if (!scalar(db, "SELECT 1 FROM installed_apps WHERE app_id=?", [association.appId])) throw new Error("That app is not installed.");
+      db.exec({ sql: "INSERT INTO file_associations VALUES (?, ?, ?) ON CONFLICT(matcher) DO UPDATE SET app_id=excluded.app_id,created_at=excluded.created_at", bind: [association.matcher, association.appId, association.createdAt] });
+      return association as StorageDbResponses[M];
+    }
+    case "removeFileAssociation": { db.exec({ sql: "DELETE FROM file_associations WHERE matcher=?", bind: [normalizeAssociationMatcher((params as StorageDbRequests["removeFileAssociation"]).matcher)] }); return undefined as StorageDbResponses[M]; }
+    case "resetFileAssociations": { db.exec("DELETE FROM file_associations"); return undefined as StorageDbResponses[M]; }
     case "readAppStorage": {
       const input = params as StorageDbRequests["readAppStorage"];
       const value = scalar(db, "SELECT value_json FROM app_storage WHERE app_id=? AND key=?", [input.appId, input.key]);

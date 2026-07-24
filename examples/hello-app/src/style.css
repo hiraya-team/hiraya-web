@@ -1,21 +1,15 @@
 :root {
-  color: var(--hiraya-text, #f5eedc);
-  background: var(--hiraya-background, #13231f);
   font-family: Georgia, serif;
 }
 
 body {
   display: grid;
-  min-height: 100vh;
-  margin: 0;
   place-items: center;
 }
 
 main {
   max-width: 32rem;
   padding: 3rem;
-  border: 1px solid var(--hiraya-border, #526a60);
-  background: var(--hiraya-surface, #1b3029);
 }
 
 .eyebrow {
@@ -63,9 +57,4 @@ dt {
 dd {
   margin: 0;
   overflow-wrap: anywhere;
-}
-
-button:focus-visible {
-  outline: 3px solid var(--hiraya-focus, #fff);
-  outline-offset: 3px;
 }

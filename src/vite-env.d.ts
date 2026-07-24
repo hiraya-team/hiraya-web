@@ -13,3 +13,10 @@ declare module "virtual:hiraya-seeded" {
   const manifest: SeededManifest | null;
   export default manifest;
 }
+
+declare module "virtual:hiraya-system-apps" {
+  import type { HirayaAppManifestV1 } from "@hiraya/apps-contracts";
+
+  const catalog: readonly { slug: string; archivePath: string; manifest: HirayaAppManifestV1 }[];
+  export default catalog;
+}

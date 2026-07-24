@@ -18,7 +18,7 @@ import { parseWindowSession, type WindowSession } from "./window-session";
 import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./activity";
 import { resolveDesktopContext } from "./desktop-catalog";
 import { localDesktopIdentity } from "./permissions";
-import { parseInstalledApp, type InstalledApp } from "../apps/installed-apps";
+import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp } from "../apps/installed-apps";
 import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
 import { storageWorkerName } from "./storage-worker";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
@@ -1442,6 +1442,12 @@ export function listInstalledApps() { return serializeStorage(async () => {
 }); }
 export function installApp(install: InstalledApp) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("installApp", { install: parseInstalledApp(install) }, null); }); }
 export function uninstallApp(appId: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("uninstallApp", { appId }, null); }); }
+export function listQuarantinedApps() { return serializeStorage(async () => { await initializeDatabase(); return (await callDatabase("listQuarantinedApps", undefined, null)).map(parseQuarantinedApp); }); }
+export function removeQuarantinedApp(appId: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeQuarantinedApp", { appId }, null); }); }
+export function listFileAssociations() { return serializeStorage(async () => { await initializeDatabase(); return (await callDatabase("listFileAssociations", undefined, null)).map(parseFileAssociation); }); }
+export function setFileAssociation(association: FileAssociation) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("setFileAssociation", { association: parseFileAssociation(association) }, null); }); }
+export function removeFileAssociation(matcher: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeFileAssociation", { matcher: normalizeAssociationMatcher(matcher) }, null); }); }
+export function resetFileAssociations() { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("resetFileAssociations", undefined, null); }); }
 export function readAppStorage(appId: string, key: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("readAppStorage", { appId, key }, null); }); }
 export function writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("writeAppStorage", { appId, key, value: parseJsonValue(value), maxBytes, maxEntries }, null); }); }
 export function removeAppStorage(appId: string, key: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeAppStorage", { appId, key }, null); }); }

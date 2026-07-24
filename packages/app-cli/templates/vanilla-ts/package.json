@@ -10,6 +10,7 @@
     "package": "bun run build && hiraya-app package dist"
   },
   "dependencies": {
+    "@hiraya/apps-ui": "workspace:*",
     "@hiraya/apps-sdk": "workspace:*"
   },
   "devDependencies": {

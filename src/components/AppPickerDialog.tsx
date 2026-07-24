@@ -4,6 +4,7 @@ import type { DialogRequest } from "../apps/host/dialogs";
 import type { DesktopEntry, FileEntry, FolderEntry } from "../types";
 import { useModalDialog } from "../ui/modal-dialog";
 import { EntryIcon } from "./VisualPrimitives";
+import { matchingFileType } from "../apps/installed-apps";
 
 type Props = {
   request: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }>;
@@ -41,7 +42,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
       return [folder.id, names.join(" / ")] as const;
     }));
   }, [entries, folders]);
-  const files = useMemo(() => entries.filter((entry): entry is FileEntry => entry.kind === "file" && (request.kind !== "openFile" || !request.params.mimeTypes?.length || request.params.mimeTypes.includes(entry.mimeType))), [entries, request]);
+  const files = useMemo(() => entries.filter((entry): entry is FileEntry => entry.kind === "file" && (request.kind !== "openFile" || !request.params.mimeTypes?.length || request.params.mimeTypes.some((matcher) => matchingFileType(entry, matcher)))), [entries, request]);
   const title = request.kind === "openFile" ? "Choose file" : request.kind === "openFolder" ? "Choose folder" : "Save file";
 
   const submit = async () => {

@@ -1,3 +1,4 @@
+import { MAX_FILE_CHUNK_BYTES } from "@hiraya/apps-contracts";
 import type {
   AppPermission,
   DirectoryEntry,
@@ -24,11 +25,12 @@ export type FileSyncFunctions = {
   renameEntry(id: string, name: string): Promise<DesktopEntry>;
   moveEntry(id: string, parentId: string | null, position: EntryPosition): Promise<DesktopEntry>;
   deleteEntry(id: string): Promise<unknown>;
+  deleteEntries(ids: string[]): Promise<unknown>;
 };
 
 export type FileServiceOptions = {
   appInstanceId: string;
-  permissions: Iterable<AppPermission>;
+  permissions: Iterable<AppPermission> | (() => Iterable<AppPermission>);
   capabilities: CapabilityStore;
   getSnapshot: () => DesktopStateSnapshot;
   sync: FileSyncFunctions;
@@ -43,11 +45,10 @@ export class FileServiceError extends Error {
 }
 
 export class FileService {
-  private readonly permissions: ReadonlySet<AppPermission>;
   private readonly createPosition: () => EntryPosition;
+  private readonly writes = new Map<string, { handle: FileHandle; size: number; mimeType?: string; expectedRevision?: number; offset: number; chunks: ArrayBuffer[]; touchedAt: number }>();
 
   constructor(private readonly options: FileServiceOptions) {
-    this.permissions = new Set(options.permissions);
     this.createPosition = options.createPosition ?? (() => ({ x: 0, y: 0 }));
   }
 
@@ -69,6 +70,19 @@ export class FileService {
     });
   }
 
+  async readChunk(params: Params<"files.readChunk">): Promise<Result<"files.readChunk">> {
+    return this.protect(async () => {
+      this.requirePermission("files:read");
+      if (params.length > MAX_FILE_CHUNK_BYTES) throw new FileServiceError("INVALID_REQUEST", "The requested file chunk is too large.");
+      const capability = this.requireHandle(params.handle, "read", "file");
+      const entry = this.requireEntry(capability, "file") as FileEntry;
+      if (params.offset > entry.size) throw new FileServiceError("INVALID_REQUEST", "The file chunk offset is beyond the end of the file.");
+      const blob = await this.options.sync.readFile(entry.id);
+      const data = await blob.slice(params.offset, Math.min(params.offset + params.length, entry.size)).arrayBuffer();
+      return { data, mimeType: entry.mimeType, size: entry.size, contentRevision: this.snapshot().sync.contentRevisions[entry.id] ?? 0 };
+    });
+  }
+
   async write(params: Params<"files.write">): Promise<Result<"files.write">> {
     return this.protect(async () => {
       this.requirePermission("files:write");
@@ -80,6 +94,117 @@ export class FileService {
       });
       return this.fileMetadata(saved, capability);
     });
+  }
+
+  async beginWrite(params: Params<"files.beginWrite">): Promise<Result<"files.beginWrite">> {
+    return this.protect(() => {
+      this.requirePermission("files:write");
+      this.cleanupWrites();
+      const capability = this.requireHandle(params.handle, "write", "file");
+      const entry = this.requireEntry(capability, "file") as FileEntry;
+      const revision = this.snapshot().sync.contentRevisions[entry.id] ?? 0;
+      if (params.expectedRevision !== undefined && params.expectedRevision !== revision) throw new FileServiceError("CONFLICT", "The file changed since it was last read.");
+      if (this.writes.size >= MAX_STAGED_WRITE_SESSIONS || this.stagedBytes() + params.size > MAX_STAGED_WRITE_BYTES) throw new FileServiceError("QUOTA_EXCEEDED", "The app has too much file data staged in memory.");
+      const uploadId = `upload_${crypto.randomUUID().replaceAll("-", "")}`;
+      this.writes.set(uploadId, { handle: params.handle, size: params.size, mimeType: params.mimeType, expectedRevision: params.expectedRevision ?? revision, offset: 0, chunks: [], touchedAt: Date.now() });
+      return { uploadId, chunkSize: MAX_FILE_CHUNK_BYTES };
+    });
+  }
+
+  async writeChunk(params: Params<"files.writeChunk">): Promise<void> {
+    return this.protect(() => {
+      this.requirePermission("files:write");
+      const write = this.requireWrite(params.uploadId);
+      if (params.data.byteLength > MAX_FILE_CHUNK_BYTES || params.offset !== write.offset || params.data.byteLength === 0 || write.offset + params.data.byteLength > write.size) {
+        throw new FileServiceError("INVALID_REQUEST", "File chunks must be complete and written in order.");
+      }
+      write.chunks.push(params.data);
+      write.offset += params.data.byteLength;
+      write.touchedAt = Date.now();
+    });
+  }
+
+  async commitWrite(params: Params<"files.commitWrite">): Promise<Result<"files.commitWrite">> {
+    return this.protect(async () => {
+      this.requirePermission("files:write");
+      const write = this.requireWrite(params.uploadId);
+      if (write.offset !== write.size) throw new FileServiceError("INVALID_REQUEST", "The staged file is incomplete.");
+      const capability = this.requireHandle(write.handle, "write", "file");
+      const entry = this.requireEntry(capability, "file") as FileEntry;
+      try {
+        const saved = await this.options.sync.saveFile(entry.id, new Blob(write.chunks, { type: write.mimeType ?? entry.mimeType }), {
+          mimeType: write.mimeType,
+          expectedContentRevision: write.expectedRevision,
+        });
+        return this.fileMetadata(saved, capability);
+      } finally {
+        this.writes.delete(params.uploadId);
+      }
+    });
+  }
+
+  async abortWrite(params: Params<"files.abortWrite">): Promise<void> {
+    return this.protect(() => {
+      this.requirePermission("files:write");
+      this.cleanupWrites();
+      if (!this.writes.delete(params.uploadId)) throw new FileServiceError("NOT_FOUND", "The file write session is unavailable.");
+    });
+  }
+
+  async resolve(params: Params<"files.resolve">): Promise<Result<"files.resolve">> {
+    return this.protect(() => {
+      this.requirePermission("files:read");
+      const source = this.requireHandle(params.handle, "read");
+      if (source.kind !== "folder") throw new FileServiceError("PERMISSION_DENIED", "Relative paths require access to a folder.");
+      const sourceEntry = source.entryId === null ? null : this.requireEntry(source, "folder") as FolderEntry;
+      const entries = this.snapshot().entries;
+      let parentId = sourceEntry?.id ?? null;
+      let target: DesktopEntry | undefined = sourceEntry ?? undefined;
+      const parts = params.path.split("/");
+      for (const [index, part] of parts.entries()) {
+        if (part === ".") {
+          target = parentId === null ? undefined : entries.find((entry) => entry.id === parentId && entry.kind === "folder");
+          continue;
+        }
+        if (part === "..") {
+          if (parentId === source.scopeEntryId) throw new FileServiceError("NOT_FOUND", "The relative file is unavailable.");
+          const parent = parentId === null ? undefined : entries.find((entry) => entry.id === parentId && entry.kind === "folder");
+          parentId = parent?.parentId ?? null;
+          target = parentId === null ? undefined : entries.find((entry) => entry.id === parentId && entry.kind === "folder");
+          continue;
+        }
+        target = entries.find((entry) => entry.parentId === parentId && entry.name === part);
+        if (!target) throw new FileServiceError("NOT_FOUND", "The relative file is unavailable.");
+        if (target.kind === "file" && index < parts.length - 1) throw new FileServiceError("NOT_FOUND", "The relative file is unavailable.");
+        parentId = target.kind === "folder" ? target.id : target.parentId;
+      }
+      if (!target) throw new FileServiceError("NOT_FOUND", "The relative file is unavailable.");
+      if (!this.inScope(target.id, source.scopeEntryId)) throw new FileServiceError("NOT_FOUND", "The relative file is unavailable.");
+      const handle = this.options.capabilities.grantResolved(this.options.appInstanceId, params.handle, target.kind, target.id);
+      return this.publicEntry(target, { handle, kind: target.kind, entryId: target.id, scopeEntryId: target.id, operations: source.operations });
+    });
+  }
+
+  changedHandles(entryIds: Iterable<string>): (FileHandle | FolderHandle)[] {
+    return this.options.capabilities.findAll(this.options.appInstanceId, new Set(entryIds));
+  }
+
+  changedPayload(entryIds: Iterable<string>): { handles: (FileHandle | FolderHandle)[] } {
+    return { handles: this.changedHandles(entryIds) };
+  }
+
+  close(): void {
+    this.writes.clear();
+  }
+
+  entryForHost(handle: FileCapabilityHandle, operation: FileCapabilityOperation = "stat"): DesktopEntry {
+    return this.requireEntry(this.requireHandle(handle, operation));
+  }
+
+  folderIdForHost(handle: FolderHandle | null, operation: FileCapabilityOperation): string | null {
+    const capability = handle === null ? this.requireRoot(operation) : this.requireHandle(handle, operation, "folder");
+    if (capability.entryId !== null) this.requireEntry(capability, "folder");
+    return capability.entryId;
   }
 
   async list(params: Params<"files.list">): Promise<Result<"files.list">> {
@@ -145,12 +270,43 @@ export class FileService {
     });
   }
 
+  async deleteMany(params: Params<"files.deleteMany">): Promise<void> {
+    return this.protect(async () => {
+      this.requirePermission("files:write");
+      // Resolve every capability and recursive constraint before the single host mutation.
+      const selected = params.handles.map((handle) => ({ handle, entry: this.requireEntry(this.requireHandle(handle, "delete")) }));
+      const snapshot = this.snapshot();
+      if (!params.recursive && selected.some(({ entry }) => entry.kind === "folder" && snapshot.entries.some((candidate) => candidate.parentId === entry.id))) {
+        throw new FileServiceError("CONFLICT", "A selected folder is not empty.");
+      }
+      await this.options.sync.deleteEntries(selected.map(({ entry }) => entry.id));
+      for (const { handle } of selected) this.options.capabilities.revoke(handle);
+    });
+  }
+
   private async mutateEntry(handle: FileCapabilityHandle, operation: FileCapabilityOperation, mutation: (entry: DesktopEntry) => Promise<DesktopEntry>) {
     return this.protect(async () => {
       this.requirePermission("files:write");
       const capability = this.requireHandle(handle, operation);
       return this.publicEntry(await mutation(this.requireEntry(capability)), capability);
     });
+  }
+
+  private requireWrite(uploadId: string) {
+    this.cleanupWrites();
+    const write = this.writes.get(uploadId);
+    if (!write) throw new FileServiceError("NOT_FOUND", "The file write session is unavailable.");
+    return write;
+  }
+
+  private stagedBytes() {
+    let bytes = 0;
+    for (const write of this.writes.values()) bytes += write.size;
+    return bytes;
+  }
+
+  private cleanupWrites(now = Date.now()) {
+    for (const [id, write] of this.writes) if (now - write.touchedAt >= STAGED_WRITE_EXPIRY_MS) this.writes.delete(id);
   }
 
   private parentCapability(handle: FolderHandle | null, operation: FileCapabilityOperation) {
@@ -225,7 +381,8 @@ export class FileService {
   }
 
   private requirePermission(permission: AppPermission) {
-    if (!this.permissions.has(permission)) throw new FileServiceError("PERMISSION_DENIED", "The app does not have permission for this operation.");
+    const permissions = typeof this.options.permissions === "function" ? this.options.permissions() : this.options.permissions;
+    if (!new Set(permissions).has(permission)) throw new FileServiceError("PERMISSION_DENIED", "The app does not have permission for this operation.");
   }
 
   private snapshot() {
@@ -248,3 +405,7 @@ export class FileService {
     }
   }
 }
+
+export const MAX_STAGED_WRITE_SESSIONS = 4;
+export const MAX_STAGED_WRITE_BYTES = 32 * 1024 * 1024;
+export const STAGED_WRITE_EXPIRY_MS = 2 * 60 * 1000;

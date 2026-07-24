@@ -1,4 +1,6 @@
-import { connectHiraya, HirayaSdkError, type ThemeTokens } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
+import { bindTheme } from "@hiraya/apps-ui";
+import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.hello";
@@ -29,7 +31,9 @@ try {
     await hiraya.window.setTitle(`${greetings[greeting]} (${clicks})`);
   };
 
-  applyTheme(launch.theme);
+  const unsubscribeTheme = bindTheme(hiraya, launch.theme, {
+    onChange: (theme) => { if (themeElement) themeElement.textContent = theme.mode; },
+  });
   renderCount();
   if (launchElement) launchElement.textContent = `${launch.source} / ${launch.launchId}`;
   if (statusElement) statusElement.textContent = "Connected to the Hiraya host.";
@@ -44,7 +48,6 @@ try {
   const unsubscribeCommand = hiraya.on("commands.invoked", ({ id }) => {
     if (id === "change-greeting") void changeGreeting().catch(reportError);
   });
-  const unsubscribeTheme = hiraya.on("theme.changed", applyTheme);
   addEventListener("pagehide", () => {
     unsubscribeCommand();
     unsubscribeTheme();
@@ -54,12 +57,4 @@ try {
   if (statusElement) statusElement.textContent = error instanceof HirayaSdkError
     ? `Hiraya error (${error.code}): ${error.message}`
     : error instanceof Error ? error.message : String(error);
-}
-
-function applyTheme(theme: ThemeTokens): void {
-  document.documentElement.dataset.theme = theme.mode;
-  if (themeElement) themeElement.textContent = theme.mode;
-  for (const [name, value] of Object.entries(theme)) {
-    if (name !== "mode") document.documentElement.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
-  }
 }

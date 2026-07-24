@@ -6,7 +6,7 @@
     <meta name="color-scheme" content="dark light" />
     <title>Calculator</title>
   </head>
-  <body>
+  <body class="hiraya-app">
     <main class="app-shell">
       <section class="calculator" aria-label="Calculator">
         <header class="app-header">
@@ -33,7 +33,7 @@
         </div>
 
         <div class="keypad" aria-label="Calculator keypad">
-          <button type="button" class="key utility" data-action="clear">AC</button>
+          <button type="button" class="key utility" data-action="clear" aria-label="Clear calculation">AC</button>
           <button type="button" class="key utility" data-action="sign" aria-label="Toggle positive or negative">+/-</button>
           <button type="button" class="key utility" data-value="%" aria-label="Percent">%</button>
           <button type="button" class="key operator" data-value="/" aria-label="Divide">/</button>
@@ -55,7 +55,7 @@
 
           <button type="button" class="key" data-action="parenthesis" aria-label="Add parenthesis">( )</button>
           <button type="button" class="key" data-value="0">0</button>
-          <button type="button" class="key" data-value=".">.</button>
+          <button type="button" class="key" data-value="." aria-label="Decimal point">.</button>
           <button type="button" class="key equals" data-action="equals" aria-label="Equals">=</button>
         </div>
         <p class="keyboard-hint">Keyboard ready <span aria-hidden="true">/</span> Enter to solve <span aria-hidden="true">/</span> Esc to clear</p>

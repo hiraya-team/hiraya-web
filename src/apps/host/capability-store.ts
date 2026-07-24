@@ -21,6 +21,7 @@ const DEFAULT_FOLDER_OPERATIONS: readonly FileCapabilityOperation[] = ["stat", "
 
 export class CapabilityStore {
   private readonly records = new Map<FileCapabilityHandle, CapabilityRecord>();
+  private readonly mutationAllowed = new Map<string, boolean>();
 
   grantFile(appInstanceId: string, entryId: string, operations: Iterable<FileCapabilityOperation> = DEFAULT_FILE_OPERATIONS): FileHandle {
     return this.grant(appInstanceId, "file", entryId, entryId, operations) as FileHandle;
@@ -35,11 +36,21 @@ export class CapabilityStore {
     return this.grant(appInstanceId, kind, entryId, parent.scopeEntryId, parent.operations);
   }
 
+  grantResolved(appInstanceId: string, source: FileCapabilityHandle, kind: "file" | "folder", entryId: string): FileCapabilityHandle {
+    const parent = this.lookup(appInstanceId, source);
+    return this.grant(appInstanceId, kind, entryId, entryId, parent.operations);
+  }
+
   resolve(appInstanceId: string, handle: FileCapabilityHandle, operation: FileCapabilityOperation, kind?: "file" | "folder"): ResolvedFileCapability | null {
     const record = this.inspect(appInstanceId, handle, kind);
     if (!record) return null;
+    if (isMutation(operation) && this.mutationAllowed.get(appInstanceId) === false) return null;
     if (!record.operations.has(operation)) return null;
     return record;
+  }
+
+  setInstanceMutationAllowed(appInstanceId: string, allowed: boolean) {
+    this.mutationAllowed.set(appInstanceId, allowed);
   }
 
   inspect(appInstanceId: string, handle: FileCapabilityHandle, kind?: "file" | "folder"): ResolvedFileCapability | null {
@@ -55,6 +66,14 @@ export class CapabilityStore {
     return null;
   }
 
+  findAll(appInstanceId: string, entryIds: ReadonlySet<string>): FileCapabilityHandle[] {
+    const handles: FileCapabilityHandle[] = [];
+    for (const record of this.records.values()) {
+      if (!record.revoked && record.appInstanceId === appInstanceId && record.entryId !== null && entryIds.has(record.entryId)) handles.push(record.handle);
+    }
+    return handles;
+  }
+
   revoke(handle: FileCapabilityHandle) {
     const record = this.records.get(handle);
     if (record) record.revoked = true;
@@ -62,6 +81,7 @@ export class CapabilityStore {
 
   revokeInstance(appInstanceId: string) {
     for (const record of this.records.values()) if (record.appInstanceId === appInstanceId) record.revoked = true;
+    this.mutationAllowed.delete(appInstanceId);
   }
 
   private lookup(appInstanceId: string, handle: FileCapabilityHandle) {
@@ -77,4 +97,8 @@ export class CapabilityStore {
     this.records.set(handle, record);
     return handle;
   }
+}
+
+function isMutation(operation: FileCapabilityOperation) {
+  return operation === "write" || operation === "create" || operation === "rename" || operation === "move" || operation === "delete";
 }

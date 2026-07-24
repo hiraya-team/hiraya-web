@@ -19,3 +19,18 @@ export function grantPickedFolder(capabilities: CapabilityStore, instanceId: str
     : ["stat", "read", "list"];
   return capabilities.grantFolder(instanceId, entry?.id ?? null, operations);
 }
+
+export type LaunchCapabilityInput = {
+  files?: readonly DesktopEntry[];
+  folders?: readonly DesktopEntry[];
+  root?: boolean;
+};
+
+export function grantLaunchCapabilities(capabilities: CapabilityStore, instanceId: string, permissions: Iterable<AppPermission>, input: LaunchCapabilityInput): { files: FileHandle[]; folders: FolderHandle[] } {
+  const permissionList = [...permissions];
+  if (!permissionList.includes("files:read")) return { files: [], folders: [] };
+  const files = grantPickedFiles(capabilities, instanceId, permissionList, input.files ?? []);
+  const folders = (input.folders ?? []).map((entry) => grantPickedFolder(capabilities, instanceId, permissionList, entry));
+  if (input.root) folders.push(grantPickedFolder(capabilities, instanceId, permissionList, null));
+  return { files, folders };
+}

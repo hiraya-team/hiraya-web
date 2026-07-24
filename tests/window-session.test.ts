@@ -74,4 +74,28 @@ describe("window and browser sessions", () => {
       { kind: "explorer", width: 360, height: 280 },
     ]);
   });
+
+  test("persists deterministic system app targets by underlying entry ID", () => {
+    const bounds = { x: 12, y: 18, width: 700, height: 500 };
+    const target = { kind: "system" as const, appId: "app.hiraya.text-editor", targetKind: "file" as const, entryId: "file" };
+    const session = createWindowSession([{ kind: "sandbox", systemTarget: target, bounds, minimized: false, zIndex: 2 }]);
+    expect(session.apps).toEqual([{ ...target, bounds, minimized: false, zIndex: 2 }]);
+    expect(parseWindowTargets({ schemaVersion: 1, apps: [target] })).toEqual([target]);
+  });
+
+  test("persists approved-package handler identity and migrates legacy file targets", () => {
+    const bounds = { x: 12, y: 18, width: 700, height: 500 };
+    const target = { kind: "system" as const, appId: "user.notes", targetKind: "file" as const, entryId: "file", source: "desktop" as const, digest: "a".repeat(64), permissions: ["files:read"] };
+    expect(createWindowSession([{ kind: "sandbox", systemTarget: target, bounds, minimized: false, zIndex: 1 }]).apps[0]).toEqual({ ...target, bounds, minimized: false, zIndex: 1 });
+    expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "file", fileId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "file", fileId: "file" });
+  });
+
+  test("filters stale system targets and restores root launches", () => {
+    const bounds = { x: 0, y: 0, width: 700, height: 500 };
+    const session = parseWindowSession({ schemaVersion: 1, apps: [
+      { kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "root", entryId: null, bounds, minimized: false, zIndex: 1 },
+      { kind: "system", appId: "app.hiraya.text-editor", targetKind: "file", entryId: "missing", bounds, minimized: false, zIndex: 2 },
+    ] });
+    expect(restoreWindowSession(session, [], { column: 0, row: 0 }, { width: 1000, height: 700 }).map((app) => app.kind === "system" ? app.targetKind : app.kind)).toEqual(["root"]);
+  });
 });

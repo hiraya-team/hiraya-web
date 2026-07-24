@@ -22,6 +22,7 @@ describe("desktop permissions", () => {
   test("preserves owned offline queue behavior", () => {
     expect(canMutateDesktop(localDesktopIdentity("desk", "Desktop"), "offline")).toBe(true);
     expect(canMutateDesktop(localDesktopIdentity("desk", "Desktop"), "connecting")).toBe(false);
+    expect(canMutateDesktop(localDesktopIdentity("desk", "Desktop"), "blocked")).toBe(false);
   });
 
   test("distinguishes role, offline, and connecting restrictions", () => {

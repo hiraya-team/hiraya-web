@@ -71,11 +71,38 @@ describe("apps SDK", () => {
     await client.app.getLaunchContext();
     await client.files.write("file_0123456789abcdef" as FileHandle, new ArrayBuffer(0), { expectedRevision: 7, mimeType: "text/plain" });
     await client.window.setDirty(true);
+    await client.host.openEntry("file_0123456789abcdef" as FileHandle);
+    await client.files.deleteMany(["file_0123456789abcdef" as FileHandle], true);
     expect(requests).toEqual([
       expect.objectContaining({ method: "app.getLaunchContext", params: {} }),
       expect.objectContaining({ method: "files.write", params: expect.objectContaining({ expectedRevision: 7, mimeType: "text/plain" }) }),
       expect.objectContaining({ method: "window.setDirty", params: { dirty: true } }),
+      expect.objectContaining({ method: "host.openEntry", params: { handle: "file_0123456789abcdef" } }),
+      expect.objectContaining({ method: "files.deleteMany", params: { handles: ["file_0123456789abcdef"], recursive: true } }),
     ]);
+    client.close();
+    channel.port2.close();
+  });
+
+  test("reads and atomically stages files across bounded transferable chunks", async () => {
+    const channel = new MessageChannel();
+    const handle = "file_0123456789abcdef" as FileHandle;
+    const source = new Uint8Array(2 * 1024 * 1024 + 5).map((_, index) => index % 251);
+    const written: Array<{ offset: number; data: Uint8Array }> = [];
+    channel.port2.onmessage = ({ data }) => {
+      let result: unknown;
+      if (data.method === "files.stat") result = { kind: "file", metadata: { handle, name: "large.bin", mimeType: "application/octet-stream", size: source.byteLength, modifiedAt: 1, parent: null, contentRevision: 4 } };
+      if (data.method === "files.readChunk") result = { data: source.slice(data.params.offset, data.params.offset + data.params.length).buffer, mimeType: "application/octet-stream", size: source.byteLength, contentRevision: 4 };
+      if (data.method === "files.beginWrite") result = { uploadId: "upload-1", chunkSize: 1024 * 1024 };
+      if (data.method === "files.writeChunk") { written.push({ offset: data.params.offset, data: new Uint8Array(data.params.data) }); result = undefined; }
+      if (data.method === "files.commitWrite") result = { handle, name: "large.bin", mimeType: "application/octet-stream", size: source.byteLength, modifiedAt: 2, parent: null, contentRevision: 5 };
+      channel.port2.postMessage({ protocolVersion: 1, type: "response", id: data.id, ok: true, result });
+    };
+    const client = await connectHiraya({ port: channel.port1 });
+    expect(new Uint8Array((await client.files.readAll(handle)).data)).toEqual(source);
+    expect((await client.files.writeAll(handle, source.buffer.slice(0), { expectedRevision: 4 })).contentRevision).toBe(5);
+    expect(written.map(({ offset, data }) => [offset, data.byteLength])).toEqual([[0, 1024 * 1024], [1024 * 1024, 1024 * 1024], [2 * 1024 * 1024, 5]]);
+    expect(written[2].data).toEqual(source.slice(-5));
     client.close();
     channel.port2.close();
   });

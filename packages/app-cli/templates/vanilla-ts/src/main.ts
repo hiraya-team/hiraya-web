@@ -1,4 +1,6 @@
-import { connectHiraya, HirayaSdkError, type ThemeTokens } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
+import { bindTheme } from "@hiraya/apps-ui";
+import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.starter";
@@ -9,7 +11,7 @@ const button = document.querySelector<HTMLButtonElement>("button");
 try {
   const hiraya = await connectHiraya({ appId: APP_ID });
   const launch = await hiraya.app.getLaunchContext();
-  applyTheme(launch.theme);
+  const unsubscribeTheme = bindTheme(hiraya, launch.theme);
   const storedCount = await hiraya.storage.get("count");
   let count = typeof storedCount === "number" && Number.isSafeInteger(storedCount) && storedCount >= 0 ? storedCount : 0;
 
@@ -35,7 +37,6 @@ try {
   const unsubscribeCommand = hiraya.on("commands.invoked", ({ id }) => {
     if (id === "increment") void increment().catch(reportError);
   });
-  const unsubscribeTheme = hiraya.on("theme.changed", applyTheme);
   addEventListener("pagehide", () => {
     unsubscribeCommand();
     unsubscribeTheme();
@@ -45,12 +46,4 @@ try {
   if (statusElement) statusElement.textContent = error instanceof HirayaSdkError
     ? `Hiraya error (${error.code}): ${error.message}`
     : error instanceof Error ? error.message : String(error);
-}
-
-function applyTheme(theme: ThemeTokens): void {
-  const root = document.documentElement;
-  root.dataset.theme = theme.mode;
-  for (const [name, value] of Object.entries(theme)) {
-    if (name !== "mode") root.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
-  }
 }

@@ -1,0 +1,15 @@
+{
+  "name": "@hiraya/system-apps-shared",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./styles.css": "./src/styles.css",
+    "./vite": "./vite.config.ts"
+  },
+  "dependencies": {
+    "@hiraya/apps-sdk": "workspace:*",
+    "@hiraya/apps-ui": "workspace:*"
+  }
+}
