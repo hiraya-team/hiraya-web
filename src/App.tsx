@@ -121,6 +121,7 @@ import { ConnectionPanel } from "./components/ConnectionPanel";
 import { SystemMenu } from "./components/SystemMenu";
 import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
+import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
 type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
@@ -348,6 +349,7 @@ function App({ session }: { session: AuthSession | null }) {
   const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0 });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
+  const actionSheetHistoryRef = useRef<string | null>(null);
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
   desktopSizeRef.current = desktopSize;
   desktopsRef.current = desktops;
@@ -367,6 +369,7 @@ function App({ session }: { session: AuthSession | null }) {
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const syncIndicatorStatus = syncStatus === "online" && isSyncing ? "syncing" : syncStatus;
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
+  const actionSheetOpen = isMobile && Boolean(contextMenu);
   const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
   const offlineModel = useMemo(() => buildOfflineAvailability(entries, offlineInventory ?? {
     desktopId: activeDesktopId,
@@ -1177,6 +1180,18 @@ function App({ session }: { session: AuthSession | null }) {
   }, []);
 
   useEffect(() => {
+    if (!actionSheetOpen) return;
+    const token = crypto.randomUUID();
+    actionSheetHistoryRef.current = token;
+    window.history.pushState(actionSheetHistoryState(window.history.state, token), "", window.location.href);
+    return () => {
+      if (actionSheetHistoryRef.current !== token) return;
+      if (actionSheetHistoryToken(window.history.state) === token) window.history.back();
+      else actionSheetHistoryRef.current = null;
+    };
+  }, [actionSheetOpen]);
+
+  useEffect(() => {
     function restoreRoute(state?: unknown) {
       if (!navigationReadyRef.current) return;
       setDialog(null);
@@ -1195,7 +1210,14 @@ function App({ session }: { session: AuthSession | null }) {
       if (apps) restoreHistoryAppsRef.current(apps);
       applyLocationRouteRef.current();
     }
-    const onPopState = (event: PopStateEvent) => restoreRoute(event.state);
+    const onPopState = (event: PopStateEvent) => {
+      if (actionSheetHistoryRef.current) {
+        actionSheetHistoryRef.current = null;
+        setContextMenu(null);
+        return;
+      }
+      restoreRoute(event.state);
+    };
     const onHashChange = () => restoreRoute();
     window.addEventListener("popstate", onPopState);
     window.addEventListener("hashchange", onHashChange);
@@ -1332,7 +1354,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   useEffect(() => {
     function closeMenu(event: PointerEvent) {
-      if (!(event.target as Element).closest?.(".context-menu")) setContextMenu(null);
+      if (!(event.target as Element).closest?.(".context-menu, .action-sheet")) setContextMenu(null);
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() === "r" && contextMenuEntry && canMutate) {
