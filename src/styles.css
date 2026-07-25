@@ -3261,6 +3261,156 @@ a:focus-visible {
   }
 }
 
+/* The area switcher is a right-edge drawer above desktop action chrome. */
+.desktop-minimap {
+  --area-switcher-drag-x: 0px;
+  position: fixed;
+  z-index: var(--layer-switcher, 5200);
+  right: -18px;
+  bottom: max(-8px, calc(env(safe-area-inset-bottom) - 8px));
+  display: block;
+  width: 62px;
+  height: 72px;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--theme-radius) 0 0 0;
+  background: transparent;
+  box-shadow: none;
+  transform: translate3d(var(--area-switcher-drag-x), 0, 0);
+  transition: transform calc(180ms * var(--theme-motion)) cubic-bezier(.22, .75, .24, 1), opacity calc(150ms * var(--theme-motion)) ease;
+}
+.desktop-minimap[data-dragging] { transition: none; }
+.desktop-minimap__pull-tab {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  grid-template-columns: 13px 1fr;
+  grid-template-rows: 1fr 18px;
+  align-items: center;
+  padding: 9px 18px 9px 7px;
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 24%, transparent);
+  border-right: 0;
+  border-bottom: 0;
+  border-radius: var(--theme-radius) 0 0 0;
+  color: var(--theme-chrome-text);
+  background: var(--theme-chrome);
+  box-shadow: var(--theme-elevation-2), inset 0 1px 0 color-mix(in srgb, var(--theme-chrome-text) 10%, transparent);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.desktop-minimap__pull-tab > svg:first-child { color: color-mix(in srgb, var(--theme-chrome-text) 54%, transparent); }
+.desktop-minimap__pull-tab > svg:nth-child(2) { color: var(--theme-accent); }
+.desktop-minimap__pull-tab > span { grid-column: 1 / -1; align-self: end; font-size: 10px; font-weight: 800; text-align: center; }
+.desktop-minimap:not([data-expanded]):hover,
+.desktop-minimap:not([data-expanded]):focus-within { transform: translate3d(calc(var(--area-switcher-drag-x) - 8px), -4px, 0); }
+
+.desktop-minimap[data-expanded] {
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: auto;
+  display: grid;
+  width: min(760px, calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  height: min(56dvh, 420px);
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 24%, transparent);
+  border-radius: var(--theme-radius);
+  background: var(--theme-chrome);
+  box-shadow: var(--theme-elevation-3), inset 0 1px 0 color-mix(in srgb, var(--theme-chrome-text) 9%, transparent);
+}
+.desktop-minimap__handle {
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-right: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 14%, transparent);
+  color: color-mix(in srgb, var(--theme-chrome-text) 54%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 5%, transparent);
+  cursor: ew-resize;
+  touch-action: none;
+}
+.desktop-minimap__handle:hover,
+.desktop-minimap__handle:focus-visible { color: var(--theme-accent); background: color-mix(in srgb, var(--theme-chrome-text) 10%, transparent); }
+.desktop-minimap__body { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); padding: 13px; }
+.desktop-minimap__header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 16px; padding: 0 2px 11px; }
+.desktop-minimap__header > span:first-child { display: grid; min-width: 0; gap: 2px; }
+.desktop-minimap__header strong { font-size: 15px; }
+.desktop-minimap__header small,
+.desktop-minimap__header > span:last-child { color: color-mix(in srgb, var(--theme-chrome-text) 64%, transparent); font-size: 11px; }
+.desktop-minimap__app-switcher { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 0 2px 11px; }
+.desktop-minimap__app-switcher > span { flex: 0 0 auto; color: color-mix(in srgb, var(--theme-chrome-text) 64%, transparent); font-size: 10px; font-weight: 750; text-transform: uppercase; letter-spacing: .06em; }
+.desktop-minimap__apps { display: flex; min-width: 0; align-items: center; gap: 6px; padding: 0; overflow-x: auto; border: 0; scrollbar-width: none; }
+.desktop-minimap__apps::-webkit-scrollbar { display: none; }
+.desktop-minimap__app {
+  position: relative;
+  display: grid;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  place-items: center;
+  padding: 0;
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 14%, transparent);
+  border-radius: var(--theme-radius-small);
+  color: color-mix(in srgb, var(--theme-chrome-text) 78%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 7%, transparent);
+  cursor: pointer;
+}
+.desktop-minimap__app--overflow { font-size: 11px; font-weight: 800; }
+.desktop-minimap__grid-viewport { container-type: size; display: grid; min-width: 0; min-height: 0; overflow: hidden; place-items: center; touch-action: none; }
+.desktop-minimap__grid {
+  display: grid;
+  width: min(100cqw, calc(100cqh * var(--minimap-columns) * 19 / var(--minimap-rows) / 12));
+  height: auto;
+  min-width: 0;
+  min-height: 0;
+  aspect-ratio: calc(var(--minimap-columns) * 19) / calc(var(--minimap-rows) * 12);
+  grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
+  grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));
+  gap: 8px;
+  touch-action: none;
+}
+.desktop-minimap__slot { min-width: 0; min-height: 0; }
+.desktop-minimap__area { position: relative; width: 100%; height: 100%; min-width: 0; min-height: 0; overflow: hidden; }
+.desktop-minimap__area-title { position: absolute; z-index: 2; top: 7px; right: 8px; left: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px; pointer-events: none; }
+.desktop-minimap__area-title strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-minimap__area-title small { color: color-mix(in srgb, var(--theme-chrome-text) 58%, transparent); font-size: 9px; }
+.desktop-minimap__file {
+  position: absolute;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border-radius: 7px;
+  color: color-mix(in srgb, var(--theme-chrome-text) 84%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 10%, transparent);
+  pointer-events: none;
+}
+.desktop-minimap__area-overflow { position: absolute; right: 7px; bottom: 6px; min-width: 24px; padding: 2px 5px; border-radius: 999px; color: var(--theme-accent-text); background: var(--theme-accent); pointer-events: none; font-size: 9px; font-weight: 800; }
+
+@media (max-width: 620px) {
+  .desktop-minimap[data-mobile] { right: -18px; bottom: max(-8px, calc(env(safe-area-inset-bottom) - 8px)); width: 62px; height: 72px; padding: 0; }
+  .desktop-minimap[data-mobile][data-expanded] { right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); left: auto; width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)); max-width: none; height: min(62dvh, 460px); padding: 0; }
+  .desktop-minimap__body { padding: 10px; }
+  .desktop-minimap__header > span:last-child { display: none; }
+  .desktop-minimap__app-switcher { align-items: flex-start; flex-direction: column; gap: 6px; }
+  .desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 15 / var(--minimap-rows) / 11)); aspect-ratio: calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 11); gap: 6px; }
+  .desktop-minimap__area-title { top: 5px; right: 6px; left: 6px; }
+  .desktop-minimap__file { width: 26px; height: 26px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-minimap { transition: none; }
+}
+
 /* Runtime theme layer. Kept after responsive rules so tokens win without
    changing the desktop's established layout or drag positioning. */
 .desktop-shell {
@@ -5739,4 +5889,46 @@ a:focus-visible {
     grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
     grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));
   }
+}
+
+/* Final area-switcher geometry overrides the retired minimap modes above. */
+.desktop-minimap {
+  position: fixed;
+  z-index: var(--layer-switcher, 5200);
+  right: -18px;
+  bottom: max(-8px, calc(env(safe-area-inset-bottom) - 8px));
+  display: block;
+  width: 62px;
+  height: 72px;
+  max-width: none;
+  padding: 0;
+  border: 0;
+  border-radius: var(--theme-radius) 0 0 0;
+  background: transparent;
+  box-shadow: none;
+}
+.desktop-minimap[data-expanded] {
+  right: max(10px, env(safe-area-inset-right));
+  bottom: max(10px, env(safe-area-inset-bottom));
+  left: auto;
+  display: grid;
+  width: min(760px, calc(100vw - 20px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  height: min(56dvh, 420px);
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 0;
+  padding: 0;
+  background: var(--theme-chrome);
+}
+.desktop-minimap__apps,
+.desktop-minimap[data-expanded] .desktop-minimap__apps { align-self: auto; flex-direction: row; padding: 0; overflow-x: auto; border: 0; }
+.desktop-minimap__app { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
+.desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 19 / var(--minimap-rows) / 12)); height: auto; aspect-ratio: calc(var(--minimap-columns) * 19) / calc(var(--minimap-rows) * 12); gap: 8px; }
+.desktop-minimap[data-expanded] .desktop-minimap__file { width: 28px; height: 28px; }
+
+@media (max-width: 620px) {
+  .desktop-minimap[data-mobile] { right: -18px; bottom: max(-8px, calc(env(safe-area-inset-bottom) - 8px)); width: 62px; height: 72px; max-width: none; padding: 0; }
+  .desktop-minimap[data-mobile][data-expanded] { right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); left: auto; width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)); height: min(62dvh, 460px); padding: 0; }
+  .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 15 / var(--minimap-rows) / 11)); height: auto; aspect-ratio: calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 11); gap: 6px; }
+  .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__file { width: 26px; height: 26px; }
 }

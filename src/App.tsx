@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowsIn, ArrowsOut, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, MapTrifold, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, CaretRight, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsSixVertical, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, MapTrifold, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -117,13 +117,13 @@ import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHand
 import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
-import { AppIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
+import { AppIcon, EntryIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
 import { boundedNotificationVisibility } from "./ui/notifications";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
 import { DesktopTaskbar } from "./components/DesktopTaskbar";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragOffset, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
@@ -239,7 +239,6 @@ function App({ session }: { session: AuthSession | null }) {
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
   const [cachedSearchResults, setCachedSearchResults] = useState<DesktopSearchResult[]>([]);
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
-  const [showDesktopMinimap, setShowDesktopMinimap] = useState(true);
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
   const [minimapExpanded, setMinimapExpanded] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
@@ -264,13 +263,8 @@ function App({ session }: { session: AuthSession | null }) {
     startY: number;
     timer: number;
   } | null>(null);
-  const minimapPressRef = useRef<{
-    activated: boolean;
-    pointerId: number;
-    startX: number;
-    startY: number;
-    timer: number;
-  } | null>(null);
+  const areaSwitcherRef = useRef<HTMLElement>(null);
+  const areaSwitcherDragRef = useRef<{ expanded: boolean; pointerId: number; startX: number } | null>(null);
   const minimapSwipeRef = useRef<{
     axis: "x" | "y" | null;
     pointerId: number;
@@ -432,13 +426,11 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapColumnCount = Math.max(...minimapColumns) - minimapMinColumn + 1;
   const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, compactChrome);
-  const minimapWindowButtonCount = Math.min(runningApps.length, minimapWindowLimit) + (runningApps.length > minimapWindowLimit ? 1 : 0);
-  const minimapDetailed = minimapExpanded && !isMobile;
-  const minimapIconMode = !showDesktopMinimap && !minimapDetailed;
+  const minimapDetailed = minimapExpanded;
   const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
-  const minimapWidth = (minimapIconMode ? 44 : Math.min(112, Math.max(42, segmentColumns * 24)) + 26) + (minimapDetailed && minimapWindowButtonCount ? minimapWindowButtonCount * 38 + 9 : 0);
-  const minimapHeight = Math.min(84, Math.max(30, segmentRows * 20)) + 27;
+  const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
+  const minimapHeight = minimapDetailed ? Math.min(420, desktopSize.height * 0.56) : 68;
   const minimapObscured =
     !minimapExpanded &&
     activeDesktopSegment.entries.some((entry) => {
@@ -1359,7 +1351,6 @@ function App({ session }: { session: AuthSession | null }) {
         setAutoUpdate(preferences.autoUpdate);
         setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
-        setShowDesktopMinimap(preferences.showDesktopMinimap);
         setExplorerView(preferences.explorerView);
         setPreferencesLoaded(true);
         checkAutomatically();
@@ -1585,7 +1576,6 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(
     () => () => {
       if (desktopPressRef.current) window.clearTimeout(desktopPressRef.current.timer);
-      if (minimapPressRef.current) window.clearTimeout(minimapPressRef.current.timer);
     },
     [],
   );
@@ -1990,20 +1980,6 @@ function App({ session }: { session: AuthSession | null }) {
       localPreferencesRef.current = previous;
       setSearchAllDesktops(previous.searchAllDesktops);
       setError("The search preference could not be saved.");
-    }
-  }
-
-  async function changeDesktopMinimap(enabled: boolean) {
-    const previous = localPreferencesRef.current;
-    const next = { ...previous, showDesktopMinimap: enabled };
-    localPreferencesRef.current = next;
-    setShowDesktopMinimap(enabled);
-    try {
-      await saveLocalPreferences(next);
-    } catch {
-      localPreferencesRef.current = previous;
-      setShowDesktopMinimap(previous.showDesktopMinimap);
-      setError("The desktop area map preference could not be saved.");
     }
   }
 
@@ -3349,45 +3325,32 @@ function App({ session }: { session: AuthSession | null }) {
 
   function openAreaMap() {
     if (isMobile && focusedAppIdRef.current) showDesktop();
-    if (isMobile) void changeDesktopMinimap(true);
-    else setMinimapExpanded(true);
+    setMinimapExpanded(true);
   }
 
-  function beginMinimapPress(event: React.PointerEvent<HTMLButtonElement>) {
-    if (minimapExpanded || event.button !== 0 || event.pointerType === "mouse") return;
-    const press = {
-      activated: false,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      timer: 0,
-    };
-    press.timer = window.setTimeout(() => {
-      if (minimapPressRef.current !== press) return;
-      press.activated = true;
-      suppressMinimapClickRef.current = true;
-      setMinimapExpanded(true);
-    }, DESKTOP_LONG_PRESS_MS);
-    minimapPressRef.current = press;
+  function beginAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, expanded: boolean) {
+    if (event.button !== 0) return;
+    areaSwitcherDragRef.current = { expanded, pointerId: event.pointerId, startX: event.clientX };
     event.currentTarget.setPointerCapture(event.pointerId);
+    areaSwitcherRef.current?.setAttribute("data-dragging", "");
   }
 
-  function moveMinimapPress(event: React.PointerEvent<HTMLButtonElement>) {
-    const press = minimapPressRef.current;
-    if (!press || press.pointerId !== event.pointerId || press.activated) return;
-    if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < 10) return;
-    window.clearTimeout(press.timer);
-    minimapPressRef.current = null;
+  function moveAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>) {
+    const drag = areaSwitcherDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const offset = areaSwitcherDragOffset(event.clientX - drag.startX, drag.expanded);
+    areaSwitcherRef.current?.style.setProperty("--area-switcher-drag-x", `${offset}px`);
   }
 
-  function finishMinimapPress(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
-    const press = minimapPressRef.current;
-    if (!press || press.pointerId !== event.pointerId) return;
-    window.clearTimeout(press.timer);
+  function finishAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
+    const drag = areaSwitcherDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    minimapPressRef.current = null;
-    if (cancelled) suppressMinimapClickRef.current = false;
-    else if (press.activated) window.setTimeout(() => { suppressMinimapClickRef.current = false; }, 0);
+    const deltaX = event.clientX - drag.startX;
+    areaSwitcherDragRef.current = null;
+    areaSwitcherRef.current?.removeAttribute("data-dragging");
+    areaSwitcherRef.current?.style.removeProperty("--area-switcher-drag-x");
+    if (!cancelled && areaSwitcherDragCommits(deltaX, drag.expanded)) setMinimapExpanded(!drag.expanded);
   }
 
   function beginExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
@@ -4158,117 +4121,60 @@ function App({ session }: { session: AuthSession | null }) {
       </section>
 
       {(isMobile || activeDesktopId) && (
-        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
-          {minimapDetailed && runningApps.length > 0 && (
-            <div className="desktop-minimap__apps" aria-label="Open apps">
-              {minimapWindowModel.visible.map(({ app }) => {
-                const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
-                const label = runningAppLabel(app);
-                return (
-                  <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}>
-                    <AppIcon kind={app.kind} entry={entry} size={16} />
-                  </button>
-                );
-              })}
-              {minimapWindowModel.overflow.length > 0 && (
-                <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>
-                  +{minimapWindowModel.overflow.length}
-                </button>
-              )}
-            </div>
-          )}
-          <div className="desktop-minimap__areas">
-            {minimapIconMode ? (
-              <button className="desktop-minimap__mode-toggle" type="button" aria-label="Show desktop area map" title="Show desktop area map" disabled={!preferencesLoaded} onClick={() => void changeDesktopMinimap(true)}>
-                <MapTrifold size={19} weight="duotone" aria-hidden="true" />
-                <span className="desktop-minimap__indicator" aria-hidden="true" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
-                  {minimapSegments.map((segment) => <i key={segment.key} data-active={segment.key === activeSegmentKey || undefined} data-occupied={occupiedSegments.some((candidate) => candidate.key === segment.key) || undefined} style={{ gridColumn: segment.segment.column - minimapMinColumn + 1, gridRow: segment.segment.row - minimapMinRow + 1 }} />)}
-                </span>
+        <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
+          {!minimapDetailed ? (
+            <button className="desktop-minimap__pull-tab" type="button" aria-label={`Open area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded="false" onClick={() => setMinimapExpanded(true)} onPointerDown={(event) => beginAreaSwitcherDrag(event, false)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
+              <CaretRight size={15} aria-hidden="true" />
+              <MapTrifold size={22} weight="duotone" aria-hidden="true" />
+              <span>{occupiedSegments.length}</span>
+            </button>
+          ) : (
+            <>
+              <button className="desktop-minimap__handle" type="button" aria-label="Collapse area switcher" aria-expanded="true" onClick={() => setMinimapExpanded(false)} onPointerDown={(event) => beginAreaSwitcherDrag(event, true)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
+                <DotsSixVertical size={22} weight="bold" aria-hidden="true" />
               </button>
-            ) : (
-              <>
-                <div className="desktop-minimap__toolbar">
-                  <span>{minimapDetailed ? `${homeRelativeAreaLabel(activeSegment)} · ${occupiedSegments.length} occupied` : "Areas"}</span>
-                  <div className="desktop-minimap__toolbar-actions">
-                    {!minimapDetailed && <button type="button" aria-label="Use icon mode" title="Use icon mode" disabled={!preferencesLoaded} onClick={() => void changeDesktopMinimap(false)}><MapTrifold aria-hidden="true" /><span>Icon</span></button>}
-                    {!isMobile && <button type="button" aria-label={`${minimapDetailed ? "Collapse" : "Expand"} area map, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "area" : "areas"}`} aria-expanded={minimapDetailed} onClick={() => setMinimapExpanded((expanded) => !expanded)}>
-                      {minimapDetailed ? <ArrowsIn aria-hidden="true" /> : <ArrowsOut aria-hidden="true" />}
-                      <span>{minimapDetailed ? "Collapse" : "Expand"}</span>
-                      <b>{occupiedSegments.length}</b>
-                    </button>}
-                  </div>
-                </div>
-                <span className="desktop-minimap__summary">
-                  {homeRelativeAreaLabel(activeSegment)} · {occupiedSegments.length} occupied
-                </span>
-                <div
-                  className="desktop-minimap__grid-viewport"
-                  onPointerDown={beginExpandedMinimapSwipe}
-                  onPointerMove={moveExpandedMinimapSwipe}
-                  onPointerUp={finishExpandedMinimapSwipe}
-                  onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}
-                >
-                  <div
-                    className="desktop-minimap__grid"
-                    style={
-                      {
-                        "--minimap-columns": minimapColumnCount,
-                        "--minimap-rows": minimapRowCount,
-                      } as React.CSSProperties
-                    }
-                  >
-                    {minimapSegments.map((desktopSegment, visibleIndex) => {
-                const column = desktopSegment.segment.column - minimapMinColumn;
-                const row = desktopSegment.segment.row - minimapMinRow;
-                const currentSegmentKey = desktopSegment.key;
-                const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
-                return (
-                  <div className="desktop-minimap__slot" data-segment-key={isOccupiedSegment ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: column + 1, gridRow: row + 1 }}>
-                    <button
-                      className="desktop-minimap__area"
-                      data-active={currentSegmentKey === activeSegmentKey || undefined}
-                      data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined}
-                      data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined}
-                      data-occupied={isOccupiedSegment || undefined}
-                      type="button"
-                      aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`}
-                      aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined}
-                      onClick={(event) => {
-                        if (suppressMinimapClickRef.current) {
-                          suppressMinimapClickRef.current = false;
-                          event.preventDefault();
-                          return;
-                        }
-                        goToSegment(desktopSegment.segment);
-                      }}
-                      onContextMenu={(event) => event.preventDefault()}
-                      onPointerDown={beginMinimapPress}
-                      onPointerMove={moveMinimapPress}
-                      onPointerUp={finishMinimapPress}
-                      onPointerCancel={(event) => finishMinimapPress(event, true)}
-                    >
-                      {desktopSegment.entries.map((entry) => {
-                        const position = responsive.positions.get(entry.id) ?? entry.position;
-                        return (
-                          <span
-                            className="desktop-minimap__file"
-                            key={entry.id}
-                            style={{
-                              left: `${(position.x / desktopSize.width) * 100}%`,
-                              top: `${(position.y / desktopSize.height) * 100}%`,
-                            }}
-                          />
-                        );
+              <div className="desktop-minimap__body">
+                <header className="desktop-minimap__header">
+                  <span><strong>Areas</strong><small>{homeRelativeAreaLabel(activeSegment)} · {occupiedSegments.length} occupied</small></span>
+                  <span>Tap an area or swipe the map</span>
+                </header>
+                {runningApps.length > 0 && (
+                  <div className="desktop-minimap__app-switcher">
+                    <span>Open apps</span>
+                    <div className="desktop-minimap__apps" aria-label="Open apps">
+                      {minimapWindowModel.visible.map(({ app }) => {
+                        const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+                        const label = runningAppLabel(app);
+                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
                       })}
-                    </button>
+                      {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
+                    </div>
                   </div>
-                );
+                )}
+                <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
+                  <div className="desktop-minimap__grid" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
+                    {minimapSegments.map((desktopSegment, visibleIndex) => {
+                      const column = desktopSegment.segment.column - minimapMinColumn;
+                      const row = desktopSegment.segment.row - minimapMinRow;
+                      const currentSegmentKey = desktopSegment.key;
+                      const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
+                      const hiddenEntryCount = Math.max(0, desktopSegment.entries.length - 10);
+                      return <div className="desktop-minimap__slot" data-segment-key={isOccupiedSegment ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: column + 1, gridRow: row + 1 }}>
+                        <button className="desktop-minimap__area" data-active={currentSegmentKey === activeSegmentKey || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupiedSegment || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`} aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined} onClick={(event) => { if (suppressMinimapClickRef.current) { suppressMinimapClickRef.current = false; event.preventDefault(); return; } goToSegment(desktopSegment.segment); }} onContextMenu={(event) => event.preventDefault()}>
+                          <span className="desktop-minimap__area-title"><strong>{homeRelativeAreaLabel(desktopSegment.segment)}</strong><small>{desktopSegment.entries.length || "Empty"}</small></span>
+                          {desktopSegment.entries.slice(0, 10).map((entry) => {
+                            const position = responsive.positions.get(entry.id) ?? entry.position;
+                            return <span className="desktop-minimap__file" key={entry.id} title={entry.name} style={{ left: `${Math.min(92, Math.max(8, position.x / desktopSize.width * 100))}%`, top: `${Math.min(78, Math.max(24, position.y / desktopSize.height * 100))}%` }}><EntryIcon entry={entry} size={18} /></span>;
+                          })}
+                          {hiddenEntryCount > 0 && <span className="desktop-minimap__area-overflow">+{hiddenEntryCount}</span>}
+                        </button>
+                      </div>;
                     })}
                   </div>
                 </div>
-              </>
-            )}
-          </div>
+              </div>
+            </>
+          )}
           <span className="visually-hidden">
             {activeDesktopName}, area {Math.max(1, minimapSegments.findIndex((candidate) => candidate.key === activeSegmentKey) + 1)} of {minimapSegments.length}
           </span>

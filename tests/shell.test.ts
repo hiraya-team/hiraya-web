@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragOffset, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -49,6 +49,17 @@ describe("cohesive shell view models", () => {
     expect(committedSwipeTarget(null, false)).toBeNull();
     expect(committedSwipeTarget(preview, true)).toBeNull();
     expect(committedSwipeTarget(preview, false)).toEqual(preview);
+  });
+
+  test("constrains and commits direct area switcher pulls", () => {
+    expect(areaSwitcherDragOffset(30, false)).toBe(0);
+    expect(areaSwitcherDragOffset(-30, false)).toBe(-30);
+    expect(areaSwitcherDragCommits(-43, false)).toBeFalse();
+    expect(areaSwitcherDragCommits(-44, false)).toBeTrue();
+    expect(areaSwitcherDragOffset(-30, true)).toBe(0);
+    expect(areaSwitcherDragOffset(30, true)).toBe(30);
+    expect(areaSwitcherDragCommits(71, true)).toBeFalse();
+    expect(areaSwitcherDragCommits(72, true)).toBeTrue();
   });
 
   test("counts only occupied regions, excluding an empty current region", () => {

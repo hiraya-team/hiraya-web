@@ -61,6 +61,14 @@ export function committedSwipeTarget(previewTarget: SurfaceSegment | null, cance
   return cancelled ? null : previewTarget;
 }
 
+export function areaSwitcherDragOffset(deltaX: number, expanded: boolean) {
+  return expanded ? Math.max(0, deltaX) : Math.min(0, deltaX);
+}
+
+export function areaSwitcherDragCommits(deltaX: number, expanded: boolean) {
+  return expanded ? deltaX >= 72 : deltaX <= -44;
+}
+
 export function occupiedAreaCount(areas: readonly { occupied: boolean }[]) {
   return areas.filter((area) => area.occupied).length;
 }
