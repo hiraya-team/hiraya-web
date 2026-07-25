@@ -120,6 +120,7 @@ import type { HelpSectionId } from "./lib/help";
 import { AppIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
 import { boundedNotificationVisibility } from "./ui/notifications";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
+import { DesktopTaskbar } from "./components/DesktopTaskbar";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { SystemMenu } from "./components/SystemMenu";
 import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
@@ -1667,6 +1668,11 @@ function App({ session }: { session: AuthSession | null }) {
         setActivePanel("search");
         return;
       }
+      if (((modifier && event.key.toLowerCase() === "w") || (event.altKey && event.key === "F4")) && focusedAppIdRef.current) {
+        event.preventDefault();
+        void closeAppRef.current(focusedAppIdRef.current);
+        return;
+      }
       if (event.key === "?" && !event.metaKey && !event.ctrlKey && !(event.target as Element | null)?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) {
         event.preventDefault();
         setActivePanel("shortcuts");
@@ -1697,14 +1703,13 @@ function App({ session }: { session: AuthSession | null }) {
         explorer: false,
         areaEditor: minimapExpanded,
       });
-      if (!owner && !focusedAppIdRef.current) return;
+      if (!owner) return;
       if (owner === "moveDialog" && moveDialogSubmitting) return;
       event.preventDefault();
       if (owner === "dialog") setDialog(null);
       else if (owner === "moveDialog") setMoveDialogEntryIds([]);
       else if (owner === "contextMenu") setContextMenu(null);
       else if (owner === "areaEditor") setMinimapExpanded(false);
-      else if (focusedAppIdRef.current) closeAppRef.current(focusedAppIdRef.current);
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -2974,6 +2979,18 @@ function App({ session }: { session: AuthSession | null }) {
     if (currentRoute) navigateRoute({ desktopId: activeDesktopIdRef.current, column: currentRoute.column, row: currentRoute.row }, "replace");
   }
 
+  function minimizeCurrentAreaWindows() {
+    const currentRoute = routeRef.current;
+    if (!currentRoute) return;
+    const segment = { column: currentRoute.column, row: currentRoute.row };
+    for (const app of runningAppsRef.current) {
+      if (app.kind === "sandbox" && appIsInSegment(app, segment)) appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: false });
+    }
+    updateRunningApps((current) => current.map((app) => appIsInSegment(app, segment) ? { ...app, minimized: true } : app));
+    setFocusedApp(null);
+    navigateRoute({ desktopId: activeDesktopIdRef.current, ...segment }, "replace");
+  }
+
   function navigateBack() {
     if (settingsPageRef.current !== "main" && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
       navigateSettingsPage("main");
@@ -3280,6 +3297,20 @@ function App({ session }: { session: AuthSession | null }) {
     minimapWindowLimit,
   );
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
+  const taskbarItems = runningApps.map((app) => {
+    const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+    const area = segmentForApp(app);
+    return {
+      id: app.id,
+      title: runningAppLabel(app),
+      areaLabel: areaDirectionalLabel(area, activeSegment),
+      icon: <AppIcon kind={app.kind} entry={entry} size={16} />,
+      active: focusedAppId === app.id && !app.minimized,
+      minimized: app.minimized,
+      dirty: dirtyAppIds.has(app.id),
+      otherArea: segmentKey(area) !== activeSegmentKey,
+    };
+  });
   const commandContext: AppCommandContext = {
     canMutate,
     canOpenTrash,
@@ -3303,7 +3334,8 @@ function App({ session }: { session: AuthSession | null }) {
     { id: "save", group: "Editor", label: "Save the open file", keys: ["Ctrl/⌘", "S"] },
     { id: "maximize", group: "Windows", label: "Maximize or restore focused window", keys: ["Alt", "Enter"] },
     { id: "move-window", group: "Windows", label: "Move focused window between areas", keys: ["Alt", "Arrow key"] },
-    { id: "close", group: "Windows", label: "Close the top panel or focused window", keys: ["Escape"] },
+    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "W"] },
+    { id: "dismiss", group: "Windows", label: "Dismiss the current menu or dialog", keys: ["Escape"] },
   ];
 
   function runSearchCommand(commandId: CommandId) {
@@ -3429,8 +3461,13 @@ function App({ session }: { session: AuthSession | null }) {
     <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)}>
       <header className="menu-bar">
         {!isMobile && activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
+        {!isMobile && <DesktopTaskbar
+          items={taskbarItems}
+          onShowDesktop={minimizeCurrentAreaWindows}
+          onActivate={(id) => focusedAppId === id && !runningApps.find((app) => app.id === id)?.minimized ? minimizeApp(id) : focusApp(id)}
+        />}
         {isMobile && (
-          <nav className="mobile-window-nav" aria-label="Workspace navigation">
+          <nav className="mobile-window-nav" aria-label="Desktop navigation">
             <div className="mobile-window-nav__leading">
               {focusedApp?.kind === "settings" && settingsPage !== "main" ? (
                 <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
@@ -3446,8 +3483,14 @@ function App({ session }: { session: AuthSession | null }) {
                 activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />
               )}
             </div>
-            {focusedApp && (
+            {focusedApp ? (
               <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
+            ) : (
+              <button className="mobile-area-switcher" type="button" aria-label={`Open area map, current area ${homeRelativeAreaLabel(activeSegment)}`} onClick={openAreaMap}>
+                <span>{activeDesktopName}</span>
+                <small>{homeRelativeAreaLabel(activeSegment)}</small>
+                <CaretDown size={16} aria-hidden="true" />
+              </button>
             )}
           </nav>
         )}
@@ -3654,7 +3697,7 @@ function App({ session }: { session: AuthSession | null }) {
                         setSharingOpen(true);
                       }}
                     >
-                      <ShareNetwork /> Share workspace
+                      <ShareNetwork /> Share desktop
                     </button>
                   )}
                   {session && (
@@ -3875,7 +3918,7 @@ function App({ session }: { session: AuthSession | null }) {
           <UploadSimple size={25} /> Drop files or folders to add them
         </div>
 
-        <div className="app-window-layer" aria-label="Open windows">
+        <div className="app-window-layer" role="region" aria-label="Open windows">
           {runningApps.map((app, index) => {
             const projection = projectLogicalPosition(app.bounds, desktopSize);
             const segmentActive = projection.segment.column === activeSegment.column && projection.segment.row === activeSegment.row;
@@ -3921,12 +3964,7 @@ function App({ session }: { session: AuthSession | null }) {
                 onMoveArea={moveAppToArea}
                 onShowDesktop={navigateBack}
                 onSwitchWindow={() => setActivePanel("windows")}
-                titleArea={
-                  <div>
-                    <span className="window-kicker">{app.kind === "sandbox" ? "Session app" : app.kind === "file" ? (app.editMode || (file && ["text", "url"].includes(fileCapabilities(file).preview)) ? "Text editor" : file && fileCapabilities(file).preview === "markdown" ? "Markdown" : "Preview") : app.kind === "explorer" ? "Folder" : app.kind === "properties" ? "Properties" : "Hiraya desktop"}</span>
-                    <h2 id={titleId}>{title}</h2>
-                  </div>
-                }
+                titleArea={<h2 id={titleId}>{title}</h2>}
               >
                 {(headerElements) => (
                   <>
@@ -4120,7 +4158,7 @@ function App({ session }: { session: AuthSession | null }) {
       </section>
 
       {(isMobile || activeDesktopId) && (
-        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions and open apps`}>
+        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
           {minimapDetailed && runningApps.length > 0 && (
             <div className="desktop-minimap__apps" aria-label="Open apps">
               {minimapWindowModel.visible.map(({ app }) => {
@@ -4245,6 +4283,7 @@ function App({ session }: { session: AuthSession | null }) {
         className="visually-hidden"
         type="file"
         multiple
+        aria-label="Upload files"
         onChange={(event) => {
           const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
           uploadPositionRef.current = undefined;
@@ -4265,6 +4304,7 @@ function App({ session }: { session: AuthSession | null }) {
         className="visually-hidden"
         type="file"
         multiple
+        aria-label="Import folder"
         onChange={(event) => {
           const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
           uploadPositionRef.current = undefined;

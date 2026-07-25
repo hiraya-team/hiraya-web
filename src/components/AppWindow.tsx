@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
 import {
   clampWindowBounds,
   resizeWindowBounds,
@@ -218,6 +218,9 @@ export function AppWindow({
       {(!mobile || !hideMobileHeader) && <header
         className="app-window__header"
         data-window-drag-handle
+        onDoubleClick={(event) => {
+          if (!mobile && onToggleMaximize && !(event.target as Element).closest(NO_DRAG_SELECTOR)) onToggleMaximize(id);
+        }}
         onPointerDown={beginInteraction}
         onPointerMove={moveInteraction}
         onPointerUp={finishInteraction}
@@ -234,7 +237,7 @@ export function AppWindow({
             {onShowDesktop && <button className="app-window__control app-window__mobile-action" type="button" onClick={onShowDesktop}><ArrowLeft /> <span>{mobileBackLabel}</span></button>}
             {onSwitchWindow && <button className="app-window__control app-window__mobile-action" type="button" onClick={onSwitchWindow}><SquaresFour /> <span>Switch Window</span></button>}
             {onClose && <button className="app-window__control app-window__mobile-action app-window__control--close" type="button" onClick={() => onClose(id)}><X /> <span>Close</span></button>}
-          </> : <>{onToggleMaximize && <div className="app-window__menu-wrap">
+          </> : <>{canMoveArea && onMoveArea && <div className="app-window__menu-wrap">
             <button ref={windowMenuButtonRef} className="app-window__control" type="button" aria-label={`Window actions for ${title}`} aria-haspopup="menu" aria-expanded={windowMenuOpen} onClick={() => setWindowMenuOpen((open) => !open)}><CaretDown size={15} /></button>
             {windowMenuOpen && <div ref={windowMenuRef} className="app-window__menu" role="menu" onKeyDown={(event) => {
               const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)"));
@@ -248,12 +251,14 @@ export function AppWindow({
                 items[index]?.focus();
               }
             }}>
-              <button type="button" role="menuitem" onClick={() => { onToggleMaximize(id); setWindowMenuOpen(false); }}><ArrowsOut size={15} /> {maximized ? "Restore window" : "Maximize window"}<kbd>Alt Enter</kbd></button>
-              {canMoveArea && onMoveArea && (["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={direction} onClick={() => { onMoveArea(id, direction); setWindowMenuOpen(false); }}>Move to area {direction}<kbd>Alt {direction}</kbd></button>)}
+              {(["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={direction} onClick={() => { onMoveArea(id, direction); setWindowMenuOpen(false); }}>Move to area {direction}<kbd>Alt {direction}</kbd></button>)}
             </div>}
           </div>}
           {onMinimize && <button className="app-window__control app-window__control--minimize" type="button" onClick={() => onMinimize(id)} aria-label={`Minimize ${title}`}>
             <Minus size={16} />
+          </button>}
+          {onToggleMaximize && <button className="app-window__control app-window__control--maximize" type="button" onClick={() => onToggleMaximize(id)} aria-label={`${maximized ? "Restore" : "Maximize"} ${title}`}>
+            {maximized ? <ArrowsIn size={16} /> : <ArrowsOut size={16} />}
           </button>}
           {onClose && <button className="app-window__control app-window__control--close" type="button" onClick={() => onClose(id)} aria-label={`Close ${title}`}>
             <X size={16} />

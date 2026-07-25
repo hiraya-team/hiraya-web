@@ -27,7 +27,7 @@ export function ConnectionPanel(props: Props) {
   return <section className="connection-panel">
     <header className="connection-panel__heading"><h2>Connection &amp; Offline</h2><p>Connection state, queued work, offline pins, and browser storage in one place.</p></header>
     <SyncIssuesPanel status={props.status} records={props.records} lastSyncedAt={props.lastSyncedAt} affectedLabels={props.affectedLabels} onRetry={props.onRetryRecord} onDiscard={props.onDiscardRecord} />
-    <div className="connection-panel__explanation"><strong>{props.status === "local" ? "Browser-local workspace" : "Server-authoritative workspace"}</strong><span>{props.status === "local" ? "Files and changes exist only in this browser. Clearing site data removes them." : "Downloaded files are validated copies. Pending local changes remain protected until synchronization completes."}</span></div>
+    <div className="connection-panel__explanation"><strong>{props.status === "local" ? "Browser-local desktop" : "Server-authoritative desktop"}</strong><span>{props.status === "local" ? "Files and changes exist only in this browser. Clearing site data removes them." : "Downloaded files are validated copies. Pending local changes remain protected until synchronization completes."}</span></div>
     <OfflineStoragePanel entries={props.entries} inventory={props.inventory} model={props.model} progress={props.progress} online={props.online} onRetry={props.onRetryDownloads} onUnpin={props.onUnpin} onReleaseAll={props.onReleaseAll} onOpenHelp={props.onOpenHelp} />
   </section>;
 }

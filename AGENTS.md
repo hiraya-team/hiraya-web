@@ -74,6 +74,10 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 
 ## Interaction And UI
 
+- Treat Hiraya as a desktop environment, not a marketing page. Its core interaction model and visual language must remain familiar, coherent, and predictable.
+- Use `DESIGN_VARIANCE: 3`, `MOTION_INTENSITY: 3`, and `VISUAL_DENSITY: 5` as the default design dials for desktop UI work.
+- Favor conventional window geometry, menus, controls, alignment, selection states, and keyboard behavior over novel interaction patterns. Express personality through the established wallpaper, palette, typography, and subtle material treatment instead.
+- Use motion only when it clarifies opening, closing, focusing, movement, feedback, or another state transition.
 - Dragging applies direct transforms during pointer movement and commits state only on release.
 - Use Pointer Events and keep icons reachable on desktop and mobile.
 - Root coordinates occupy one continuous logical surface; surface segments are derived and never persisted.

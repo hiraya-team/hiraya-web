@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   ArrowLeft,
+  CaretRight,
   DotsThreeVertical,
   FilePlus,
   Folder,
@@ -111,6 +112,14 @@ export function FolderExplorer({
   function open(entry: DesktopEntry) {
     if (entry.kind === "folder") onNavigate(entry);
     else onOpen(entry);
+  }
+
+  function chooseSort(key: FolderSortKey) {
+    if (sortKey === key) setSortDirection((current) => current === "asc" ? "desc" : "asc");
+    else {
+      setSortKey(key);
+      setSortDirection("asc");
+    }
   }
 
   function setDropTarget(target: HTMLElement | null) {
@@ -227,7 +236,12 @@ export function FolderExplorer({
           headerElements.actions,
         )}
 
-        <div className="folder-explorer__toolbar">
+        <nav className="folder-explorer__breadcrumbs" aria-label="Folder path">
+          <button type="button" aria-current={!folder ? "page" : undefined} onClick={() => onNavigate(null)}>{rootLabel}</button>
+          {trail.map((item) => <span key={item.id}><CaretRight size={13} aria-hidden="true" /><button type="button" aria-current={item.id === folder?.id ? "page" : undefined} onClick={() => onNavigate(item)}>{item.name}</button></span>)}
+        </nav>
+
+        <div className="folder-explorer__toolbar" data-view={view}>
           <label className="folder-explorer__search">
             <MagnifyingGlass size={16} aria-hidden="true" />
             <span className="sr-only">Search this folder</span>
@@ -284,6 +298,13 @@ export function FolderExplorer({
             </div>
           ) : (
             <div className="folder-explorer__list" data-view={view} aria-label={`Contents of ${folder?.name ?? rootLabel}`}>
+              {view === "list" && <div className="folder-explorer__columns">
+                <span aria-hidden="true" />
+                <button type="button" data-active={sortKey === "name" || undefined} data-direction={sortKey === "name" ? sortDirection : undefined} onClick={() => chooseSort("name")}>Name</button>
+                <button type="button" data-active={sortKey === "type" || undefined} data-direction={sortKey === "type" ? sortDirection : undefined} onClick={() => chooseSort("type")}>Type</button>
+                <button type="button" data-active={sortKey === "date" || undefined} data-direction={sortKey === "date" ? sortDirection : undefined} onClick={() => chooseSort("date")}>Modified</button>
+                <button type="button" data-active={sortKey === "size" || undefined} data-direction={sortKey === "size" ? sortDirection : undefined} onClick={() => chooseSort("size")}>Size</button>
+              </div>}
               {orderedChildren.map((entry) => (
                 <button
                   className="folder-explorer__row"

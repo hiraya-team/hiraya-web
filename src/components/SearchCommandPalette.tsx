@@ -86,7 +86,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
       action: () => onOpenEntry(result),
     })),
     ...windows.map((window): PaletteItem => ({ id: `window:${window.id}`, category: "windows", label: window.title, detail: window.detail, action: () => onFocusWindow(window.id) })),
-    ...commands.map((command): PaletteItem => ({ id: `command:${command.id}`, category: "commands", label: command.label, detail: command.enabled ? command.detail : [command.detail, "Unavailable in the current workspace state."].filter(Boolean).join(" "), keywords: command.keywords, disabled: !command.enabled, action: () => onRunCommand(command.id) })),
+    ...commands.map((command): PaletteItem => ({ id: `command:${command.id}`, category: "commands", label: command.label, detail: command.enabled ? command.detail : [command.detail, "Unavailable in the current desktop state."].filter(Boolean).join(" "), keywords: command.keywords, disabled: !command.enabled, action: () => onRunCommand(command.id) })),
   ];
   const suggestedItems = deferredQuery ? items : [
     ...items.filter((item) => item.category === "windows"),
@@ -135,8 +135,8 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
         <button className="icon-button" type="button" aria-label="Close search" onClick={onClose}><X size={18} /></button>
       </header>
        <div className="command-palette__scope">
-         <div className="command-palette__segments" role="group" aria-label="Search scope"><button type="button" aria-pressed={!searchAllDesktops} onClick={() => onSearchAllDesktopsChange(false)}>Current</button><button type="button" aria-pressed={searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide workspace-wide search." : undefined} onClick={() => onSearchAllDesktopsChange(true)}>All workspaces</button></div>
-         <span id={scopeStatusId} role="status">{!allDesktopsAvailable ? "All workspaces is unavailable because this server does not provide workspace-wide search." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}</span>
+         <div className="command-palette__segments" role="group" aria-label="Search scope"><button type="button" aria-pressed={!searchAllDesktops} onClick={() => onSearchAllDesktopsChange(false)}>Current</button><button type="button" aria-pressed={searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide search across desktops." : undefined} onClick={() => onSearchAllDesktopsChange(true)}>All desktops</button></div>
+         <span id={scopeStatusId} role="status">{!allDesktopsAvailable ? "Search across desktops is unavailable on this server." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}</span>
       </div>
       {searchError && <p className="command-palette__warning" role="alert">{searchError} Showing cached results, which may be stale.</p>}
       <div id={listId} className="command-palette__results" role="listbox" aria-label="Search results">

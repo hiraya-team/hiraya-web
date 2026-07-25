@@ -35,4 +35,17 @@ describe("AppWindow mobile actions", () => {
     expect(markup).not.toContain("app-window__header");
     expect(markup).toContain("Content");
   });
+
+  test("renders conventional desktop minimize, maximize, and close controls", () => {
+    const markup = renderToStaticMarkup(<AppWindow
+      {...base}
+      mobile={false}
+      onMinimize={() => undefined}
+      onToggleMaximize={() => undefined}
+      onClose={() => undefined}
+    />);
+    expect(markup).toContain('aria-label="Minimize Document"');
+    expect(markup).toContain('aria-label="Maximize Document"');
+    expect(markup).toContain('aria-label="Close Document"');
+  });
 });

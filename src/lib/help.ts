@@ -3,7 +3,7 @@ import guideMarkdown from "../../docs/USER_GUIDE.md?raw";
 export const HELP_SECTIONS = [
   { id: "start-here", title: "Start here", summary: "Product model and where work lives", keywords: ["local first", "server", "browser local"] },
   { id: "files-and-folders", title: "Files and folders", summary: "Hierarchy, uploads, and folder import", keywords: ["directory", "empty folders", "drag drop"] },
-  { id: "desktops-and-areas", title: "Desktops and areas", summary: "Named workspaces and derived spatial regions", keywords: ["coordinates", "navigate", "arrange"] },
+  { id: "desktops-and-areas", title: "Desktops and areas", summary: "Named desktops and derived spatial regions", keywords: ["coordinates", "navigate", "arrange"] },
   { id: "sharing", title: "Sharing", summary: "Roles, invitations, and public links", keywords: ["owner", "manager", "writer", "reader", "publish"] },
   { id: "offline", title: "Offline Storage", summary: "Cache, pins, site-data risk, and shared restrictions", keywords: ["download", "storage", "clear site data"] },
   { id: "installation-and-updates", title: "Installation and updates", summary: "Install the PWA and apply releases", keywords: ["add to home screen", "reload", "PWA"] },

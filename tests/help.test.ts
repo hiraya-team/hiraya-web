@@ -47,7 +47,7 @@ describe("bundled user guide", () => {
     const required = [
       "server is the authoritative",
       "Import folder",
-      "named workspace",
+      "named desktops",
       "derived from item and window coordinates",
       "Manager",
       "public link",

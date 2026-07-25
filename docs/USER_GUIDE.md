@@ -4,11 +4,11 @@ This guide is included with Hiraya and remains available when the app shell is o
 
 ## Start here {#start-here}
 
-Hiraya is a self-hosted, local-first workspace that presents files on a spatial desktop.
+Hiraya is a self-hosted, local-first desktop for spatially organizing files.
 
 In a synchronized installation, the server is the authoritative home of desktops and files. The browser keeps a projected desktop, downloaded file copies, and queued changes so supported work can continue through a short outage. In browser-local mode, this browser is authoritative and clearing its site data removes your Hiraya content.
 
-Use the workspace switcher for **named desktops**. Use the [desktop area map](#desktops-and-areas) or the phone app-bar area button to move around within one desktop, and expand the map into a full-width strip when you need more room. Open Search to find files, folders, windows, commands, or the command that opens this guide.
+Use the desktop switcher for **named desktops**. Use the [desktop area map](#desktops-and-areas) or the phone app-bar area button to move around within one desktop, and expand the map into a full-width strip when you need more room. Open Search to find files, folders, windows, commands, or the command that opens this guide.
 
 ## Files, folders, and hierarchy import {#files-and-folders}
 
@@ -20,7 +20,7 @@ Some browsers do not provide directory picking or directory-drop details. When *
 
 ## Named desktops and derived areas {#desktops-and-areas}
 
-A **desktop** is a named workspace with its own files, folders, appearance, sharing, and permissions. Use the desktop switcher to create, rename, switch, or delete desktops when your role allows it.
+A **desktop** has its own files, folders, appearance, sharing, and permissions. Use the desktop switcher to create, rename, switch, or delete desktops when your role allows it.
 
 An **area** is a viewport-sized region derived from item and window coordinates on one continuous desktop. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
 
@@ -53,7 +53,7 @@ Shared desktops have stricter offline rules. Cached shared content remains read-
 
 Install Hiraya from **Settings > Install Hiraya** when an Install button is offered. Otherwise use the browser's **Install app** or **Add to Home Screen** command. Installation adds app-like launch and window behavior; it does not move authoritative data out of the server or protect browser-local data from site-data removal.
 
-Production installations can check for updates in Settings. Automatic updates check in the background and ask before reloading. Save editor and app work before applying an update. If installation is unsupported, keep using Hiraya in a normal browser tab; all core workspace data remains in the same browser origin.
+Production installations can check for updates in Settings. Automatic updates check in the background and ask before reloading. Save editor and app work before applying an update. If installation is unsupported, keep using Hiraya in a normal browser tab; all core desktop data remains in the same browser origin.
 
 ## `.hiraya.app` apps and permissions {#apps-and-permissions}
 

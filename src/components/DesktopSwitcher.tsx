@@ -85,8 +85,8 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
       type="button"
       disabled={disabled}
       aria-haspopup="dialog"
-      aria-label={`Switch workspace, current workspace ${active?.name ?? "unavailable"}`}
-      title={disabled ? "Workspaces are still loading." : `Switch workspace from ${active?.name ?? "the current workspace"}`}
+      aria-label={`Switch desktop, current desktop ${active?.name ?? "unavailable"}`}
+      title={disabled ? "Desktops are still loading." : `Switch desktop from ${active?.name ?? "the current desktop"}`}
       aria-expanded={open}
       aria-controls={open ? "desktop-switcher-dialog" : undefined}
       onClick={() => { if (open) close(false); else setOpen(true); }}
@@ -108,9 +108,9 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
             </button>
         </div>)}</div>)}
        </div>
-       <details className="desktop-switcher__manage"><summary>Manage workspaces</summary><div>{owned.map((desktop) => {
+       <details className="desktop-switcher__manage"><summary>Manage desktops</summary><div>{owned.map((desktop) => {
          const protectedReason = desktop.capabilities.delete ? desktopDeleteProtection(owned.length) : "Only the owner can delete this desktop.";
-         const renameReason = desktop.capabilities.manage && !canManageDesktop(desktop) ? "Connect to rename this workspace." : "";
+         const renameReason = desktop.capabilities.manage && !canManageDesktop(desktop) ? "Connect to rename this desktop." : "";
          const reasonId = `desktop-manage-${desktop.id.replaceAll(/[^a-zA-Z0-9_-]/g, "-")}`;
          return <div className="desktop-switcher__manage-row" key={desktop.id}><span><strong>{desktop.name}</strong>{(renameReason || protectedReason) && <small id={reasonId}>{[renameReason, protectedReason].filter(Boolean).join(" ")}</small>}</span>{desktop.capabilities.manage && <button type="button" className="icon-button" disabled={Boolean(renameReason)} aria-describedby={renameReason ? reasonId : undefined} aria-label={`Rename ${desktop.name}`} onClick={() => setEditing({ mode: "rename", id: desktop.id, value: desktop.name })}><PencilSimple size={15} /></button>}{desktop.capabilities.delete && <button type="button" className="icon-button" disabled={Boolean(protectedReason)} aria-describedby={protectedReason ? reasonId : undefined} title={protectedReason || `Delete ${desktop.name}`} aria-label={`Delete ${desktop.name}`} onClick={() => { setError(""); void onDelete(desktop.id).catch((deleteError) => setError(deleteError instanceof Error ? deleteError.message : "The desktop could not be deleted.")); }}><Trash size={15} /></button>}</div>;
        })}</div>{quota && <section className="desktop-switcher__quota" aria-label="Account limits">

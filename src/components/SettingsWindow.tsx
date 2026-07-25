@@ -396,10 +396,10 @@ export function SettingsWindow({
         </button>,
         mobileHeaderElements.leading,
       )}
-      <div className="settings-window__content" ref={contentRef}>
+      <div className={`settings-window__content${page === "main" ? " settings-window__content--main" : ""}`} ref={contentRef}>
          {page === "main" ? (
            <>
-             <header className="settings-ia-header"><div><h2>Settings</h2><span className="status-badge">This desktop + this device</span></div><p>Shared desktop choices and browser-local preferences are labeled at the point of use.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
+             <header className="settings-ia-header"><span className="status-badge">This desktop + this device</span><p>Shared desktop choices and browser-local preferences are labeled at the point of use.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
               <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
               <div className="settings-scope-summary" role="status"><strong>{activeSettingsCategory.label}</strong><span>Scope: {activeSettingsCategory.scope}</span></div>
               <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "desktop"}>
