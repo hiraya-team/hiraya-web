@@ -118,7 +118,7 @@ import { boundedNotificationVisibility } from "./ui/notifications";
 import { WorkspaceOverview } from "./components/WorkspaceOverview";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
@@ -2841,13 +2841,20 @@ function App({ session }: { session: AuthSession | null }) {
     const swipe = swipeRef.current;
     if (!swipe || swipe.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const nextSegment = cancelled ? swipe.startSegment : swipe.previewTarget ?? swipe.startSegment;
+    const nextSegment = committedSwipeTarget(swipe.previewTarget, cancelled);
     suppressClickRef.current = swipe.axis !== null;
     window.setTimeout(() => { suppressClickRef.current = false; }, 0);
     swipeRef.current = null;
     setSwipePreview(null);
-    if (canvasRef.current) delete canvasRef.current.dataset.swiping;
-    goToSegment(nextSegment);
+    if (canvasRef.current) {
+      delete canvasRef.current.dataset.swiping;
+      if (!nextSegment) {
+        const startColumn = swipe.startSegment.column - minColumn;
+        const startRow = swipe.startSegment.row - minRow;
+        canvasRef.current.style.transform = `translate3d(${-startColumn * desktopSize.width}px, ${-startRow * desktopSize.height}px, 0)`;
+      }
+    }
+    if (nextSegment) goToSegment(nextSegment);
   }
 
   function previewSegmentMove(sourceSegmentKey: string, targetIndex: number) {

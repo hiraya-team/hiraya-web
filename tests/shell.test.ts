@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, homeRelativeAreaLabel, occupiedAreaCount, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, occupiedAreaCount, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -40,6 +40,13 @@ describe("cohesive shell view models", () => {
     expect(swipePreviewReady(64, 390)).toBeTrue();
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "x", -64)).toEqual({ column: 1, row: 0 });
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", 64)).toEqual({ column: 0, row: -1 });
+  });
+
+  test("navigates only after a completed swipe", () => {
+    const preview = { column: 1, row: 0 };
+    expect(committedSwipeTarget(null, false)).toBeNull();
+    expect(committedSwipeTarget(preview, true)).toBeNull();
+    expect(committedSwipeTarget(preview, false)).toEqual(preview);
   });
 
   test("counts only occupied regions, excluding an empty current region", () => {
