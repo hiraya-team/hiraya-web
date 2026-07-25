@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contextMenuPressAction, dismissesSheetDrag, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
+import { allowsMouseDoubleClick, contextMenuPressAction, dismissesSheetDrag, recordTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
 
 describe("file icon touch release", () => {
   const valid = { cancelled: false, moved: false, longPressed: false, releasedOnVisibleContent: true };
@@ -33,6 +33,15 @@ describe("file icon context menu press", () => {
   test("preserves mouse and keyboard context menus", () => {
     expect(contextMenuPressAction({ pointerType: "mouse", moved: false, longPressed: false })).toBe("open");
     expect(contextMenuPressAction(null)).toBe("open");
+  });
+});
+
+describe("touch compatibility double click", () => {
+  test("suppresses a double click retargeted into newly rendered folder contents", () => {
+    recordTouchRelease(1_000);
+    expect(allowsMouseDoubleClick(1_001)).toBeFalse();
+    expect(allowsMouseDoubleClick(1_700)).toBeFalse();
+    expect(allowsMouseDoubleClick(1_701)).toBeTrue();
   });
 });
 

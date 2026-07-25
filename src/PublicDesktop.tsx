@@ -15,7 +15,7 @@ import { useModalDialog } from "./ui/modal-dialog";
 import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-layout";
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
-import { touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
+import { allowsMouseDoubleClick, recordTouchRelease, touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
 
 type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
 
@@ -44,9 +44,8 @@ function PublicIcon({ entry, selected, multiSelect, onSelect, onLongPressSelect,
 }) {
   const press = useRef<{ pointerId: number; x: number; y: number; moved: boolean; longPressed: boolean; timer?: number } | null>(null);
   const lastTap = useRef<TouchTap | null>(null);
-  const lastTouchReleaseAt = useRef(0);
   useEffect(() => () => { if (press.current?.timer) window.clearTimeout(press.current.timer); }, []);
-  return <button className="public-icon" type="button" aria-pressed={selected} onClick={() => onSelect(false)} onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) onOpen(); }} onPointerDown={(event) => {
+  return <button className="public-icon" type="button" aria-pressed={selected} onClick={() => onSelect(false)} onDoubleClick={() => { if (allowsMouseDoubleClick(performance.now())) onOpen(); }} onPointerDown={(event) => {
     if (event.pointerType !== "touch" || event.button !== 0) return;
     event.preventDefault();
     press.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false, longPressed: false };
@@ -70,8 +69,9 @@ function PublicIcon({ entry, selected, multiSelect, onSelect, onLongPressSelect,
     const current = press.current;
     if (!current || current.pointerId !== event.pointerId) return;
     if (current.timer) window.clearTimeout(current.timer);
-    lastTouchReleaseAt.current = performance.now();
-    const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: lastTouchReleaseAt.current };
+    const releasedAt = performance.now();
+    recordTouchRelease(releasedAt);
+    const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: releasedAt };
     const action = touchReleaseAction(lastTap.current, tap, { cancelled: false, moved: current.moved, longPressed: current.longPressed, releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)) });
     lastTap.current = action === "select" ? tap : null;
     press.current = null;

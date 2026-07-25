@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { contextMenuPressAction, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
+import { allowsMouseDoubleClick, contextMenuPressAction, recordTouchRelease, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
 
 type Props = {
   entry: DesktopEntry;
@@ -32,7 +32,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
-  const lastTouchReleaseAt = useRef(0);
   const drag = useRef<{
     pointerX: number;
     pointerY: number;
@@ -224,7 +223,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     }
     onDragEndRef.current(cancelled || !succeeded);
     if (completed.pointerType === "touch") {
-      lastTouchReleaseAt.current = performance.now();
+      recordTouchRelease(performance.now());
       const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
       const visibleTarget = releaseTarget?.closest(".file-icon__art, .file-icon__name");
       const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: performance.now() };
@@ -257,7 +256,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
         aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability ? `, ${offlineStatusLabel(offlineAvailability)}` : ""}`}
         aria-pressed={selected}
         onClick={(event) => { if (event.detail === 0) onSelect(event); }}
-        onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) onOpen(); }}
+        onDoubleClick={() => { if (allowsMouseDoubleClick(performance.now())) onOpen(); }}
         onContextMenu={(event) => {
           const current = drag.current;
           const action = contextMenuPressAction(current);
