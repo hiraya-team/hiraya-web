@@ -61,19 +61,6 @@
         "vite": "^7.0.4",
       },
     },
-    "apps/system/folder-explorer": {
-      "name": "@hiraya/system-folder-explorer",
-      "version": "1.0.0",
-      "dependencies": {
-        "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
-        "@hiraya/system-apps-shared": "workspace:*",
-      },
-      "devDependencies": {
-        "typescript": "~5.8.3",
-        "vite": "^7.0.4",
-      },
-    },
     "apps/system/image-viewer": {
       "name": "@hiraya/system-image-viewer",
       "version": "1.0.0",
@@ -474,8 +461,6 @@
     "@hiraya/system-apps-shared": ["@hiraya/system-apps-shared@workspace:apps/system/shared"],
 
     "@hiraya/system-file-viewer": ["@hiraya/system-file-viewer@workspace:apps/system/file-viewer"],
-
-    "@hiraya/system-folder-explorer": ["@hiraya/system-folder-explorer@workspace:apps/system/folder-explorer"],
 
     "@hiraya/system-image-viewer": ["@hiraya/system-image-viewer@workspace:apps/system/image-viewer"],
 
