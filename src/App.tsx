@@ -432,10 +432,11 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, compactChrome);
   const minimapWindowButtonCount = Math.min(runningApps.length, minimapWindowLimit) + (runningApps.length > minimapWindowLimit ? 1 : 0);
-  const minimapIconMode = !isMobile && !showDesktopMinimap && !minimapExpanded;
+  const minimapDetailed = minimapExpanded && !isMobile;
+  const minimapIconMode = !showDesktopMinimap && !minimapDetailed;
   const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
-  const minimapWidth = (minimapIconMode ? 44 : Math.min(112, Math.max(42, segmentColumns * 24)) + 26) + (!isMobile && minimapWindowButtonCount ? minimapWindowButtonCount * 38 + 9 : 0);
+  const minimapWidth = (minimapIconMode ? 44 : Math.min(112, Math.max(42, segmentColumns * 24)) + 26) + (minimapWindowButtonCount ? minimapWindowButtonCount * 38 + 9 : 0);
   const minimapHeight = Math.min(84, Math.max(30, segmentRows * 20)) + 27;
   const minimapObscured =
     !minimapExpanded &&
@@ -3316,7 +3317,8 @@ function App({ session }: { session: AuthSession | null }) {
 
   function openAreaMap() {
     if (isMobile && focusedAppIdRef.current) showDesktop();
-    setMinimapExpanded(true);
+    if (isMobile) void changeDesktopMinimap(true);
+    else setMinimapExpanded(true);
   }
 
   function beginMinimapPress(event: React.PointerEvent<HTMLButtonElement>) {
@@ -3444,14 +3446,8 @@ function App({ session }: { session: AuthSession | null }) {
                 activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />
               )}
             </div>
-            {focusedApp ? (
+            {focusedApp && (
               <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-            ) : (
-              <button className="mobile-area-switcher" type="button" aria-label={`${minimapExpanded ? "Collapse" : "Expand"} area map, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={minimapExpanded} onClick={() => setMinimapExpanded((expanded) => !expanded)}>
-                <span>{activeDesktopName}</span>
-                <small>{homeRelativeAreaLabel(activeSegment)}</small>
-                <SquaresFour size={18} weight="duotone" />
-              </button>
             )}
           </nav>
         )}
@@ -4124,8 +4120,8 @@ function App({ session }: { session: AuthSession | null }) {
       </section>
 
       {(isMobile || activeDesktopId) && (
-        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapExpanded || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions and open apps`}>
-          {!isMobile && runningApps.length > 0 && (
+        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions and open apps`}>
+          {runningApps.length > 0 && (
             <div className="desktop-minimap__apps" aria-label="Open apps">
               {minimapWindowModel.visible.map(({ app }) => {
                 const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
@@ -4154,14 +4150,14 @@ function App({ session }: { session: AuthSession | null }) {
             ) : (
               <>
                 <div className="desktop-minimap__toolbar">
-                  <span>{minimapExpanded ? `${homeRelativeAreaLabel(activeSegment)} · ${occupiedSegments.length} occupied` : "Areas"}</span>
+                  <span>{minimapDetailed ? `${homeRelativeAreaLabel(activeSegment)} · ${occupiedSegments.length} occupied` : "Areas"}</span>
                   <div className="desktop-minimap__toolbar-actions">
-                    {!isMobile && !minimapExpanded && <button type="button" aria-label="Use icon mode" title="Use icon mode" disabled={!preferencesLoaded} onClick={() => void changeDesktopMinimap(false)}><MapTrifold aria-hidden="true" /><span>Icon</span></button>}
-                    <button type="button" aria-label={`${minimapExpanded ? "Collapse" : "Expand"} area map, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "area" : "areas"}`} aria-expanded={minimapExpanded} onClick={() => setMinimapExpanded((expanded) => !expanded)}>
-                      {minimapExpanded ? <ArrowsIn aria-hidden="true" /> : <ArrowsOut aria-hidden="true" />}
-                      <span>{minimapExpanded ? "Collapse" : "Expand"}</span>
+                    {!minimapDetailed && <button type="button" aria-label="Use icon mode" title="Use icon mode" disabled={!preferencesLoaded} onClick={() => void changeDesktopMinimap(false)}><MapTrifold aria-hidden="true" /><span>Icon</span></button>}
+                    {!isMobile && <button type="button" aria-label={`${minimapDetailed ? "Collapse" : "Expand"} area map, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "area" : "areas"}`} aria-expanded={minimapDetailed} onClick={() => setMinimapExpanded((expanded) => !expanded)}>
+                      {minimapDetailed ? <ArrowsIn aria-hidden="true" /> : <ArrowsOut aria-hidden="true" />}
+                      <span>{minimapDetailed ? "Collapse" : "Expand"}</span>
                       <b>{occupiedSegments.length}</b>
-                    </button>
+                    </button>}
                   </div>
                 </div>
                 <span className="desktop-minimap__summary">
