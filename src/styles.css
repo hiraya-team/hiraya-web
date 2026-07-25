@@ -2991,7 +2991,7 @@ a:focus-visible {
   }
 
   .menu-bar__actions > button span,
-  .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger span,
+  .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger > span:not(.mobile-window-nav__count),
   .menu-bar__clock,
   .menu-bar__sync span {
     display: none;
@@ -5110,7 +5110,7 @@ a:focus-visible {
   .menu-bar__actions > button,
   .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger { width: var(--control-size); padding: 0; justify-content: center; }
   .menu-bar__actions > button span,
-  .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger span,
+  .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger > span:not(.mobile-window-nav__count),
   .menu-bar__clock,
   .menu-bar__sync span { display: none; }
 }
@@ -5124,6 +5124,7 @@ a:focus-visible {
   .taskbar { display: none; }
   .mobile-window-nav { display: grid; min-width: 0; flex: 1; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: center; margin-inline: 4px; }
   .mobile-window-nav > button,
+  .mobile-window-nav__desktop,
   .mobile-window-nav .mobile-header-menu__trigger { width: 44px; min-width: 44px; height: 44px; padding: 0; border: 0; color: var(--theme-chrome-text); background: transparent; }
   .mobile-window-nav__desktop { display: grid; place-items: center; cursor: pointer; }
   .mobile-window-nav__desktop span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
