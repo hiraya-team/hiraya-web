@@ -214,10 +214,7 @@ function ActionMenuFrame({ menuRef, style, label, onClose, onFocus, children }: 
   if (!mobile) return menu;
   return <div ref={backdropRef} className="action-sheet-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
     <section ref={dialogRef} className="action-sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
-      <button className="action-sheet__handle" type="button" aria-label="Close actions" onClick={(event) => {
-        if (drag.current?.moved) { event.preventDefault(); drag.current = null; return; }
-        onClose();
-      }} onPointerDown={(event) => {
+      <div className="action-sheet__handle" aria-hidden="true" onPointerDown={(event) => {
         if (event.button !== 0) return;
         drag.current = { pointerId: event.pointerId, startY: event.clientY, startedAt: performance.now(), moved: false };
         event.currentTarget.setPointerCapture(event.pointerId);
@@ -239,7 +236,7 @@ function ActionMenuFrame({ menuRef, style, label, onClose, onFocus, children }: 
         if (drag.current?.pointerId !== event.pointerId) return;
         drag.current = null;
         dialogRef.current?.style.removeProperty("transform");
-      }}><span /></button>
+      }}><span /></div>
       {menu}
     </section>
   </div>;

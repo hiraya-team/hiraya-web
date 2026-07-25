@@ -41,7 +41,6 @@ required("#cancel-name").addEventListener("click", () => dialog.close());
 createMenuTrigger.addEventListener("click", () => setCreateMenuOpen(createActions.dataset.open !== "true"));
 mobileFab.addEventListener("click", () => selectedHandles.length ? void showMoreActions() : setCreateMenuOpen(true));
 const createActionsHandle = required<HTMLElement>("#create-actions-handle");
-createActionsHandle.addEventListener("click", () => { if (!sheetDrag?.moved) closeCreateMenu(); });
 createActionsHandle.addEventListener("pointerdown", beginSheetDrag);
 createActionsHandle.addEventListener("pointermove", moveSheetDrag);
 createActionsHandle.addEventListener("pointerup", finishSheetDrag);
