@@ -955,6 +955,7 @@ a:focus-visible {
   text-shadow: 0 1px 3px rgba(3, 13, 14, 0.68);
   cursor: default;
   touch-action: none;
+  -webkit-touch-callout: none;
   user-select: none;
   transition: background 130ms ease, border-color 130ms ease, box-shadow 130ms ease;
   left: var(--file-x);
@@ -2204,6 +2205,7 @@ a:focus-visible {
   background: transparent;
   text-align: left;
   touch-action: pan-y;
+  -webkit-touch-callout: none;
   cursor: default;
 }
 

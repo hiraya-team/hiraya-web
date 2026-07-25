@@ -5,6 +5,12 @@ export type TouchTap = {
   at: number;
 };
 
+export type ContextMenuPress = {
+  pointerType: string;
+  moved: boolean;
+  longPressed: boolean;
+};
+
 const DOUBLE_TAP_DELAY_MS = 400;
 const DOUBLE_TAP_DISTANCE = 24;
 
@@ -19,6 +25,12 @@ export function touchReleaseAction(previous: TouchTap | null, tap: TouchTap, sta
     && previous.id === tap.id
     && tap.at - previous.at <= DOUBLE_TAP_DELAY_MS
     && Math.hypot(tap.x - previous.x, tap.y - previous.y) <= DOUBLE_TAP_DISTANCE) return "open";
+  return "select";
+}
+
+export function contextMenuPressAction(press: ContextMenuPress | null) {
+  if (press?.pointerType !== "touch") return "open";
+  if (press.moved || press.longPressed) return "suppress";
   return "select";
 }
 

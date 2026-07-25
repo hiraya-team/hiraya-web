@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { dismissesSheetDrag, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
+import { contextMenuPressAction, dismissesSheetDrag, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
 
 describe("file icon touch release", () => {
   const valid = { cancelled: false, moved: false, longPressed: false, releasedOnVisibleContent: true };
@@ -17,6 +17,22 @@ describe("file icon touch release", () => {
     expect(touchReleaseAction(null, tap, { ...valid, longPressed: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, moved: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, cancelled: true })).toBe("none");
+  });
+});
+
+describe("file icon context menu press", () => {
+  test("turns an active touch hold into selection", () => {
+    expect(contextMenuPressAction({ pointerType: "touch", moved: false, longPressed: false })).toBe("select");
+  });
+
+  test("suppresses touch context menus after movement or selection", () => {
+    expect(contextMenuPressAction({ pointerType: "touch", moved: true, longPressed: false })).toBe("suppress");
+    expect(contextMenuPressAction({ pointerType: "touch", moved: false, longPressed: true })).toBe("suppress");
+  });
+
+  test("preserves mouse and keyboard context menus", () => {
+    expect(contextMenuPressAction({ pointerType: "mouse", moved: false, longPressed: false })).toBe("open");
+    expect(contextMenuPressAction(null)).toBe("open");
   });
 });
 

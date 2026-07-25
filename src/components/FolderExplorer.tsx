@@ -21,7 +21,7 @@ import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
-import { touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
+import { contextMenuPressAction, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -311,6 +311,18 @@ export function FolderExplorer({
                   }}
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    const current = drag.current;
+                    const action = contextMenuPressAction(current);
+                    if (action !== "open") {
+                      if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+                      if (current) current.longPressTimer = undefined;
+                      if (action === "select" && current) {
+                        current.longPressed = true;
+                        lastTap.current = null;
+                        onLongPressSelect(current.entry, orderedIds);
+                      }
+                      return;
+                    }
                     if (!selectedIds.has(entry.id)) onSelect(entry, { toggle: false, range: false, orderedIds });
                     onContextMenu(entry, event.clientX, event.clientY);
                   }}

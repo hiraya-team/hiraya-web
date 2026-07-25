@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
+import { contextMenuPressAction, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
 
 type Props = {
   entry: DesktopEntry;
@@ -260,7 +260,18 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
         onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) onOpen(); }}
         onContextMenu={(event) => {
           const current = drag.current;
-          if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+          const action = contextMenuPressAction(current);
+          if (action !== "open") {
+            event.preventDefault();
+            if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+            if (current) current.longPressTimer = undefined;
+            if (action === "select" && current) {
+              current.longPressed = true;
+              lastTap.current = null;
+              onLongPressSelect();
+            }
+            return;
+          }
           if (current) {
             current.longPressTimer = undefined;
             current.longPressed = true;
