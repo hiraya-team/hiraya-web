@@ -3074,7 +3074,7 @@ function App({ session }: { session: AuthSession | null }) {
     : notice || (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : appNotifications.at(-1)?.title ?? "");
 
   return (
-    <main className="desktop-shell" data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)}>
+    <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)}>
       <header className="menu-bar">
         {!isMobile && activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
         {!isMobile ? <nav className="taskbar" data-has-overflow={taskbarModel.overflow.length > 0 || undefined} style={{ "--taskbar-visible": taskbarModel.visible.length } as React.CSSProperties} aria-label="Open windows">
@@ -3235,7 +3235,7 @@ function App({ session }: { session: AuthSession | null }) {
           <div className="desktop-state area-empty-state">
             <span className="empty-state__icon"><Desktop size={28} weight="duotone" /></span>
             <h1>This area is empty.</h1>
-            <p>This coordinate region remains available in this viewport after you place a root item or window here.</p>
+            <p>Place a root item or window here to keep this coordinate region available.</p>
             <div className="empty-state__actions">
                <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => setDialog({ type: "create-folder", parentId: null })}><FolderPlus size={17} /> Create folder here</button>
                <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseUpload(null)}><UploadSimple size={17} /> Upload files here</button>

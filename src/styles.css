@@ -5147,7 +5147,33 @@ a:focus-visible {
   .areas-panel__area-heading { align-items: stretch; flex-direction: column; }
   .areas-panel__actions { display: grid; grid-template-columns: 1fr; }
   .areas-panel__actions .button { min-height: 44px; }
-  .empty-state { width: min(390px, calc(100% - 36px)); }
+  .empty-state {
+    top: 12px;
+    width: min(390px, calc(100% - 24px));
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    padding: clamp(16px, calc(18px * var(--theme-density)), 22px);
+    transform: translateX(-50%);
+    overscroll-behavior: contain;
+  }
+  .desktop-shell[data-mobile-selection-toolbar="true"] .empty-state {
+    max-height: calc(100% - 76px - max(12px, env(safe-area-inset-bottom)));
+  }
+  .empty-state__icon {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 12px;
+  }
+  .empty-state__icon svg { width: 23px; height: 23px; }
+  .empty-state h1 {
+    margin-bottom: 6px;
+    font-size: calc(clamp(22px, 7vw, 27px) * var(--theme-type-scale));
+  }
+  .empty-state p { line-height: 1.5; }
+  .empty-state__actions {
+    gap: 6px;
+    margin-top: 18px;
+  }
   .empty-state__actions > *,
   .folder-explorer__empty-actions > * { flex-basis: 100%; }
   .sharing-dialog__backdrop,
