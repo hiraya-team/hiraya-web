@@ -150,7 +150,12 @@ export default function PublicDesktop({ token }: { token: string }) {
     }
   }
 
-  function openEntry(entry: DesktopEntry) { if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id }); else void loadFile(entry); }
+  function openEntry(entry: DesktopEntry) {
+    setSelectedIds(new Set());
+    setMultiSelect(false);
+    if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id });
+    else void loadFile(entry);
+  }
   function selectEntry(entry: DesktopEntry, toggle: boolean) {
     setSelectedIds((current) => {
       if (!toggle) return new Set([entry.id]);

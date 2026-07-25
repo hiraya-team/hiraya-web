@@ -3800,7 +3800,10 @@ function App({ session }: { session: AuthSession | null }) {
                     setMobileMultiSelectScope("desktop");
                     addEntryToSelection("desktop", entry);
                   }}
-                  onOpen={() => void handleOpen(entry)}
+                  onOpen={() => {
+                    replaceSelection("desktop", []);
+                    handleOpen(entry);
+                  }}
                   onMove={(position, targetParentId) => handleDesktopMove(entry, position, targetParentId)}
                   onDragAtEdge={(clientX, clientY) => handleIconDragAtEdge(entry, clientX, clientY)}
                   onDragEnd={finishEdgeNavigation}
@@ -3949,7 +3952,10 @@ function App({ session }: { session: AuthSession | null }) {
                           replaceSelection(app.id, []);
                           navigateExplorerWindow(app.id, nextFolder?.id ?? null);
                         }}
-                        onOpen={handleOpen}
+                        onOpen={(entry) => {
+                          replaceSelection(app.id, []);
+                          handleOpen(entry);
+                        }}
                         onCreateFolder={(parentId) => setDialog({ type: "create-folder", parentId })}
                         onCreateFile={(parentId) => setDialog({ type: "create-file", parentId })}
                         onUpload={chooseUpload}
@@ -4452,15 +4458,24 @@ function App({ session }: { session: AuthSession | null }) {
         <ContextMenu
           menu={contextMenu}
           entry={contextMenuEntry}
-          onOpen={() => handleOpen(contextMenuEntry)}
-          onEditFile={contextMenuEntry.kind === "file" && fileCapabilities(contextMenuEntry).editable ? () => handleEditFile(contextMenuEntry) : undefined}
+          onOpen={() => {
+            replaceSelection(selectionScope, []);
+            handleOpen(contextMenuEntry);
+          }}
+          onEditFile={contextMenuEntry.kind === "file" && fileCapabilities(contextMenuEntry).editable ? () => {
+            replaceSelection(selectionScope, []);
+            handleEditFile(contextMenuEntry);
+          } : undefined}
           openWith={
             contextMenuEntry.kind === "file"
               ? matchingInstalledApps(installedApps, entries, contextMenuEntry).map((app) => ({
                   id: app.appId,
                   label: app.manifest.name,
                   preferred: resolveFileApp(contextMenuEntry, installedApps, entries, fileAssociations)?.app.appId === app.appId,
-                  onOpen: () => void openFileWithApp(app, contextMenuEntry),
+                  onOpen: () => {
+                    replaceSelection(selectionScope, []);
+                    void openFileWithApp(app, contextMenuEntry);
+                  },
                   onSetPreferred: () => {
                     const matcher = associationCandidates(contextMenuEntry)[0];
                     setContextMenu(null);

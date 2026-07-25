@@ -5168,6 +5168,7 @@ a:focus-visible {
 .empty-state,
 .desktop-state--loading,
 .drop-message { background: var(--theme-chrome); }
+.area-empty-state { background: color-mix(in srgb, var(--theme-chrome) 88%, transparent); }
 .app-window,
 .file-dialog,
 .utility-panel-dialog,
