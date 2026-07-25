@@ -100,7 +100,7 @@ import { isAppPackageName, RpcDispatcher } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
-import { installedAppIsAvailable, packageMatchesInstall, removeFileAssociationsForApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
+import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, removeFileAssociationsForApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
@@ -146,10 +146,6 @@ function formatImportBytes(value: number) {
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function samePermissions(left: readonly string[], right: readonly string[]) {
-  return left.length === right.length && left.every((permission) => right.includes(permission));
 }
 
 function transientMenuOpen() {
@@ -796,7 +792,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (!target) continue;
       const current = target !== "root" && target.kind === "file" ? resolveRestoredFileApp(target, installedApps, entriesRef.current, fileAssociations, saved) : null;
       const install = current?.app ?? installedApps.find((app) => app.appId === saved.appId);
-      const identityMatches = target === "root" || target.kind !== "file" ? !saved.digest || Boolean(install && install.appId === saved.appId && install.source === saved.source && install.digest === saved.digest && samePermissions(install.manifest.permissions, saved.permissions ?? [])) : Boolean(current);
+      const identityMatches = target === "root" || target.kind !== "file" ? Boolean(install && installedAppMatchesSavedIdentity(install, saved)) : Boolean(current);
       if (!install || !installedAppIsAvailable(install, entriesRef.current) || !identityMatches) {
         setNotice(`The saved handler ${saved.appId} is unavailable or changed. Open the item again to choose an available app.`);
         continue;
@@ -834,7 +830,7 @@ function App({ session }: { session: AuthSession | null }) {
         const launchTarget = target.targetKind === "root" ? "root" : entriesRef.current.find((entry) => entry.id === target.entryId && entry.kind === target.targetKind);
         const current = launchTarget !== "root" && launchTarget?.kind === "file" ? resolveRestoredFileApp(launchTarget, installedApps, entriesRef.current, fileAssociations, target) : null;
         const install = current?.app ?? installedApps.find((app) => app.appId === target.appId);
-        const identityMatches = launchTarget === "root" || launchTarget?.kind !== "file" ? !target.digest || Boolean(install && install.appId === target.appId && install.source === target.source && install.digest === target.digest && samePermissions(install.manifest.permissions, target.permissions ?? [])) : Boolean(current);
+        const identityMatches = launchTarget === "root" || launchTarget?.kind !== "file" ? Boolean(install && installedAppMatchesSavedIdentity(install, target)) : Boolean(current);
         if (install && launchTarget && identityMatches && installedAppIsAvailable(install, entriesRef.current)) {
           if (current?.app.appId !== target.appId) setNotice(`The saved handler ${target.appId} is unavailable or no longer preferred. Restored with ${install.manifest.name}.`);
           else if (current?.preferredUnavailable) setNotice(`Your preferred app for ${current.preferredUnavailable.matcher} is unavailable. Restored with ${install.manifest.name}.`);

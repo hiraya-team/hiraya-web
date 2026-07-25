@@ -30,7 +30,7 @@ describe("file association resolution", () => {
     expect(resolution?.preferredUnavailable).toEqual({ appId: "missing.editor", matcher: ".txt" });
   });
 
-  test("restores validated preferred system and user handlers and visibly falls back when unavailable", () => {
+  test("silently advances system handlers while strictly validating user handlers", () => {
     const file = { name: "notes.txt", mimeType: "text/plain" };
     const user = { ...text, appId: "user.notes", source: "desktop" as const, packageEntryId: "package", archivePath: null, digest: "b".repeat(64), manifest: { ...text.manifest, id: "user.notes" } };
     const entries = [{ id: "package", kind: "file" as const }];
@@ -39,7 +39,8 @@ describe("file association resolution", () => {
     const fallback = resolveRestoredFileApp(file, [text, generic], [], [{ matcher: ".txt", appId: "missing.editor", createdAt: 1 }], { appId: "missing.editor", source: "desktop", digest: "c".repeat(64), permissions: ["files:read"] });
     expect(fallback?.app.appId).toBe(text.appId);
     expect(fallback?.preferredUnavailable?.appId).toBe("missing.editor");
-    expect(resolveRestoredFileApp(file, [text, generic], [], [], { appId: text.appId, source: text.source, digest: "d".repeat(64), permissions: text.manifest.permissions })).toBeNull();
+    expect(resolveRestoredFileApp(file, [text, generic], [], [], { appId: text.appId, source: text.source, digest: "d".repeat(64), permissions: ["files:read", "theme"] })?.app).toBe(text);
+    expect(resolveRestoredFileApp(file, [text, user, generic], entries, [{ matcher: "text/plain", appId: user.appId, createdAt: 1 }], { appId: user.appId, source: user.source, digest: "d".repeat(64), permissions: user.manifest.permissions })).toBeNull();
   });
 
   test("reserves app packages and internet shortcuts ahead of user mappings", () => {

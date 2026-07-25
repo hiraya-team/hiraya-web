@@ -1,6 +1,6 @@
 import type { DesktopEntry, FileEntry } from "../types";
 import type { FileAssociation, InstalledApp } from "./installed-apps";
-import { installedAppAcceptsFile, installedAppAcceptsMatcher, installedAppIsAvailable, matchingFileType } from "./installed-apps";
+import { installedAppAcceptsFile, installedAppAcceptsMatcher, installedAppIsAvailable, installedAppMatchesSavedIdentity, matchingFileType } from "./installed-apps";
 import { SYSTEM_APP_IDS } from "./system-app-ids";
 import type { SystemAppTarget } from "./types";
 
@@ -73,8 +73,7 @@ export function resolveFileApp(file: Pick<FileEntry, "name" | "mimeType">, apps:
 export function resolveRestoredFileApp(file: Pick<FileEntry, "name" | "mimeType">, apps: readonly InstalledApp[], entries: readonly DesktopEntry[], associations: readonly FileAssociation[], saved: Pick<SystemAppTarget, "appId" | "source" | "digest" | "permissions">): AssociationResolution | null {
   const current = resolveFileApp(file, apps, entries, associations);
   if (!current || current.app.appId !== saved.appId || !saved.digest) return current;
-  if (current.app.source !== saved.source || current.app.digest !== saved.digest || current.app.manifest.permissions.length !== saved.permissions?.length || !current.app.manifest.permissions.every((permission) => saved.permissions?.includes(permission))) return null;
-  return current;
+  return installedAppMatchesSavedIdentity(current.app, saved) ? current : null;
 }
 
 export function matchingAssociation(matcher: string, file: Pick<FileEntry, "name" | "mimeType">): boolean {

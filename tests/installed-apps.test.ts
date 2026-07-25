@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { installedAppAcceptsFile, installedAppIsAvailable, packageMatchesInstall, parseInstalledApp, removeFileAssociationsForApp, removeInstalledApp, replaceInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
+import { installedAppAcceptsFile, installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, parseInstalledApp, removeFileAssociationsForApp, removeInstalledApp, replaceInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
 import { resolveFileApp } from "../src/apps/file-associations";
 
 function install(version = "1.0.0", digest = "a".repeat(64), packageEntryId = "package-one"): InstalledApp {
@@ -23,6 +23,15 @@ describe("installed apps", () => {
     expect(apps).toEqual([updated]);
     expect(resolveFileApp({ name: "notes.txt", mimeType: "text/plain" }, apps, [{ id: updated.packageEntryId, kind: "file" }], associations)?.app).toEqual(updated);
     expect(removeInstalledApp([updated], updated.appId)).toEqual([]);
+  });
+
+  test("trusts updated bundled identities but not updated desktop packages", () => {
+    const desktop = install();
+    const system = parseInstalledApp({ ...desktop, source: "system", packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app" });
+    const changed = { appId: desktop.appId, source: desktop.source, digest: "b".repeat(64), permissions: ["files:read", "theme"] } as const;
+    expect(installedAppMatchesSavedIdentity(system, { ...changed, source: "system" })).toBe(true);
+    expect(installedAppMatchesSavedIdentity(desktop, changed)).toBe(false);
+    expect(installedAppMatchesSavedIdentity(desktop, { appId: desktop.appId })).toBe(true);
   });
 
   test("reconciles associations immediately when an app is uninstalled", () => {

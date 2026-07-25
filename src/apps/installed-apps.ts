@@ -1,5 +1,6 @@
 import { parseManifestV1, type HirayaAppManifestV1 } from "@hiraya/apps-contracts";
 import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
+import type { SystemAppTarget } from "./types";
 
 type InstalledAppBase = Readonly<{
   appId: string;
@@ -86,6 +87,16 @@ export function parseInstalledApp(value: unknown): InstalledApp {
 
 export function packageMatchesInstall(install: InstalledApp | undefined, packageEntryId: string, digest: string, version: string): boolean {
   return Boolean(install?.source === "desktop" && install.packageEntryId === packageEntryId && install.digest === digest && install.version === version);
+}
+
+export function installedAppMatchesSavedIdentity(install: InstalledApp, saved: Pick<SystemAppTarget, "appId" | "source" | "digest" | "permissions">): boolean {
+  if (install.appId !== saved.appId) return false;
+  if (!saved.digest) return true;
+  if (install.source === "system" && saved.source === "system") return true;
+  return install.source === saved.source
+    && install.digest === saved.digest
+    && install.manifest.permissions.length === saved.permissions?.length
+    && install.manifest.permissions.every((permission) => saved.permissions?.includes(permission));
 }
 
 export function replaceInstalledApp(current: readonly InstalledApp[], value: unknown): InstalledApp[] {
