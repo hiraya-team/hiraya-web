@@ -5442,7 +5442,7 @@ a:focus-visible {
 .notification-card .notification-dismiss:focus-visible { color: var(--theme-text); background: var(--theme-window-muted); }
 
 /* The compact navigator expands in place without changing desktop geometry. */
-.desktop-minimap__grid-viewport { overflow: hidden; }
+.desktop-minimap__grid-viewport { min-height: 0; overflow: hidden; }
 .desktop-minimap__grid {
   width: clamp(56px, calc(var(--minimap-columns) * 28px), 196px);
   height: clamp(38px, calc(var(--minimap-rows) * 23px), 132px);
@@ -5460,7 +5460,7 @@ a:focus-visible {
 .desktop-minimap[data-expanded] .desktop-minimap__toolbar { margin-bottom: 9px; }
 .desktop-minimap[data-expanded] .desktop-minimap__grid-viewport { overflow: auto; overscroll-behavior: contain; }
 .desktop-minimap[data-expanded] .desktop-minimap__grid {
-  width: min(100%, calc(var(--minimap-columns) * 226px));
+  width: min(100%, calc(var(--minimap-columns) * 360px / var(--minimap-rows)));
   height: auto;
   min-width: calc(var(--minimap-columns) * 82px);
   min-height: 0;
@@ -5565,7 +5565,7 @@ a:focus-visible {
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar { display: flex; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar > span { display: block; overflow: hidden; text-overflow: ellipsis; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid {
-    width: min(100%, calc(var(--minimap-columns) * 326px));
+    width: min(100%, calc(var(--minimap-columns) * 326px / var(--minimap-rows)));
     height: auto;
     min-width: calc(var(--minimap-columns) * 74px);
     min-height: 0;
