@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, CloudCheck, CloudSlash, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -423,22 +423,7 @@ function App({ session }: { session: AuthSession | null }) {
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
-  const mobileFileParentId = focusedExplorer?.folderId ?? null;
-  const showMobileFileFab = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId);
-  const mobileFabPlacement = (() => {
-    const candidates = [
-      { id: "bottom-right", x: desktopSize.width - 45, y: desktopSize.height - 45 },
-      { id: "bottom-left", x: 45, y: desktopSize.height - 45 },
-      { id: "top-right", x: desktopSize.width - 45, y: 45 },
-      { id: "top-left", x: 45, y: 45 },
-    ];
-    const positions = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, desktopSize).local);
-    return candidates.map((candidate) => ({ ...candidate, clearance: positions.length ? Math.min(...positions.map((position) => {
-      const dx = Math.max(position.x - candidate.x, 0, candidate.x - position.x - iconMetrics.width);
-      const dy = Math.max(position.y - candidate.y, 0, candidate.y - position.y - iconMetrics.height);
-      return Math.hypot(dx, dy);
-    })) : Number.POSITIVE_INFINITY })).sort((left, right) => right.clearance - left.clearance)[0].id;
-  })();
+  const showMobileSelectionToolbar = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId) && mobileFileSelection.length > 0;
   const dialogEntry = dialog?.type === "rename" ? entryIndex.byId.get(dialog.entryId) ?? null : dialog?.type === "delete" ? entryIndex.byId.get(dialog.entryIds[0]) ?? null : null;
   const contextMenuEntry = contextMenu?.type === "entry" ? entryIndex.byId.get(contextMenu.entryId) ?? null : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
@@ -3441,14 +3426,13 @@ function App({ session }: { session: AuthSession | null }) {
         event.target.value = "";
       }} />
 
-      {showMobileFileFab && <button className="mobile-file-fab" data-placement={mobileFabPlacement} type="button" aria-label={mobileFileSelection.length ? `Actions for ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}` : "Create or import an item"} onClick={() => {
-        if (mobileFileSelection.length) openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth - 20, window.innerHeight - 20);
-        else {
-          replaceSelection(mobileFileSurface, []);
-          const position = mobileFileParentId === null ? projectLogicalPosition(positionFor(null), desktopSize).local : positionFor(mobileFileParentId);
-          setContextMenu({ type: "desktop", parentId: mobileFileParentId, x: window.innerWidth - 28, y: window.innerHeight - 28, position });
-        }
-      }}>{mobileFileSelection.length ? <><DotsThree size={24} weight="bold" /><span>{mobileFileSelection.length}</span></> : <Plus size={24} weight="bold" />}</button>}
+      {showMobileSelectionToolbar && <div className="mobile-selection-toolbar" role="toolbar" aria-label={`Actions for ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`}>
+        <span className="mobile-selection-toolbar__count" aria-hidden="true">{mobileFileSelection.length}</span>
+        <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}><Copy size={20} /></button>
+        <button type="button" title="Move" aria-label={`Move ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => { setMoveDialogSubmitting(false); setMoveDialogEntryIds(mobileFileSelection.map((entry) => entry.id)); }}><FolderSimplePlus size={20} /></button>
+        <button className="mobile-selection-toolbar__danger" type="button" title={syncStatus !== "local" ? "Move to Trash" : "Delete permanently"} aria-label={`${syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}: ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => setDialog({ type: "delete", entryIds: mobileFileSelection.map((entry) => entry.id) })}><Trash size={20} /></button>
+        <button type="button" title="More actions" aria-label="More actions" aria-haspopup="dialog" onClick={() => openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth / 2, window.innerHeight - 20)}><DotsThree size={22} weight="bold" /></button>
+      </div>}
 
       {(notificationTotal > 0 || importProgress || showUpdateToast) && <aside className="shell-status-region" aria-label="Notifications and progress">
         {notificationTotal > 0 && <div className="notification-stack">
