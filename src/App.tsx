@@ -436,7 +436,7 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapIconMode = !showDesktopMinimap && !minimapDetailed;
   const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
-  const minimapWidth = (minimapIconMode ? 44 : Math.min(112, Math.max(42, segmentColumns * 24)) + 26) + (minimapWindowButtonCount ? minimapWindowButtonCount * 38 + 9 : 0);
+  const minimapWidth = (minimapIconMode ? 44 : Math.min(112, Math.max(42, segmentColumns * 24)) + 26) + (minimapDetailed && minimapWindowButtonCount ? minimapWindowButtonCount * 38 + 9 : 0);
   const minimapHeight = Math.min(84, Math.max(30, segmentRows * 20)) + 27;
   const minimapObscured =
     !minimapExpanded &&
@@ -4121,13 +4121,13 @@ function App({ session }: { session: AuthSession | null }) {
 
       {(isMobile || activeDesktopId) && (
         <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-icon-mode={minimapIconMode || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions and open apps`}>
-          {runningApps.length > 0 && (
+          {minimapDetailed && runningApps.length > 0 && (
             <div className="desktop-minimap__apps" aria-label="Open apps">
               {minimapWindowModel.visible.map(({ app }) => {
                 const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
                 const label = runningAppLabel(app);
                 return (
-                  <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`${app.minimized ? "Restore" : focusedAppId === app.id ? "Minimize" : "Switch to"} ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => (focusedAppId === app.id && !app.minimized ? minimizeApp(app.id) : focusApp(app.id))}>
+                  <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}>
                     <AppIcon kind={app.kind} entry={entry} size={16} />
                   </button>
                 );
