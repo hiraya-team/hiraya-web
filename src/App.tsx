@@ -65,7 +65,7 @@ import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, l
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
-import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, type DesktopRoute } from "./lib/routes";
+import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, type DesktopRoute } from "./lib/routes";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle, type CustomTheme, type ThemeState } from "./lib/themes";
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, reorderSurfaceSegments, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
@@ -2170,10 +2170,11 @@ function App({ session }: { session: AuthSession | null }) {
          source: install.source,
          digest: install.digest,
          permissions: [...install.manifest.permissions],
-       } : undefined;
+      } : undefined;
       const id = systemTarget ? builtinAppTargetId(systemTarget) : `sandbox:${install.packageEntryId}:${crypto.randomUUID()}`;
+      const shouldFocus = !systemTarget || routeTargetsAppEntry(routeRef.current, systemTarget);
       const existing = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === id);
-      if (existing) { focusApp(existing.id); return; }
+      if (existing) { if (shouldFocus) focusApp(existing.id); return; }
       pendingInstanceId = id;
       let base = createAppBase(id, "sandbox");
       if (appPackage.manifest.window) {
@@ -2204,7 +2205,7 @@ function App({ session }: { session: AuthSession | null }) {
            arguments: install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
           theme: mapThemeTokens(activeTheme),
         },
-        window: { focused: true, maximized: false, fullscreen: false, width: Math.round(base.bounds.width), height: Math.round(base.bounds.height) },
+        window: { focused: shouldFocus, maximized: false, fullscreen: false, width: Math.round(base.bounds.width), height: Math.round(base.bounds.height) },
         title: appPackage.manifest.name,
       });
       pendingHost = host;
@@ -2261,7 +2262,7 @@ function App({ session }: { session: AuthSession | null }) {
       });
       const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, ...(systemTarget ? { systemTarget } : {}) };
       updateRunningApps([...runningAppsRef.current, app]);
-      setFocusedApp(id);
+      if (shouldFocus) setFocusedApp(id);
       pendingInstanceId = null;
       pendingHost = null;
     } catch (openError) {

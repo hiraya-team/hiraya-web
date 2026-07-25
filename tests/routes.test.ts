@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { API_ROUTES } from "../src/lib/api-routes";
-import { formatDesktopRoute, parseDesktopRoute } from "../src/lib/routes";
+import { formatDesktopRoute, parseDesktopRoute, routeTargetsAppEntry } from "../src/lib/routes";
 
 describe("canonical routes", () => {
   test("round-trips desktop areas and rejects old hashes", () => {
@@ -28,5 +28,13 @@ describe("canonical routes", () => {
     expect(formatDesktopRoute({ desktopId: "desk", column: 0, row: -1, propertiesEntryId: "entry" })).toBe("#/desktops/desk/areas/0/-1/properties/entry");
     expect(formatDesktopRoute({ desktopId: "desk", column: 3, row: 4, settings: true })).toBe("#/desktops/desk/areas/3/4/settings");
     expect(parseDesktopRoute("#/desktops/desk/areas/0/0/file/a/properties/b")).toBeNull();
+  });
+
+  test("keeps delayed app launches behind the current route", () => {
+    const folderRoute = { desktopId: "desk", column: 0, row: 0, explorerFolderId: "folder" };
+    expect(routeTargetsAppEntry(folderRoute, { targetKind: "file", entryId: "file" })).toBeFalse();
+    expect(routeTargetsAppEntry(folderRoute, { targetKind: "folder", entryId: "folder" })).toBeTrue();
+    expect(routeTargetsAppEntry({ ...folderRoute, explorerFolderId: null }, { targetKind: "root", entryId: null })).toBeTrue();
+    expect(routeTargetsAppEntry({ desktopId: "desk", column: 0, row: 0, fileId: "file" }, { targetKind: "file", entryId: "file" })).toBeTrue();
   });
 });

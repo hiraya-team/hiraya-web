@@ -12,6 +12,13 @@ export type DesktopRoute = {
   settings?: true;
 };
 
+export function routeTargetsAppEntry(route: DesktopRoute | null, target: { targetKind: "file" | "folder" | "root"; entryId: string | null }) {
+  if (!route) return false;
+  if (target.targetKind === "file") return route.fileId === target.entryId;
+  if (target.targetKind === "folder") return route.explorerFolderId === target.entryId;
+  return route.explorerFolderId === null;
+}
+
 function decodeId(value: string) {
   try {
     const decoded = decodeURIComponent(value);
