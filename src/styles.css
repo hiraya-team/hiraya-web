@@ -5465,10 +5465,12 @@ a:focus-visible {
   background: color-mix(in srgb, var(--theme-chrome) 94%, transparent);
   box-shadow: var(--theme-elevation-3);
 }
-.desktop-minimap[data-expanded] .desktop-minimap__toolbar { margin-bottom: 9px; }
+.desktop-minimap[data-expanded] .desktop-minimap__toolbar { grid-row: 1; margin-bottom: 9px; }
+.desktop-minimap[data-expanded] .desktop-minimap__summary { grid-row: 2; }
 .desktop-minimap[data-expanded] .desktop-minimap__grid-viewport {
   container-type: size;
   display: grid;
+  grid-row: 3;
   overflow: hidden;
   place-items: center;
   touch-action: none;
