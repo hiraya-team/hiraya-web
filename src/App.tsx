@@ -4141,7 +4141,7 @@ function App({ session }: { session: AuthSession | null }) {
                 {runningApps.length > 0 && (
                   <div className="desktop-minimap__app-switcher">
                     <span>Open apps</span>
-                    <div className="desktop-minimap__apps" aria-label="Open apps">
+                    <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
                         const label = runningAppLabel(app);
