@@ -50,7 +50,7 @@ function useRovingMenu(ref: RefObject<HTMLDivElement | null>) {
     const items = visibleMenuItems(menu);
     const current = items.find((item) => item === document.activeElement) ?? items[0];
     for (const item of items) item.tabIndex = item === current ? 0 : -1;
-    if (current && !menu.contains(document.activeElement)) requestAnimationFrame(() => current.focus());
+    if (current && !menu.contains(document.activeElement) && !menu.closest(".action-sheet")) requestAnimationFrame(() => current.focus());
   });
   return (event: React.FocusEvent<HTMLDivElement>) => {
     const target = event.target;
@@ -126,7 +126,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
   ];
 
   return <ActionMenuFrame menuRef={position.ref} style={position.style} label={selectionCount > 1 ? `Actions for ${selectionCount} selected items` : `Actions for ${entry.name}`} onClose={onClose} onFocus={onFocus}>
-      {selectionCount === 1 && <button type="button" role="menuitem" autoFocus onClick={onOpen}>
+      {selectionCount === 1 && <button type="button" role="menuitem" onClick={onOpen}>
         <FolderOpen size={17} /> Open
       </button>}
       {selectionCount === 1 && entry.kind === "file" && onEditFile && <button type="button" role="menuitem" disabled={readOnly} onClick={onEditFile}>
@@ -177,7 +177,7 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
   const onFocus = useRovingMenu(position.ref);
 
   return <ActionMenuFrame menuRef={position.ref} style={position.style} label="Create and desktop actions" onClose={onClose} onFocus={onFocus}>
-      <button type="button" role="menuitem" autoFocus={!readOnly} disabled={readOnly} onClick={onCreateFile}>
+      <button type="button" role="menuitem" disabled={readOnly} onClick={onCreateFile}>
         <FilePlus size={17} /> New text file
       </button>
       <button type="button" role="menuitem" disabled={readOnly} onClick={onCreateFolder}>
@@ -190,7 +190,7 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
         <FolderOpen size={17} /> Import folder
       </button>
       {onPaste && <button type="button" role="menuitem" disabled={readOnly} onClick={onPaste}><ClipboardText size={17} /> Paste<kbd>Ctrl/⌘ V</kbd></button>}
-      {onSettings && <button className="context-menu__separated" type="button" role="menuitem" autoFocus={readOnly} onClick={onSettings}>
+      {onSettings && <button className="context-menu__separated" type="button" role="menuitem" onClick={onSettings}>
         <GearSix size={17} /> Settings
       </button>}
   </ActionMenuFrame>;
