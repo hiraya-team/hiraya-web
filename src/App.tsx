@@ -125,6 +125,7 @@ import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRela
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
+import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
 type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
@@ -133,7 +134,7 @@ type SettingsApp = BaseRunningApp & { kind: "settings" };
 type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
 type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
 type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
-type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[] };
+type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 const DESKTOP_LONG_PRESS_MS = 500;
 const ONBOARDING_VERSION = 1;
@@ -205,7 +206,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const isMobile = useMediaQuery(MOBILE_WINDOW_QUERY);
   const compactChrome = useMediaQuery(COMPACT_CHROME_QUERY);
-  const [settingsPage, setSettingsPage] = useState<"main" | "themes" | "activity" | "apps">("main");
+  const [settingsPage, setSettingsPage] = useState<AppHistorySettingsPage>("main");
   const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
   const [fileAssociations, setFileAssociations] = useState<FileAssociation[]>([]);
   const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
@@ -291,9 +292,10 @@ function App({ session }: { session: AuthSession | null }) {
   const restoreHistoryAppsRef = useRef<(apps: WindowTarget[]) => void>(() => undefined);
   const restoreRunningAppsRef = useRef<(session: WindowSession, entries: DesktopEntry[]) => void>(() => undefined);
   const applyOpenQueryRef = useRef<(entries: DesktopEntry[], layout: DesktopLayout) => void>(() => undefined);
-  const closeAppRef = useRef<(id: string, consultLifecycle?: boolean) => Promise<boolean>>(async () => false);
+  const closeAppRef = useRef<(id: string, consultLifecycle?: boolean, syncRoute?: boolean) => Promise<boolean>>(async () => false);
   const runningAppsRef = useRef<RunningApp[]>([]);
   const focusedAppIdRef = useRef<string | null>(null);
+  const settingsPageRef = useRef<AppHistorySettingsPage>("main");
   const nextWindowZRef = useRef(1);
   const fileLoadGenerationsRef = useRef<Record<string, number>>({});
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
@@ -327,6 +329,7 @@ function App({ session }: { session: AuthSession | null }) {
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
+  const restoringHistoryRef = useRef(false);
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
   desktopSizeRef.current = desktopSize;
   desktopsRef.current = desktops;
@@ -502,7 +505,14 @@ function App({ session }: { session: AuthSession | null }) {
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
   }, [appCapabilities, canMutate]);
   useEffect(() => {
-    if (!canViewActivity && settingsPage === "activity") setSettingsPage("main");
+    if (!canViewActivity && settingsPage === "activity") {
+      const current = window.history.state;
+      if (historySettingsPage(current) === "activity") window.history.back();
+      else {
+        settingsPageRef.current = "main";
+        setSettingsPage("main");
+      }
+    }
   }, [canViewActivity, settingsPage]);
   useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
@@ -611,6 +621,10 @@ function App({ session }: { session: AuthSession | null }) {
     });
   }
 
+  function runningAppIds(apps = runningAppsRef.current) {
+    return apps.map((app) => app.id);
+  }
+
   function historyApps(state: unknown) {
     if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;
     try {
@@ -620,15 +634,16 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function routeHistoryState(apps: WindowTarget[], parentHash?: string): RouteHistoryState {
-    return { hiraya: true, schemaVersion: 1, ...(parentHash ? { parentHash } : {}), apps };
+  function routeHistoryState(apps: WindowTarget[], parentHash?: string, instances = runningAppIds(), page = settingsPageRef.current): RouteHistoryState {
+    return { hiraya: true, schemaVersion: 1, ...(parentHash ? { parentHash } : {}), apps, instances, settingsPage: page };
   }
 
   function writeRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
     const hash = formatDesktopRoute(next);
     if (mode === "push" && hash !== window.location.hash) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
-      window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentHash : undefined), "", window.location.href);
+      const previousInstances = current?.hiraya ? historyInstanceIds(current, (previousApps ?? runningAppTargets()).map(builtinAppTargetId)) : (previousApps ?? runningAppTargets()).map(builtinAppTargetId);
+      window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentHash : undefined, previousInstances), "", window.location.href);
       window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash), "", hash);
     } else if (mode === "replace" || hash !== window.location.hash) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
@@ -650,6 +665,21 @@ function App({ session }: { session: AuthSession | null }) {
   function navigateRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
     const normalized = normalizeDesktopRoute(next, entriesRef.current, activeDesktopIdRef.current);
     if (normalized) writeRoute(normalized, mode, previousApps);
+  }
+
+  function navigateSettingsPage(next: AppHistorySettingsPage) {
+    const previous = settingsPageRef.current;
+    if (next === previous) return;
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (next !== "main" && previous === "main" && current?.hiraya) {
+      window.history.replaceState(routeHistoryState(runningAppTargets(), current.parentHash, runningAppIds(), "main"), "", window.location.href);
+      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash, runningAppIds(), next), "", window.location.href);
+    } else if (next === "main" && current?.hiraya && historySettingsPage(current) !== "main") {
+      window.history.back();
+      return;
+    }
+    settingsPageRef.current = next;
+    setSettingsPage(next);
   }
 
   function routeForApp(app: RunningApp | null, current: DesktopRoute): DesktopRoute {
@@ -708,8 +738,11 @@ function App({ session }: { session: AuthSession | null }) {
     if (syncRoute && currentRoute) goToSegment(segmentForApp(target), "replace", { ...target, minimized: false, zIndex });
   }
 
-  function closeApp(id: string) {
-    if (id === builtinAppTargetId({ kind: "settings" })) setSettingsPage("main");
+  function closeApp(id: string, syncRoute = true) {
+    if (id === builtinAppTargetId({ kind: "settings" })) {
+      settingsPageRef.current = "main";
+      setSettingsPage("main");
+    }
     delete fileDirtyRef.current[id];
     setDirtyAppIds((current) => {
       if (!current.has(id)) return current;
@@ -731,11 +764,11 @@ function App({ session }: { session: AuthSession | null }) {
       const next = topAppInSegment(remaining, activeSegment);
       setFocusedApp(next?.id ?? null);
       const currentRoute = routeRef.current;
-      if (currentRoute) navigateRoute(routeForApp(next, currentRoute), "replace");
+      if (syncRoute && !restoringHistoryRef.current && currentRoute) navigateRoute(routeForApp(next, currentRoute), "replace");
     }
   }
 
-  async function requestCloseApp(id: string, consultLifecycle = true): Promise<boolean> {
+  async function requestCloseApp(id: string, consultLifecycle = true, syncRoute = true): Promise<boolean> {
     const target = runningAppsRef.current.find((app) => app.id === id);
     if (!target) return true;
     if (target.kind === "sandbox" && consultLifecycle) {
@@ -745,7 +778,7 @@ function App({ session }: { session: AuthSession | null }) {
     return closeWithDirtyCheck({
       dirty,
       confirmDiscard: () => requestConfirmation({ title: "Discard unsaved changes?", message: target.kind === "sandbox" ? "Close this app and discard its unsaved changes?" : "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }),
-      close: () => closeApp(id),
+      close: () => closeApp(id, syncRoute),
     });
   }
 
@@ -1222,7 +1255,14 @@ function App({ session }: { session: AuthSession | null }) {
     }
     if (navigationReadyRef.current && windowSessionRestored && routeHistoryReady) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
-      window.history.replaceState(routeHistoryState(runningAppTargets(runningApps), current?.hiraya ? current.parentHash : undefined), "", window.location.href);
+      window.history.replaceState({
+        hiraya: true,
+        schemaVersion: 1,
+        ...(current?.hiraya && current.parentHash ? { parentHash: current.parentHash } : {}),
+        apps: runningAppTargets(runningApps),
+        instances: runningAppIds(runningApps),
+        settingsPage: current?.hiraya ? historySettingsPage(current) : settingsPageRef.current,
+      } satisfies RouteHistoryState, "", window.location.href);
     }
   }, [routeHistoryReady, runningApps, windowSessionRestored]);
 
@@ -1316,7 +1356,7 @@ function App({ session }: { session: AuthSession | null }) {
   }, [actionSheetOpen]);
 
   useEffect(() => {
-    function restoreRoute(state?: unknown) {
+    async function restoreRoute(state?: unknown) {
       if (!navigationReadyRef.current) return;
       setDialog(null);
       setContextMenu(null);
@@ -1331,18 +1371,42 @@ function App({ session }: { session: AuthSession | null }) {
         return;
       }
       const apps = historyApps(state);
-      if (apps) restoreHistoryAppsRef.current(apps);
+      if (apps) {
+        const destinationIds = historyInstanceIds(state, apps.map(builtinAppTargetId));
+        const removedIds = removedHistoryInstanceIds(runningAppIds(), destinationIds);
+        restoringHistoryRef.current = true;
+        try {
+          for (const id of removedIds) {
+            if (!(await closeAppRef.current(id, true, false))) {
+              window.history.forward();
+              return;
+            }
+          }
+        } finally {
+          restoringHistoryRef.current = false;
+        }
+        restoreHistoryAppsRef.current(apps);
+        const restoredSettingsPage = historySettingsPage(state);
+        settingsPageRef.current = restoredSettingsPage;
+        setSettingsPage(restoredSettingsPage);
+      }
       applyLocationRouteRef.current();
     }
+    let restoringPopState = false;
     const onPopState = (event: PopStateEvent) => {
       if (actionSheetHistoryRef.current) {
         actionSheetHistoryRef.current = null;
         setContextMenu(null);
         return;
       }
-      restoreRoute(event.state);
+      restoringPopState = true;
+      void restoreRoute(event.state).finally(() => {
+        restoringPopState = false;
+      });
     };
-    const onHashChange = () => restoreRoute();
+    const onHashChange = () => {
+      if (!restoringPopState) void restoreRoute();
+    };
     window.addEventListener("popstate", onPopState);
     window.addEventListener("hashchange", onHashChange);
     return () => {
@@ -2427,6 +2491,10 @@ function App({ session }: { session: AuthSession | null }) {
       const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, ...(systemTarget ? { systemTarget } : {}) };
       updateRunningApps([...runningAppsRef.current, app]);
       if (shouldFocus) setFocusedApp(id);
+      if (!systemTarget && launchSource !== "restore") {
+        const current = window.history.state as Partial<RouteHistoryState> | null;
+        if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash), "", window.location.href);
+      }
       pendingInstanceId = null;
       pendingHost = null;
     } catch (openError) {
@@ -2864,6 +2932,20 @@ function App({ session }: { session: AuthSession | null }) {
     if (currentRoute) navigateRoute({ desktopId: activeDesktopIdRef.current, column: currentRoute.column, row: currentRoute.row }, "replace");
   }
 
+  function navigateBack() {
+    if (settingsPageRef.current !== "main" && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
+      navigateSettingsPage("main");
+      return;
+    }
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (current?.hiraya && current.parentHash !== undefined) {
+      window.history.back();
+      return;
+    }
+    const focusedId = focusedAppIdRef.current;
+    if (focusedId) void requestCloseApp(focusedId);
+  }
+
   windowCommandRef.current = { maximize: toggleMaximizeApp, move: moveAppToArea };
 
   function edgeAt(clientX: number, clientY: number) {
@@ -3244,14 +3326,14 @@ function App({ session }: { session: AuthSession | null }) {
           <nav className="mobile-window-nav" aria-label="Workspace navigation">
             <div className="mobile-window-nav__leading">
               {focusedApp?.kind === "settings" && settingsPage !== "main" ? (
-                <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={() => setSettingsPage("main")}>
+                <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
                   <ArrowLeft size={18} />
                   <span>Settings</span>
                 </button>
               ) : focusedApp ? (
-                <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Desktop" onClick={showDesktop}>
-                  <Desktop size={18} />
-                  <span>Desktop</span>
+                <button type="button" className="mobile-window-nav__desktop" aria-label={`Back from ${runningAppLabel(focusedApp)}`} onClick={navigateBack}>
+                  <ArrowLeft size={18} />
+                  <span>Back</span>
                 </button>
               ) : (
                 activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />
@@ -3748,7 +3830,7 @@ function App({ session }: { session: AuthSession | null }) {
                 canMoveArea={!isMobile}
                 onToggleMaximize={toggleMaximizeApp}
                 onMoveArea={moveAppToArea}
-                onShowDesktop={showDesktop}
+                onShowDesktop={navigateBack}
                 onSwitchWindow={() => setActivePanel("windows")}
                 titleArea={
                   <div>
@@ -3809,7 +3891,7 @@ function App({ session }: { session: AuthSession | null }) {
                     {app.kind === "settings" && (
                       <SettingsWindow
                         page={settingsPage}
-                        onPageChange={setSettingsPage}
+                        onPageChange={navigateSettingsPage}
                         mobileHeaderElements={isMobile ? headerElements : undefined}
                         layout={layout}
                         activeDesktopId={activeDesktopId}
