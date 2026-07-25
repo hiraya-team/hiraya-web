@@ -5373,7 +5373,7 @@ a:focus-visible {
 .context-menu__submenu > [role="menu"] button { text-align: left; }
 .context-menu__submenu-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; }
 .context-menu__submenu-item-primary { width: 100%; min-width: 0; padding-left: 10px; }
-.context-menu__submenu > [role="menu"] .context-menu__submenu-item-secondary { width: auto; min-width: 78px; justify-content: center; padding-inline: 9px; color: color-mix(in srgb, var(--theme-chrome-text) 72%, transparent); font-size: max(12px, calc(9.5px * var(--theme-type-scale))); }
+.context-menu__submenu > [role="menu"] .context-menu__submenu-item-secondary { width: auto; min-width: 92px; justify-content: center; padding-inline: 9px; color: color-mix(in srgb, var(--theme-chrome-text) 72%, transparent); font-size: max(12px, calc(9.5px * var(--theme-type-scale))); white-space: nowrap; }
 .context-menu__submenu-item-icon { display: grid; place-items: center; }
 .context-menu__submenu-item-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .context-menu__submenu-item-meta { margin-left: auto; color: color-mix(in srgb, var(--theme-chrome-text) 58%, transparent); font-size: max(11px, calc(9px * var(--theme-type-scale))); }
