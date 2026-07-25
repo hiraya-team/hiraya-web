@@ -4037,7 +4037,7 @@ function App({ session }: { session: AuthSession | null }) {
       />
 
       {showMobileSelectionToolbar && (
-        <MobileSelectionToolbar count={mobileFileSelection.length} selectionMode={mobileSelectionMode} onDone={() => replaceSelection(mobileFileSurface, [])}>
+        <MobileSelectionToolbar count={mobileFileSelection.length} selectionMode={mobileSelectionMode}>
           <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}>
             <Copy size={20} />
           </button>

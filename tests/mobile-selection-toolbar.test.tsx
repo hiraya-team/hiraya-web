@@ -12,15 +12,15 @@ describe("MobileSelectionToolbar", () => {
     expect(markup).not.toContain("Done selecting");
   });
 
-  test("announces multiselect mode and provides a Done control", () => {
-    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={3} selectionMode onDone={() => undefined} />);
+  test("announces multiselect mode without presenting an exit control", () => {
+    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={3} selectionMode />);
 
     expect(markup).toContain('aria-label="Selection mode: 3 selected items"');
     expect(markup).toContain('role="status"');
     expect(markup).toContain('aria-live="polite"');
     expect(markup).toContain("Selecting");
     expect(markup).toContain(">3<");
-    expect(markup).toContain('aria-label="Done selecting"');
-    expect(markup).toContain(">Done<");
+    expect(markup).not.toContain("Done selecting");
+    expect(markup).not.toContain(">Done<");
   });
 });
