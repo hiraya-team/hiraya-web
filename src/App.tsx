@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, MapTrifold, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -239,6 +239,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
   const [cachedSearchResults, setCachedSearchResults] = useState<DesktopSearchResult[]>([]);
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
+  const [showDesktopMinimap, setShowDesktopMinimap] = useState(true);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -325,7 +326,7 @@ function App({ session }: { session: AuthSession | null }) {
   const unpinOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
   const windowCommandRef = useRef<{ maximize: (id: string) => void; move: (id: string, direction: "left" | "right" | "up" | "down") => void }>({ maximize: () => {}, move: () => {} });
   const autoUpdateRef = useRef(true);
-  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0 });
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
@@ -1164,6 +1165,7 @@ function App({ session }: { session: AuthSession | null }) {
         setAutoUpdate(preferences.autoUpdate);
         setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
+        setShowDesktopMinimap(preferences.showDesktopMinimap);
         setPreferencesLoaded(true);
         checkAutomatically();
       })
@@ -1741,6 +1743,19 @@ function App({ session }: { session: AuthSession | null }) {
       localPreferencesRef.current = previous;
       setSearchAllDesktops(previous.searchAllDesktops);
       setError("The search preference could not be saved.");
+    }
+  }
+
+  async function changeDesktopMinimap(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, showDesktopMinimap: enabled };
+    localPreferencesRef.current = next;
+    setShowDesktopMinimap(enabled);
+    try { await saveLocalPreferences(next); }
+    catch {
+      localPreferencesRef.current = previous;
+      setShowDesktopMinimap(previous.showDesktopMinimap);
+      setError("The desktop area map preference could not be saved.");
     }
   }
 
@@ -3059,7 +3074,8 @@ function App({ session }: { session: AuthSession | null }) {
     <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)}>
       <header className="menu-bar">
         {!isMobile && activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
-        {!isMobile ? <nav className="taskbar" data-has-overflow={taskbarModel.overflow.length > 0 || undefined} style={{ "--taskbar-visible": taskbarModel.visible.length } as React.CSSProperties} aria-label="Open windows">
+        {!isMobile ? <nav className="taskbar" data-has-overflow={taskbarModel.overflow.length > 0 || undefined} style={{ "--taskbar-visible": taskbarModel.visible.length } as React.CSSProperties} aria-label="Desktop taskbar">
+          <button className="taskbar__minimap-toggle" type="button" aria-label={`${showDesktopMinimap ? "Hide" : "Show"} desktop area map`} aria-pressed={showDesktopMinimap} title={`${showDesktopMinimap ? "Hide" : "Show"} desktop area map`} disabled={!preferencesLoaded} onClick={() => void changeDesktopMinimap(!showDesktopMinimap)}><MapTrifold size={16} weight="duotone" /></button>
           {taskbarModel.visible.map(({ app }) => {
             const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const label = runningAppLabel(app);
@@ -3214,7 +3230,7 @@ function App({ session }: { session: AuthSession | null }) {
           </div>
         )}
         {!loading && (rootEntries.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && activeDesktopSegment.entries.length === 0 && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
-          <div className="desktop-state area-empty-state">
+          <div className="desktop-state empty-state area-empty-state">
             <span className="empty-state__icon"><Desktop size={28} weight="duotone" /></span>
             <h1>This area is empty.</h1>
             <p>Place a root item or window here to keep this coordinate region available.</p>
@@ -3407,7 +3423,7 @@ function App({ session }: { session: AuthSession | null }) {
         {swipePreview && <div className="desktop-swipe-preview" role="status"><SquaresFour size={20} weight="duotone" /><span>Release for <strong>{homeRelativeAreaLabel(swipePreview)}</strong></span></div>}
       </section>
 
-      {!isMobile && (
+      {!isMobile && showDesktopMinimap && (
         <nav className="desktop-minimap" data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions`}>
           <div className="desktop-minimap__toolbar">
             <span>Areas</span>

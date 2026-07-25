@@ -10,13 +10,13 @@ import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPag
 import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
 const FRONTEND_ONLY = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
-const DEFAULT_PREFERENCES: StoredPreferences = { autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0 };
+const DEFAULT_PREFERENCES: StoredPreferences = { autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true };
 
 type Row = Record<string, SqlValue>;
 type WorkerPort = Pick<MessagePort, "postMessage"> & { start?: () => void; onmessage: ((event: MessageEvent<StorageDbRequest>) => void) | null };
@@ -72,6 +72,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 4) {
     db.exec(migrateSchema4To5Sql(migratedVersion));
+    migratedVersion = 5;
+  }
+  if (migratedVersion === 5) {
+    db.exec(migrateSchema5To6Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -151,7 +155,8 @@ function createSchema(db: Database) {
     CREATE INDEX activity_timestamp ON activity(timestamp DESC, catalog_revision DESC);
     ${APP_STORAGE_SCHEMA_SQL.replace("PRAGMA user_version=3;", "")}
     ${PREFERENCES_SCHEMA_SQL.replace("PRAGMA user_version=4;", "")}
-    ${APP_ASSOCIATIONS_SCHEMA_SQL}
+    ${APP_ASSOCIATIONS_SCHEMA_SQL.replace("PRAGMA user_version=5;", "")}
+    ${MINIMAP_PREFERENCE_SCHEMA_SQL}
     COMMIT;
   `);
 }
@@ -268,11 +273,11 @@ function listActivity(db: Database, value: StorageDbRequests["listActivity"]): A
 
 function readPreferences(db: Database): StoredPreferences {
   const row = rows(db, "SELECT * FROM preferences WHERE singleton=1")[0];
-  return row ? { autoUpdate: numberValue(row.auto_update) === 1, externalEmbeddedPreviews: numberValue(row.external_embedded_previews) === 1, searchAllDesktops: numberValue(row.search_all_desktops) === 1, onboardingVersion: numberValue(row.onboarding_version) } : DEFAULT_PREFERENCES;
+  return row ? { autoUpdate: numberValue(row.auto_update) === 1, externalEmbeddedPreviews: numberValue(row.external_embedded_previews) === 1, searchAllDesktops: numberValue(row.search_all_desktops) === 1, onboardingVersion: numberValue(row.onboarding_version), showDesktopMinimap: numberValue(row.show_desktop_minimap) === 1 } : DEFAULT_PREFERENCES;
 }
 
 function writePreferences(db: Database, value: StoredPreferences) {
-  db.exec({ sql: "INSERT INTO preferences(singleton,auto_update,external_embedded_previews,search_all_desktops,onboarding_version) VALUES (1, ?, ?, ?, ?) ON CONFLICT(singleton) DO UPDATE SET auto_update=excluded.auto_update, external_embedded_previews=excluded.external_embedded_previews, search_all_desktops=excluded.search_all_desktops, onboarding_version=excluded.onboarding_version", bind: [value.autoUpdate, value.externalEmbeddedPreviews, value.searchAllDesktops, value.onboardingVersion] });
+  db.exec({ sql: "INSERT INTO preferences(singleton,auto_update,external_embedded_previews,search_all_desktops,onboarding_version,show_desktop_minimap) VALUES (1, ?, ?, ?, ?, ?) ON CONFLICT(singleton) DO UPDATE SET auto_update=excluded.auto_update, external_embedded_previews=excluded.external_embedded_previews, search_all_desktops=excluded.search_all_desktops, onboarding_version=excluded.onboarding_version, show_desktop_minimap=excluded.show_desktop_minimap", bind: [value.autoUpdate, value.externalEmbeddedPreviews, value.searchAllDesktops, value.onboardingVersion, value.showDesktopMinimap] });
 }
 
 let existedBeforeOpen = false;

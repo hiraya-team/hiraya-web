@@ -139,6 +139,22 @@ a:focus-visible {
   content: "";
 }
 
+.taskbar__minimap-toggle {
+  display: grid;
+  width: 38px;
+  min-width: 38px;
+  height: 30px;
+  place-items: center;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.06);
+  cursor: pointer;
+}
+.taskbar__minimap-toggle[aria-pressed="true"] { color: #f9e4ba; border-color: rgba(231, 185, 100, 0.36); background: rgba(231, 185, 100, 0.18); }
+.taskbar__minimap-toggle:disabled { cursor: default; opacity: .45; }
+
 .mobile-window-nav { display: none; }
 
 .brand-mark {
@@ -1094,6 +1110,16 @@ a:focus-visible {
   gap: 8px;
   margin-top: 24px;
 }
+
+.area-empty-state .empty-state__actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.area-empty-state .empty-state__actions > * { min-width: 0; white-space: normal; }
+.area-empty-state .empty-state__actions > :first-child,
+.area-empty-state .empty-state__actions > :nth-child(4),
+.area-empty-state .empty-state__actions > :nth-child(5) { grid-column: 1 / -1; }
 
 .desktop-state--loading {
   display: grid;
@@ -3304,6 +3330,15 @@ a:focus-visible {
 }
 .brand-mark__shape span { background: var(--theme-accent); }
 .taskbar { gap: calc(5px * var(--theme-density)); }
+.taskbar__minimap-toggle {
+  height: calc(30px * var(--theme-density));
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 10%, transparent);
+  border-radius: var(--theme-radius-small);
+  color: color-mix(in srgb, var(--theme-chrome-text) 74%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 7%, transparent);
+}
+.taskbar__minimap-toggle:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-chrome-text) 13%, transparent); }
+.taskbar__minimap-toggle[aria-pressed="true"] { color: color-mix(in srgb, var(--theme-accent) 72%, var(--theme-chrome-text)); border-color: color-mix(in srgb, var(--theme-accent) 42%, transparent); background: color-mix(in srgb, var(--theme-accent) 20%, transparent); }
 .taskbar__entry {
   height: calc(30px * var(--theme-density));
   gap: calc(6px * var(--theme-density));
@@ -5042,6 +5077,19 @@ a:focus-visible {
   }
   .empty-state__actions > *,
   .folder-explorer__empty-actions > * { flex-basis: 100%; }
+  .area-empty-state {
+    top: 16px;
+    width: min(390px, calc(100% - 32px));
+    max-height: calc(100% - 32px);
+    padding: 22px 18px max(22px, env(safe-area-inset-bottom));
+  }
+  .desktop-shell[data-mobile-selection-toolbar="true"] .area-empty-state {
+    max-height: calc(100% - 80px - max(12px, env(safe-area-inset-bottom)));
+  }
+  .area-empty-state .empty-state__actions {
+    gap: 10px;
+    margin-top: 22px;
+  }
   .sharing-dialog__backdrop,
   .utility-panel-backdrop,
   .command-palette-backdrop {
@@ -5303,12 +5351,12 @@ a:focus-visible {
 /* Review-blocker ownership: keyboard menus, reserved taskbar overflow, and scoped settings. */
 .taskbar {
   display: grid;
-  max-width: calc(var(--taskbar-visible) * 150px);
-  grid-template-columns: repeat(var(--taskbar-visible), minmax(0, 1fr));
+  max-width: calc(38px + var(--taskbar-visible) * 150px + 5px);
+  grid-template-columns: 38px repeat(var(--taskbar-visible), minmax(0, 1fr));
   justify-content: start;
   overflow: hidden;
 }
-.taskbar[data-has-overflow] { max-width: calc(var(--taskbar-visible) * 150px + 38px); grid-template-columns: repeat(var(--taskbar-visible), minmax(0, 1fr)) 38px; }
+.taskbar[data-has-overflow] { max-width: calc(76px + var(--taskbar-visible) * 150px + 10px); grid-template-columns: 38px repeat(var(--taskbar-visible), minmax(0, 1fr)) 38px; }
 .taskbar__entry { width: 100%; min-width: 0; max-width: none; }
 .taskbar__overflow { width: 38px; min-width: 38px; }
 
@@ -5511,4 +5559,9 @@ a:focus-visible {
 @media (max-width: 620px) {
   .notification-card { padding: 10px; }
   .notification-card__actions > .notification-action { min-width: 0; flex: 1; }
+}
+
+@media (max-width: 350px) {
+  .area-empty-state .empty-state__actions { grid-template-columns: 1fr; }
+  .area-empty-state .empty-state__actions > * { grid-column: 1; }
 }

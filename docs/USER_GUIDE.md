@@ -24,7 +24,7 @@ A **desktop** is a named workspace with its own files, folders, appearance, shar
 
 An **area** is a viewport-sized region derived from item and window coordinates on one continuous desktop. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
 
-The persistent lower-right area map provides direct desktop navigation and always keeps Home addressable. On a phone, tap the current area in the app bar for the expanded spatial map. **Workspace Overview** is also available from the system menu or Search; its spatial and window views let you add an adjacent area, navigate, focus windows, move selected root items or the focused window, move an area's contents back to the current area, and arrange occupied areas.
+The lower-right area map provides direct desktop navigation and always keeps Home addressable. Use the map button at the start of the desktop taskbar to show or hide it; Hiraya remembers this choice on this device. On a phone, tap the current area in the app bar for the expanded spatial map. **Workspace Overview** is also available from the system menu or Search; its spatial and window views let you add an adjacent area, navigate, focus windows, move selected root items or the focused window, move an area's contents back to the current area, and arrange occupied areas.
 
 On a phone, swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place. Long-press a visible item for its actions. A short tap opens an item only when released over its visible icon or name.
 

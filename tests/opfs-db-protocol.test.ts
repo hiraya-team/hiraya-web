@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseOfflinePinResponse, parseStorageProtocol, validateOfflinePinRequest } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,9 +13,9 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 5", () => {
+describe("local schema 6", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(5);
+    expect(DATABASE_SCHEMA_VERSION).toBe(6);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
@@ -98,6 +98,23 @@ describe("local schema 5", () => {
     expect(() => migrateSchema3To4Sql(2)).toThrow("requires version 3");
   });
 
+  test("defaults the device-local desktop minimap preference to visible", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      CREATE TABLE preferences(singleton INTEGER PRIMARY KEY, auto_update INTEGER NOT NULL, external_embedded_previews INTEGER NOT NULL, search_all_desktops INTEGER NOT NULL, onboarding_version INTEGER NOT NULL);
+      INSERT INTO preferences VALUES (1, 1, 1, 0, 1);
+      PRAGMA user_version=5;
+    `);
+    db.exec(migrateSchema5To6Sql(5));
+    expect(MINIMAP_PREFERENCE_SCHEMA_SQL).toContain("show_desktop_minimap");
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 6 });
+    expect(db.query("SELECT show_desktop_minimap FROM preferences").get()).toEqual({ show_desktop_minimap: 1 });
+    db.exec("UPDATE preferences SET show_desktop_minimap=0");
+    expect(db.query("SELECT show_desktop_minimap FROM preferences").get()).toEqual({ show_desktop_minimap: 0 });
+    expect(() => migrateSchema5To6Sql(4)).toThrow("requires version 5");
+    db.close();
+  });
+
   test("keeps app RPC requests device-local", () => {
     const request = createStorageDbRequest(3, null, "readAppStorage", { appId: "test.editor", key: "theme" });
     expect(request.desktopId).toBeNull();
@@ -107,7 +124,7 @@ describe("local schema 5", () => {
   test("uses strict schema-v4 pin requests without another migration", () => {
     const list = createStorageDbRequest(4, "desktop-a", "listOfflinePins", { desktopId: "desktop-a" });
     const update = createStorageDbRequest(5, "desktop-a", "setOfflinePins", { desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
-    expect(DATABASE_SCHEMA_VERSION).toBe(5);
+    expect(DATABASE_SCHEMA_VERSION).toBe(6);
     expect(list.params).toEqual({ desktopId: "desktop-a" });
     expect(update.params).toEqual({ desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
   });
@@ -121,8 +138,8 @@ describe("local schema 5", () => {
   });
 
   test("handshakes the named worker protocol", () => {
-    expect(STORAGE_PROTOCOL_VERSION).toBe(5);
-    expect(parseStorageProtocol({ version: 5 })).toBe(5);
-    expect(() => parseStorageProtocol({ version: 4 })).toThrow("outdated");
+    expect(STORAGE_PROTOCOL_VERSION).toBe(6);
+    expect(parseStorageProtocol({ version: 6 })).toBe(6);
+    expect(() => parseStorageProtocol({ version: 5 })).toThrow("outdated");
   });
 });

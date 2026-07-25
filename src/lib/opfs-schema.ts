@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 5;
+export const DATABASE_SCHEMA_VERSION = 6;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -100,4 +100,14 @@ export const APP_ASSOCIATIONS_SCHEMA_SQL = `
 export function migrateSchema4To5Sql(version: number): string {
   if (version !== 4) throw new Error(`Schema 5 migration requires version 4, received ${version}.`);
   return `PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${APP_ASSOCIATIONS_SCHEMA_SQL} COMMIT; PRAGMA foreign_keys=ON;`;
+}
+
+export const MINIMAP_PREFERENCE_SCHEMA_SQL = `
+  ALTER TABLE preferences ADD COLUMN show_desktop_minimap INTEGER NOT NULL DEFAULT 1 CHECK (show_desktop_minimap IN (0, 1));
+  PRAGMA user_version=6;
+`;
+
+export function migrateSchema5To6Sql(version: number): string {
+  if (version !== 5) throw new Error(`Schema 6 migration requires version 5, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${MINIMAP_PREFERENCE_SCHEMA_SQL} COMMIT;`;
 }

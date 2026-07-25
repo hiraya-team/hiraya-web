@@ -8,7 +8,7 @@ import type { JsonValue } from "@hiraya/apps-contracts";
 import { isValidId } from "./contracts";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
-export type StoredPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number };
+export type StoredPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean };
 
 export type StorageDbRequests = {
   ping: undefined;
