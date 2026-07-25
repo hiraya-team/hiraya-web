@@ -3299,6 +3299,7 @@ function App({ session }: { session: AuthSession | null }) {
                       replaceSelection(app.id, []);
                       setContextMenu({ type: "desktop", parentId, x, y, position: positionFor(parentId) });
                     }}
+                    onClearSelection={() => replaceSelection(app.id, [])}
                     readOnly={!canMutate}
                     headerElements={headerElements}
                   />

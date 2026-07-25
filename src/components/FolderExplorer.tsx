@@ -38,6 +38,7 @@ export interface FolderExplorerProps {
   onExternalDrop: (dataTransfer: DataTransfer, parentId: string | null) => void;
   onContextMenu: (entry: DesktopEntry, x: number, y: number) => void;
   onBlankContextMenu: (parentId: string | null, x: number, y: number) => void;
+  onClearSelection?: () => void;
   selectedIds: ReadonlySet<string>;
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
   onLongPressSelect: (entry: DesktopEntry, orderedIds: string[]) => void;
@@ -77,6 +78,7 @@ export function FolderExplorer({
   onExternalDrop,
   onContextMenu,
   onBlankContextMenu,
+  onClearSelection,
   selectedIds,
   onSelect,
   onLongPressSelect,
@@ -249,7 +251,9 @@ export function FolderExplorer({
           <button className="folder-explorer__tool-button folder-explorer__import" type="button" disabled={readOnly} onClick={() => onImportFolder(parentId)}><FolderOpen size={18} /><span>Import folder</span></button>
         </div>
 
-        <div className="folder-explorer__content" onDragOver={(event) => { if (!readOnly) event.preventDefault(); }} onDrop={(event) => {
+        <div className="folder-explorer__content" onClick={(event) => {
+          if (!(event.target as Element).closest(".folder-explorer__row")) onClearSelection?.();
+        }} onDragOver={(event) => { if (!readOnly) event.preventDefault(); }} onDrop={(event) => {
           if (readOnly || (event.target as Element).closest(".folder-explorer__row[data-folder-target]")) return;
           event.preventDefault();
           onExternalDrop(event.dataTransfer, parentId);
