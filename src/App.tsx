@@ -179,6 +179,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [notice, setNotice] = useState("");
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
+  const [areaTransitioning, setAreaTransitioning] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [selectionScope, setSelectionScope] = useState("desktop");
@@ -246,6 +247,7 @@ function App({ session }: { session: AuthSession | null }) {
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const areaTransitionTimerRef = useRef<number | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const directoryRef = useRef<HTMLInputElement>(null);
   const uploadParentRef = useRef<string | null>(null);
@@ -3146,6 +3148,9 @@ function App({ session }: { session: AuthSession | null }) {
     if (!swipe.axis) {
       swipe.axis = swipeAxis(deltaX, deltaY);
       if (!swipe.axis) return;
+      if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+      areaTransitionTimerRef.current = null;
+      setAreaTransitioning(true);
       canvasRef.current.dataset.swiping = "true";
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -3207,6 +3212,12 @@ function App({ session }: { session: AuthSession | null }) {
       }
     }
     if (nextSegment) goToSegment(nextSegment);
+    if (swipe.axis) {
+      areaTransitionTimerRef.current = window.setTimeout(() => {
+        areaTransitionTimerRef.current = null;
+        setAreaTransitioning(false);
+      }, 450);
+    }
   }
 
   function invalidMoveIds(items: readonly DesktopEntry[]) {
@@ -3626,6 +3637,7 @@ function App({ session }: { session: AuthSession | null }) {
 
       <section
         className="desktop"
+        data-area-transitioning={areaTransitioning || undefined}
         data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         style={
@@ -3692,9 +3704,16 @@ function App({ session }: { session: AuthSession | null }) {
           }}
         />
         <div className="wallpaper-grain" aria-hidden="true" />
+        <div className="desktop-swipe-dim" aria-hidden="true" />
         <div
           className="desktop-canvas"
           ref={canvasRef}
+          onTransitionEnd={(event) => {
+            if (event.target !== event.currentTarget || event.propertyName !== "transform" || !areaTransitioning) return;
+            if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+            areaTransitionTimerRef.current = null;
+            setAreaTransitioning(false);
+          }}
           style={{
             width: segmentColumns * desktopSize.width,
             height: segmentRows * desktopSize.height,
