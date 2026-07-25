@@ -62,8 +62,15 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
       <header className="window-header"><div><span className="window-kicker">App request</span><h2 id="app-picker-title">{title}</h2></div><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
       <div className="app-picker__content">
         {request.kind === "openFile" ? <div className="app-picker__list" role="group" aria-label="Files">
-          {files.map((file) => <label className="app-picker__item" key={file.id}><input type={request.params.multiple ? "checkbox" : "radio"} name="picked-file" checked={selected.includes(file.id)} onChange={(event) => setSelected(event.target.checked ? request.params.multiple ? [...selected, file.id] : [file.id] : selected.filter((id) => id !== file.id))} /><EntryIcon entry={file} size={17} /><span>{file.name}</span></label>)}
-          {!files.length && <p>No matching files are available.</p>}
+          {files.map((file) => {
+            const isSelected = selected.includes(file.id);
+            return <label className="app-picker__item" data-selected={isSelected || undefined} key={file.id}>
+              <input type={request.params.multiple ? "checkbox" : "radio"} name="picked-file" checked={isSelected} onChange={(event) => setSelected(event.target.checked ? request.params.multiple ? [...selected, file.id] : [file.id] : selected.filter((id) => id !== file.id))} />
+              <EntryIcon entry={file} size={20} />
+              <span className="app-picker__name" title={file.name}>{file.name}</span>
+            </label>;
+          })}
+          {!files.length && <p className="app-picker__empty">No matching files are available.</p>}
         </div> : <>
           <label>Location<select value={folderId} onChange={(event) => setFolderId(event.target.value)}><option value="">Desktop</option>{folders.map((folder) => <option key={folder.id} value={folder.id}>{folderLabels.get(folder.id)}</option>)}</select></label>
           {request.kind === "saveFile" && <label>File name<input autoFocus value={name} maxLength={180} onChange={(event) => setName(event.target.value)} /></label>}
