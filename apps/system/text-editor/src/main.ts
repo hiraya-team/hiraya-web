@@ -89,7 +89,7 @@ async function remoteChanged() {
       setStatus("This file changed elsewhere. Your unsaved text is preserved; use Save as or review before replacing the remote version.", true);
       return;
     }
-    editor.value = documentState.text;
+    if (editor.value !== documentState.text) editor.value = documentState.text;
     name = loaded.entry.name;
     renderDirty();
     setStatus(`Reloaded ${name} after an external change.`);
@@ -110,14 +110,16 @@ async function save(saveAs: boolean) {
       if (entry.kind !== "file") throw new Error("The save destination is not a file.");
       expected = entry.metadata.contentRevision;
     }
-    const text = settings.autoFormat ? formatText(name, editor.value) : editor.value;
+    const sourceText = editor.value;
+    const text = settings.autoFormat ? formatText(name, sourceText) : sourceText;
     const bytes = new TextEncoder().encode(text);
     const saved = await writeFileData(hiraya, destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
     handle = destination;
     name = saved.name;
-    editor.value = text;
-    documentState.saved(text, saved.contentRevision);
+    documentState.saved(sourceText, text, saved.contentRevision);
+    if (editor.value !== documentState.text) editor.value = documentState.text;
     renderDirty();
+    if (documentState.dirty) scheduleAutoSave();
     setStatus(`Saved ${name}.`);
   } catch (error) {
     const message = error instanceof HirayaSdkError && error.code === "CONFLICT" ? "This file changed elsewhere. Your text is preserved; use Save as or review before replacing the remote version." : describeError(error, "Could not save the file.");

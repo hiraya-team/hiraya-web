@@ -41,15 +41,18 @@ export class TextDocumentState {
   edit(text: string) { this.text = text; }
 
   remote(text: string, revision: number) {
+    if (revision === this.revision && text === this.persistedText) return true;
     if (this.dirty) { this.remoteConflict = true; return false; }
     this.load(text, revision);
     return true;
   }
 
-  saved(text: string, revision: number) {
-    this.text = text;
-    this.persistedText = text;
+  saved(sourceText: string, persistedText: string, revision: number) {
+    const unchanged = this.text === sourceText;
+    if (unchanged) this.text = persistedText;
+    this.persistedText = persistedText;
     this.revision = revision;
     this.remoteConflict = false;
+    return unchanged;
   }
 }

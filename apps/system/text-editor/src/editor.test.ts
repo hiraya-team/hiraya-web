@@ -23,9 +23,46 @@ describe("Text Editor document behavior", () => {
     state.edit("two");
     state.remote("remote", 2);
     expect(DEFAULT_TEXT_EDITOR_SETTINGS.autoSave && state.dirty).toBe(true);
-    state.saved("two", 3);
+    expect(state.saved("two", "two", 3)).toBe(true);
     expect(state.dirty).toBe(false);
     expect(state.remoteConflict).toBe(false);
+  });
+
+  test("preserves edits made while a save is pending", () => {
+    const state = new TextDocumentState();
+    state.load("one", 1);
+    state.edit("submitted");
+    state.edit("submitted with newer input");
+
+    expect(state.saved("submitted", "submitted", 2)).toBe(false);
+    expect(state).toMatchObject({ text: "submitted with newer input", persistedText: "submitted", revision: 2, remoteConflict: false });
+    expect(state.dirty).toBe(true);
+  });
+
+  test("applies formatting only when no newer edits arrived during the save", () => {
+    const clean = new TextDocumentState();
+    clean.load("one", 1);
+    clean.edit("two  ");
+    expect(clean.saved("two  ", "two\n", 2)).toBe(true);
+    expect(clean).toMatchObject({ text: "two\n", persistedText: "two\n", revision: 2 });
+
+    const edited = new TextDocumentState();
+    edited.load("one", 1);
+    edited.edit("two  ");
+    edited.edit("two more");
+    expect(edited.saved("two  ", "two\n", 2)).toBe(false);
+    expect(edited).toMatchObject({ text: "two more", persistedText: "two\n", revision: 2 });
+  });
+
+  test("ignores a duplicate notification for the saved base of a newer draft", () => {
+    const state = new TextDocumentState();
+    state.load("one", 1);
+    state.edit("submitted");
+    state.edit("newer draft");
+    state.saved("submitted", "submitted", 2);
+
+    expect(state.remote("submitted", 2)).toBe(true);
+    expect(state).toMatchObject({ text: "newer draft", persistedText: "submitted", revision: 2, remoteConflict: false });
   });
 
   test("formats JSON and preserves compatible copied settings", () => {
