@@ -13,8 +13,9 @@ import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
 import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-layout";
-import { MOBILE_WINDOW_QUERY, TOUCH_PRIMARY_QUERY, useMediaQuery } from "./ui/responsive";
+import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
+import { touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
 
 type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
 
@@ -33,12 +34,64 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
   </div>;
 }
 
+function PublicIcon({ entry, selected, multiSelect, onSelect, onLongPressSelect, onOpen }: {
+  entry: DesktopEntry;
+  selected: boolean;
+  multiSelect: boolean;
+  onSelect: (toggle: boolean) => void;
+  onLongPressSelect: () => void;
+  onOpen: () => void;
+}) {
+  const press = useRef<{ pointerId: number; x: number; y: number; moved: boolean; longPressed: boolean; timer?: number } | null>(null);
+  const lastTap = useRef<TouchTap | null>(null);
+  const lastTouchReleaseAt = useRef(0);
+  useEffect(() => () => { if (press.current?.timer) window.clearTimeout(press.current.timer); }, []);
+  return <button className="public-icon" type="button" aria-pressed={selected} onClick={() => onSelect(false)} onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) onOpen(); }} onPointerDown={(event) => {
+    if (event.pointerType !== "touch" || event.button !== 0) return;
+    event.preventDefault();
+    press.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY, moved: false, longPressed: false };
+    press.current.timer = window.setTimeout(() => {
+      const current = press.current;
+      if (!current || current.pointerId !== event.pointerId || current.moved) return;
+      current.timer = undefined;
+      current.longPressed = true;
+      lastTap.current = null;
+      onLongPressSelect();
+    }, 500);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }} onPointerMove={(event) => {
+    const current = press.current;
+    if (!current || current.pointerId !== event.pointerId || current.moved) return;
+    if (Math.hypot(event.clientX - current.x, event.clientY - current.y) < 10) return;
+    current.moved = true;
+    if (current.timer) window.clearTimeout(current.timer);
+    current.timer = undefined;
+  }} onPointerUp={(event) => {
+    const current = press.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (current.timer) window.clearTimeout(current.timer);
+    lastTouchReleaseAt.current = performance.now();
+    const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: lastTouchReleaseAt.current };
+    const action = touchReleaseAction(lastTap.current, tap, { cancelled: false, moved: current.moved, longPressed: current.longPressed, releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)) });
+    lastTap.current = action === "select" ? tap : null;
+    press.current = null;
+    if (action === "select") onSelect(multiSelect);
+    else if (action === "open") onOpen();
+  }} onPointerCancel={(event) => {
+    const current = press.current;
+    if (!current || current.pointerId !== event.pointerId) return;
+    if (current.timer) window.clearTimeout(current.timer);
+    press.current = null;
+  }} onKeyDown={(event) => { if (event.key === "Enter") onOpen(); }}><EntryTypeIcon entry={entry} size={39} /><span>{entry.name}</span></button>;
+}
+
 export default function PublicDesktop({ token }: { token: string }) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
   const [error, setError] = useState("");
   const [open, setOpen] = useState<OpenView | null>(null);
   const [gate, setGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [multiSelect, setMultiSelect] = useState(false);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
   const [surfaceSize, setSurfaceSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const [bounds, setBounds] = useState(() => publicWindowBounds(surfaceSize));
@@ -47,7 +100,8 @@ export default function PublicDesktop({ token }: { token: string }) {
   const appearance = desktop?.appearance ?? DEFAULT_THEME_STATE;
   const theme = resolveTheme(appearance);
   const mobile = useMediaQuery(MOBILE_WINDOW_QUERY);
-  const touchPrimary = useMediaQuery(TOUCH_PRIMARY_QUERY);
+
+  useEffect(() => { if (!selectedIds.size) setMultiSelect(false); }, [selectedIds]);
 
   useEffect(() => { void fetchPublicDesktop(token).then(setDesktop).catch((reason) => setError(reason instanceof Error ? reason.message : "The public desktop could not be loaded.")); }, [token]);
   useEffect(() => {
@@ -94,6 +148,18 @@ export default function PublicDesktop({ token }: { token: string }) {
   }
 
   function openEntry(entry: DesktopEntry) { if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id }); else void loadFile(entry); }
+  function selectEntry(entry: DesktopEntry, toggle: boolean) {
+    setSelectedIds((current) => {
+      if (!toggle) return new Set([entry.id]);
+      const next = new Set(current);
+      if (next.has(entry.id)) next.delete(entry.id); else next.add(entry.id);
+      return next;
+    });
+  }
+  function longPressSelect(entry: DesktopEntry) {
+    setMultiSelect(true);
+    setSelectedIds((current) => new Set([...current, entry.id]));
+  }
   async function resolveLinkedFile(from: FileEntry, relativePath: string) {
     if (!desktop) throw new Error("The public desktop is unavailable.");
     const path = relativePath.split(/[?#]/, 1)[0];
@@ -136,9 +202,9 @@ export default function PublicDesktop({ token }: { token: string }) {
       {!desktop && !error && <div className="desktop-state desktop-state--loading" role="status"><SpinnerGap size={24} /> Opening public desktop...</div>}
       {error && <div className="desktop-state public-error" role="alert"><WarningCircle size={30} /><h1>Desktop unavailable</h1><p>{error}</p></div>}
       {desktop && roots.length === 0 && <div className="desktop-state empty-state"><Folder size={30} weight="duotone" /><h1>This desktop is empty.</h1><p>There are no public files to browse yet.</p></div>}
-      {desktop && <div className="public-icon-grid">{roots.map((entry) => <button className="public-icon" type="button" key={entry.id} aria-pressed={selectedIds.has(entry.id)} onClick={() => { setSelectedIds(new Set([entry.id])); if (touchPrimary) openEntry(entry); }} onDoubleClick={() => { if (!touchPrimary) openEntry(entry); }} onKeyDown={(event) => { if (event.key === "Enter") openEntry(entry); }}><EntryTypeIcon entry={entry} size={39} /><span>{entry.name}</span></button>)}</div>}
+      {desktop && <div className="public-icon-grid">{roots.map((entry) => <PublicIcon entry={entry} key={entry.id} selected={selectedIds.has(entry.id)} multiSelect={multiSelect} onSelect={(toggle) => selectEntry(entry, toggle)} onLongPressSelect={() => longPressSelect(entry)} onOpen={() => openEntry(entry)} />)}</div>}
       {open && <div className="app-window-layer"><AppWindow id="public-view" title={open.kind === "folder" ? folder?.name ?? desktop?.name ?? "Desktop" : open.file.name} titleId="public-view-title" bounds={bounds} zIndex={1} focused minimized={false} segmentActive mobile={mobile} hideMobileHeader onFocus={() => undefined} onBoundsChange={(_, next) => setBounds(next)} onClose={closePublicView} onShowDesktop={backPublicView} mobileBackLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"} titleArea={<div><span className="window-kicker">Public · Read only</span><h2 id="public-view-title">{open.kind === "folder" ? folder?.name ?? desktop?.name : open.file.name}</h2></div>}>
-        {(headerElements) => open.kind === "folder" ? <FolderExplorer folder={folder ?? null} rootLabel={desktop?.name ?? "Desktop"} breadcrumbs={folder ? index.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []} children={index.children.get(open.folderId) ?? []} selectedIds={selectedIds} onSelect={(entry) => setSelectedIds(new Set([entry.id]))} onNavigate={(next) => setOpen({ kind: "folder", folderId: next?.id ?? null })} onOpen={openEntry} onCreateFolder={() => undefined} onCreateFile={() => undefined} onUpload={() => undefined} onImportFolder={() => undefined} onExternalDrop={() => undefined} onMove={() => undefined} onContextMenu={() => undefined} onBlankContextMenu={() => undefined} readOnly headerElements={headerElements} /> : open.blob ? <FileWindow file={open.file} blob={open.blob} editable={fileCapabilities(open.file).editable} readOnly headerActionsTarget={headerElements.actions} editorSettings={desktop?.editorSettings ?? DEFAULT_EDITOR_SETTINGS} externalEmbeddedPreviews={false} theme={theme} onSave={async () => undefined} onDownload={() => void loadFile(open.file, true)} onEdit={() => undefined} onEditorSettingsChange={() => undefined} onResolveLink={(path) => resolveLinkedFile(open.file, path)} onOpenLinkedFile={(file) => void loadFile(file)} /> : open.error ? <div className="app-window__loading" role="alert"><span>{open.error}</span><button className="button button--primary" type="button" onClick={() => void loadFile(open.file)}>Retry</button></div> : fileCapabilities(open.file).preview === "none" ? <div className="no-preview"><p>No preview is available for this file type.</p><button className="button button--primary" type="button" onClick={() => void loadFile(open.file, true)}><DownloadSimple size={16} /> Download file</button></div> : <div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}
+        {(headerElements) => open.kind === "folder" ? <FolderExplorer folder={folder ?? null} rootLabel={desktop?.name ?? "Desktop"} breadcrumbs={folder ? index.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []} children={index.children.get(open.folderId) ?? []} selectedIds={selectedIds} mobileMultiSelect={multiSelect} onSelect={(entry, options) => selectEntry(entry, options.toggle)} onLongPressSelect={(entry) => longPressSelect(entry)} onNavigate={(next) => { setSelectedIds(new Set()); setMultiSelect(false); setOpen({ kind: "folder", folderId: next?.id ?? null }); }} onOpen={openEntry} onCreateFolder={() => undefined} onCreateFile={() => undefined} onUpload={() => undefined} onImportFolder={() => undefined} onExternalDrop={() => undefined} onMove={() => undefined} onContextMenu={() => undefined} onBlankContextMenu={() => undefined} readOnly headerElements={headerElements} /> : open.blob ? <FileWindow file={open.file} blob={open.blob} editable={fileCapabilities(open.file).editable} readOnly headerActionsTarget={headerElements.actions} editorSettings={desktop?.editorSettings ?? DEFAULT_EDITOR_SETTINGS} externalEmbeddedPreviews={false} theme={theme} onSave={async () => undefined} onDownload={() => void loadFile(open.file, true)} onEdit={() => undefined} onEditorSettingsChange={() => undefined} onResolveLink={(path) => resolveLinkedFile(open.file, path)} onOpenLinkedFile={(file) => void loadFile(file)} /> : open.error ? <div className="app-window__loading" role="alert"><span>{open.error}</span><button className="button button--primary" type="button" onClick={() => void loadFile(open.file)}>Retry</button></div> : fileCapabilities(open.file).preview === "none" ? <div className="no-preview"><p>No preview is available for this file type.</p><button className="button button--primary" type="button" onClick={() => void loadFile(open.file, true)}><DownloadSimple size={16} /> Download file</button></div> : <div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}
       </AppWindow></div>}
     </section>
     {gate && <LargeDownloadGate gate={gate} onClose={() => setGate(null)} />}

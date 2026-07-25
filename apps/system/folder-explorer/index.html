@@ -14,11 +14,14 @@
           <nav class="breadcrumbs" id="breadcrumbs" aria-label="Current folder"></nav>
           <span class="spacer"></span>
           <button id="create-menu-trigger" class="primary create-menu-trigger" type="button" aria-expanded="false" aria-controls="create-actions">Add</button>
-          <div id="create-actions" class="create-actions" role="group" aria-label="Create or import" data-open="false">
-            <button id="upload">Upload</button>
-            <button id="import-folder">Import folder</button>
-            <button id="new-file">New file</button>
-            <button id="new-folder" class="primary">New folder</button>
+          <div id="create-actions-backdrop" class="create-actions-backdrop" data-open="false">
+            <section id="create-actions" class="create-actions" role="group" aria-label="Create or import" tabindex="-1">
+              <button id="create-actions-handle" class="sheet-handle" type="button" aria-label="Close create actions"><span></span></button>
+              <button id="upload">Upload</button>
+              <button id="import-folder">Import folder</button>
+              <button id="new-file">New file</button>
+              <button id="new-folder" class="primary">New folder</button>
+            </section>
           </div>
         </div>
         <div class="selection-bar" data-active="false" aria-live="polite">
@@ -41,6 +44,7 @@
         <div id="empty" class="empty" hidden><strong>This folder is empty</strong><span>Create, upload, or import an item to get started.</span></div>
       </section>
       <footer class="status" id="status" role="status">Connecting...</footer>
+      <button id="mobile-fab" class="mobile-fab" type="button" aria-label="Create or import an item"><span aria-hidden="true">+</span><b hidden></b></button>
     </main>
     <dialog id="name-dialog">
       <form id="name-form">

@@ -205,6 +205,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [selectionScope, setSelectionScope] = useState("desktop");
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
+  const [mobileMultiSelectScope, setMobileMultiSelectScope] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [moveDialogEntryIds, setMoveDialogEntryIds] = useState<string[]>([]);
@@ -418,7 +419,22 @@ function App({ session }: { session: AuthSession | null }) {
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   selectedIdsRef.current = selectedIds;
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
-  const showMobileSelectionToolbar = isMobile && selectedEntries.length > 0 && !contextMenu && !selectionScope.startsWith("app:");
+  const desktopSelection = selectionScope === "desktop" ? selectedEntries.filter((entry) => entry.parentId === null) : [];
+  const showMobileFileFab = isMobile && !focusedAppId && !contextMenu && Boolean(activeDesktopId);
+  const mobileFabPlacement = (() => {
+    const candidates = [
+      { id: "bottom-right", x: desktopSize.width - 45, y: desktopSize.height - 45 },
+      { id: "bottom-left", x: 45, y: desktopSize.height - 45 },
+      { id: "top-right", x: desktopSize.width - 45, y: 45 },
+      { id: "top-left", x: 45, y: 45 },
+    ];
+    const positions = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, desktopSize).local);
+    return candidates.map((candidate) => ({ ...candidate, clearance: positions.length ? Math.min(...positions.map((position) => {
+      const dx = Math.max(position.x - candidate.x, 0, candidate.x - position.x - iconMetrics.width);
+      const dy = Math.max(position.y - candidate.y, 0, candidate.y - position.y - iconMetrics.height);
+      return Math.hypot(dx, dy);
+    })) : Number.POSITIVE_INFINITY })).sort((left, right) => right.clearance - left.clearance)[0].id;
+  })();
   const dialogEntry = dialog?.type === "rename" ? entryIndex.byId.get(dialog.entryId) ?? null : dialog?.type === "delete" ? entryIndex.byId.get(dialog.entryIds[0]) ?? null : null;
   const contextMenuEntry = contextMenu?.type === "entry" ? entryIndex.byId.get(contextMenu.entryId) ?? null : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
@@ -519,6 +535,7 @@ function App({ session }: { session: AuthSession | null }) {
     setSelectedIds(unique);
     setSelectionScope(surface);
     setSelectionAnchorId(anchorId);
+    if (!ids.length) setMobileMultiSelectScope((current) => current === surface ? null : current);
   }
 
   function selectEntry(surface: string, entry: DesktopEntry, options: { toggle?: boolean; range?: boolean; orderedIds?: string[] } = {}) {
@@ -537,6 +554,11 @@ function App({ session }: { session: AuthSession | null }) {
     }
     if (current.includes(entry.id)) return;
     replaceSelection(surface, [entry.id], entry.id);
+  }
+
+  function addEntryToSelection(surface: string, entry: DesktopEntry) {
+    const current = selectionScope === surface ? selectedIdsRef.current : [];
+    replaceSelection(surface, current.includes(entry.id) ? current : [...current, entry.id], entry.id);
   }
 
   function runningAppTargets(apps = runningAppsRef.current): WindowTarget[] {
@@ -3091,6 +3113,8 @@ function App({ session }: { session: AuthSession | null }) {
               offlineAvailability={offlineModel.entries[entry.id]}
               selected={selectedIdSet.has(entry.id)}
               onSelect={(event) => selectEntry("desktop", entry, { toggle: event.metaKey || event.ctrlKey })}
+              onTouchSelect={() => selectEntry("desktop", entry, { toggle: mobileMultiSelectScope === "desktop" })}
+              onLongPressSelect={() => { setMobileMultiSelectScope("desktop"); addEntryToSelection("desktop", entry); }}
               onOpen={() => void handleOpen(entry)}
               onMove={(position, targetParentId) => handleDesktopMove(entry, position, targetParentId)}
               onDragAtEdge={(clientX, clientY) => handleIconDragAtEdge(entry, clientX, clientY)}
@@ -3341,8 +3365,16 @@ function App({ session }: { session: AuthSession | null }) {
         event.target.value = "";
       }} />
 
-      {(showMobileSelectionToolbar || notificationTotal > 0 || importProgress || showUpdateToast) && <aside className="shell-status-region" aria-label="Selection, notifications, and progress">
-        {showMobileSelectionToolbar && <div className="mobile-selection-toolbar" role="toolbar" aria-label={`${selectedEntries.length} selected`}><strong>{selectedEntries.length} selected</strong><button type="button" aria-label="More actions for selection" onClick={(event) => openEntryContextMenu(selectedEntries[0].id, event.currentTarget.getBoundingClientRect().right, event.currentTarget.getBoundingClientRect().top)}><DotsThree size={22} /> Actions</button></div>}
+      {showMobileFileFab && <button className="mobile-file-fab" data-placement={mobileFabPlacement} type="button" aria-label={desktopSelection.length ? `Actions for ${desktopSelection.length} selected ${desktopSelection.length === 1 ? "item" : "items"}` : "Create or import an item"} onClick={() => {
+        if (desktopSelection.length) openEntryContextMenu(desktopSelection[0].id, window.innerWidth - 20, window.innerHeight - 20);
+        else {
+          replaceSelection("desktop", []);
+          const position = projectLogicalPosition(positionFor(null), desktopSize).local;
+          setContextMenu({ type: "desktop", parentId: null, x: window.innerWidth - 28, y: window.innerHeight - 28, position });
+        }
+      }}>{desktopSelection.length ? <><DotsThree size={24} weight="bold" /><span>{desktopSelection.length}</span></> : <Plus size={24} weight="bold" />}</button>}
+
+      {(notificationTotal > 0 || importProgress || showUpdateToast) && <aside className="shell-status-region" aria-label="Notifications and progress">
         {notificationTotal > 0 && <div className="notification-stack">
           {showErrorNotification && <NotificationCard badge="Error" tone="danger" icon={<WarningCircle size={18} weight="fill" />} role="alert" dismissLabel="Dismiss error" onDismiss={() => { setError(""); setFolderImportError(""); }} actions={error === folderImportError ? <button className="notification-action" type="button" onClick={() => openHelp("files-and-folders")}>Folder import help</button> : undefined}><span>{error}</span></NotificationCard>}
           {visibleTrashNotifications.map((notification) => <NotificationCard badge={notification.state === "failed" ? "Restore failed" : notification.state === "running" ? "Restoring" : "Undo available"} tone={notification.state === "failed" ? "danger" : notification.state === "running" ? "progress" : "neutral"} key={notification.id} dismissLabel={`Dismiss Trash notification for ${notification.label}`} dismissDisabled={notification.state === "running"} onDismiss={() => setTrashNotifications((current) => dismissTrashNotification(current, notification.id))} actions={<><button className="notification-action notification-action--primary" type="button" disabled={notification.state === "running"} onClick={() => void undoMoveToTrash(notification)}>{notification.state === "failed" ? "Retry Undo" : "Undo"}</button><button className="notification-action" type="button" disabled={notification.state === "running"} onClick={() => void openTrashNotification(notification)}>View Trash</button></>}><strong>{notification.label} moved to Trash</strong><span>{notification.state === "running" ? "Restoring..." : notification.error || "Undo remains available until dismissed."}</span></NotificationCard>)}
@@ -3406,6 +3438,7 @@ function App({ session }: { session: AuthSession | null }) {
           selectionCount={contextMenuEntries.length}
           trashSupported={syncStatus !== "local"}
           readOnly={!canMutate}
+          onClose={() => setContextMenu(null)}
         />
       )}
       {contextMenu?.type === "desktop" && (
@@ -3433,6 +3466,7 @@ function App({ session }: { session: AuthSession | null }) {
           }}
           onPaste={clipboardRef.current ? () => void beginPaste(contextMenu.parentId, contextMenu.parentId === null ? contextMenu.position : undefined) : undefined}
           readOnly={!canMutate}
+          onClose={() => setContextMenu(null)}
         />
       )}
       {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => setDialog(null)} onSubmit={handleDialogSubmit} />}

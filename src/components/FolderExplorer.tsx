@@ -21,6 +21,7 @@ import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
+import { touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -39,6 +40,8 @@ export interface FolderExplorerProps {
   onBlankContextMenu: (parentId: string | null, x: number, y: number) => void;
   selectedIds: ReadonlySet<string>;
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
+  onLongPressSelect: (entry: DesktopEntry, orderedIds: string[]) => void;
+  mobileMultiSelect?: boolean;
   onMove: (entry: DesktopEntry, targetParentId: string | null) => void;
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
@@ -76,6 +79,8 @@ export function FolderExplorer({
   onBlankContextMenu,
   selectedIds,
   onSelect,
+  onLongPressSelect,
+  mobileMultiSelect = false,
   onMove,
   readOnly = false,
   headerElements,
@@ -84,6 +89,8 @@ export function FolderExplorer({
   const drag = useRef<DragState | null>(null);
   const dropTarget = useRef<HTMLElement | null>(null);
   const suppressClick = useRef(false);
+  const lastTap = useRef<TouchTap | null>(null);
+  const lastTouchReleaseAt = useRef(0);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -134,8 +141,8 @@ export function FolderExplorer({
         if (!current || current.pointerId !== event.pointerId || current.moved) return;
         current.longPressTimer = undefined;
         current.longPressed = true;
-        if (!selectedIds.has(entry.id)) onSelect(entry, { toggle: false, range: false, orderedIds });
-        onContextMenu(entry, event.clientX, event.clientY);
+        lastTap.current = null;
+        onLongPressSelect(entry, orderedIds);
       }, 500);
     }
     if (readOnly) return;
@@ -169,10 +176,20 @@ export function FolderExplorer({
       if (targetId !== undefined && targetId !== current.entry.id) {
         onMove(current.entry, targetId === "" ? null : targetId);
       }
-    } else if (!cancelled && current.pointerType === "touch" && !current.longPressed) {
+    } else if (current.pointerType === "touch") {
       suppressClick.current = true;
       window.setTimeout(() => { suppressClick.current = false; }, 0);
-      open(current.entry);
+      lastTouchReleaseAt.current = performance.now();
+      const tap = { id: current.entry.id, x: event.clientX, y: event.clientY, at: lastTouchReleaseAt.current };
+      const action = touchReleaseAction(lastTap.current, tap, {
+        cancelled,
+        moved: current.moved,
+        longPressed: current.longPressed,
+        releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
+      });
+      lastTap.current = action === "select" ? tap : null;
+      if (action === "select") onSelect(current.entry, { toggle: mobileMultiSelect, range: false, orderedIds });
+      else if (action === "open") open(current.entry);
     }
     setDropTarget(null);
     drag.current = null;
@@ -276,7 +293,7 @@ export function FolderExplorer({
                     }
                     onSelect(entry, { toggle: event.metaKey || event.ctrlKey, range: event.shiftKey, orderedIds });
                   }}
-                  onDoubleClick={() => open(entry)}
+                  onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) open(entry); }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") open(entry);
                     else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {

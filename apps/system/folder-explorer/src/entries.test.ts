@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { selectionAfterInteraction, sortEntries } from "./entries";
+import { entryTapAction, selectionAfterInteraction, sortEntries } from "./entries";
 
 test("sorts folders first and names naturally", () => {
   const metadata = { modifiedAt: 0, parent: null };
@@ -16,4 +16,14 @@ test("supports keyboard-style toggle and range multi-selection", () => {
   expect(selectionAfterInteraction(["b"], "d", order, { toggle: true })).toEqual(["b", "d"]);
   expect(selectionAfterInteraction(["b", "d"], "b", order, { toggle: true })).toEqual(["d"]);
   expect(selectionAfterInteraction(["b"], "d", order, { range: true, anchor: "b" })).toEqual(["b", "c", "d"]);
+  expect(selectionAfterInteraction(["b"], "d", order, { additive: true })).toEqual(["b", "d"]);
+  expect(selectionAfterInteraction(["b"], "b", order, { additive: true })).toEqual(["b"]);
+});
+
+test("opens only after a second touch on the same nearby entry", () => {
+  const first = { handle: "a", x: 10, y: 10, at: 1_000 };
+  expect(entryTapAction(null, first, true)).toBe("select");
+  expect(entryTapAction(first, { ...first, x: 18, at: 1_300 }, true)).toBe("open");
+  expect(entryTapAction(first, { ...first, handle: "b", at: 1_300 }, true)).toBe("select");
+  expect(entryTapAction(first, { ...first, at: 1_300 }, false)).toBe("none");
 });

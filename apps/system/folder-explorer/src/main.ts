@@ -1,6 +1,6 @@
 import type { DirectoryEntry, FileHandle, FolderHandle, HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, downloadBuffer, formatBytes, readFileData, required } from "@hiraya/system-apps-shared";
-import { selectionAfterInteraction, sortEntries } from "./entries";
+import { entryTapAction, selectionAfterInteraction, sortEntries, type EntryTap } from "./entries";
 import "./style.css";
 
 const APP_ID = "app.hiraya.folder-explorer";
@@ -10,6 +10,8 @@ const dialog = required<HTMLDialogElement>("#name-dialog");
 const input = required<HTMLInputElement>("#name-input");
 const createMenuTrigger = required<HTMLButtonElement>("#create-menu-trigger");
 const createActions = required<HTMLElement>("#create-actions");
+const createActionsBackdrop = required<HTMLElement>("#create-actions-backdrop");
+const mobileFab = required<HTMLButtonElement>("#mobile-fab");
 let hiraya: HirayaClient;
 let folder: FolderHandle | null = null;
 let entries: DirectoryEntry[] = [];
@@ -17,6 +19,10 @@ let selectedHandles: string[] = [];
 let selectionAnchor: string | null = null;
 let crumbs: Array<{ handle: FolderHandle | null; name: string }> = [];
 let nameAction: ((name: string) => Promise<void>) | null = null;
+let multiSelectMode = false;
+let lastTap: EntryTap | null = null;
+let touchPress: { pointerId: number; handle: string; x: number; y: number; moved: boolean; longPressed: boolean; timer?: number } | null = null;
+let sheetDrag: { pointerId: number; y: number; startedAt: number; moved: boolean } | null = null;
 
 required("#up").addEventListener("click", () => void goUp());
 required("#choose").addEventListener("click", () => void chooseFolder());
@@ -33,9 +39,17 @@ required("#more").addEventListener("click", () => void showMoreActions());
 required("#delete").addEventListener("click", () => void remove());
 required("#cancel-name").addEventListener("click", () => dialog.close());
 createMenuTrigger.addEventListener("click", () => setCreateMenuOpen(createActions.dataset.open !== "true"));
+mobileFab.addEventListener("click", () => selectedHandles.length ? void showMoreActions() : setCreateMenuOpen(true));
+const createActionsHandle = required<HTMLElement>("#create-actions-handle");
+createActionsHandle.addEventListener("click", () => { if (!sheetDrag?.moved) closeCreateMenu(); });
+createActionsHandle.addEventListener("pointerdown", beginSheetDrag);
+createActionsHandle.addEventListener("pointermove", moveSheetDrag);
+createActionsHandle.addEventListener("pointerup", finishSheetDrag);
+createActionsHandle.addEventListener("pointercancel", cancelSheetDrag);
+createActionsBackdrop.addEventListener("pointerdown", (event) => { if (event.target === createActionsBackdrop) closeCreateMenu(); });
 document.addEventListener("pointerdown", (event) => {
   const target = event.target as Node | null;
-  if (target && !createActions.contains(target) && !createMenuTrigger.contains(target)) closeCreateMenu();
+  if (target && !createActions.contains(target) && !createMenuTrigger.contains(target) && !mobileFab.contains(target)) closeCreateMenu();
 });
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape" || createActions.dataset.open !== "true") return;
@@ -108,6 +122,44 @@ function render() {
     row.append(nameCell, type, size, modified);
     row.addEventListener("click", (event) => select(entry, { toggle: event.ctrlKey || event.metaKey, range: event.shiftKey }));
     row.addEventListener("dblclick", () => void activate(entry));
+    row.addEventListener("pointerdown", (event) => {
+      if (event.pointerType !== "touch" || event.button !== 0) return;
+      event.preventDefault();
+      touchPress = { pointerId: event.pointerId, handle, x: event.clientX, y: event.clientY, moved: false, longPressed: false };
+      touchPress.timer = window.setTimeout(() => {
+        if (!touchPress || touchPress.pointerId !== event.pointerId || touchPress.moved) return;
+        touchPress.timer = undefined;
+        touchPress.longPressed = true;
+        lastTap = null;
+        multiSelectMode = true;
+        selectedHandles = selectionAfterInteraction(selectedHandles, handle, ordered, { additive: true });
+        selectionAnchor = handle;
+        render();
+      }, 500);
+      row.setPointerCapture(event.pointerId);
+    });
+    row.addEventListener("pointermove", (event) => {
+      if (!touchPress || touchPress.pointerId !== event.pointerId || touchPress.moved) return;
+      if (Math.hypot(event.clientX - touchPress.x, event.clientY - touchPress.y) < 10) return;
+      touchPress.moved = true;
+      if (touchPress.timer) window.clearTimeout(touchPress.timer);
+      touchPress.timer = undefined;
+    });
+    row.addEventListener("pointerup", (event) => {
+      if (!touchPress || touchPress.pointerId !== event.pointerId) return;
+      if (touchPress.timer) window.clearTimeout(touchPress.timer);
+      const tap = { handle, x: event.clientX, y: event.clientY, at: performance.now() };
+      const action = entryTapAction(lastTap, tap, !touchPress.moved && !touchPress.longPressed);
+      lastTap = action === "select" ? tap : null;
+      touchPress = null;
+      if (action === "select") select(entry, { toggle: multiSelectMode });
+      else if (action === "open") void activate(entry);
+    });
+    row.addEventListener("pointercancel", (event) => {
+      if (!touchPress || touchPress.pointerId !== event.pointerId) return;
+      if (touchPress.timer) window.clearTimeout(touchPress.timer);
+      touchPress = null;
+    });
     row.addEventListener("keydown", (event) => {
       if (event.key === "Enter") { event.preventDefault(); void activate(entry); return; }
       if (event.key === " ") { event.preventDefault(); select(entry, { toggle: true }); return; }
@@ -140,6 +192,7 @@ function select(entry: DirectoryEntry, options: { toggle?: boolean; range?: bool
   const handle = entry.metadata.handle as string;
   selectedHandles = selectionAfterInteraction(selectedHandles, handle, entries.map((item) => item.metadata.handle as string), { ...options, anchor: selectionAnchor });
   if (!options.range) selectionAnchor = handle;
+  if (!selectedHandles.length) multiSelectMode = false;
   render();
 }
 
@@ -157,6 +210,11 @@ async function renderSelection() {
   required<HTMLButtonElement>("#move").disabled = selected.length !== 1;
   required<HTMLButtonElement>("#download").disabled = selected.length !== 1 || selected[0].kind !== "file";
   for (const id of ["delete", "more", "offline"]) required<HTMLButtonElement>(`#${id}`).disabled = selected.length === 0;
+  mobileFab.setAttribute("aria-label", selected.length ? `Actions for ${selected.length} selected ${selected.length === 1 ? "item" : "items"}` : "Create or import an item");
+  mobileFab.querySelector("span")!.textContent = selected.length ? "⋯" : "+";
+  const count = mobileFab.querySelector("b")!;
+  count.hidden = selected.length === 0;
+  count.textContent = String(selected.length);
   if (!selected.length) return;
   try {
     const states = await hiraya.host.getEntryStatus(selected.map((entry) => entry.metadata.handle));
@@ -168,18 +226,43 @@ async function renderSelection() {
 
 function setCreateMenuOpen(open: boolean) {
   createActions.dataset.open = String(open);
+  createActionsBackdrop.dataset.open = String(open);
+  const mobile = window.matchMedia("(max-width: 620px)").matches;
+  createActions.setAttribute("role", open && mobile ? "dialog" : "group");
+  if (open && mobile) createActions.setAttribute("aria-modal", "true"); else createActions.removeAttribute("aria-modal");
   createMenuTrigger.setAttribute("aria-expanded", String(open));
   if (open) requestAnimationFrame(() => createActions.querySelector<HTMLButtonElement>("button")?.focus());
 }
 function closeCreateMenu() { setCreateMenuOpen(false); }
+
+function beginSheetDrag(event: PointerEvent) {
+  if (event.button !== 0) return;
+  sheetDrag = { pointerId: event.pointerId, y: event.clientY, startedAt: performance.now(), moved: false };
+  (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+}
+function moveSheetDrag(event: PointerEvent) {
+  if (!sheetDrag || sheetDrag.pointerId !== event.pointerId) return;
+  const delta = Math.max(0, event.clientY - sheetDrag.y);
+  sheetDrag.moved ||= delta > 4;
+  createActions.style.transform = `translate3d(0, ${delta}px, 0)`;
+}
+function finishSheetDrag(event: PointerEvent) {
+  if (!sheetDrag || sheetDrag.pointerId !== event.pointerId) return;
+  const current = sheetDrag;
+  const delta = Math.max(0, event.clientY - current.y);
+  const velocity = delta / Math.max(1, performance.now() - current.startedAt);
+  if (delta >= 80 || delta >= 28 && velocity >= .5) { sheetDrag = null; closeCreateMenu(); }
+  else { createActions.style.removeProperty("transform"); window.setTimeout(() => { if (sheetDrag === current) sheetDrag = null; }, 0); }
+}
+function cancelSheetDrag() { sheetDrag = null; createActions.style.removeProperty("transform"); }
 
 async function activate(entry: DirectoryEntry) {
   if (entry.kind === "folder") await enter(entry.metadata.handle, entry.metadata.name);
   else await hostAction(() => hiraya.host.openEntry(entry.metadata.handle), "Could not open the file.");
 }
 async function openSelected() { const entry = selectedEntries()[0]; if (entry) await activate(entry); }
-async function enter(next: FolderHandle, name: string) { folder = next; crumbs.push({ handle: next, name }); selectedHandles = []; selectionAnchor = null; await refresh(); }
-async function navigateToCrumb(index: number) { const crumb = crumbs[index]; crumbs = crumbs.slice(0, index + 1); folder = crumb.handle; selectedHandles = []; selectionAnchor = null; await refresh(); }
+async function enter(next: FolderHandle, name: string) { folder = next; crumbs.push({ handle: next, name }); selectedHandles = []; selectionAnchor = null; multiSelectMode = false; lastTap = null; await refresh(); }
+async function navigateToCrumb(index: number) { const crumb = crumbs[index]; crumbs = crumbs.slice(0, index + 1); folder = crumb.handle; selectedHandles = []; selectionAnchor = null; multiSelectMode = false; lastTap = null; await refresh(); }
 async function goUp() { if (crumbs.length > 1) await navigateToCrumb(crumbs.length - 2); }
 async function chooseFolder() { try { const chosen = await hiraya.dialogs.openFolder(); if (chosen) { folder = chosen; crumbs = [{ handle: chosen, name: await folderLabel(chosen) }]; await refresh(); } } catch (error) { fail(error, "Could not choose a folder."); } }
 async function folderLabel(handle: FolderHandle) { const entry = await hiraya.files.stat(handle); return entry.kind === "folder" ? entry.metadata.name : "Folder"; }

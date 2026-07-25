@@ -7,7 +7,9 @@ header { position: relative; min-width: 0; }
 .breadcrumbs button { min-height: 1.8rem; padding: .15rem .3rem; overflow: hidden; border-color: transparent; background: transparent; text-overflow: ellipsis; white-space: nowrap; }
 .breadcrumbs button:disabled { color: var(--hiraya-text); opacity: 1; }
 .create-menu-trigger { display: none; }
+.create-actions-backdrop { display: contents; }
 .create-actions { display: contents; }
+.sheet-handle, .mobile-fab { display: none; }
 .mobile-label { display: none; }
 .selection-bar { display: flex; align-items: center; gap: .45rem; min-height: 2.8rem; padding: .35rem .7rem; border-bottom: 1px solid var(--hiraya-border); background: var(--hiraya-background); }
 #selection { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -32,9 +34,12 @@ tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--hiraya-acc
   .toolbar > .breadcrumbs { grid-column: 2; grid-row: 1; min-width: 0; }
   .toolbar > #choose { grid-column: 3; grid-row: 1; }
   .toolbar > .spacer { display: none; }
-  .create-menu-trigger { display: inline-flex; grid-column: 4; grid-row: 1; align-items: center; justify-content: center; }
-  .create-actions { position: absolute; z-index: 3; top: calc(100% - .25rem); right: .5rem; display: none; width: min(15rem, calc(100% - 1rem)); padding: .4rem; border: 1px solid var(--hiraya-border); border-radius: .55rem; background: var(--hiraya-surface-elevated); box-shadow: 0 .75rem 2rem rgb(0 0 0 / .24); }
-  .create-actions[data-open="true"] { display: grid; }
+  .create-menu-trigger { display: none; }
+  .create-actions-backdrop { position: fixed; z-index: 10; inset: 0; display: none; align-items: end; padding: .5rem; background: color-mix(in srgb, var(--hiraya-background) 60%, transparent); }
+  .create-actions-backdrop[data-open="true"] { display: grid; }
+  .create-actions { display: grid; width: 100%; max-height: 76dvh; padding: 0 .4rem max(.4rem, env(safe-area-inset-bottom)); overflow-y: auto; border: 1px solid var(--hiraya-border); border-radius: .8rem .8rem .45rem .45rem; background: var(--hiraya-surface-elevated); box-shadow: 0 .75rem 2rem rgb(0 0 0 / .24); transition: transform .18s cubic-bezier(.22,.75,.24,1); }
+  .sheet-handle { display: grid !important; width: 100% !important; min-height: 2.1rem !important; place-items: center; padding: 0 !important; border: 0 !important; background: transparent !important; touch-action: none; }
+  .sheet-handle span { width: 2.6rem; height: .3rem; border-radius: 999px; background: color-mix(in srgb, var(--hiraya-text) 38%, transparent); }
   .create-actions button { width: 100%; min-height: 2.75rem; border-color: transparent; background: transparent; text-align: left; }
   .create-actions button:hover:not(:disabled), .create-actions button:focus-visible { border-color: var(--hiraya-border); background: var(--hiraya-surface); }
   .create-actions button.primary { color: var(--hiraya-text); font-weight: inherit; }
@@ -45,7 +50,8 @@ tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--hiraya-acc
   .selection-bar #move,
   .selection-bar #download,
   .selection-bar #offline,
-  .selection-bar #delete { display: none; }
+  .selection-bar #delete,
+  .selection-bar #more { display: none; }
   .selection-bar button { min-height: 2.65rem; padding-inline: .7rem; }
   .desktop-label { display: none; }
   .mobile-label { display: inline; }
@@ -54,4 +60,10 @@ tbody tr[aria-selected="true"] { background: color-mix(in srgb, var(--hiraya-acc
   th:nth-child(3) { width: 26%; }
   th, td { padding-inline: .65rem; }
   tbody tr { height: 3.25rem; }
+  .browser { padding-bottom: 5rem; }
+  .mobile-fab { position: fixed; z-index: 8; right: max(1rem, env(safe-area-inset-right)); bottom: max(1rem, env(safe-area-inset-bottom)); display: grid; width: 3.6rem; height: 3.6rem; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--hiraya-accent) 70%, var(--hiraya-border)); border-radius: 50%; color: var(--hiraya-accent-text); background: var(--hiraya-accent); box-shadow: 0 .8rem 2rem rgb(0 0 0 / .28); font-size: 1.7rem; }
+  .mobile-fab b { position: absolute; top: -.2rem; right: -.2rem; display: grid; min-width: 1.35rem; height: 1.35rem; place-items: center; padding-inline: .25rem; border: 2px solid var(--hiraya-background); border-radius: 999px; color: var(--hiraya-text); background: var(--hiraya-surface-elevated); font-size: .68rem; }
+  .mobile-fab b[hidden] { display: none; }
 }
+
+@media (prefers-reduced-motion: reduce) { .create-actions { transition-duration: .01ms; } }

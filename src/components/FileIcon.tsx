@@ -2,12 +2,14 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { opensOnTouchRelease } from "../ui/file-icon-gesture";
+import { touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
 
 type Props = {
   entry: DesktopEntry;
   selected: boolean;
   onSelect: (event: React.MouseEvent | React.PointerEvent) => void;
+  onTouchSelect: () => void;
+  onLongPressSelect: () => void;
   onOpen: () => void;
   onMove: (position: EntryPosition, targetParentId: string | null, delta: EntryPosition) => Promise<boolean>;
   onDragAtEdge: (clientX: number, clientY: number) => {
@@ -26,9 +28,11 @@ type Props = {
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
+  const lastTap = useRef<TouchTap | null>(null);
+  const lastTouchReleaseAt = useRef(0);
   const drag = useRef<{
     pointerX: number;
     pointerY: number;
@@ -133,12 +137,13 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
         if (!current || current.pointerId !== event.pointerId || current.moved) return;
         current.longPressTimer = undefined;
         current.longPressed = true;
-        onContextMenuAt(event.clientX, event.clientY);
+        lastTap.current = null;
+        onLongPressSelect();
       }, 500);
     }
     canvas.dataset.iconDragging = "true";
     event.currentTarget.setPointerCapture(event.pointerId);
-    onSelect(event);
+    if (event.pointerType !== "touch") onSelect(event);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
@@ -219,14 +224,19 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
     }
     onDragEndRef.current(cancelled || !succeeded);
     if (completed.pointerType === "touch") {
+      lastTouchReleaseAt.current = performance.now();
       const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
       const visibleTarget = releaseTarget?.closest(".file-icon__art, .file-icon__name");
-      if (opensOnTouchRelease({
+      const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: performance.now() };
+      const action = touchReleaseAction(lastTap.current, tap, {
         cancelled,
         moved: completed.moved,
         longPressed: completed.longPressed,
         releasedOnVisibleContent: Boolean(visibleTarget && iconRef.current?.contains(visibleTarget)),
-      })) onOpen();
+      });
+      lastTap.current = action === "select" ? tap : null;
+      if (action === "select") onTouchSelect();
+      else if (action === "open") onOpen();
     }
   }
 
@@ -247,7 +257,7 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
         aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability ? `, ${offlineStatusLabel(offlineAvailability)}` : ""}`}
         aria-pressed={selected}
         onClick={(event) => { if (event.detail === 0) onSelect(event); }}
-        onDoubleClick={onOpen}
+        onDoubleClick={() => { if (performance.now() - lastTouchReleaseAt.current > 700) onOpen(); }}
         onContextMenu={(event) => {
           const current = drag.current;
           if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);

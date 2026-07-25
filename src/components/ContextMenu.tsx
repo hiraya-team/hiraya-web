@@ -2,6 +2,9 @@ import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type Reac
 import { CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
+import { MOBILE_WINDOW_QUERY, useMediaQuery } from "../ui/responsive";
+import { useModalDialog } from "../ui/modal-dialog";
+import { dismissesSheetDrag } from "../ui/file-icon-gesture";
 
 const VIEWPORT_MARGIN = 8;
 const MENU_BAR_INSET = 48;
@@ -109,9 +112,10 @@ type Props = {
   selectionCount?: number;
   trashSupported?: boolean;
   openWith?: readonly { id: string; label: string; preferred?: boolean; onOpen: () => void; onSetPreferred?: () => void }[];
+  onClose: () => void;
 };
 
-export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onUnpinOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [] }: Props) {
+export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onUnpinOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
   const position = useMenuPosition(menu.x, menu.y);
   const onFocus = useRovingMenu(position.ref);
   const offlineItems: SubmenuItem[] = [
@@ -121,8 +125,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
     ...(onOpenOfflineStorage ? [{ id: "offline-panel", label: "Connection & Offline", icon: <GearSix />, onSelect: onOpenOfflineStorage }] : []),
   ];
 
-  return (
-    <div ref={position.ref} className="context-menu" role="menu" style={position.style} onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>
+  return <ActionMenuFrame menuRef={position.ref} style={position.style} label={selectionCount > 1 ? `Actions for ${selectionCount} selected items` : `Actions for ${entry.name}`} onClose={onClose} onFocus={onFocus}>
       {selectionCount === 1 && <button type="button" role="menuitem" autoFocus onClick={onOpen}>
         <FolderOpen size={17} /> Open
       </button>}
@@ -154,8 +157,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
       <button className="context-menu__danger" type="button" role="menuitem" disabled={readOnly} onClick={onDelete}>
         <Trash size={17} /> {trashSupported ? "Move to Trash" : "Delete permanently"}
       </button>
-    </div>
-  );
+  </ActionMenuFrame>;
 }
 
 type DesktopProps = {
@@ -167,14 +169,14 @@ type DesktopProps = {
   onSettings?: () => void;
   onPaste?: () => void;
   readOnly?: boolean;
+  onClose: () => void;
 };
 
-export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUpload, onImportFolder, onSettings, onPaste, readOnly = false }: DesktopProps) {
+export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUpload, onImportFolder, onSettings, onPaste, readOnly = false, onClose }: DesktopProps) {
   const position = useMenuPosition(menu.x, menu.y);
   const onFocus = useRovingMenu(position.ref);
 
-  return (
-    <div ref={position.ref} className="context-menu" role="menu" style={position.style} onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>
+  return <ActionMenuFrame menuRef={position.ref} style={position.style} label="Create and desktop actions" onClose={onClose} onFocus={onFocus}>
       <button type="button" role="menuitem" autoFocus={!readOnly} disabled={readOnly} onClick={onCreateFile}>
         <FilePlus size={17} /> New text file
       </button>
@@ -191,8 +193,56 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
       {onSettings && <button className="context-menu__separated" type="button" role="menuitem" autoFocus={readOnly} onClick={onSettings}>
         <GearSix size={17} /> Settings
       </button>}
-    </div>
-  );
+  </ActionMenuFrame>;
+}
+
+function ActionMenuFrame({ menuRef, style, label, onClose, onFocus, children }: {
+  menuRef: RefObject<HTMLDivElement | null>;
+  style: CSSProperties;
+  label: string;
+  onClose: () => void;
+  onFocus: (event: React.FocusEvent<HTMLDivElement>) => void;
+  children: ReactNode;
+}) {
+  const mobile = useMediaQuery(MOBILE_WINDOW_QUERY);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  const drag = useRef<{ pointerId: number; startY: number; startedAt: number; moved: boolean } | null>(null);
+  useModalDialog(backdropRef, dialogRef, onClose);
+
+  const menu = <div ref={menuRef} className="context-menu" role="menu" style={style} onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>{children}</div>;
+  if (!mobile) return menu;
+  return <div ref={backdropRef} className="action-sheet-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section ref={dialogRef} className="action-sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
+      <button className="action-sheet__handle" type="button" aria-label="Close actions" onClick={(event) => {
+        if (drag.current?.moved) { event.preventDefault(); drag.current = null; return; }
+        onClose();
+      }} onPointerDown={(event) => {
+        if (event.button !== 0) return;
+        drag.current = { pointerId: event.pointerId, startY: event.clientY, startedAt: performance.now(), moved: false };
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }} onPointerMove={(event) => {
+        const current = drag.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        const delta = Math.max(0, event.clientY - current.startY);
+        current.moved ||= delta > 4;
+        dialogRef.current?.style.setProperty("transform", `translate3d(0, ${delta}px, 0)`);
+      }} onPointerUp={(event) => {
+        const current = drag.current;
+        if (!current || current.pointerId !== event.pointerId) return;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        const delta = Math.max(0, event.clientY - current.startY);
+        if (dismissesSheetDrag(delta, performance.now() - current.startedAt)) { drag.current = null; onClose(); return; }
+        dialogRef.current?.style.removeProperty("transform");
+        window.setTimeout(() => { if (drag.current === current) drag.current = null; }, 0);
+      }} onPointerCancel={(event) => {
+        if (drag.current?.pointerId !== event.pointerId) return;
+        drag.current = null;
+        dialogRef.current?.style.removeProperty("transform");
+      }}><span /></button>
+      {menu}
+    </section>
+  </div>;
 }
 
 function handleMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
