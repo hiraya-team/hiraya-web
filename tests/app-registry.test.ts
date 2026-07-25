@@ -4,6 +4,7 @@ import {
   builtinAppEntryDependency,
   builtinAppMaximizeRestoreWindow,
   builtinAppTargetId,
+  builtinAppTargetOpensFile,
   builtinAppWindow,
   extractBuiltinAppTarget,
 } from "../src/apps/registry";
@@ -44,6 +45,13 @@ describe("built-in app registry", () => {
     expect(builtinAppEntryDependency({ kind: "properties", entryId: "alpha" })).toEqual({ entryId: "alpha", kind: "entry" });
     expect(builtinAppEntryDependency({ kind: "explorer", folderId: null })).toBeNull();
     expect(builtinAppEntryDependency({ kind: "settings" })).toBeNull();
+  });
+
+  test("identifies native and system apps already opening a file", () => {
+    expect(builtinAppTargetOpensFile({ kind: "file", fileId: "alpha" }, "alpha")).toBeTrue();
+    expect(builtinAppTargetOpensFile({ kind: "system", appId: "viewer", targetKind: "file", entryId: "alpha" }, "alpha")).toBeTrue();
+    expect(builtinAppTargetOpensFile({ kind: "system", appId: "viewer", targetKind: "file", entryId: "beta" }, "alpha")).toBeFalse();
+    expect(builtinAppTargetOpensFile({ kind: "explorer", folderId: "alpha" }, "alpha")).toBeFalse();
   });
 
   test("owns launch, minimum, and behavior-compatible maximize restore dimensions", () => {

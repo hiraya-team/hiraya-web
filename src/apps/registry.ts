@@ -93,6 +93,11 @@ export function builtinAppTargetId(target: BuiltinAppTarget): string {
   return `system:${target.appId}:${target.targetKind}:${target.entryId ?? "root"}`;
 }
 
+export function builtinAppTargetOpensFile(target: BuiltinAppTarget, fileId: string): boolean {
+  if (target.kind === "file") return target.fileId === fileId;
+  return target.kind === "system" && target.targetKind === "file" && target.entryId === fileId;
+}
+
 export function builtinAppEntryDependency(target: BuiltinAppTarget): BuiltinAppEntryDependency | null {
   if (target.kind === "file") return BUILTIN_APP_REGISTRY.file.entryDependency(target);
   if (target.kind === "explorer") return BUILTIN_APP_REGISTRY.explorer.entryDependency(target);

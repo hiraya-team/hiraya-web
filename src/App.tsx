@@ -93,7 +93,7 @@ import type { OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
-import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
+import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
 import type { AppPackageInspection } from "@hiraya/app-cli";
 import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
@@ -992,8 +992,14 @@ function App({ session }: { session: AuthSession | null }) {
   openRouteAppsRef.current = (next) => {
     if (next.explorerFolderId !== undefined) openExplorerWindow(next.explorerFolderId, false, !next.fileId && !next.propertiesEntryId && !next.settings);
     if (next.fileId) {
-      const entry = entryIndex.byId.get(next.fileId);
-      const resolution = entry?.kind === "file" ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
+      const fileId = next.fileId;
+      const entry = entryIndex.byId.get(fileId);
+      const openApp = runningAppsRef.current.find((app) => {
+        const target = app.kind === "sandbox" && app.systemTarget ? app.systemTarget : extractBuiltinAppTarget(app);
+        return target ? builtinAppTargetOpensFile(target, fileId) : false;
+      });
+      if (openApp) focusApp(openApp.id, false);
+      const resolution = entry?.kind === "file" && !openApp ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
       if (entry?.kind === "file" && resolution) void launchInstalledApp(resolution.app, entry, "restore");
     }
     if (next.propertiesEntryId && entryIndex.byId.has(next.propertiesEntryId)) openPropertiesWindow(next.propertiesEntryId, false);
@@ -2540,6 +2546,25 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  async function openFileWithApp(app: InstalledApp, file: FileEntry) {
+    setContextMenu(null);
+    const currentRoute = routeRef.current;
+    if (!currentRoute) return;
+    const previousApps = runningAppTargets();
+    const target: SystemAppTarget = { kind: "system", appId: app.appId, targetKind: "file", entryId: file.id };
+    if (app.source === "system") await launchInstalledApp(app, file);
+    else {
+      const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
+      if (packageEntry) await openAppPackage(packageEntry, file);
+      else setError("That app package is unavailable.");
+    }
+    const id = builtinAppTargetId(target);
+    if (!runningAppsRef.current.some((running) => running.id === id)) return;
+    if (routeRef.current !== currentRoute) return;
+    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: file.id }, "push", previousApps);
+    focusApp(id, false);
+  }
+
   async function removeInstalledApp(app: InstalledApp) {
     if (app.source === "system") return;
     if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
@@ -2611,19 +2636,7 @@ function App({ session }: { session: AuthSession | null }) {
       return;
     }
     if (resolution?.preferredUnavailable) setNotice(`Your preferred app for ${resolution.preferredUnavailable.matcher} is unavailable. Opened with ${app.manifest.name}; change the preference in Settings > Apps > File types.`);
-    const systemTarget: SystemAppTarget | undefined = app.source === "system" ? { kind: "system", appId: app.appId, targetKind: "file", entryId: entry.id } : undefined;
-    const existingId = systemTarget ? builtinAppTargetId(systemTarget) : "";
-    if (runningAppsRef.current.some((app) => app.id === existingId)) {
-      focusApp(existingId);
-      return;
-    }
-    const previousApps = runningAppTargets();
-    if (app.source === "desktop") {
-      const appPackage = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === app.packageEntryId && candidate.kind === "file");
-      if (appPackage) void openAppPackage(appPackage, entry);
-      else setError("That app package is unavailable.");
-    } else void launchInstalledApp(app, entry);
-    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: entry.id }, "push", previousApps);
+    void openFileWithApp(app, entry);
   }
   handleOpenRef.current = handleOpen;
 
@@ -2636,9 +2649,7 @@ function App({ session }: { session: AuthSession | null }) {
       setError("Text Editor is unavailable.");
       return;
     }
-    const previousApps = runningAppTargets();
-    void launchInstalledApp(editor, file);
-    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: file.id }, "push", previousApps);
+    void openFileWithApp(editor, file);
   }
 
   async function download(file: FileEntry) {
@@ -4390,27 +4401,8 @@ function App({ session }: { session: AuthSession | null }) {
               ? matchingInstalledApps(installedApps, entries, contextMenuEntry).map((app) => ({
                   id: app.appId,
                   label: app.manifest.name,
-                  preferred: fileAssociations.some((association) => association.appId === app.appId && associationCandidates(contextMenuEntry).includes(association.matcher)),
-                  onOpen: () => {
-                    setContextMenu(null);
-                    const previousApps = runningAppTargets();
-                    if (app.source === "system") void launchInstalledApp(app, contextMenuEntry);
-                    else {
-                      const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
-                      if (packageEntry) void openAppPackage(packageEntry, contextMenuEntry);
-                    }
-                    const currentRoute = routeRef.current;
-                    if (currentRoute)
-                      navigateRoute(
-                        {
-                          column: currentRoute.column,
-                          row: currentRoute.row,
-                          fileId: contextMenuEntry.id,
-                        },
-                        "push",
-                        previousApps,
-                      );
-                  },
+                  preferred: resolveFileApp(contextMenuEntry, installedApps, entries, fileAssociations)?.app.appId === app.appId,
+                  onOpen: () => void openFileWithApp(app, contextMenuEntry),
                   onSetPreferred: () => {
                     const matcher = associationCandidates(contextMenuEntry)[0];
                     setContextMenu(null);

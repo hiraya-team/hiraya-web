@@ -1,10 +1,11 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
+import { Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "../ui/responsive";
 import { useModalDialog } from "../ui/modal-dialog";
 import { dismissesSheetDrag } from "../ui/file-icon-gesture";
+import { openWithMenuItems, type OpenWithItem } from "../ui/open-with-menu";
 
 const VIEWPORT_MARGIN = 8;
 const MENU_BAR_INSET = 48;
@@ -61,7 +62,15 @@ function useRovingMenu(ref: RefObject<HTMLDivElement | null>) {
   };
 }
 
-type SubmenuItem = { id: string; label: string; icon?: ReactNode; disabled?: boolean; onSelect: () => void };
+type SubmenuItem = {
+  id: string;
+  label: string;
+  icon?: ReactNode;
+  meta?: string;
+  disabled?: boolean;
+  onSelect: () => void;
+  secondaryAction?: { label: string; accessibleLabel: string; onSelect: () => void };
+};
 
 function MenuSubmenu({ icon, label, items }: { icon: ReactNode; label: string; items: readonly SubmenuItem[] }) {
   const [open, setOpen] = useState(false);
@@ -84,7 +93,14 @@ function MenuSubmenu({ icon, label, items }: { icon: ReactNode; label: string; i
       const next = linearNavigationIndex(menuItems.indexOf(document.activeElement as HTMLButtonElement), menuItems.length, event.key, "vertical");
       if (next < 0) return;
       event.preventDefault(); event.stopPropagation(); menuItems[next]?.focus();
-    }}>{items.map((item) => <button type="button" role="menuitem" tabIndex={-1} disabled={item.disabled} key={item.id} onClick={item.onSelect}><span className="context-menu__submenu-item-icon" aria-hidden="true">{item.icon}</span><span className="context-menu__submenu-item-label">{item.label}</span></button>)}</div>
+    }}>{items.map((item) => <div className="context-menu__submenu-item" role="none" key={item.id}>
+      <button className="context-menu__submenu-item-primary" type="button" role="menuitem" tabIndex={-1} disabled={item.disabled} onClick={item.onSelect}>
+        <span className="context-menu__submenu-item-icon" aria-hidden="true">{item.icon}</span>
+        <span className="context-menu__submenu-item-label">{item.label}</span>
+        {item.meta && <span className="context-menu__submenu-item-meta">{item.meta}</span>}
+      </button>
+      {item.secondaryAction && <button className="context-menu__submenu-item-secondary" type="button" role="menuitem" tabIndex={-1} disabled={item.disabled} aria-label={item.secondaryAction.accessibleLabel} onClick={item.secondaryAction.onSelect}>{item.secondaryAction.label}</button>}
+    </div>)}</div>
   </div>;
 }
 
@@ -111,7 +127,7 @@ type Props = {
   readOnly?: boolean;
   selectionCount?: number;
   trashSupported?: boolean;
-  openWith?: readonly { id: string; label: string; preferred?: boolean; onOpen: () => void; onSetPreferred?: () => void }[];
+  openWith?: readonly OpenWithItem[];
   onClose: () => void;
 };
 
@@ -132,7 +148,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
       {selectionCount === 1 && entry.kind === "file" && onEditFile && <button type="button" role="menuitem" disabled={readOnly} onClick={onEditFile}>
         <PencilSimple size={17} /> Edit file
       </button>}
-      {selectionCount === 1 && entry.kind === "file" && openWith.length > 0 && <MenuSubmenu icon={<Package size={17} />} label="Open with" items={openWith.flatMap((app) => [{ id: app.id, label: `${app.label}${app.preferred ? " (preferred)" : ""}`, onSelect: app.onOpen }, ...(app.onSetPreferred ? [{ id: `${app.id}:preferred`, label: `Always use ${app.label}`, onSelect: app.onSetPreferred }] : [])])} />}
+      {selectionCount === 1 && entry.kind === "file" && openWith.length > 0 && <MenuSubmenu icon={<Package size={17} />} label="Open with" items={openWithMenuItems(openWith).map((item) => ({ ...item, icon: item.preferred ? <Check size={15} weight="bold" /> : undefined }))} />}
       {selectionCount === 1 && <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onRename}>
         <PencilSimple size={17} /> Rename
         <kbd>R</kbd>
