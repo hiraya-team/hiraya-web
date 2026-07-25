@@ -69,6 +69,7 @@ describe("app command contributions", () => {
       uploadFiles: () => calls.push("upload"),
       importFolder: () => calls.push("import-folder"),
       openSettings: () => calls.push("settings"),
+      openAreaMap: () => calls.push("area-map"),
       openPanel: (panel) => calls.push(panel),
     };
     const service = createAppCommandService();
@@ -79,7 +80,7 @@ describe("app command contributions", () => {
       APP_COMMAND_IDS.upload,
       APP_COMMAND_IDS.importFolder,
       APP_COMMAND_IDS.trash,
-      APP_COMMAND_IDS.workspaceOverview,
+      APP_COMMAND_IDS.areaMap,
       APP_COMMAND_IDS.connection,
       APP_COMMAND_IDS.help,
       APP_COMMAND_IDS.shortcuts,
@@ -88,9 +89,12 @@ describe("app command contributions", () => {
     expect(await service.execute(APP_COMMAND_IDS.trash, context)).toBe(false);
     expect(calls).toEqual([]);
 
+    expect(await service.execute(APP_COMMAND_IDS.areaMap, context)).toBe(true);
+    expect(calls).toEqual(["area-map"]);
+
     context.canMutate = true;
     expect(await service.execute(APP_COMMAND_IDS.newFile, context)).toBe(true);
     expect(await service.execute(APP_COMMAND_IDS.trash, context)).toBe(true);
-    expect(calls).toEqual(["file", "trash"]);
+    expect(calls).toEqual(["area-map", "file", "trash"]);
   });
 });

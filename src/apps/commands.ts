@@ -58,14 +58,14 @@ export const APP_COMMAND_IDS = {
   importFolder: "desktop.import-folder",
   trash: "desktop.trash",
   settings: "desktop.settings",
-  workspaceOverview: "desktop.workspace-overview",
+  areaMap: "desktop.area-map",
   connection: "desktop.connection-offline",
   help: "desktop.help",
   shortcuts: "desktop.shortcuts",
 } as const satisfies Record<string, CommandId>;
 
 export type AppCommandId = typeof APP_COMMAND_IDS[keyof typeof APP_COMMAND_IDS];
-export type AppCommandPanel = "trash" | "areas" | "help" | "shortcuts" | "sync";
+export type AppCommandPanel = "trash" | "help" | "shortcuts" | "sync";
 
 export type AppCommandContext = {
   canMutate: boolean;
@@ -76,6 +76,7 @@ export type AppCommandContext = {
   uploadFiles: () => void;
   importFolder: () => void;
   openSettings: () => void;
+  openAreaMap: () => void;
   openPanel: (panel: AppCommandPanel) => void;
 };
 
@@ -128,7 +129,7 @@ export function createAppCommandService(): CommandService<AppCommandContext> {
     { id: APP_COMMAND_IDS.importFolder, order: 35, label: "Import folder", keywords: ["directory upload hierarchy"], enabled: ({ canMutate }) => canMutate, execute: ({ importFolder }) => importFolder() },
     { id: APP_COMMAND_IDS.trash, order: 40, label: "Open Trash", keywords: ["deleted restore"], visible: ({ canOpenTrash }) => canOpenTrash, enabled: ({ canMutate }) => canMutate, execute: ({ openPanel }) => openPanel("trash") },
     { id: APP_COMMAND_IDS.settings, order: 50, label: "Open Settings", visible: ({ canOpenSettings }) => canOpenSettings, execute: ({ openSettings }) => openSettings() },
-    { id: APP_COMMAND_IDS.workspaceOverview, order: 60, label: "Open Workspace Overview", detail: "Navigate regions and focus open windows", keywords: ["areas spaces coordinates windows move arrange"], execute: ({ openPanel }) => openPanel("areas") },
+    { id: APP_COMMAND_IDS.areaMap, order: 60, label: "Expand Area Map", detail: "Navigate spatial desktop areas", keywords: ["areas spaces coordinates regions minimap"], execute: ({ openAreaMap }) => openAreaMap() },
     { id: APP_COMMAND_IDS.connection, order: 65, label: "Open Connection & Offline", detail: "Review sync, pending work, pins, and storage", keywords: ["sync cache pin download release blocked"], execute: ({ openPanel }) => openPanel("sync") },
     { id: APP_COMMAND_IDS.help, order: 75, label: "Open User Guide", detail: "Bundled product help and troubleshooting", keywords: ["help documentation manual offline"], execute: ({ openPanel }) => openPanel("help") },
     { id: APP_COMMAND_IDS.shortcuts, order: 80, label: "Show keyboard shortcuts", keywords: ["keys help"], execute: ({ openPanel }) => openPanel("shortcuts") },

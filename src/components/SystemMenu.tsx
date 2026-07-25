@@ -1,4 +1,4 @@
-import { BookOpenText, GearSix, IdentificationCard, Keyboard, ShareNetwork, SignOut, SquaresFour, Trash, UserCircle } from "@phosphor-icons/react";
+import { BookOpenText, GearSix, IdentificationCard, Keyboard, MapTrifold, ShareNetwork, SignOut, Trash, UserCircle } from "@phosphor-icons/react";
 import type { AuthSession } from "../lib/auth";
 import { SERVER_ROUTES } from "../lib/api-routes";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
@@ -7,7 +7,7 @@ type Props = {
   session: AuthSession | null;
   canOpenTrash: boolean;
   canShare: boolean;
-  onWorkspace: () => void;
+  onAreaMap: () => void;
   onSettings: () => void;
   onHelp: () => void;
   onShortcuts: () => void;
@@ -15,11 +15,11 @@ type Props = {
   onShare: () => void;
 };
 
-export function SystemMenu({ session, canOpenTrash, canShare, onWorkspace, onSettings, onHelp, onShortcuts, onTrash, onShare }: Props) {
+export function SystemMenu({ session, canOpenTrash, canShare, onAreaMap, onSettings, onHelp, onShortcuts, onTrash, onShare }: Props) {
   return <MobileHeaderMenu label={session ? `Account and system: ${session.user.displayName}` : "System menu"} icon={session ? <UserCircle size={18} /> : <GearSix size={18} />}>
     {(dismiss) => <>
       {session && <div className="account-menu__identity"><strong>{session.user.displayName}</strong>{session.user.email && <span>{session.user.email}</span>}</div>}
-      <button type="button" onClick={() => { dismiss(); onWorkspace(); }}><SquaresFour /> Workspace Overview</button>
+      <button type="button" onClick={() => { dismiss(); onAreaMap(); }}><MapTrifold /> Expand Area Map</button>
       <button type="button" onClick={() => { dismiss(); onSettings(); }}><GearSix /> Settings</button>
       <button type="button" onClick={() => { dismiss(); onHelp(); }}><BookOpenText /> Help</button>
       <button type="button" onClick={() => { dismiss(); onShortcuts(); }}><Keyboard /> Keyboard shortcuts</button>
