@@ -8,6 +8,8 @@ const body = required<HTMLTableSectionElement>("#entries");
 const status = required<HTMLElement>("#status");
 const dialog = required<HTMLDialogElement>("#name-dialog");
 const input = required<HTMLInputElement>("#name-input");
+const createMenuTrigger = required<HTMLButtonElement>("#create-menu-trigger");
+const createActions = required<HTMLElement>("#create-actions");
 let hiraya: HirayaClient;
 let folder: FolderHandle | null = null;
 let entries: DirectoryEntry[] = [];
@@ -18,10 +20,10 @@ let nameAction: ((name: string) => Promise<void>) | null = null;
 
 required("#up").addEventListener("click", () => void goUp());
 required("#choose").addEventListener("click", () => void chooseFolder());
-required("#upload").addEventListener("click", () => void hostAction(() => hiraya.host.importFiles(folder), "Could not open file upload."));
-required("#import-folder").addEventListener("click", () => void hostAction(() => hiraya.host.importFolder(folder), "Could not open folder import."));
-required("#new-file").addEventListener("click", () => askName("Create file", "Untitled.txt", createFile));
-required("#new-folder").addEventListener("click", () => askName("Create folder", "New folder", createFolder));
+required("#upload").addEventListener("click", () => { closeCreateMenu(); void hostAction(() => hiraya.host.importFiles(folder), "Could not open file upload."); });
+required("#import-folder").addEventListener("click", () => { closeCreateMenu(); void hostAction(() => hiraya.host.importFolder(folder), "Could not open folder import."); });
+required("#new-file").addEventListener("click", () => { closeCreateMenu(); askName("Create file", "Untitled.txt", createFile); });
+required("#new-folder").addEventListener("click", () => { closeCreateMenu(); askName("Create folder", "New folder", createFolder); });
 required("#open").addEventListener("click", () => void openSelected());
 required("#rename").addEventListener("click", () => selectedEntries()[0] && askName("Rename item", selectedEntries()[0].metadata.name, rename));
 required("#move").addEventListener("click", () => void move());
@@ -30,6 +32,17 @@ required("#offline").addEventListener("click", () => void toggleOffline());
 required("#more").addEventListener("click", () => void showMoreActions());
 required("#delete").addEventListener("click", () => void remove());
 required("#cancel-name").addEventListener("click", () => dialog.close());
+createMenuTrigger.addEventListener("click", () => setCreateMenuOpen(createActions.dataset.open !== "true"));
+document.addEventListener("pointerdown", (event) => {
+  const target = event.target as Node | null;
+  if (target && !createActions.contains(target) && !createMenuTrigger.contains(target)) closeCreateMenu();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || createActions.dataset.open !== "true") return;
+  event.preventDefault();
+  closeCreateMenu();
+  createMenuTrigger.focus();
+});
 required<HTMLFormElement>("#name-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const action = nameAction;
@@ -137,6 +150,7 @@ function selectedEntries() {
 
 async function renderSelection() {
   const selected = selectedEntries();
+  required<HTMLElement>(".selection-bar").dataset.active = String(selected.length > 0);
   required("#selection").textContent = selected.length === 0 ? "Nothing selected" : selected.length === 1 ? selected[0].metadata.name : `${selected.length} items selected`;
   required<HTMLButtonElement>("#open").disabled = selected.length !== 1;
   required<HTMLButtonElement>("#rename").disabled = selected.length !== 1;
@@ -151,6 +165,13 @@ async function renderSelection() {
     status.textContent = states.length === 1 ? offlineLabel(states[0].status) : `${states.filter((entry) => entry.pinned).length} of ${states.length} selected items pinned.`;
   } catch { /* Older hosts retain the primary file actions. */ }
 }
+
+function setCreateMenuOpen(open: boolean) {
+  createActions.dataset.open = String(open);
+  createMenuTrigger.setAttribute("aria-expanded", String(open));
+  if (open) requestAnimationFrame(() => createActions.querySelector<HTMLButtonElement>("button")?.focus());
+}
+function closeCreateMenu() { setCreateMenuOpen(false); }
 
 async function activate(entry: DirectoryEntry) {
   if (entry.kind === "folder") await enter(entry.metadata.handle, entry.metadata.name);

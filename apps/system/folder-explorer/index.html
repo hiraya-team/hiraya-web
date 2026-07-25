@@ -1,1 +1,54 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Folder Explorer</title></head><body><main class="app-shell"><header><div class="toolbar"><button id="up" aria-label="Go to parent folder">Up</button><button id="choose">Choose folder</button><nav class="breadcrumbs" id="breadcrumbs" aria-label="Current folder"></nav><span class="spacer"></span><button id="upload">Upload</button><button id="import-folder">Import folder</button><button id="new-file">New file</button><button id="new-folder" class="primary">New folder</button></div><div class="selection-bar" aria-live="polite"><span id="selection">Nothing selected</span><span class="spacer"></span><button id="open" disabled>Open</button><button id="rename" disabled>Rename</button><button id="move" disabled>Move</button><button id="download" disabled>Download</button><button id="offline" disabled>Make available offline</button><button id="more" disabled>More actions</button><button id="delete" class="danger" disabled>Delete</button></div></header><section class="browser"><table role="grid" aria-label="Folder entries" aria-multiselectable="true"><thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Size</th><th scope="col">Modified</th></tr></thead><tbody id="entries"></tbody></table><div id="empty" class="empty" hidden><strong>This folder is empty</strong><span>Create, upload, or import an item to get started.</span></div></section><footer class="status" id="status" role="status">Connecting...</footer></main><dialog id="name-dialog"><form id="name-form"><h2 id="dialog-title">Name item</h2><label>Name<input id="name-input" maxlength="255" required></label><div class="dialog-actions"><button id="cancel-name" type="button">Cancel</button><button class="primary" type="submit">Continue</button></div></form></dialog><script type="module" src="/src/main.ts"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Folder Explorer</title>
+  </head>
+  <body>
+    <main class="app-shell">
+      <header>
+        <div class="toolbar">
+          <button id="up" aria-label="Go to parent folder">Up</button>
+          <button id="choose">Choose folder</button>
+          <nav class="breadcrumbs" id="breadcrumbs" aria-label="Current folder"></nav>
+          <span class="spacer"></span>
+          <button id="create-menu-trigger" class="primary create-menu-trigger" type="button" aria-expanded="false" aria-controls="create-actions">Add</button>
+          <div id="create-actions" class="create-actions" role="group" aria-label="Create or import" data-open="false">
+            <button id="upload">Upload</button>
+            <button id="import-folder">Import folder</button>
+            <button id="new-file">New file</button>
+            <button id="new-folder" class="primary">New folder</button>
+          </div>
+        </div>
+        <div class="selection-bar" data-active="false" aria-live="polite">
+          <span id="selection">Nothing selected</span>
+          <span class="spacer"></span>
+          <button id="open" disabled>Open</button>
+          <button id="rename" disabled>Rename</button>
+          <button id="move" disabled>Move</button>
+          <button id="download" disabled>Download</button>
+          <button id="offline" disabled>Make available offline</button>
+          <button id="more" disabled><span class="desktop-label">More actions</span><span class="mobile-label">Actions</span></button>
+          <button id="delete" class="danger" disabled>Delete</button>
+        </div>
+      </header>
+      <section class="browser">
+        <table role="grid" aria-label="Folder entries" aria-multiselectable="true">
+          <thead><tr><th scope="col">Name</th><th scope="col">Type</th><th scope="col">Size</th><th scope="col">Modified</th></tr></thead>
+          <tbody id="entries"></tbody>
+        </table>
+        <div id="empty" class="empty" hidden><strong>This folder is empty</strong><span>Create, upload, or import an item to get started.</span></div>
+      </section>
+      <footer class="status" id="status" role="status">Connecting...</footer>
+    </main>
+    <dialog id="name-dialog">
+      <form id="name-form">
+        <h2 id="dialog-title">Name item</h2>
+        <label>Name<input id="name-input" maxlength="255" required></label>
+        <div class="dialog-actions"><button id="cancel-name" type="button">Cancel</button><button class="primary" type="submit">Continue</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

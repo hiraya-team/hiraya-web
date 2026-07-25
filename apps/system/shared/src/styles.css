@@ -2,6 +2,7 @@
 
 :root { color-scheme: light dark; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; color: var(--hiraya-text); background: var(--hiraya-background); }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { width: 100%; min-width: 0; min-height: 100%; margin: 0; }
 body { min-height: 100vh; }
 button, input, textarea, select { color: inherit; font: inherit; }
