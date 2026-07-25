@@ -15,6 +15,7 @@ import { useModalDialog } from "./ui/modal-dialog";
 import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-layout";
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
+import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import { allowsMouseDoubleClick, recordTouchRelease, touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
 
 type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
@@ -207,6 +208,7 @@ export default function PublicDesktop({ token }: { token: string }) {
         {(headerElements) => open.kind === "folder" ? <FolderExplorer folder={folder ?? null} rootLabel={desktop?.name ?? "Desktop"} breadcrumbs={folder ? index.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []} children={index.children.get(open.folderId) ?? []} selectedIds={selectedIds} mobileMultiSelect={multiSelect} onSelect={(entry, options) => selectEntry(entry, options.toggle)} onLongPressSelect={(entry) => longPressSelect(entry)} onNavigate={(next) => { setSelectedIds(new Set()); setMultiSelect(false); setOpen({ kind: "folder", folderId: next?.id ?? null }); }} onOpen={openEntry} onCreateFolder={() => undefined} onCreateFile={() => undefined} onUpload={() => undefined} onImportFolder={() => undefined} onExternalDrop={() => undefined} onMove={() => undefined} onContextMenu={() => undefined} onBlankContextMenu={() => undefined} readOnly headerElements={headerElements} /> : open.blob ? <FileWindow file={open.file} blob={open.blob} editable={fileCapabilities(open.file).editable} readOnly headerActionsTarget={headerElements.actions} editorSettings={desktop?.editorSettings ?? DEFAULT_EDITOR_SETTINGS} externalEmbeddedPreviews={false} theme={theme} onSave={async () => undefined} onDownload={() => void loadFile(open.file, true)} onEdit={() => undefined} onEditorSettingsChange={() => undefined} onResolveLink={(path) => resolveLinkedFile(open.file, path)} onOpenLinkedFile={(file) => void loadFile(file)} /> : open.error ? <div className="app-window__loading" role="alert"><span>{open.error}</span><button className="button button--primary" type="button" onClick={() => void loadFile(open.file)}>Retry</button></div> : fileCapabilities(open.file).preview === "none" ? <div className="no-preview"><p>No preview is available for this file type.</p><button className="button button--primary" type="button" onClick={() => void loadFile(open.file, true)}><DownloadSimple size={16} /> Download file</button></div> : <div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}
       </AppWindow></div>}
     </section>
+    {multiSelect && selectedIds.size > 0 && <MobileSelectionToolbar count={selectedIds.size} selectionMode onDone={() => { setSelectedIds(new Set()); setMultiSelect(false); }} />}
     {gate && <LargeDownloadGate gate={gate} onClose={() => setGate(null)} />}
   </main>;
 }

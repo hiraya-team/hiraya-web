@@ -16,6 +16,7 @@ import { GettingStartedDialog } from "./components/GettingStartedDialog";
 import { AppPickerDialog } from "./components/AppPickerDialog";
 import { UpdateToast } from "./components/UpdateToast";
 import { NotificationCard } from "./components/NotificationCard";
+import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
   createEntries,
@@ -402,6 +403,7 @@ function App({ session }: { session: AuthSession | null }) {
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
+  const mobileSelectionMode = mobileMultiSelectScope === mobileFileSurface && selectionScope === mobileFileSurface;
   const showMobileSelectionToolbar = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId) && mobileFileSelection.length > 0;
   const showMobilePasteToolbar = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId) && canMutate && mobileFileSelection.length === 0 && Boolean(clipboardOffer && !clipboardOffer.dismissed);
   const dialogEntry = dialog?.type === "rename" ? entryIndex.byId.get(dialog.entryId) ?? null : dialog?.type === "delete" ? entryIndex.byId.get(dialog.entryIds[0]) ?? null : null;
@@ -409,6 +411,10 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || confirmation || contextMenu || editingAreas || appDialogRequests.length);
+
+  useEffect(() => {
+    if (mobileMultiSelectScope === selectionScope && !selectedIds.length) setMobileMultiSelectScope(null);
+  }, [mobileMultiSelectScope, selectedIds.length, selectionScope]);
 
   useEffect(() => {
     appTheme.set(activeTheme);
@@ -3474,13 +3480,12 @@ function App({ session }: { session: AuthSession | null }) {
         event.target.value = "";
       }} />
 
-      {showMobileSelectionToolbar && <div className="mobile-selection-toolbar" role="toolbar" aria-label={`Actions for ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`}>
-        <span className="mobile-selection-toolbar__count" aria-hidden="true">{mobileFileSelection.length}</span>
+      {showMobileSelectionToolbar && <MobileSelectionToolbar count={mobileFileSelection.length} selectionMode={mobileSelectionMode} onDone={() => replaceSelection(mobileFileSurface, [])}>
         <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}><Copy size={20} /></button>
         <button type="button" title="Move" aria-label={`Move ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => { setMoveDialogSubmitting(false); setMoveDialogEntryIds(mobileFileSelection.map((entry) => entry.id)); }}><FolderSimplePlus size={20} /></button>
         <button className="mobile-selection-toolbar__danger" type="button" title={syncStatus !== "local" ? "Move to Trash" : "Delete permanently"} aria-label={`${syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}: ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => setDialog({ type: "delete", entryIds: mobileFileSelection.map((entry) => entry.id) })}><Trash size={20} /></button>
         <button type="button" title="More actions" aria-label="More actions" aria-haspopup="dialog" onClick={() => openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth / 2, window.innerHeight - 20)}><DotsThree size={22} weight="bold" /></button>
-      </div>}
+      </MobileSelectionToolbar>}
       {showMobilePasteToolbar && <div className="mobile-selection-toolbar mobile-selection-toolbar--paste" role="toolbar" aria-label="Clipboard actions">
         <button className="mobile-selection-toolbar__primary" type="button" onClick={() => void beginPaste(focusedExplorer?.folderId ?? null)}><ClipboardText size={20} /><span>Paste</span></button>
         <button type="button" title="Dismiss paste action" aria-label="Dismiss paste action" onClick={() => setClipboardOffer((current) => dismissClipboardOffer(current))}><X size={19} /></button>
