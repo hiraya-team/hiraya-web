@@ -5924,7 +5924,16 @@ a:focus-visible {
 .desktop-minimap[data-expanded] .desktop-minimap__apps { align-self: auto; flex-direction: row; padding: 0; overflow-x: auto; border: 0; }
 .desktop-minimap__app { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 .desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 19 / var(--minimap-rows) / 12)); height: auto; aspect-ratio: calc(var(--minimap-columns) * 19) / calc(var(--minimap-rows) * 12); gap: 8px; }
-.desktop-minimap[data-expanded] .desktop-minimap__file { width: 28px; height: 28px; }
+.desktop-minimap[data-expanded] .desktop-minimap__file {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  transform: translate(-50%, -50%);
+  border-radius: 7px;
+  color: color-mix(in srgb, var(--theme-chrome-text) 84%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 10%, transparent);
+}
 .desktop-minimap__header { grid-row: 1; }
 .desktop-minimap__app-switcher { grid-row: 2; }
 .desktop-minimap[data-expanded] .desktop-minimap__grid-viewport { grid-row: 3; }
