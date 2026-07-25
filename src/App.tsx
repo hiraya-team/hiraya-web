@@ -5,6 +5,7 @@ import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
+import { FolderExplorer } from "./components/FolderExplorer";
 import { MoveDialog } from "./components/MoveDialog";
 import { DesktopSwitcher } from "./components/DesktopSwitcher";
 import type { CatalogQuota } from "./lib/desktop-catalog";
@@ -419,8 +420,11 @@ function App({ session }: { session: AuthSession | null }) {
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   selectedIdsRef.current = selectedIds;
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
-  const desktopSelection = selectionScope === "desktop" ? selectedEntries.filter((entry) => entry.parentId === null) : [];
-  const showMobileFileFab = isMobile && !focusedAppId && !contextMenu && Boolean(activeDesktopId);
+  const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
+  const mobileFileSurface = focusedExplorer?.id ?? "desktop";
+  const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
+  const mobileFileParentId = focusedExplorer?.folderId ?? null;
+  const showMobileFileFab = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId);
   const mobileFabPlacement = (() => {
     const candidates = [
       { id: "bottom-right", x: desktopSize.width - 45, y: desktopSize.height - 45 },
@@ -769,14 +773,13 @@ function App({ session }: { session: AuthSession | null }) {
     const savedApps = restoreWindowSession(session, loadedEntries, restoredRoute, desktopSize);
     pendingSystemRestoreRef.current = savedApps.flatMap((saved): Array<Extract<WindowSession["apps"][number], { kind: "system" }>> => {
       if (saved.kind === "system") return [saved];
-      if (saved.kind === "explorer") return [{ ...saved, kind: "system", appId: SYSTEM_APP_IDS.folderExplorer, targetKind: saved.folderId === null ? "root" : "folder", entryId: saved.folderId }];
       if (saved.kind === "file") {
         const file = byId.get(saved.fileId);
         return file?.kind === "file" ? [{ ...saved, kind: "system", appId: systemDefaultAppId(file), targetKind: "file", entryId: file.id }] : [];
       }
       return [];
     });
-    const restored = savedApps.filter((saved) => saved.kind !== "system" && saved.kind !== "file" && saved.kind !== "explorer").map((saved): RunningApp => {
+    const restored = savedApps.filter((saved) => saved.kind !== "system" && saved.kind !== "file").map((saved): RunningApp => {
       if (saved.kind === "settings") return { ...saved, id: builtinAppTargetId(saved) };
       return { ...saved, id: builtinAppTargetId(saved) };
     });
@@ -820,9 +823,7 @@ function App({ session }: { session: AuthSession | null }) {
         continue;
       }
       if (target.kind === "explorer") {
-        const explorer = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.folderExplorer && app.source === "system");
-        const folder = target.folderId === null ? "root" : entriesRef.current.find((entry) => entry.id === target.folderId && entry.kind === "folder");
-        if (explorer && folder) void launchInstalledAppRef.current(explorer, folder, "restore");
+        openExplorerWindow(target.folderId, false, false);
         continue;
       }
       if (target.kind === "properties") {
@@ -887,11 +888,7 @@ function App({ session }: { session: AuthSession | null }) {
   applyLocationRouteRef.current = applyLocationRoute;
   navigateRouteRef.current = navigateRoute;
   openRouteAppsRef.current = (next) => {
-    if (next.explorerFolderId !== undefined) {
-      const folder = next.explorerFolderId === null ? "root" : entryIndex.byId.get(next.explorerFolderId);
-      const explorer = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.folderExplorer);
-      if (explorer && (folder === "root" || folder?.kind === "folder")) void launchInstalledApp(explorer, folder, "restore");
-    }
+    if (next.explorerFolderId !== undefined) openExplorerWindow(next.explorerFolderId, false, !next.fileId && !next.propertiesEntryId && !next.settings);
     if (next.fileId) {
       const entry = entryIndex.byId.get(next.fileId);
       const resolution = entry?.kind === "file" ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
@@ -2052,6 +2049,37 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  function openExplorerWindow(folderId: string | null, syncRoute = true, focus = true) {
+    const id = builtinAppTargetId({ kind: "explorer", folderId });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      if (focus) focusApp(id, syncRoute);
+      return false;
+    }
+    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId };
+    updateRunningApps([...runningAppsRef.current, app]);
+    if (focus) setFocusedApp(id);
+    return true;
+  }
+
+  function navigateExplorerWindow(appId: string, folderId: string | null) {
+    const nextId = builtinAppTargetId({ kind: "explorer", folderId });
+    if (nextId === appId) return;
+    const previousApps = runningAppTargets();
+    const zIndex = ++nextWindowZRef.current;
+    const existing = runningAppsRef.current.find((app) => app.id === nextId);
+    if (existing) {
+      updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => app.id === nextId ? { ...app, minimized: false, zIndex } : app));
+    } else {
+      updateRunningApps(runningAppsRef.current.map((app) => app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex } : app));
+    }
+    setFocusedApp(nextId);
+    const currentRoute = routeRef.current;
+    if (currentRoute && existing) {
+      const segment = segmentForApp(existing);
+      navigateRoute({ ...segment, explorerFolderId: folderId }, "push", previousApps);
+    } else if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: folderId }, "push", previousApps);
+  }
+
   function openSettingsWindow(syncRoute = true) {
     const id = builtinAppTargetId({ kind: "settings" });
     if (runningAppsRef.current.some((app) => app.id === id)) {
@@ -2285,28 +2313,37 @@ function App({ session }: { session: AuthSession | null }) {
     }
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
-    const resolution = entry.kind === "file" ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
-    const app = entry.kind === "folder" ? installedApps.find((candidate) => candidate.appId === SYSTEM_APP_IDS.folderExplorer) : resolution?.app;
+    if (entry.kind === "folder") {
+      const existingId = builtinAppTargetId({ kind: "explorer", folderId: entry.id });
+      if (runningAppsRef.current.some((app) => app.id === existingId)) {
+        focusApp(existingId);
+        return;
+      }
+      const previousApps = runningAppTargets();
+      const created = openExplorerWindow(entry.id, false);
+      navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: entry.id }, created ? "push" : "replace", previousApps);
+      return;
+    }
+    const resolution = resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations);
+    const app = resolution?.app;
     if (!app) {
       setError("No available app can open this item.");
       return;
     }
     if (resolution?.preferredUnavailable) setNotice(`Your preferred app for ${resolution.preferredUnavailable.matcher} is unavailable. Opened with ${app.manifest.name}; change the preference in Settings > Apps > File types.`);
-    const systemTarget: SystemAppTarget | undefined = app.source === "system" ? { kind: "system", appId: app.appId, targetKind: entry.kind, entryId: entry.id } : undefined;
+    const systemTarget: SystemAppTarget | undefined = app.source === "system" ? { kind: "system", appId: app.appId, targetKind: "file", entryId: entry.id } : undefined;
     const existingId = systemTarget ? builtinAppTargetId(systemTarget) : "";
     if (runningAppsRef.current.some((app) => app.id === existingId)) {
       focusApp(existingId);
       return;
     }
     const previousApps = runningAppTargets();
-    if (app.source === "desktop" && entry.kind === "file") {
+    if (app.source === "desktop") {
       const appPackage = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === app.packageEntryId && candidate.kind === "file");
       if (appPackage) void openAppPackage(appPackage, entry);
       else setError("That app package is unavailable.");
     } else void launchInstalledApp(app, entry);
-    navigateRoute(entry.kind === "folder"
-      ? { column: currentRoute.column, row: currentRoute.row, explorerFolderId: entry.id }
-      : { column: currentRoute.column, row: currentRoute.row, fileId: entry.id }, "push", previousApps);
+    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: entry.id }, "push", previousApps);
   }
   handleOpenRef.current = handleOpen;
 
@@ -3201,7 +3238,7 @@ function App({ session }: { session: AuthSession | null }) {
                 minimized={app.minimized}
                 segmentActive={segmentActive}
                  mobile={isMobile}
-                 hideMobileHeader
+                 hideMobileHeader={app.kind !== "explorer"}
                 onFocus={focusApp}
                 onBoundsChange={updateAppBounds}
                 onDragAtEdge={handleWindowDragAtEdge}
@@ -3218,6 +3255,38 @@ function App({ session }: { session: AuthSession | null }) {
               >
                 {(headerElements) => <>
                 {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} onNavigation={() => closeApp(app.id)} />}
+                {app.kind === "explorer" && (
+                  <FolderExplorer
+                    folder={folder}
+                    rootLabel={activeDesktopName}
+                    breadcrumbs={folder ? entryIndex.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []}
+                    children={entryIndex.children.get(folder?.id ?? null) ?? []}
+                    selectedIds={selectionScope === app.id ? selectedIdSet : new Set()}
+                    mobileMultiSelect={mobileMultiSelectScope === app.id}
+                    onSelect={(entry, options) => selectEntry(app.id, entry, options)}
+                    onLongPressSelect={(entry) => { setMobileMultiSelectScope(app.id); addEntryToSelection(app.id, entry); }}
+                    onNavigate={(nextFolder) => { replaceSelection(app.id, []); navigateExplorerWindow(app.id, nextFolder?.id ?? null); }}
+                    onOpen={handleOpen}
+                    onCreateFolder={(parentId) => setDialog({ type: "create-folder", parentId })}
+                    onCreateFile={(parentId) => setDialog({ type: "create-file", parentId })}
+                    onUpload={chooseUpload}
+                    onImportFolder={chooseFolderImport}
+                    onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
+                    offlineAvailability={offlineModel.entries}
+                    onMove={(entry, parentId) => void handleMoveTo(selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry], parentId)}
+                    onContextMenu={(entry, x, y) => {
+                      if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
+                      openEntryContextMenu(entry.id, x, y);
+                    }}
+                    onBlankContextMenu={(parentId, x, y) => {
+                      window.getSelection()?.removeAllRanges();
+                      replaceSelection(app.id, []);
+                      setContextMenu({ type: "desktop", parentId, x, y, position: positionFor(parentId) });
+                    }}
+                    readOnly={!canMutate}
+                    headerElements={headerElements}
+                  />
+                )}
                 {app.kind === "properties" && propertiesEntry && (
                   <PropertiesWindow
                     entry={propertiesEntry}
@@ -3261,7 +3330,7 @@ function App({ session }: { session: AuthSession | null }) {
                     installedApps={installedApps}
                     quarantinedApps={quarantinedApps}
                     onLaunchApp={(installed) => {
-                      if (installed.source === "system") void launchInstalledApp(installed, installed.appId === SYSTEM_APP_IDS.folderExplorer ? "root" : undefined);
+                      if (installed.source === "system") void launchInstalledApp(installed);
                       else {
                         const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === installed.packageEntryId && candidate.kind === "file");
                         if (entry) void openAppPackage(entry); else setError("That app package is unavailable.");
@@ -3372,14 +3441,14 @@ function App({ session }: { session: AuthSession | null }) {
         event.target.value = "";
       }} />
 
-      {showMobileFileFab && <button className="mobile-file-fab" data-placement={mobileFabPlacement} type="button" aria-label={desktopSelection.length ? `Actions for ${desktopSelection.length} selected ${desktopSelection.length === 1 ? "item" : "items"}` : "Create or import an item"} onClick={() => {
-        if (desktopSelection.length) openEntryContextMenu(desktopSelection[0].id, window.innerWidth - 20, window.innerHeight - 20);
+      {showMobileFileFab && <button className="mobile-file-fab" data-placement={mobileFabPlacement} type="button" aria-label={mobileFileSelection.length ? `Actions for ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}` : "Create or import an item"} onClick={() => {
+        if (mobileFileSelection.length) openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth - 20, window.innerHeight - 20);
         else {
-          replaceSelection("desktop", []);
-          const position = projectLogicalPosition(positionFor(null), desktopSize).local;
-          setContextMenu({ type: "desktop", parentId: null, x: window.innerWidth - 28, y: window.innerHeight - 28, position });
+          replaceSelection(mobileFileSurface, []);
+          const position = mobileFileParentId === null ? projectLogicalPosition(positionFor(null), desktopSize).local : positionFor(mobileFileParentId);
+          setContextMenu({ type: "desktop", parentId: mobileFileParentId, x: window.innerWidth - 28, y: window.innerHeight - 28, position });
         }
-      }}>{desktopSelection.length ? <><DotsThree size={24} weight="bold" /><span>{desktopSelection.length}</span></> : <Plus size={24} weight="bold" />}</button>}
+      }}>{mobileFileSelection.length ? <><DotsThree size={24} weight="bold" /><span>{mobileFileSelection.length}</span></> : <Plus size={24} weight="bold" />}</button>}
 
       {(notificationTotal > 0 || importProgress || showUpdateToast) && <aside className="shell-status-region" aria-label="Notifications and progress">
         {notificationTotal > 0 && <div className="notification-stack">

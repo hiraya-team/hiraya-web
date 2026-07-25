@@ -57,7 +57,7 @@ Production installations can check for updates in Settings. Automatic updates ch
 
 ## `.hiraya.app` apps and permissions {#apps-and-permissions}
 
-A new or empty desktop includes six trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, File Viewer, and Folder Explorer. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files.
+A new or empty desktop includes five trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, and File Viewer. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files. Folder browsing is built into the desktop shell so it shares the desktop's selection, context menus, imports, offline state, and window behavior.
 
 Text Editor reloads an open clean document when it changes elsewhere and preserves unsaved text with a conflict warning when the document is dirty. Its auto-save, format-on-save, font-size, and wrapping preferences start from the desktop editor settings on first launch, then remain app-local to this browser and signed-in account.
 

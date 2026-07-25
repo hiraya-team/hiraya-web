@@ -21,6 +21,11 @@ describe("built-in app registry", () => {
     expect(extractBuiltinAppTarget({ kind: "settings", page: "themes" })).toEqual({ kind: "settings" });
   });
 
+  test("normalizes the retired folder explorer app to a native explorer target", () => {
+    expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "root", entryId: null })).toEqual({ kind: "explorer", folderId: null });
+    expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "folder", entryId: "folder" })).toEqual({ kind: "explorer", folderId: "folder" });
+  });
+
   test("rejects unknown and malformed runtime targets", () => {
     for (const value of [null, [], { kind: "trash" }, { kind: "file", fileId: "" }, { kind: "file", fileId: "file", editMode: "yes" }, { kind: "explorer" }, { kind: "explorer", folderId: 4 }, { kind: "properties", entryId: "" }]) {
       expect(extractBuiltinAppTarget(value)).toBeNull();

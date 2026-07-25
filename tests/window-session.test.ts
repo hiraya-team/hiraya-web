@@ -90,12 +90,14 @@ describe("window and browser sessions", () => {
     expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "file", fileId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "file", fileId: "file" });
   });
 
-  test("filters stale system targets and restores root launches", () => {
+  test("migrates saved folder explorer app targets back to native explorer windows", () => {
     const bounds = { x: 0, y: 0, width: 700, height: 500 };
     const session = parseWindowSession({ schemaVersion: 1, apps: [
       { kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "root", entryId: null, bounds, minimized: false, zIndex: 1 },
-      { kind: "system", appId: "app.hiraya.text-editor", targetKind: "file", entryId: "missing", bounds, minimized: false, zIndex: 2 },
+      { kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "folder", entryId: "folder", bounds, minimized: false, zIndex: 2 },
     ] });
-    expect(restoreWindowSession(session, [], { column: 0, row: 0 }, { width: 1000, height: 700 }).map((app) => app.kind === "system" ? app.targetKind : app.kind)).toEqual(["root"]);
+    const entries: DesktopEntry[] = [{ kind: "folder", id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }];
+    expect(session.apps.map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
+    expect(restoreWindowSession(session, entries, { column: 0, row: 0 }, { width: 1000, height: 700 }).map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
   });
 });
