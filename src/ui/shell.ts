@@ -1,12 +1,12 @@
 import type { SurfaceSegment } from "./desktop-geometry";
 
-export type TaskbarWindow = {
+export type MinimapWindow = {
   id: string;
   areaId: string;
   focused?: boolean;
 };
 
-export function taskbarWindows<T extends TaskbarWindow>(windows: readonly T[], currentAreaId: string, limit = 6) {
+export function minimapWindows<T extends MinimapWindow>(windows: readonly T[], currentAreaId: string, limit = 6) {
   const ordered = [...windows].sort((left, right) => {
     const leftRank = left.focused ? 0 : left.areaId === currentAreaId ? 1 : 2;
     const rightRank = right.focused ? 0 : right.areaId === currentAreaId ? 1 : 2;
@@ -15,7 +15,7 @@ export function taskbarWindows<T extends TaskbarWindow>(windows: readonly T[], c
   return { visible: ordered.slice(0, limit), overflow: ordered.slice(limit) };
 }
 
-export function taskbarCapacity(viewportWidth: number, compact: boolean) {
+export function minimapWindowCapacity(viewportWidth: number, compact: boolean) {
   if (viewportWidth <= 760) return 2;
   if (compact || viewportWidth <= 1024) return 5;
   return 7;

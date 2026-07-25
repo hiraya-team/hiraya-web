@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, occupiedAreaCount, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -9,16 +9,16 @@ describe("cohesive shell view models", () => {
       { id: "focused", areaId: "1:0", focused: true },
       { id: "current-b", areaId: "0:0" },
     ];
-    const model = taskbarWindows(windows, "0:0", 3);
+    const model = minimapWindows(windows, "0:0", 3);
     expect(model.visible.map((window) => window.id)).toEqual(["focused", "current-a", "current-b"]);
     expect(model.overflow.map((window) => window.id)).toEqual(["other-a"]);
   });
 
-  test("adapts taskbar capacity while reserving the overflow model", () => {
-    expect(taskbarCapacity(621, true)).toBe(2);
-    expect(taskbarCapacity(768, true)).toBe(5);
-    expect(taskbarCapacity(1024, false)).toBe(5);
-    expect(taskbarCapacity(1920, false)).toBe(7);
+  test("adapts minimap window capacity while reserving the overflow model", () => {
+    expect(minimapWindowCapacity(621, true)).toBe(2);
+    expect(minimapWindowCapacity(768, true)).toBe(5);
+    expect(minimapWindowCapacity(1024, false)).toBe(5);
+    expect(minimapWindowCapacity(1920, false)).toBe(7);
   });
 
   test("uses directional identity before raw coordinates", () => {

@@ -5448,7 +5448,73 @@ a:focus-visible {
 .notification-card .notification-dismiss:hover,
 .notification-card .notification-dismiss:focus-visible { color: var(--theme-text); background: var(--theme-window-muted); }
 
-/* The compact navigator expands in place without changing desktop geometry. */
+/* The app rail and area map share one compact navigator surface. */
+.desktop-minimap {
+  display: flex;
+  max-width: calc(100vw - 24px);
+  align-items: stretch;
+  gap: 6px;
+}
+.desktop-minimap__apps {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  padding-right: 6px;
+  overflow: hidden;
+  border-right: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 16%, transparent);
+}
+.desktop-minimap__app,
+.desktop-minimap__mode-toggle {
+  position: relative;
+  display: grid;
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  min-height: 34px;
+  place-items: center;
+  padding: 0;
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 14%, transparent);
+  border-radius: calc(var(--theme-radius-small) * .8);
+  color: color-mix(in srgb, var(--theme-chrome-text) 76%, transparent);
+  background: color-mix(in srgb, var(--theme-chrome-text) 7%, transparent);
+  cursor: pointer;
+}
+.desktop-minimap__app:hover,
+.desktop-minimap__mode-toggle:hover { background: color-mix(in srgb, var(--theme-chrome-text) 14%, transparent); }
+.desktop-minimap__app[data-active] { border-color: color-mix(in srgb, var(--theme-accent) 55%, transparent); color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 20%, transparent); }
+.desktop-minimap__app[data-minimized] { opacity: .58; }
+.desktop-minimap__app[data-other-area]:not([data-active]) { border-style: dashed; opacity: .72; }
+.desktop-minimap__app[data-dirty]::after {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--theme-accent);
+  content: "";
+}
+.desktop-minimap__app--overflow { font-size: 10px; font-weight: 800; }
+.desktop-minimap__areas { min-width: 0; flex: 0 0 auto; }
+.desktop-minimap__mode-toggle { width: 40px; min-width: 40px; height: 40px; min-height: 40px; }
+.desktop-minimap__indicator {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  display: grid;
+  width: 14px;
+  height: 10px;
+  grid-template-columns: repeat(var(--minimap-columns), minmax(1px, 1fr));
+  grid-template-rows: repeat(var(--minimap-rows), minmax(1px, 1fr));
+  gap: 1px;
+  pointer-events: none;
+}
+.desktop-minimap__indicator i { min-width: 1px; min-height: 1px; border-radius: 1px; background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
+.desktop-minimap__indicator i[data-occupied] { background: color-mix(in srgb, var(--theme-chrome-text) 58%, transparent); }
+.desktop-minimap__indicator i[data-active] { background: var(--theme-accent); }
+.desktop-minimap__toolbar-actions { display: flex; align-items: center; gap: 4px; }
+
 .desktop-minimap__grid-viewport { min-height: 0; overflow: hidden; }
 .desktop-minimap__grid {
   width: clamp(56px, calc(var(--minimap-columns) * 28px), 196px);
@@ -5458,13 +5524,15 @@ a:focus-visible {
   right: 12px;
   left: 12px;
   bottom: max(12px, env(safe-area-inset-bottom));
-  display: grid;
+  display: flex;
   height: min(38dvh, 340px);
-  grid-template-rows: auto auto minmax(0, 1fr);
+  align-items: stretch;
   padding: 10px;
   background: color-mix(in srgb, var(--theme-chrome) 94%, transparent);
   box-shadow: var(--theme-elevation-3);
 }
+.desktop-minimap[data-expanded] .desktop-minimap__apps { align-self: flex-start; flex-direction: column; padding-right: 8px; }
+.desktop-minimap[data-expanded] .desktop-minimap__areas { display: grid; min-width: 0; flex: 1; grid-template-rows: auto auto minmax(0, 1fr); }
 .desktop-minimap[data-expanded] .desktop-minimap__toolbar { grid-row: 1; margin-bottom: 9px; }
 .desktop-minimap[data-expanded] .desktop-minimap__summary { grid-row: 2; }
 .desktop-minimap[data-expanded] .desktop-minimap__grid-viewport {
@@ -5558,6 +5626,7 @@ a:focus-visible {
     min-width: 0;
     min-height: 0;
     max-width: min(228px, calc(100vw - 20px));
+    display: block;
     padding: 6px;
   }
   .desktop-minimap[data-mobile] .desktop-minimap__toolbar { display: none; }
@@ -5573,6 +5642,11 @@ a:focus-visible {
     max-width: none;
     height: min(46dvh, 320px);
     padding: 8px;
+  }
+  .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__areas {
+    display: grid;
+    height: 100%;
+    grid-template-rows: auto auto minmax(0, 1fr);
   }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar { display: flex; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar > span { display: block; overflow: hidden; text-overflow: ellipsis; }
