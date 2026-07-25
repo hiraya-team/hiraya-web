@@ -123,7 +123,7 @@ import { SystemMenu } from "./components/SystemMenu";
 import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
-import { dismissClipboardOffer, observeClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
+import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
 type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
@@ -225,7 +225,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [updateApplying, setUpdateApplying] = useState(false);
   const [serverBuildTimestamp, setServerBuildTimestamp] = useState<string | null>(null);
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
-  const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(null);
+  const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(() => restoreClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage));
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "windows" | "areas" | "help" | "shortcuts" | "trash" | null>(null);
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
@@ -418,6 +418,10 @@ function App({ session }: { session: AuthSession | null }) {
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
   }, [activeTheme, appTheme]);
+
+  useEffect(() => {
+    persistClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage, clipboardOffer);
+  }, [clipboardOffer]);
 
   useEffect(() => {
     let cancelled = false;
