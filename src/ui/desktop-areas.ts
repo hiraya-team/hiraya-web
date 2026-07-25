@@ -27,6 +27,17 @@ export function adjacentArea(segment: SurfaceSegment, direction: "left" | "right
   };
 }
 
+export function areaMapSegments(segments: readonly SurfaceSegment[], current: SurfaceSegment, includeAdjacent: boolean): SurfaceSegment[] {
+  const byKey = new Map(segments.map((segment) => [segmentKey(segment), segment]));
+  if (includeAdjacent) {
+    for (const direction of ["left", "right", "up", "down"] as const) {
+      const segment = adjacentArea(current, direction);
+      if (!byKey.has(segmentKey(segment))) byKey.set(segmentKey(segment), segment);
+    }
+  }
+  return [...byKey.values()].sort((left, right) => left.row - right.row || left.column - right.column);
+}
+
 export function desktopAreaItems(occupied: readonly AreaOccupancy[], current: SurfaceSegment): DesktopAreaItem[] {
   const byKey = new Map(occupied.map((area) => [segmentKey(area.segment), area]));
   const home = { column: 0, row: 0 };

@@ -111,7 +111,7 @@ import { COMPACT_CHROME_QUERY, MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/r
 import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
 import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
-import { areaCoordinateLabel, moveLogicalPositionToArea, persistAreaPositionUpdates } from "./ui/desktop-areas";
+import { areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
 import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
@@ -268,6 +268,14 @@ function App({ session }: { session: AuthSession | null }) {
     startY: number;
     timer: number;
   } | null>(null);
+  const minimapSwipeRef = useRef<{
+    axis: "x" | "y" | null;
+    pointerId: number;
+    startSegment: SurfaceSegment;
+    startX: number;
+    startY: number;
+    previewTarget: SurfaceSegment | null;
+  } | null>(null);
   const suppressMinimapClickRef = useRef(false);
   const suppressClickRef = useRef(false);
   const selectedIdsRef = useRef<string[]>([]);
@@ -401,6 +409,11 @@ function App({ session }: { session: AuthSession | null }) {
     if (!byKey.has(activeSegmentKey)) byKey.set(activeSegmentKey, { entries: [], key: activeSegmentKey, segment: activeSegment });
     return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
   })();
+  const visibleSegmentsByKey = new Map(visibleSegments.map((segment) => [segment.key, segment]));
+  const minimapSegments = areaMapSegments(visibleSegments.map((segment) => segment.segment), activeSegment, minimapExpanded).map((segment) => {
+    const key = segmentKey(segment);
+    return visibleSegmentsByKey.get(key) ?? { entries: [], key, segment };
+  });
   const occupiedColumns = occupiedSegments.map((candidate) => candidate.segment.column);
   const occupiedRows = occupiedSegments.map((candidate) => candidate.segment.row);
   const minColumn = Math.min(0, activeSegment.column, ...occupiedColumns);
@@ -409,6 +422,12 @@ function App({ session }: { session: AuthSession | null }) {
   const maxRow = Math.max(0, activeSegment.row, ...occupiedRows);
   const segmentColumns = maxColumn - minColumn + 1;
   const segmentRows = maxRow - minRow + 1;
+  const minimapColumns = minimapSegments.map((candidate) => candidate.segment.column);
+  const minimapRows = minimapSegments.map((candidate) => candidate.segment.row);
+  const minimapMinColumn = Math.min(...minimapColumns);
+  const minimapMinRow = Math.min(...minimapRows);
+  const minimapColumnCount = Math.max(...minimapColumns) - minimapMinColumn + 1;
+  const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
   const minimapWidth = Math.min(112, Math.max(42, segmentColumns * 24)) + 26;
@@ -2926,27 +2945,6 @@ function App({ session }: { session: AuthSession | null }) {
     goToSegment(segment, "push", moved);
   }
 
-  async function moveRootItemsToSegment(ids: readonly string[], segment: SurfaceSegment, announce = true): Promise<boolean> {
-    if (!canMutate) return false;
-    const idSet = new Set(ids);
-    const updates = entriesRef.current.filter((entry) => entry.parentId === null && idSet.has(entry.id)).map((entry) => ({ entryId: entry.id, position: moveLogicalPositionToArea(entry.position, segment, desktopSizeRef.current) }));
-    if (!updates.length) return true;
-    const previous = new Map(entriesRef.current.map((entry) => [entry.id, entry.position]));
-    const positions = new Map(updates.map((update) => [update.entryId, update.position]));
-    const next = entriesRef.current.map((entry) => (positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry));
-    entriesRef.current = next;
-    setEntries(next);
-    if (await persistAreaPositionUpdates(updates, updateRootEntryPositions)) {
-      if (announce) setNotice(`${updates.length} root ${updates.length === 1 ? "item" : "items"} moved`);
-      return true;
-    }
-    const restored = entriesRef.current.map((entry) => (previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry));
-    entriesRef.current = restored;
-    setEntries(restored);
-    setError("The selected items could not be moved to that area.");
-    return false;
-  }
-
   function showDesktop() {
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: false });
     setFocusedApp(null);
@@ -3259,7 +3257,6 @@ function App({ session }: { session: AuthSession | null }) {
     activeSegmentKey,
     taskbarCapacity(desktopSize.width, compactChrome),
   );
-  const selectedRootIds = selectedEntries.filter((entry) => entry.parentId === null).map((entry) => entry.id);
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
   const commandContext: AppCommandContext = {
     canMutate,
@@ -3336,6 +3333,55 @@ function App({ session }: { session: AuthSession | null }) {
     minimapPressRef.current = null;
     if (cancelled) suppressMinimapClickRef.current = false;
     else if (press.activated) window.setTimeout(() => { suppressMinimapClickRef.current = false; }, 0);
+  }
+
+  function beginExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    if (!minimapExpanded || event.pointerType !== "touch" || event.button !== 0) return;
+    event.stopPropagation();
+    minimapSwipeRef.current = {
+      axis: null,
+      pointerId: event.pointerId,
+      startSegment: activeSegment,
+      startX: event.clientX,
+      startY: event.clientY,
+      previewTarget: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const swipe = minimapSwipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    const deltaX = event.clientX - swipe.startX;
+    const deltaY = event.clientY - swipe.startY;
+    if (!swipe.axis) swipe.axis = swipeAxis(deltaX, deltaY);
+    if (!swipe.axis) return;
+    event.preventDefault();
+    const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const viewportDistance = swipe.axis === "x" ? bounds.width : bounds.height;
+    const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
+    if (segmentKey(previewTarget ?? swipe.startSegment) !== segmentKey(swipe.previewTarget ?? swipe.startSegment)) {
+      swipe.previewTarget = previewTarget;
+      setSwipePreview(previewTarget);
+    }
+  }
+
+  function finishExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>, cancelled = false) {
+    const swipe = minimapSwipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const nextSegment = committedSwipeTarget(swipe.previewTarget, cancelled);
+    minimapSwipeRef.current = null;
+    setSwipePreview(null);
+    if (!swipe.axis) return;
+    suppressMinimapClickRef.current = true;
+    window.setTimeout(() => {
+      suppressMinimapClickRef.current = false;
+    }, 0);
+    if (nextSegment) goToSegment(nextSegment);
   }
 
   function outboxAffectedLabels(record: OutboxRecord) {
@@ -3833,29 +3879,6 @@ function App({ session }: { session: AuthSession | null }) {
             </span>
             <h1>This area is empty.</h1>
             <p>Place a root item or window here to keep this coordinate region available.</p>
-            <div className="empty-state__actions">
-              <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => setDialog({ type: "create-folder", parentId: null })}>
-                <FolderPlus size={17} /> Create folder here
-              </button>
-              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseUpload(null)}>
-                <UploadSimple size={17} /> Upload files here
-              </button>
-              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseFolderImport(null)}>
-                <FolderOpen size={17} /> Import folder here
-              </button>
-              <button className="button button--quiet" type="button" disabled={!canMutate || selectedRootIds.length === 0} onClick={() => void moveRootItemsToSegment(selectedRootIds, activeSegment)}>
-                Move selected root items here
-              </button>
-              <button className="button button--quiet" type="button" disabled={runningApps.length === 0} onClick={() => setActivePanel("windows")}>
-                <SquaresFour size={17} /> Move a window here
-              </button>
-              <button className="button button--quiet" type="button" onClick={() => goToSegment({ column: 0, row: 0 })}>
-                <Desktop size={17} /> Return to Home
-              </button>
-              <button className="button button--quiet" type="button" onClick={openAreaMap}>
-                <MapTrifold size={17} /> Expand Area Map
-              </button>
-            </div>
           </div>
         )}
         <div className="drop-message" aria-hidden="true">
@@ -4113,19 +4136,25 @@ function App({ session }: { session: AuthSession | null }) {
           <span className="desktop-minimap__summary">
             {homeRelativeAreaLabel(activeSegment)} · {occupiedSegments.length} occupied
           </span>
-          <div className="desktop-minimap__grid-viewport">
+          <div
+            className="desktop-minimap__grid-viewport"
+            onPointerDown={beginExpandedMinimapSwipe}
+            onPointerMove={moveExpandedMinimapSwipe}
+            onPointerUp={finishExpandedMinimapSwipe}
+            onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}
+          >
             <div
               className="desktop-minimap__grid"
               style={
                 {
-                  "--minimap-columns": segmentColumns,
-                  "--minimap-rows": segmentRows,
+                  "--minimap-columns": minimapColumnCount,
+                  "--minimap-rows": minimapRowCount,
                 } as React.CSSProperties
               }
             >
-              {visibleSegments.map((desktopSegment, visibleIndex) => {
-                const column = desktopSegment.segment.column - minColumn;
-                const row = desktopSegment.segment.row - minRow;
+              {minimapSegments.map((desktopSegment, visibleIndex) => {
+                const column = desktopSegment.segment.column - minimapMinColumn;
+                const row = desktopSegment.segment.row - minimapMinRow;
                 const currentSegmentKey = desktopSegment.key;
                 const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
                 return (
@@ -4133,10 +4162,11 @@ function App({ session }: { session: AuthSession | null }) {
                     <button
                       className="desktop-minimap__area"
                       data-active={currentSegmentKey === activeSegmentKey || undefined}
+                      data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined}
                       data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined}
                       data-occupied={isOccupiedSegment || undefined}
                       type="button"
-                      aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${visibleSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`}
+                      aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`}
                       aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined}
                       onClick={(event) => {
                         if (suppressMinimapClickRef.current) {
@@ -4172,7 +4202,7 @@ function App({ session }: { session: AuthSession | null }) {
             </div>
           </div>
           <span className="visually-hidden">
-            {activeDesktopName}, area {Math.max(1, visibleSegments.findIndex((candidate) => candidate.key === activeSegmentKey) + 1)} of {visibleSegments.length}
+            {activeDesktopName}, area {Math.max(1, minimapSegments.findIndex((candidate) => candidate.key === activeSegmentKey) + 1)} of {minimapSegments.length}
           </span>
         </nav>
       )}

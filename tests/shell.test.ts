@@ -39,6 +39,8 @@ describe("cohesive shell view models", () => {
     expect(swipePreviewReady(50, 390)).toBeFalse();
     expect(swipePreviewReady(64, 390)).toBeTrue();
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "x", -64)).toEqual({ column: 1, row: 0 });
+    expect(adjacentSwipeArea({ column: 0, row: 0 }, "x", 64)).toEqual({ column: -1, row: 0 });
+    expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", -64)).toEqual({ column: 0, row: 1 });
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", 64)).toEqual({ column: 0, row: -1 });
   });
 

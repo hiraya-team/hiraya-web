@@ -1126,15 +1126,7 @@ a:focus-visible {
   margin-top: 24px;
 }
 
-.area-empty-state .empty-state__actions {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-.area-empty-state .empty-state__actions > * { min-width: 0; white-space: normal; }
-.area-empty-state .empty-state__actions > :first-child,
-.area-empty-state .empty-state__actions > :nth-child(4),
-.area-empty-state .empty-state__actions > :nth-child(5) { grid-column: 1 / -1; }
+.area-empty-state { pointer-events: none; }
 
 .desktop-state--loading {
   display: grid;
@@ -5090,10 +5082,6 @@ a:focus-visible {
   .desktop-shell[data-mobile-selection-toolbar="true"] .area-empty-state {
     max-height: calc(100% - 80px - max(12px, env(safe-area-inset-bottom)));
   }
-  .area-empty-state .empty-state__actions {
-    gap: 10px;
-    margin-top: 22px;
-  }
   .sharing-dialog__backdrop,
   .utility-panel-backdrop,
   .command-palette-backdrop {
@@ -5471,28 +5459,36 @@ a:focus-visible {
   left: 12px;
   bottom: max(12px, env(safe-area-inset-bottom));
   display: grid;
-  max-height: min(38dvh, 340px);
+  height: min(38dvh, 340px);
+  grid-template-rows: auto auto minmax(0, 1fr);
   padding: 10px;
   background: color-mix(in srgb, var(--theme-chrome) 94%, transparent);
   box-shadow: var(--theme-elevation-3);
 }
 .desktop-minimap[data-expanded] .desktop-minimap__toolbar { margin-bottom: 9px; }
-.desktop-minimap[data-expanded] .desktop-minimap__grid-viewport { overflow: auto; overscroll-behavior: contain; }
+.desktop-minimap[data-expanded] .desktop-minimap__grid-viewport {
+  container-type: size;
+  display: grid;
+  overflow: hidden;
+  place-items: center;
+  touch-action: none;
+}
 .desktop-minimap[data-expanded] .desktop-minimap__grid {
-  width: min(100%, calc(var(--minimap-columns) * 360px / var(--minimap-rows)));
+  width: min(100cqw, calc(100cqh * var(--minimap-columns) * 19 / var(--minimap-rows) / 13));
   height: auto;
-  min-width: calc(var(--minimap-columns) * 82px);
+  min-width: 0;
   min-height: 0;
   margin-inline: auto;
   aspect-ratio: calc(var(--minimap-columns) * 19) / calc(var(--minimap-rows) * 13);
   grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
   grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));
   gap: 6px;
-  touch-action: pan-x pan-y;
+  touch-action: none;
 }
 .desktop-minimap[data-expanded] .desktop-minimap__file { width: 4px; height: 4px; }
 .desktop-minimap__area[data-home]:not([data-active]) { border-color: color-mix(in srgb, var(--theme-accent) 48%, var(--theme-chrome-text)); }
 .desktop-minimap__area:not([data-occupied]):not([data-active]) { border-style: dashed; background: color-mix(in srgb, var(--theme-chrome-text) 4%, transparent); }
+.desktop-minimap__area[data-preview] { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
 .desktop-minimap__area:hover { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
 
 .desktop-swipe-preview {
@@ -5553,11 +5549,6 @@ a:focus-visible {
   .notification-card__actions > .notification-action { min-width: 0; flex: 1; }
 }
 
-@media (max-width: 350px) {
-  .area-empty-state .empty-state__actions { grid-template-columns: 1fr; }
-  .area-empty-state .empty-state__actions > * { grid-column: 1; }
-}
-
 @media (max-width: 620px) {
   .desktop-minimap[data-mobile] {
     right: 10px;
@@ -5578,15 +5569,15 @@ a:focus-visible {
     left: 8px;
     bottom: max(8px, env(safe-area-inset-bottom));
     max-width: none;
-    max-height: min(46dvh, 320px);
+    height: min(46dvh, 320px);
     padding: 8px;
   }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar { display: flex; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__toolbar > span { display: block; overflow: hidden; text-overflow: ellipsis; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid {
-    width: min(100%, calc(var(--minimap-columns) * 326px / var(--minimap-rows)));
+    width: min(100cqw, calc(100cqh * var(--minimap-columns) * 34 / var(--minimap-rows) / 25));
     height: auto;
-    min-width: calc(var(--minimap-columns) * 74px);
+    min-width: 0;
     min-height: 0;
     aspect-ratio: calc(var(--minimap-columns) * 34) / calc(var(--minimap-rows) * 25);
     grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
