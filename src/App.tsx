@@ -72,6 +72,7 @@ import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, 
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
+import type { ExplorerView } from "./ui/folder-explorer";
 import { topOverlay } from "./ui/overlay";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -238,6 +239,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [cachedSearchResults, setCachedSearchResults] = useState<DesktopSearchResult[]>([]);
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
   const [showDesktopMinimap, setShowDesktopMinimap] = useState(true);
+  const [explorerView, setExplorerView] = useState<ExplorerView>("list");
   const [minimapExpanded, setMinimapExpanded] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -343,7 +345,7 @@ function App({ session }: { session: AuthSession | null }) {
   const unpinOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
   const windowCommandRef = useRef<{ maximize: (id: string) => void; move: (id: string, direction: "left" | "right" | "up" | "down") => void }>({ maximize: () => {}, move: () => {} });
   const autoUpdateRef = useRef(true);
-  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true });
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
@@ -1353,6 +1355,7 @@ function App({ session }: { session: AuthSession | null }) {
         setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
         setShowDesktopMinimap(preferences.showDesktopMinimap);
+        setExplorerView(preferences.explorerView);
         setPreferencesLoaded(true);
         checkAutomatically();
       })
@@ -1992,6 +1995,21 @@ function App({ session }: { session: AuthSession | null }) {
       localPreferencesRef.current = previous;
       setShowDesktopMinimap(previous.showDesktopMinimap);
       setError("The desktop area map preference could not be saved.");
+    }
+  }
+
+  async function changeExplorerView(view: ExplorerView) {
+    if (view === localPreferencesRef.current.explorerView) return;
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, explorerView: view };
+    localPreferencesRef.current = next;
+    setExplorerView(view);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setExplorerView(previous.explorerView);
+      setError("The folder view preference could not be saved.");
     }
   }
 
@@ -3984,6 +4002,9 @@ function App({ session }: { session: AuthSession | null }) {
                         onClearSelection={() => replaceSelection(app.id, [])}
                         readOnly={!canMutate}
                         headerElements={headerElements}
+                        view={explorerView}
+                        onViewChange={(view) => void changeExplorerView(view)}
+                        viewChangeDisabled={!preferencesLoaded}
                       />
                     )}
                     {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onUnpin={offlineModel.entries[propertiesEntry.id]?.directlyPinned ? () => void unpinOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}

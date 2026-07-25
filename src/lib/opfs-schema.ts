@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 6;
+export const DATABASE_SCHEMA_VERSION = 7;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -110,4 +110,14 @@ export const MINIMAP_PREFERENCE_SCHEMA_SQL = `
 export function migrateSchema5To6Sql(version: number): string {
   if (version !== 5) throw new Error(`Schema 6 migration requires version 5, received ${version}.`);
   return `BEGIN IMMEDIATE; ${MINIMAP_PREFERENCE_SCHEMA_SQL} COMMIT;`;
+}
+
+export const EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL = `
+  ALTER TABLE preferences ADD COLUMN explorer_view TEXT NOT NULL DEFAULT 'list' CHECK (explorer_view IN ('list', 'grid'));
+  PRAGMA user_version=7;
+`;
+
+export function migrateSchema6To7Sql(version: number): string {
+  if (version !== 6) throw new Error(`Schema 7 migration requires version 6, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL} COMMIT;`;
 }

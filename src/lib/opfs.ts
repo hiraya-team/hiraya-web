@@ -1,4 +1,5 @@
 import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type EntryPosition, type FileEntry, type FolderEntry } from "../types";
+import type { ExplorerView } from "../ui/folder-explorer";
 import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validation";
 import { parseBundledSeededManifest, type SeededManifest } from "./seeded-manifest";
 import { validateWallpaperImage } from "./wallpaper-image";
@@ -84,7 +85,7 @@ type Manifest = DesktopState;
 const parseManifestV13 = parseDesktopState;
 const manifestLayout = desktopStateLayout;
 
-export type LocalPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean };
+export type LocalPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
 
 export { DEFAULT_EDITOR_SETTINGS } from "./desktop-state";
 

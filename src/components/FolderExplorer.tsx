@@ -16,7 +16,7 @@ import {
   X,
 } from "@phosphor-icons/react";
 import type { DesktopEntry, FolderEntry } from "../types";
-import { filterAndSortEntries, formatEntrySize, type FolderSortKey, type SortDirection } from "../ui/folder-explorer";
+import { filterAndSortEntries, formatEntrySize, type ExplorerView, type FolderSortKey, type SortDirection } from "../ui/folder-explorer";
 import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
@@ -47,6 +47,9 @@ export interface FolderExplorerProps {
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
   offlineAvailability?: Readonly<Record<string, OfflineEntryAvailability>>;
+  view: ExplorerView;
+  onViewChange: (view: ExplorerView) => void;
+  viewChangeDisabled?: boolean;
 }
 
 type DragState = {
@@ -59,8 +62,6 @@ type DragState = {
   longPressed: boolean;
   longPressTimer?: number;
 };
-
-type ExplorerView = "list" | "grid";
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
 
@@ -87,6 +88,9 @@ export function FolderExplorer({
   readOnly = false,
   headerElements,
   offlineAvailability = {},
+  view,
+  onViewChange,
+  viewChangeDisabled = false,
 }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const dropTarget = useRef<HTMLElement | null>(null);
@@ -95,7 +99,6 @@ export function FolderExplorer({
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [view, setView] = useState<ExplorerView>("list");
   const parentId = folder?.id ?? null;
   const orderedChildren = filterAndSortEntries(children, search, sortKey, sortDirection);
   const orderedIds = orderedChildren.map((item) => item.id);
@@ -244,8 +247,8 @@ export function FolderExplorer({
             {sortDirection === "asc" ? <SortAscending size={18} /> : <SortDescending size={18} />}
           </button>
           <div className="folder-explorer__view-options" role="group" aria-label="Folder view">
-            <button type="button" aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")}><ListBullets size={18} /></button>
-            <button type="button" aria-label="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")}><SquaresFour size={18} /></button>
+            <button type="button" aria-label="List view" aria-pressed={view === "list"} disabled={viewChangeDisabled} onClick={() => onViewChange("list")}><ListBullets size={18} /></button>
+            <button type="button" aria-label="Grid view" aria-pressed={view === "grid"} disabled={viewChangeDisabled} onClick={() => onViewChange("grid")}><SquaresFour size={18} /></button>
           </div>
           <button className="folder-explorer__tool-button folder-explorer__import" type="button" disabled={readOnly} onClick={() => onUpload(parentId)}><UploadSimple size={18} /><span>Upload files</span></button>
           <button className="folder-explorer__tool-button folder-explorer__import" type="button" disabled={readOnly} onClick={() => onImportFolder(parentId)}><FolderOpen size={18} /><span>Import folder</span></button>
