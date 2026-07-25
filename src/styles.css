@@ -5925,6 +5925,9 @@ a:focus-visible {
 .desktop-minimap__app { width: 44px; min-width: 44px; height: 44px; min-height: 44px; }
 .desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 19 / var(--minimap-rows) / 12)); height: auto; aspect-ratio: calc(var(--minimap-columns) * 19) / calc(var(--minimap-rows) * 12); gap: 8px; }
 .desktop-minimap[data-expanded] .desktop-minimap__file { width: 28px; height: 28px; }
+.desktop-minimap__header { grid-row: 1; }
+.desktop-minimap__app-switcher { grid-row: 2; }
+.desktop-minimap[data-expanded] .desktop-minimap__grid-viewport { grid-row: 3; }
 
 @media (max-width: 620px) {
   .desktop-minimap[data-mobile] { right: -18px; bottom: max(-8px, calc(env(safe-area-inset-bottom) - 8px)); width: 62px; height: 72px; max-width: none; padding: 0; }
