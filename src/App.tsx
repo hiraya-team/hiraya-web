@@ -3908,7 +3908,7 @@ function App({ session }: { session: AuthSession | null }) {
                 minimized={app.minimized}
                 segmentActive={segmentActive}
                 mobile={isMobile}
-                hideMobileHeader={app.kind !== "explorer"}
+                hideMobileHeader
                 onFocus={focusApp}
                 onBoundsChange={updateAppBounds}
                 onDragAtEdge={handleWindowDragAtEdge}
