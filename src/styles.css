@@ -4583,6 +4583,15 @@ a:focus-visible {
     grid-template-columns: 34px minmax(0, 1fr) minmax(58px, 72px);
   }
 
+  .folder-explorer__columns {
+    grid-template-columns: 34px minmax(0, 1fr) minmax(58px, 72px);
+  }
+
+  .folder-explorer__columns button:nth-child(3),
+  .folder-explorer__columns button:nth-child(4) {
+    display: none;
+  }
+
   .folder-explorer__row .folder-explorer__kind,
   .folder-explorer__row .folder-explorer__date {
     display: none;
