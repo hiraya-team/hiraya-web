@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -64,7 +64,7 @@ import {
 import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, listQuarantinedApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, removeFileAssociation, removeQuarantinedApp, resetFileAssociations, saveLocalPreferences, saveWindowSession, setFileAssociation, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage, type DesktopStateSnapshot, type LocalPreferences } from "./lib/opfs";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
-import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, decodeClipboardArchiveItem, encodeClipboardArchive, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
+import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, type DesktopRoute } from "./lib/routes";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle, type CustomTheme, type ThemeState } from "./lib/themes";
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
@@ -122,6 +122,7 @@ import { SystemMenu } from "./components/SystemMenu";
 import { adjacentSwipeArea, areaDirectionalLabel, committedSwipeTarget, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
+import { dismissClipboardOffer, observeClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
 type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
@@ -247,6 +248,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [updateApplying, setUpdateApplying] = useState(false);
   const [serverBuildTimestamp, setServerBuildTimestamp] = useState<string | null>(null);
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(null);
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "windows" | "areas" | "help" | "shortcuts" | "trash" | null>(null);
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
@@ -427,6 +429,7 @@ function App({ session }: { session: AuthSession | null }) {
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
   const showMobileSelectionToolbar = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId) && mobileFileSelection.length > 0;
+  const showMobilePasteToolbar = isMobile && (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId) && canMutate && mobileFileSelection.length === 0 && Boolean(clipboardOffer && !clipboardOffer.dismissed);
   const dialogEntry = dialog?.type === "rename" ? entryIndex.byId.get(dialog.entryId) ?? null : dialog?.type === "delete" ? entryIndex.byId.get(dialog.entryIds[0]) ?? null : null;
   const contextMenuEntry = contextMenu?.type === "entry" ? entryIndex.byId.get(contextMenu.entryId) ?? null : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
@@ -438,6 +441,32 @@ function App({ session }: { session: AuthSession | null }) {
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
   }, [activeTheme, appTheme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function inspectClipboard() {
+      if (!navigator.clipboard?.read || !navigator.permissions?.query) return;
+      try {
+        const permission = await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
+        if (permission.state !== "granted") return;
+        const item = (await navigator.clipboard.read()).find((candidate) => candidate.types.some(isClipboardArchiveType));
+        if (!item) return;
+        const snapshot = await decodeClipboardArchiveItem(item);
+        if (cancelled) return;
+        clipboardRef.current = snapshot;
+        setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot)));
+      } catch { /* Clipboard inspection is best-effort and must never request access. */ }
+    }
+    function inspectWhenVisible() { if (document.visibilityState === "visible") void inspectClipboard(); }
+    void inspectClipboard();
+    window.addEventListener("focus", inspectClipboard);
+    document.addEventListener("visibilitychange", inspectWhenVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", inspectClipboard);
+      document.removeEventListener("visibilitychange", inspectWhenVisible);
+    };
+  }, []);
 
   useEffect(() => appLifecycle.subscribe((owner, state) => {
     fileDirtyRef.current[owner.instanceId] = state.dirty;
@@ -2481,6 +2510,7 @@ function App({ session }: { session: AuthSession | null }) {
     try {
       const snapshot = await captureEntries(selectedIdsRef.current);
       clipboardRef.current = snapshot;
+      setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot), true));
       if (navigator.clipboard?.write && "ClipboardItem" in window) {
         try {
           const archive = await encodeClipboardArchive(snapshot);
@@ -2515,6 +2545,7 @@ function App({ session }: { session: AuthSession | null }) {
     replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, rootIds);
     setPendingPaste(null);
     setContextMenu(null);
+    setClipboardOffer((current) => dismissClipboardOffer(current));
     setNotice(`${rootIds.length} ${rootIds.length === 1 ? "item" : "items"} pasted`);
   }
 
@@ -3454,6 +3485,10 @@ function App({ session }: { session: AuthSession | null }) {
         <button type="button" title="Move" aria-label={`Move ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => { setMoveDialogSubmitting(false); setMoveDialogEntryIds(mobileFileSelection.map((entry) => entry.id)); }}><FolderSimplePlus size={20} /></button>
         <button className="mobile-selection-toolbar__danger" type="button" title={syncStatus !== "local" ? "Move to Trash" : "Delete permanently"} aria-label={`${syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}: ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} disabled={!canMutate} onClick={() => setDialog({ type: "delete", entryIds: mobileFileSelection.map((entry) => entry.id) })}><Trash size={20} /></button>
         <button type="button" title="More actions" aria-label="More actions" aria-haspopup="dialog" onClick={() => openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth / 2, window.innerHeight - 20)}><DotsThree size={22} weight="bold" /></button>
+      </div>}
+      {showMobilePasteToolbar && <div className="mobile-selection-toolbar mobile-selection-toolbar--paste" role="toolbar" aria-label="Clipboard actions">
+        <button className="mobile-selection-toolbar__primary" type="button" onClick={() => void beginPaste(focusedExplorer?.folderId ?? null)}><ClipboardText size={20} /><span>Paste</span></button>
+        <button type="button" title="Dismiss paste action" aria-label="Dismiss paste action" onClick={() => setClipboardOffer((current) => dismissClipboardOffer(current))}><X size={19} /></button>
       </div>}
 
       {(notificationTotal > 0 || importProgress || showUpdateToast) && <aside className="shell-status-region" aria-label="Notifications and progress">

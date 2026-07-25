@@ -137,6 +137,15 @@ export function isClipboardArchiveType(type: string) {
   return type === CLIPBOARD_ARCHIVE_WEB_MIME_TYPE || type === CLIPBOARD_ARCHIVE_MIME_TYPE;
 }
 
+export function clipboardSnapshotIdentity(snapshot: ClipboardEntrySnapshot) {
+  return JSON.stringify({
+    selectedRootIds: snapshot.selectedRootIds,
+    entries: snapshot.entries.map((entry) => entry.kind === "file"
+      ? [entry.kind, entry.id, entry.name, entry.parentId, entry.modifiedAt, entry.mimeType, entry.size]
+      : [entry.kind, entry.id, entry.name, entry.parentId, entry.modifiedAt]),
+  });
+}
+
 export async function createClipboardArchiveItem(snapshot: ClipboardEntrySnapshot): Promise<ClipboardItem> {
   return new ClipboardItem({ [CLIPBOARD_ARCHIVE_WEB_MIME_TYPE]: await encodeClipboardArchive(snapshot) });
 }

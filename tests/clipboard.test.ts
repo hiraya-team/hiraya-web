@@ -3,6 +3,7 @@ import { strToU8, unzipSync, zipSync } from "fflate";
 import {
   CLIPBOARD_ARCHIVE_MIME_TYPE,
   CLIPBOARD_ARCHIVE_WEB_MIME_TYPE,
+  clipboardSnapshotIdentity,
   decodeClipboardArchive,
   encodeClipboardArchive,
   isClipboardArchiveType,
@@ -54,6 +55,15 @@ describe("clipboard archive codec", () => {
     expect(isClipboardArchiveType(CLIPBOARD_ARCHIVE_WEB_MIME_TYPE)).toBe(true);
     expect(isClipboardArchiveType(CLIPBOARD_ARCHIVE_MIME_TYPE)).toBe(true);
     expect(isClipboardArchiveType("text/plain")).toBe(false);
+  });
+
+  test("identifies clipboard contents from stable paste-relevant metadata", () => {
+    const original = snapshot();
+    const same = snapshot();
+    expect(clipboardSnapshotIdentity(same)).toBe(clipboardSnapshotIdentity(original));
+
+    same.entries[1] = { ...same.entries[1], modifiedAt: 3 };
+    expect(clipboardSnapshotIdentity(same)).not.toBe(clipboardSnapshotIdentity(original));
   });
 
   test("rejects archives without creation dates", async () => {

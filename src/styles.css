@@ -3975,6 +3975,10 @@ a:focus-visible {
 .mobile-selection-toolbar button:disabled { opacity: .42; cursor: not-allowed; }
 .mobile-selection-toolbar button:disabled:active { transform: none; }
 .mobile-selection-toolbar .mobile-selection-toolbar__danger { color: color-mix(in srgb, var(--theme-danger) 45%, var(--theme-chrome-text)); }
+.mobile-selection-toolbar--paste { padding-left: 5px; }
+.mobile-selection-toolbar .mobile-selection-toolbar__primary { display: inline-flex; width: auto; min-width: 108px; gap: 7px; padding-inline: 15px; color: var(--theme-accent-text); background: var(--theme-accent); font-size: 13px; font-weight: 800; white-space: nowrap; }
+.mobile-selection-toolbar .mobile-selection-toolbar__primary:hover,
+.mobile-selection-toolbar .mobile-selection-toolbar__primary:focus-visible { background: color-mix(in srgb, var(--theme-accent) 88%, var(--theme-chrome-text)); }
 
 .action-sheet-backdrop { position: fixed; z-index: var(--layer-modal, 6000); inset: 0; display: grid; align-items: end; padding: 8px; background: color-mix(in srgb, var(--theme-shell) 58%, transparent); animation: backdrop-in 130ms ease-out; }
 .action-sheet { width: 100%; max-height: min(76dvh, 640px); overflow: hidden; border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 22%, transparent); border-radius: var(--theme-radius) var(--theme-radius) var(--theme-radius-small) var(--theme-radius-small); background: var(--theme-chrome); box-shadow: var(--theme-elevation-3); transition: transform 180ms cubic-bezier(.22, .75, .24, 1); animation: sheet-in 180ms cubic-bezier(.22, .75, .24, 1); }
