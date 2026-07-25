@@ -3423,8 +3423,8 @@ function App({ session }: { session: AuthSession | null }) {
         {swipePreview && <div className="desktop-swipe-preview" role="status"><SquaresFour size={20} weight="duotone" /><span>Release for <strong>{homeRelativeAreaLabel(swipePreview)}</strong></span></div>}
       </section>
 
-      {!isMobile && showDesktopMinimap && (
-        <nav className="desktop-minimap" data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions`}>
+      {(isMobile || showDesktopMinimap) && (
+        <nav className="desktop-minimap" data-mobile={isMobile || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions`}>
           <div className="desktop-minimap__toolbar">
             <span>Areas</span>
             <button type="button" aria-label={`Open Workspace Overview, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "area" : "areas"}`} onClick={() => setActivePanel("areas")}><SquaresFour aria-hidden="true" /><span>Overview</span><b>{occupiedSegments.length}</b></button>

@@ -5565,3 +5565,20 @@ a:focus-visible {
   .area-empty-state .empty-state__actions { grid-template-columns: 1fr; }
   .area-empty-state .empty-state__actions > * { grid-column: 1; }
 }
+
+@media (max-width: 620px) {
+  .desktop-minimap[data-mobile] {
+    right: 10px;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    min-width: 0;
+    min-height: 0;
+    max-width: min(228px, calc(100vw - 20px));
+    padding: 6px;
+  }
+  .desktop-minimap[data-mobile] .desktop-minimap__toolbar { display: none; }
+  .desktop-minimap[data-mobile] .desktop-minimap__grid {
+    display: grid;
+    width: clamp(44px, calc(var(--minimap-columns) * 44px), 216px);
+    height: clamp(44px, calc(var(--minimap-rows) * 44px), 172px);
+  }
+}
