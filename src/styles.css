@@ -1137,7 +1137,7 @@ a:focus-visible {
 
 .desktop-minimap {
   position: absolute;
-  z-index: 15;
+  z-index: 17;
   right: 12px;
   bottom: max(13px, env(safe-area-inset-bottom));
   display: block;
@@ -3015,7 +3015,7 @@ a:focus-visible {
 
   .desktop-minimap {
     position: absolute;
-    z-index: 15;
+    z-index: 17;
     right: 12px;
     bottom: max(13px, env(safe-area-inset-bottom));
     display: block;
@@ -4229,7 +4229,7 @@ a:focus-visible {
 .error-banner .notification-dismiss { display: grid; width: 34px; min-width: 34px; min-height: 34px; place-items: center; padding: 0; }
 .notification-summary { color: var(--theme-text-muted); font-size: 12px; }
 
-.desktop-shell:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu, .app-window__menu, .notification-stack, .app-window:not([data-minimized])) .desktop-minimap { opacity: 0; pointer-events: none; }
+.desktop-shell:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu, .app-window__menu) .desktop-minimap { opacity: 0; pointer-events: none; }
 
 @media (max-width: 620px) {
   .readonly-badge { display: inline-flex; max-width: 84px; padding-inline: 6px; white-space: nowrap; }
@@ -5430,7 +5430,7 @@ a:focus-visible {
   .taskbar__entry span { display: block; }
 }
 
-.desktop-shell:not(:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu, .app-window__menu, .notification-stack, .app-window:not([data-minimized]):not([data-segment-hidden]))) .desktop-minimap {
+.desktop-shell:not(:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu, .app-window__menu)) .desktop-minimap {
   opacity: 1;
   pointer-events: auto;
 }
@@ -5462,10 +5462,109 @@ a:focus-visible {
 .notification-card .notification-dismiss { display: grid; width: 32px; min-width: 32px; height: 32px; min-height: 32px; place-items: center; padding: 0; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-text-muted); background: transparent; }
 .notification-card .notification-dismiss:hover,
 .notification-card .notification-dismiss:focus-visible { color: var(--theme-text); background: var(--theme-window-muted); }
+
+/* Direct spatial navigation remains lightweight in the shell; the overview
+   expands the same coordinate model for management. */
+.desktop-minimap__grid {
+  width: clamp(56px, calc(var(--minimap-columns) * 28px), 196px);
+  height: clamp(38px, calc(var(--minimap-rows) * 23px), 132px);
+}
+.desktop-minimap__area[data-home]:not([data-active]) { border-color: color-mix(in srgb, var(--theme-accent) 48%, var(--theme-chrome-text)); }
+.desktop-minimap__area:not([data-occupied]):not([data-active]) { border-style: dashed; background: color-mix(in srgb, var(--theme-chrome-text) 4%, transparent); }
+.desktop-minimap__area:hover { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
+
+.workspace-area-map {
+  display: grid;
+  min-height: 104px;
+  grid-template-columns: repeat(var(--area-map-columns), minmax(74px, 1fr));
+  grid-template-rows: repeat(var(--area-map-rows), minmax(64px, 1fr));
+  gap: 7px;
+  overflow: auto;
+  padding: 10px;
+  border: var(--theme-border-width) solid var(--theme-border);
+  border-radius: var(--theme-radius);
+  background: color-mix(in srgb, var(--theme-window-muted) 86%, var(--theme-window));
+}
+.workspace-area-map__area {
+  display: grid;
+  min-width: 74px;
+  min-height: 64px;
+  align-content: space-between;
+  justify-items: start;
+  gap: 6px;
+  padding: 9px;
+  border: var(--theme-border-width) dashed color-mix(in srgb, var(--theme-text-muted) 42%, transparent);
+  border-radius: var(--theme-radius-small);
+  color: var(--theme-text-muted);
+  background: color-mix(in srgb, var(--theme-window) 72%, transparent);
+  text-align: left;
+  cursor: pointer;
+}
+.workspace-area-map__area[data-occupied] { border-style: solid; color: var(--theme-text); background: var(--theme-window); }
+.workspace-area-map__area[data-home]:not([data-current]) { border-color: color-mix(in srgb, var(--theme-selection) 62%, var(--theme-border)); }
+.workspace-area-map__area[data-current] { border-style: solid; border-color: var(--theme-selection); color: var(--theme-text); background: var(--theme-selected); box-shadow: inset 0 0 0 var(--theme-border-width) color-mix(in srgb, var(--theme-selection) 32%, transparent); }
+.workspace-area-map__area:disabled { cursor: default; opacity: 1; }
+.workspace-area-map__area span { max-width: 100%; overflow: hidden; font-size: 11px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-area-map__area small { color: inherit; font-size: 10px; opacity: .72; }
+.workspace-area-map[data-compact] { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); grid-template-rows: none; }
+.workspace-area-map[data-compact] .workspace-area-map__area { min-width: 128px; }
+
+.desktop-swipe-preview {
+  position: absolute;
+  z-index: 20;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  transform: translateX(-50%);
+  padding: 0 14px;
+  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-accent) 58%, transparent);
+  border-radius: 999px;
+  color: var(--theme-chrome-text);
+  background: var(--theme-chrome);
+  box-shadow: var(--theme-elevation-2);
+  pointer-events: none;
+  font-size: 12px;
+  animation: toast-in 140ms ease-out;
+}
+.desktop-swipe-preview svg { color: var(--theme-accent); }
+
+@media (max-width: 620px) {
+  .mobile-window-nav { grid-template-columns: 44px minmax(0, 1fr); }
+  .mobile-area-switcher {
+    display: grid;
+    min-width: 0;
+    height: 44px;
+    grid-template-columns: minmax(0, 1fr) 20px;
+    grid-template-rows: 1fr 1fr;
+    align-items: center;
+    gap: 0 8px;
+    padding: 4px 8px 4px 10px;
+    border: 0;
+    border-radius: var(--theme-radius-small);
+    color: var(--theme-chrome-text);
+    background: transparent;
+    text-align: left;
+  }
+  .mobile-area-switcher:active { background: color-mix(in srgb, var(--theme-chrome-text) 10%, transparent); }
+  .mobile-area-switcher span,
+  .mobile-area-switcher small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .mobile-area-switcher span { align-self: end; font-size: 11px; font-weight: 700; }
+  .mobile-area-switcher small { align-self: start; color: color-mix(in srgb, var(--theme-chrome-text) 70%, transparent); font-size: 9px; }
+  .mobile-area-switcher svg { grid-column: 2; grid-row: 1 / 3; }
+  .workspace-area-map { grid-template-columns: repeat(var(--area-map-columns), minmax(68px, 1fr)); grid-template-rows: repeat(var(--area-map-rows), 62px); }
+  .workspace-area-map__area { min-width: 68px; min-height: 62px; }
+  .desktop-swipe-preview { right: 14px; bottom: max(18px, env(safe-area-inset-bottom)); left: 14px; justify-content: center; transform: none; }
+}
 .notification-drawer { width: 100%; justify-self: stretch; }
 
 @media (max-width: 620px) {
   .notification-card { padding: 10px; }
   .notification-card__actions > .notification-action { min-width: 0; flex: 1; }
 }
-.desktop-shell:has(.shell-status-region) .desktop-minimap { opacity: 0; pointer-events: none; }
+@media (min-width: 621px) {
+  .desktop-shell:has(.shell-status-region) .shell-status-region { width: min(560px, calc(100vw - 250px)); }
+  .desktop-shell:has(.shell-status-region) .desktop-minimap { right: calc(min(560px, calc(100vw - 250px)) + 28px); }
+}

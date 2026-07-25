@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
+import { opensOnTouchRelease } from "../ui/file-icon-gesture";
 
 type Props = {
   entry: DesktopEntry;
@@ -145,7 +146,8 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
     const deltaX = event.clientX - drag.current.pointerX;
     const deltaY = event.clientY - drag.current.pointerY;
 
-    if (!drag.current.moved && Math.hypot(deltaX, deltaY) < 4) return;
+    const moveThreshold = drag.current.pointerType === "touch" ? 12 : 4;
+    if (!drag.current.moved && Math.hypot(deltaX, deltaY) < moveThreshold) return;
     if (drag.current.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
     drag.current.longPressTimer = undefined;
     drag.current.moved = true;
@@ -216,7 +218,16 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
       }
     }
     onDragEndRef.current(cancelled || !succeeded);
-    if (!cancelled && !completed.moved && !completed.longPressed && completed.pointerType === "touch") onOpen();
+    if (completed.pointerType === "touch") {
+      const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
+      const visibleTarget = releaseTarget?.closest(".file-icon__art, .file-icon__name");
+      if (opensOnTouchRelease({
+        cancelled,
+        moved: completed.moved,
+        longPressed: completed.longPressed,
+        releasedOnVisibleContent: Boolean(visibleTarget && iconRef.current?.contains(visibleTarget)),
+      })) onOpen();
+    }
   }
 
   return (
@@ -237,7 +248,15 @@ export function FileIcon({ entry, selected, onSelect, onOpen, onMove, onDragAtEd
         aria-pressed={selected}
         onClick={(event) => { if (event.detail === 0) onSelect(event); }}
         onDoubleClick={onOpen}
-        onContextMenu={onContextMenu}
+        onContextMenu={(event) => {
+          const current = drag.current;
+          if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+          if (current) {
+            current.longPressTimer = undefined;
+            current.longPressed = true;
+          }
+          onContextMenu(event);
+        }}
         onDragOver={entry.kind === "folder" ? (event) => {
           event.preventDefault();
           event.stopPropagation();

@@ -1,6 +1,6 @@
 import type { EntryPosition } from "../types";
 import { projectLogicalPosition, restoreLogicalPosition, segmentKey, type RootEntryPositionUpdate, type SurfaceSegment } from "./desktop-geometry";
-import { areaDirectionalLabel } from "./shell";
+import { homeRelativeAreaLabel } from "./shell";
 
 export type AreaOccupancy = {
   segment: SurfaceSegment;
@@ -29,7 +29,10 @@ export function adjacentArea(segment: SurfaceSegment, direction: "left" | "right
 
 export function desktopAreaItems(occupied: readonly AreaOccupancy[], current: SurfaceSegment): DesktopAreaItem[] {
   const byKey = new Map(occupied.map((area) => [segmentKey(area.segment), area]));
+  const home = { column: 0, row: 0 };
+  const homeKey = segmentKey(home);
   const currentKey = segmentKey(current);
+  if (!byKey.has(homeKey)) byKey.set(homeKey, { segment: home, rootItemCount: 0, windowCount: 0 });
   if (!byKey.has(currentKey)) byKey.set(currentKey, { segment: current, rootItemCount: 0, windowCount: 0 });
   return [...byKey.values()]
     .sort((left, right) => left.segment.row - right.segment.row || left.segment.column - right.segment.column)
@@ -38,7 +41,7 @@ export function desktopAreaItems(occupied: readonly AreaOccupancy[], current: Su
       current: segmentKey(area.segment) === currentKey,
       occupied: area.rootItemCount > 0 || area.windowCount > 0,
       key: segmentKey(area.segment),
-      label: areaDirectionalLabel(area.segment, current),
+      label: homeRelativeAreaLabel(area.segment),
       coordinateLabel: areaCoordinateLabel(area.segment),
     }));
 }

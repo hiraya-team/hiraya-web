@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { areaDirectionalLabel, nextOccupiedArea, occupiedAreaCount, taskbarCapacity, taskbarWindows } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, homeRelativeAreaLabel, occupiedAreaCount, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -27,11 +27,19 @@ describe("cohesive shell view models", () => {
     expect(areaDirectionalLabel({ column: 2, row: -1 }, { column: 0, row: 0 })).toBe("Above right");
   });
 
-  test("swipes to the nearest occupied region and never creates an empty one", () => {
-    const areas = [{ column: 0, row: 0 }, { column: 3, row: 0 }, { column: 0, row: -2 }];
-    expect(nextOccupiedArea(areas, areas[0], "x", 1)).toEqual(areas[1]);
-    expect(nextOccupiedArea(areas, areas[0], "y", -1)).toEqual(areas[2]);
-    expect(nextOccupiedArea(areas, areas[0], "x", -1)).toEqual(areas[0]);
+  test("keeps stable identities relative to Home", () => {
+    expect(homeRelativeAreaLabel({ column: 0, row: 0 })).toBe("Home");
+    expect(homeRelativeAreaLabel({ column: 2, row: -1 })).toBe("1 above, 2 right of Home");
+  });
+
+  test("requires a dominant deliberate swipe and advances one coordinate", () => {
+    expect(swipeAxis(8, 2)).toBeNull();
+    expect(swipeAxis(50, 45)).toBeNull();
+    expect(swipeAxis(-60, 8)).toBe("x");
+    expect(swipePreviewReady(50, 390)).toBeFalse();
+    expect(swipePreviewReady(64, 390)).toBeTrue();
+    expect(adjacentSwipeArea({ column: 0, row: 0 }, "x", -64)).toEqual({ column: 1, row: 0 });
+    expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", 64)).toEqual({ column: 0, row: -1 });
   });
 
   test("counts only occupied regions, excluding an empty current region", () => {

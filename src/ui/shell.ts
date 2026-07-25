@@ -33,13 +33,28 @@ export function areaDirectionalLabel(segment: SurfaceSegment, current: SurfaceSe
   return `${vertical} ${horizontal}`;
 }
 
-export function nextOccupiedArea(areas: readonly SurfaceSegment[], current: SurfaceSegment, axis: "x" | "y", direction: -1 | 1) {
-  const candidates = areas.filter((area) => axis === "x"
-    ? area.row === current.row && Math.sign(area.column - current.column) === direction
-    : area.column === current.column && Math.sign(area.row - current.row) === direction);
-  return candidates.sort((left, right) => axis === "x"
-    ? Math.abs(left.column - current.column) - Math.abs(right.column - current.column)
-    : Math.abs(left.row - current.row) - Math.abs(right.row - current.row))[0] ?? current;
+export function homeRelativeAreaLabel(segment: SurfaceSegment) {
+  if (segment.column === 0 && segment.row === 0) return "Home";
+  const horizontal = segment.column === 0 ? "" : `${Math.abs(segment.column)} ${segment.column < 0 ? "left" : "right"}`;
+  const vertical = segment.row === 0 ? "" : `${Math.abs(segment.row)} ${segment.row < 0 ? "above" : "below"}`;
+  return [vertical, horizontal].filter(Boolean).join(", ") + " of Home";
+}
+
+export function swipeAxis(deltaX: number, deltaY: number): "x" | "y" | null {
+  if (Math.hypot(deltaX, deltaY) < 12) return null;
+  if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < Math.min(Math.abs(deltaX), Math.abs(deltaY)) * 1.2) return null;
+  return Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
+}
+
+export function adjacentSwipeArea(current: SurfaceSegment, axis: "x" | "y", delta: number): SurfaceSegment {
+  const direction = delta < 0 ? 1 : -1;
+  return axis === "x"
+    ? { column: current.column + direction, row: current.row }
+    : { column: current.column, row: current.row + direction };
+}
+
+export function swipePreviewReady(delta: number, viewportDistance: number) {
+  return Math.abs(delta) >= Math.min(88, Math.max(52, viewportDistance * 0.16));
 }
 
 export function occupiedAreaCount(areas: readonly { occupied: boolean }[]) {

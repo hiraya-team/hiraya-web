@@ -118,7 +118,7 @@ import { boundedNotificationVisibility } from "./ui/notifications";
 import { WorkspaceOverview } from "./components/WorkspaceOverview";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { SystemMenu } from "./components/SystemMenu";
-import { areaDirectionalLabel, nextOccupiedArea, taskbarCapacity, taskbarWindows } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, homeRelativeAreaLabel, swipeAxis, swipePreviewReady, taskbarCapacity, taskbarWindows } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
@@ -199,6 +199,8 @@ function App({ session }: { session: AuthSession | null }) {
   const [error, setError] = useState("");
   const [folderImportError, setFolderImportError] = useState("");
   const [notice, setNotice] = useState("");
+  const [areaAnnouncement, setAreaAnnouncement] = useState("");
+  const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [selectionScope, setSelectionScope] = useState("desktop");
@@ -268,7 +270,7 @@ function App({ session }: { session: AuthSession | null }) {
   const uploadParentRef = useRef<string | null>(null);
   const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
   const importOperationRef = useRef<ImportOperationContext | null>(null);
-  const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: { column: number; row: number }; startTime: number; startX: number; startY: number; x: number; y: number } | null>(null);
+  const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null } | null>(null);
   const desktopPressRef = useRef<{
     activated: boolean;
     pointerId: number;
@@ -389,10 +391,13 @@ function App({ session }: { session: AuthSession | null }) {
     }
     return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
   }, [desktopSize, responsive.segments, runningApps]);
-  const visibleSegments = occupiedSegments.some((candidate) => candidate.key === activeSegmentKey)
-    ? occupiedSegments
-    : [...occupiedSegments, { entries: [], key: activeSegmentKey, segment: activeSegment }]
-      .sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
+  const visibleSegments = (() => {
+    const byKey = new Map(occupiedSegments.map((candidate) => [candidate.key, candidate]));
+    const home: SurfaceSegment = { column: 0, row: 0 };
+    if (!byKey.has(segmentKey(home))) byKey.set(segmentKey(home), { entries: [], key: segmentKey(home), segment: home });
+    if (!byKey.has(activeSegmentKey)) byKey.set(activeSegmentKey, { entries: [], key: activeSegmentKey, segment: activeSegment });
+    return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
+  })();
   const occupiedColumns = occupiedSegments.map((candidate) => candidate.segment.column);
   const occupiedRows = occupiedSegments.map((candidate) => candidate.segment.row);
   const minColumn = Math.min(0, activeSegment.column, ...occupiedColumns);
@@ -2500,6 +2505,7 @@ function App({ session }: { session: AuthSession | null }) {
       ? preferredApp
       : topAppInSegment(runningAppsRef.current, segment);
     setFocusedApp(nextApp?.id ?? null);
+    if (segmentKey(segment) !== activeSegmentKey) setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
     navigateRoute(routeForApp(nextApp, { ...currentRoute, ...segment }), mode);
   }
 
@@ -2616,7 +2622,7 @@ function App({ session }: { session: AuthSession | null }) {
       return;
     }
     event.preventDefault();
-    swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startTime: performance.now(), startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY };
+    swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
     if (event.pointerType !== "touch") return;
     event.currentTarget.setPointerCapture(event.pointerId);
     const press = {
@@ -2630,6 +2636,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (desktopPressRef.current !== press) return;
       press.activated = true;
       swipeRef.current = null;
+      setSwipePreview(null);
       suppressClickRef.current = true;
       openDesktopContextMenu(press.startX, press.startY);
     }, DESKTOP_LONG_PRESS_MS);
@@ -2768,8 +2775,8 @@ function App({ session }: { session: AuthSession | null }) {
     const deltaX = swipe.x - swipe.startX;
     const deltaY = swipe.y - swipe.startY;
     if (!swipe.axis) {
-      if (Math.hypot(deltaX, deltaY) < 7) return;
-      swipe.axis = Math.abs(deltaX) >= Math.abs(deltaY) ? "x" : "y";
+      swipe.axis = swipeAxis(deltaX, deltaY);
+      if (!swipe.axis) return;
       canvasRef.current.dataset.swiping = "true";
       event.currentTarget.setPointerCapture(event.pointerId);
     }
@@ -2778,9 +2785,16 @@ function App({ session }: { session: AuthSession | null }) {
     const x = -startColumn * desktopSize.width + (swipe.axis === "x" ? deltaX : 0);
     const y = -startRow * desktopSize.height + (swipe.axis === "y" ? deltaY : 0);
     canvasRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+    const viewportDistance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
+    const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
+    if (segmentKey(previewTarget ?? swipe.startSegment) !== segmentKey(swipe.previewTarget ?? swipe.startSegment)) {
+      swipe.previewTarget = previewTarget;
+      setSwipePreview(previewTarget);
+    }
   }
 
-  function finishDesktopSwipe(event: React.PointerEvent<HTMLElement>) {
+  function finishDesktopSwipe(event: React.PointerEvent<HTMLElement>, cancelled = false) {
     if (marqueeRef.current?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       marqueeRef.current = null;
@@ -2796,6 +2810,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (press.activated) {
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         swipeRef.current = null;
+        setSwipePreview(null);
         window.setTimeout(() => { suppressClickRef.current = false; }, 0);
         return;
       }
@@ -2803,19 +2818,11 @@ function App({ session }: { session: AuthSession | null }) {
     const swipe = swipeRef.current;
     if (!swipe || swipe.pointerId !== event.pointerId) return;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const delta = swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY;
-    const distance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
-    const velocity = Math.abs(delta) / Math.max(1, performance.now() - swipe.startTime);
-    const advance = swipe.axis && (Math.abs(delta) > distance * 0.16 || velocity > 0.45) ? (delta < 0 ? 1 : -1) : 0;
-    const nextSegment = !swipe.axis || advance === 0 ? swipe.startSegment : nextOccupiedArea(
-      occupiedSegments.map((area) => area.segment),
-      swipe.startSegment,
-      swipe.axis,
-      advance as -1 | 1,
-    );
+    const nextSegment = cancelled ? swipe.startSegment : swipe.previewTarget ?? swipe.startSegment;
     suppressClickRef.current = swipe.axis !== null;
     window.setTimeout(() => { suppressClickRef.current = false; }, 0);
     swipeRef.current = null;
+    setSwipePreview(null);
     if (canvasRef.current) delete canvasRef.current.dataset.swiping;
     goToSegment(nextSegment);
   }
@@ -2991,7 +2998,7 @@ function App({ session }: { session: AuthSession | null }) {
           {taskbarModel.overflow.length > 0 && <button className="taskbar__overflow" type="button" onClick={() => setActivePanel("windows")} aria-label={`${taskbarModel.overflow.length} more open windows`}>+{taskbarModel.overflow.length}</button>}
         </nav> : <nav className="mobile-window-nav" aria-label="Workspace navigation">
           <div className="mobile-window-nav__leading">{focusedApp?.kind === "settings" && settingsPage !== "main" ? <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={() => setSettingsPage("main")}><ArrowLeft size={18} /><span>Settings</span></button> : focusedApp ? <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Desktop" onClick={showDesktop}><Desktop size={18} /><span>Desktop</span></button> : activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}</div>
-          <span className="mobile-window-nav__title">{focusedApp ? runningAppLabel(focusedApp) : `${activeDesktopName} · ${areaItems.find((area) => area.current)?.label ?? "Home"}`}</span>
+          {focusedApp ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span> : <button className="mobile-area-switcher" type="button" aria-label={`Open area map, current area ${homeRelativeAreaLabel(activeSegment)}`} onClick={() => setActivePanel("areas")}><span>{activeDesktopName}</span><small>{homeRelativeAreaLabel(activeSegment)}</small><SquaresFour size={18} weight="duotone" /></button>}
         </nav>}
         <div className="menu-bar__actions">
           {(!isMobile || !focusedApp) && <MobileHeaderMenu label="New" icon={<><Plus size={16} weight="bold" /><span>New</span><CaretDown size={12} /></>}>
@@ -3058,8 +3065,8 @@ function App({ session }: { session: AuthSession | null }) {
         }}
         onPointerDown={handleDesktopPointerDown}
         onPointerMove={handleDesktopPointerMove}
-        onPointerUp={finishDesktopSwipe}
-        onPointerCancel={finishDesktopSwipe}
+        onPointerUp={(event) => finishDesktopSwipe(event)}
+        onPointerCancel={(event) => finishDesktopSwipe(event, true)}
       >
         <div className="wallpaper-image" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
@@ -3275,15 +3282,16 @@ function App({ session }: { session: AuthSession | null }) {
             );
           })}
         </div>
+        {swipePreview && <div className="desktop-swipe-preview" role="status"><SquaresFour size={20} weight="duotone" /><span>Release for <strong>{homeRelativeAreaLabel(swipePreview)}</strong></span></div>}
       </section>
 
-      {(segmentColumns > 1 || segmentRows > 1 || occupiedSegments.length > 1) && (
+      {!isMobile && (
         <nav className="desktop-minimap" data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} workspace regions`}>
           <div className="desktop-minimap__toolbar">
-            <span>Workspace map</span>
-            <button type="button" aria-label={`Open Workspace Overview, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "region" : "regions"}`} onClick={() => setActivePanel("areas")}><SquaresFour aria-hidden="true" /><span>Regions</span><b>{occupiedSegments.length}</b></button>
+            <span>Areas</span>
+            <button type="button" aria-label={`Open Workspace Overview, ${occupiedSegments.length} occupied ${occupiedSegments.length === 1 ? "area" : "areas"}`} onClick={() => setActivePanel("areas")}><SquaresFour aria-hidden="true" /><span>Overview</span><b>{occupiedSegments.length}</b></button>
           </div>
-          <span className="desktop-minimap__summary">{areaDirectionalLabel(activeSegment, activeSegment)} · {occupiedSegments.length} occupied</span>
+          <span className="desktop-minimap__summary">{homeRelativeAreaLabel(activeSegment)} · {occupiedSegments.length} occupied</span>
           <div className="desktop-minimap__grid" style={{ "--minimap-columns": segmentColumns, "--minimap-rows": segmentRows } as React.CSSProperties}>
             {visibleSegments.map((desktopSegment, visibleIndex) => {
               const column = desktopSegment.segment.column - minColumn;
@@ -3295,10 +3303,12 @@ function App({ session }: { session: AuthSession | null }) {
                   <button
                     className="desktop-minimap__area"
                     data-active={currentSegmentKey === activeSegmentKey || undefined}
+                    data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined}
+                    data-occupied={isOccupiedSegment || undefined}
                     type="button"
-                    aria-label={`${areaDirectionalLabel(desktopSegment.segment, activeSegment)}, region ${visibleIndex + 1} of ${visibleSegments.length}${currentSegmentKey === activeSegmentKey ? ", current region" : ""}`}
+                    aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${visibleSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`}
                     aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined}
-                    onClick={() => isOccupiedSegment ? goToSegment(desktopSegment.segment) : setActivePanel("areas")}
+                    onClick={() => goToSegment(desktopSegment.segment)}
                   >
                     {desktopSegment.entries.map((entry) => {
                       const position = responsive.positions.get(entry.id) ?? entry.position;
@@ -3312,6 +3322,7 @@ function App({ session }: { session: AuthSession | null }) {
           <span className="visually-hidden">{activeDesktopName}, area {Math.max(1, visibleSegments.findIndex((candidate) => candidate.key === activeSegmentKey) + 1)} of {visibleSegments.length}</span>
         </nav>
       )}
+      <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{areaAnnouncement}</span>
 
       <input ref={uploadRef} className="visually-hidden" type="file" multiple onChange={(event) => {
         const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);

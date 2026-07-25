@@ -8,7 +8,7 @@ Hiraya is a self-hosted, local-first workspace that presents files on a spatial 
 
 In a synchronized installation, the server is the authoritative home of desktops and files. The browser keeps a projected desktop, downloaded file copies, and queued changes so supported work can continue through a short outage. In browser-local mode, this browser is authoritative and clearing its site data removes your Hiraya content.
 
-Use the workspace switcher for **named desktops**. Use [Workspace Overview](#desktops-and-areas) to move around within one desktop and focus its windows. Open Search to find files, folders, windows, commands, or the command that opens this guide.
+Use the workspace switcher for **named desktops**. Use the desktop area map or the phone app-bar area button to move around within one desktop; [Workspace Overview](#desktops-and-areas) provides the expanded map and window controls. Open Search to find files, folders, windows, commands, or the command that opens this guide.
 
 ## Files, folders, and hierarchy import {#files-and-folders}
 
@@ -24,7 +24,9 @@ A **desktop** is a named workspace with its own files, folders, appearance, shar
 
 An **area** is a viewport-sized region derived from item and window coordinates on one continuous desktop. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
 
-Open **Workspace Overview** from the system menu, minimap, mobile window sheet, or Search. Its spatial and window views let you add an adjacent region, navigate, focus windows, move selected root items or the focused window, move a region's contents back to the current region, and arrange occupied regions. Swiping navigates among occupied regions only; use Add adjacent to enter an empty region explicitly.
+The persistent lower-right area map provides direct desktop navigation and always keeps Home addressable. On a phone, tap the current area in the app bar for the expanded spatial map. **Workspace Overview** is also available from the system menu or Search; its spatial and window views let you add an adjacent area, navigate, focus windows, move selected root items or the focused window, move an area's contents back to the current area, and arrange occupied areas.
+
+On a phone, swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place. Long-press a visible item for its actions. A short tap opens an item only when released over its visible icon or name.
 
 ## Sharing, roles, and public links {#sharing}
 

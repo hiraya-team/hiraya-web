@@ -37,6 +37,13 @@ export function WorkspaceOverview({ areas, windows, canMutate, selectedRootCount
   const id = useId();
   const arrangeable = arrangeableAreaItems(areas);
   const occupiedCount = occupiedAreaCount(areas);
+  const columns = areas.map((area) => area.segment.column);
+  const rows = areas.map((area) => area.segment.row);
+  const minColumn = Math.min(...columns);
+  const minRow = Math.min(...rows);
+  const mapColumns = Math.max(...columns) - minColumn + 1;
+  const mapRows = Math.max(...rows) - minRow + 1;
+  const compactMap = mapColumns > 8 || mapRows > 8 || mapColumns * mapRows > 36;
   const arrangeReason = !canMutate ? "Write access is required to arrange regions." : arrangeable.length < 2 ? "Add content to at least two regions before arranging." : "";
   function selectView(next: WorkspaceOverviewView) {
     if (controlledView === undefined) setUncontrolledView(next);
@@ -58,6 +65,21 @@ export function WorkspaceOverview({ areas, windows, canMutate, selectedRootCount
       <button id={`${id}-windows-tab`} type="button" role="tab" tabIndex={view === "windows" ? 0 : -1} aria-selected={view === "windows"} aria-controls={`${id}-windows-panel`} onKeyDown={handleTabKeyDown} onClick={() => selectView("windows")}><ListBullets /> Windows</button>
     </div>
     <div id={`${id}-spatial-panel`} role="tabpanel" aria-labelledby={`${id}-spatial-tab`} hidden={view !== "spatial"} tabIndex={0}>
+      <nav className="workspace-area-map" data-compact={compactMap || undefined} aria-label="Workspace area map" style={{ "--area-map-columns": compactMap ? 1 : mapColumns, "--area-map-rows": compactMap ? areas.length : mapRows } as React.CSSProperties}>
+        {areas.map((area) => <button
+          className="workspace-area-map__area"
+          style={compactMap ? undefined : { gridColumn: area.segment.column - minColumn + 1, gridRow: area.segment.row - minRow + 1 }}
+          type="button"
+          key={area.key}
+          data-current={area.current || undefined}
+          data-home={area.segment.column === 0 && area.segment.row === 0 || undefined}
+          data-occupied={area.occupied || undefined}
+          aria-current={area.current ? "true" : undefined}
+          disabled={area.current}
+          aria-label={`${area.label}, ${area.rootItemCount} items, ${area.windowCount} windows${area.current ? ", current area" : ""}`}
+          onClick={() => !area.current && onGo(area.segment)}
+        ><span>{area.segment.column === 0 && area.segment.row === 0 ? "Home" : area.label.replace(" of Home", "")}</span><small>{area.rootItemCount + area.windowCount || "Empty"}</small></button>)}
+      </nav>
       <div className="areas-panel__create" aria-label="Add an adjacent region"><strong>Add adjacent</strong><button type="button" onClick={() => onCreateAdjacent("left")}><ArrowLeft /> Left</button><button type="button" onClick={() => onCreateAdjacent("right")}><ArrowRight /> Right</button><button type="button" onClick={() => onCreateAdjacent("up")}><ArrowUp /> Above</button><button type="button" onClick={() => onCreateAdjacent("down")}><ArrowDown /> Below</button></div>
       <div className="areas-panel__arrange"><div><strong>Arrange occupied regions</strong><span>Moves {areas.reduce((sum, area) => sum + area.rootItemCount, 0)} root items and {windows.length} windows between coordinate regions. Nothing is deleted.</span>{arrangeReason && <small id={`${id}-arrange-reason`}>{arrangeReason}</small>}</div><button className="button button--quiet" type="button" disabled={Boolean(arrangeReason) && !arranging} aria-describedby={arrangeReason ? `${id}-arrange-reason` : undefined} title={arrangeReason || undefined} aria-pressed={arranging} onClick={() => onArrangeChange(!arranging)}>{arranging ? "Done" : "Arrange"}</button></div>
       <ol className="areas-panel__list">{areas.map((area) => {
