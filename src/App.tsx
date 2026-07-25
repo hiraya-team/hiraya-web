@@ -259,6 +259,14 @@ function App({ session }: { session: AuthSession | null }) {
     startY: number;
     timer: number;
   } | null>(null);
+  const minimapPressRef = useRef<{
+    activated: boolean;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    timer: number;
+  } | null>(null);
+  const suppressMinimapClickRef = useRef(false);
   const suppressClickRef = useRef(false);
   const selectedIdsRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardEntrySnapshot | null>(null);
@@ -1542,6 +1550,7 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(
     () => () => {
       if (desktopPressRef.current) window.clearTimeout(desktopPressRef.current.timer);
+      if (minimapPressRef.current) window.clearTimeout(minimapPressRef.current.timer);
     },
     [],
   );
@@ -3270,6 +3279,43 @@ function App({ session }: { session: AuthSession | null }) {
     setMinimapExpanded(true);
   }
 
+  function beginMinimapPress(event: React.PointerEvent<HTMLButtonElement>) {
+    if (minimapExpanded || event.button !== 0 || event.pointerType === "mouse") return;
+    const press = {
+      activated: false,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: 0,
+    };
+    press.timer = window.setTimeout(() => {
+      if (minimapPressRef.current !== press) return;
+      press.activated = true;
+      suppressMinimapClickRef.current = true;
+      setMinimapExpanded(true);
+    }, DESKTOP_LONG_PRESS_MS);
+    minimapPressRef.current = press;
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveMinimapPress(event: React.PointerEvent<HTMLButtonElement>) {
+    const press = minimapPressRef.current;
+    if (!press || press.pointerId !== event.pointerId || press.activated) return;
+    if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) < 10) return;
+    window.clearTimeout(press.timer);
+    minimapPressRef.current = null;
+  }
+
+  function finishMinimapPress(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
+    const press = minimapPressRef.current;
+    if (!press || press.pointerId !== event.pointerId) return;
+    window.clearTimeout(press.timer);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    minimapPressRef.current = null;
+    if (cancelled) suppressMinimapClickRef.current = false;
+    else if (press.activated) window.setTimeout(() => { suppressMinimapClickRef.current = false; }, 0);
+  }
+
   function outboxAffectedLabels(record: OutboxRecord) {
     const operation = record.operation;
     const ids = operation.kind === "delete" ? [operation.entryId] : operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer" ? operation.entryIds : operation.kind === "update-entry" || operation.kind === "save-content" ? [operation.entry.id] : operation.kind === "create" ? operation.entries.map((entry) => entry.id) : [];
@@ -4054,7 +4100,28 @@ function App({ session }: { session: AuthSession | null }) {
                 const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
                 return (
                   <div className="desktop-minimap__slot" data-segment-key={isOccupiedSegment ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: column + 1, gridRow: row + 1 }}>
-                    <button className="desktop-minimap__area" data-active={currentSegmentKey === activeSegmentKey || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupiedSegment || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${visibleSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`} aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined} onClick={() => goToSegment(desktopSegment.segment)}>
+                    <button
+                      className="desktop-minimap__area"
+                      data-active={currentSegmentKey === activeSegmentKey || undefined}
+                      data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined}
+                      data-occupied={isOccupiedSegment || undefined}
+                      type="button"
+                      aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${visibleSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`}
+                      aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined}
+                      onClick={(event) => {
+                        if (suppressMinimapClickRef.current) {
+                          suppressMinimapClickRef.current = false;
+                          event.preventDefault();
+                          return;
+                        }
+                        goToSegment(desktopSegment.segment);
+                      }}
+                      onContextMenu={(event) => event.preventDefault()}
+                      onPointerDown={beginMinimapPress}
+                      onPointerMove={moveMinimapPress}
+                      onPointerUp={finishMinimapPress}
+                      onPointerCancel={(event) => finishMinimapPress(event, true)}
+                    >
                       {desktopSegment.entries.map((entry) => {
                         const position = responsive.positions.get(entry.id) ?? entry.position;
                         return (
