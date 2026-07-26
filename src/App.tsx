@@ -276,6 +276,7 @@ function App({ session }: { session: AuthSession | null }) {
   const areaSwitcherHandleRef = useRef<HTMLButtonElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
+  const areaSwitcherInternalActivationRef = useRef(false);
   const areaSwitcherDragRef = useRef<{ expanded: boolean; moved: boolean; pointerId: number; startX: number; travel: number } | null>(null);
   const suppressAreaSwitcherClickRef = useRef(false);
   const minimapSwipeRef = useRef<{
@@ -487,6 +488,23 @@ function App({ session }: { session: AuthSession | null }) {
     const frame = window.requestAnimationFrame(() => areaSwitcherHandleRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [activeSegmentKey, minimapExpanded]);
+
+  useEffect(() => {
+    if (!minimapExpanded) return;
+    let timer: number | null = null;
+    const dismissForFrameFocus = () => {
+      timer = window.setTimeout(() => {
+        if (!(document.activeElement instanceof HTMLIFrameElement) || areaSwitcherRef.current?.contains(document.activeElement)) return;
+        areaSwitcherInternalActivationRef.current = false;
+        setMinimapExpanded(false);
+      }, 0);
+    };
+    window.addEventListener("blur", dismissForFrameFocus, true);
+    return () => {
+      window.removeEventListener("blur", dismissForFrameFocus, true);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [minimapExpanded]);
 
   useEffect(() => {
     appTheme.set(activeTheme);
@@ -3459,18 +3477,41 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function openAreaMap() {
+    areaSwitcherInternalActivationRef.current = false;
     areaSwitcherRestoreFocusRef.current = false;
     setMinimapExpanded(true);
   }
 
   function collapseAreaMap(restoreFocus = isMobile) {
+    areaSwitcherInternalActivationRef.current = false;
     if (restoreFocus) areaSwitcherRestoreFocusRef.current = true;
     setMinimapExpanded(false);
   }
 
   function selectAreaFromSwitcher(segment: SurfaceSegment) {
     goToSegment(segment, "push", undefined, !isMobile);
-    if (isMobile) collapseAreaMap();
+  }
+
+  function areaSwitcherContains(target: EventTarget | null) {
+    return Boolean(target && areaSwitcherRef.current?.contains(target as Node));
+  }
+
+  function handleShellAreaSwitcherInteraction(event: React.PointerEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) {
+    areaSwitcherInternalActivationRef.current = false;
+    if (minimapExpanded && !areaSwitcherContains(event.target)) collapseAreaMap(false);
+  }
+
+  function captureAreaSwitcherActivation(event: React.MouseEvent<HTMLElement>) {
+    if (minimapExpanded && areaSwitcherContains(event.target)) areaSwitcherInternalActivationRef.current = true;
+  }
+
+  function handleShellAreaSwitcherFocus(event: React.FocusEvent<HTMLElement>) {
+    if (!minimapExpanded || areaSwitcherContains(event.target)) return;
+    if (areaSwitcherInternalActivationRef.current) {
+      areaSwitcherInternalActivationRef.current = false;
+      return;
+    }
+    collapseAreaMap(false);
   }
 
   function beginAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, expanded: boolean) {
@@ -3588,7 +3629,7 @@ function App({ session }: { session: AuthSession | null }) {
   const shellAnnouncement = error ? "" : importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : notice || (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? ""));
 
   return (
-    <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)}>
+    <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
         {!isMobile && activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
         {!isMobile && <DesktopTaskbar
@@ -3854,12 +3895,6 @@ function App({ session }: { session: AuthSession | null }) {
         }
         ref={desktopRef}
         aria-label={`${activeDesktopName} desktop`}
-        onFocusCapture={() => {
-          if (minimapExpanded) collapseAreaMap(false);
-        }}
-        onPointerDownCapture={() => {
-          if (minimapExpanded) collapseAreaMap(false);
-        }}
         onClickCapture={(event) => {
           if (!suppressClickRef.current) return;
           suppressClickRef.current = false;
@@ -4335,7 +4370,7 @@ function App({ session }: { session: AuthSession | null }) {
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
                         const label = runningAppLabel(app);
-                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => { focusApp(app.id); if (isMobile) collapseAreaMap(false); }}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
+                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
                       })}
                       {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
                 </div>
