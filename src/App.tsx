@@ -130,6 +130,7 @@ import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
+import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
 
 type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
 type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
@@ -140,7 +141,7 @@ type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | n
 type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
 type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
-type AreaTransition = { source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
+type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 const DESKTOP_LONG_PRESS_MS = 500;
 const ONBOARDING_VERSION = 1;
 
@@ -259,12 +260,14 @@ function App({ session }: { session: AuthSession | null }) {
   const frameTrackRef = useRef<HTMLDivElement>(null);
   const areaTransitionTimerRef = useRef<number | null>(null);
   const areaTransitionGenerationRef = useRef(0);
+  const areaTransitionRef = useRef<AreaTransition | null>(null);
+  const completeAreaTransitionRef = useRef<() => void>(() => undefined);
   const uploadRef = useRef<HTMLInputElement>(null);
   const directoryRef = useRef<HTMLInputElement>(null);
   const uploadParentRef = useRef<string | null>(null);
   const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
   const importOperationRef = useRef<ImportOperationContext | null>(null);
-  const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null } | null>(null);
+  const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null; transitionId?: number } | null>(null);
   const desktopPressRef = useRef<{
     activated: boolean;
     pointerId: number;
@@ -361,6 +364,7 @@ function App({ session }: { session: AuthSession | null }) {
   const actionSheetHistoryRef = useRef<string | null>(null);
   const restoringHistoryRef = useRef(false);
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
+  areaTransitionRef.current = areaTransition;
   desktopSizeRef.current = desktopSize;
   desktopsRef.current = desktops;
   const routeExplorerFolderId = route?.explorerFolderId;
@@ -426,16 +430,6 @@ function App({ session }: { session: AuthSession | null }) {
     const key = segmentKey(segment);
     return visibleSegmentsByKey.get(key) ?? { entries: [], key, segment };
   });
-  const occupiedColumns = occupiedSegments.map((candidate) => candidate.segment.column);
-  const occupiedRows = occupiedSegments.map((candidate) => candidate.segment.row);
-  const transitionColumns = areaTransition ? [areaTransition.source.column, areaTransition.target.column] : [];
-  const transitionRows = areaTransition ? [areaTransition.source.row, areaTransition.target.row] : [];
-  const minColumn = Math.min(0, activeSegment.column, ...occupiedColumns, ...transitionColumns);
-  const minRow = Math.min(0, activeSegment.row, ...occupiedRows, ...transitionRows);
-  const maxColumn = Math.max(0, activeSegment.column, ...occupiedColumns, ...transitionColumns);
-  const maxRow = Math.max(0, activeSegment.row, ...occupiedRows, ...transitionRows);
-  const segmentColumns = maxColumn - minColumn + 1;
-  const segmentRows = maxRow - minRow + 1;
   const minimapColumns = minimapSegments.map((candidate) => candidate.segment.column);
   const minimapRows = minimapSegments.map((candidate) => candidate.segment.row);
   const minimapMinColumn = Math.min(...minimapColumns);
@@ -444,7 +438,7 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, compactChrome);
   const minimapDetailed = minimapExpanded;
-  const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
+  const restingCamera = areaCameraPosition(activeSegment, desktopSize);
   const transitionSegmentKeys = new Set(areaTransition ? [segmentKey(areaTransition.source), segmentKey(areaTransition.target)] : []);
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
   const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
@@ -1451,6 +1445,7 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => {
     async function restoreRoute(state?: unknown) {
       if (!navigationReadyRef.current) return;
+      completeAreaTransitionRef.current();
       setDialog(null);
       setContextMenu(null);
       setMoveDialogEntryIds([]);
@@ -1527,6 +1522,15 @@ function App({ session }: { session: AuthSession | null }) {
     });
     observer.observe(desktop);
     return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (areaTransitionRef.current) completeAreaTransitionRef.current();
+  }, [desktopSize.width, desktopSize.height]);
+
+  useEffect(() => () => {
+    areaTransitionGenerationRef.current += 1;
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
   }, []);
 
   const previousDesktopSizeRef = useRef(desktopSize);
@@ -1844,10 +1848,8 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function snapRootEntryPosition(position: EntryPosition) {
-    const logical = { x: position.x + minColumn * desktopSize.width, y: position.y + minRow * desktopSize.height };
-    const projection = projectLogicalPosition(logical, desktopSize);
-    const snapped = restoreLogicalPosition(snapPositionInView(projection.local), projection.segment, desktopSize);
-    return { x: snapped.x - minColumn * desktopSize.width, y: snapped.y - minRow * desktopSize.height };
+    const projection = projectLogicalPosition(position, desktopSize);
+    return restoreLogicalPosition(snapPositionInView(projection.local), projection.segment, desktopSize);
   }
 
   function positionAtDesktopPoint(clientX: number, clientY: number) {
@@ -2364,11 +2366,10 @@ function App({ session }: { session: AuthSession | null }) {
     if (targetParentId) {
       return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], targetParentId, true);
     }
-    const finalPosition = layoutRef.current.snapToGrid ? snapRootEntryPosition(position) : position;
-    const logicalCanvasPosition = {
-      x: finalPosition.x + minColumn * desktopSize.width,
-      y: finalPosition.y + minRow * desktopSize.height,
-    };
+    const sourceSegment = projectLogicalPosition(entry.position, desktopSize).segment;
+    const sourceOrigin = areaWorldOrigin(sourceSegment, desktopSize);
+    const worldPosition = { x: sourceOrigin.x + position.x, y: sourceOrigin.y + position.y };
+    const logicalCanvasPosition = layoutRef.current.snapToGrid ? snapRootEntryPosition(worldPosition) : worldPosition;
     const projected = projectLogicalPosition(logicalCanvasPosition, desktopSize);
     const targetSegment = edgeNavigationRef.current?.targetSegment ?? projected.segment;
     const localPosition = {
@@ -3013,6 +3014,7 @@ function App({ session }: { session: AuthSession | null }) {
     desktopRef.current?.style.removeProperty("--area-stage-scale");
     desktopRef.current?.style.removeProperty("--area-frame-opacity");
   }
+  completeAreaTransitionRef.current = completeAreaTransition;
 
   function scheduleAreaTransitionCompletion(generation: number) {
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
@@ -3028,17 +3030,29 @@ function App({ session }: { session: AuthSession | null }) {
     const nextApp = focusDestinationApp ? (preferredApp && appIsInSegment(preferredApp, segment) ? preferredApp : topAppInSegment(runningAppsRef.current, segment)) : null;
     setFocusedApp(nextApp?.id ?? null);
     const destinationRoute = routeForApp(nextApp, { ...currentRoute, ...segment });
-    if (segmentKey(segment) === activeSegmentKey || !animate || activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (segmentKey(segment) === activeSegmentKey || activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       completeAreaTransition();
       navigateRoute(destinationRoute, mode);
       return;
     }
+    if (!animate) {
+      const generation = ++areaTransitionGenerationRef.current;
+      const camera = areaCameraPosition(segment, desktopSizeRef.current);
+      setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "interactive", kind: "gesture" });
+      setAreaTrackTransform(camera.x, camera.y);
+      navigateRoute(destinationRoute, mode);
+      window.requestAnimationFrame(() => {
+        if (areaTransitionGenerationRef.current !== generation) return;
+        completeAreaTransition();
+      });
+      return;
+    }
     setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
     const generation = ++areaTransitionGenerationRef.current;
-    setAreaTransition({ source: activeSegment, target: segment, phase: "preparing", kind: "programmatic" });
+    setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "preparing", kind: "programmatic" });
     window.requestAnimationFrame(() => {
       if (areaTransitionGenerationRef.current !== generation) return;
-      setAreaTransition({ source: activeSegment, target: segment, phase: "settling", kind: "programmatic" });
+      setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "settling", kind: "programmatic" });
       navigateRoute(destinationRoute, mode);
       scheduleAreaTransitionCompletion(generation);
     });
@@ -3197,21 +3211,18 @@ function App({ session }: { session: AuthSession | null }) {
     const pending = edgeNavigationRef.current;
     if (!pending || pending.draftEntryId !== entry.id) return null;
     pending.targetSegment = targetSegment;
-    const targetMinColumn = Math.min(responsive.minColumn, targetSegment.column);
-    const targetMinRow = Math.min(responsive.minRow, targetSegment.row);
-    const targetMaxColumn = Math.max(responsive.maxColumn, targetSegment.column);
-    const targetMaxRow = Math.max(responsive.maxRow, targetSegment.row);
-    const previousCanvasColumn = previousSegment.column - minColumn;
-    const previousCanvasRow = previousSegment.row - minRow;
-    const targetCanvasColumn = targetSegment.column - targetMinColumn;
-    const targetCanvasRow = targetSegment.row - targetMinRow;
+    const sourceSegment = projectLogicalPosition(entry.position, desktopSize).segment;
+    const transfer = areaTransferDelta(previousSegment, targetSegment, desktopSize);
+    const targetOffset = areaTransferDelta(sourceSegment, targetSegment, desktopSize);
     edgeDragRef.current = { direction: edge.direction, time: now };
     goToSegment(targetSegment, "replace", undefined, true, false);
     return {
-      deltaX: (targetCanvasColumn - previousCanvasColumn) * desktopSize.width,
-      deltaY: (targetCanvasRow - previousCanvasRow) * desktopSize.height,
-      maxX: Math.max(8, (targetMaxColumn - targetMinColumn + 1) * desktopSize.width - iconMetrics.width),
-      maxY: Math.max(8, (targetMaxRow - targetMinRow + 1) * desktopSize.height - iconMetrics.height),
+      deltaX: transfer.x,
+      deltaY: transfer.y,
+      minX: targetOffset.x + 8,
+      minY: targetOffset.y + 8,
+      maxX: targetOffset.x + Math.max(8, desktopSize.width - iconMetrics.width),
+      maxY: targetOffset.y + Math.max(8, desktopSize.height - iconMetrics.height),
     };
   }
 
@@ -3317,24 +3328,23 @@ function App({ session }: { session: AuthSession | null }) {
       if (!swipe.axis) return;
       if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
       areaTransitionTimerRef.current = null;
+      const transitionId = ++areaTransitionGenerationRef.current;
+      swipe.transitionId = transitionId;
       const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
       const target = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
       swipe.previewTarget = null;
-      setAreaTransition({ source: swipe.startSegment, target, phase: "interactive", kind: "gesture" });
+      setAreaTransition({ id: transitionId, source: swipe.startSegment, target, phase: "interactive", kind: "gesture" });
       canvasRef.current.dataset.swiping = "true";
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    const startColumn = swipe.startSegment.column - minColumn;
-    const startRow = swipe.startSegment.row - minRow;
-    const x = -startColumn * desktopSize.width + (swipe.axis === "x" ? deltaX : 0);
-    const y = -startRow * desktopSize.height + (swipe.axis === "y" ? deltaY : 0);
-    setAreaTrackTransform(x, y);
+    const camera = areaCameraDragPosition(swipe.startSegment, desktopSize, { x: deltaX, y: deltaY }, swipe.axis);
+    setAreaTrackTransform(camera.x, camera.y);
     const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
     const viewportDistance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
     const transitionTarget = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
     if (!areaTransition || segmentKey(areaTransition.target) !== segmentKey(transitionTarget)) {
-      setAreaTransition({ source: swipe.startSegment, target: transitionTarget, phase: "interactive", kind: "gesture" });
+      setAreaTransition({ id: swipe.transitionId!, source: swipe.startSegment, target: transitionTarget, phase: "interactive", kind: "gesture" });
     }
     setAreaTransitionDepth(areaTransitionDepth(primaryDelta, viewportDistance));
     const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
@@ -3380,11 +3390,12 @@ function App({ session }: { session: AuthSession | null }) {
     }, 0);
     swipeRef.current = null;
     setSwipePreview(null);
-    const transitionTarget = areaTransition?.target ?? (swipe.axis ? adjacentSwipeArea(swipe.startSegment, swipe.axis, swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY) : swipe.startSegment);
-    const generation = ++areaTransitionGenerationRef.current;
+    const transitionTarget = swipe.axis ? adjacentSwipeArea(swipe.startSegment, swipe.axis, swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY) : swipe.startSegment;
+    const generation = swipe.transitionId ?? ++areaTransitionGenerationRef.current;
     if (swipe.axis) {
-      setAreaTransition({ source: swipe.startSegment, target: transitionTarget, phase: "settling", kind: "gesture" });
+      setAreaTransition({ id: generation, source: swipe.startSegment, target: transitionTarget, phase: "settling", kind: "gesture" });
       window.requestAnimationFrame(() => {
+        if (areaTransitionGenerationRef.current !== generation) return;
         resetAreaTrackTransform();
         setAreaTransitionDepth(0);
       });
@@ -3392,9 +3403,8 @@ function App({ session }: { session: AuthSession | null }) {
     if (canvasRef.current) {
       delete canvasRef.current.dataset.swiping;
       if (!nextSegment) {
-        const startColumn = swipe.startSegment.column - minColumn;
-        const startRow = swipe.startSegment.row - minRow;
-        setAreaTrackTransform(-startColumn * desktopSize.width, -startRow * desktopSize.height);
+        const camera = areaCameraPosition(swipe.startSegment, desktopSize);
+        setAreaTrackTransform(camera.x, camera.y);
       }
     }
     if (nextSegment && routeRef.current) {
@@ -3967,24 +3977,22 @@ function App({ session }: { session: AuthSession | null }) {
           <div
             className="desktop-canvas desktop-area-track"
             ref={canvasRef}
+            onTransitionEnd={(event) => {
+              if (event.target !== event.currentTarget || event.propertyName !== "transform" || areaTransition?.phase !== "settling") return;
+              completeAreaTransition();
+            }}
             style={{
-              width: segmentColumns * desktopSize.width,
-              height: segmentRows * desktopSize.height,
-              transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
+              width: desktopSize.width,
+              height: desktopSize.height,
+              transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
             }}
           >
-          {responsive.segments.flatMap((desktopSegment) =>
-            desktopSegment.entries.map((entry) => {
-              const segmentColumn = desktopSegment.segment.column - minColumn;
-              const segmentRow = desktopSegment.segment.row - minRow;
+          {responsive.segments.map((desktopSegment) => {
+            const origin = areaWorldOrigin(desktopSegment.segment, desktopSize);
+            return <div className="desktop-area-segment" key={desktopSegment.key} style={{ left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
+            {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
-              const renderedEntry = {
-                ...entry,
-                position: {
-                  x: segmentColumn * desktopSize.width + projectedPosition.x,
-                  y: segmentRow * desktopSize.height + projectedPosition.y,
-                },
-              };
+              const renderedEntry = { ...entry, position: projectedPosition };
               return (
                 <FileIcon
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
@@ -4013,7 +4021,11 @@ function App({ session }: { session: AuthSession | null }) {
                   onMove={(position, targetParentId) => handleDesktopMove(entry, position, targetParentId)}
                   onDragAtEdge={(clientX, clientY) => handleIconDragAtEdge(entry, clientX, clientY)}
                   onDragEnd={finishEdgeNavigation}
-                  getSnapPreview={layout.snapToGrid ? snapRootEntryPosition : undefined}
+                  getSnapPreview={layout.snapToGrid ? (position) => {
+                    const world = { x: origin.x + position.x, y: origin.y + position.y };
+                    const snapped = snapRootEntryPosition(world);
+                    return { x: snapped.x - origin.x, y: snapped.y - origin.y };
+                  } : undefined}
                   onExternalDrop={(dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -4026,8 +4038,9 @@ function App({ session }: { session: AuthSession | null }) {
                   }}
                 />
               );
-            }),
-          )}
+            })}
+            </div>;
+          })}
           </div>
         </div>
         {marquee && (
@@ -4093,20 +4106,19 @@ function App({ session }: { session: AuthSession | null }) {
             role="region"
             aria-label="Open windows"
             style={isMobile ? undefined : {
-              width: segmentColumns * desktopSize.width,
-              height: segmentRows * desktopSize.height,
-              transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
+              width: desktopSize.width,
+              height: desktopSize.height,
+              transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
             }}
           >
           {runningApps.map((app, index) => {
             const projection = projectLogicalPosition(app.bounds, desktopSize);
             const segmentActive = projection.segment.column === activeSegment.column && projection.segment.row === activeSegment.row;
             const segmentVisible = segmentActive || transitionSegmentKeys.has(segmentKey(projection.segment));
-            const segmentColumn = projection.segment.column - minColumn;
-            const segmentRow = projection.segment.row - minRow;
             const localBounds = isMobile
               ? { x: 0, y: 0, width: desktopSize.width, height: desktopSize.height }
-              : { ...app.bounds, x: segmentColumn * desktopSize.width + projection.local.x, y: segmentRow * desktopSize.height + projection.local.y };
+              : { ...app.bounds, ...projection.local };
+            const origin = areaWorldOrigin(projection.segment, desktopSize);
             const titleId = `running-app-title-${index}`;
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
@@ -4122,8 +4134,8 @@ function App({ session }: { session: AuthSession | null }) {
                   })
                 : builtinAppWindow(app.kind);
             return (
+              <div className="desktop-window-segment" key={app.id} style={isMobile ? undefined : { left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
               <AppWindow
-                key={app.id}
                 id={app.id}
                 title={title}
                 titleId={titleId}
@@ -4332,6 +4344,7 @@ function App({ session }: { session: AuthSession | null }) {
                   </>
                 )}
               </AppWindow>
+              </div>
             );
           })}
           </div>
@@ -4342,9 +4355,9 @@ function App({ session }: { session: AuthSession | null }) {
               className="desktop-area-frame-track desktop-area-track"
               ref={frameTrackRef}
               style={{
-                width: segmentColumns * desktopSize.width,
-                height: segmentRows * desktopSize.height,
-                transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
+                width: desktopSize.width,
+                height: desktopSize.height,
+                transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
               }}
             >
               {[areaTransition.source, areaTransition.target].filter((segment, index, segments) => segments.findIndex((candidate) => segmentKey(candidate) === segmentKey(segment)) === index).map((segment) => (
@@ -4352,8 +4365,8 @@ function App({ session }: { session: AuthSession | null }) {
                   className="desktop-area-frame"
                   key={segmentKey(segment)}
                   style={{
-                    left: (segment.column - minColumn) * desktopSize.width,
-                    top: (segment.row - minRow) * desktopSize.height,
+                    left: segment.column * desktopSize.width,
+                    top: segment.row * desktopSize.height,
                     width: desktopSize.width,
                     height: desktopSize.height,
                   }}

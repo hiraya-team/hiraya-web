@@ -155,13 +155,20 @@ describe("accessibility regressions", () => {
   test("live area transitions keep mobile windows outside the transformed area track", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('style.setProperty("--area-track-x"');
     expect(app).toContain('style.removeProperty("--area-track-x")');
     expect(app).toContain("translate3d(var(--area-track-x");
+    expect(app).toContain("areaCameraPosition(activeSegment, desktopSize)");
+    expect(app).toContain("areaWorldOrigin(desktopSegment.segment, desktopSize)");
+    expect(app).not.toContain("segment.column - minColumn");
     expect(app).toContain('className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}');
     expect(app).toContain("style={isMobile ? undefined : {");
     expect(app).toContain("segmentVisible={isMobile ? segmentActive : segmentVisible}");
     expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
+    expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
+    expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
+    expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
   });
 });

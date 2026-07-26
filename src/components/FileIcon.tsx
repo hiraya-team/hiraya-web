@@ -15,6 +15,8 @@ type Props = {
   onDragAtEdge: (clientX: number, clientY: number) => {
     deltaX: number;
     deltaY: number;
+    minX: number;
+    minY: number;
     maxX: number;
     maxY: number;
   } | null;
@@ -37,9 +39,13 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     pointerX: number;
     pointerY: number;
     pointerId: number;
+    minX: number;
+    minY: number;
     maxX: number;
     maxY: number;
     moved: boolean;
+    groupOriginX: number;
+    groupOriginY: number;
     originX: number;
     originY: number;
     baseX: number;
@@ -111,18 +117,23 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
       void finishDrag({ pointerId: drag.current.pointerId, clientX: drag.current.pointerX, clientY: drag.current.pointerY }, true);
       return;
     }
-    const canvas = event.currentTarget.parentElement;
-    if (!canvas) return;
+    const surface = event.currentTarget.parentElement;
+    if (!surface) return;
+    const canvas = event.currentTarget.closest<HTMLElement>(".desktop-canvas") ?? surface;
 
     if (event.pointerType !== "touch" || !allowBrowserPinchZoom) event.preventDefault();
-    const bounds = canvas.getBoundingClientRect();
+    const bounds = surface.getBoundingClientRect();
     drag.current = {
       pointerX: event.clientX,
       pointerY: event.clientY,
       pointerId: event.pointerId,
+      minX: 8,
+      minY: 8,
       maxX: Math.max(8, bounds.width - event.currentTarget.offsetWidth - 8),
       maxY: Math.max(8, bounds.height - event.currentTarget.offsetHeight - 8),
       moved: false,
+      groupOriginX: event.currentTarget.offsetLeft,
+      groupOriginY: event.currentTarget.offsetTop,
       originX: event.currentTarget.offsetLeft,
       originY: event.currentTarget.offsetTop,
       baseX: event.currentTarget.offsetLeft,
@@ -162,8 +173,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     if (drag.current.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
     drag.current.longPressTimer = undefined;
     drag.current.moved = true;
-    let x = Math.min(drag.current.maxX, Math.max(8, drag.current.originX + deltaX));
-    let y = Math.min(drag.current.maxY, Math.max(8, drag.current.originY + deltaY));
+    let x = Math.min(drag.current.maxX, Math.max(drag.current.minX, drag.current.originX + deltaX));
+    let y = Math.min(drag.current.maxY, Math.max(drag.current.minY, drag.current.originY + deltaY));
     const pageChange = onDragAtEdge(event.clientX, event.clientY);
     if (pageChange) {
       x += pageChange.deltaX;
@@ -172,6 +183,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
       drag.current.pointerY = event.clientY;
       drag.current.originX = x;
       drag.current.originY = y;
+      drag.current.minX = pageChange.minX;
+      drag.current.minY = pageChange.minY;
       drag.current.maxX = pageChange.maxX;
       drag.current.maxY = pageChange.maxY;
     }
@@ -183,7 +196,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     iconRef.current.style.transform = `translate3d(${x - drag.current.baseX}px, ${y - drag.current.baseY}px, 0)`;
     iconRef.current.dataset.dragging = "true";
     if (iconRef.current.dataset.selected) {
-      const groupDelta = { x: x - drag.current.originX, y: y - drag.current.originY };
+      const groupDelta = { x: x - drag.current.groupOriginX, y: y - drag.current.groupOriginY };
       document.querySelectorAll<HTMLElement>(".file-icon[data-selected]").forEach((icon) => {
         if (icon === iconRef.current) return;
         icon.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;

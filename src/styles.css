@@ -484,13 +484,18 @@ a:focus-visible {
 .desktop-area-stage--frames { z-index: 17; overflow: hidden; pointer-events: none; }
 
 .desktop-area-track {
-  transition: transform calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
   will-change: transform;
 }
 
-.desktop-canvas.desktop-area-track { transition-duration: calc(420ms * var(--theme-motion)); }
+.desktop[data-area-transition-phase="settling"] .desktop-area-track {
+  transition: transform calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
+}
 
-.app-window-layer.desktop-area-track { right: auto; bottom: auto; }
+.desktop-area-segment,
+.desktop-window-segment { position: absolute; }
+.desktop-window-segment { pointer-events: none; }
+.app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }
+.app-window-layer:not(.desktop-area-track) .desktop-window-segment { inset: 0; }
 .desktop-area-frame-track { position: absolute; inset: 0 auto auto 0; }
 .desktop-area-frame { position: absolute; }
 
@@ -1016,7 +1021,6 @@ a:focus-visible {
   inset: 0;
   right: auto;
   bottom: auto;
-  transition: transform 260ms cubic-bezier(0.22, 0.75, 0.24, 1);
   will-change: transform;
 }
 
@@ -1046,10 +1050,6 @@ a:focus-visible {
   transition: background 130ms ease, border-color 130ms ease, box-shadow 130ms ease;
   left: var(--file-x);
   top: var(--file-y);
-}
-
-.desktop[data-area-transitioning] .file-icon {
-  transition: background 130ms ease, border-color 130ms ease, box-shadow 130ms ease, left calc(260ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1), top calc(260ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
 }
 
 .file-icon:hover,
@@ -3684,8 +3684,6 @@ a:focus-visible {
 .file-icon__art { width: var(--theme-icon-size); height: var(--theme-icon-size); color: var(--theme-desktop-text); filter: drop-shadow(0 3px 5px var(--theme-shadow-soft)); }
 .file-icon__art svg { width: calc(var(--theme-icon-size) * 0.72); height: calc(var(--theme-icon-size) * 0.72); }
 .file-icon__name { color: var(--theme-desktop-text); font-size: max(12px, calc(11px * var(--theme-type-scale))); font-weight: var(--theme-weight); }
-.desktop-canvas { transition-duration: calc(260ms * var(--theme-motion)); }
-
 .empty-state,
 .desktop-state--loading,
 .drop-message,
