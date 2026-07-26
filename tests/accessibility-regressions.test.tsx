@@ -129,6 +129,13 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
     expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__handle { height: 100%; }");
+    expect(app).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
+    expect(css).toContain(".desktop-minimap__slot { aspect-ratio: var(--desktop-area-width) / var(--desktop-area-height); }");
+    expect(css).toContain("(100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap))");
+    expect(css).not.toContain("calc(var(--minimap-columns) * 16) / calc(var(--minimap-rows) * 10)");
+    expect(css).not.toContain("calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 10)");
+    expect(css).toContain(".desktop-minimap__area:not([data-occupied]):not([data-active])::after {");
+    expect(css).toContain('content: "+";');
     expect(css).toContain("height: min(34dvh, 240px);");
     expect(css).toContain("min-height: 52px;");
     expect(css).toContain(".desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }");

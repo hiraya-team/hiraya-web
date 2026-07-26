@@ -5844,7 +5844,18 @@ a:focus-visible {
 }
 .desktop-minimap[data-expanded] .desktop-minimap__file { width: 4px; height: 4px; }
 .desktop-minimap__area[data-home]:not([data-active]) { border-color: color-mix(in srgb, var(--theme-accent) 48%, var(--theme-chrome-text)); }
-.desktop-minimap__area:not([data-occupied]):not([data-active]) { border-style: dashed; background: color-mix(in srgb, var(--theme-chrome-text) 4%, transparent); }
+.desktop-minimap__area:not([data-occupied]):not([data-active]) { border-color: color-mix(in srgb, var(--theme-chrome-text) 9%, transparent); border-style: solid; background: transparent; }
+.desktop-minimap__area:not([data-occupied]):not([data-active]) .desktop-minimap__area-title { display: none; }
+.desktop-minimap__area:not([data-occupied]):not([data-active])::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: color-mix(in srgb, var(--theme-chrome-text) 32%, transparent);
+  content: "+";
+  font-size: 14px;
+  font-weight: 500;
+}
 .desktop-minimap__area[data-preview] { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
 .desktop-minimap__area:hover { border-color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
 
@@ -6135,17 +6146,18 @@ a:focus-visible {
 }
 .desktop-minimap__grid,
 .desktop-minimap[data-expanded] .desktop-minimap__grid {
+  --minimap-gap: 5px;
   display: grid;
-  width: min(100cqw, calc(100cqh * var(--minimap-columns) * 16 / var(--minimap-rows) / 10));
+  width: min(100cqw, calc((100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap)) * var(--minimap-columns) * var(--desktop-area-width) / var(--minimap-rows) / var(--desktop-area-height) + (var(--minimap-columns) - 1) * var(--minimap-gap)));
   height: auto;
   min-width: 0;
   min-height: 0;
-  aspect-ratio: calc(var(--minimap-columns) * 16) / calc(var(--minimap-rows) * 10);
   grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));
-  gap: 5px;
+  grid-template-rows: repeat(var(--minimap-rows), auto);
+  gap: var(--minimap-gap);
   touch-action: none;
 }
+.desktop-minimap__slot { aspect-ratio: var(--desktop-area-width) / var(--desktop-area-height); }
 .desktop-minimap__area-title { top: 5px; right: 6px; left: 6px; gap: 5px; }
 .desktop-minimap__area-title strong { font-size: 9px; font-weight: 700; }
 .desktop-minimap__area-title small { font-size: 8px; }
@@ -6180,9 +6192,7 @@ a:focus-visible {
   .desktop-minimap__window-controls > button { width: var(--touch-target); min-width: var(--touch-target); height: var(--touch-target); }
   .desktop-minimap__grid,
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid {
-    width: min(100cqw, calc(100cqh * var(--minimap-columns) * 15 / var(--minimap-rows) / 10));
-    aspect-ratio: calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 10);
-    gap: 5px;
+    width: min(100cqw, calc((100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap)) * var(--minimap-columns) * var(--desktop-area-width) / var(--minimap-rows) / var(--desktop-area-height) + (var(--minimap-columns) - 1) * var(--minimap-gap)));
   }
 }
 

@@ -4389,7 +4389,7 @@ function App({ session }: { session: AuthSession | null }) {
               </div>
             </header>}
             <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
-              <div className="desktop-minimap__grid" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
+              <div className="desktop-minimap__grid" style={{ "--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width, "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
                     {minimapSegments.map((desktopSegment, visibleIndex) => {
                       const column = desktopSegment.segment.column - minimapMinColumn;
                       const row = desktopSegment.segment.row - minimapMinRow;
