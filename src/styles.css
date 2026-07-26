@@ -502,12 +502,16 @@ a:focus-visible {
   box-shadow: 0 20px 60px rgba(4, 10, 12, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.45);
   content: "";
   opacity: var(--area-frame-opacity, 0);
+  transition: opacity calc(360ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
 }
 
 .desktop[data-area-transition-phase="preparing"] .desktop-area-stage,
 .desktop[data-area-transition-phase="preparing"] .desktop-area-track,
 .desktop[data-area-transition-phase="interactive"] .desktop-area-stage,
 .desktop[data-area-transition-phase="interactive"] .desktop-area-track { transition: none; }
+
+.desktop[data-area-transition-phase="preparing"] .desktop-area-frame::after,
+.desktop[data-area-transition-phase="interactive"] .desktop-area-frame::after { transition: none; }
 
 .desktop[data-area-transitioning] .app-window,
 .desktop[data-area-transitioning] .file-icon { pointer-events: none; }
