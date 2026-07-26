@@ -6,8 +6,8 @@ This file is the durable handoff record for the capability-oriented frontend ref
 
 - Baseline frontend commit: `c802248`
 - Current phase: 5 - authenticated desktop composition
-- State: ready to start
-- Next action: extract running-window types and route/history coordination from `App.tsx`, then move shell render layers behind explicit props
+- State: in progress
+- Next action: extract the running-window state controller from `App.tsx`, preserving direct pointer transforms and route synchronization
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -169,6 +169,15 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Extracted idempotency headers, mutation route selection, direct blob upload, commit retry classification, and abort cleanup into `src/platform/sync/outbox-transport.ts`.
 - Kept replay ordering and reconciliation generation checks together in `SyncEngine`, where they coordinate storage publication and lifecycle cancellation.
 - `bun test`: passed, 395 tests across 75 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 5 Checkpoint: Window Model
+
+- Moved running app/window discriminated unions and pure area projections into `src/features/windows/model.ts`.
+- Moved strict browser-history parsing, state construction, and focused-window route projection into `src/features/windows/history.ts`.
+- Added direct tests for area projection, top-window selection, persisted targets, instance IDs, and route history.
+- `bun test`: passed, 399 tests across 76 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 

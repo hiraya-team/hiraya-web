@@ -78,7 +78,7 @@ import { topOverlay } from "./ui/overlay";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { namesMatch } from "./lib/entry-validation";
-import { createWindowSession, parseWindowTargets, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
+import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { parseInternetShortcut } from "./lib/internet-shortcut";
 import { createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
@@ -97,7 +97,7 @@ import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
-import type { AppPackageInspection, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { isAppPackageName, RpcDispatcher, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
@@ -131,15 +131,9 @@ import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sh
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
+import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp } from "./features/windows/model";
+import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 
-type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
-type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
-type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string | null };
-type SettingsApp = BaseRunningApp & { kind: "settings" };
-type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
-type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
-type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
-type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 const DESKTOP_LONG_PRESS_MS = 500;
@@ -158,15 +152,6 @@ function formatImportBytes(value: number) {
 
 function transientMenuOpen() {
   return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .app-window__menu"));
-}
-
-function topRunningAppInSegment(apps: RunningApp[], segment: SurfaceSegment, size: { width: number; height: number }, excludedId?: string) {
-  return [...apps]
-    .filter((app) => {
-      const appSegment = projectLogicalPosition(app.bounds, size).segment;
-      return app.id !== excludedId && !app.minimized && appSegment.column === segment.column && appSegment.row === segment.row;
-    })
-    .sort((a, b) => b.zIndex - a.zIndex)[0] ?? null;
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -690,28 +675,19 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function runningAppTargets(apps = runningAppsRef.current): WindowTarget[] {
-    return apps.flatMap((app): WindowTarget[] => {
-      if (app.kind === "sandbox" && app.systemTarget) return [app.systemTarget];
-      const target = extractBuiltinAppTarget(app);
-      return target ? [target] : [];
-    });
+    return projectRunningAppTargets(apps);
   }
 
   function runningAppIds(apps = runningAppsRef.current) {
-    return apps.map((app) => app.id);
+    return projectRunningAppIds(apps);
   }
 
   function historyApps(state: unknown) {
-    if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;
-    try {
-      return parseWindowTargets(state);
-    } catch {
-      return null;
-    }
+    return parseRunningAppHistory(state);
   }
 
   function routeHistoryState(apps: WindowTarget[], parentHash?: string, instances = runningAppIds(), page = settingsPageRef.current): RouteHistoryState {
-    return { hiraya: true, schemaVersion: 1, ...(parentHash ? { parentHash } : {}), apps, instances, settingsPage: page };
+    return createRouteHistoryState(apps, instances, page, parentHash);
   }
 
   function writeRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
@@ -759,17 +735,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function routeForApp(app: RunningApp | null, current: DesktopRoute): DesktopRoute {
-    const base = { desktopId: activeDesktopIdRef.current, column: current.column, row: current.row };
-    if (!app) return base;
-    if (app.kind === "file") return { ...base, fileId: app.fileId };
-    if (app.kind === "explorer") return { ...base, explorerFolderId: app.folderId };
-    if (app.kind === "properties") return { ...base, propertiesEntryId: app.entryId };
-    if (app.kind === "sandbox") {
-      if (app.systemTarget?.targetKind === "file") return { ...base, fileId: app.systemTarget.entryId! };
-      if (app.systemTarget?.targetKind === "folder" || app.systemTarget?.targetKind === "root") return { ...base, explorerFolderId: app.systemTarget.entryId };
-      return base;
-    }
-    return { ...base, settings: true };
+    return routeForRunningApp(app, current, activeDesktopIdRef.current);
   }
 
   function updateRunningApps(updater: RunningApp[] | ((current: RunningApp[]) => RunningApp[])) {
@@ -791,12 +757,11 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function segmentForApp(app: RunningApp, size = desktopSize) {
-    return projectLogicalPosition(app.bounds, size).segment;
+    return runningAppSegment(app, size);
   }
 
   function appIsInSegment(app: RunningApp, segment: SurfaceSegment, size = desktopSize) {
-    const appSegment = segmentForApp(app, size);
-    return appSegment.column === segment.column && appSegment.row === segment.row;
+    return runningAppIsInSegment(app, segment, size);
   }
 
   function topAppInSegment(apps: RunningApp[], segment: SurfaceSegment, excludedId?: string) {
