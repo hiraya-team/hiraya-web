@@ -36,11 +36,12 @@ describe("AppWindow mobile actions", () => {
     expect(markup).toContain("Content");
   });
 
-  test("sizes mobile windows from the dynamic viewport", () => {
+  test("fills the viewport-owned mobile window layer", () => {
     const markup = renderToStaticMarkup(<AppWindow {...base} />);
 
-    expect(markup).toContain("width:100vw");
-    expect(markup).toContain("height:calc(100dvh - 44px)");
+    expect(markup).toContain("inset:0");
+    expect(markup).toContain("width:100%");
+    expect(markup).toContain("height:100%");
     expect(markup).not.toContain("height:300px");
   });
 

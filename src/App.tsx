@@ -4080,11 +4080,11 @@ function App({ session }: { session: AuthSession | null }) {
 
         <div className="desktop-area-stage desktop-area-stage--windows">
           <div
-            className="app-window-layer desktop-area-track"
+            className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}
             ref={windowTrackRef}
             role="region"
             aria-label="Open windows"
-            style={{
+            style={isMobile ? undefined : {
               width: segmentColumns * desktopSize.width,
               height: segmentRows * desktopSize.height,
               transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
@@ -4097,7 +4097,7 @@ function App({ session }: { session: AuthSession | null }) {
             const segmentColumn = projection.segment.column - minColumn;
             const segmentRow = projection.segment.row - minRow;
             const localBounds = isMobile
-              ? { x: segmentColumn * desktopSize.width, y: segmentRow * desktopSize.height, width: desktopSize.width, height: desktopSize.height }
+              ? { x: 0, y: 0, width: desktopSize.width, height: desktopSize.height }
               : { ...app.bounds, x: segmentColumn * desktopSize.width + projection.local.x, y: segmentRow * desktopSize.height + projection.local.y };
             const titleId = `running-app-title-${index}`;
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
@@ -4126,7 +4126,7 @@ function App({ session }: { session: AuthSession | null }) {
                 focused={focusedAppId === app.id}
                 minimized={app.minimized}
                 segmentActive={segmentActive}
-                segmentVisible={segmentVisible}
+                segmentVisible={isMobile ? segmentActive : segmentVisible}
                 mobile={isMobile}
                 hideMobileHeader
                 externalHeaderElements={isMobile && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}

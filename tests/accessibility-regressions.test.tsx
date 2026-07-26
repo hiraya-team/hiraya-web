@@ -136,13 +136,16 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
   });
 
-  test("live area transitions restore canonical tracks and dynamic viewport-sized mobile windows", async () => {
+  test("live area transitions keep mobile windows outside the transformed area track", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
 
     expect(app).toContain('style.setProperty("--area-track-x"');
     expect(app).toContain('style.removeProperty("--area-track-x")');
     expect(app).toContain("translate3d(var(--area-track-x");
-    expect(appWindow).toContain('width: "100vw", height: "calc(100dvh - 44px)"');
+    expect(app).toContain('className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}');
+    expect(app).toContain("style={isMobile ? undefined : {");
+    expect(app).toContain("segmentVisible={isMobile ? segmentActive : segmentVisible}");
+    expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
   });
 });
