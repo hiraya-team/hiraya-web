@@ -4733,6 +4733,14 @@ a:focus-visible {
     flex: 1;
   }
 
+  .folder-explorer__toolbar[data-view="list"] .folder-explorer__sort {
+    display: flex;
+  }
+
+  .folder-explorer__toolbar[data-view="list"] > .folder-explorer__tool-button:not(.folder-explorer__import) {
+    display: grid;
+  }
+
   .folder-explorer__import {
     display: none !important;
   }
@@ -4742,11 +4750,6 @@ a:focus-visible {
   }
 
   .folder-explorer__columns {
-    grid-template-columns: 34px minmax(0, 1fr) minmax(58px, 72px);
-  }
-
-  .folder-explorer__columns button:nth-child(3),
-  .folder-explorer__columns button:nth-child(4) {
     display: none;
   }
 

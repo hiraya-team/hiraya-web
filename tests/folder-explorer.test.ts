@@ -37,6 +37,15 @@ const entries: DesktopEntry[] = [
 ];
 
 describe("folder explorer entries", () => {
+  test("uses the compact sorting toolbar for both mobile views", async () => {
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    const mobileRules = css.slice(css.indexOf("@media (max-width: 620px)"), css.indexOf(".trash-window"));
+
+    expect(mobileRules).toContain('.folder-explorer__toolbar[data-view="list"] .folder-explorer__sort');
+    expect(mobileRules).toContain('> .folder-explorer__tool-button:not(.folder-explorer__import)');
+    expect(mobileRules).toContain(".folder-explorer__columns {\n    display: none;");
+  });
+
   test("filters locally and keeps folders first while sorting", () => {
     expect(filterAndSortEntries(entries, "report", "name", "asc").map((entry) => entry.id)).toEqual(["small", "large"]);
     expect(filterAndSortEntries(entries, "", "date", "desc").map((entry) => entry.id)).toEqual(["folder", "large", "small"]);
