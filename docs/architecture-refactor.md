@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 1 - characterization coverage
+- Current phase: 2 - neutral domain models and platform ports
 - State: ready to start
-- Next action: add focused characterization tests for extraction seams not already protected by direct tests
+- Next action: move explorer preference, desktop snapshot, save options, and revision conflict types below UI and storage implementations
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -91,7 +91,7 @@ This is a destination map, not a requirement to create empty directories or one 
 ## Phase Checklist
 
 - [x] Phase 0: establish this ledger, correct architecture documentation, and add baseline guardrails.
-- [ ] Phase 1: add characterization coverage for high-risk extraction seams.
+- [x] Phase 1: add characterization coverage for high-risk extraction seams.
 - [ ] Phase 2: establish neutral domain models and platform ports.
 - [ ] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
 - [ ] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
@@ -130,6 +130,14 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed with the public desktop boundary rule enabled
 - `bun run build`: passed, including system and example app builds and packages
 
+### Phase 1
+
+- Added a populated schema 2 fixture that executes every supported migration through schema 8 and verifies preferences, installed-app storage, offline pins, and foreign keys.
+- Locked the observable content-revision conflict name, message, expected revision, and actual revision before moving the error below OPFS.
+- `bun test`: passed, 395 tests across 75 files
+- `bun run lint`: passed
+- `bun run build`: passed, including system and example app builds and packages
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -160,4 +168,4 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Current Phase Notes
 
-Phase 1 should prioritize characterization that enables a concrete extraction rather than attempting to fill every integration-test gap at once. Start with neutral persisted models and app-host storage ports because phase 2 depends on them.
+Phase 2 starts with the smallest dependency inversions: persisted preferences must not import UI, and app-host file services must not import OPFS implementation types. Keep `opfs.ts` re-exports temporarily so existing consumers can migrate without a mixed checkpoint.

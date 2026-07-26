@@ -52,6 +52,16 @@ async function expectCode(promise: Promise<unknown>, code: string) {
 }
 
 describe("app file authority", () => {
+  test("exposes stable content revision conflict details", () => {
+    const error = new ContentRevisionConflictError(3, 5);
+    expect(error).toMatchObject({
+      name: "ContentRevisionConflictError",
+      message: "The file changed since it was last read.",
+      expectedRevision: 3,
+      actualRevision: 5,
+    });
+  });
+
   test("turns picker selections into instance-bound least-authority capabilities", async () => {
     const h = fixture();
     const file = grantPickedFiles(h.capabilities, "app-1", ["files:read"], [h.nested])[0];

@@ -147,6 +147,44 @@ describe("local schema 8", () => {
     db.close();
   });
 
+  test("migrates a populated schema 2 database through the complete supported chain", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      PRAGMA foreign_keys=ON;
+      CREATE TABLE desktops(id TEXT PRIMARY KEY);
+      CREATE TABLE preferences(singleton INTEGER PRIMARY KEY, auto_update INTEGER NOT NULL, external_embedded_previews INTEGER NOT NULL);
+      INSERT INTO desktops VALUES ('desktop-a');
+      INSERT INTO preferences VALUES (1, 0, 1);
+      PRAGMA user_version=2;
+    `);
+
+    db.exec(migrateSchema2To3Sql(2));
+    db.exec("INSERT INTO installed_apps VALUES ('user.editor', 'package-entry', 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '1.0.0', '{}', 10)");
+    db.exec("INSERT INTO app_storage VALUES ('user.editor', 'draft', '{\"text\":\"kept\"}', 15)");
+    db.exec(migrateSchema3To4Sql(3));
+    db.exec("INSERT INTO offline_pins VALUES ('desktop-a', 'entry-a', 20)");
+    db.exec(migrateSchema4To5Sql(4));
+    db.exec(migrateSchema5To6Sql(5));
+    db.exec(migrateSchema6To7Sql(6));
+    db.exec(migrateSchema7To8Sql(7));
+
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
+    expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
+      auto_update: 0,
+      external_embedded_previews: 0,
+      allow_browser_pinch_zoom: 0,
+      search_all_desktops: 0,
+      onboarding_version: 0,
+      show_desktop_minimap: 1,
+      explorer_view: "list",
+    });
+    expect(db.query("SELECT source,package_entry_id,archive_path FROM installed_apps WHERE app_id='user.editor'").get()).toEqual({ source: "desktop", package_entry_id: "package-entry", archive_path: null });
+    expect(db.query("SELECT value_json FROM app_storage WHERE app_id='user.editor'").get()).toEqual({ value_json: '{"text":"kept"}' });
+    expect(db.query("SELECT desktop_id,entry_id,created_at FROM offline_pins").get()).toEqual({ desktop_id: "desktop-a", entry_id: "entry-a", created_at: 20 });
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    db.close();
+  });
+
   test("keeps app RPC requests device-local", () => {
     const request = createStorageDbRequest(3, null, "readAppStorage", { appId: "test.editor", key: "theme" });
     expect(request.desktopId).toBeNull();
