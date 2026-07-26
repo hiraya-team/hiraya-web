@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowsIn, ArrowsOut, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Minus, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
@@ -133,6 +133,7 @@ import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, typ
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
 import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
+import { useRunningWindows } from "./features/windows/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -182,8 +183,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [moveDialogSubmitting, setMoveDialogSubmitting] = useState(false);
   const [desktopMoveFolders, setDesktopMoveFolders] = useState<Record<string, DesktopEntry[]>>({});
   const [moveDestinationsLoading, setMoveDestinationsLoading] = useState(false);
-  const [runningApps, setRunningApps] = useState<RunningApp[]>([]);
-  const [focusedAppId, setFocusedAppId] = useState<string | null>(null);
+  const { runningApps, runningAppsRef, focusedAppId, focusedAppIdRef, updateRunningApps, setFocusedApp, nextWindowZIndex, setNextWindowZIndex } = useRunningWindows();
   const [windowSessionRestored, setWindowSessionRestored] = useState(false);
   const [routeHistoryReady, setRouteHistoryReady] = useState(false);
   const [route, setRoute] = useState<DesktopRoute | null>(null);
@@ -310,10 +310,7 @@ function App({ session }: { session: AuthSession | null }) {
   const restoreRunningAppsRef = useRef<(session: WindowSession, entries: DesktopEntry[]) => void>(() => undefined);
   const applyOpenQueryRef = useRef<(entries: DesktopEntry[], layout: DesktopLayout) => void>(() => undefined);
   const closeAppRef = useRef<(id: string, consultLifecycle?: boolean, syncRoute?: boolean) => Promise<boolean>>(async () => false);
-  const runningAppsRef = useRef<RunningApp[]>([]);
-  const focusedAppIdRef = useRef<string | null>(null);
   const settingsPageRef = useRef<AppHistorySettingsPage>("main");
-  const nextWindowZRef = useRef(1);
   const fileLoadGenerationsRef = useRef<Record<string, number>>({});
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
@@ -489,7 +486,7 @@ function App({ session }: { session: AuthSession | null }) {
     appTheme.set(activeTheme);
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
-  }, [activeTheme, appTheme]);
+  }, [activeTheme, appTheme, runningAppsRef]);
 
   useEffect(() => {
     persistClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage, clipboardOffer);
@@ -553,7 +550,7 @@ function App({ session }: { session: AuthSession | null }) {
           }),
         );
       }),
-    [appLifecycle],
+    [appLifecycle, updateRunningApps],
   );
 
   useEffect(() => appHostServices.dialogs.subscribe(setAppDialogRequests), [appHostServices]);
@@ -564,7 +561,7 @@ function App({ session }: { session: AuthSession | null }) {
       appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
       app.dispatcher.emit("capabilities.changed", { files: fileWriteCapability(activeDesktop, syncStatus), externalEmbeddedPreviews: externalEmbeddedPreviews === true });
     }
-  }, [activeDesktop, appCapabilities, canMutate, externalEmbeddedPreviews, syncStatus]);
+  }, [activeDesktop, appCapabilities, canMutate, externalEmbeddedPreviews, runningAppsRef, syncStatus]);
   useEffect(() => {
     if (!canViewActivity && settingsPage === "activity") {
       const current = window.history.state;
@@ -674,13 +671,13 @@ function App({ session }: { session: AuthSession | null }) {
     replaceSelection(surface, current.includes(entry.id) ? current : [...current, entry.id], entry.id);
   }
 
-  function runningAppTargets(apps = runningAppsRef.current): WindowTarget[] {
+  const runningAppTargets = useCallback((apps = runningAppsRef.current): WindowTarget[] => {
     return projectRunningAppTargets(apps);
-  }
+  }, [runningAppsRef]);
 
-  function runningAppIds(apps = runningAppsRef.current) {
+  const runningAppIds = useCallback((apps = runningAppsRef.current) => {
     return projectRunningAppIds(apps);
-  }
+  }, [runningAppsRef]);
 
   function historyApps(state: unknown) {
     return parseRunningAppHistory(state);
@@ -738,24 +735,6 @@ function App({ session }: { session: AuthSession | null }) {
     return routeForRunningApp(app, current, activeDesktopIdRef.current);
   }
 
-  function updateRunningApps(updater: RunningApp[] | ((current: RunningApp[]) => RunningApp[])) {
-    if (Array.isArray(updater)) {
-      runningAppsRef.current = updater;
-      setRunningApps(updater);
-      return;
-    }
-    setRunningApps((current) => {
-      const next = updater(current);
-      runningAppsRef.current = next;
-      return next;
-    });
-  }
-
-  function setFocusedApp(id: string | null) {
-    focusedAppIdRef.current = id;
-    setFocusedAppId(id);
-  }
-
   function segmentForApp(app: RunningApp, size = desktopSize) {
     return runningAppSegment(app, size);
   }
@@ -771,7 +750,7 @@ function App({ session }: { session: AuthSession | null }) {
   function focusApp(id: string, syncRoute = true) {
     const target = runningAppsRef.current.find((app) => app.id === id);
     if (!target) return;
-    const zIndex = ++nextWindowZRef.current;
+    const zIndex = nextWindowZIndex();
     updateRunningApps((current) => current.map((app) => (app.id === id ? { ...app, minimized: false, zIndex } : app)));
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: app.id === id });
     setFocusedApp(id);
@@ -858,7 +837,7 @@ function App({ session }: { session: AuthSession | null }) {
       id,
       bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, segment, desktopSize) },
       minimized: false,
-      zIndex: ++nextWindowZRef.current,
+      zIndex: nextWindowZIndex(),
     };
   }
 
@@ -917,7 +896,7 @@ function App({ session }: { session: AuthSession | null }) {
         if (saved.kind === "settings") return { ...saved, id: builtinAppTargetId(saved) };
         return { ...saved, id: builtinAppTargetId(saved) };
       });
-    nextWindowZRef.current = Math.max(1, ...restored.map((app) => app.zIndex));
+    setNextWindowZIndex(Math.max(1, ...restored.map((app) => app.zIndex)));
     updateRunningApps(restored);
     setFocusedApp(null);
   }
@@ -941,7 +920,7 @@ function App({ session }: { session: AuthSession | null }) {
       const restoredTarget: SystemAppTarget = { ...saved, appId: install.appId, source: install.source, digest: install.digest, permissions: [...install.manifest.permissions] };
       void launchInstalledAppRef.current(install, target, "restore").then(() => updateRunningApps((apps) => apps.map((app) => (app.id === builtinAppTargetId(restoredTarget) ? { ...app, bounds: saved.bounds, minimized: saved.minimized, zIndex: saved.zIndex } : app))));
     }
-  }, [fileAssociations, installedApps]);
+  }, [fileAssociations, installedApps, updateRunningApps]);
 
   function restoreHistoryApps(targets: WindowTarget[]) {
     const historySegment = normalizeDesktopRoute(parseDesktopRoute(window.location.hash), entriesRef.current, activeDesktopIdRef.current);
@@ -1209,7 +1188,7 @@ function App({ session }: { session: AuthSession | null }) {
       unsubscribeCatalog();
       void stopDesktopSync();
     };
-  }, []);
+  }, [focusedAppIdRef, runningAppsRef, setFocusedApp, updateRunningApps]);
 
   useEffect(() => () => confirmationResolverRef.current?.(false), []);
 
@@ -1315,7 +1294,7 @@ function App({ session }: { session: AuthSession | null }) {
         settingsPage: current?.hiraya ? historySettingsPage(current) : settingsPageRef.current,
       } satisfies RouteHistoryState, "", window.location.href);
     }
-  }, [routeHistoryReady, runningApps, windowSessionRestored]);
+  }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
 
   useEffect(() => {
     if (syncStatus !== "blocked") return;
@@ -1467,7 +1446,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("popstate", onPopState);
       window.removeEventListener("hashchange", onHashChange);
     };
-  }, []);
+  }, [runningAppIds]);
 
   useEffect(() => {
     function syncFullscreen() {
@@ -1529,7 +1508,7 @@ function App({ session }: { session: AuthSession | null }) {
         return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
       }),
     );
-  }, [desktopSize]);
+  }, [desktopSize, focusedAppIdRef, runningAppsRef, updateRunningApps]);
 
   useEffect(() => {
     if (loading) return;
@@ -1584,7 +1563,7 @@ function App({ session }: { session: AuthSession | null }) {
         })
         .catch(() => setError("An open file changed on the server but could not be refreshed."));
     }
-  }, [entryIndex, loading]);
+  }, [entryIndex, focusedAppIdRef, loading, runningAppsRef, setFocusedApp, updateRunningApps]);
 
   useEffect(() => {
     if (loading || !windowSessionRestored) return;
@@ -1676,7 +1655,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-  }, [activeDesktopSegment.entries, canMutate, entryIndex, selectionScope, shortcutsSuspended]);
+  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, runningAppsRef, selectionScope, shortcutsSuspended]);
 
   useEffect(() => {
     function onGlobalShortcut(event: KeyboardEvent) {
@@ -1714,7 +1693,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
     window.addEventListener("keydown", onGlobalShortcut);
     return () => window.removeEventListener("keydown", onGlobalShortcut);
-  }, [minimapExpanded, shortcutsSuspended]);
+  }, [focusedAppIdRef, minimapExpanded, shortcutsSuspended]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -2408,7 +2387,7 @@ function App({ session }: { session: AuthSession | null }) {
     const nextId = builtinAppTargetId({ kind: "explorer", folderId });
     if (nextId === appId) return;
     const previousApps = runningAppTargets();
-    const zIndex = ++nextWindowZRef.current;
+    const zIndex = nextWindowZIndex();
     const existing = runningAppsRef.current.find((app) => app.id === nextId);
     if (existing) {
       updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => (app.id === nextId ? { ...app, minimized: false, zIndex } : app)));
