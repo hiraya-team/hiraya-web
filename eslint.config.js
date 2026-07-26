@@ -61,7 +61,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/lib/opfs*.{ts,tsx}", "src/apps/host/**/*.{ts,tsx}", "packages/app-runtime/**/*.{ts,tsx}"],
+    files: ["src/lib/opfs*.{ts,tsx}", "src/platform/storage/**/*.{ts,tsx}", "src/apps/host/**/*.{ts,tsx}", "packages/app-runtime/**/*.{ts,tsx}"],
     rules: {
       "no-restricted-imports": [
         "error",

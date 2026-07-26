@@ -13,62 +13,23 @@ import {
   type PersistedDesktopState,
 } from "./desktop-state";
 import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition, parseRootEntryPositionUpdates } from "./contracts";
-import { createStorageDbRequest, parseOfflinePinResponse, parseStorageProtocol, type StorageDbMethod, type StorageDbRequests, type StorageDbResponse, type StorageDbResponses } from "./opfs-db-protocol";
+import { parseOfflinePinResponse } from "./opfs-db-protocol";
 import { wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState, type CustomTheme, type ThemeState } from "./themes";
-import { parseWindowSession, type WindowSession } from "./window-session";
+import type { WindowSession } from "./window-session";
 import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./activity";
 import { resolveDesktopContext } from "./desktop-catalog";
 import { localDesktopIdentity } from "./permissions";
-import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp } from "../apps/installed-apps";
-import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
-import { storageWorkerName } from "./storage-worker";
+import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
+import type { JsonValue } from "@hiraya/apps-contracts";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
+import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
+import { getFilesDirectory, materializeOutbox, operationContentIds, readContentCacheMarker, readStagedContent, removeContentCacheMarker, removeStagedOperation, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
+import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
+import * as repositories from "../platform/storage/repositories";
 
-const FILES_DIRECTORY = "files";
-const PENDING_DIRECTORY = "pending";
-const CONTENT_CACHE_DIRECTORY = ".hiraya-content-cache";
-const LEGACY_STORAGE_ENTRIES = [FILES_DIRECTORY, PENDING_DIRECTORY, CONTENT_CACHE_DIRECTORY, ".hiraya-sqlite-v1"];
-export const LOCAL_STORAGE_ID = "hiraya-local";
-const FRONTEND_ONLY = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
-
-let storageNamespace: { storageId: string; key: string } | null = null;
-
-function namespaceKey() {
-  if (!storageNamespace) throw new Error("Hiraya storage was used before its namespace was selected.");
-  return storageNamespace.key;
-}
-
-async function storageKey(storageId: string) {
-  if (!storageId || storageId.length > 1024 || [...storageId].some((character) => character.charCodeAt(0) < 32)) throw new Error("The Hiraya storage ID is invalid.");
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(storageId));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-async function removeLegacyUnscopedStorage(root: FileSystemDirectoryHandle) {
-  if (localStorage.getItem("hiraya-scoped-storage-v1") === "complete") return;
-  for (const name of LEGACY_STORAGE_ENTRIES) {
-    try {
-      await root.removeEntry(name, { recursive: true });
-    } catch (error) {
-      if (!isNotFound(error)) throw error;
-    }
-  }
-  localStorage.setItem("hiraya-scoped-storage-v1", "complete");
-}
-
-export async function configureStorageNamespace(storageId: string) {
-  const key = await storageKey(storageId);
-  if (storageNamespace) {
-    if (storageNamespace.storageId !== storageId) throw new Error("The Hiraya storage namespace cannot change after startup.");
-    return;
-  }
-  if (!navigator.storage?.getDirectory) throw new StorageUnavailableError();
-  const root = await navigator.storage.getDirectory();
-  if (!FRONTEND_ONLY) await removeLegacyUnscopedStorage(root);
-  storageNamespace = { storageId, key };
-  activeDesktopContext = sessionStorage.getItem(FRONTEND_ONLY ? "hiraya-active-desktop" : `hiraya-active-desktop-${key}`);
-}
+export { stageOperationContentsInDirectory } from "../platform/storage/blobs";
+export { configureStorageNamespace, LOCAL_STORAGE_ID, StorageUnavailableError } from "../platform/storage/namespace";
 
 type DesktopState = PersistedDesktopState;
 export type { DesktopSyncState } from "./desktop-state";
@@ -83,65 +44,6 @@ const parseManifestV13 = parseDesktopState;
 const manifestLayout = desktopStateLayout;
 
 export { DEFAULT_EDITOR_SETTINGS } from "./desktop-state";
-
-export class StorageUnavailableError extends Error {
-  constructor() {
-    super("Private browser storage is unavailable. Open Hiraya in a modern browser over HTTPS or localhost.");
-    this.name = "StorageUnavailableError";
-  }
-}
-
-async function getRoot() {
-  if (!("storage" in navigator) || !("getDirectory" in navigator.storage)) {
-    throw new StorageUnavailableError();
-  }
-
-  const root = await navigator.storage.getDirectory();
-  return FRONTEND_ONLY ? root : root.getDirectoryHandle(`.hiraya-storage-${namespaceKey()}`, { create: true });
-}
-
-async function getFilesDirectory() {
-  const root = await getRoot();
-  return root.getDirectoryHandle(FILES_DIRECTORY, { create: true });
-}
-
-async function getPendingDirectory() {
-  const root = await getRoot();
-  return root.getDirectoryHandle(PENDING_DIRECTORY, { create: true });
-}
-
-async function getContentCacheDirectory() {
-  const root = await getRoot();
-  return root.getDirectoryHandle(CONTENT_CACHE_DIRECTORY, { create: true });
-}
-
-type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number };
-
-async function readContentCacheMarker(id: string): Promise<ContentCacheMarker | null> {
-  try {
-    const directory = await getContentCacheDirectory();
-    const value: unknown = JSON.parse(await (await directory.getFileHandle(id)).getFile().then((file) => file.text()));
-    if (!value || typeof value !== "object") return null;
-    const marker = value as Partial<ContentCacheMarker>;
-    if (typeof marker.catalogId !== "string" || !Number.isSafeInteger(marker.contentRevision) || !Number.isSafeInteger(marker.size)) return null;
-    return marker as ContentCacheMarker;
-  } catch (error) {
-    if (isNotFound(error) || error instanceof SyntaxError) return null;
-    throw error;
-  }
-}
-
-async function writeContentCacheMarker(id: string, marker: ContentCacheMarker) {
-  await writeHandleContent(await getContentCacheDirectory(), id, JSON.stringify(marker));
-}
-
-async function removeContentCacheMarker(id: string) {
-  try {
-    await (await getContentCacheDirectory()).removeEntry(id);
-  } catch (error) {
-    if (!isNotFound(error)) throw error;
-  }
-}
 
 async function writeDesktopState(state: DesktopState, activity?: NewActivityRecord) {
   await callDatabase("replaceDesktopState", { state, activity });
@@ -198,25 +100,16 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
   return created;
 }
 
-function isNotFound(error: unknown): error is DOMException {
-  return error instanceof DOMException && error.name === "NotFoundError";
-}
-
-async function initializeDatabase(): Promise<void> {
-  await getRoot();
-  await callDatabase("status", undefined);
-  parseStorageProtocol(await callDatabase("protocol", undefined, null));
-}
-
 async function readActiveDesktopState(seeded: SeededManifest | null = null): Promise<DesktopState> {
   databaseInitialization ??= initializeDatabase().catch((error) => {
     databaseInitialization = null;
     throw error;
   });
   await databaseInitialization;
-  if (!activeDesktopContext) throw new Error("No desktop is active.");
+  const desktopId = getActiveDesktopContext();
+  if (!desktopId) throw new Error("No desktop is active.");
   try {
-    return parseDesktopState(await callDatabase("readDesktop", { desktopId: activeDesktopContext }, activeDesktopContext));
+    return parseDesktopState(await callDatabase("readDesktop", { desktopId }, desktopId));
   } catch (error) {
     if (!seeded) throw error;
     const desktop = localDesktopIdentity(crypto.randomUUID(), "Desktop");
@@ -231,34 +124,6 @@ const readManifest = readActiveDesktopState;
 const writeManifest = writeDesktopState;
 const assertValidManifest = assertValidDesktopState;
 
-async function writeContent(id: string, content: Blob | string) {
-  const directory = await getFilesDirectory();
-  const handle = await directory.getFileHandle(id, { create: true });
-  const writable = await handle.createWritable();
-
-  try {
-    await writable.write(content);
-  } finally {
-    await writable.close();
-  }
-}
-
-async function writeHandleContent(directory: FileSystemDirectoryHandle, name: string, content: Blob | string) {
-  const handle = await directory.getFileHandle(name, { create: true });
-  const writable = await handle.createWritable();
-  try {
-    await writable.write(content);
-  } finally {
-    await writable.close();
-  }
-}
-
-function operationContentIds(operation: OutboxOperation) {
-  if (operation.kind === "save-content") return [operation.entry.id];
-  if (operation.kind === "create") return operation.entries.filter((entry): entry is FileEntry => entry.kind === "file").map((entry) => entry.id);
-  return [];
-}
-
 async function globallyProtectedFileIdsUnsafe(records: readonly OutboxRecord[]) {
   const registry = await callDatabase("listDesktops", undefined, null);
   const states: Manifest[] = [];
@@ -266,48 +131,6 @@ async function globallyProtectedFileIdsUnsafe(records: readonly OutboxRecord[]) 
   return outboxProtectedFileIds(records, states);
 }
 
-export async function stageOperationContentsInDirectory(
-  pending: FileSystemDirectoryHandle,
-  operationId: string,
-  contents: Map<string, Blob>,
-  write: (directory: FileSystemDirectoryHandle, name: string, content: Blob) => Promise<void> = writeHandleContent,
-) {
-  if (contents.size === 0) return;
-  try {
-    const operationDirectory = await pending.getDirectoryHandle(operationId, { create: true });
-    for (const [id, content] of contents) await write(operationDirectory, id, content);
-  } catch (error) {
-    try { await pending.removeEntry(operationId, { recursive: true }); }
-    catch (cleanupError) { if (!isNotFound(cleanupError)) console.warn("Hiraya could not clean up partially staged content.", cleanupError); }
-    throw error;
-  }
-}
-
-async function stageOperationContents(operationId: string, contents: Map<string, Blob>) {
-  await stageOperationContentsInDirectory(await getPendingDirectory(), operationId, contents);
-}
-
-async function readStagedContent(operationId: string, id: string) {
-  const pending = await getPendingDirectory();
-  return (await (await pending.getDirectoryHandle(operationId)).getFileHandle(id)).getFile();
-}
-
-async function materializeOutbox(records: OutboxRecord[]) {
-  for (const record of records) {
-    for (const id of operationContentIds(record.operation)) {
-      const content = await readStagedContent(record.operationId, id);
-      await writeContent(id, content);
-    }
-  }
-}
-
-async function removeStagedOperation(operationId: string) {
-  try {
-    await (await getPendingDirectory()).removeEntry(operationId, { recursive: true });
-  } catch (error) {
-    if (!isNotFound(error)) console.warn("Hiraya could not clean up acknowledged pending content.", error);
-  }
-}
 
 function findParent(entries: DesktopEntry[], parentId: string | null) {
   if (parentId === null) return;
@@ -331,212 +154,6 @@ function getFileEntry(entries: DesktopEntry[], id: string): FileEntry {
 
 let desktopLoad: Promise<DesktopState> | null = null;
 let databaseInitialization: Promise<void> | null = null;
-let storageWork: Promise<void> = Promise.resolve();
-let activeDesktopContext: string | null = null;
-
-function setDesktopContext(desktopId: string) {
-  activeDesktopContext = desktopId;
-  if (typeof sessionStorage !== "undefined") sessionStorage.setItem(FRONTEND_ONLY ? "hiraya-active-desktop" : `hiraya-active-desktop-${namespaceKey()}`, desktopId);
-}
-
-type RpcPort = {
-  postMessage(message: unknown, transfer?: Transferable[]): void;
-  addEventListener(type: "message", listener: (event: MessageEvent<StorageDbResponse>) => void): void;
-  start?: () => void;
-  reset(): boolean;
-};
-
-let databasePort: Promise<RpcPort> | null = null;
-let hostedDatabaseWorker: Worker | null = null;
-let hostedDatabaseRequestId: number | null = null;
-let requestId = 0;
-const pendingRequests = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-const OWNER_CHANGED_MESSAGE = "The local database owner changed. Retry the operation.";
-const RETRYABLE_OWNER_CHANGE_METHODS = new Set<StorageDbMethod>(["status", "protocol", "listDesktops", "readDesktop", "readPreferences", "readWindowSession", "readOutbox", "listActivity", "listOfflinePins"]);
-const DATABASE_REQUEST_TIMEOUT_MS = 15_000;
-const STORAGE_LOCK_TIMEOUT_MS = 30_000;
-
-class LocalDatabaseOwnerChangedError extends Error {}
-class LocalDatabaseTimeoutError extends Error {}
-
-function openDatabasePort(): RpcPort {
-  const key = namespaceKey();
-  let port: RpcPort;
-  if (typeof SharedWorker !== "undefined") {
-    const shared = new SharedWorker(new URL("./opfs-shared.worker.ts", import.meta.url), { type: "module", name: storageWorkerName(FRONTEND_ONLY, key) });
-    shared.port.addEventListener("message", (event) => {
-      const message = event.data as { type?: string; requestId?: number; error?: string };
-      if (message.type === "terminate-engine" && message.requestId === hostedDatabaseRequestId) {
-        hostedDatabaseWorker?.terminate();
-        hostedDatabaseWorker = null;
-        hostedDatabaseRequestId = null;
-        return;
-      }
-      if (message.type !== "need-engine" || message.requestId === undefined) return;
-      if (hostedDatabaseWorker && hostedDatabaseRequestId === message.requestId) return;
-      hostedDatabaseWorker?.terminate();
-      const candidateRequestId = message.requestId;
-      const worker = new Worker(new URL("./opfs-db.worker.ts", import.meta.url), { type: "module", name: FRONTEND_ONLY ? "hiraya-sqlite-engine" : `hiraya-sqlite-engine-${key}` });
-      hostedDatabaseRequestId = candidateRequestId;
-      hostedDatabaseWorker = worker;
-      const channel = new MessageChannel();
-      let failed = false;
-      const fail = (error: string) => {
-        if (failed) return;
-        failed = true;
-        worker.terminate();
-        channel.port2.close();
-        if (hostedDatabaseWorker === worker) {
-          hostedDatabaseWorker = null;
-          hostedDatabaseRequestId = null;
-        }
-        shared.port.postMessage({ type: "engine-failed", requestId: candidateRequestId, error });
-      };
-      channel.port2.onmessage = (message: MessageEvent<{ type?: string; error?: string }>) => {
-        if (message.data.type === "engine-error") {
-          fail(message.data.error ?? "The local database engine could not start.");
-          return;
-        }
-        if (message.data.type !== "engine-ready") return;
-        failed = true;
-        channel.port2.onmessage = null;
-        if (hostedDatabaseWorker !== worker) {
-          channel.port2.close();
-          return;
-        }
-        shared.port.postMessage({ type: "attach-engine", requestId: candidateRequestId, port: channel.port2 }, [channel.port2]);
-      };
-      worker.addEventListener("error", (workerError) => { workerError.preventDefault(); fail(workerError.message || "The local database worker failed to load."); });
-      worker.addEventListener("messageerror", () => fail("The local database worker sent an invalid startup message."));
-      channel.port2.start();
-      worker.postMessage({ type: "attach", storage: key, port: channel.port1 }, [channel.port1]);
-    });
-    shared.port.postMessage({ type: "configure-storage", storage: key });
-    window.addEventListener("pagehide", () => {
-      if (!hostedDatabaseWorker || hostedDatabaseRequestId === null) return;
-      const releasedRequestId = hostedDatabaseRequestId;
-      hostedDatabaseWorker.terminate();
-      hostedDatabaseWorker = null;
-      hostedDatabaseRequestId = null;
-      shared.port.postMessage({ type: "release-engine", requestId: releasedRequestId });
-    });
-    port = {
-      postMessage: (message, transfer) => shared.port.postMessage(message, transfer ?? []),
-      addEventListener: (type, listener) => shared.port.addEventListener(type, listener),
-      start: () => shared.port.start(),
-      reset: () => {
-        hostedDatabaseWorker?.terminate();
-        hostedDatabaseWorker = null;
-        hostedDatabaseRequestId = null;
-        shared.port.postMessage({ type: "reset-engine" });
-        return false;
-      },
-    };
-  } else {
-    const worker = new Worker(new URL("./opfs-db.worker.ts", import.meta.url), { type: "module", name: FRONTEND_ONLY ? "hiraya-storage-fallback" : `hiraya-storage-fallback-${key}` });
-    worker.postMessage({ type: "configure-storage", storage: key });
-    port = {
-      postMessage: (message, transfer) => worker.postMessage(message, transfer ?? []),
-      addEventListener: (type, listener) => worker.addEventListener(type, listener),
-      reset: () => {
-        worker.terminate();
-        return true;
-      },
-    };
-  }
-  port.addEventListener("message", (event) => {
-    const response = event.data;
-    const pending = pendingRequests.get(response.id);
-    if (!pending) return;
-    pendingRequests.delete(response.id);
-    if (response.error) pending.reject(response.error === OWNER_CHANGED_MESSAGE ? new LocalDatabaseOwnerChangedError(response.error) : new Error(response.error));
-    else pending.resolve(response.result);
-  });
-  port.start?.();
-  return port;
-}
-
-async function callDatabase<M extends StorageDbMethod>(method: M, params: StorageDbRequests[M], desktopId: string | null = activeDesktopContext): Promise<StorageDbResponses[M]> {
-  await getRoot();
-  for (let attempt = 0; ; attempt += 1) {
-    const connection = databasePort ??= Promise.resolve().then(openDatabasePort);
-    const port = await connection;
-    try {
-      const id = ++requestId;
-      return await new Promise<StorageDbResponses[M]>((resolve, reject) => {
-        const timeout = window.setTimeout(() => {
-          if (!pendingRequests.delete(id)) return;
-          if (port.reset() && databasePort === connection) databasePort = null;
-          const error = new LocalDatabaseTimeoutError("Local storage stopped responding. Please retry the operation.");
-          for (const pending of [...pendingRequests.values()]) pending.reject(error);
-          pendingRequests.clear();
-          reject(error);
-        }, DATABASE_REQUEST_TIMEOUT_MS);
-        pendingRequests.set(id, {
-          resolve: (value) => {
-            window.clearTimeout(timeout);
-            resolve(value as StorageDbResponses[M]);
-          },
-          reject: (error) => {
-            window.clearTimeout(timeout);
-            reject(error);
-          },
-        });
-        port.postMessage(createStorageDbRequest(id, desktopId, method, params));
-      });
-    } catch (error) {
-      if (!(error instanceof LocalDatabaseOwnerChangedError || error instanceof LocalDatabaseTimeoutError) || attempt > 0 || !RETRYABLE_OWNER_CHANGE_METHODS.has(method)) throw error;
-    }
-  }
-}
-
-async function withCrossContextLock<T>(operation: () => Promise<T>) {
-  if (!("locks" in navigator) || !navigator.locks) return operation();
-  const controller = new AbortController();
-  let acquired = false;
-  const timeout = window.setTimeout(() => {
-    if (!acquired) controller.abort();
-  }, STORAGE_LOCK_TIMEOUT_MS);
-  try {
-    return await navigator.locks.request(FRONTEND_ONLY ? "hiraya-opfs" : `hiraya-opfs-${namespaceKey()}`, { mode: "exclusive", signal: controller.signal }, async () => {
-      acquired = true;
-      window.clearTimeout(timeout);
-      return operation();
-    });
-  } catch (error) {
-    if (controller.signal.aborted) throw new Error("Local storage is busy in another Hiraya window. Close the other window and retry.");
-    throw error;
-  } finally {
-    window.clearTimeout(timeout);
-  }
-}
-
-function serializeStorage<T>(operation: () => Promise<T>): Promise<T> {
-  const locked = () => withCrossContextLock(operation);
-  const next = storageWork.then(locked, locked);
-  storageWork = next.then(() => undefined, () => undefined);
-  return next;
-}
-
-async function readLocalPreferencesUnsafe(): Promise<LocalPreferences> {
-  await callDatabase("status", undefined);
-  return callDatabase("readPreferences", undefined);
-}
-
-async function saveLocalPreferencesUnsafe(preferences: LocalPreferences) {
-  await callDatabase("status", undefined);
-  await callDatabase("writePreferences", { preferences });
-}
-
-async function readWindowSessionUnsafe(desktopId: string) {
-  await callDatabase("status", undefined);
-  return parseWindowSession(await callDatabase("readWindowSession", { desktopId }));
-}
-
-async function saveWindowSessionUnsafe(desktopId: string, session: WindowSession) {
-  await callDatabase("status", undefined);
-  await callDatabase("writeWindowSession", { desktopId, session: parseWindowSession(session) });
-}
 
 function emptyDesktopState(): DesktopState {
   return { entries: [], snapToGrid: false, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
@@ -551,7 +168,7 @@ async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
     await callDatabase("createDesktop", { desktop, state: await createDesktopStateFromSeeded(seeded) }, null);
     desktops.push(desktop);
   }
-  const activeDesktopId = resolveDesktopContext(activeDesktopContext, desktops);
+  const activeDesktopId = resolveDesktopContext(getActiveDesktopContext(), desktops);
   if (activeDesktopId) setDesktopContext(activeDesktopId);
   return { desktops, activeDesktopId };
 }
@@ -562,8 +179,9 @@ async function createDesktopUnsafe(nameValue: string) {
   const registry = await callDatabase("listDesktops", undefined);
   if (registry.desktops.some((candidate) => candidate.name.toLocaleLowerCase() === desktop.name.toLocaleLowerCase())) throw new Error("A desktop with that name already exists.");
   const state = emptyDesktopState();
-  if (activeDesktopContext) {
-    const active = parseDesktopState(await callDatabase("readDesktop", { desktopId: activeDesktopContext }, activeDesktopContext));
+  const activeDesktopId = getActiveDesktopContext();
+  if (activeDesktopId) {
+    const active = parseDesktopState(await callDatabase("readDesktop", { desktopId: activeDesktopId }, activeDesktopId));
     state.sync.catalogId = active.sync.catalogId;
     state.sync.catalogRevision = active.sync.catalogRevision;
   }
@@ -641,11 +259,11 @@ async function pruneLocalDesktopsUnsafe(retainedDesktopIds: string[]) {
   const retainedDesktops = new Set(retainedDesktopIds);
   const candidates: string[] = [];
   for (const desktop of registry.desktops) {
-    if (retainedDesktops.has(desktop.id) || desktop.id === activeDesktopContext) continue;
+    if (retainedDesktops.has(desktop.id) || desktop.id === getActiveDesktopContext()) continue;
     const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId: desktop.id }, null));
     for (const entry of manifest.entries) if (entry.kind === "file") candidates.push(entry.id);
   }
-  await callDatabase("pruneDesktops", { retainedDesktopIds }, activeDesktopContext);
+  await callDatabase("pruneDesktops", { retainedDesktopIds }, getActiveDesktopContext());
   const retainedFiles = await retainedFileIdsUnsafe();
   try {
     const directory = await getFilesDirectory();
@@ -675,7 +293,7 @@ async function loadDesktopUnsafe(_viewport: EntryPosition, seeded: SeededManifes
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
-async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = activeDesktopContext, force = false, useAcknowledgedContent = true) {
+async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true) {
   if (!desktopId) throw new Error("No desktop is active.");
   const current = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   if (!force && current.sync.catalogId === snapshot.sync.catalogId && current.sync.catalogRevision >= snapshot.sync.catalogRevision) {
@@ -714,7 +332,7 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   }
   const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId }, desktopId);
   const projected = parseDesktopState(reconciled.state);
-  if (desktopId === activeDesktopContext) desktopLoad = Promise.resolve(projected);
+  if (desktopId === getActiveDesktopContext()) desktopLoad = Promise.resolve(projected);
   await materializeOutbox(await callDatabase("readOutbox", undefined));
 
   const retained = await retainedFileIdsUnsafe();
@@ -1224,7 +842,7 @@ async function loadOfflineInventoryUnsafe(desktopId: string): Promise<OfflineSto
   }
   let browserStorage: OfflineStorageInventory["browserStorage"] = null;
   try {
-    const estimate = await navigator.storage.estimate();
+    const estimate = await estimateStorage();
     if (Number.isFinite(estimate.usage) && Number.isFinite(estimate.quota)) browserStorage = { usage: estimate.usage!, quota: estimate.quota! };
   } catch { /* Browser-wide storage estimates are optional. */ }
   return { desktopId, pinIds, files, cachedBytes, protectedBytes, releasableBytes, browserStorage };
@@ -1409,8 +1027,8 @@ export function readFileByRelativePath(fromFileId: FileEntry["id"], relativePath
 export function resolveFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string) { return serializeStorage(() => resolveFileByRelativePathUnsafe(fromFileId, relativePath)); }
 export function saveTextFile(id: FileEntry["id"], content: string) { return serializeStorage(() => saveTextFileUnsafe(id, content)); }
 export function saveFile(id: FileEntry["id"], content: Blob, options?: SaveFileOptions) { return serializeStorage(() => saveFileUnsafe(id, content, options)); }
-export function readLocalPreferences() { return serializeStorage(() => readLocalPreferencesUnsafe()); }
-export function saveLocalPreferences(preferences: LocalPreferences) { return serializeStorage(() => saveLocalPreferencesUnsafe(preferences)); }
+export function readLocalPreferences() { return serializeStorage(() => repositories.readPreferences()); }
+export function saveLocalPreferences(preferences: LocalPreferences) { return serializeStorage(() => repositories.savePreferences(preferences)); }
 export function listDesktops(seeded: SeededManifest | null = null) { return serializeStorage(() => listDesktopsUnsafe(seeded)); }
 export function createDesktop(name: string) { return serializeStorage(() => createDesktopUnsafe(name)); }
 export function createOfflineDesktop(name: string) { return serializeStorage(() => createOfflineDesktopUnsafe(name)); }
@@ -1421,8 +1039,8 @@ export function switchDesktop(desktopId: string) { return serializeStorage(() =>
 export function pruneLocalDesktops(retainedDesktopIds: string[]) { return serializeStorage(() => pruneLocalDesktopsUnsafe(retainedDesktopIds)); }
 export function readDesktopEntries(desktopId: string) { return serializeStorage(() => readDesktopEntriesUnsafe(desktopId)); }
 export function transferEntries(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => transferEntriesUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
-export function readWindowSession(desktopId: string) { return serializeStorage(() => readWindowSessionUnsafe(desktopId)); }
-export function saveWindowSession(desktopId: string, session: WindowSession) { return serializeStorage(() => saveWindowSessionUnsafe(desktopId, session)); }
+export function readWindowSession(desktopId: string) { return serializeStorage(() => repositories.readWindowSession(desktopId)); }
+export function saveWindowSession(desktopId: string, session: WindowSession) { return serializeStorage(() => repositories.saveWindowSession(desktopId, session)); }
 export function enqueueMutation(operation: OutboxOperation, contents?: Map<string, Blob>) { return serializeStorage(() => enqueueMutationUnsafe(operation, contents)); }
 export function enqueueTransfer(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => enqueueTransferUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
 export function readOutbox() { return serializeStorage(() => callDatabase("readOutbox", undefined)); }
@@ -1432,21 +1050,16 @@ export function blockMutation(operationId: string, error: string) { return seria
 export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
 export function readPendingContent(operationId: string, entryId: string) { return serializeStorage(() => readStagedContent(operationId, entryId)); }
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }
-export function listInstalledApps() { return serializeStorage(async () => {
-  await initializeDatabase();
-  const apps = await callDatabase("listInstalledApps", undefined, null);
-  if (!Array.isArray(apps)) throw new Error("The local storage worker uses an outdated app protocol. Reload Hiraya and close any older Hiraya tabs.");
-  return apps.map(parseInstalledApp);
-}); }
-export function installApp(install: InstalledApp) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("installApp", { install: parseInstalledApp(install) }, null); }); }
-export function uninstallApp(appId: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("uninstallApp", { appId }, null); }); }
-export function listQuarantinedApps() { return serializeStorage(async () => { await initializeDatabase(); return (await callDatabase("listQuarantinedApps", undefined, null)).map(parseQuarantinedApp); }); }
-export function removeQuarantinedApp(appId: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeQuarantinedApp", { appId }, null); }); }
-export function listFileAssociations() { return serializeStorage(async () => { await initializeDatabase(); return (await callDatabase("listFileAssociations", undefined, null)).map(parseFileAssociation); }); }
-export function setFileAssociation(association: FileAssociation) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("setFileAssociation", { association: parseFileAssociation(association) }, null); }); }
-export function removeFileAssociation(matcher: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeFileAssociation", { matcher: normalizeAssociationMatcher(matcher) }, null); }); }
-export function resetFileAssociations() { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("resetFileAssociations", undefined, null); }); }
-export function readAppStorage(appId: string, key: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("readAppStorage", { appId, key }, null); }); }
-export function writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("writeAppStorage", { appId, key, value: parseJsonValue(value), maxBytes, maxEntries }, null); }); }
-export function removeAppStorage(appId: string, key: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("removeAppStorage", { appId, key }, null); }); }
-export function clearAppStorage(appId: string) { return serializeStorage(async () => { await initializeDatabase(); return callDatabase("clearAppStorage", { appId }, null); }); }
+export function listInstalledApps() { return serializeStorage(() => repositories.listInstalledApps()); }
+export function installApp(install: InstalledApp) { return serializeStorage(() => repositories.installApp(install)); }
+export function uninstallApp(appId: string) { return serializeStorage(() => repositories.uninstallApp(appId)); }
+export function listQuarantinedApps() { return serializeStorage(() => repositories.listQuarantinedApps()); }
+export function removeQuarantinedApp(appId: string) { return serializeStorage(() => repositories.removeQuarantinedApp(appId)); }
+export function listFileAssociations() { return serializeStorage(() => repositories.listFileAssociations()); }
+export function setFileAssociation(association: FileAssociation) { return serializeStorage(() => repositories.setFileAssociation(association)); }
+export function removeFileAssociation(matcher: string) { return serializeStorage(() => repositories.removeFileAssociation(matcher)); }
+export function resetFileAssociations() { return serializeStorage(() => repositories.resetFileAssociations()); }
+export function readAppStorage(appId: string, key: string) { return serializeStorage(() => repositories.readAppStorage(appId, key)); }
+export function writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number) { return serializeStorage(() => repositories.writeAppStorage(appId, key, value, maxBytes, maxEntries)); }
+export function removeAppStorage(appId: string, key: string) { return serializeStorage(() => repositories.removeAppStorage(appId, key)); }
+export function clearAppStorage(appId: string) { return serializeStorage(() => repositories.clearAppStorage(appId)); }

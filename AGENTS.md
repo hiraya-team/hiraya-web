@@ -18,7 +18,8 @@ bun run dev
 
 - `src/App.tsx`: application state and orchestration for files, dialogs, uploads, errors, and windows.
 - `src/lib/sync.ts`: API mutations, durable outbox replay, SSE, health checks, and remote reconciliation.
-- `src/lib/opfs.ts`: browser persistence boundary. Keep storage access behind this module.
+- `src/lib/opfs.ts`: serialized browser persistence facade and local desktop mutations.
+- `src/platform/storage/`: storage namespace, OPFS blobs, SQLite worker client, and device/app repositories. Keep browser storage access inside this platform boundary.
 - `src/lib/contracts.ts`: runtime validation for strict catalog/desktop schema version 1.
 - `src/lib/api-routes.ts`: same-origin API route construction.
 - `src/lib/seeded-manifest.ts`: seeded manifest validation shared by the build loader and exporter.
@@ -39,7 +40,7 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 ## Storage And Sync Invariants
 
 - OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.
-- All browser storage operations go through `src/lib/opfs.ts`.
+- All browser storage operations go through the `src/lib/opfs.ts` facade and `src/platform/storage/` implementation boundary.
 - Physical browser files use stable UUIDs; user-facing names and folders are metadata.
 - The OPFS SQLite schema is version 8, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, and reserves normalized offline pins without changing their runtime behavior.
 - Offline mutations update the projected SQLite desktop and append an outbox operation atomically.

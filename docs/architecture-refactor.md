@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 3 - browser persistence platform
+- Current phase: 4 - synchronization platform
 - State: ready to start
-- Next action: extract storage namespace, OPFS blob access, and SQLite client mechanics from the `opfs.ts` facade without changing repository behavior
+- Next action: define the synchronization storage port, then extract transport/connectivity and replay mechanics from `sync.ts`
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -93,7 +93,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 0: establish this ledger, correct architecture documentation, and add baseline guardrails.
 - [x] Phase 1: add characterization coverage for high-risk extraction seams.
 - [x] Phase 2: establish neutral domain models and platform ports.
-- [ ] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
+- [x] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
 - [ ] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
 - [ ] Phase 5: reduce `App.tsx` to authenticated desktop composition.
 - [ ] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
@@ -149,6 +149,18 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed
 - `bun run build`: passed, including system and example app builds and packages
 
+### Phase 3
+
+- Extracted account namespace selection, legacy cleanup, active desktop context, cross-tab locking, and serialized storage work into `src/platform/storage/namespace.ts`.
+- Extracted OPFS file blobs, revision markers, durable pending content, materialization, and cleanup into `src/platform/storage/blobs.ts`.
+- Extracted SharedWorker/fallback worker ownership, request retries, timeouts, and protocol initialization into `src/platform/storage/database-client.ts`.
+- Extracted preferences, window sessions, installed apps, associations, and app storage database adapters into `src/platform/storage/repositories.ts`.
+- Retained local desktop mutation orchestration in the `opfs.ts` facade to preserve content-before-metadata and atomic outbox ordering.
+- Browser smoke: frontend-only startup created `phase3-storage.txt`, reload restored it, and browser errors remained empty.
+- `bun test`: passed, 395 tests across 75 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -159,6 +171,7 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 - `src/lib/opfs.ts` re-exports neutral desktop-state, preference, save-option, and conflict contracts while consumers migrate to direct domain imports.
 - `src/lib/desktop-state.ts` and `src/lib/themes.ts` re-export domain types while runtime parser imports migrate.
+- Storage worker entrypoints and protocol/schema leaves remain under `src/lib/`; the platform database client owns them but paths are deferred to avoid mixing a large worker-relative-path move into the behavioral extraction.
 
 ## Known Risks
 
@@ -180,4 +193,4 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Current Phase Notes
 
-Phase 3 should first move mechanics with narrow dependencies: namespace selection and OPFS directory/blob helpers, then SQLite worker RPC. Keep local desktop mutations together until those adapters are behind explicit interfaces; splitting every mutation into a separate repository prematurely would duplicate serialized-state orchestration.
+Phase 4 should preserve the existing `SyncEngine` public API while extracting collaborators. Start by replacing `Pick<typeof storage, ...>` with an explicit storage port, then move HTTP/blob transport and SSE/health connectivity. Replay and reconciliation can follow once their side effects are parameterized.
