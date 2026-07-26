@@ -5,10 +5,10 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: final verification
-- State: in progress
-- Next action: run server, browser, synchronized-session, persistence, and Docker verification against the final frontend commit
-- Server gitlink: update only after the complete frontend refactor passes final verification
+- Current phase: complete
+- State: verified
+- Next action: update and commit the server gitlink
+- Server gitlink: ready to update to the final verified frontend commit
 - Push policy: do not push as part of this refactor
 
 ## Scope
@@ -101,7 +101,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 8: modularize the design system and CSS without redesigning the desktop.
 - [x] Phase 9: recompose the public desktop from read-only capabilities.
 - [x] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
-- [ ] Final: run frontend, server, browser, synchronized-session, and Docker verification.
+- [x] Final: run frontend, server, browser, synchronized-session, and Docker verification.
 
 ## Phase Acceptance
 
@@ -285,6 +285,22 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 
+### Final Verification
+
+- Frontend commit under test: `c4dc4e6` (the following ledger-only commit does not change runtime artifacts).
+- `bun test`: passed, 408 tests across 79 files.
+- `bun run lint`: passed.
+- `bun run build`: passed, including storage worker, system app, and example app bundles.
+- `go test ./...`: passed.
+- `go vet ./...`: passed.
+- Built `hiraya-server:architecture-refactor` from the server workspace and pinned frontend; `/`, SPA fallback, `/api/health`, authenticated session bootstrap, static immutable cache headers, and schema version 1 responses were verified.
+- Local blob mode: two independent authenticated HTTP sessions observed one catalog authority; multipart metadata and bytes were created in one session and read byte-for-byte in the other.
+- Direct S3-compatible mode: an isolated TLS MinIO deployment verified presigned browser upload, commit, revision-qualified download, and server restart persistence without a local content fallback.
+- Browser verification: a 1920x1080 session created and edited `direct-persistence.txt`; an isolated 390x844 session observed the synchronized metadata and content.
+- Offline replay: the mobile session edited the file while network access was disabled, retained protected pending content, reconnected, replayed the mutation, and read `Architecture refactor offline replay verified.` at content revision 4 after server restart.
+- SSE propagation: an authenticated stream observed the catalog revision before and after a mutation; health polling and reconciliation remained active as the fallback path.
+- Exact-image browser console and page-error checks remained empty during the final desktop and mobile smoke checks.
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -299,11 +315,11 @@ Worker entrypoints and protocol/schema leaves remain under `src/lib/` by design:
 
 ## Known Risks
 
-- `src/App.tsx` owns desktop, route, selection, window, area, app-host, preference, and sync orchestration.
-- `src/lib/sync.ts` combines domain mutation behavior, replay, reconciliation, connectivity, and transport.
-- `src/lib/opfs.ts` combines OPFS blobs, SQLite RPC, repositories, app storage, preferences, and offline inventory.
+- `src/App.tsx` remains the largest composition root and coordinates cross-feature desktop, route, preference, and synchronization behavior.
+- `SyncEngine` still coordinates mutation ordering, replay, and reconciliation even though transport, connectivity, and storage dependencies now use explicit boundaries.
+- `src/lib/opfs.ts` retains local mutation orchestration because content-before-metadata and atomic outbox publication span storage capabilities.
 - `src/styles.css` relies on source order across more than 6,000 lines.
-- Public and authenticated gesture implementations can drift.
+- Public and authenticated feature policies can still drift around the shared touch-release primitive.
 - Several accessibility regressions are protected by source or CSS assertions rather than rendered interaction tests.
 
 ## Resume Procedure
@@ -317,4 +333,4 @@ Worker entrypoints and protocol/schema leaves remain under `src/lib/` by design:
 
 ## Current Phase Notes
 
-Phase 5 begins with low-risk pure ownership: running-window models, route/history state, and shell render layers. Do not start by moving all React state into one large hook; extract cohesive controllers one at a time and keep `App.tsx` as the composition root throughout.
+All phases and final acceptance checks are complete. No temporary migration scaffolding remains; the next repository action is the final frontend documentation checkpoint followed by the server gitlink commit.
