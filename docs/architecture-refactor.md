@@ -7,7 +7,7 @@ This file is the durable handoff record for the capability-oriented frontend ref
 - Baseline frontend commit: `c802248`
 - Current phase: 5 - authenticated desktop composition
 - State: in progress
-- Next action: extract the desktop area switcher and minimap render layer behind explicit area and window projections
+- Next action: separate global panel and overlay rendering from authenticated desktop orchestration
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -208,6 +208,16 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Kept explorer, properties, settings, and sandbox content wiring in the authenticated desktop composition root through an explicit render callback.
 - Updated source-level mobile-window regression checks to follow the extracted ownership boundary.
 - Browser smoke: a system text editor opened, minimized, restored, maximized, rendered at a 390px viewport, and closed successfully with no new console errors.
+- `bun test`: passed, 402 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 5 Checkpoint: Area Switcher Layer
+
+- Moved the authenticated minimap grid, open-window strip, focused-window controls, accessibility state, and responsive area-switcher markup into `src/features/areas/AreaSwitcher.tsx`.
+- Kept drag/swipe ownership, focus restoration, route commits, and direct shell transform coordination in the composition root.
+- Updated source-level area-switcher regression checks to follow the extracted feature boundary.
+- Browser smoke: expanded the switcher, selected an adjacent empty area, resized to 390px, and retained the current-area controls with no new console errors.
 - `bun test`: passed, 402 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles

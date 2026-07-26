@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowsIn, ArrowsOut, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Minus, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -116,7 +116,7 @@ import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHand
 import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
-import { AppIcon, EntryIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
+import { AppIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
 import { boundedNotificationVisibility } from "./ui/notifications";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
 import { DesktopTaskbar } from "./components/DesktopTaskbar";
@@ -124,7 +124,7 @@ import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, swipeAxis, swipePreviewReady } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
@@ -134,6 +134,7 @@ import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAp
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
+import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { useDesktopSelection } from "./features/selection/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -3355,14 +3356,7 @@ function App({ session }: { session: AuthSession | null }) {
     const area = segmentForApp(app);
     return { id: app.id, title: runningAppLabel(app), areaId: segmentKey(area), areaLabel: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}`, minimized: app.minimized };
   });
-  const minimapWindowModel = minimapWindows(
-    runningApps.map((app) => ({ app, id: app.id, areaId: segmentKey(segmentForApp(app)), focused: focusedAppId === app.id })),
-    activeSegmentKey,
-    minimapWindowLimit,
-  );
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
-  const focusedAppEntry = focusedApp?.kind === "file" ? entryIndex.byId.get(focusedApp.fileId) : focusedApp?.kind === "properties" ? entryIndex.byId.get(focusedApp.entryId) : focusedApp?.kind === "explorer" && focusedApp.folderId ? entryIndex.byId.get(focusedApp.folderId) : null;
-  const focusedAppLabel = focusedApp ? runningAppLabel(focusedApp) : "";
   const taskbarItems = runningApps.map((app) => {
     const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
     const area = segmentForApp(app);
@@ -4264,57 +4258,54 @@ function App({ session }: { session: AuthSession | null }) {
         )}
       </section>
 
-      {(isMobile || activeDesktopId) && (
-        <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-open-apps={runningApps.length > 0 || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
-          <button ref={areaSwitcherHandleRef} className="desktop-minimap__handle" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerDown={(event) => beginAreaSwitcherDrag(event, minimapDetailed)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
-            <span aria-hidden="true" />
-          </button>
-          <div className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}>
-            {runningApps.length > 0 && <header className="desktop-minimap__header">
-              <div className="desktop-minimap__header-tools">
-                <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
-                      {minimapWindowModel.visible.map(({ app }) => {
-                        const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
-                        const label = runningAppLabel(app);
-                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
-                      })}
-                      {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
-                </div>
-                {focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedAppLabel}`}>
-                  <span className="desktop-minimap__window-target" title={focusedAppLabel}><AppIcon kind={focusedApp.kind} entry={focusedAppEntry} size={18} /><span>{focusedAppLabel}</span></span>
-                  <button type="button" onClick={() => minimizeApp(focusedApp.id)} title={`Minimize ${focusedAppLabel}`} aria-label={`Minimize ${focusedAppLabel}`}><Minus size={15} /></button>
-                  {!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>}
-                  <button className="desktop-minimap__window-close" type="button" onClick={() => void requestCloseApp(focusedApp.id)} title={`Close ${focusedAppLabel}`} aria-label={`Close ${focusedAppLabel}`}><X size={15} /></button>
-                </div>}
-              </div>
-            </header>}
-            <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
-              <div className="desktop-minimap__grid" style={{ "--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width, "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
-                    {minimapSegments.map((desktopSegment, visibleIndex) => {
-                      const column = desktopSegment.segment.column - minimapMinColumn;
-                      const row = desktopSegment.segment.row - minimapMinRow;
-                      const currentSegmentKey = desktopSegment.key;
-                      const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
-                      const hiddenEntryCount = Math.max(0, desktopSegment.entries.length - 6);
-                      return <div className="desktop-minimap__slot" data-segment-key={isOccupiedSegment ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: column + 1, gridRow: row + 1 }}>
-                        <button className="desktop-minimap__area" data-active={currentSegmentKey === activeSegmentKey || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupiedSegment || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`} aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined} onClick={(event) => { if (suppressMinimapClickRef.current) { suppressMinimapClickRef.current = false; event.preventDefault(); return; } selectAreaFromSwitcher(desktopSegment.segment); }} onContextMenu={(event) => event.preventDefault()}>
-                          <span className="desktop-minimap__area-title"><strong>{areaDirectionalLabel(desktopSegment.segment, activeSegment)}</strong><small>{desktopSegment.entries.length || "Empty"}</small></span>
-                          {desktopSegment.entries.slice(0, 6).map((entry) => {
-                            const position = responsive.positions.get(entry.id) ?? entry.position;
-                            return <span className="desktop-minimap__file" key={entry.id} title={entry.name} style={{ left: `${Math.min(92, Math.max(8, position.x / desktopSize.width * 100))}%`, top: `${Math.min(78, Math.max(24, position.y / desktopSize.height * 100))}%` }}><EntryIcon entry={entry} size={18} /></span>;
-                          })}
-                          {hiddenEntryCount > 0 && <span className="desktop-minimap__area-overflow">+{hiddenEntryCount}</span>}
-                        </button>
-                      </div>;
-                    })}
-              </div>
-            </div>
-          </div>
-          <span className="visually-hidden">
-            {activeDesktopName}, area {Math.max(1, minimapSegments.findIndex((candidate) => candidate.key === activeSegmentKey) + 1)} of {minimapSegments.length}
-          </span>
-        </nav>
-      )}
+      {(isMobile || activeDesktopId) && <AreaSwitcher
+        activeSegment={activeSegment}
+        activeSegmentKey={activeSegmentKey}
+        apps={runningApps}
+        desktopName={activeDesktopName}
+        desktopSize={desktopSize}
+        detailed={minimapDetailed}
+        dirtyAppIds={dirtyAppIds}
+        focusedApp={focusedApp}
+        focusedAppId={focusedAppId}
+        handleRef={areaSwitcherHandleRef}
+        isMobile={isMobile}
+        obscured={minimapObscured}
+        occupiedSegmentKeys={new Set(occupiedSegments.map((segment) => segment.key))}
+        positions={responsive.positions}
+        rootRef={areaSwitcherRef}
+        segments={minimapSegments}
+        minColumn={minimapMinColumn}
+        minRow={minimapMinRow}
+        columnCount={minimapColumnCount}
+        rowCount={minimapRowCount}
+        swipePreview={swipePreview}
+        windowLimit={minimapWindowLimit}
+        getAppEntry={(app) => app.kind === "file" ? (entryIndex.byId.get(app.fileId) ?? null) : app.kind === "properties" ? (entryIndex.byId.get(app.entryId) ?? null) : app.kind === "explorer" && app.folderId ? (entryIndex.byId.get(app.folderId) ?? null) : null}
+        getAppLabel={runningAppLabel}
+        getAppSegment={segmentForApp}
+        isAppMaximized={appIsMaximized}
+        onBeginDrag={beginAreaSwitcherDrag}
+        onMoveDrag={moveAreaSwitcherDrag}
+        onFinishDrag={finishAreaSwitcherDrag}
+        onToggle={toggleAreaSwitcher}
+        onBeginGridSwipe={beginExpandedMinimapSwipe}
+        onMoveGridSwipe={moveExpandedMinimapSwipe}
+        onFinishGridSwipe={finishExpandedMinimapSwipe}
+        onSelectArea={(segment, event) => {
+          if (suppressMinimapClickRef.current) {
+            suppressMinimapClickRef.current = false;
+            event.preventDefault();
+            return;
+          }
+          selectAreaFromSwitcher(segment);
+        }}
+        onFocusApp={focusApp}
+        onMinimizeApp={minimizeApp}
+        onToggleMaximizeApp={toggleMaximizeApp}
+        onCloseApp={requestCloseApp}
+        onShowAllWindows={() => setActivePanel("windows")}
+      />}
       <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {areaAnnouncement}
       </span>

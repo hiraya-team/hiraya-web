@@ -81,6 +81,7 @@ describe("accessibility regressions", () => {
 
   test("mobile switchers use distinct desktop and area controls", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
     const systemMenu = await Bun.file(new URL("../src/components/SystemMenu.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
@@ -97,9 +98,9 @@ describe("accessibility regressions", () => {
     expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
     expect(desktopSwitcher).toContain('aria-label={`Switch desktop, current desktop');
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
-    expect(app).toContain('aria-expanded={minimapDetailed}');
-    expect(app).toContain('className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}');
-    expect(app).not.toContain('className="desktop-minimap__pull-tab"');
+    expect(areaSwitcher).toContain('aria-expanded={detailed}');
+    expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}');
+    expect(areaSwitcher).not.toContain('className="desktop-minimap__pull-tab"');
     expect(app).toContain('if (owner === "areaEditor") {');
     expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
     expect(app).toContain("if (drag.expanded) collapseAreaMap();");
@@ -122,22 +123,23 @@ describe("accessibility regressions", () => {
 
   test("area switcher exposes breakpoint-appropriate controls for the focused window", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-    expect(app).toContain('className="desktop-minimap__window-controls" role="group"');
-    expect(app).toContain('data-open-apps={runningApps.length > 0 || undefined}');
-    expect(app).toContain('{runningApps.length > 0 && <header className="desktop-minimap__header">');
-    expect(app).not.toContain("<strong>Areas</strong>");
-    expect(app).toContain('aria-label={`Minimize ${focusedAppLabel}`}');
-    expect(app).toContain('{!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)}');
-    expect(app).toContain('onClick={() => void requestCloseApp(focusedApp.id)}');
-    expect(app).toContain('focusedApp && !focusedApp.minimized');
+    expect(areaSwitcher).toContain('className="desktop-minimap__window-controls" role="group"');
+    expect(areaSwitcher).toContain('data-open-apps={apps.length > 0 || undefined}');
+    expect(areaSwitcher).toContain('{apps.length > 0 && <header className="desktop-minimap__header">');
+    expect(areaSwitcher).not.toContain("<strong>Areas</strong>");
+    expect(areaSwitcher).toContain('aria-label={`Minimize ${focusedLabel}`}');
+    expect(areaSwitcher).toContain('{!isMobile && <button type="button" onClick={() => onToggleMaximizeApp(focusedApp.id)}');
+    expect(areaSwitcher).toContain('onClick={() => onCloseApp(focusedApp.id)}');
+    expect(areaSwitcher).toContain('focusedApp && !focusedApp.minimized');
     expect(app).not.toContain('if (isMobile && focusedAppIdRef.current) showDesktop();');
     expect(css).toContain(".desktop-minimap__window-controls > .desktop-minimap__window-close:hover");
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
     expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__handle { height: 100%; }");
-    expect(app).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
+    expect(areaSwitcher).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
     expect(css).toContain("(100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap))");
     expect(css).toContain("(100cqw - (var(--minimap-columns) - 1) * var(--minimap-gap))");
     expect(css).toContain("grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));");
