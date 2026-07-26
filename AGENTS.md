@@ -41,7 +41,7 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 - OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.
 - All browser storage operations go through `src/lib/opfs.ts`.
 - Physical browser files use stable UUIDs; user-facing names and folders are metadata.
-- The OPFS SQLite schema is version 7, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view, and reserves normalized offline pins without changing their runtime behavior.
+- The OPFS SQLite schema is version 8, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, and reserves normalized offline pins without changing their runtime behavior.
 - Offline mutations update the projected SQLite desktop and append an outbox operation atomically.
 - Replay uses stable idempotency headers and preserves blocked operations for user resolution.
 - During reconciliation, publish validated metadata without requiring file bytes. Fetch virtual file content on demand, validate its revision and size, and cache it before use.

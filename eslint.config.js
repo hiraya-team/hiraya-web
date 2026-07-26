@@ -28,4 +28,20 @@ export default tseslint.config(
       globals: globals.node,
     },
   },
+  {
+    files: ["src/PublicDesktop.tsx", "src/lib/public-desktop.ts", "src/ui/public-desktop-layout.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/sync", "**/opfs", "**/outbox", "**/apps/host", "**/apps/host/**"],
+              message: "The public desktop must remain independent of authenticated storage, synchronization, outbox, and app-host modules.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
