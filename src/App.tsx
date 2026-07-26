@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowsIn, ArrowsOut, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Minus, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
-import { AppWindow } from "./components/AppWindow";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
 import { FolderExplorer } from "./components/FolderExplorer";
@@ -134,6 +133,7 @@ import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorl
 import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
+import { WindowLayer } from "./features/windows/WindowLayer";
 import { useDesktopSelection } from "./features/selection/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -4013,73 +4013,42 @@ function App({ session }: { session: AuthSession | null }) {
           <UploadSimple size={25} /> Drop files or folders to add them
         </div>
 
-        <div className="desktop-area-stage desktop-area-stage--windows">
-          <div
-            className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}
-            ref={windowTrackRef}
-            role="region"
-            aria-label="Open windows"
-            style={isMobile ? undefined : {
-              width: desktopSize.width,
-              height: desktopSize.height,
-              transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
-            }}
-          >
-          {runningApps.map((app, index) => {
-            const projection = projectLogicalPosition(app.bounds, desktopSize);
-            const segmentActive = projection.segment.column === activeSegment.column && projection.segment.row === activeSegment.row;
-            const segmentVisible = segmentActive || transitionSegmentKeys.has(segmentKey(projection.segment));
-            const localBounds = isMobile
-              ? { x: 0, y: 0, width: desktopSize.width, height: desktopSize.height }
-              : { ...app.bounds, ...projection.local };
-            const origin = areaWorldOrigin(projection.segment, desktopSize);
-            const titleId = `running-app-title-${index}`;
+        <WindowLayer
+          apps={runningApps}
+          activeSegment={activeSegment}
+          desktopSize={desktopSize}
+          focusedAppId={focusedAppId}
+          isMobile={isMobile}
+          mobileHeaderActionsElement={mobileHeaderActionsElement}
+          restingCamera={restingCamera}
+          trackRef={windowTrackRef}
+          transitionSegmentKeys={transitionSegmentKeys}
+          titleForApp={(app) => {
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            const title = app.kind === "sandbox" ? app.title : app.kind === "settings" ? (isMobile && settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
-            const appWindow =
-              app.kind === "sandbox"
-                ? (app.package.manifest.window ?? {
-                    minWidth: 360,
-                    minHeight: 260,
-                  })
-                : builtinAppWindow(app.kind);
+            return app.kind === "sandbox" ? app.title : app.kind === "settings" ? (isMobile && settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+          }}
+          isMaximized={appIsMaximized}
+          onFocus={focusApp}
+          onBoundsChange={updateAppBounds}
+          onDragAtEdge={handleWindowDragAtEdge}
+          onDragEnd={finishWindowEdgeNavigation}
+          onMinimize={minimizeApp}
+          onClose={requestCloseApp}
+          onToggleMaximize={toggleMaximizeApp}
+          onMoveArea={moveAppToArea}
+          onShowDesktop={navigateBack}
+          onSwitchWindow={() => setActivePanel("windows")}
+        >
+          {(app, headerElements) => {
+            const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+            const folder = folderEntry?.kind === "folder" ? folderEntry : null;
+            const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             return (
-              <div className="desktop-window-segment" key={app.id} style={isMobile ? undefined : { left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
-              <AppWindow
-                id={app.id}
-                title={title}
-                titleId={titleId}
-                bounds={localBounds}
-                minWidth={appWindow.minWidth}
-                minHeight={appWindow.minHeight}
-                zIndex={app.zIndex}
-                focused={focusedAppId === app.id}
-                minimized={app.minimized}
-                segmentActive={segmentActive}
-                segmentVisible={isMobile ? segmentActive : segmentVisible}
-                mobile={isMobile}
-                hideMobileHeader
-                externalHeaderElements={isMobile && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
-                onFocus={focusApp}
-                onBoundsChange={updateAppBounds}
-                onDragAtEdge={handleWindowDragAtEdge}
-                onDragEnd={finishWindowEdgeNavigation}
-                onMinimize={minimizeApp}
-                onClose={requestCloseApp}
-                maximized={appIsMaximized(app)}
-                canMoveArea={!isMobile}
-                onToggleMaximize={toggleMaximizeApp}
-                onMoveArea={moveAppToArea}
-                onShowDesktop={navigateBack}
-                onSwitchWindow={() => setActivePanel("windows")}
-                titleArea={<h2 id={titleId}>{title}</h2>}
-              >
-                {(headerElements) => (
-                  <>
+              <>
                     {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
@@ -4255,14 +4224,10 @@ function App({ session }: { session: AuthSession | null }) {
                         onOpenHelp={openHelp}
                       />
                     )}
-                  </>
-                )}
-              </AppWindow>
-              </div>
+              </>
             );
-          })}
-          </div>
-        </div>
+          }}
+        </WindowLayer>
         {areaTransition && (
           <div className="desktop-area-stage desktop-area-stage--frames" aria-hidden="true">
             <div

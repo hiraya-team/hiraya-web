@@ -68,10 +68,11 @@ describe("accessibility regressions", () => {
   test("suppressed mobile windows retain explicit authenticated and public action slots", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const publicDesktop = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('className="mobile-global-actions"');
-    expect(app).toContain("externalHeaderElements={isMobile && focusedAppId === app.id");
+    expect(windowLayer).toContain("externalHeaderElements={isMobile && focusedAppId === app.id");
     expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
     expect(publicDesktop).toContain("externalHeaderElements={mobile ?");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
@@ -155,6 +156,7 @@ describe("accessibility regressions", () => {
   test("live area transitions keep mobile windows outside the transformed area track", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
+    const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('style.setProperty("--area-track-x"');
@@ -163,9 +165,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("areaCameraPosition(activeSegment, desktopSize)");
     expect(app).toContain("areaWorldOrigin(desktopSegment.segment, desktopSize)");
     expect(app).not.toContain("segment.column - minColumn");
-    expect(app).toContain('className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}');
-    expect(app).toContain("style={isMobile ? undefined : {");
-    expect(app).toContain("segmentVisible={isMobile ? segmentActive : segmentVisible}");
+    expect(windowLayer).toContain('className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}');
+    expect(windowLayer).toContain("style={isMobile ? undefined : {");
+    expect(windowLayer).toContain("segmentVisible={isMobile ? segmentActive : segmentVisible}");
     expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');

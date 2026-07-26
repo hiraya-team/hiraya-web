@@ -7,7 +7,7 @@ This file is the durable handoff record for the capability-oriented frontend ref
 - Baseline frontend commit: `c802248`
 - Current phase: 5 - authenticated desktop composition
 - State: in progress
-- Next action: separate shell chrome and global panel render layers behind explicit props, starting with the window layer
+- Next action: extract the desktop area switcher and minimap render layer behind explicit area and window projections
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -198,6 +198,16 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Moved selected IDs, synchronous selection refs, selection surfaces, anchors, range/toggle rules, mobile multi-select, and reconciliation pruning into `src/features/selection/controller.ts`.
 - Kept entry-domain actions and shell-specific context menus in the composition root.
 - Added direct tests for single, toggle, preserved, and bidirectional range selection.
+- `bun test`: passed, 402 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 5 Checkpoint: Window Layer
+
+- Moved window-track geometry, segment projection and visibility, mobile bounds, frame chrome, and window controls into `src/features/windows/WindowLayer.tsx`.
+- Kept explorer, properties, settings, and sandbox content wiring in the authenticated desktop composition root through an explicit render callback.
+- Updated source-level mobile-window regression checks to follow the extracted ownership boundary.
+- Browser smoke: a system text editor opened, minimized, restored, maximized, rendered at a 390px viewport, and closed successfully with no new console errors.
 - `bun test`: passed, 402 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
