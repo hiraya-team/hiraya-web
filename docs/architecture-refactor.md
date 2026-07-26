@@ -7,7 +7,7 @@ This file is the durable handoff record for the capability-oriented frontend ref
 - Baseline frontend commit: `c802248`
 - Current phase: 5 - authenticated desktop composition
 - State: in progress
-- Next action: extract desktop selection state and range/toggle coordination, then separate shell render layers behind explicit props
+- Next action: separate shell chrome and global panel render layers behind explicit props, starting with the window layer
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -190,6 +190,15 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Added a dispatcher detach/reattach regression test.
 - Browser smoke: system text editor opened, minimized, restored, and closed successfully with no new console messages; desktop and 390px viewport transitions remained operational.
 - `bun test`: passed, 400 tests across 76 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 5 Checkpoint: Selection State
+
+- Moved selected IDs, synchronous selection refs, selection surfaces, anchors, range/toggle rules, mobile multi-select, and reconciliation pruning into `src/features/selection/controller.ts`.
+- Kept entry-domain actions and shell-specific context menus in the composition root.
+- Added direct tests for single, toggle, preserved, and bidirectional range selection.
+- `bun test`: passed, 402 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 

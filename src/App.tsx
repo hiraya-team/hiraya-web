@@ -134,6 +134,7 @@ import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorl
 import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
+import { useDesktopSelection } from "./features/selection/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -172,11 +173,8 @@ function App({ session }: { session: AuthSession | null }) {
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, addEntryToSelection: addEntryIdToSelection, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
-  const [selectionScope, setSelectionScope] = useState("desktop");
-  const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
-  const [mobileMultiSelectScope, setMobileMultiSelectScope] = useState<string | null>(null);
   const [dialog, setDialog] = useState<DialogState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
   const [moveDialogEntryIds, setMoveDialogEntryIds] = useState<string[]>([]);
@@ -277,10 +275,10 @@ function App({ session }: { session: AuthSession | null }) {
   } | null>(null);
   const suppressMinimapClickRef = useRef(false);
   const suppressClickRef = useRef(false);
-  const selectedIdsRef = useRef<string[]>([]);
   const clipboardRef = useRef<ClipboardEntrySnapshot | null>(null);
   const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; additive: boolean; initial: string[] } | null>(null);
   const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
+  const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
   const handleImportRef = useRef<(files: File[], parentId: string | null, base?: EntryPosition) => Promise<void>>(async () => undefined);
   const edgeDragRef = useRef({ direction: "", time: 0 });
   const windowEdgeDragRef = useRef({ direction: "", time: 0 });
@@ -432,7 +430,6 @@ function App({ session }: { session: AuthSession | null }) {
       return position.x + iconMetrics.width > desktopSize.width - minimapWidth && position.y + iconMetrics.height > desktopSize.height - minimapHeight;
     });
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  selectedIdsRef.current = selectedIds;
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
@@ -445,10 +442,6 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || confirmation || contextMenu || appDialogRequests.length);
-
-  useEffect(() => {
-    if (mobileMultiSelectScope === selectionScope && !selectedIds.length) setMobileMultiSelectScope(null);
-  }, [mobileMultiSelectScope, selectedIds.length, selectionScope]);
 
   useEffect(() => {
     if (!minimapExpanded) return;
@@ -639,36 +632,12 @@ function App({ session }: { session: AuthSession | null }) {
     resolve?.(confirmed);
   }
 
-  function replaceSelection(surface: string, ids: string[], anchorId = ids.at(-1) ?? null) {
-    const unique = [...new Set(ids)];
-    selectedIdsRef.current = unique;
-    setSelectedIds(unique);
-    setSelectionScope(surface);
-    setSelectionAnchorId(anchorId);
-    if (!ids.length) setMobileMultiSelectScope((current) => (current === surface ? null : current));
-  }
-
   function selectEntry(surface: string, entry: DesktopEntry, options: { toggle?: boolean; range?: boolean; orderedIds?: string[] } = {}) {
-    const current = selectionScope === surface ? selectedIdsRef.current : [];
-    if (options.range && selectionScope === surface && selectionAnchorId && options.orderedIds) {
-      const start = options.orderedIds.indexOf(selectionAnchorId);
-      const end = options.orderedIds.indexOf(entry.id);
-      if (start >= 0 && end >= 0) {
-        replaceSelection(surface, options.orderedIds.slice(Math.min(start, end), Math.max(start, end) + 1), selectionAnchorId);
-        return;
-      }
-    }
-    if (options.toggle) {
-      replaceSelection(surface, current.includes(entry.id) ? current.filter((id) => id !== entry.id) : [...current, entry.id], entry.id);
-      return;
-    }
-    if (current.includes(entry.id)) return;
-    replaceSelection(surface, [entry.id], entry.id);
+    selectEntryId(surface, entry.id, options);
   }
 
   function addEntryToSelection(surface: string, entry: DesktopEntry) {
-    const current = selectionScope === surface ? selectedIdsRef.current : [];
-    replaceSelection(surface, current.includes(entry.id) ? current : [...current, entry.id], entry.id);
+    addEntryIdToSelection(surface, entry.id);
   }
 
   const runningAppTargets = useCallback((apps = runningAppsRef.current): WindowTarget[] => {
@@ -1063,7 +1032,7 @@ function App({ session }: { session: AuthSession | null }) {
         const syncedIds = new Set(synced.entries.map((entry) => entry.id));
         appSnapshotRef.current = synced;
         if (changedEntryIds.size) for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("files.changed", app.files.changedPayload(changedEntryIds));
-        setSelectedIds((current) => current.filter((id) => syncedIds.has(id)));
+        retainSelection(syncedIds);
         setContextMenu((current) => (current?.type === "entry" && !syncedIds.has(current.entryId) ? null : current));
         setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
         setDialog((current) => {
@@ -1188,7 +1157,7 @@ function App({ session }: { session: AuthSession | null }) {
       unsubscribeCatalog();
       void stopDesktopSync();
     };
-  }, [focusedAppIdRef, runningAppsRef, setFocusedApp, updateRunningApps]);
+  }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps]);
 
   useEffect(() => () => confirmationResolverRef.current?.(false), []);
 
@@ -1508,7 +1477,7 @@ function App({ session }: { session: AuthSession | null }) {
         return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
       }),
     );
-  }, [desktopSize, focusedAppIdRef, runningAppsRef, updateRunningApps]);
+  }, [desktopSize, focusedAppIdRef, runningAppsRef, selectedIdsRef, updateRunningApps]);
 
   useEffect(() => {
     if (loading) return;
@@ -1629,7 +1598,7 @@ function App({ session }: { session: AuthSession | null }) {
         replaceSelection(surface, ids);
       } else if (modifier && key === "c" && selectedIdsRef.current.length) {
         event.preventDefault();
-        void copySelection();
+        void copySelectionRef.current();
       } else if (modifier && key === "v") {
         event.preventDefault();
         const explorer = activeExplorer();
@@ -1655,7 +1624,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, runningAppsRef, selectionScope, shortcutsSuspended]);
+  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
 
   useEffect(() => {
     function onGlobalShortcut(event: KeyboardEvent) {
@@ -2857,6 +2826,7 @@ function App({ session }: { session: AuthSession | null }) {
       setError(copyError instanceof Error ? copyError.message : "The selected items could not be copied.");
     }
   }
+  copySelectionRef.current = copySelection;
 
   function pastePositions(snapshot: ClipboardEntrySnapshot, parentId: string | null, base?: EntryPosition) {
     const roots = snapshot.selectedRootIds.map((id) => snapshot.entries.find((entry) => entry.id === id)!);
@@ -3955,7 +3925,7 @@ function App({ session }: { session: AuthSession | null }) {
                     })
                   }
                   onLongPressSelect={() => {
-                    setMobileMultiSelectScope("desktop");
+                    beginMobileMultiSelect("desktop");
                     addEntryToSelection("desktop", entry);
                   }}
                   onOpen={() => {
@@ -4121,7 +4091,7 @@ function App({ session }: { session: AuthSession | null }) {
                         mobileMultiSelect={mobileMultiSelectScope === app.id}
                         onSelect={(entry, options) => selectEntry(app.id, entry, options)}
                         onLongPressSelect={(entry) => {
-                          setMobileMultiSelectScope(app.id);
+                          beginMobileMultiSelect(app.id);
                           addEntryToSelection(app.id, entry);
                         }}
                         onNavigate={(nextFolder) => {
