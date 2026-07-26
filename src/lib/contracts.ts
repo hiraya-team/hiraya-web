@@ -206,13 +206,6 @@ export function parseDesktopIdentity(value: unknown, localDefaults = false): Des
   };
 }
 
-export function parseDesktopList(value: unknown): DesktopIdentity[] {
-  if (!Array.isArray(value) || value.length === 0) throw new Error("At least one desktop is required.");
-  const desktops = value.map((desktop) => parseDesktopIdentity(desktop, true));
-  if (new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The desktop list contains duplicate IDs.");
-  return desktops;
-}
-
 export function assertCanonicalEntryName(value: unknown): asserts value is string {
   if (typeof value !== "string" || !value || value.trim() !== value || value === "." || value === "..") {
     throw new Error("An entry has an invalid name.");

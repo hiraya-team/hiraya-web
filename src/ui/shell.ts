@@ -76,7 +76,3 @@ export function areaSwitcherDragCommits(deltaX: number, expanded: boolean, trave
   const threshold = Math.round(expanded ? Math.min(96, travel * 0.28) : Math.min(72, travel * 0.22));
   return distance >= threshold;
 }
-
-export function occupiedAreaCount(areas: readonly { occupied: boolean }[]) {
-  return areas.filter((area) => area.occupied).length;
-}

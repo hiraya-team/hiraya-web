@@ -146,10 +146,6 @@ export function clipboardSnapshotIdentity(snapshot: ClipboardEntrySnapshot) {
   });
 }
 
-export async function createClipboardArchiveItem(snapshot: ClipboardEntrySnapshot): Promise<ClipboardItem> {
-  return new ClipboardItem({ [CLIPBOARD_ARCHIVE_WEB_MIME_TYPE]: await encodeClipboardArchive(snapshot) });
-}
-
 export async function decodeClipboardArchiveItem(item: Pick<ClipboardItem, "types" | "getType">) {
   const type = item.types.find(isClipboardArchiveType);
   if (!type) throw new Error("The clipboard does not contain a Hiraya entry archive.");

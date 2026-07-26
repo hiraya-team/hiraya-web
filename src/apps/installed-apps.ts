@@ -99,19 +99,6 @@ export function installedAppMatchesSavedIdentity(install: InstalledApp, saved: P
     && install.manifest.permissions.every((permission) => saved.permissions?.includes(permission));
 }
 
-export function replaceInstalledApp(current: readonly InstalledApp[], value: unknown): InstalledApp[] {
-  const install = parseInstalledApp(value);
-  return [...current.filter((item) => item.appId !== install.appId), install];
-}
-
-export function removeInstalledApp(current: readonly InstalledApp[], appId: string): InstalledApp[] {
-  return current.filter((item) => item.appId !== appId || item.source === "system");
-}
-
-export function removeFileAssociationsForApp(current: readonly FileAssociation[], appId: string): FileAssociation[] {
-  return current.filter((association) => association.appId !== appId);
-}
-
 export function installedAppIsAvailable(install: InstalledApp, entries: readonly { id: string; kind: "file" | "folder" }[]): boolean {
   return install.source === "system" || entries.some((entry) => entry.id === install.packageEntryId && entry.kind === "file");
 }

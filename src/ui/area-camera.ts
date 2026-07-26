@@ -31,7 +31,3 @@ export function areaTransferDelta(source: SurfaceSegment, target: SurfaceSegment
     y: targetOrigin.y - sourceOrigin.y,
   };
 }
-
-export function areaScreenPosition(world: EntryPosition, camera: EntryPosition): EntryPosition {
-  return { x: world.x + camera.x, y: world.y + camera.y };
-}

@@ -15,7 +15,7 @@ import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition,
 import { parseOfflinePinResponse } from "./opfs-db-protocol";
 import { wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState } from "./themes";
-import type { CustomTheme, ThemeState } from "../domain/theme";
+import type { CustomTheme } from "../domain/theme";
 import type { WindowSession } from "./window-session";
 import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./activity";
 import { resolveDesktopContext } from "./desktop-catalog";
@@ -866,32 +866,6 @@ async function releaseOfflineCopiesUnsafe(desktopId: string, rootIds?: string[])
   return { releasedBytes, releasedFiles, skippedFiles };
 }
 
-async function captureDesktopStateUnsafe(): Promise<{
-  entries: DesktopEntry[];
-  layout: DesktopLayout;
-  editorSettings: EditorSettings;
-  appearance: ThemeState;
-  contents: Map<string, Blob>;
-}> {
-  const manifest = await readManifest();
-  const directory = await getFilesDirectory();
-  const contents = new Map<string, Blob>();
-  for (const entry of manifest.entries) {
-    if (entry.kind !== "file") continue;
-    const handle = await directory.getFileHandle(entry.id);
-    const stored = await handle.getFile();
-    if (stored.size !== entry.size) throw new Error(`The stored contents of “${entry.name}” do not match its metadata.`);
-    contents.set(entry.id, stored.slice(0, stored.size, entry.mimeType));
-  }
-  return {
-    entries: manifest.entries,
-    layout: manifestLayout(manifest),
-    editorSettings: manifest.editorSettings,
-    appearance: manifest.appearance,
-    contents,
-  };
-}
-
 async function readDesktopStateUnsafe(desktopId: string): Promise<DesktopStateSnapshot> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   return { entries: manifest.entries, layout: manifestLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
@@ -941,11 +915,6 @@ async function resolveFileByRelativePathUnsafe(
 
   if (!resolved || resolved.kind !== "file") throw new Error(`No local file exists at “${relativePath}”.`);
   return resolved;
-}
-
-async function readFileByRelativePathUnsafe(fromFileId: FileEntry["id"], relativePath: string): Promise<{ file: FileEntry; blob: Blob }> {
-  const file = await resolveFileByRelativePathUnsafe(fromFileId, relativePath);
-  return { file, blob: await readFileUnsafe(file.id) };
 }
 
 async function saveFileUnsafe(id: FileEntry["id"], content: Blob, options: SaveFileOptions = {}): Promise<FileEntry> {
@@ -1011,9 +980,7 @@ export function removeCachedFile(desktopId: string, catalogId: string, id: FileE
 export function loadOfflineInventory(desktopId: string) { return serializeStorage(() => loadOfflineInventoryUnsafe(desktopId)); }
 export function setOfflinePins(desktopId: string, entryIds: string[], pinned: boolean) { return serializeStorage(() => setOfflinePinsUnsafe(desktopId, entryIds, pinned)); }
 export function releaseOfflineCopies(desktopId: string, rootIds?: string[]) { return serializeStorage(() => releaseOfflineCopiesUnsafe(desktopId, rootIds)); }
-export function captureDesktopState() { return serializeStorage(() => captureDesktopStateUnsafe()); }
 export function readDesktopState(desktopId: string) { return serializeStorage(() => readDesktopStateUnsafe(desktopId)); }
-export function readFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string) { return serializeStorage(() => readFileByRelativePathUnsafe(fromFileId, relativePath)); }
 export function resolveFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string) { return serializeStorage(() => resolveFileByRelativePathUnsafe(fromFileId, relativePath)); }
 export function saveTextFile(id: FileEntry["id"], content: string) { return serializeStorage(() => saveTextFileUnsafe(id, content)); }
 export function saveFile(id: FileEntry["id"], content: Blob, options?: SaveFileOptions) { return serializeStorage(() => saveFileUnsafe(id, content, options)); }

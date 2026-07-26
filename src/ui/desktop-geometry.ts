@@ -28,9 +28,6 @@ export type ResponsiveDesktop = {
   positions: ReadonlyMap<string, EntryPosition>;
 };
 
-export type RootEntryPositionUpdate = { entryId: string; position: EntryPosition };
-export type SurfaceSegmentMove = { source: SurfaceSegment; target: SurfaceSegment };
-
 export function segmentKey(segment: SurfaceSegment) {
   return `${segment.row}:${segment.column}`;
 }
@@ -132,36 +129,4 @@ export function responsiveDesktop(entries: readonly DesktopEntry[], size: { widt
     segments,
     positions,
   };
-}
-
-export function reorderDesktopSegments(
-  segments: readonly DesktopSegment[],
-  sourceKey: string,
-  targetIndex: number,
-  size: { width: number; height: number },
-): RootEntryPositionUpdate[] {
-  const sourceIndex = segments.findIndex((segment) => segment.key === sourceKey);
-  const boundedTarget = Math.max(0, Math.min(segments.length - 1, targetIndex));
-  if (sourceIndex < 0 || sourceIndex === boundedTarget) return [];
-  const groups = segments.map((segment) => segment.entries);
-  const [moved] = groups.splice(sourceIndex, 1);
-  groups.splice(boundedTarget, 0, moved);
-  return groups.flatMap((entries, index) => entries.map((entry) => {
-    const local = projectLogicalPosition(entry.position, size).local;
-    return { entryId: entry.id, position: restoreLogicalPosition(local, segments[index].segment, size) };
-  }));
-}
-
-export function reorderSurfaceSegments(
-  segments: readonly SurfaceSegment[],
-  sourceKey: string,
-  targetIndex: number,
-): SurfaceSegmentMove[] {
-  const sourceIndex = segments.findIndex((segment) => segmentKey(segment) === sourceKey);
-  const boundedTarget = Math.max(0, Math.min(segments.length - 1, targetIndex));
-  if (sourceIndex < 0 || sourceIndex === boundedTarget) return [];
-  const reordered = [...segments];
-  const [moved] = reordered.splice(sourceIndex, 1);
-  reordered.splice(boundedTarget, 0, moved);
-  return reordered.map((source, index) => ({ source, target: segments[index] }));
 }

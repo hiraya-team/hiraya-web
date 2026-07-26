@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { breadcrumbForEntry, localSearchResults, mergeActiveDesktopResults, parseSearchResponse, searchAccessibleDesktops } from "../src/lib/search";
+import { breadcrumbForEntry, localSearchResults, parseSearchResponse, searchAccessibleDesktops } from "../src/lib/search";
 import { localDesktopIdentity } from "../src/lib/permissions";
 import type { DesktopEntry } from "../src/types";
 
@@ -46,14 +46,5 @@ describe("desktop search models", () => {
     expect(requests[0].url).toBe("/api/search?q=plans%20%2F%20q3");
     expect(requests[0].init).toMatchObject({ cache: "no-store", credentials: "same-origin" });
     expect(parsed.results[0].entry).toEqual(file);
-  });
-
-  test("keeps the active desktop live when authoritative results are merged", () => {
-    const active = localDesktopIdentity("desk", "Renamed Work");
-    const remote = [{ authorityCatalogId: null, catalogRevision: 2, desktopId: "desk", desktopName: "Old Work", entry: { ...file, name: "Old.txt" }, breadcrumb: [], stale: false }, { authorityCatalogId: "other-authority", catalogRevision: 3, desktopId: "other", desktopName: "Other", entry: file, breadcrumb: [], stale: false }, { authorityCatalogId: "other-authority", catalogRevision: 3, desktopId: "desk", desktopName: "Same ID Elsewhere", entry: { ...file, id: "elsewhere" }, breadcrumb: [], stale: false }];
-    const merged = mergeActiveDesktopResults(remote, active, [folder, file]);
-    expect(merged.filter((result) => result.desktopId === "desk" && result.authorityCatalogId === null).map((result) => result.entry.name)).toEqual(["Plans", "Q3.txt"]);
-    expect(merged.some((result) => result.desktopId === "other")).toBe(true);
-    expect(merged.some((result) => result.entry.id === "elsewhere")).toBe(true);
   });
 });

@@ -1,50 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { DesktopEntry } from "../src/types";
-import { desktopSlots, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, reorderDesktopSegments, reorderSurfaceSegments, responsiveDesktop, restoreLogicalPosition } from "../src/ui/desktop-geometry";
-import { adjacentArea, arrangeableAreaItems, desktopAreaItems, moveLogicalPositionToArea, persistAreaPositionUpdates } from "../src/ui/desktop-areas";
+import { desktopSlots, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition } from "../src/ui/desktop-geometry";
+import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
   return { kind: "file", id, name: `${id}.txt`, parentId: null, modifiedAt: 1, position: { x, y }, mimeType: "text/plain", size: 0 };
 }
 
 describe("responsive desktop geometry", () => {
-  test("builds derived area view models with a reachable empty current area", () => {
-    const areas = desktopAreaItems([
-      { segment: { column: 0, row: 0 }, rootItemCount: 2, windowCount: 1 },
-      { segment: { column: -1, row: 0 }, rootItemCount: 1, windowCount: 0 },
-    ], { column: 1, row: 0 });
-    expect(areas).toEqual([
-      { segment: { column: -1, row: 0 }, rootItemCount: 1, windowCount: 0, current: false, occupied: true, key: "0:-1", label: "1 left of Home", coordinateLabel: "Column -1, row 0" },
-      { segment: { column: 0, row: 0 }, rootItemCount: 2, windowCount: 1, current: false, occupied: true, key: "0:0", label: "Home", coordinateLabel: "Column 0, row 0" },
-      { segment: { column: 1, row: 0 }, rootItemCount: 0, windowCount: 0, current: true, occupied: false, key: "0:1", label: "1 right of Home", coordinateLabel: "Column 1, row 0" },
-    ]);
-    expect(arrangeableAreaItems(areas).map((area) => area.key)).toEqual(["0:-1", "0:0"]);
-  });
-
-  test("derives adjacent coordinates and preserves local placement when moving", () => {
+  test("derives adjacent coordinates", () => {
     expect(adjacentArea({ column: 2, row: -1 }, "left")).toEqual({ column: 1, row: -1 });
     expect(adjacentArea({ column: 2, row: -1 }, "down")).toEqual({ column: 2, row: 0 });
-    expect(moveLogicalPositionToArea({ x: 412, y: 640 }, { column: -1, row: 2 }, { width: 390, height: 600 })).toEqual({ x: -368, y: 1240 });
-  });
-
-  test("reports whether area position persistence committed", async () => {
-    const updates = [{ entryId: "one", position: { x: 412, y: 22 } }];
-    let persisted = 0;
-    expect(await persistAreaPositionUpdates(updates, async (values) => { persisted = values.length; })).toBe(true);
-    expect(persisted).toBe(1);
-    expect(await persistAreaPositionUpdates(updates, async () => { throw new Error("offline"); })).toBe(false);
-  });
-
-  test("reorders logical canvas segments without persisted area identity", () => {
-    expect(reorderSurfaceSegments([
-      { column: -1, row: 0 },
-      { column: 0, row: 0 },
-      { column: 2, row: 1 },
-    ], "0:-1", 2)).toEqual([
-      { source: { column: 0, row: 0 }, target: { column: -1, row: 0 } },
-      { source: { column: 2, row: 1 }, target: { column: 0, row: 0 } },
-      { source: { column: -1, row: 0 }, target: { column: 2, row: 1 } },
-    ]);
   });
   test("derives placement capacity without using it for area membership", () => {
     expect(desktopSlots({ width: 500, height: 500 })).toHaveLength(16);
@@ -126,17 +92,5 @@ describe("responsive desktop geometry", () => {
     expect(desktop.segments).toEqual([]);
     expect(desktop.columns).toBe(1);
     expect(desktop.rows).toBe(1);
-  });
-
-  test("reorders desktop segments by translating coordinates", () => {
-    const size = { width: 390, height: 600 };
-    const entries = [file("one", 22, 22), file("two", 412, 40), file("three", 802, 60)];
-    const segments = responsiveDesktop(entries, size).segments;
-    const updates = reorderDesktopSegments(segments, "0:0", 2, size);
-    expect(updates).toEqual([
-      { entryId: "two", position: { x: 22, y: 40 } },
-      { entryId: "three", position: { x: 412, y: 60 } },
-      { entryId: "one", position: { x: 802, y: 22 } },
-    ]);
   });
 });

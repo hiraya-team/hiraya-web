@@ -332,11 +332,6 @@ export function resolveTheme(state: ThemeState) {
   return state.customThemes.find((theme) => theme.id === state.selectedThemeId)?.definition ?? BUILTIN_THEMES[DEFAULT_THEME_ID].definition;
 }
 
-export function themeName(state: ThemeState, id: string) {
-  if (isBuiltinThemeId(id)) return BUILTIN_THEMES[id].name;
-  return state.customThemes.find((theme) => theme.id === id)?.name ?? "Hiraya Dusk";
-}
-
 const FONT_STACKS: Record<ThemeFontFamily, string> = {
   humanist: '"Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif',
   system: 'system-ui, -apple-system, "Segoe UI", sans-serif',

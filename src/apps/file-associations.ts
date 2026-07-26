@@ -1,6 +1,6 @@
 import type { DesktopEntry, FileEntry } from "../types";
 import type { FileAssociation, InstalledApp } from "./installed-apps";
-import { installedAppAcceptsFile, installedAppAcceptsMatcher, installedAppIsAvailable, installedAppMatchesSavedIdentity, matchingFileType } from "./installed-apps";
+import { installedAppAcceptsFile, installedAppAcceptsMatcher, installedAppIsAvailable, installedAppMatchesSavedIdentity } from "./installed-apps";
 import { SYSTEM_APP_IDS } from "./system-app-ids";
 import type { SystemAppTarget } from "./types";
 
@@ -74,8 +74,4 @@ export function resolveRestoredFileApp(file: Pick<FileEntry, "name" | "mimeType"
   const current = resolveFileApp(file, apps, entries, associations);
   if (!current || current.app.appId !== saved.appId || !saved.digest) return current;
   return installedAppMatchesSavedIdentity(current.app, saved) ? current : null;
-}
-
-export function matchingAssociation(matcher: string, file: Pick<FileEntry, "name" | "mimeType">): boolean {
-  return matchingFileType(file, matcher);
 }

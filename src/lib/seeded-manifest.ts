@@ -23,8 +23,6 @@ export type BundledSeededManifest = Omit<PortableSeededManifest, "entries"> & {
   entries: Array<FolderEntry | BundledSeededFileEntry>;
 };
 
-// Kept for the existing application-facing virtual module API.
-export type SeededFileEntry = BundledSeededFileEntry;
 export type SeededManifest = BundledSeededManifest;
 
 function readSeeded(value: unknown, portable: boolean): PortableSeededManifest {
@@ -74,10 +72,6 @@ export function parsePortableSeededManifest(value: unknown): PortableSeededManif
 
 export function parseBundledSeededManifest(value: unknown): BundledSeededManifest {
   return readSeeded(value, false) as unknown as BundledSeededManifest;
-}
-
-export function parseSeededManifest(value: unknown): SeededManifest {
-  return parseBundledSeededManifest(value);
 }
 
 export function toPortableSeededManifest(

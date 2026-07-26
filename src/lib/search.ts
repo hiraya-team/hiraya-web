@@ -107,10 +107,6 @@ export function localSearchResults(desktop: DesktopIdentity, entries: readonly D
   return entries.map((entry) => ({ authorityCatalogId: desktop.authorityCatalogId, catalogRevision: null, desktopId: desktop.id, desktopName: desktop.name, entry, breadcrumb: breadcrumbForEntry(entries, entry), stale }));
 }
 
-export function mergeActiveDesktopResults(remote: readonly DesktopSearchResult[], activeDesktop: DesktopIdentity, entries: readonly DesktopEntry[]) {
-  return [...remote.filter((result) => result.desktopId !== activeDesktop.id || result.authorityCatalogId !== activeDesktop.authorityCatalogId), ...localSearchResults(activeDesktop, entries, false)];
-}
-
 export async function searchAccessibleDesktops(query: string, signal: AbortSignal, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
   const response = requireAuthenticatedResponse(await fetchImpl(API_ROUTES.search(query), { cache: "no-store", credentials: "same-origin", signal }));
   if (!response.ok) throw new Error(`Hiraya search is unavailable (${response.status}).`);

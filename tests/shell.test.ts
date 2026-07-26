@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -73,9 +73,5 @@ describe("cohesive shell view models", () => {
     expect(areaSwitcherDragCommits(-66, false, 300)).toBeTrue();
     expect(areaSwitcherDragCommits(83, true, 300)).toBeFalse();
     expect(areaSwitcherDragCommits(84, true, 300)).toBeTrue();
-  });
-
-  test("counts only occupied regions, excluding an empty current region", () => {
-    expect(occupiedAreaCount([{ occupied: true }, { occupied: false }, { occupied: true }])).toBe(2);
   });
 });
