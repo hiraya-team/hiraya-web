@@ -36,6 +36,14 @@ describe("AppWindow mobile actions", () => {
     expect(markup).toContain("Content");
   });
 
+  test("sizes mobile windows from the live desktop container", () => {
+    const markup = renderToStaticMarkup(<AppWindow {...base} />);
+
+    expect(markup).toContain("width:100cqw");
+    expect(markup).toContain("height:100cqh");
+    expect(markup).not.toContain("height:300px");
+  });
+
   test("routes suppressed mobile header portals to the global shell", () => {
     const actions = {} as HTMLDivElement;
     const markup = renderToStaticMarkup(

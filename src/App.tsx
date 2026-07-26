@@ -2982,10 +2982,13 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function setAreaTrackTransform(x: number, y: number) {
-    const transform = `translate3d(${x}px, ${y}px, 0)`;
-    if (canvasRef.current) canvasRef.current.style.transform = transform;
-    if (windowTrackRef.current) windowTrackRef.current.style.transform = transform;
-    if (frameTrackRef.current) frameTrackRef.current.style.transform = transform;
+    desktopRef.current?.style.setProperty("--area-track-x", `${x}px`);
+    desktopRef.current?.style.setProperty("--area-track-y", `${y}px`);
+  }
+
+  function resetAreaTrackTransform() {
+    desktopRef.current?.style.removeProperty("--area-track-x");
+    desktopRef.current?.style.removeProperty("--area-track-y");
   }
 
   function setAreaTransitionDepth(depth: number) {
@@ -2999,6 +3002,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
     areaTransitionTimerRef.current = null;
     setAreaTransition(null);
+    resetAreaTrackTransform();
     desktopRef.current?.style.removeProperty("--area-stage-scale");
     desktopRef.current?.style.removeProperty("--area-frame-opacity");
   }
@@ -3142,7 +3146,6 @@ function App({ session }: { session: AuthSession | null }) {
       completeAreaTransition();
       if (canvasRef.current) {
         delete canvasRef.current.dataset.swiping;
-        setAreaTrackTransform(-(activeSegment.column - minColumn) * desktopSize.width, -(activeSegment.row - minRow) * desktopSize.height);
       }
       return;
     }
@@ -3374,7 +3377,10 @@ function App({ session }: { session: AuthSession | null }) {
     const generation = ++areaTransitionGenerationRef.current;
     if (swipe.axis) {
       setAreaTransition({ source: swipe.startSegment, target: transitionTarget, phase: "settling", kind: "gesture" });
-      window.requestAnimationFrame(() => setAreaTransitionDepth(0));
+      window.requestAnimationFrame(() => {
+        resetAreaTrackTransform();
+        setAreaTransitionDepth(0);
+      });
     }
     if (canvasRef.current) {
       delete canvasRef.current.dataset.swiping;
@@ -3956,7 +3962,7 @@ function App({ session }: { session: AuthSession | null }) {
             style={{
               width: segmentColumns * desktopSize.width,
               height: segmentRows * desktopSize.height,
-              transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+              transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
             }}
           >
           {responsive.segments.flatMap((desktopSegment) =>
@@ -4081,7 +4087,7 @@ function App({ session }: { session: AuthSession | null }) {
             style={{
               width: segmentColumns * desktopSize.width,
               height: segmentRows * desktopSize.height,
-              transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+              transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
             }}
           >
           {runningApps.map((app, index) => {
@@ -4330,7 +4336,7 @@ function App({ session }: { session: AuthSession | null }) {
               style={{
                 width: segmentColumns * desktopSize.width,
                 height: segmentRows * desktopSize.height,
-                transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+                transform: `translate3d(var(--area-track-x, ${-canvasOffset.column * desktopSize.width}px), var(--area-track-y, ${-canvasOffset.row * desktopSize.height}px), 0)`,
               }}
             >
               {[areaTransition.source, areaTransition.target].filter((segment, index, segments) => segments.findIndex((candidate) => segmentKey(candidate) === segmentKey(segment)) === index).map((segment) => (
