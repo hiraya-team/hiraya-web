@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 4 - synchronization platform
+- Current phase: 5 - authenticated desktop composition
 - State: ready to start
-- Next action: define the synchronization storage port, then extract transport/connectivity and replay mechanics from `sync.ts`
+- Next action: extract running-window types and route/history coordination from `App.tsx`, then move shell render layers behind explicit props
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -94,7 +94,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 1: add characterization coverage for high-risk extraction seams.
 - [x] Phase 2: establish neutral domain models and platform ports.
 - [x] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
-- [ ] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
+- [x] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
 - [ ] Phase 5: reduce `App.tsx` to authenticated desktop composition.
 - [ ] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
 - [ ] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
@@ -161,6 +161,17 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 
+### Phase 4
+
+- Added a named synchronization storage port and moved the browser OPFS adapter out of `SyncEngine` construction.
+- Extracted authenticated JSON request policy and synchronization errors into `src/platform/sync/http-client.ts`.
+- Extracted EventSource and health timer ownership into `src/platform/sync/connectivity.ts`; reconciliation decisions remain in the engine.
+- Extracted idempotency headers, mutation route selection, direct blob upload, commit retry classification, and abort cleanup into `src/platform/sync/outbox-transport.ts`.
+- Kept replay ordering and reconciliation generation checks together in `SyncEngine`, where they coordinate storage publication and lifecycle cancellation.
+- `bun test`: passed, 395 tests across 75 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -172,6 +183,7 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `src/lib/opfs.ts` re-exports neutral desktop-state, preference, save-option, and conflict contracts while consumers migrate to direct domain imports.
 - `src/lib/desktop-state.ts` and `src/lib/themes.ts` re-export domain types while runtime parser imports migrate.
 - Storage worker entrypoints and protocol/schema leaves remain under `src/lib/`; the platform database client owns them but paths are deferred to avoid mixing a large worker-relative-path move into the behavioral extraction.
+- `src/platform/sync/storage-port.ts` derives its method signatures from the browser adapter during migration; phase 10 should replace this with implementation-independent port declarations once callers have stabilized.
 
 ## Known Risks
 
@@ -193,4 +205,4 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Current Phase Notes
 
-Phase 4 should preserve the existing `SyncEngine` public API while extracting collaborators. Start by replacing `Pick<typeof storage, ...>` with an explicit storage port, then move HTTP/blob transport and SSE/health connectivity. Replay and reconciliation can follow once their side effects are parameterized.
+Phase 5 begins with low-risk pure ownership: running-window models, route/history state, and shell render layers. Do not start by moving all React state into one large hook; extract cohesive controllers one at a time and keep `App.tsx` as the composition root throughout.

@@ -84,4 +84,20 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["src/platform/sync/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ui/**", "**/components/**", "**/App", "**/PublicDesktop"],
+              message: "Synchronization platform modules must remain independent of React UI and composition roots.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

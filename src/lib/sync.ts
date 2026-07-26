@@ -1,8 +1,7 @@
 import type { SeededManifest } from "./seeded-manifest";
-import * as storage from "./opfs";
 import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validation";
 import { API_ROUTES } from "./api-routes";
-import { assertValidId, parseBlobMutationPreparation, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
+import { assertValidId, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, isAccessRevocationRecord, outboxDesktopRetentionIds, outboxOperationDesktopIds } from "./outbox";
@@ -10,11 +9,15 @@ import { parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
 import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
 import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";
-import { AuthenticationRequiredError, redirectToLogin, requireAuthenticatedResponse } from "./auth";
-import { mapWithConcurrency, sha256Blob, uploadBlobDigests } from "./blob-transfer";
+import { AuthenticationRequiredError, redirectToLogin } from "./auth";
+import { mapWithConcurrency, sha256Blob } from "./blob-transfer";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, type OfflineStorageInventory } from "./offline-availability";
 import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
+import { browserSyncStorage, type SyncStorage } from "../platform/sync/storage-port";
+import { SyncHttpClient, SyncRequestError } from "../platform/sync/http-client";
+import { SyncConnectivity } from "../platform/sync/connectivity";
+import { sendOutboxOperation } from "../platform/sync/outbox-transport";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never
@@ -30,23 +33,6 @@ export async function fetchServerBuildTimestamp(fetchImpl: typeof fetch = global
   if (typeof health !== "object" || health === null || !("buildTimestamp" in health) || typeof health.buildTimestamp !== "string") return null;
   return health.buildTimestamp || null;
 }
-
-type StorageBoundary = Pick<typeof storage,
-  "applyRemoteDesktop" | "createEntries" | "createFile" | "createFolder" | "createTextFile" | "deleteEntries" | "deleteEntry" | "importFiles" | "loadDesktop" |
-  "moveEntries" | "moveEntry" | "readCurrentDesktop" | "captureDesktopState" | "readFile" | "readCachedFile" | "cacheRemoteFile" | "removeCachedFile" | "resolveFileByRelativePath" |
-  "readDesktopState" |
-  "renameEntry" | "saveDesktopLayout" | "saveEditorSettings" | "saveFile" | "saveTextFile" | "updateEntryPosition"
-  | "updateRootEntryPositions" | "enqueueMutation" | "readOutbox" | "bindOutboxCatalog" |
-  "acknowledgeMutation" | "blockMutation" | "discardDesktopProjection" | "readPendingContent" |
-  "selectTheme" | "saveCustomTheme" | "deleteCustomTheme"
-  | "listActivity"
-  | "transferEntries" | "enqueueTransfer"
-  | "createDesktop" | "renameDesktop" | "deleteDesktop"
-  | "createOfflineDesktop"
-  | "listDesktops" | "ensureDesktop"
-  | "pruneLocalDesktops"
-  | "loadOfflineInventory" | "setOfflinePins" | "releaseOfflineCopies"
->;
 
 export type OfflineOperationProgress = {
   desktopId: string;
@@ -68,22 +54,9 @@ export type SyncEngineOptions = {
   eventSource?: typeof EventSource;
   setInterval?: typeof globalThis.setInterval;
   clearInterval?: typeof globalThis.clearInterval;
-  storage?: StorageBoundary;
+  storage?: SyncStorage;
   onUnauthorized?: () => void;
 };
-
-class SyncRequestError extends Error {
-  constructor(message: string, readonly status: number | null, readonly permanent: boolean) {
-    super(message);
-  }
-}
-
-function retryableBlobCommitError(error: unknown): error is SyncRequestError {
-  return error instanceof SyncRequestError && (error.status === 410 || error.status === 404 && error.message === "upload reservation not found" || error.status === 409 && (
-    error.message === "a reserved upload is missing" ||
-    error.message === "a reserved upload failed size or checksum verification"
-  ));
-}
 
 export class VirtualFileUnavailableError extends Error {
   constructor(message = "This file is not available offline yet. Reconnect and try again.") {
@@ -111,10 +84,6 @@ function localEntry(entry: RemoteEntry): DesktopEntry {
   void _revision;
   void _contentRevision;
   return local;
-}
-
-function serverEntry(entry: DesktopEntry) {
-  return entry;
 }
 
 function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
@@ -150,16 +119,13 @@ function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
 export class SyncEngine {
   private readonly frontendOnly: boolean;
   private readonly fetchImpl: typeof fetch;
-  private readonly EventSourceImpl: typeof EventSource | undefined;
-  private readonly setIntervalImpl: typeof globalThis.setInterval;
-  private readonly clearIntervalImpl: typeof globalThis.clearInterval;
-  private readonly storage: StorageBoundary;
+  private readonly storage: SyncStorage;
   private readonly onUnauthorized: () => void;
+  private readonly http: SyncHttpClient;
+  private readonly connectivity: SyncConnectivity;
   private readonly directMutationClientId = crypto.randomUUID();
   private desktop: DesktopStateSnapshot | null = null;
   private status: SyncStatus = "connecting";
-  private events: EventSource | null = null;
-  private healthTimer: ReturnType<typeof globalThis.setInterval> | null = null;
   private work: Promise<unknown> = Promise.resolve();
   private startPromise: Promise<{ desktop: DesktopStateSnapshot; status: SyncStatus }> | null = null;
   private running = false;
@@ -185,11 +151,21 @@ export class SyncEngine {
   constructor(options: SyncEngineOptions = {}) {
     this.frontendOnly = options.frontendOnly ?? false;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
-    this.EventSourceImpl = "eventSource" in options ? options.eventSource : globalThis.EventSource;
-    this.setIntervalImpl = options.setInterval ?? globalThis.setInterval.bind(globalThis);
-    this.clearIntervalImpl = options.clearInterval ?? globalThis.clearInterval.bind(globalThis);
-    this.storage = options.storage ?? storage;
+    this.storage = options.storage ?? browserSyncStorage;
     this.onUnauthorized = options.onUnauthorized ?? redirectToLogin;
+    this.http = new SyncHttpClient({
+      fetch: this.fetchImpl,
+      onUnauthorized: this.onUnauthorized,
+      onAuthenticationRequired: () => this.pauseForAuthentication(),
+      authenticationPaused: () => this.authenticationPaused,
+      onUnavailable: () => this.setStatus("offline"),
+    });
+    this.connectivity = new SyncConnectivity(
+      "eventSource" in options ? options.eventSource : globalThis.EventSource,
+      options.setInterval ?? globalThis.setInterval.bind(globalThis),
+      options.clearInterval ?? globalThis.clearInterval.bind(globalThis),
+      API_ROUTES.events,
+    );
   }
 
   start(desktopId: string, viewport: EntryPosition, seeded: SeededManifest | null = null) {
@@ -235,10 +211,7 @@ export class SyncEngine {
     this.running = false;
     this.generation += 1;
     this.startPromise = null;
-    this.events?.close();
-    this.events = null;
-    if (this.healthTimer !== null) this.clearIntervalImpl(this.healthTimer);
-    this.healthTimer = null;
+    this.connectivity.stop();
     this.contentLoads.clear();
     this.offlineInventoryLoad = null;
     this.offlineRefresh = null;
@@ -376,35 +349,18 @@ export class SyncEngine {
   }
 
   private async requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
-    if (this.authenticationPaused) throw new AuthenticationRequiredError();
-    let response: Response;
-    try {
-      response = await this.fetchImpl(input, { credentials: "same-origin", ...init });
-    } catch {
-      this.setStatus("offline");
-      throw new SyncRequestError("The Hiraya server is unavailable. The change remains queued.", null, false);
-    }
-    this.requireAuthentication(response);
-    if (!response.ok) {
-      const body = await response.json().catch(() => null) as { error?: string } | null;
-      throw new SyncRequestError(body?.error || `The Hiraya server rejected the request (${response.status}).`, response.status, response.status >= 400 && response.status < 500 && response.status !== 408 && response.status !== 429);
-    }
-    return response.json();
+    return this.http.requestJson(input, init);
   }
 
   private pauseForAuthentication() {
     if (this.authenticationPaused) return;
     this.authenticationPaused = true;
-    this.events?.close();
-    this.events = null;
-    if (this.healthTimer !== null) this.clearIntervalImpl(this.healthTimer);
-    this.healthTimer = null;
+    this.connectivity.stop();
     this.setStatus("connecting");
   }
 
   private requireAuthentication(response: Response) {
-    if (response.status === 401) this.pauseForAuthentication();
-    return requireAuthenticatedResponse(response, this.onUnauthorized);
+    return this.http.requireAuthentication(response);
   }
 
   private async requestDesktop(input: RequestInfo | URL, init?: RequestInit) {
@@ -457,132 +413,13 @@ export class SyncEngine {
     await this.publishOutbox();
   }
 
-  private idempotencyHeaders(record: OutboxRecord, headers?: HeadersInit) {
-    const result = new Headers(headers);
-    result.set("X-Hiraya-Client-ID", record.clientId);
-    result.set("X-Hiraya-Operation-ID", record.operationId);
-    return result;
-  }
-
-  private async abortBlobMutation(record: OutboxRecord, uploadId: string) {
-    try {
-      const response = await this.fetchImpl(API_ROUTES.desktopBlobMutation(record.desktopId, uploadId), {
-        method: "DELETE",
-        headers: this.idempotencyHeaders(record),
-        credentials: "same-origin",
-        cache: "no-store",
-      });
-      this.requireAuthentication(response);
-    } catch {
-      // A later replay starts with a fresh prepare, so abort cleanup is best effort.
-    }
-  }
-
-  private async sendBlobMutation(record: OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }) {
-    const operation = record.operation;
-    const files = operation.kind === "create" ? operation.entries.filter((entry): entry is FileEntry => entry.kind === "file") : [operation.entry];
-    const contents = new Map<string, Blob>();
-    const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
-      const content = await this.storage.readPendingContent(record.operationId, entry.id);
-      if (content.size !== entry.size) throw new Error(`The staged contents of “${entry.name}” have an unexpected size.`);
-      contents.set(entry.id, content);
-      return [entry.id, await uploadBlobDigests(content)] as const;
-    }));
-    const entries = operation.kind === "create" ? operation.entries : [operation.entry];
-    const prepared = parseBlobMutationPreparation(await this.requestJson(API_ROUTES.desktopBlobMutations(record.desktopId), {
-      method: "POST",
-      headers: this.idempotencyHeaders(record, { "Content-Type": "application/json" }),
-      body: JSON.stringify({ kind: operation.kind, items: entries.map((entry) => ({ entry: serverEntry(entry), ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) })) }),
-    }), files.map((entry) => entry.id));
-    if (prepared.state === "committed") return;
-    let commitStarted = false;
-    try {
-      await mapWithConcurrency(prepared.items, 3, async (target) => {
-        let response: Response;
-        try {
-          response = await this.fetchImpl(target.access.url, {
-            method: target.access.method,
-            headers: target.access.headers,
-            body: contents.get(target.entryId)!,
-            credentials: "omit",
-            referrerPolicy: "no-referrer",
-            redirect: "error",
-          });
-        } catch {
-          throw new SyncRequestError("Direct file upload failed. The change remains queued.", null, false);
-        }
-        if (!response.ok) throw new SyncRequestError(`Direct file upload failed (${response.status}). The change remains queued.`, null, false);
-      });
-      commitStarted = true;
-      try {
-        await this.requestJson(API_ROUTES.desktopBlobMutationCommit(record.desktopId, prepared.uploadId), {
-          method: "POST",
-          headers: this.idempotencyHeaders(record),
-        });
-      } catch (error) {
-        if (retryableBlobCommitError(error)) throw new SyncRequestError(error.message, error.status, false);
-        throw error;
-      }
-    } catch (error) {
-      if (!commitStarted) await this.abortBlobMutation(record, prepared.uploadId);
-      throw error;
-    }
-  }
-
   private async sendOutboxOperation(record: OutboxRecord) {
-    const operation = record.operation;
-    const desktopId = record.desktopId;
-    const headers = (value?: HeadersInit) => this.idempotencyHeaders(record, value);
-    switch (operation.kind) {
-      case "create-desktop":
-        await this.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) });
-        return;
-      case "rename-desktop":
-        await this.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name }) });
-        return;
-      case "delete-desktop":
-        await this.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers() });
-        return;
-      case "create": {
-        await this.sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" }> });
-        return;
-      }
-      case "update-entry":
-        await this.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entry.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(serverEntry(operation.entry)) });
-        return;
-      case "delete":
-        await this.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "DELETE", headers: headers() });
-        return;
-      case "delete-entries":
-        await this.requestJson(API_ROUTES.desktopDeleteEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds }) });
-        return;
-      case "move-entries":
-        await this.requestJson(API_ROUTES.desktopMoveEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, parentId: operation.parentId }) });
-        return;
-      case "entry-transfer":
-        await this.requestJson(API_ROUTES.entryTransfers, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ sourceDesktopId: desktopId, destinationDesktopId: operation.destinationDesktopId, entryIds: operation.entryIds, parentId: operation.parentId }) });
-        return;
-      case "save-content":
-        await this.sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "save-content" }> });
-        return;
-      case "root-entry-positions":
-        await this.requestJson(API_ROUTES.desktopRootEntryPositions(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.positions) });
-        return;
-      case "layout":
-        await this.requestJson(API_ROUTES.desktopLayout(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.layout) });
-        return;
-      case "editor-settings":
-        await this.requestJson(API_ROUTES.desktopEditorSettings(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.settings) });
-        return;
-      case "select-theme":
-        await this.requestJson(API_ROUTES.desktopThemeSelection(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ themeId: operation.themeId }) });
-        return;
-      case "upsert-theme":
-        await this.requestJson(API_ROUTES.desktopTheme(desktopId, operation.theme.id), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.theme) });
-        return;
-      case "delete-theme":
-        await this.requestJson(API_ROUTES.desktopTheme(desktopId, operation.themeId), { method: "DELETE", headers: headers() });
-    }
+    return sendOutboxOperation(record, {
+      fetch: this.fetchImpl,
+      requestJson: (input, init) => this.requestJson(input, init),
+      requireAuthentication: (response) => this.requireAuthentication(response),
+      readPendingContent: (operationId, entryId) => this.storage.readPendingContent(operationId, entryId),
+    });
   }
 
   private async replayRecord(record: OutboxRecord, generation: number, retryBlocked = false) {
@@ -665,18 +502,8 @@ export class SyncEngine {
   }
 
   private startEvents() {
-    this.events?.close();
-    let events: EventSource | null = null;
-    try {
-      if (this.EventSourceImpl) events = new this.EventSourceImpl(API_ROUTES.events);
-    } catch {
-      events = null;
-    }
-    if (this.healthTimer !== null) this.clearIntervalImpl(this.healthTimer);
-    this.healthTimer = this.setIntervalImpl(() => { void this.checkHealth(); }, 5_000);
-    if (!events) return;
-    this.events = events;
-    events.onopen = () => {
+    this.connectivity.start({
+      onOpen: () => {
       if (!this.running) return;
       if (this.status === "blocked") return;
       if (this.status !== "online") this.setStatus("connecting");
@@ -689,13 +516,13 @@ export class SyncEngine {
       }).catch((error) => {
         if (this.running) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
       });
-    };
-    events.onerror = () => {
+      },
+      onError: () => {
       if (!this.running || this.status === "blocked" || this.authenticationPaused) return;
       this.setStatus("offline");
       void this.checkHealth();
-    };
-    events.addEventListener("catalog", (event) => {
+      },
+      onCatalog: (event) => {
       if (!this.running) return;
       if (this.status === "blocked") return;
       let revision = Number.NaN;
@@ -719,6 +546,8 @@ export class SyncEngine {
       }).catch(() => {
         if (this.running) this.setStatus("offline");
       });
+      },
+      onPoll: () => { void this.checkHealth(); },
     });
   }
 
