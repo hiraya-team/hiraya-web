@@ -4226,8 +4226,8 @@ function App({ session }: { session: AuthSession | null }) {
             <span aria-hidden="true" />
           </button>
           <div className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}>
-            {runningApps.length > 0 && <header className="desktop-minimap__header">
-              <div className="desktop-minimap__header-tools">
+            <header className="desktop-minimap__header">
+              {runningApps.length > 0 && <div className="desktop-minimap__header-tools">
                 <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
@@ -4242,8 +4242,8 @@ function App({ session }: { session: AuthSession | null }) {
                   {!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>}
                   <button className="desktop-minimap__window-close" type="button" onClick={() => void requestCloseApp(focusedApp.id)} title={`Close ${focusedAppLabel}`} aria-label={`Close ${focusedAppLabel}`}><X size={15} /></button>
                 </div>}
-              </div>
-            </header>}
+              </div>}
+            </header>
             <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
               <div className="desktop-minimap__grid" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
                     {minimapSegments.map((desktopSegment, visibleIndex) => {

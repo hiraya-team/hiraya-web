@@ -108,7 +108,8 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('className="desktop-minimap__window-controls" role="group"');
-    expect(app).toContain('{runningApps.length > 0 && <header className="desktop-minimap__header">');
+    expect(app).toContain('<header className="desktop-minimap__header">');
+    expect(app).toContain('{runningApps.length > 0 && <div className="desktop-minimap__header-tools">');
     expect(app).not.toContain("<strong>Areas</strong>");
     expect(app).toContain('aria-label={`Minimize ${focusedAppLabel}`}');
     expect(app).toContain('{!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)}');
