@@ -1713,6 +1713,13 @@ function App({ session }: { session: AuthSession | null }) {
     function onGlobalShortcut(event: KeyboardEvent) {
       if (shortcutsSuspended || transientMenuOpen()) return;
       const modifier = event.metaKey || event.ctrlKey;
+      if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space") {
+        event.preventDefault();
+        areaSwitcherInternalActivationRef.current = false;
+        areaSwitcherRestoreFocusRef.current = false;
+        setMinimapExpanded(true);
+        return;
+      }
       if (modifier && event.key.toLowerCase() === "k") {
         event.preventDefault();
         setActivePanel("search");
@@ -3461,6 +3468,7 @@ function App({ session }: { session: AuthSession | null }) {
   const searchCommands = commandService.list(commandContext);
   const keyboardShortcuts: KeyboardShortcut[] = [
     { id: "search", group: "Navigation", label: "Search files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
+    { id: "area-switcher", group: "Navigation", label: "Open area switcher", keys: ["Ctrl", "Space"] },
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
     { id: "copy", group: "Files", label: "Copy selected items", keys: ["Ctrl/⌘", "C"] },

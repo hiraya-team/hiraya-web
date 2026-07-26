@@ -84,6 +84,8 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain("areaSwitcherHandleRef.current?.focus()");
+    expect(app).toContain('event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space"');
+    expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Open area switcher", keys: ["Ctrl", "Space"] }');
     expect(app).toContain("mobileSummary={homeRelativeAreaLabel(activeSegment)}");
     expect(app).not.toContain("<MapTrifold /> Expand Area Map");
     expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
