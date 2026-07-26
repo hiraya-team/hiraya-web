@@ -95,15 +95,14 @@ import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
-import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
-import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
-import { isAppPackageName, RpcDispatcher, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
+import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
+import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
-import { FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
+import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
-import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "./apps/system-apps";
+import { SYSTEM_APP_CATALOG } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
 import type { SystemAppTarget } from "./apps/types";
 import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
@@ -136,6 +135,7 @@ import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { useAppPlatform } from "./features/app-management/controller";
+import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
 import { useDesktopSelection } from "./features/selection/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -2389,82 +2389,21 @@ function App({ session }: { session: AuthSession | null }) {
     return true;
   }
 
-  async function launchInstalledApp(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource: "launcher" | "file" | "restore" = target ? "file" : "launcher") {
+  async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
     setError("");
-    let pendingInstanceId: string | null = null;
-    let pendingHost: { close(): void } | null = null;
     try {
-      const blob =
-        install.source === "system"
-          ? await fetch(systemAppArchiveUrl({ archivePath: install.archivePath })).then((response) => {
-              if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
-              return response.blob();
-            })
-          : await readFile(install.packageEntryId);
-      const { inspectAppArchive } = await import("@hiraya/app-cli");
-      const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
-      if (appPackage.digest !== install.digest || appPackage.manifest.id !== install.appId) throw new Error(`${install.manifest.name} failed package verification.`);
-      const systemTarget: SystemAppTarget | undefined = target
-        ? {
-            kind: "system",
-            appId: install.appId,
-            targetKind: target === "root" ? "root" : (target?.kind ?? "root"),
-            entryId: target === "root" || !target ? null : target.id,
-            source: install.source,
-            digest: install.digest,
-            permissions: [...install.manifest.permissions],
-          }
-        : undefined;
-      const id = systemTarget ? builtinAppTargetId(systemTarget) : `sandbox:${install.packageEntryId}:${crypto.randomUUID()}`;
-      const shouldFocus = !systemTarget || routeTargetsAppEntry(routeRef.current, systemTarget);
-      const existing = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === id);
-      if (existing) {
-        if (shouldFocus) focusApp(existing.id);
-        return;
-      }
-      pendingInstanceId = id;
-      let base = createAppBase(id, "sandbox");
-      if (appPackage.manifest.window) {
-        const window = appPackage.manifest.window;
-        const local = initialWindowBounds(desktopSize, { ...window, index: runningAppsRef.current.filter((app) => appIsInSegment(app, activeSegment)).length });
-        base = { ...base, bounds: { ...local, ...restoreLogicalPosition(local, activeSegment, desktopSize) } };
-      }
-      const effectivePermissions = () => appPackage.manifest.permissions.filter((permission) => permission !== "files:write" || canMutateRef.current);
-      appCapabilities.setInstanceMutationAllowed(id, canMutateRef.current);
-      const relativeFolder = target && target !== "root" && target.kind === "file" && install.appId === SYSTEM_APP_IDS.markdownPreview && target.parentId ? entriesRef.current.find((entry): entry is FolderEntry => entry.id === target.parentId && entry.kind === "folder") : undefined;
-      const markdownAtRoot = install.appId === SYSTEM_APP_IDS.markdownPreview && target && target !== "root" && target.kind === "file" && target.parentId === null;
-      const launchCapabilities = grantLaunchCapabilities(appCapabilities, id, appPackage.manifest.permissions, {
-        files: target && target !== "root" && target.kind === "file" ? [target] : [],
-        folders: target && target !== "root" && target.kind === "folder" ? [target] : relativeFolder ? [relativeFolder] : [],
-        root: target === "root" || (install.source === "system" && !target) || Boolean(markdownAtRoot),
-      });
-      const host = appHostServices.openInstance({
-        instanceId: id,
-        launch: {
-          protocolVersion: 1,
-          appId: appPackage.manifest.id,
-          launchId: crypto.randomUUID(),
-          source: launchSource,
-          files: launchCapabilities.files,
-          folders: launchCapabilities.folders,
-          arguments: install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
-          theme: mapThemeTokens(activeTheme),
-        },
-        window: { focused: shouldFocus, maximized: false, fullscreen: false, width: Math.round(base.bounds.width), height: Math.round(base.bounds.height) },
-        title: appPackage.manifest.name,
-        getCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
-      });
-      pendingHost = host;
-      const files = new FileService({
-        appInstanceId: id,
-        permissions: effectivePermissions,
+      const result = await launchSandboxApp({
+        install,
+        target,
+        source: launchSource,
+        activeSegment,
+        desktopSize,
+        runningApps: runningAppsRef.current,
+        activeTheme,
         capabilities: appCapabilities,
-        getSnapshot: () =>
-          appSnapshotRef.current ??
-          (() => {
-            throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE");
-          })(),
-        sync: {
+        hostServices: appHostServices,
+        commandService,
+        fileSync: {
           readFile,
           saveFile: saveAppFile,
           createFile: createAppFile,
@@ -2474,60 +2413,43 @@ function App({ session }: { session: AuthSession | null }) {
           deleteEntry: deleteAppEntry,
           deleteEntries,
         },
+        getEntries: () => entriesRef.current,
+        getSnapshot: () => appSnapshotRef.current ?? (() => { throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE"); })(),
+        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
+        getAppCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
+        canMutate: () => canMutateRef.current,
+        shouldFocusTarget: (systemTarget) => routeTargetsAppEntry(routeRef.current, systemTarget),
+        createBase: (id) => createAppBase(id, "sandbox"),
         createPosition: () => positionFor(null),
-      });
-      const entryIds = (handles: (FileHandle | FolderHandle)[], operation: "stat" | "write" = "stat") => handles.map((handle) => files.entryForHost(handle, operation).id);
-      const runtimeHost = {
-        ...host,
-        dialogs: {
-          openFile: host.dialogs.openFile,
-          openFolder: host.dialogs.openFolder,
-          saveFile: host.dialogs.saveFile,
-          confirm: async (params: { title: string; message: string; confirmLabel?: string; destructive?: boolean }) => requestConfirmation({ title: params.title, message: params.message, confirmLabel: params.confirmLabel ?? "Confirm", danger: params.destructive }),
+        confirm: requestConfirmation,
+        openEntry: (entry) => handleOpenRef.current(entry),
+        importFiles: (parentId) => chooseUploadRef.current(parentId),
+        importFolder: (parentId) => chooseFolderImportRef.current(parentId),
+        showEntryActions: (instanceId, ids) => {
+          replaceSelection(`app:${instanceId}`, ids);
+          setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
         },
-        host: {
-          openEntry: ({ handle }: { handle: FileHandle | FolderHandle }) => handleOpenRef.current(files.entryForHost(handle)),
-          importFiles: ({ parent }: { parent: FolderHandle | null }) => chooseUploadRef.current(files.folderIdForHost(parent, "create")),
-          importFolder: ({ parent }: { parent: FolderHandle | null }) => chooseFolderImportRef.current(files.folderIdForHost(parent, "create")),
-          showEntryActions: ({ handles }: { handles: (FileHandle | FolderHandle)[] }) => {
-            const ids = entryIds(handles);
-            replaceSelection(`app:${id}`, ids);
-            setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
-          },
-          getEntryStatus: ({ handles }: { handles: (FileHandle | FolderHandle)[] }) =>
-            handles.map((handle) => {
-              const status = offlineModelRef.current?.entries[files.entryForHost(handle).id];
-              return { handle, status: status?.status ?? "unavailable", pinned: status?.pinned ?? false, directlyPinned: status?.directlyPinned ?? false };
-            }),
-          setOfflinePinned: async ({ handles, pinned }: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }) => {
-            const ids = entryIds(handles);
-            if (pinned) await makeAvailableOfflineRef.current(ids);
-            else await unpinOfflineRef.current(ids);
-          },
-          setExternalEmbeddedPreviews: async ({ enabled }: { enabled: boolean }) => {
-            if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.markdownPreview) throw new HostServiceError("Only the bundled Markdown app can change this preference.", "PERMISSION_DENIED");
-            await changeExternalEmbeddedPreviews(enabled);
-          },
+        getEntryStatus: (id) => {
+          const status = offlineModelRef.current?.entries[id];
+          return { status: status?.status ?? "unavailable", pinned: status?.pinned ?? false, directlyPinned: status?.directlyPinned ?? false };
         },
-      };
-      const dispatcher = new RpcDispatcher({
-        permissions: effectivePermissions,
-        host: runtimeHost,
-        files,
-        commands: new RuntimeCommandContributions(commandService, appPackage.manifest.id, (commandId) => dispatcher.emit("commands.invoked", { id: commandId })),
+        setOfflinePinned: async (ids, pinned) => {
+          if (pinned) await makeAvailableOfflineRef.current(ids);
+          else await unpinOfflineRef.current(ids);
+        },
+        setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
       });
-      const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, ...(systemTarget ? { systemTarget } : {}) };
-      updateRunningApps([...runningAppsRef.current, app]);
-      if (shouldFocus) setFocusedApp(id);
-      if (!systemTarget && launchSource !== "restore") {
+      if (result.kind === "existing") {
+        if (result.shouldFocus) focusApp(result.id);
+        return;
+      }
+      updateRunningApps([...runningAppsRef.current, result.app]);
+      if (result.shouldFocus) setFocusedApp(result.app.id);
+      if (!result.systemTarget && launchSource !== "restore") {
         const current = window.history.state as Partial<RouteHistoryState> | null;
         if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash), "", window.location.href);
       }
-      pendingInstanceId = null;
-      pendingHost = null;
     } catch (openError) {
-      pendingHost?.close();
-      if (pendingInstanceId) appCapabilities.revokeInstance(pendingInstanceId);
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
     }
   }

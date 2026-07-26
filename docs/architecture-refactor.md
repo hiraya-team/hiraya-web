@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 6 - app lifecycle isolation
+- Current phase: 7 - reusable interaction mechanics
 - State: in progress
-- Next action: extract verified sandbox instance construction and teardown from the authenticated composition root
+- Next action: audit authenticated and public desktop pointer interactions and extract only behaviorally identical mechanics
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -96,7 +96,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
 - [x] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
 - [x] Phase 5: reduce `App.tsx` to authenticated desktop composition.
-- [ ] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
+- [x] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
 - [ ] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
 - [ ] Phase 8: modularize the design system and CSS without redesigning the desktop.
 - [ ] Phase 9: recompose the public desktop from read-only capabilities.
@@ -228,6 +228,16 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Moved durable installed-app, bundled-app, association, and quarantine loading and mutations behind the app-management controller.
 - Bundled app archives remain identity-verified before their durable records are refreshed.
 - Browser smoke: Settings reported all five bundled apps and launched the system text editor with no new console errors.
+- `bun test`: passed, 402 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 6 Checkpoint: Sandbox Launch Transaction
+
+- Added `src/features/app-management/launch.ts` as the verified package-to-running-instance transaction.
+- Package identity and digest validation, stable system-target identity, capability grants, host/file services, runtime RPC, command contributions, and partial-failure cleanup now complete before a sandbox window is published.
+- The composition root retains route history and running-window publication only after the transaction returns a complete app instance.
+- Browser smoke: launched and closed the bundled text editor from Settings with no new console errors.
 - `bun test`: passed, 402 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
