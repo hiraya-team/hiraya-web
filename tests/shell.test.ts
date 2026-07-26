@@ -42,6 +42,10 @@ describe("cohesive shell view models", () => {
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "x", 64)).toEqual({ column: -1, row: 0 });
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", -64)).toEqual({ column: 0, row: 1 });
     expect(adjacentSwipeArea({ column: 0, row: 0 }, "y", 64)).toEqual({ column: 0, row: -1 });
+    expect(adjacentSwipeArea({ column: -1, row: 0 }, "x", -64)).toEqual({ column: 0, row: 0 });
+    expect(adjacentSwipeArea({ column: -1, row: 0 }, "x", 64)).toEqual({ column: -2, row: 0 });
+    expect(adjacentSwipeArea({ column: 0, row: -1 }, "y", -64)).toEqual({ column: 0, row: 0 });
+    expect(adjacentSwipeArea({ column: 0, row: -1 }, "y", 64)).toEqual({ column: 0, row: -2 });
   });
 
   test("navigates only after a completed swipe", () => {

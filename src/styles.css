@@ -999,6 +999,10 @@ a:focus-visible {
   top: var(--file-y);
 }
 
+.desktop[data-area-transitioning] .file-icon {
+  transition: background 130ms ease, border-color 130ms ease, box-shadow 130ms ease, left calc(260ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1), top calc(260ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
+}
+
 .file-icon:hover,
 .file-icon[data-selected] {
   border-color: rgba(255, 255, 255, 0.19);
