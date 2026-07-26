@@ -6010,15 +6010,12 @@ a:focus-visible {
   gap: 10px;
   padding: 0 2px 8px;
 }
-.desktop-minimap__header > span:first-child { display: flex; min-width: 0; align-items: baseline; gap: 7px; }
-.desktop-minimap__header strong { font-size: 13px; }
-.desktop-minimap__header small { overflow: hidden; color: color-mix(in srgb, var(--theme-chrome-text) 62%, transparent); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.desktop-minimap__header-tools { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.desktop-minimap__header-tools { display: flex; width: 100%; min-width: 0; align-items: center; justify-content: space-between; gap: 7px; }
 .desktop-minimap__apps,
 .desktop-minimap[data-expanded] .desktop-minimap__apps {
   display: flex;
   min-width: 0;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   align-self: auto;
   flex-direction: row;
   align-items: center;
