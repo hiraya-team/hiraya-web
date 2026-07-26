@@ -61,12 +61,15 @@ export function committedSwipeTarget(previewTarget: SurfaceSegment | null, cance
   return cancelled ? null : previewTarget;
 }
 
-export function areaSwitcherDragOffset(deltaX: number, expanded: boolean) {
-  return expanded ? Math.max(0, deltaX) : Math.min(0, deltaX);
+export function areaSwitcherDragPosition(deltaX: number, expanded: boolean, travel: number) {
+  const start = expanded ? 0 : travel;
+  return Math.min(travel, Math.max(0, start + deltaX));
 }
 
-export function areaSwitcherDragCommits(deltaX: number, expanded: boolean) {
-  return expanded ? deltaX >= 72 : deltaX <= -44;
+export function areaSwitcherDragCommits(deltaX: number, expanded: boolean, travel: number) {
+  const distance = expanded ? deltaX : -deltaX;
+  const threshold = Math.round(expanded ? Math.min(96, travel * 0.28) : Math.min(72, travel * 0.22));
+  return distance >= threshold;
 }
 
 export function occupiedAreaCount(areas: readonly { occupied: boolean }[]) {

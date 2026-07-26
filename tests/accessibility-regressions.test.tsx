@@ -80,13 +80,19 @@ describe("accessibility regressions", () => {
 
   test("mobile area switcher focus and collapse paths share the global opener", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain("mobileAreaSwitcherButtonRef.current?.focus()");
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
+    expect(app).toContain('aria-expanded={minimapDetailed}');
+    expect(app).toContain('className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}');
+    expect(app).not.toContain('className="desktop-minimap__pull-tab"');
     expect(app).toContain('if (owner === "areaEditor") {');
     expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
     expect(app).toContain("if (drag.expanded) collapseAreaMap();");
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
     expect(app).toContain("if (isMobile) collapseAreaMap();");
+    expect(css).toContain("calc(100% - 44px + var(--area-switcher-edge-inset))");
+    expect(css).toContain(".desktop-minimap[data-dragging] { transition: none; }");
   });
 });
