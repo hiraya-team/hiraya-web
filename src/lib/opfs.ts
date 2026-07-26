@@ -1,5 +1,7 @@
 import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type EntryPosition, type FileEntry, type FolderEntry } from "../types";
-import type { ExplorerView } from "../ui/folder-explorer";
+import type { DesktopStateSnapshot } from "../domain/desktop-state";
+import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
+import type { LocalPreferences } from "../domain/preferences";
 import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validation";
 import { parseBundledSeededManifest, type SeededManifest } from "./seeded-manifest";
 import { validateWallpaperImage } from "./wallpaper-image";
@@ -8,7 +10,6 @@ import {
   emptySyncState,
   desktopStateLayout,
   parseDesktopState,
-  type DesktopSyncState,
   type PersistedDesktopState,
 } from "./desktop-state";
 import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition, parseRootEntryPositionUpdates } from "./contracts";
@@ -71,21 +72,15 @@ export async function configureStorageNamespace(storageId: string) {
 
 type DesktopState = PersistedDesktopState;
 export type { DesktopSyncState } from "./desktop-state";
-
-export type DesktopStateSnapshot = {
-  entries: DesktopEntry[];
-  layout: DesktopLayout;
-  editorSettings: EditorSettings;
-  appearance: ThemeState;
-  sync: DesktopSyncState;
-};
+export type { DesktopStateSnapshot } from "../domain/desktop-state";
+export { ContentRevisionConflictError } from "../domain/files";
+export type { SaveFileOptions } from "../domain/files";
+export type { LocalPreferences } from "../domain/preferences";
 
 // Local aliases keep mutation code focused on state transitions rather than persistence mechanics.
 type Manifest = DesktopState;
 const parseManifestV13 = parseDesktopState;
 const manifestLayout = desktopStateLayout;
-
-export type LocalPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; allowBrowserPinchZoom: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
 
 export { DEFAULT_EDITOR_SETTINGS } from "./desktop-state";
 
@@ -95,18 +90,6 @@ export class StorageUnavailableError extends Error {
     this.name = "StorageUnavailableError";
   }
 }
-
-export class ContentRevisionConflictError extends Error {
-  constructor(readonly expectedRevision: number, readonly actualRevision: number) {
-    super("The file changed since it was last read.");
-    this.name = "ContentRevisionConflictError";
-  }
-}
-
-export type SaveFileOptions = {
-  mimeType?: string;
-  expectedContentRevision?: number;
-};
 
 async function getRoot() {
   if (!("storage" in navigator) || !("getDirectory" in navigator.storage)) {

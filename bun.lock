@@ -137,7 +137,6 @@
       "name": "@hiraya/app-runtime",
       "version": "0.1.0",
       "dependencies": {
-        "@hiraya/app-cli": "workspace:*",
         "@hiraya/apps-contracts": "workspace:*",
         "react": "^19.1.0",
       },

@@ -16,7 +16,7 @@ import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, recordTouchRelease, touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
-import type { ExplorerView } from "./ui/folder-explorer";
+import type { ExplorerView } from "./domain/preferences";
 
 type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
 

@@ -2,7 +2,6 @@ import type { DesktopEntry } from "../types";
 
 export type FolderSortKey = "name" | "date" | "type" | "size";
 export type SortDirection = "asc" | "desc";
-export type ExplorerView = "list" | "grid";
 
 const SORT_LABELS: Record<FolderSortKey, string> = {
   name: "Name",

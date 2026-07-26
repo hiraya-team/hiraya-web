@@ -44,4 +44,44 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["src/domain/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["react", "react/**", "../components/**", "../ui/**", "../lib/**", "../apps/**", "../platform/**"],
+              message: "Domain contracts must remain independent of React, UI, features, and platform implementations.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/lib/opfs*.{ts,tsx}", "src/apps/host/**/*.{ts,tsx}", "packages/app-runtime/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/ui/**", "**/components/**"],
+              message: "Persistence and app-host implementations must not depend on UI modules.",
+            },
+            {
+              group: ["**/lib/opfs"],
+              message: "App-host services must depend on neutral domain ports rather than the OPFS implementation.",
+            },
+            {
+              group: ["@hiraya/app-cli"],
+              message: "The app runtime must depend on package contracts rather than CLI implementation types.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

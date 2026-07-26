@@ -1,5 +1,5 @@
 import { APPS_PROTOCOL_VERSION, parseAppConnect, parseAppReady } from "@hiraya/apps-contracts";
-import type { AppPackageInspection } from "@hiraya/app-cli";
+import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 
 export type MaterializedApp = { html: string; revoke(): void };

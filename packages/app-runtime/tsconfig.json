@@ -16,7 +16,7 @@
     "noUnusedParameters": true,
     "skipLibCheck": true
   },
-  "references": [{ "path": "../apps-contracts" }, { "path": "../app-cli" }],
+  "references": [{ "path": "../apps-contracts" }],
   "include": ["src"],
   "exclude": ["src/**/*.test.ts"]
 }

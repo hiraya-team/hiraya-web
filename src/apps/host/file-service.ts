@@ -9,8 +9,8 @@ import type {
   HirayaErrorCode,
   ServiceMethods,
 } from "@hiraya/apps-contracts";
-import type { DesktopStateSnapshot, SaveFileOptions } from "../../lib/opfs";
-import { ContentRevisionConflictError } from "../../lib/opfs";
+import type { DesktopStateSnapshot } from "../../domain/desktop-state";
+import { ContentRevisionConflictError, type SaveFileOptions } from "../../domain/files";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";
 import { CapabilityStore, type FileCapabilityHandle, type FileCapabilityOperation, type ResolvedFileCapability } from "./capability-store";
 

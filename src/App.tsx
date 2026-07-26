@@ -63,7 +63,9 @@ import {
   type SyncStatus,
   type OfflineOperationProgress,
 } from "./lib/sync";
-import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, listQuarantinedApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, removeFileAssociation, removeQuarantinedApp, resetFileAssociations, saveLocalPreferences, saveWindowSession, setFileAssociation, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage, type DesktopStateSnapshot, type LocalPreferences } from "./lib/opfs";
+import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, listQuarantinedApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, removeFileAssociation, removeQuarantinedApp, resetFileAssociations, saveLocalPreferences, saveWindowSession, setFileAssociation, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage } from "./lib/opfs";
+import type { DesktopStateSnapshot } from "./domain/desktop-state";
+import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
@@ -72,7 +74,6 @@ import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, 
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
-import type { ExplorerView } from "./ui/folder-explorer";
 import { topOverlay } from "./ui/overlay";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -96,8 +97,7 @@ import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
-import type { AppPackageInspection } from "@hiraya/app-cli";
-import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { AppPackageInspection, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { isAppPackageName, RpcDispatcher, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";

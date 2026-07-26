@@ -1,26 +1,9 @@
-import type { DesktopEntry, DesktopLayout, EditorSettings, Wallpaper } from "../types";
+import type { DesktopLayout, EditorSettings } from "../types";
+import type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
 import { assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision } from "./contracts";
-import { parseThemeState, type ThemeState } from "./themes";
+import { parseThemeState } from "./themes";
 
-export type DesktopSyncState = {
-  catalogId: string | null;
-  catalogRevision: number;
-  entryRevisions: Record<string, number>;
-  contentRevisions: Record<string, number>;
-  layoutRevision: number;
-  settingsRevision: number;
-  themeSelectionRevision: number;
-  themeRevisions: Record<string, number>;
-};
-
-export type PersistedDesktopState = {
-  entries: DesktopEntry[];
-  snapToGrid: boolean;
-  wallpaper: Wallpaper;
-  editorSettings: EditorSettings;
-  appearance: ThemeState;
-  sync: DesktopSyncState;
-};
+export type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true };
 

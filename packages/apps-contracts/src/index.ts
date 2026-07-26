@@ -35,6 +35,15 @@ export interface HirayaAppManifestV1 {
   window?: AppManifestWindow;
 }
 
+export interface AppPackageInspection {
+  manifest: HirayaAppManifestV1;
+  digest: string;
+  entryCount: number;
+  compressedBytes: number;
+  expandedBytes: number;
+  files: ReadonlyMap<string, Uint8Array>;
+}
+
 export interface AppManifestWindow {
   width: number;
   height: number;

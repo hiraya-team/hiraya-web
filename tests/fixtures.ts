@@ -1,4 +1,4 @@
-import type { DesktopStateSnapshot } from "../src/lib/opfs";
+import type { DesktopStateSnapshot } from "../src/domain/desktop-state";
 import { DEFAULT_THEME_STATE } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 import { OWNER_CAPABILITIES } from "../src/lib/permissions";

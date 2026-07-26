@@ -13,6 +13,8 @@ import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";
 import { AuthenticationRequiredError, redirectToLogin, requireAuthenticatedResponse } from "./auth";
 import { mapWithConcurrency, sha256Blob, uploadBlobDigests } from "./blob-transfer";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, type OfflineStorageInventory } from "./offline-availability";
+import type { DesktopStateSnapshot } from "../domain/desktop-state";
+import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never
@@ -115,7 +117,7 @@ function serverEntry(entry: DesktopEntry) {
   return entry;
 }
 
-function toSnapshot(remote: RemoteDesktopState): storage.DesktopStateSnapshot {
+function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
   const entryRevisions: Record<string, number> = {};
   const contentRevisions: Record<string, number> = {};
   const themeRevisions: Record<string, number> = {};
@@ -154,12 +156,12 @@ export class SyncEngine {
   private readonly storage: StorageBoundary;
   private readonly onUnauthorized: () => void;
   private readonly directMutationClientId = crypto.randomUUID();
-  private desktop: storage.DesktopStateSnapshot | null = null;
+  private desktop: DesktopStateSnapshot | null = null;
   private status: SyncStatus = "connecting";
   private events: EventSource | null = null;
   private healthTimer: ReturnType<typeof globalThis.setInterval> | null = null;
   private work: Promise<unknown> = Promise.resolve();
-  private startPromise: Promise<{ desktop: storage.DesktopStateSnapshot; status: SyncStatus }> | null = null;
+  private startPromise: Promise<{ desktop: DesktopStateSnapshot; status: SyncStatus }> | null = null;
   private running = false;
   private authenticationPaused = false;
   private generation = 0;
@@ -168,7 +170,7 @@ export class SyncEngine {
   private catalogRevision = 0;
   private lastQuota: { catalogId: string; quota: CatalogQuota } | null = null;
   private pendingWork = 0;
-  private readonly desktopListeners = new Set<(next: storage.DesktopStateSnapshot) => void>();
+  private readonly desktopListeners = new Set<(next: DesktopStateSnapshot) => void>();
   private readonly statusListeners = new Set<(next: SyncStatus) => void>();
   private readonly syncWorkListeners = new Set<(syncing: boolean) => void>();
   private readonly activityChangeListeners = new Set<() => void>();
@@ -243,7 +245,7 @@ export class SyncEngine {
     await Promise.all([this.work, starting?.catch(() => undefined)]);
   }
 
-  subscribe(onDesktop: (next: storage.DesktopStateSnapshot) => void, onStatus: (next: SyncStatus) => void, onSyncWork?: (syncing: boolean) => void) {
+  subscribe(onDesktop: (next: DesktopStateSnapshot) => void, onStatus: (next: SyncStatus) => void, onSyncWork?: (syncing: boolean) => void) {
     this.desktopListeners.add(onDesktop);
     this.statusListeners.add(onStatus);
     if (onSyncWork) this.syncWorkListeners.add(onSyncWork);
@@ -338,7 +340,7 @@ export class SyncEngine {
     return records;
   }
 
-  private publish(next: storage.DesktopStateSnapshot) {
+  private publish(next: DesktopStateSnapshot) {
     this.desktop = next;
     for (const listener of this.desktopListeners) listener(next);
   }
@@ -745,7 +747,7 @@ export class SyncEngine {
     }
   }
 
-  private async mutate<T>(operation: OutboxOperationInput, select: (next: storage.DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void) {
+  private async mutate<T>(operation: OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void) {
     return this.queue(async () => {
       validate?.();
       const queued = await this.storage.enqueueMutation({ ...operation, schemaVersion: 1 } as OutboxOperation, contents);
@@ -1043,7 +1045,7 @@ export class SyncEngine {
     return this.mutate({ kind: "root-entry-positions", positions }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
   }
 
-  saveFile(id: string, content: Blob, options: storage.SaveFileOptions = {}) {
+  saveFile(id: string, content: Blob, options: SaveFileOptions = {}) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveFile(id, content, options));
     const existing = this.current().entries.find((entry): entry is FileEntry => entry.id === id && entry.kind === "file");
     if (!existing) throw new Error("That file no longer exists.");
@@ -1055,7 +1057,7 @@ export class SyncEngine {
       () => {
         const actualRevision = this.current().sync.contentRevisions[id] ?? 0;
         if (options.expectedContentRevision !== undefined && options.expectedContentRevision !== actualRevision) {
-          throw new storage.ContentRevisionConflictError(options.expectedContentRevision, actualRevision);
+          throw new ContentRevisionConflictError(options.expectedContentRevision, actualRevision);
         }
       },
     );

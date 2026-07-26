@@ -1,6 +1,8 @@
-import { parseManifestV1, type HirayaAppManifestV1 } from "@hiraya/apps-contracts";
+import { parseManifestV1, type AppPackageInspection } from "@hiraya/apps-contracts";
 import { parse } from "parse5";
 import { unzipSync } from "fflate";
+
+export type { AppPackageInspection } from "@hiraya/apps-contracts";
 
 export const APP_ARCHIVE_EXTENSION = ".hiraya.app";
 export const APP_MANIFEST_PATH = "hiraya.app.json";
@@ -12,15 +14,6 @@ export const APP_ARCHIVE_LIMITS = {
   manifestBytes: 128 * 1024,
   compressionRatio: 200,
 } as const;
-
-export interface AppPackageInspection {
-  manifest: HirayaAppManifestV1;
-  digest: string;
-  entryCount: number;
-  compressedBytes: number;
-  expandedBytes: number;
-  files: ReadonlyMap<string, Uint8Array>;
-}
 
 interface ZipEntry {
   path: string;

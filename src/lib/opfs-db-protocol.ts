@@ -7,9 +7,9 @@ import type { FileAssociation, InstalledApp, QuarantinedApp } from "../apps/inst
 import type { JsonValue } from "@hiraya/apps-contracts";
 import { isValidId } from "./contracts";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
-import type { ExplorerView } from "../ui/folder-explorer";
+import type { LocalPreferences } from "../domain/preferences";
 
-export type StoredPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; allowBrowserPinchZoom: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
+export type StoredPreferences = LocalPreferences;
 
 export type StorageDbRequests = {
   ping: undefined;

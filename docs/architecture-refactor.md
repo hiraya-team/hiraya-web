@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 2 - neutral domain models and platform ports
+- Current phase: 3 - browser persistence platform
 - State: ready to start
-- Next action: move explorer preference, desktop snapshot, save options, and revision conflict types below UI and storage implementations
+- Next action: extract storage namespace, OPFS blob access, and SQLite client mechanics from the `opfs.ts` facade without changing repository behavior
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -92,7 +92,7 @@ This is a destination map, not a requirement to create empty directories or one 
 
 - [x] Phase 0: establish this ledger, correct architecture documentation, and add baseline guardrails.
 - [x] Phase 1: add characterization coverage for high-risk extraction seams.
-- [ ] Phase 2: establish neutral domain models and platform ports.
+- [x] Phase 2: establish neutral domain models and platform ports.
 - [ ] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
 - [ ] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
 - [ ] Phase 5: reduce `App.tsx` to authenticated desktop composition.
@@ -138,6 +138,17 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed
 - `bun run build`: passed, including system and example app builds and packages
 
+### Phase 2
+
+- Added neutral domain contracts for themes, desktop state, file-save conflicts, and device preferences.
+- Removed the storage-to-UI dependency for the persisted folder explorer view.
+- Removed app-host imports of OPFS implementation types and errors.
+- Moved app package inspection into `@hiraya/apps-contracts`; app-runtime no longer depends on app-CLI.
+- Added lint rules protecting domain, persistence, app-host, and app-runtime dependency directions.
+- `bun test`: passed, 395 tests across 75 files
+- `bun run lint`: passed
+- `bun run build`: passed, including system and example app builds and packages
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -146,7 +157,8 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Temporary Scaffolding
 
-- None yet.
+- `src/lib/opfs.ts` re-exports neutral desktop-state, preference, save-option, and conflict contracts while consumers migrate to direct domain imports.
+- `src/lib/desktop-state.ts` and `src/lib/themes.ts` re-export domain types while runtime parser imports migrate.
 
 ## Known Risks
 
@@ -168,4 +180,4 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Current Phase Notes
 
-Phase 2 starts with the smallest dependency inversions: persisted preferences must not import UI, and app-host file services must not import OPFS implementation types. Keep `opfs.ts` re-exports temporarily so existing consumers can migrate without a mixed checkpoint.
+Phase 3 should first move mechanics with narrow dependencies: namespace selection and OPFS directory/blob helpers, then SQLite worker RPC. Keep local desktop mutations together until those adapters are behind explicit interfaces; splitting every mutation into a separate repository prematurely would duplicate serialized-state orchestration.
