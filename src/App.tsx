@@ -1716,8 +1716,8 @@ function App({ session }: { session: AuthSession | null }) {
       if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space") {
         event.preventDefault();
         areaSwitcherInternalActivationRef.current = false;
-        areaSwitcherRestoreFocusRef.current = false;
-        setMinimapExpanded(true);
+        areaSwitcherRestoreFocusRef.current = minimapExpanded;
+        setMinimapExpanded(!minimapExpanded);
         return;
       }
       if (modifier && event.key.toLowerCase() === "k") {
@@ -1745,7 +1745,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
     window.addEventListener("keydown", onGlobalShortcut);
     return () => window.removeEventListener("keydown", onGlobalShortcut);
-  }, [shortcutsSuspended]);
+  }, [minimapExpanded, shortcutsSuspended]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -3468,7 +3468,7 @@ function App({ session }: { session: AuthSession | null }) {
   const searchCommands = commandService.list(commandContext);
   const keyboardShortcuts: KeyboardShortcut[] = [
     { id: "search", group: "Navigation", label: "Search files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
-    { id: "area-switcher", group: "Navigation", label: "Open area switcher", keys: ["Ctrl", "Space"] },
+    { id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] },
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
     { id: "copy", group: "Files", label: "Copy selected items", keys: ["Ctrl/⌘", "C"] },
