@@ -83,15 +83,18 @@ export class RpcDispatcher {
     port.start();
   }
 
+  detach(): void {
+    if (!this.#port) return;
+    this.#port.removeEventListener("message", this.#onMessage);
+    this.#port.removeEventListener("messageerror", this.#onMessageError);
+    this.#port.close();
+    this.#port = null;
+  }
+
   dispose(): void {
     if (this.#closed) return;
     this.#closed = true;
-    if (this.#port) {
-      this.#port.removeEventListener("message", this.#onMessage);
-      this.#port.removeEventListener("messageerror", this.#onMessageError);
-      this.#port.close();
-      this.#port = null;
-    }
+    this.detach();
     this.options.commands?.close?.();
     this.options.files.close?.();
     this.options.host.close();

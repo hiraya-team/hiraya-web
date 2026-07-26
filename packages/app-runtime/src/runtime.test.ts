@@ -75,6 +75,24 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
+  test("detaches a frame channel without closing its host lifecycle", async () => {
+    const service = host();
+    const dispatcher = new RpcDispatcher({ permissions: [], host: service.value, files });
+    const first = new MessageChannel();
+    const second = new MessageChannel();
+    dispatcher.attach(first.port1);
+    dispatcher.detach();
+    expect(service.closed()).toBe(false);
+    dispatcher.attach(second.port1);
+    const response = new Promise<unknown>((resolve) => { second.port2.onmessage = ({ data }) => resolve(data); });
+    second.port2.postMessage({ protocolVersion: 1, type: "request", id: "reattached", method: "app.getLaunchContext", params: {} });
+    expect(await response).toEqual(expect.objectContaining({ id: "reattached", ok: true }));
+    dispatcher.dispose();
+    expect(service.closed()).toBe(true);
+    first.port2.close();
+    second.port2.close();
+  });
+
   test("rechecks effective permissions after a host authority change", async () => {
     const service = host();
     let permissions: Array<"files:read" | "files:write"> = ["files:read", "files:write"];

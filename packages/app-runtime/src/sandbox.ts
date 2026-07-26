@@ -158,7 +158,7 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     timer = setTimeout(dispose, timeoutMs) as unknown as number;
     frame.contentWindow.postMessage({ protocolVersion: APPS_PROTOCOL_VERSION, type: "hiraya:init", appId, nonce }, "*", [channel.port2]);
   };
-  const dispose = () => {
+  const dispose = (closeDispatcher = true) => {
     if (disposed) return;
     disposed = true;
     clearTimeout(timer);
@@ -166,11 +166,12 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     frame.removeEventListener("load", onLoad);
     channel?.port1.close();
     channel?.port2.close();
-    dispatcher.dispose();
+    if (closeDispatcher) dispatcher.dispose();
+    else dispatcher.detach();
   };
   window.addEventListener("message", onConnect);
   frame.addEventListener("load", onLoad);
-  return dispose;
+  return () => dispose(false);
 }
 
 function resolvePackagePath(reference: string, from: string): string | null {
