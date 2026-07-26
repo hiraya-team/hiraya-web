@@ -3397,7 +3397,6 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function openAreaMap() {
-    if (isMobile && focusedAppIdRef.current) showDesktop();
     areaSwitcherRestoreFocusRef.current = false;
     setMinimapExpanded(true);
   }
@@ -4238,10 +4237,10 @@ function App({ session }: { session: AuthSession | null }) {
                       })}
                       {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
                 </div>}
-                {!isMobile && focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedAppLabel}`}>
+                {focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedAppLabel}`}>
                   <span className="desktop-minimap__window-target" title={focusedAppLabel}><AppIcon kind={focusedApp.kind} entry={focusedAppEntry} size={18} /><span>{focusedAppLabel}</span></span>
                   <button type="button" onClick={() => minimizeApp(focusedApp.id)} title={`Minimize ${focusedAppLabel}`} aria-label={`Minimize ${focusedAppLabel}`}><Minus size={15} /></button>
-                  <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>
+                  {!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>}
                   <button className="desktop-minimap__window-close" type="button" onClick={() => void requestCloseApp(focusedApp.id)} title={`Close ${focusedAppLabel}`} aria-label={`Close ${focusedAppLabel}`}><X size={15} /></button>
                 </div>}
               </div>

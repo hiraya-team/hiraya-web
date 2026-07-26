@@ -6124,7 +6124,9 @@ a:focus-visible {
   }
   .desktop-minimap__body { padding: 8px; }
   .desktop-minimap__header { min-height: 40px; padding-bottom: 6px; }
-  .desktop-minimap__window-controls { display: none; }
+  .desktop-minimap__window-controls { gap: 0; padding-left: 4px; }
+  .desktop-minimap__window-target { display: none; }
+  .desktop-minimap__window-controls > button { width: var(--touch-target); min-width: var(--touch-target); height: var(--touch-target); }
   .desktop-minimap__grid,
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid {
     width: min(100cqw, calc(100cqh * var(--minimap-columns) * 15 / var(--minimap-rows) / 10));
