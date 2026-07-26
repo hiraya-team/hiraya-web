@@ -6004,7 +6004,7 @@ a:focus-visible {
 .desktop-minimap__header {
   display: flex;
   min-width: 0;
-  min-height: 42px;
+  min-height: 52px;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -6123,7 +6123,7 @@ a:focus-visible {
     height: min(42dvh, 300px);
   }
   .desktop-minimap__body { padding: 8px; }
-  .desktop-minimap__header { min-height: 40px; padding-bottom: 6px; }
+  .desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }
   .desktop-minimap__window-controls { gap: 0; padding-left: 4px; }
   .desktop-minimap__window-target { display: none; }
   .desktop-minimap__window-controls > button { width: var(--touch-target); min-width: var(--touch-target); height: var(--touch-target); }

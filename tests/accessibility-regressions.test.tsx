@@ -118,6 +118,8 @@ describe("accessibility regressions", () => {
     expect(app).not.toContain('if (isMobile && focusedAppIdRef.current) showDesktop();');
     expect(css).toContain(".desktop-minimap__window-controls > .desktop-minimap__window-close:hover");
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
+    expect(css).toContain("min-height: 52px;");
+    expect(css).toContain(".desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }");
     expect(css).toContain(".desktop-minimap__window-target { display: none; }");
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
   });
