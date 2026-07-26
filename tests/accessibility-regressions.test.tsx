@@ -81,6 +81,7 @@ describe("accessibility regressions", () => {
   test("mobile switchers use distinct desktop and area controls", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
+    const systemMenu = await Bun.file(new URL("../src/components/SystemMenu.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain("areaSwitcherHandleRef.current?.focus()");
@@ -90,6 +91,8 @@ describe("accessibility regressions", () => {
     expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] }');
     expect(app).toContain("mobileSummary={homeRelativeAreaLabel(activeSegment)}");
     expect(app).not.toContain("<MapTrifold /> Expand Area Map");
+    expect(systemMenu).not.toContain("Expand Area Map");
+    expect(systemMenu).not.toContain("onAreaMap");
     expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
     expect(desktopSwitcher).toContain('aria-label={`Switch desktop, current desktop');
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");

@@ -3886,7 +3886,7 @@ function App({ session }: { session: AuthSession | null }) {
               )}
             </MobileHeaderMenu>
           )}
-          {!isMobile && <SystemMenu session={session} canOpenTrash={canOpenTrash} canShare={Boolean(session && activeDesktop?.capabilities.manage && canManage)} onAreaMap={openAreaMap} onSettings={() => openSettingsWindow()} onHelp={() => openHelp()} onShortcuts={() => setActivePanel("shortcuts")} onTrash={() => setActivePanel("trash")} onShare={() => setSharingOpen(true)} />}
+          {!isMobile && <SystemMenu session={session} canOpenTrash={canOpenTrash} canShare={Boolean(session && activeDesktop?.capabilities.manage && canManage)} onSettings={() => openSettingsWindow()} onHelp={() => openHelp()} onShortcuts={() => setActivePanel("shortcuts")} onTrash={() => setActivePanel("trash")} onShare={() => setSharingOpen(true)} />}
           <span className="menu-bar__clock">{formatClock(clock)}</span>
         </div>
       </header>
