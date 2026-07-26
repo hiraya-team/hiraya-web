@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsOut, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Minus, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -3344,6 +3344,8 @@ function App({ session }: { session: AuthSession | null }) {
     minimapWindowLimit,
   );
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
+  const focusedAppEntry = focusedApp?.kind === "file" ? entryIndex.byId.get(focusedApp.fileId) : focusedApp?.kind === "properties" ? entryIndex.byId.get(focusedApp.entryId) : focusedApp?.kind === "explorer" && focusedApp.folderId ? entryIndex.byId.get(focusedApp.folderId) : null;
+  const focusedAppLabel = focusedApp ? runningAppLabel(focusedApp) : "";
   const taskbarItems = runningApps.map((app) => {
     const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
     const area = segmentForApp(app);
@@ -4227,16 +4229,22 @@ function App({ session }: { session: AuthSession | null }) {
           <div className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}>
             <header className="desktop-minimap__header">
               <span><strong>Areas</strong><small>{areaDirectionalLabel(activeSegment, activeSegment)} · {occupiedSegments.length} occupied</small></span>
-              {runningApps.length > 0 && (
-                <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
+              <div className="desktop-minimap__header-tools">
+                {runningApps.length > 0 && <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
                         const label = runningAppLabel(app);
                         return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => { focusApp(app.id); if (isMobile) collapseAreaMap(false); }}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
                       })}
                       {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
-                </div>
-              )}
+                </div>}
+                {!isMobile && focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedAppLabel}`}>
+                  <span className="desktop-minimap__window-target" title={focusedAppLabel}><AppIcon kind={focusedApp.kind} entry={focusedAppEntry} size={18} /><span>{focusedAppLabel}</span></span>
+                  <button type="button" onClick={() => minimizeApp(focusedApp.id)} title={`Minimize ${focusedAppLabel}`} aria-label={`Minimize ${focusedAppLabel}`}><Minus size={15} /></button>
+                  <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>
+                  <button className="desktop-minimap__window-close" type="button" onClick={() => void requestCloseApp(focusedApp.id)} title={`Close ${focusedAppLabel}`} aria-label={`Close ${focusedAppLabel}`}><X size={15} /></button>
+                </div>}
+              </div>
             </header>
             <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
               <div className="desktop-minimap__grid" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>

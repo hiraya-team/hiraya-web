@@ -102,4 +102,17 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap[data-dragging] { transition: none; }");
     expect(css).toContain(".mobile-window-nav > .desktop-switcher[data-mobile-summary]");
   });
+
+  test("area switcher exposes controls for the focused desktop window", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+
+    expect(app).toContain('className="desktop-minimap__window-controls" role="group"');
+    expect(app).toContain('aria-label={`Minimize ${focusedAppLabel}`}');
+    expect(app).toContain('aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}');
+    expect(app).toContain('onClick={() => void requestCloseApp(focusedApp.id)}');
+    expect(app).toContain('!isMobile && focusedApp && !focusedApp.minimized');
+    expect(css).toContain(".desktop-minimap__window-controls > .desktop-minimap__window-close:hover");
+    expect(css).toContain(".desktop-minimap__window-controls { display: none; }");
+  });
 });
