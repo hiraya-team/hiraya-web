@@ -1,5 +1,5 @@
 import { IdentificationCard, SignOut, UserCircle } from "@phosphor-icons/react";
-import type { AuthSession } from "../lib/auth";
+import { lockAuthBootstrap, type AuthSession } from "../lib/auth";
 import { SERVER_ROUTES } from "../lib/api-routes";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 
@@ -12,7 +12,7 @@ export function AccountMenu({ session }: { session: AuthSession }) {
           {session.user.email && <span>{session.user.email}</span>}
         </div>
         <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={dismiss}><IdentificationCard size={17} /> Profile</a>
-        <form action={SERVER_ROUTES.logout} method="post">
+        <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
           <button className="account-menu__action" type="submit"><SignOut size={17} /> Log out</button>
         </form>
       </>}

@@ -40,16 +40,27 @@ function appendInline(parent: HTMLElement, text: string, document: Document) {
   for (const part of inlineParts(text)) {
     if (part.kind === "text") { parent.append(document.createTextNode(part.value)); continue; }
     if (part.kind === "image") {
-      const image = document.createElement("img"); image.alt = part.label; image.dataset.relativeSrc = part.value; parent.append(image); continue;
+      const image = document.createElement("img"); image.alt = part.label;
+      if (markdownResourceKind(part.value) === "external") image.dataset.externalSrc = part.value;
+      else if (markdownResourceKind(part.value) === "relative") image.dataset.relativeSrc = part.value;
+      else { parent.append(document.createTextNode(`[Blocked image: ${part.label || part.value}]`)); continue; }
+      parent.append(image); continue;
     }
     if (part.kind === "link") {
       const link = document.createElement("a"); link.textContent = part.label;
-      if (/^(https?:|mailto:)/i.test(part.value)) { link.href = part.value; link.rel = "noreferrer"; link.target = "_blank"; }
-      else link.dataset.relativeHref = part.value;
+      if (/^(https?:|mailto:)/i.test(part.value)) { link.href = part.value; link.rel = "noopener noreferrer"; link.target = "_blank"; }
+      else if (part.value.startsWith("#")) link.href = part.value;
+      else if (isSafeRelative(part.value)) link.dataset.relativeHref = part.value;
       parent.append(link); continue;
     }
     const element = document.createElement(part.kind); element.textContent = part.value; parent.append(element);
   }
+}
+
+function isSafeRelative(value: string) { return !/^(?:[a-z][a-z\d+.-]*:|\/\/|\/)/i.test(value) && !value.includes("\\"); }
+export function markdownResourceKind(value: string): "external" | "relative" | "blocked" {
+  if (/^https?:\/\//i.test(value)) return "external";
+  return isSafeRelative(value) ? "relative" : "blocked";
 }
 
 export type InlinePart = { kind: "text" | "code" | "strong"; value: string } | { kind: "link" | "image"; value: string; label: string };

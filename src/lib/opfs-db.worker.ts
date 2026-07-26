@@ -3,20 +3,20 @@
 import sqlite3InitModule, { type Database, type SqlValue } from "@sqlite.org/sqlite-wasm";
 import type { DesktopEntry, DesktopIdentity, EditorSettings, Wallpaper } from "../types";
 import { parseDesktopState, type DesktopSyncState, type PersistedDesktopState } from "./desktop-state";
-import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord } from "./outbox";
+import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
 import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type NewActivityRecord } from "./activity";
 import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
 const FRONTEND_ONLY = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
-const DEFAULT_PREFERENCES: StoredPreferences = { autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" };
+const DEFAULT_PREFERENCES: StoredPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" };
 
 type Row = Record<string, SqlValue>;
 type WorkerPort = Pick<MessagePort, "postMessage"> & { start?: () => void; onmessage: ((event: MessageEvent<StorageDbRequest>) => void) | null };
@@ -80,6 +80,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 6) {
     db.exec(migrateSchema6To7Sql(migratedVersion));
+    migratedVersion = 7;
+  }
+  if (migratedVersion === 7) {
+    db.exec(migrateSchema7To8Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -162,6 +166,7 @@ function createSchema(db: Database) {
     ${APP_ASSOCIATIONS_SCHEMA_SQL.replace("PRAGMA user_version=5;", "")}
     ${MINIMAP_PREFERENCE_SCHEMA_SQL}
     ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL}
+    ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL}
     COMMIT;
   `);
 }
@@ -278,11 +283,11 @@ function listActivity(db: Database, value: StorageDbRequests["listActivity"]): A
 
 function readPreferences(db: Database): StoredPreferences {
   const row = rows(db, "SELECT * FROM preferences WHERE singleton=1")[0];
-  return row ? { autoUpdate: numberValue(row.auto_update) === 1, externalEmbeddedPreviews: numberValue(row.external_embedded_previews) === 1, searchAllDesktops: numberValue(row.search_all_desktops) === 1, onboardingVersion: numberValue(row.onboarding_version), showDesktopMinimap: numberValue(row.show_desktop_minimap) === 1, explorerView: stringValue(row.explorer_view) as StoredPreferences["explorerView"] } : DEFAULT_PREFERENCES;
+  return row ? { autoUpdate: numberValue(row.auto_update) === 1, externalEmbeddedPreviews: numberValue(row.external_embedded_previews) === 1, allowBrowserPinchZoom: numberValue(row.allow_browser_pinch_zoom) === 1, searchAllDesktops: numberValue(row.search_all_desktops) === 1, onboardingVersion: numberValue(row.onboarding_version), showDesktopMinimap: numberValue(row.show_desktop_minimap) === 1, explorerView: stringValue(row.explorer_view) as StoredPreferences["explorerView"] } : DEFAULT_PREFERENCES;
 }
 
 function writePreferences(db: Database, value: StoredPreferences) {
-  db.exec({ sql: "INSERT INTO preferences(singleton,auto_update,external_embedded_previews,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view) VALUES (1, ?, ?, ?, ?, ?, ?) ON CONFLICT(singleton) DO UPDATE SET auto_update=excluded.auto_update, external_embedded_previews=excluded.external_embedded_previews, search_all_desktops=excluded.search_all_desktops, onboarding_version=excluded.onboarding_version, show_desktop_minimap=excluded.show_desktop_minimap, explorer_view=excluded.explorer_view", bind: [value.autoUpdate, value.externalEmbeddedPreviews, value.searchAllDesktops, value.onboardingVersion, value.showDesktopMinimap, value.explorerView] });
+  db.exec({ sql: "INSERT INTO preferences(singleton,auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view) VALUES (1, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(singleton) DO UPDATE SET auto_update=excluded.auto_update, external_embedded_previews=excluded.external_embedded_previews, allow_browser_pinch_zoom=excluded.allow_browser_pinch_zoom, search_all_desktops=excluded.search_all_desktops, onboarding_version=excluded.onboarding_version, show_desktop_minimap=excluded.show_desktop_minimap, explorer_view=excluded.explorer_view", bind: [value.autoUpdate, value.externalEmbeddedPreviews, value.allowBrowserPinchZoom, value.searchAllDesktops, value.onboardingVersion, value.showDesktopMinimap, value.explorerView] });
 }
 
 let existedBeforeOpen = false;
@@ -401,6 +406,22 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     }
     case "acknowledgeMutation": db.exec({ sql: "DELETE FROM outbox WHERE operation_id=?", bind: [(params as StorageDbRequests["acknowledgeMutation"]).operationId] }); return undefined as StorageDbResponses[M];
     case "blockMutation": { const input = params as StorageDbRequests["blockMutation"]; db.exec({ sql: "UPDATE outbox SET status='blocked', error=? WHERE operation_id=?", bind: [input.error, input.operationId] }); return undefined as StorageDbResponses[M]; }
+    case "discardDesktopProjection": {
+      const input = params as StorageDbRequests["discardDesktopProjection"];
+      return db.transaction("IMMEDIATE", () => {
+        const records = readOutbox(db);
+        const selected = records.find((record) => record.operationId === input.operationId);
+        if (!selected || selected.status !== "blocked" || !outboxOperationDesktopIds(selected).has(input.desktopId)) throw new Error("That blocked desktop change no longer exists.");
+        const dependent = outboxRecordsDependingOnDesktop(records, input.desktopId);
+        const operationIds = dependent.map((record) => record.operationId);
+        const affectedDesktopIds = [...new Set(dependent.flatMap((record) => [...outboxOperationDesktopIds(record)]))];
+        const fileIds = rows(db, "SELECT id FROM entries WHERE desktop_id=? AND kind='file'", [input.desktopId]).map((row) => stringValue(row.id));
+        for (const operationId of operationIds) db.exec({ sql: "DELETE FROM outbox WHERE operation_id=?", bind: [operationId] });
+        db.exec({ sql: "DELETE FROM desktops WHERE id=?", bind: [input.desktopId] });
+        if (db.changes() !== 1) throw new Error("That desktop no longer exists.");
+        return { operationIds, affectedDesktopIds, fileIds: fileIds.filter((id) => !scalar(db, "SELECT 1 FROM entries WHERE id=?", [id])) };
+      }) as StorageDbResponses[M];
+    }
     case "listActivity": return listActivity(db, params as StorageDbRequests["listActivity"]) as StorageDbResponses[M];
     case "pruneDesktops": { const retained = new Set((params as StorageDbRequests["pruneDesktops"]).retainedDesktopIds); db.transaction("IMMEDIATE", () => { for (const row of rows(db, "SELECT id FROM desktops")) { const id = stringValue(row.id); if (!retained.has(id)) db.exec({ sql: "DELETE FROM desktops WHERE id=?", bind: [id] }); } }); return undefined as StorageDbResponses[M]; }
     case "listOfflinePins": {

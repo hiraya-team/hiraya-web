@@ -67,6 +67,12 @@ export interface LaunchContext {
   theme: ThemeTokens;
 }
 
+export type FileWriteCapabilityReason = "available" | "read-only" | "shared-offline" | "temporarily-unavailable";
+export interface AppCapabilities {
+  files: { write: boolean; writeReason: FileWriteCapabilityReason };
+  externalEmbeddedPreviews: boolean;
+}
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 
@@ -179,6 +185,7 @@ export interface CommandDefinition {
 
 export interface ServiceMethods {
   "app.getLaunchContext": { params: Record<string, never>; result: LaunchContext };
+  "app.getCapabilities": { params: Record<string, never>; result: AppCapabilities };
   "files.stat": { params: { handle: FileHandle | FolderHandle }; result: DirectoryEntry };
   "files.read": { params: { handle: FileHandle }; result: { data: ArrayBuffer; mimeType: string } };
   "files.readChunk": { params: { handle: FileHandle; offset: number; length: number }; result: { data: ArrayBuffer; mimeType: string; size: number; contentRevision: number } };
@@ -201,6 +208,7 @@ export interface ServiceMethods {
   "host.showEntryActions": { params: { handles: (FileHandle | FolderHandle)[] }; result: void };
   "host.getEntryStatus": { params: { handles: (FileHandle | FolderHandle)[] }; result: HostEntryStatus[] };
   "host.setOfflinePinned": { params: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }; result: void };
+  "host.setExternalEmbeddedPreviews": { params: { enabled: boolean }; result: void };
   "dialogs.openFile": { params: { multiple?: boolean; mimeTypes?: string[] }; result: FileHandle[] | null };
   "dialogs.openFolder": { params: Record<string, never>; result: FolderHandle | null };
   "dialogs.saveFile": { params: { suggestedName?: string; mimeType?: string }; result: FileHandle | null };
@@ -225,6 +233,7 @@ export interface ServiceMethods {
 export type ServiceMethod = keyof ServiceMethods;
 
 export interface ServiceEvents {
+  "capabilities.changed": AppCapabilities;
   "files.changed": { handles: (FileHandle | FolderHandle)[] };
   "window.stateChanged": WindowState;
   "commands.invoked": { id: string };
@@ -237,15 +246,15 @@ export type ServiceEvent = keyof ServiceEvents;
 const permissionSet = new Set<string>(APP_PERMISSIONS);
 const errorCodeSet = new Set<string>(HIRAYA_ERROR_CODES);
 const serviceMethodSet = new Set<string>([
-  "app.getLaunchContext",
+  "app.getLaunchContext", "app.getCapabilities",
   "files.stat", "files.read", "files.readChunk", "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite", "files.resolve", "files.list", "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
-  "host.openEntry", "host.importFiles", "host.importFolder", "host.showEntryActions", "host.getEntryStatus", "host.setOfflinePinned",
+  "host.openEntry", "host.importFiles", "host.importFolder", "host.showEntryActions", "host.getEntryStatus", "host.setOfflinePinned", "host.setExternalEmbeddedPreviews",
   "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm",
   "window.getState", "window.setTitle", "window.setDirty", "window.setSize", "window.setFullscreen", "window.close",
   "commands.set", "commands.clear", "notifications.show", "notifications.dismiss", "theme.get",
   "storage.get", "storage.set", "storage.remove", "storage.clear",
 ]);
-const serviceEventSet = new Set<string>(["files.changed", "window.stateChanged", "commands.invoked", "notifications.clicked", "theme.changed"]);
+const serviceEventSet = new Set<string>(["files.changed", "window.stateChanged", "commands.invoked", "notifications.clicked", "theme.changed", "capabilities.changed"]);
 
 function record(value: unknown, label: string): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError(`${label} must be an object.`);
@@ -397,6 +406,15 @@ export function parseLaunchContext(value: unknown): LaunchContext {
   };
 }
 
+export function parseAppCapabilities(value: unknown): AppCapabilities {
+  const capabilities = record(value, "App capabilities");
+  exact(capabilities, ["files", "externalEmbeddedPreviews"], [], "App capabilities");
+  const files = record(capabilities.files, "App file capabilities");
+  exact(files, ["write", "writeReason"], [], "App file capabilities");
+  if (!["available", "read-only", "shared-offline", "temporarily-unavailable"].includes(String(files.writeReason))) throw new TypeError("App file write capability reason is invalid.");
+  return { files: { write: boolean(files.write, "App file write capability"), writeReason: files.writeReason as FileWriteCapabilityReason }, externalEmbeddedPreviews: boolean(capabilities.externalEmbeddedPreviews, "External embedded preview capability") };
+}
+
 function parseWindowState(value: unknown): WindowState {
   const state = record(value, "Window state");
   exact(state, ["focused", "maximized", "fullscreen", "width", "height"], [], "Window state");
@@ -451,7 +469,7 @@ export function parseServiceParams<M extends ServiceMethod>(method: M, value: un
   const shape = (required: readonly string[], optional: readonly string[] = []) => exact(params, required, optional, `${method} params`);
   let result: unknown;
   switch (method) {
-    case "app.getLaunchContext": case "dialogs.openFolder": case "window.getState": case "window.close": case "commands.clear": case "storage.clear": result = empty(params, `${method} params`); break;
+    case "app.getLaunchContext": case "app.getCapabilities": case "dialogs.openFolder": case "window.getState": case "window.close": case "commands.clear": case "storage.clear": result = empty(params, `${method} params`); break;
     case "files.stat": case "files.read": shape(["handle"]); result = { handle: method === "files.read" ? parseFileHandle(params.handle) : handle(params.handle) }; break;
     case "files.readChunk": shape(["handle", "offset", "length"]); result = { handle: parseFileHandle(params.handle), offset: number(params.offset, "File chunk offset", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), length: number(params.length, "File chunk length", { integer: true, min: 1, max: MAX_FILE_CHUNK_BYTES }) }; break;
     case "files.write": shape(["handle", "data"], ["mimeType", "expectedRevision"]); result = { handle: parseFileHandle(params.handle), data: arrayBuffer(params.data, "File data"), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }), ...(params.expectedRevision === undefined ? {} : { expectedRevision: number(params.expectedRevision, "Expected revision", { integer: true, min: 0 }) }) }; break;
@@ -470,6 +488,7 @@ export function parseServiceParams<M extends ServiceMethod>(method: M, value: un
     case "host.importFiles": case "host.importFolder": shape(["parent"]); result = { parent: nullableFolder(params.parent) }; break;
     case "host.showEntryActions": case "host.getEntryStatus": shape(["handles"]); result = { handles: handleArray(params.handles, "Host entry handles") }; break;
     case "host.setOfflinePinned": shape(["handles", "pinned"]); result = { handles: handleArray(params.handles, "Host entry handles"), pinned: boolean(params.pinned, "Offline pin state") }; break;
+    case "host.setExternalEmbeddedPreviews": shape(["enabled"]); result = { enabled: boolean(params.enabled, "External embedded preview state") }; break;
     case "dialogs.openFile": shape([], ["multiple", "mimeTypes"]); result = { ...(params.multiple === undefined ? {} : { multiple: boolean(params.multiple, "Multiple selection") }), ...(params.mimeTypes === undefined ? {} : { mimeTypes: stringArray(params.mimeTypes, "Dialog MIME types", 32) }) }; break;
     case "dialogs.saveFile": shape([], ["suggestedName", "mimeType"]); result = { ...(params.suggestedName === undefined ? {} : { suggestedName: text(params.suggestedName, "Suggested name", 255) }), ...(params.mimeType === undefined ? {} : { mimeType: text(params.mimeType, "File MIME type", 255) }) }; break;
     case "dialogs.confirm": shape(["title", "message"], ["confirmLabel", "destructive"]); result = { title: text(params.title, "Dialog title", 120), message: text(params.message, "Dialog message", 2_000), ...(params.confirmLabel === undefined ? {} : { confirmLabel: text(params.confirmLabel, "Confirm label", 80) }), ...(params.destructive === undefined ? {} : { destructive: boolean(params.destructive, "Destructive confirmation") }) }; break;
@@ -492,6 +511,7 @@ export function parseServiceResult<M extends ServiceMethod>(method: M, value: un
   let result: unknown;
   switch (method) {
     case "app.getLaunchContext": result = parseLaunchContext(value); break;
+    case "app.getCapabilities": result = parseAppCapabilities(value); break;
     case "files.stat": case "files.rename": case "files.move": result = parseDirectoryEntry(value); break;
     case "files.read": { const item = record(value, "File read result"); exact(item, ["data", "mimeType"], [], "File read result"); result = { data: arrayBuffer(item.data, "File data"), mimeType: text(item.mimeType, "File MIME type", 255) }; break; }
     case "files.readChunk": { const item = record(value, "File chunk result"); exact(item, ["data", "mimeType", "size", "contentRevision"], [], "File chunk result"); const data = arrayBuffer(item.data, "File chunk data"); if (data.byteLength > MAX_FILE_CHUNK_BYTES) throw new TypeError("File chunk data exceeds the chunk limit."); result = { data, mimeType: text(item.mimeType, "File MIME type", 255), size: number(item.size, "File size", { integer: true, min: 0, max: MAX_APP_FILE_BYTES }), contentRevision: number(item.contentRevision, "Content revision", { integer: true, min: 0 }) }; break; }
@@ -508,7 +528,7 @@ export function parseServiceResult<M extends ServiceMethod>(method: M, value: un
     case "theme.get": result = parseThemeTokens(value); break;
     case "storage.get": result = value === undefined ? undefined : parseJsonValue(value); break;
     case "host.getEntryStatus": if (!Array.isArray(value) || value.length > 256) throw new TypeError("Host entry statuses are invalid."); result = value.map(parseHostEntryStatus); break;
-    case "files.writeChunk": case "files.abortWrite": case "files.delete": case "files.deleteMany": case "host.openEntry": case "host.importFiles": case "host.importFolder": case "host.showEntryActions": case "host.setOfflinePinned": case "window.setTitle": case "window.setDirty": case "window.close": case "commands.set": case "commands.clear": case "notifications.dismiss": case "storage.set": case "storage.remove": case "storage.clear": if (value !== undefined) throw new TypeError(`${method} result must be undefined.`); result = undefined; break;
+    case "files.writeChunk": case "files.abortWrite": case "files.delete": case "files.deleteMany": case "host.openEntry": case "host.importFiles": case "host.importFolder": case "host.showEntryActions": case "host.setOfflinePinned": case "host.setExternalEmbeddedPreviews": case "window.setTitle": case "window.setDirty": case "window.close": case "commands.set": case "commands.clear": case "notifications.dismiss": case "storage.set": case "storage.remove": case "storage.clear": if (value !== undefined) throw new TypeError(`${method} result must be undefined.`); result = undefined; break;
     default: throw new TypeError("RPC method is invalid.");
   }
   return result as ServiceMethods[M]["result"];
@@ -529,6 +549,7 @@ function parseHostEntryStatus(value: unknown): HostEntryStatus {
 }
 
 export function parseServiceEventPayload<E extends ServiceEvent>(event: E, value: unknown): ServiceEvents[E] {
+  if (event === "capabilities.changed") return parseAppCapabilities(value) as ServiceEvents[E];
   if (event === "window.stateChanged") return parseWindowState(value) as ServiceEvents[E];
   if (event === "theme.changed") return parseThemeTokens(value) as ServiceEvents[E];
   const payload = record(value, `${event} payload`);

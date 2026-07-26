@@ -122,6 +122,20 @@ describe("apps SDK", () => {
     channel.port2.close();
   });
 
+  test("exposes live effective app capabilities", async () => {
+    const channel = new MessageChannel();
+    channel.port2.onmessage = ({ data }) => channel.port2.postMessage({ protocolVersion: 1, type: "response", id: data.id, ok: true, result: { files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false } });
+    const client = await connectHiraya({ port: channel.port1 });
+    expect(await client.app.getCapabilities()).toEqual({ files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false });
+    const changes: boolean[] = [];
+    client.on("capabilities.changed", ({ files }) => changes.push(files.write));
+    channel.port2.postMessage({ protocolVersion: 1, type: "event", event: "capabilities.changed", payload: { files: { write: true, writeReason: "available" }, externalEmbeddedPreviews: false } });
+    await Bun.sleep(0);
+    expect(changes).toEqual([true]);
+    client.close();
+    channel.port2.close();
+  });
+
   test("rejects requests on abort, timeout, and close", async () => {
     const channel = new MessageChannel();
     const client = await connectHiraya({ port: channel.port1, requestTimeoutMs: 10 });

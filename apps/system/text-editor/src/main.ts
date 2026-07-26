@@ -1,6 +1,6 @@
 import { HirayaSdkError, type FileHandle, type HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
-import { formatText, parseTextEditorSettings, TextDocumentState, type TextEditorSettings } from "./editor";
+import { formatText, parseTextEditorSettings, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
 
 const APP_ID = "app.hiraya.text-editor";
@@ -15,6 +15,8 @@ let name = "Untitled.txt";
 let settings = parseTextEditorSettings(undefined);
 let autoSaveTimer = 0;
 let saving = false;
+let canWrite = false;
+let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
 
 editor.addEventListener("input", () => {
   documentState.edit(editor.value);
@@ -30,7 +32,7 @@ for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], [
   required<HTMLInputElement>(`#${id}`).addEventListener("change", (event) => void changeSettings({ ...settings, [key]: (event.target as HTMLInputElement).checked }));
 }
 addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); void save(event.shiftKey); }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (canWrite) void save(event.shiftKey); }
 });
 void start();
 
@@ -44,11 +46,12 @@ async function start() {
     settings = parseTextEditorSettings(stored, parseTextEditorSettings(copiedSettings));
     if (stored === undefined) await hiraya.storage.set(SETTINGS_KEY, settings);
     applySettings();
-    hiraya.on("commands.invoked", ({ id }) => id === "save" ? void save(false) : id === "open" ? void open() : id === "format" ? applyFormatting() : undefined);
+    applyCapabilities(await hiraya.app.getCapabilities());
+    hiraya.on("capabilities.changed", applyCapabilities);
+    hiraya.on("commands.invoked", ({ id }) => id === "save" ? canWrite && void save(false) : id === "open" ? void open() : id === "format" ? canWrite && applyFormatting() : undefined);
     hiraya.on("files.changed", ({ handles }) => { if (handle && handles.includes(handle)) void remoteChanged(); });
-    await hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O" }, { id: "save", title: "Save", shortcut: "Ctrl+S" }, { id: "format", title: "Format document" }]);
     if (app.launch.files[0]) await load(app.launch.files[0]);
-    else setStatus("Ready. Settings are stored for this browser and account.");
+    else if (canWrite) setStatus("Ready. Settings are stored for this browser and account.");
   } catch (error) { setStatus(describeError(error, "Text Editor could not start."), true); }
 }
 
@@ -78,7 +81,7 @@ async function load(next: FileHandle) {
   handle = next;
   name = loaded.entry.name;
   renderDirty();
-  setStatus(`Opened ${name}.`);
+  setStatus(canWrite ? `Opened ${name}.` : writeRestrictionMessage(writeReason, false));
 }
 
 async function remoteChanged() {
@@ -97,7 +100,7 @@ async function remoteChanged() {
 }
 
 async function save(saveAs: boolean) {
-  if (saving) return;
+  if (saving || !canWrite) return;
   saving = true;
   clearTimeout(autoSaveTimer);
   try {
@@ -113,6 +116,7 @@ async function save(saveAs: boolean) {
     const sourceText = editor.value;
     const text = settings.autoFormat ? formatText(name, sourceText) : sourceText;
     const bytes = new TextEncoder().encode(text);
+    if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, documentState.dirty), documentState.dirty); return; }
     const saved = await writeFileData(hiraya, destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
     handle = destination;
     name = saved.name;
@@ -128,6 +132,7 @@ async function save(saveAs: boolean) {
 }
 
 function applyFormatting() {
+  if (!canWrite) return;
   try {
     editor.value = formatText(name, editor.value);
     documentState.edit(editor.value);
@@ -139,7 +144,7 @@ function applyFormatting() {
 
 function scheduleAutoSave() {
   clearTimeout(autoSaveTimer);
-  if (settings.autoSave && handle && documentState.dirty && !documentState.remoteConflict) autoSaveTimer = setTimeout(() => void save(false), 750) as unknown as number;
+  if (canWrite && settings.autoSave && handle && documentState.dirty && !documentState.remoteConflict) autoSaveTimer = setTimeout(() => void save(false), 750) as unknown as number;
 }
 
 async function changeSettings(next: TextEditorSettings) {
@@ -164,5 +169,17 @@ function renderDirty() {
   title.textContent = `${dirty ? "*" : ""}${name}`;
   void hiraya?.window.setDirty(dirty);
   void hiraya?.window.setTitle(`${dirty ? "*" : ""}${name} - Text Editor`);
+}
+function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"]["getCapabilities"]>>) {
+  const restored = !canWrite && capabilities.files.write;
+  canWrite = capabilities.files.write;
+  writeReason = capabilities.files.writeReason;
+  editor.readOnly = !canWrite;
+  for (const id of ["save", "save-as", "format", "auto-save", "auto-format"]) required<HTMLButtonElement | HTMLInputElement>(`#${id}`).disabled = !canWrite;
+  required<HTMLElement>("#write-state").hidden = canWrite;
+  if (!canWrite) clearTimeout(autoSaveTimer);
+  else scheduleAutoSave();
+  void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O" }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: canWrite }, { id: "format", title: "Format document", enabled: canWrite }]);
+  if (!canWrite || restored) setStatus(writeRestrictionMessage(writeReason, documentState.dirty), !canWrite && documentState.dirty);
 }
 function setStatus(message: string, error = false) { status.textContent = message; status.classList.toggle("error", error); }

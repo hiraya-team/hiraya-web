@@ -1,4 +1,4 @@
-import type { LaunchContext, WindowState } from "@hiraya/apps-contracts";
+import type { AppCapabilities, LaunchContext, WindowState } from "@hiraya/apps-contracts";
 import { AppDialogService, type AppDialogApi } from "./dialogs";
 import { AppLifecycleService, type AppWindowApi } from "./lifecycle";
 import { AppNotificationService, type AppNotificationApi } from "./notifications";
@@ -8,7 +8,7 @@ import { unavailable, type AppInstanceOwner } from "./types";
 
 export interface AppHostContext {
   readonly owner: AppInstanceOwner;
-  readonly app: { getLaunchContext(): Promise<LaunchContext> };
+  readonly app: { getLaunchContext(): Promise<LaunchContext>; getCapabilities(): Promise<AppCapabilities> };
   readonly window: AppWindowApi;
   readonly dialogs: AppDialogApi;
   readonly notifications: AppNotificationApi;
@@ -25,6 +25,7 @@ export type OpenAppInstance = {
   launch: LaunchContext;
   window: WindowState;
   title: string;
+  getCapabilities?: () => AppCapabilities;
 };
 
 export class AppHostServices {
@@ -54,7 +55,10 @@ export class AppHostServices {
     };
     return {
       owner,
-      app: { getLaunchContext: async () => { assertOpen(); return structuredClone(launch); } },
+      app: {
+        getLaunchContext: async () => { assertOpen(); return structuredClone(launch); },
+        getCapabilities: async () => { assertOpen(); return structuredClone(input.getCapabilities?.() ?? { files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false }); },
+      },
       window: windowApi,
       dialogs: {
         openFile: async (params) => { assertOpen(); return dialogApi.openFile(params); },

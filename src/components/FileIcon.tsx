@@ -24,11 +24,12 @@ type Props = {
   onContextMenuAt: (x: number, y: number) => void;
   onExternalDrop?: (dataTransfer: DataTransfer) => void;
   offlineAvailability?: OfflineEntryAvailability;
+  allowBrowserPinchZoom?: boolean;
 };
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -106,10 +107,14 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
+    if (drag.current && drag.current.pointerId !== event.pointerId) {
+      void finishDrag({ pointerId: drag.current.pointerId, clientX: drag.current.pointerX, clientY: drag.current.pointerY }, true);
+      return;
+    }
     const canvas = event.currentTarget.parentElement;
     if (!canvas) return;
 
-    event.preventDefault();
+    if (event.pointerType !== "touch" || !allowBrowserPinchZoom) event.preventDefault();
     const bounds = canvas.getBoundingClientRect();
     drag.current = {
       pointerX: event.clientX,
@@ -141,7 +146,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
       }, 500);
     }
     canvas.dataset.iconDragging = "true";
-    event.currentTarget.setPointerCapture(event.pointerId);
+    if (event.pointerType !== "touch" || !allowBrowserPinchZoom) event.currentTarget.setPointerCapture(event.pointerId);
     if (event.pointerType !== "touch") onSelect(event);
   }
 
@@ -152,6 +157,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
 
     const moveThreshold = drag.current.pointerType === "touch" ? 12 : 4;
     if (!drag.current.moved && Math.hypot(deltaX, deltaY) < moveThreshold) return;
+    event.preventDefault();
+    if (!event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.setPointerCapture(event.pointerId);
     if (drag.current.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
     drag.current.longPressTimer = undefined;
     drag.current.moved = true;

@@ -33,6 +33,25 @@ export type OutboxRecord = {
   error: string | null;
 };
 
+export const ACCESS_REVOKED_ERROR = "Access to this desktop was revoked. Local changes have not been uploaded.";
+
+export function outboxOperationDesktopIds(record: Pick<OutboxRecord, "desktopId" | "operation">) {
+  const ids = new Set([record.desktopId]);
+  const operation = record.operation;
+  if (operation.kind === "create-desktop" || operation.kind === "rename-desktop") ids.add(operation.desktop.id);
+  if (operation.kind === "delete-desktop") ids.add(operation.desktopId);
+  if (operation.kind === "entry-transfer") ids.add(operation.destinationDesktopId);
+  return ids;
+}
+
+export function isAccessRevocationRecord(record: Pick<OutboxRecord, "status" | "error">) {
+  return record.status === "blocked" && record.error === ACCESS_REVOKED_ERROR;
+}
+
+export function outboxRecordsDependingOnDesktop(records: readonly OutboxRecord[], desktopId: string) {
+  return records.filter((record) => outboxOperationDesktopIds(record).has(desktopId));
+}
+
 export function wallpaperAfterEntryRemoval(entries: readonly DesktopEntry[], wallpaper: Wallpaper) {
   return wallpaper.source.startsWith("file:") && !entries.some((entry) => entry.id === wallpaper.source.slice(5))
     ? { ...DEFAULT_WALLPAPER }
@@ -53,9 +72,7 @@ export function outboxDesktopRetentionIds(records: readonly OutboxRecord[], cata
   const retained = new Set<string>();
   for (const record of records) {
     if (record.catalogId !== catalogId) continue;
-    retained.add(record.desktopId);
-    if (record.operation.kind === "create-desktop" || record.operation.kind === "rename-desktop") retained.add(record.operation.desktop.id);
-    if (record.operation.kind === "entry-transfer") retained.add(record.operation.destinationDesktopId);
+    for (const id of outboxOperationDesktopIds(record)) retained.add(id);
   }
   return retained;
 }

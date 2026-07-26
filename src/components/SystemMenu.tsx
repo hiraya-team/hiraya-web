@@ -1,5 +1,5 @@
 import { BookOpenText, GearSix, IdentificationCard, Keyboard, MapTrifold, ShareNetwork, SignOut, Trash, UserCircle } from "@phosphor-icons/react";
-import type { AuthSession } from "../lib/auth";
+import { lockAuthBootstrap, type AuthSession } from "../lib/auth";
 import { SERVER_ROUTES } from "../lib/api-routes";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 
@@ -25,7 +25,7 @@ export function SystemMenu({ session, canOpenTrash, canShare, onAreaMap, onSetti
       <button type="button" onClick={() => { dismiss(); onShortcuts(); }}><Keyboard /> Keyboard shortcuts</button>
       {canOpenTrash && <button type="button" onClick={() => { dismiss(); onTrash(); }}><Trash /> Trash</button>}
       {canShare && <button type="button" onClick={() => { dismiss(); onShare(); }}><ShareNetwork /> Share desktop</button>}
-      {session && <><span className="mobile-header-menu__separator" /><a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={dismiss}><IdentificationCard /> Profile</a><form action={SERVER_ROUTES.logout} method="post"><button className="account-menu__action" type="submit"><SignOut /> Log out</button></form></>}
+      {session && <><span className="mobile-header-menu__separator" /><a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={dismiss}><IdentificationCard /> Profile</a><form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}><button className="account-menu__action" type="submit"><SignOut /> Log out</button></form></>}
     </>}
   </MobileHeaderMenu>;
 }

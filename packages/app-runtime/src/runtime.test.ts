@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { RpcDispatcher } from "./dispatcher";
-import { createPackageAssetResolver, initializeSandboxFrame, isAppPackageName, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS } from "./sandbox";
+import { createPackageAssetResolver, initializeSandboxFrame, isAppPackageName, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "./sandbox";
 
 function host() {
   let closed = false;
@@ -148,6 +148,9 @@ describe("app runtime", () => {
     expect(SANDBOX_FLAGS).not.toContain("allow-forms");
     expect(SANDBOX_FLAGS).not.toContain("allow-popups");
     expect(SANDBOX_FLAGS).not.toContain("allow-top-navigation");
+    expect(TRUSTED_MARKDOWN_CSP).toContain("img-src data: blob: https: http:");
+    expect(TRUSTED_MARKDOWN_CSP).toContain("connect-src 'none'");
+    expect(TRUSTED_MARKDOWN_FLAGS).toContain("allow-popups-to-escape-sandbox");
   });
 
   test("terminates and replaces an app frame on navigation after its initial load", () => {

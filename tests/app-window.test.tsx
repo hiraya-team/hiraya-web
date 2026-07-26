@@ -36,6 +36,18 @@ describe("AppWindow mobile actions", () => {
     expect(markup).toContain("Content");
   });
 
+  test("routes suppressed mobile header portals to the global shell", () => {
+    const actions = {} as HTMLDivElement;
+    const markup = renderToStaticMarkup(
+      <AppWindow {...base} hideMobileHeader externalHeaderElements={{ leading: null, actions }}>
+        {(elements) => <div data-global-actions={elements.actions === actions}>Content</div>}
+      </AppWindow>,
+    );
+
+    expect(markup).not.toContain("app-window__header");
+    expect(markup).toContain('data-global-actions="true"');
+  });
+
   test("renders conventional desktop minimize, maximize, and close controls", () => {
     const markup = renderToStaticMarkup(<AppWindow
       {...base}

@@ -61,6 +61,7 @@ export class HirayaSdkError extends Error {
 export class HirayaClient {
   readonly app = {
     getLaunchContext: (options?: RequestOptions) => this.request("app.getLaunchContext", {}, options),
+    getCapabilities: (options?: RequestOptions) => this.request("app.getCapabilities", {}, options),
   };
 
   readonly files = {
@@ -101,6 +102,7 @@ export class HirayaClient {
     showEntryActions: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.showEntryActions", { handles }, options),
     getEntryStatus: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.getEntryStatus", { handles }, options),
     setOfflinePinned: (handles: (FileHandle | FolderHandle)[], pinned: boolean, options?: RequestOptions) => this.request("host.setOfflinePinned", { handles, pinned }, options),
+    setExternalEmbeddedPreviews: (enabled: boolean, options?: RequestOptions) => this.request("host.setExternalEmbeddedPreviews", { enabled }, options),
   };
 
   readonly dialogs = {

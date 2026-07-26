@@ -94,8 +94,13 @@ function remoteStorage() {
       stats.blockWrites += 1;
       outbox = outbox.map((record) => record.operationId === operationId ? { ...record, status: "blocked" as const, error } : record);
     },
+    discardDesktopProjection: async (desktopId: string) => {
+      const discarded = outbox.filter((record) => record.desktopId === desktopId || record.operation.kind === "entry-transfer" && record.operation.destinationDesktopId === desktopId);
+      outbox = outbox.filter((record) => !discarded.includes(record));
+      return { operationIds: discarded.map((record) => record.operationId), fileIds: [], affectedDesktopIds: [desktopId] };
+    },
   } as unknown as NonNullable<SyncEngineOptions["storage"]>;
-  return Object.assign(storage, { stats });
+  return Object.assign(storage, { stats, seedOutbox: (records: OutboxRecord[]) => { outbox = records; } });
 }
 
 describe("canonical synchronization", () => {
@@ -327,6 +332,7 @@ describe("canonical synchronization", () => {
     let current = desktopStateSnapshot();
     let records: OutboxRecord[] = [];
     const requests: string[] = [];
+    let createBody: unknown;
     const storage = {
       listDesktops: async () => ({ desktops: local, activeDesktopId }),
       createOfflineDesktop: async (name: string) => {
@@ -352,7 +358,7 @@ describe("canonical synchronization", () => {
       if (!online) throw new TypeError("offline");
       if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 1, desktops: [remoteDesktopIdentity("server-desk", "Desktop")], quota: catalogQuota });
       if (String(input) === "/api/desktops/offline-desk" && !remoteExists) return Response.json({ error: "desktop not found" }, { status: 404 });
-      if (String(input) === "/api/desktops" && init?.method === "POST") { remoteExists = true; return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop" }, { status: 201 }); }
+      if (String(input) === "/api/desktops" && init?.method === "POST") { createBody = JSON.parse(String(init.body)); remoteExists = true; return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop" }, { status: 201 }); }
       if (String(input) === "/api/desktops/offline-desk") return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop", catalogRevision: 2 });
       throw new Error(`Unexpected request: ${request}`);
     }) as typeof fetch;
@@ -371,6 +377,7 @@ describe("canonical synchronization", () => {
     expect(remoteExists).toBe(true);
     expect(records).toEqual([]);
     expect(requests).toContain("POST /api/desktops");
+    expect(createBody).toEqual({ id: "offline-desk", name: "Offline desktop" });
     await engine.stop();
   });
 
@@ -425,6 +432,54 @@ describe("canonical synchronization", () => {
     CapturingEventSource.latest?.onerror?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toContain("/api/sync/health");
+    await engine.stop();
+  });
+
+  test("falls back to health polling when EventSource is missing or throws and cleans up", async () => {
+    for (const eventSource of [undefined, class { constructor() { throw new Error("disabled"); } }] as const) {
+      let healthCheck: (() => void) | undefined;
+      let cleared = 0;
+      const requests: string[] = [];
+      const engine = new SyncEngine({
+        storage: remoteStorage(),
+        fetch: (async (input) => {
+          requests.push(String(input));
+          if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+          if (String(input) === "/api/sync/health") return Response.json({ catalogId: "catalog", catalogRevision: 1 });
+          throw new Error(`Unexpected request: ${String(input)}`);
+        }) as typeof fetch,
+        eventSource: eventSource as typeof EventSource | undefined,
+        setInterval: ((callback: () => void) => { healthCheck = callback; return 1; }) as never,
+        clearInterval: (() => { cleared += 1; }) as never,
+      });
+      expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("online");
+      healthCheck?.();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      expect(requests).toContain("/api/sync/health");
+      await engine.stop();
+      expect(cleared).toBe(1);
+    }
+  });
+
+  test("scopes access revocation while replaying and preserving unrelated desktop writes", async () => {
+    const storage = remoteStorage();
+    const revoked: OutboxRecord = { operationId: "revoked", sequence: 1, clientId: "client", catalogId: "catalog-1", desktopId: "shared", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "pending", error: null };
+    const unrelated: OutboxRecord = { operationId: "owned", sequence: 2, clientId: "client", catalogId: "catalog-1", desktopId: "desk", operation: { schemaVersion: 1, kind: "editor-settings", settings: remoteDesktopState().editorSettings }, status: "pending", error: null };
+    storage.seedOutbox([revoked, unrelated]);
+    const requests: string[] = [];
+    const engine = new SyncEngine({ storage, eventSource: FakeEventSource as unknown as typeof EventSource, fetch: (async (input, init) => {
+      requests.push(`${init?.method ?? "GET"} ${String(input)}`);
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/shared/layout") return Response.json({ error: "forbidden" }, { status: 403 });
+      if (String(input) === "/api/desktops/desk/editor-settings") return Response.json({});
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch });
+
+    expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("online");
+    expect(await engine.listOutboxRecords()).toEqual([expect.objectContaining({ operationId: "revoked", status: "blocked", error: "Access to this desktop was revoked. Local changes have not been uploaded." })]);
+    expect(requests).toContain("PUT /api/desktops/desk/editor-settings");
+    await engine.createFolder("Still writable", null, { x: 0, y: 0 });
+    expect((await engine.listOutboxRecords()).some((record) => record.desktopId === "desk" && record.status === "pending")).toBe(true);
     await engine.stop();
   });
 
@@ -590,6 +645,59 @@ describe("canonical synchronization", () => {
     expect(latest.layout.snapToGrid).toBe(remote.layout.snapToGrid);
     expect(storage.stats.remoteApplications.at(-1)).toEqual({ acknowledgedOperationId: blocked.operationId, force: true, useAcknowledgedContent: false });
     await engine.stop();
+  });
+
+  test("explicitly removes a permanently rejected projected desktop without fetching it", async () => {
+    const projected = remoteDesktopIdentity("projected", "Projected");
+    let records: OutboxRecord[] = [{ operationId: "create", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation: { schemaVersion: 1, kind: "create-desktop", desktop: projected }, status: "blocked", error: "invalid desktop" }];
+    const discarded: Array<{ desktopId: string; operationId: string }> = [];
+    const requests: string[] = [];
+    const storage = {
+      readOutbox: async () => records,
+      discardDesktopProjection: async (desktopId: string, operationId: string) => {
+        discarded.push({ desktopId, operationId });
+        records = [];
+        return { operationIds: [operationId], fileIds: [], affectedDesktopIds: [desktopId] };
+      },
+      listDesktops: async () => ({ desktops: [remoteDesktopIdentity()], activeDesktopId: "desk" }),
+      ensureDesktop: async (desktop: ReturnType<typeof remoteDesktopIdentity>) => desktop,
+      bindOutboxCatalog: async () => undefined,
+    } as unknown as NonNullable<SyncEngineOptions["storage"]>;
+    const engine = new SyncEngine({ storage, fetch: (async (input) => {
+      requests.push(String(input));
+      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      throw new Error(`The projected desktop was fetched: ${String(input)}`);
+    }) as typeof fetch });
+
+    expect(await engine.discardBlockedOutboxRecord("create")).toEqual([]);
+    expect(discarded).toEqual([{ desktopId: "projected", operationId: "create" }]);
+    expect(requests).toEqual(["/api/catalog"]);
+  });
+
+  test("resolves revoked desktop dependencies without fetching the revoked desktop", async () => {
+    let records: OutboxRecord[] = [{ operationId: "revoked", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "shared", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "blocked", error: "Access to this desktop was revoked. Local changes have not been uploaded." }];
+    const discarded: string[] = [];
+    const requests: string[] = [];
+    const storage = {
+      readOutbox: async () => records,
+      discardDesktopProjection: async (desktopId: string) => {
+        discarded.push(desktopId);
+        records = [];
+        return { operationIds: ["revoked"], fileIds: [], affectedDesktopIds: [desktopId] };
+      },
+      listDesktops: async () => ({ desktops: [remoteDesktopIdentity()], activeDesktopId: "desk" }),
+      ensureDesktop: async (desktop: ReturnType<typeof remoteDesktopIdentity>) => desktop,
+      bindOutboxCatalog: async () => undefined,
+    } as unknown as NonNullable<SyncEngineOptions["storage"]>;
+    const engine = new SyncEngine({ storage, fetch: (async (input) => {
+      requests.push(String(input));
+      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      throw new Error(`The revoked desktop was fetched: ${String(input)}`);
+    }) as typeof fetch });
+
+    expect(await engine.discardBlockedOutboxRecord("revoked")).toEqual([]);
+    expect(discarded).toEqual(["shared"]);
+    expect(requests).toEqual(["/api/catalog"]);
   });
 
   test("rejects discard unless the caller selects the blocked head record", async () => {

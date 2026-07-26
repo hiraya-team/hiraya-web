@@ -2955,6 +2955,14 @@ a:focus-visible {
     touch-action: none;
   }
 
+  .desktop[data-browser-pinch-zoom] {
+    touch-action: pinch-zoom;
+  }
+
+  .desktop[data-browser-pinch-zoom] .file-icon {
+    touch-action: pinch-zoom;
+  }
+
   .desktop-canvas {
     right: auto;
     bottom: auto;
@@ -4096,7 +4104,7 @@ a:focus-visible {
   .mobile-window-nav__leading .desktop-switcher__trigger > :not(.brand-mark__shape) { display: none; }
   .menu-bar__actions { gap: 0; }
   .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger,
-  .menu-bar__actions > button { width: 42px; min-width: 42px; padding: 0; justify-content: center; }
+  .menu-bar__actions > button { width: var(--touch-target); min-width: var(--touch-target); flex: 0 0 var(--touch-target); padding: 0; justify-content: center; }
   .menu-bar__actions > .mobile-header-menu:first-child > .mobile-header-menu__trigger span { display: none; }
   .menu-bar__clock, .menu-bar__sync span { display: none; }
   .app-window[data-mobile] .app-window__header-leading,
@@ -5375,7 +5383,7 @@ a:focus-visible {
   .mobile-window-nav__leading .desktop-switcher__trigger { width: 44px; padding: 0; justify-content: center; }
   .mobile-window-nav__leading .desktop-switcher__trigger > :not(.brand-mark__shape) { display: none; }
   .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger,
-  .menu-bar__actions > button { width: 42px; min-width: 42px; padding: 0; justify-content: center; }
+  .menu-bar__actions > button { width: var(--touch-target); min-width: var(--touch-target); flex: 0 0 var(--touch-target); padding: 0; justify-content: center; }
   .app-window[data-mobile] .app-window__header-leading,
   .app-window[data-mobile] .app-window__title-area,
   .app-window[data-mobile] .app-window__header-content { display: none; }
@@ -5943,4 +5951,28 @@ a:focus-visible {
   .desktop-minimap[data-mobile][data-expanded] { right: max(8px, env(safe-area-inset-right)); bottom: max(8px, env(safe-area-inset-bottom)); left: auto; width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right)); height: min(62dvh, 460px); padding: 0; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid { width: min(100cqw, calc(100cqh * var(--minimap-columns) * 15 / var(--minimap-rows) / 11)); height: auto; aspect-ratio: calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 11); gap: 6px; }
   .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__file { width: 26px; height: 26px; }
+}
+
+/* Suppressed mobile window chrome portals its actions into the global header. */
+.mobile-global-actions { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; }
+.mobile-global-actions:empty { display: none; }
+
+@media (max-width: 620px) {
+  .mobile-window-nav { min-width: 0; flex: 1 1 auto; }
+  .mobile-global-actions,
+  .mobile-global-actions .file-header-actions,
+  .mobile-global-actions .file-header-actions > * { flex-shrink: 0; }
+  .mobile-global-actions .mobile-header-menu__trigger,
+  .mobile-global-actions .icon-button,
+  .mobile-global-actions .file-header-actions__edit,
+  .mobile-global-actions .file-header-actions__save { min-width: var(--touch-target); min-height: var(--touch-target); }
+  .mobile-global-actions .mobile-header-menu__trigger,
+  .mobile-global-actions .icon-button { width: var(--touch-target); height: var(--touch-target); padding: 0; color: var(--theme-chrome-text); background: transparent; }
+  .mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }
+  .public-menu:has(.public-menu__context) { grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target); }
+  .public-menu__back { grid-column: 1; width: var(--touch-target); min-width: var(--touch-target); justify-content: center; padding: 0; }
+  .public-menu__context { grid-column: 2; }
+  .public-menu__window-actions { grid-column: 3; }
+  .public-menu__close { grid-column: 4; width: var(--touch-target); min-width: var(--touch-target); justify-content: center; padding: 0; }
+  .public-menu__close span { display: none; }
 }

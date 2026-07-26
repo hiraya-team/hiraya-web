@@ -2,4 +2,6 @@
 #editor { width: 100%; min-height: 0; padding: 1rem 1.15rem; resize: none; border: 0; outline: 0; color: var(--hiraya-text); background: var(--hiraya-background); font: 14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
 .compact-control { display: inline-flex; align-items: center; gap: .3rem; color: var(--hiraya-text-muted); font-size: .78rem; white-space: nowrap; }
 .compact-control select { min-width: 3.5rem; }
+.write-state { padding: .15rem .45rem; border: 1px solid var(--hiraya-border); border-radius: 999px; color: var(--hiraya-text-muted); background: var(--hiraya-surface-elevated); font-size: .72rem; font-weight: 650; white-space: nowrap; }
+#editor:read-only { cursor: default; }
 @media (max-width: 700px) { .compact-control { display: none; } }

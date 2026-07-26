@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxDesktopRetentionIds, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
+import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxDesktopRetentionIds, outboxRecordsDependingOnDesktop, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
 import { desktopStateSnapshot } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
@@ -101,5 +101,9 @@ describe("strict outbox", () => {
     expect(desktopPendingOperationProtection([transfer], "source")).toContain("pending or blocked");
     expect(desktopPendingOperationProtection([transfer], "destination")).toContain("pending or blocked");
     expect(desktopPendingOperationProtection([transfer], "clean")).toBe("");
+    const destinationEdit: OutboxRecord = { ...transfer, operationId: "destination-edit", sequence: 2, desktopId: "destination", operation: { schemaVersion: 1, kind: "editor-settings", settings: state().editorSettings } };
+    const unrelated: OutboxRecord = { ...destinationEdit, operationId: "unrelated", sequence: 3, desktopId: "other" };
+    expect(outboxRecordsDependingOnDesktop([transfer, destinationEdit, unrelated], "source").map((record) => record.operationId)).toEqual(["transfer"]);
+    expect(outboxRecordsDependingOnDesktop([transfer, destinationEdit, unrelated], "destination").map((record) => record.operationId)).toEqual(["transfer", "destination-edit"]);
   });
 });

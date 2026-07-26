@@ -1,11 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { filterAndSortEntries, formatEntrySize } from "../src/ui/folder-explorer";
+import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary } from "../src/ui/folder-explorer";
 import type { DesktopEntry } from "../src/types";
 
 const entries: DesktopEntry[] = [
-  { id: "large", kind: "file", name: "Report 10.pdf", parentId: null, createdAt: 1, modifiedAt: 30, position: { x: 0, y: 0 }, mimeType: "application/pdf", size: 2048 },
-  { id: "folder", kind: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 20, position: { x: 0, y: 0 } },
-  { id: "small", kind: "file", name: "Report 2.txt", parentId: null, createdAt: 1, modifiedAt: 10, position: { x: 0, y: 0 }, mimeType: "text/plain", size: 1 },
+  {
+    id: "large",
+    kind: "file",
+    name: "Report 10.pdf",
+    parentId: null,
+    createdAt: 1,
+    modifiedAt: 30,
+    position: { x: 0, y: 0 },
+    mimeType: "application/pdf",
+    size: 2048,
+  },
+  {
+    id: "folder",
+    kind: "folder",
+    name: "Plans",
+    parentId: null,
+    createdAt: 1,
+    modifiedAt: 20,
+    position: { x: 0, y: 0 },
+  },
+  {
+    id: "small",
+    kind: "file",
+    name: "Report 2.txt",
+    parentId: null,
+    createdAt: 1,
+    modifiedAt: 10,
+    position: { x: 0, y: 0 },
+    mimeType: "text/plain",
+    size: 1,
+  },
 ];
 
 describe("folder explorer entries", () => {
@@ -19,5 +47,12 @@ describe("folder explorer entries", () => {
     expect(formatEntrySize(entries[1])).toBe("");
     expect(formatEntrySize(entries[2])).toBe("1 byte");
     expect(formatEntrySize(entries[0])).toBe("2 KB");
+  });
+
+  test("describes sort state and labels controls by their next action", () => {
+    expect(sortSummary("name", "asc")).toBe("Sorted by Name, ascending.");
+    expect(sortSummary("date", "desc")).toBe("Sorted by Date modified, descending.");
+    expect(sortActionLabel("name", "name", "asc")).toBe("Sort by Name, descending");
+    expect(sortActionLabel("size", "name", "desc")).toBe("Sort by Size, ascending");
   });
 });

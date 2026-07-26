@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { AuthenticationRequiredError, bootstrapSession, loginUrl, parseAuthSession, safeReturnPath } from "../src/lib/auth";
+import { AuthenticationRequiredError, bootstrapSession, lockAuthBootstrap, loginUrl, parseAuthSession, safeReturnPath } from "../src/lib/auth";
+
+function memoryStorage() {
+  const values = new Map<string, string>();
+  return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };
+}
 
 describe("session bootstrap", () => {
   test("validates stable storage identity and display metadata", () => {
@@ -30,5 +35,27 @@ describe("session bootstrap", () => {
     let redirects = 0;
     await expect(bootstrapSession(false, (async () => new Response(null, { status: 401 })) as typeof fetch, () => { redirects += 1; })).rejects.toBeInstanceOf(AuthenticationRequiredError);
     expect(redirects).toBe(1);
+  });
+
+  test("uses a versioned validated bootstrap only when session fetch rejects", async () => {
+    const storage = memoryStorage();
+    const session = { storageId: "account-a", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
+    expect(await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage)).toEqual(session);
+    expect(await bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).toEqual(session);
+    await expect(bootstrapSession(false, (async () => new Response(null, { status: 401 })) as typeof fetch, () => undefined, storage)).rejects.toBeInstanceOf(AuthenticationRequiredError);
+    await expect(bootstrapSession(false, (async () => { throw new TypeError("offline after logout"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline after logout");
+    await expect(bootstrapSession(false, (async () => new Response(null, { status: 503 })) as typeof fetch, () => undefined, storage)).rejects.toThrow("503");
+    await expect(bootstrapSession(false, (async () => Response.json({ ...session, storageId: "" })) as typeof fetch, () => undefined, storage)).rejects.toThrow("storage ID");
+    const other = { ...session, storageId: "account-b", user: { displayName: "Grace" } };
+    await bootstrapSession(false, (async () => Response.json(other)) as typeof fetch, () => undefined, storage);
+    expect(await bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).toEqual(other);
+  });
+
+  test("locks cached account bootstrap synchronously on logout", async () => {
+    const storage = memoryStorage();
+    const session = { storageId: "account-a", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
+    await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage);
+    lockAuthBootstrap(storage);
+    await expect(bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline");
   });
 });

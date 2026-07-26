@@ -7,6 +7,12 @@ export type TextEditorSettings = Readonly<{
 
 export const DEFAULT_TEXT_EDITOR_SETTINGS: TextEditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, lineWrap: true };
 
+export function writeRestrictionMessage(reason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable", dirty: boolean) {
+  if (reason === "available") return dirty ? "Write access restored. Your unsaved draft is ready to save." : "Write access restored. Editing is available.";
+  const explanation = reason === "shared-offline" ? "Reconnect to edit this shared desktop." : reason === "read-only" ? "Your access to this desktop is read-only." : "Editing is temporarily unavailable.";
+  return dirty ? `Unsaved draft preserved. ${explanation}` : explanation;
+}
+
 export function parseTextEditorSettings(value: unknown, fallback: TextEditorSettings = DEFAULT_TEXT_EDITOR_SETTINGS): TextEditorSettings {
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const item = value as Record<string, unknown>;

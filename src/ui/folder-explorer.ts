@@ -4,14 +4,25 @@ export type FolderSortKey = "name" | "date" | "type" | "size";
 export type SortDirection = "asc" | "desc";
 export type ExplorerView = "list" | "grid";
 
-const entryType = (entry: DesktopEntry) => entry.kind === "folder" ? "folder" : entry.mimeType || "file";
+const SORT_LABELS: Record<FolderSortKey, string> = {
+  name: "Name",
+  date: "Date modified",
+  type: "Type",
+  size: "Size",
+};
 
-export function filterAndSortEntries(
-  entries: readonly DesktopEntry[],
-  query: string,
-  sortKey: FolderSortKey,
-  direction: SortDirection,
-) {
+export function sortSummary(key: FolderSortKey, direction: SortDirection) {
+  return `Sorted by ${SORT_LABELS[key]}, ${direction === "asc" ? "ascending" : "descending"}.`;
+}
+
+export function sortActionLabel(key: FolderSortKey, activeKey: FolderSortKey, direction: SortDirection) {
+  const nextDirection = key === activeKey && direction === "asc" ? "descending" : "ascending";
+  return `Sort by ${SORT_LABELS[key]}, ${nextDirection}`;
+}
+
+const entryType = (entry: DesktopEntry) => (entry.kind === "folder" ? "folder" : entry.mimeType || "file");
+
+export function filterAndSortEntries(entries: readonly DesktopEntry[], query: string, sortKey: FolderSortKey, direction: SortDirection) {
   const needle = query.trim().toLocaleLowerCase();
   const filtered = needle ? entries.filter((entry) => entry.name.toLocaleLowerCase().includes(needle)) : entries;
   const factor = direction === "asc" ? 1 : -1;
@@ -20,11 +31,25 @@ export function filterAndSortEntries(
     // Keep folders together while applying the requested direction within each kind.
     if (left.kind !== right.kind) return left.kind === "folder" ? -1 : 1;
     let compared = 0;
-    if (sortKey === "name") compared = left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" });
+    if (sortKey === "name")
+      compared = left.name.localeCompare(right.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      });
     if (sortKey === "date") compared = left.modifiedAt - right.modifiedAt;
-    if (sortKey === "type") compared = entryType(left).localeCompare(entryType(right), undefined, { sensitivity: "base" });
+    if (sortKey === "type")
+      compared = entryType(left).localeCompare(entryType(right), undefined, {
+        sensitivity: "base",
+      });
     if (sortKey === "size") compared = (left.kind === "file" ? left.size : 0) - (right.kind === "file" ? right.size : 0);
-    return compared * factor || left.name.localeCompare(right.name, undefined, { numeric: true, sensitivity: "base" }) || left.id.localeCompare(right.id);
+    return (
+      compared * factor ||
+      left.name.localeCompare(right.name, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }) ||
+      left.id.localeCompare(right.id)
+    );
   });
 }
 

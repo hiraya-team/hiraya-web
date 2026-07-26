@@ -85,7 +85,7 @@ type Manifest = DesktopState;
 const parseManifestV13 = parseDesktopState;
 const manifestLayout = desktopStateLayout;
 
-export type LocalPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
+export type LocalPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; allowBrowserPinchZoom: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
 
 export { DEFAULT_EDITOR_SETTINGS } from "./desktop-state";
 
@@ -795,6 +795,19 @@ async function acknowledgeMutationUnsafe(operationId: string) {
   await removeStagedOperation(operationId);
 }
 
+async function discardDesktopProjectionUnsafe(desktopId: string, operationId: string) {
+  const result = await callDatabase("discardDesktopProjection", { desktopId, operationId }, null);
+  for (const id of result.operationIds) await removeStagedOperation(id);
+  try {
+    const directory = await getFilesDirectory();
+    for (const id of result.fileIds) {
+      await directory.removeEntry(id).catch(() => undefined);
+      await removeContentCacheMarker(id);
+    }
+  } catch (error) { console.warn("Hiraya could not clean up discarded desktop content.", error); }
+  return result;
+}
+
 async function saveEditorSettingsUnsafe(settings: EditorSettings) {
   const manifest = { ...await readManifest(), editorSettings: settings };
   assertValidManifest(manifest);
@@ -1433,6 +1446,7 @@ export function readOutbox() { return serializeStorage(() => callDatabase("readO
 export function bindOutboxCatalog(catalogId: string) { return serializeStorage(() => callDatabase("bindOutboxCatalog", { catalogId }, null)); }
 export function acknowledgeMutation(operationId: string) { return serializeStorage(() => acknowledgeMutationUnsafe(operationId)); }
 export function blockMutation(operationId: string, error: string) { return serializeStorage(() => callDatabase("blockMutation", { operationId, error })); }
+export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
 export function readPendingContent(operationId: string, entryId: string) { return serializeStorage(() => readStagedContent(operationId, entryId)); }
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }
 export function listInstalledApps() { return serializeStorage(async () => {

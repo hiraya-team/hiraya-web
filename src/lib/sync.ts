@@ -5,7 +5,7 @@ import { API_ROUTES } from "./api-routes";
 import { assertValidId, parseBlobMutationPreparation, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
-import { desktopPendingOperationProtection, outboxDesktopRetentionIds } from "./outbox";
+import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, isAccessRevocationRecord, outboxDesktopRetentionIds, outboxOperationDesktopIds } from "./outbox";
 import { parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
 import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
@@ -35,7 +35,7 @@ type StorageBoundary = Pick<typeof storage,
   "readDesktopState" |
   "renameEntry" | "saveDesktopLayout" | "saveEditorSettings" | "saveFile" | "saveTextFile" | "updateEntryPosition"
   | "updateRootEntryPositions" | "enqueueMutation" | "readOutbox" | "bindOutboxCatalog" |
-  "acknowledgeMutation" | "blockMutation" | "readPendingContent" |
+  "acknowledgeMutation" | "blockMutation" | "discardDesktopProjection" | "readPendingContent" |
   "selectTheme" | "saveCustomTheme" | "deleteCustomTheme"
   | "listActivity"
   | "transferEntries" | "enqueueTransfer"
@@ -183,7 +183,7 @@ export class SyncEngine {
   constructor(options: SyncEngineOptions = {}) {
     this.frontendOnly = options.frontendOnly ?? false;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
-    this.EventSourceImpl = options.eventSource ?? globalThis.EventSource;
+    this.EventSourceImpl = "eventSource" in options ? options.eventSource : globalThis.EventSource;
     this.setIntervalImpl = options.setInterval ?? globalThis.setInterval.bind(globalThis);
     this.clearIntervalImpl = options.clearInterval ?? globalThis.clearInterval.bind(globalThis);
     this.storage = options.storage ?? storage;
@@ -326,6 +326,16 @@ export class SyncEngine {
     if (this.status === next) return;
     this.status = next;
     for (const listener of this.statusListeners) listener(next);
+  }
+
+  private activeDesktopIsBlocked(records: readonly OutboxRecord[]) {
+    return records.some((record) => record.catalogId === this.catalogId && record.status === "blocked" && (!isAccessRevocationRecord(record) || outboxOperationDesktopIds(record).has(this.desktopId)));
+  }
+
+  private async updateStatusFromOutbox() {
+    const records = await this.storage.readOutbox();
+    this.setStatus(this.activeDesktopIsBlocked(records) ? "blocked" : "online");
+    return records;
   }
 
   private publish(next: storage.DesktopStateSnapshot) {
@@ -523,7 +533,7 @@ export class SyncEngine {
     const headers = (value?: HeadersInit) => this.idempotencyHeaders(record, value);
     switch (operation.kind) {
       case "create-desktop":
-        await this.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.desktop) });
+        await this.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) });
         return;
       case "rename-desktop":
         await this.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name }) });
@@ -596,7 +606,7 @@ export class SyncEngine {
       await this.publishOutbox();
     } catch (error) {
       if (error instanceof SyncRequestError && error.permanent) {
-        await this.storage.blockMutation(record.operationId, error.message);
+        await this.storage.blockMutation(record.operationId, error.status === 403 ? ACCESS_REVOKED_ERROR : error.message);
         await this.publishOutbox();
       }
       throw error;
@@ -638,15 +648,31 @@ export class SyncEngine {
     } else {
       await this.bindOutboxCatalog(this.catalogId);
     }
-    for (const record of (await this.storage.readOutbox()).filter((candidate) => candidate.catalogId === this.catalogId)) {
-      await this.replayRecord(record, generation);
+    const records = (await this.storage.readOutbox()).filter((candidate) => candidate.catalogId === this.catalogId);
+    const revokedDesktopIds = new Set(records.filter(isAccessRevocationRecord).flatMap((record) => [...outboxOperationDesktopIds(record)]));
+    for (const record of records) {
+      if (isAccessRevocationRecord(record) || [...outboxOperationDesktopIds(record)].some((id) => revokedDesktopIds.has(id))) continue;
+      try {
+        await this.replayRecord(record, generation);
+      } catch (error) {
+        if (!(error instanceof SyncRequestError) || error.status !== 403) throw error;
+        for (const id of outboxOperationDesktopIds(record)) revokedDesktopIds.add(id);
+      }
     }
+    await this.updateStatusFromOutbox();
   }
 
   private startEvents() {
-    if (!this.EventSourceImpl) throw new Error("Server events are unavailable in this browser.");
     this.events?.close();
-    const events = new this.EventSourceImpl(API_ROUTES.events);
+    let events: EventSource | null = null;
+    try {
+      if (this.EventSourceImpl) events = new this.EventSourceImpl(API_ROUTES.events);
+    } catch {
+      events = null;
+    }
+    if (this.healthTimer !== null) this.clearIntervalImpl(this.healthTimer);
+    this.healthTimer = this.setIntervalImpl(() => { void this.checkHealth(); }, 5_000);
+    if (!events) return;
     this.events = events;
     events.onopen = () => {
       if (!this.running) return;
@@ -657,7 +683,7 @@ export class SyncEngine {
         if (catalog.desktops.some((desktop) => desktop.id === this.desktopId)) await this.reconcileActiveWithCreateRecovery();
         return this.replayOutbox();
       }).then(() => {
-        if (this.running) this.setStatus("online");
+        if (this.running && this.status !== "blocked") this.setStatus("online");
       }).catch((error) => {
         if (this.running) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
       });
@@ -692,8 +718,6 @@ export class SyncEngine {
         if (this.running) this.setStatus("offline");
       });
     });
-    if (this.healthTimer !== null) this.clearIntervalImpl(this.healthTimer);
-    this.healthTimer = this.setIntervalImpl(() => { void this.checkHealth(); }, 5_000);
   }
 
   private async checkHealth() {
@@ -715,7 +739,7 @@ export class SyncEngine {
         if (catalog.desktops.some((desktop) => desktop.id === this.desktopId)) await this.reconcileActiveWithCreateRecovery();
         await this.replayOutbox();
       });
-      if (this.running) this.setStatus("online");
+      if (this.running) await this.updateStatusFromOutbox();
     } catch (error) {
       if (this.running && !(error instanceof AuthenticationRequiredError)) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
     }
@@ -1265,10 +1289,13 @@ export class SyncEngine {
           await this.replayRecord(record, this.generation, recordIndex === index);
         }
         const remaining = [...await this.storage.readOutbox()];
-        this.setStatus(remaining.some((record) => record.status === "blocked") ? "blocked" : "online");
+        this.setStatus(this.activeDesktopIsBlocked(remaining) ? "blocked" : "online");
         return remaining;
       } catch (error) {
-        if (error instanceof SyncRequestError) this.setStatus(error.permanent ? "blocked" : "offline");
+        if (error instanceof SyncRequestError) {
+          if (error.permanent) await this.updateStatusFromOutbox();
+          else this.setStatus("offline");
+        }
         throw error;
       }
     });
@@ -1281,7 +1308,19 @@ export class SyncEngine {
       const record = records.find((candidate) => candidate.operationId === operationId);
       if (!record) throw new Error("That queued change no longer exists.");
       if (record.status !== "blocked") throw new Error("Only blocked changes can be discarded.");
-      if (records[0]?.operationId !== operationId) throw new Error("Resolve earlier queued changes before discarding this change.");
+      const removesProjection = isAccessRevocationRecord(record) || record.operation.kind === "create-desktop";
+      if (!removesProjection && records[0]?.operationId !== operationId) throw new Error("Resolve earlier queued changes before discarding this change.");
+
+      if (removesProjection) {
+        const desktopId = record.operation.kind === "create-desktop" ? record.operation.desktop.id : record.desktopId;
+        const discarded = await this.storage.discardDesktopProjection(desktopId, operationId);
+        for (const affectedDesktopId of discarded.affectedDesktopIds) {
+          if (affectedDesktopId !== desktopId) await this.reconcile(undefined, affectedDesktopId);
+        }
+        await this.publishOutbox();
+        await this.refreshCatalog();
+        return [...await this.updateStatusFromOutbox()];
+      }
 
       const generation = this.generation;
       const remote = await this.fetchDesktop(record.desktopId);
@@ -1295,8 +1334,7 @@ export class SyncEngine {
       await this.publishOutbox();
       if (record.operation.kind === "create-desktop" || record.operation.kind === "rename-desktop" || record.operation.kind === "delete-desktop") await this.refreshCatalog();
       const remaining = [...await this.storage.readOutbox()];
-      if (remaining.some((candidate) => candidate.status === "blocked")) this.setStatus("blocked");
-      else this.setStatus("online");
+      this.setStatus(this.activeDesktopIsBlocked(remaining) ? "blocked" : "online");
       return remaining;
     });
   }

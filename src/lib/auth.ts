@@ -15,6 +15,9 @@ export type AuthSession = {
   };
 };
 
+const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-v1";
+type BootstrapStorage = Pick<Storage, "getItem" | "setItem">;
+
 export class AuthenticationRequiredError extends Error {
   constructor() {
     super("Your Hiraya session has expired.");
@@ -63,22 +66,53 @@ export function redirectToLogin() {
   window.location.replace(loginUrl());
 }
 
-export function requireAuthenticatedResponse(response: Response, onUnauthorized: () => void = redirectToLogin) {
+export function requireAuthenticatedResponse(response: Response, onUnauthorized: () => void = redirectToLogin, storage?: BootstrapStorage) {
   if (response.status !== 401) return response;
+  const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
+  if (bootstrapStorage) lockAuthBootstrap(bootstrapStorage);
   onUnauthorized();
   throw new AuthenticationRequiredError();
+}
+
+function cachedSession(storage: BootstrapStorage): AuthSession | null {
+  try {
+    const value = JSON.parse(storage.getItem(AUTH_BOOTSTRAP_CACHE_KEY) ?? "null") as unknown;
+    if (!value || typeof value !== "object") return null;
+    const cache = value as { version?: unknown; locked?: unknown; session?: unknown };
+    if (cache.version !== 1 || cache.locked !== false) return null;
+    return parseAuthSession(cache.session);
+  } catch {
+    return null;
+  }
+}
+
+export function lockAuthBootstrap(storage: BootstrapStorage = localStorage) {
+  try {
+    storage.setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 1, locked: true }));
+  } catch { /* Logout must continue when browser storage is unavailable. */ }
 }
 
 export async function bootstrapSession(
   frontendOnly: boolean,
   fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),
   onUnauthorized: () => void = redirectToLogin,
+  storage?: BootstrapStorage,
 ): Promise<AuthSession | null> {
   if (frontendOnly) return null;
-  const response = requireAuthenticatedResponse(await fetchImpl(API_ROUTES.authSession, {
-    cache: "no-store",
-    credentials: "same-origin",
-  }), onUnauthorized);
+  let response: Response;
+  try {
+    response = await fetchImpl(API_ROUTES.authSession, { cache: "no-store", credentials: "same-origin" });
+  } catch (error) {
+    const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
+    const cached = bootstrapStorage ? cachedSession(bootstrapStorage) : null;
+    if (cached) return cached;
+    throw error;
+  }
+  requireAuthenticatedResponse(response, onUnauthorized, storage);
   if (!response.ok) throw new Error(`Hiraya could not load your session (${response.status}).`);
-  return parseAuthSession(await response.json());
+  const session = parseAuthSession(await response.json());
+  try {
+    (storage ?? localStorage).setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 1, locked: false, session }));
+  } catch { /* A cache write failure must not block an authenticated startup. */ }
+  return session;
 }

@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 7;
+export const DATABASE_SCHEMA_VERSION = 8;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -120,4 +120,15 @@ export const EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL = `
 export function migrateSchema6To7Sql(version: number): string {
   if (version !== 6) throw new Error(`Schema 7 migration requires version 6, received ${version}.`);
   return `BEGIN IMMEDIATE; ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL} COMMIT;`;
+}
+
+export const PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL = `
+  ALTER TABLE preferences ADD COLUMN allow_browser_pinch_zoom INTEGER NOT NULL DEFAULT 0 CHECK (allow_browser_pinch_zoom IN (0, 1));
+  UPDATE preferences SET external_embedded_previews=0;
+  PRAGMA user_version=8;
+`;
+
+export function migrateSchema7To8Sql(version: number): string {
+  if (version !== 7) throw new Error(`Schema 8 migration requires version 7, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL} COMMIT;`;
 }

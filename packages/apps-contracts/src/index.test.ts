@@ -80,6 +80,10 @@ describe("apps contracts", () => {
     expect(parseServiceResult("dialogs.confirm", true)).toBe(true);
     expect(() => parseServiceResult("dialogs.confirm", "yes")).toThrow("Confirmation");
     expect(parseRpcEvent({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: "save" } })).toEqual(expect.objectContaining({ payload: { id: "save" } }));
+    const capabilities = { files: { write: false, writeReason: "shared-offline" }, externalEmbeddedPreviews: false } as const;
+    expect(parseServiceResult("app.getCapabilities", capabilities)).toEqual(capabilities);
+    expect(parseRpcEvent({ protocolVersion: 1, type: "event", event: "capabilities.changed", payload: capabilities })).toEqual(expect.objectContaining({ payload: capabilities }));
+    expect(() => parseServiceResult("app.getCapabilities", { ...capabilities, files: { write: false, writeReason: "unknown" } })).toThrow("reason");
     expect(() => parseRpcEvent({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: 1 } })).toThrow("ID");
     expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r2", method: "files.readChunk", params: { handle: "file_0123456789abcdef", offset: 4, length: 1024 * 1024 } })).toEqual(expect.objectContaining({ params: expect.objectContaining({ offset: 4, length: 1024 * 1024 }) }));
     expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r2", method: "files.readChunk", params: { handle: "file_0123456789abcdef", offset: 0, length: 1024 * 1024 + 1 } })).toThrow("length");

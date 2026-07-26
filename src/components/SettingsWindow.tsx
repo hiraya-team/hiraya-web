@@ -84,6 +84,7 @@ type Props = {
   updateChecking: boolean;
   autoUpdate: boolean;
   externalEmbeddedPreviews: boolean;
+  allowBrowserPinchZoom: boolean;
   localPreferencesLoaded: boolean;
   searchAllDesktops: boolean;
   desktopSearchAvailable: boolean;
@@ -117,6 +118,7 @@ type Props = {
   onCheckForUpdate: () => void;
   onAutoUpdateChange: (enabled: boolean) => void;
   onExternalEmbeddedPreviewsChange: (enabled: boolean) => void;
+  onAllowBrowserPinchZoomChange: (enabled: boolean) => void;
   onSearchAllDesktopsChange: (enabled: boolean) => void;
   onOpenGettingStarted: () => void;
   onInstall: () => void;
@@ -188,6 +190,7 @@ export function SettingsWindow({
   updateChecking,
   autoUpdate,
   externalEmbeddedPreviews,
+  allowBrowserPinchZoom,
   localPreferencesLoaded,
   searchAllDesktops,
   desktopSearchAvailable,
@@ -221,6 +224,7 @@ export function SettingsWindow({
   onCheckForUpdate,
   onAutoUpdateChange,
   onExternalEmbeddedPreviewsChange,
+  onAllowBrowserPinchZoomChange,
   onSearchAllDesktopsChange,
   onOpenGettingStarted,
   onInstall,
@@ -454,6 +458,11 @@ export function SettingsWindow({
                     <button className="button button--quiet" type="button" onClick={onToggleFullscreen}>{isFullscreen ? "Exit" : "Enter"}</button>
                   </div>
                 )}
+                <label className="settings-row">
+                  <span className="settings-row__icon"><ArrowsOut size={17} /></span>
+                  <span className="settings-row__copy"><strong>Browser pinch zoom</strong><small>Allow two-finger browser magnification over the desktop. This browser-only option can interfere with desktop gestures.</small></span>
+                  <input type="checkbox" checked={allowBrowserPinchZoom} disabled={!localPreferencesLoaded} onChange={(event) => onAllowBrowserPinchZoomChange(event.target.checked)} />
+                </label>
               </div>
             </section>
 

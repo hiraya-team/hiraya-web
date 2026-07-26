@@ -1,0 +1,92 @@
+import { describe, expect, test } from "bun:test";
+import { renderToStaticMarkup } from "react-dom/server";
+import { SearchCommandPalette } from "../src/components/SearchCommandPalette";
+
+const baseProps = {
+  entries: [],
+  activeDesktopId: "desktop",
+  activeDesktopName: "Desktop",
+  activeAuthorityCatalogId: null,
+  cachedDesktopResults: [],
+  searchAllDesktops: false,
+  allDesktopsAvailable: false,
+  online: true,
+  onSearchAllDesktops: async () => ({
+    schemaVersion: 1 as const,
+    query: "",
+    limit: 50,
+    truncated: false,
+    results: [],
+  }),
+  onSearchAllDesktopsChange: () => undefined,
+  windows: [],
+  commands: [],
+  onOpenEntry: () => undefined,
+  onFocusWindow: () => undefined,
+  onRunCommand: () => undefined,
+  onClose: () => undefined,
+};
+
+describe("accessibility regressions", () => {
+  test("search exposes a list-autocomplete combobox and omits an empty active descendant", () => {
+    const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} />);
+
+    expect(markup).toContain('role="combobox"');
+    expect(markup).toContain('aria-autocomplete="list"');
+    expect(markup).toContain('aria-expanded="true"');
+    expect(markup).toContain('aria-haspopup="listbox"');
+    expect(markup).toContain('role="listbox"');
+    expect(markup).not.toContain("aria-activedescendant");
+  });
+
+  test("the active descendant references the rendered selected option", () => {
+    const entry = {
+      kind: "folder" as const,
+      id: "folder",
+      name: "Plans",
+      parentId: null,
+      createdAt: 1,
+      modifiedAt: 1,
+      position: { x: 0, y: 0 },
+    };
+    const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} entries={[entry]} />);
+    const activeId = markup.match(/aria-activedescendant="([^"]+)"/)?.[1];
+
+    expect(activeId).toBeTruthy();
+    expect(markup).toContain(`id="${activeId}"`);
+    expect(markup).toContain(`id="${activeId}" class="command-palette__result" type="button" role="option" aria-selected="true"`);
+  });
+
+  test("mobile shell controls retain fixed 44px targets in the final override", async () => {
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    const finalMobileRules = css.slice(css.indexOf("/* Final ownership for cohesion-specific responsive behavior. */"));
+
+    expect(finalMobileRules).toContain("width: var(--touch-target); min-width: var(--touch-target); flex: 0 0 var(--touch-target)");
+    expect(finalMobileRules).not.toContain("width: 42px; min-width: 42px");
+  });
+
+  test("suppressed mobile windows retain explicit authenticated and public action slots", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const publicDesktop = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+
+    expect(app).toContain('className="mobile-global-actions"');
+    expect(app).toContain("externalHeaderElements={isMobile && focusedAppId === app.id");
+    expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
+    expect(publicDesktop).toContain("externalHeaderElements={mobile ?");
+    expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
+    expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
+  });
+
+  test("mobile area switcher focus and collapse paths share the global opener", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+
+    expect(app).toContain("mobileAreaSwitcherButtonRef.current?.focus()");
+    expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
+    expect(app).toContain('if (owner === "areaEditor") {');
+    expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
+    expect(app).toContain("if (drag.expanded) collapseAreaMap();");
+    expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
+    expect(app).toContain("if (isMobile) collapseAreaMap();");
+  });
+});

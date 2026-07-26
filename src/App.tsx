@@ -93,12 +93,12 @@ import { canOpenActivity } from "./ui/activity-navigation";
 import type { OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
-import { canMutateDesktop, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
+import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, RuntimeCommandContributions, type AppCommandContext, type CommandId } from "./apps/commands";
 import type { AppPackageInspection } from "@hiraya/app-cli";
 import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
-import { isAppPackageName, RpcDispatcher } from "@hiraya/app-runtime";
+import { isAppPackageName, RpcDispatcher, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
@@ -122,6 +122,8 @@ import { boundedNotificationVisibility } from "./ui/notifications";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
 import { DesktopTaskbar } from "./components/DesktopTaskbar";
 import { ConnectionPanel } from "./components/ConnectionPanel";
+import { lockAuthBootstrap } from "./lib/auth";
+import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { SystemMenu } from "./components/SystemMenu";
 import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragOffset, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
@@ -217,6 +219,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [appNotifications, setAppNotifications] = useState<readonly AppNotification[]>([]);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [externalEmbeddedPreviews, setExternalEmbeddedPreviews] = useState<boolean | null>(null);
+  const [allowBrowserPinchZoom, setAllowBrowserPinchZoom] = useState(false);
   const [updateSupported, setUpdateSupported] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [updateChecking, setUpdateChecking] = useState(false);
@@ -231,6 +234,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
   const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [storagePersistence, setStoragePersistence] = useState<StoragePersistenceStatus>("checking");
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
   const [offlineInventory, setOfflineInventory] = useState<OfflineStorageInventory | null>(null);
   const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
@@ -246,6 +250,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
+  const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -263,7 +268,10 @@ function App({ session }: { session: AuthSession | null }) {
     startY: number;
     timer: number;
   } | null>(null);
+  const desktopTouchPointersRef = useRef(new Set<number>());
+  const mobileAreaSwitcherButtonRef = useRef<HTMLButtonElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
+  const areaSwitcherRestoreFocusRef = useRef(false);
   const areaSwitcherDragRef = useRef<{ expanded: boolean; pointerId: number; startX: number } | null>(null);
   const minimapSwipeRef = useRef<{
     axis: "x" | "y" | null;
@@ -328,6 +336,7 @@ function App({ session }: { session: AuthSession | null }) {
   const windowSessionSaveRef = useRef<Promise<void>>(Promise.resolve());
   const updaterRef = useRef<PwaUpdater | null>(null);
   const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const persistenceRequestedRef = useRef(false);
   const restoredWindowBoundsRef = useRef(new Map<string, WindowBounds>());
   const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
   const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
@@ -340,7 +349,7 @@ function App({ session }: { session: AuthSession | null }) {
   const unpinOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
   const windowCommandRef = useRef<{ maximize: (id: string) => void; move: (id: string, direction: "left" | "right" | "up" | "down") => void }>({ maximize: () => {}, move: () => {} });
   const autoUpdateRef = useRef(true);
-  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: true, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
@@ -457,6 +466,21 @@ function App({ session }: { session: AuthSession | null }) {
   }, [mobileMultiSelectScope, selectedIds.length, selectionScope]);
 
   useEffect(() => {
+    if (!minimapExpanded) return;
+    const frame = window.requestAnimationFrame(() => {
+      areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [minimapExpanded]);
+
+  useEffect(() => {
+    if (minimapExpanded || !areaSwitcherRestoreFocusRef.current) return;
+    areaSwitcherRestoreFocusRef.current = false;
+    const frame = window.requestAnimationFrame(() => mobileAreaSwitcherButtonRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSegmentKey, minimapExpanded]);
+
+  useEffect(() => {
     appTheme.set(activeTheme);
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
@@ -530,8 +554,12 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => appHostServices.dialogs.subscribe(setAppDialogRequests), [appHostServices]);
   useEffect(() => appHostServices.notifications.subscribe(setAppNotifications), [appHostServices]);
   useEffect(() => {
-    for (const app of runningAppsRef.current) if (app.kind === "sandbox") appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
-  }, [appCapabilities, canMutate]);
+    for (const app of runningAppsRef.current) {
+      if (app.kind !== "sandbox") continue;
+      appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
+      app.dispatcher.emit("capabilities.changed", { files: fileWriteCapability(activeDesktop, syncStatus), externalEmbeddedPreviews: externalEmbeddedPreviews === true });
+    }
+  }, [activeDesktop, appCapabilities, canMutate, externalEmbeddedPreviews, syncStatus]);
   useEffect(() => {
     if (!canViewActivity && settingsPage === "activity") {
       const current = window.history.state;
@@ -1202,6 +1230,10 @@ function App({ session }: { session: AuthSession | null }) {
 
   useEffect(() => {
     if (activePanel !== "sync") return;
+    if (!persistenceRequestedRef.current) {
+      persistenceRequestedRef.current = true;
+      void requestStoragePersistence().then(setStoragePersistence);
+    }
     let active = true;
     void listOutboxRecords()
       .then((records) => {
@@ -1350,6 +1382,7 @@ function App({ session }: { session: AuthSession | null }) {
         updatePreferenceLoadedRef.current = true;
         setAutoUpdate(preferences.autoUpdate);
         setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
+        setAllowBrowserPinchZoom(preferences.allowBrowserPinchZoom);
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
         setExplorerView(preferences.explorerView);
         setPreferencesLoaded(true);
@@ -1395,6 +1428,7 @@ function App({ session }: { session: AuthSession | null }) {
       setDialog(null);
       setContextMenu(null);
       setMoveDialogEntryIds([]);
+      if (areaSwitcherRef.current?.hasAttribute("data-expanded")) areaSwitcherRestoreFocusRef.current = true;
       setMinimapExpanded(false);
       const requestedRoute = parseDesktopRoute(window.location.hash);
       const requestedDesktopId = requestedRoute?.desktopId;
@@ -1699,11 +1733,14 @@ function App({ session }: { session: AuthSession | null }) {
       if (owner === "dialog") setDialog(null);
       else if (owner === "moveDialog") setMoveDialogEntryIds([]);
       else if (owner === "contextMenu") setContextMenu(null);
-      else if (owner === "areaEditor") setMinimapExpanded(false);
+      else if (owner === "areaEditor") {
+        if (isMobile) areaSwitcherRestoreFocusRef.current = true;
+        setMinimapExpanded(false);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [contextMenu, dialog, minimapExpanded, moveDialogEntries.length, moveDialogSubmitting]);
+  }, [contextMenu, dialog, isMobile, minimapExpanded, moveDialogEntries.length, moveDialogSubmitting]);
 
   useEffect(() => {
     if (!notice) return;
@@ -1966,6 +2003,20 @@ function App({ session }: { session: AuthSession | null }) {
       localPreferencesRef.current = previous;
       setExternalEmbeddedPreviews(previous.externalEmbeddedPreviews);
       setError("The external preview preference could not be saved.");
+    }
+  }
+
+  async function changeAllowBrowserPinchZoom(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, allowBrowserPinchZoom: enabled };
+    localPreferencesRef.current = next;
+    setAllowBrowserPinchZoom(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setAllowBrowserPinchZoom(previous.allowBrowserPinchZoom);
+      setError("The browser zoom preference could not be saved.");
     }
   }
 
@@ -2468,6 +2519,7 @@ function App({ session }: { session: AuthSession | null }) {
         },
         window: { focused: shouldFocus, maximized: false, fullscreen: false, width: Math.round(base.bounds.width), height: Math.round(base.bounds.height) },
         title: appPackage.manifest.name,
+        getCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
       });
       pendingHost = host;
       const files = new FileService({
@@ -2518,6 +2570,10 @@ function App({ session }: { session: AuthSession | null }) {
             const ids = entryIds(handles);
             if (pinned) await makeAvailableOfflineRef.current(ids);
             else await unpinOfflineRef.current(ids);
+          },
+          setExternalEmbeddedPreviews: async ({ enabled }: { enabled: boolean }) => {
+            if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.markdownPreview) throw new HostServiceError("Only the bundled Markdown app can change this preference.", "PERMISSION_DENIED");
+            await changeExternalEmbeddedPreviews(enabled);
           },
         },
       };
@@ -2899,7 +2955,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null) {
+  function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null, focusDestinationApp = true) {
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
     if (canvasRef.current) {
@@ -2907,7 +2963,7 @@ function App({ session }: { session: AuthSession | null }) {
       const nextMinRow = Math.min(0, segment.row, ...occupiedSegments.map((candidate) => candidate.segment.row));
       canvasRef.current.style.transform = `translate3d(${-(segment.column - nextMinColumn) * desktopSize.width}px, ${-(segment.row - nextMinRow) * desktopSize.height}px, 0)`;
     }
-    const nextApp = preferredApp && appIsInSegment(preferredApp, segment) ? preferredApp : topAppInSegment(runningAppsRef.current, segment);
+    const nextApp = focusDestinationApp ? (preferredApp && appIsInSegment(preferredApp, segment) ? preferredApp : topAppInSegment(runningAppsRef.current, segment)) : null;
     setFocusedApp(nextApp?.id ?? null);
     if (segmentKey(segment) !== activeSegmentKey) setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
     navigateRoute(routeForApp(nextApp, { ...currentRoute, ...segment }), mode);
@@ -3013,10 +3069,23 @@ function App({ session }: { session: AuthSession | null }) {
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    event.preventDefault();
+    desktopTouchPointersRef.current.add(event.pointerId);
+    if (desktopTouchPointersRef.current.size > 1) {
+      if (desktopPressRef.current) window.clearTimeout(desktopPressRef.current.timer);
+      desktopPressRef.current = null;
+      swipeRef.current = null;
+      setSwipePreview(null);
+      setAreaTransitioning(false);
+      if (canvasRef.current) {
+        delete canvasRef.current.dataset.swiping;
+        canvasRef.current.style.transform = `translate3d(${-(activeSegment.column - minColumn) * desktopSize.width}px, ${-(activeSegment.row - minRow) * desktopSize.height}px, 0)`;
+      }
+      return;
+    }
+    if (!allowBrowserPinchZoom) event.preventDefault();
     swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
     if (event.pointerType !== "touch") return;
-    event.currentTarget.setPointerCapture(event.pointerId);
+    if (!allowBrowserPinchZoom) event.currentTarget.setPointerCapture(event.pointerId);
     const press = {
       activated: false,
       pointerId: event.pointerId,
@@ -3193,6 +3262,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function finishDesktopSwipe(event: React.PointerEvent<HTMLElement>, cancelled = false) {
+    if (event.pointerType === "touch") desktopTouchPointersRef.current.delete(event.pointerId);
     if (marqueeRef.current?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       marqueeRef.current = null;
@@ -3325,7 +3395,18 @@ function App({ session }: { session: AuthSession | null }) {
 
   function openAreaMap() {
     if (isMobile && focusedAppIdRef.current) showDesktop();
+    areaSwitcherRestoreFocusRef.current = false;
     setMinimapExpanded(true);
+  }
+
+  function collapseAreaMap(restoreFocus = isMobile) {
+    if (restoreFocus) areaSwitcherRestoreFocusRef.current = true;
+    setMinimapExpanded(false);
+  }
+
+  function selectAreaFromSwitcher(segment: SurfaceSegment) {
+    goToSegment(segment, "push", undefined, !isMobile);
+    if (isMobile) collapseAreaMap();
   }
 
   function beginAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, expanded: boolean) {
@@ -3350,7 +3431,10 @@ function App({ session }: { session: AuthSession | null }) {
     areaSwitcherDragRef.current = null;
     areaSwitcherRef.current?.removeAttribute("data-dragging");
     areaSwitcherRef.current?.style.removeProperty("--area-switcher-drag-x");
-    if (!cancelled && areaSwitcherDragCommits(deltaX, drag.expanded)) setMinimapExpanded(!drag.expanded);
+    if (!cancelled && areaSwitcherDragCommits(deltaX, drag.expanded)) {
+      if (drag.expanded) collapseAreaMap();
+      else openAreaMap();
+    }
   }
 
   function beginExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
@@ -3399,13 +3483,15 @@ function App({ session }: { session: AuthSession | null }) {
     window.setTimeout(() => {
       suppressMinimapClickRef.current = false;
     }, 0);
-    if (nextSegment) goToSegment(nextSegment);
+    if (nextSegment) selectAreaFromSwitcher(nextSegment);
   }
 
   function outboxAffectedLabels(record: OutboxRecord) {
     const operation = record.operation;
     const ids = operation.kind === "delete" ? [operation.entryId] : operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer" ? operation.entryIds : operation.kind === "update-entry" || operation.kind === "save-content" ? [operation.entry.id] : operation.kind === "create" ? operation.entries.map((entry) => entry.id) : [];
-    return ids.map((id) => entriesRef.current.find((entry) => entry.id === id)?.name).filter((name): name is string => Boolean(name));
+    const desktopName = desktopsRef.current.find((desktop) => desktop.id === record.desktopId)?.name ?? record.desktopId;
+    const entryNames = record.desktopId === activeDesktopIdRef.current ? ids.map((id) => entriesRef.current.find((entry) => entry.id === id)?.name).filter((name): name is string => Boolean(name)) : [];
+    return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
   const notificationVisibility = boundedNotificationVisibility({ error: Boolean(error), notice: Boolean(notice), trash: trashNotifications.length, apps: appNotifications.length });
@@ -3449,7 +3535,7 @@ function App({ session }: { session: AuthSession | null }) {
             {focusedApp ? (
               <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
             ) : (
-              <button className="mobile-area-switcher" type="button" aria-label={`Open area map, current area ${homeRelativeAreaLabel(activeSegment)}`} onClick={openAreaMap}>
+              <button ref={mobileAreaSwitcherButtonRef} className="mobile-area-switcher" type="button" aria-label={`Open area map, current area ${homeRelativeAreaLabel(activeSegment)}`} onClick={openAreaMap}>
                 <span>{activeDesktopName}</span>
                 <small>{homeRelativeAreaLabel(activeSegment)}</small>
                 <CaretDown size={16} aria-hidden="true" />
@@ -3458,6 +3544,7 @@ function App({ session }: { session: AuthSession | null }) {
           </nav>
         )}
         <div className="menu-bar__actions">
+          {isMobile && focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
           {(!isMobile || !focusedApp) && (
             <MobileHeaderMenu
               label="New"
@@ -3669,7 +3756,7 @@ function App({ session }: { session: AuthSession | null }) {
                       <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={dismiss}>
                         <IdentificationCard /> Profile
                       </a>
-                      <form action={SERVER_ROUTES.logout} method="post">
+                      <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
                         <button className="account-menu__action" type="submit">
                           <SignOut /> Log out
                         </button>
@@ -3687,6 +3774,7 @@ function App({ session }: { session: AuthSession | null }) {
 
       <section
         className="desktop"
+        data-browser-pinch-zoom={allowBrowserPinchZoom || undefined}
         data-area-transitioning={areaTransitioning || undefined}
         data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
@@ -3784,6 +3872,7 @@ function App({ session }: { session: AuthSession | null }) {
               };
               return (
                 <FileIcon
+                  allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
                   offlineAvailability={offlineModel.entries[entry.id]}
@@ -3915,6 +4004,7 @@ function App({ session }: { session: AuthSession | null }) {
                 segmentActive={segmentActive}
                 mobile={isMobile}
                 hideMobileHeader
+                externalHeaderElements={isMobile && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
                 onFocus={focusApp}
                 onBoundsChange={updateAppBounds}
                 onDragAtEdge={handleWindowDragAtEdge}
@@ -3931,7 +4021,7 @@ function App({ session }: { session: AuthSession | null }) {
               >
                 {(headerElements) => (
                   <>
-                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
                         folder={folder}
@@ -4006,6 +4096,7 @@ function App({ session }: { session: AuthSession | null }) {
                         updateChecking={updateChecking}
                         autoUpdate={autoUpdate}
                         externalEmbeddedPreviews={externalEmbeddedPreviews === true}
+                        allowBrowserPinchZoom={allowBrowserPinchZoom}
                         localPreferencesLoaded={externalEmbeddedPreviews !== null}
                         searchAllDesktops={searchAllDesktops}
                         desktopSearchAvailable={desktopSearchAvailable}
@@ -4097,6 +4188,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onCheckForUpdate={() => void checkForUpdate()}
                         onAutoUpdateChange={(enabled) => void changeAutoUpdate(enabled)}
                         onExternalEmbeddedPreviewsChange={(enabled) => void changeExternalEmbeddedPreviews(enabled)}
+                        onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
                         onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
                         onOpenGettingStarted={() => setShowGettingStarted(true)}
                         onInstall={() => void installPwa()}
@@ -4123,14 +4215,14 @@ function App({ session }: { session: AuthSession | null }) {
       {(isMobile || activeDesktopId) && (
         <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
           {!minimapDetailed ? (
-            <button className="desktop-minimap__pull-tab" type="button" aria-label={`Open area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded="false" onClick={() => setMinimapExpanded(true)} onPointerDown={(event) => beginAreaSwitcherDrag(event, false)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
+            <button className="desktop-minimap__pull-tab" type="button" aria-label={`Open area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded="false" onClick={openAreaMap} onPointerDown={(event) => beginAreaSwitcherDrag(event, false)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
               <CaretRight size={15} aria-hidden="true" />
               <MapTrifold size={22} weight="duotone" aria-hidden="true" />
               <span>{occupiedSegments.length}</span>
             </button>
           ) : (
             <>
-              <button className="desktop-minimap__handle" type="button" aria-label="Collapse area switcher" aria-expanded="true" onClick={() => setMinimapExpanded(false)} onPointerDown={(event) => beginAreaSwitcherDrag(event, true)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
+              <button className="desktop-minimap__handle" type="button" aria-label="Collapse area switcher" aria-expanded="true" onClick={() => collapseAreaMap()} onPointerDown={(event) => beginAreaSwitcherDrag(event, true)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
                 <DotsSixVertical size={22} weight="bold" aria-hidden="true" />
               </button>
               <div className="desktop-minimap__body">
@@ -4145,7 +4237,7 @@ function App({ session }: { session: AuthSession | null }) {
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
                         const label = runningAppLabel(app);
-                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => focusApp(app.id)}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
+                        return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(segmentForApp(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => { focusApp(app.id); if (isMobile) collapseAreaMap(false); }}><AppIcon kind={app.kind} entry={entry} size={22} /></button>;
                       })}
                       {minimapWindowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={() => setActivePanel("windows")} aria-label={`${minimapWindowModel.overflow.length} more open apps`}>+{minimapWindowModel.overflow.length}</button>}
                     </div>
@@ -4160,7 +4252,7 @@ function App({ session }: { session: AuthSession | null }) {
                       const isOccupiedSegment = occupiedSegments.some((candidate) => candidate.key === currentSegmentKey);
                       const hiddenEntryCount = Math.max(0, desktopSegment.entries.length - 10);
                       return <div className="desktop-minimap__slot" data-segment-key={isOccupiedSegment ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: column + 1, gridRow: row + 1 }}>
-                        <button className="desktop-minimap__area" data-active={currentSegmentKey === activeSegmentKey || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupiedSegment || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`} aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined} onClick={(event) => { if (suppressMinimapClickRef.current) { suppressMinimapClickRef.current = false; event.preventDefault(); return; } goToSegment(desktopSegment.segment); }} onContextMenu={(event) => event.preventDefault()}>
+                        <button className="desktop-minimap__area" data-active={currentSegmentKey === activeSegmentKey || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && currentSegmentKey !== activeSegmentKey) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupiedSegment || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${minimapSegments.length}${currentSegmentKey === activeSegmentKey ? ", current area" : ""}${isOccupiedSegment ? "" : ", empty"}`} aria-current={currentSegmentKey === activeSegmentKey ? "true" : undefined} onClick={(event) => { if (suppressMinimapClickRef.current) { suppressMinimapClickRef.current = false; event.preventDefault(); return; } selectAreaFromSwitcher(desktopSegment.segment); }} onContextMenu={(event) => event.preventDefault()}>
                           <span className="desktop-minimap__area-title"><strong>{homeRelativeAreaLabel(desktopSegment.segment)}</strong><small>{desktopSegment.entries.length || "Empty"}</small></span>
                           {desktopSegment.entries.slice(0, 10).map((entry) => {
                             const position = responsive.positions.get(entry.id) ?? entry.position;
@@ -4656,12 +4748,14 @@ function App({ session }: { session: AuthSession | null }) {
             model={offlineModel}
             progress={offlineProgress}
             online={syncStatus === "online"}
+            persistence={storagePersistence}
             onRetryRecord={(record) => void retryBlockedOutboxRecord(record.operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The queued change could not be retried."))}
-            onDiscardRecord={(record) =>
+            onDiscardRecord={(record) => {
+              const removesDesktop = record.error?.startsWith("Access to this desktop was revoked.") || record.operation.kind === "create-desktop";
               void requestConfirmation({
-                title: "Discard queued change?",
-                message: "Discard this blocked local change and restore the server version? This cannot be undone.",
-                confirmLabel: "Discard change",
+                title: removesDesktop ? "Remove local desktop?" : "Discard queued change?",
+                message: removesDesktop ? "This removes this desktop's local projection and every queued change that depends on it. These changes have not reached the server and cannot be recovered." : "Discard this blocked local change and restore the server version? This cannot be undone.",
+                confirmLabel: removesDesktop ? "Remove local desktop" : "Discard change",
                 danger: true,
               }).then(async (confirmed) => {
                 if (!confirmed) return;
@@ -4670,8 +4764,8 @@ function App({ session }: { session: AuthSession | null }) {
                 } catch (reason) {
                   setError(reason instanceof Error ? reason.message : "The queued change could not be discarded.");
                 }
-              })
-            }
+              });
+            }}
             onRetryDownloads={() => void refreshPinnedContent()}
             onUnpin={(ids) => void unpinOffline(ids)}
             onReleaseAll={() => void removeDownloadedCopies()}

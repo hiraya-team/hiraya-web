@@ -9,7 +9,7 @@ import { isValidId } from "./contracts";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 import type { ExplorerView } from "../ui/folder-explorer";
 
-export type StoredPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
+export type StoredPreferences = { autoUpdate: boolean; externalEmbeddedPreviews: boolean; allowBrowserPinchZoom: boolean; searchAllDesktops: boolean; onboardingVersion: number; showDesktopMinimap: boolean; explorerView: ExplorerView };
 
 export type StorageDbRequests = {
   ping: undefined;
@@ -36,6 +36,7 @@ export type StorageDbRequests = {
   applyRemoteWithOutbox: { state: PersistedDesktopState; acknowledgedOperationId?: string };
   acknowledgeMutation: { operationId: string };
   blockMutation: { operationId: string; error: string };
+  discardDesktopProjection: { desktopId: string; operationId: string };
   listActivity: ActivityQuery;
   pruneDesktops: { retainedDesktopIds: string[] };
   listOfflinePins: { desktopId: string };
@@ -80,6 +81,7 @@ export type StorageDbResponses = {
   applyRemoteWithOutbox: { state: PersistedDesktopState; blocked: OutboxRecord[] };
   acknowledgeMutation: undefined;
   blockMutation: undefined;
+  discardDesktopProjection: { operationIds: string[]; fileIds: string[]; affectedDesktopIds: string[] };
   listActivity: ActivityPage;
   pruneDesktops: undefined;
   listOfflinePins: { desktopId: string; entryIds: string[] };

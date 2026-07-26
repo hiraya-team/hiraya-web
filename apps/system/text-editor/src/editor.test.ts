@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, TextDocumentState } from "./editor";
+import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Text Editor document behavior", () => {
   test("reloads a clean document after a remote change", () => {
@@ -70,5 +70,11 @@ describe("Text Editor document behavior", () => {
     expect(formatText("notes.txt", "one  \n two\t")).toBe("one\n two\n");
     expect(parseTextEditorSettings({ autoSave: false, autoFormat: true, fontSize: 18, lineWrap: false })).toEqual({ autoSave: false, autoFormat: true, fontSize: 18, lineWrap: false });
     expect(parseTextEditorSettings({ fontSize: 99 })).toEqual(DEFAULT_TEXT_EDITOR_SETTINGS);
+  });
+
+  test("clearly distinguishes preserved drafts from clean read-only documents", () => {
+    expect(writeRestrictionMessage("read-only", false)).toContain("read-only");
+    expect(writeRestrictionMessage("shared-offline", true)).toBe("Unsaved draft preserved. Reconnect to edit this shared desktop.");
+    expect(writeRestrictionMessage("available", true)).toContain("ready to save");
   });
 });

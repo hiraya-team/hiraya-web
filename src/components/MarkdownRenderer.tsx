@@ -12,9 +12,9 @@ type Props = {
   onAnchorLink?: (href: string) => void;
 };
 
-function isExternal(value: string) {
-  return /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value);
-}
+function isExternalLink(value: string) { return /^(?:https?:|mailto:)/i.test(value); }
+function isExternalImage(value: string) { return /^https?:\/\//i.test(value); }
+function hasScheme(value: string) { return /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value); }
 
 function LocalImage({ src, alt, externalEmbeddedPreviews, onResolveLink }: {
   src: string;
@@ -23,11 +23,13 @@ function LocalImage({ src, alt, externalEmbeddedPreviews, onResolveLink }: {
   onResolveLink: Props["onResolveLink"];
 }) {
   const [resolvedSrc, setResolvedSrc] = useState("");
+  const [loadOnce, setLoadOnce] = useState(false);
   useEffect(() => {
-    if (isExternal(src)) {
-      setResolvedSrc(externalEmbeddedPreviews ? src : "");
+    if (isExternalImage(src)) {
+      setResolvedSrc(externalEmbeddedPreviews || loadOnce ? src : "");
       return;
     }
+    if (hasScheme(src) || src.startsWith("/")) { setResolvedSrc(""); return; }
     let active = true;
     let objectUrl = "";
     void onResolveLink(src).then(({ blob }) => {
@@ -39,9 +41,15 @@ function LocalImage({ src, alt, externalEmbeddedPreviews, onResolveLink }: {
       active = false;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [externalEmbeddedPreviews, onResolveLink, src]);
+  }, [externalEmbeddedPreviews, loadOnce, onResolveLink, src]);
 
-  return resolvedSrc ? <img src={resolvedSrc} alt={alt} /> : <span className="markdown-renderer__missing-media">{alt || src}</span>;
+  if (resolvedSrc) return <img src={resolvedSrc} alt={alt} />;
+  if (isExternalImage(src)) {
+    let host = "external site";
+    try { host = new URL(src).host; } catch { /* URL shape is checked above. */ }
+    return <span className="markdown-renderer__missing-media">External image blocked from {host}. <button type="button" className="button button--quiet" onClick={() => setLoadOnce(true)}>Load once</button></span>;
+  }
+  return <span className="markdown-renderer__missing-media">{alt || src}</span>;
 }
 
 function headingId(children: ReactNode) {
@@ -84,8 +92,9 @@ export function MarkdownRenderer({ content, externalEmbeddedPreviews, onResolveL
           h2: ({ children }) => <h2 id={headingId(children)}>{headingChildren(children)}</h2>,
           h3: ({ children }) => <h3 id={headingId(children)}>{headingChildren(children)}</h3>,
           h4: ({ children }) => <h4 id={headingId(children)}>{headingChildren(children)}</h4>,
-          a: ({ href = "", children }: { href?: string; children?: ReactNode }) => isExternal(href) || href.startsWith("#")
-            ? <a href={href} target={isExternal(href) ? "_blank" : undefined} rel={isExternal(href) ? "noopener noreferrer" : undefined} onClick={href.startsWith("#") && onAnchorLink ? (event) => { event.preventDefault(); onAnchorLink(href); } : undefined}>{children}</a>
+          a: ({ href = "", children }: { href?: string; children?: ReactNode }) => isExternalLink(href) || href.startsWith("#")
+            ? <a href={href} target={isExternalLink(href) ? "_blank" : undefined} rel={isExternalLink(href) ? "noopener noreferrer" : undefined} onClick={href.startsWith("#") && onAnchorLink ? (event) => { event.preventDefault(); onAnchorLink(href); } : undefined}>{children}</a>
+            : hasScheme(href) || href.startsWith("/") ? <span>{children}</span>
             : <a href={href} onClick={(event) => { event.preventDefault(); void openLocalLink(href); }}>{children}</a>,
           img: ({ src = "", alt = "" }: { src?: string; alt?: string }) => (
             <LocalImage src={src} alt={alt} externalEmbeddedPreviews={externalEmbeddedPreviews} onResolveLink={onResolveLink} />

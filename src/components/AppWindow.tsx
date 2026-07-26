@@ -33,6 +33,7 @@ export type AppWindowProps = {
   onSwitchWindow?: () => void;
   mobileBackLabel?: string;
   hideMobileHeader?: boolean;
+  externalHeaderElements?: AppWindowHeaderElements;
   children: ReactNode | ((headerElements: AppWindowHeaderElements) => ReactNode);
   titleArea?: ReactNode;
   headerContent?: ReactNode;
@@ -82,6 +83,7 @@ export function AppWindow({
   onSwitchWindow,
   mobileBackLabel = "Back to Desktop",
   hideMobileHeader = false,
+  externalHeaderElements,
   children,
   titleArea,
   headerContent,
@@ -194,6 +196,9 @@ export function AppWindow({
   const style: CSSProperties = mobile
     ? { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex }
     : { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex };
+  const headerElements = mobile && hideMobileHeader && externalHeaderElements
+    ? externalHeaderElements
+    : { leading: headerLeadingElement, actions: headerActionsElement };
 
   return (
     <section
@@ -266,7 +271,7 @@ export function AppWindow({
           </>}
         </div>
       </header>}
-      <div className="app-window__content">{typeof children === "function" ? children({ leading: headerLeadingElement, actions: headerActionsElement }) : children}</div>
+      <div className="app-window__content">{typeof children === "function" ? children(headerElements) : children}</div>
       {!mobile && RESIZE_DIRECTIONS.map((direction) => (
         <div
           key={direction}

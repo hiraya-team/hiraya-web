@@ -35,6 +35,13 @@ export function canMutateDesktop(desktop: DesktopIdentity | undefined, status: s
   return desktop.ownership === "owned" || status === "online" || status === "local";
 }
 
+export function fileWriteCapability(desktop: DesktopIdentity | undefined, status: string) {
+  if (!desktop?.capabilities.write) return { write: false, writeReason: "read-only" as const };
+  if (desktop.ownership === "shared" && status !== "online") return { write: false, writeReason: "shared-offline" as const };
+  if (!canMutateDesktop(desktop, status)) return { write: false, writeReason: "temporarily-unavailable" as const };
+  return { write: true, writeReason: "available" as const };
+}
+
 export function sharedOfflineMessage(desktop: DesktopIdentity | undefined, status: string) {
   return desktop?.ownership === "shared" && desktop.capabilities.write && status !== "online"
     ? "Shared desktop editing is unavailable offline. Reconnect to make changes safely."
