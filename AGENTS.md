@@ -16,21 +16,29 @@ bun run dev
 
 ## Architecture
 
-- `src/App.tsx`: application state and orchestration for files, dialogs, uploads, errors, and windows.
-- `src/lib/sync.ts`: API mutations, durable outbox replay, SSE, health checks, and remote reconciliation.
-- `src/lib/opfs.ts`: serialized browser persistence facade and local desktop mutations.
-- `src/platform/storage/`: storage namespace, OPFS blobs, SQLite worker client, and device/app repositories. Keep browser storage access inside this platform boundary.
+- `src/App.tsx`: authenticated desktop composition root for cross-feature routing, preferences, synchronization, and shell orchestration.
+- `src/PublicDesktop.tsx`: public desktop composition root; read-only remote authority belongs in `src/features/public-desktop/`.
+- `src/domain/`: browser-independent desktop, file, preference, and theme contracts.
+- `src/features/`: feature-owned controllers and render layers for windows, areas, selection, app management, and public desktop behavior.
+- `src/lib/sync.ts`: synchronization engine coordinating mutation ordering, durable replay, and reconciliation.
+- `src/platform/sync/`: synchronization storage port, authenticated HTTP policy, connectivity, and outbox transport adapters.
+- `src/lib/opfs.ts`: serialized local desktop mutation facade preserving content-before-metadata and atomic outbox publication.
+- `src/platform/storage/`: storage namespace, OPFS blobs, SQLite worker client, and device/app repositories. Keep browser storage implementations inside this platform boundary.
 - `src/lib/contracts.ts`: runtime validation for strict catalog/desktop schema version 1.
 - `src/lib/api-routes.ts`: same-origin API route construction.
 - `src/lib/seeded-manifest.ts`: seeded manifest validation shared by the build loader and exporter.
 - `src/lib/seeded.ts`: seeded ZIP export.
 - `build/seeded.ts`: Vite plugin that validates and bundles optional seeded content.
 - `vite.config.ts`: seeded content, PWA generation, and the development `/api` proxy.
-- `src/components/`: desktop windows, icons, dialogs, menus, and previews.
+- `src/components/`: shared desktop windows, icons, dialogs, menus, and previews; shared components must not import product features or platform adapters.
 - `src/ui/`: desktop geometry, window management, and UI-domain helpers.
-- `src/styles.css`: visual system, wallpaper, responsive behavior, and motion fallbacks.
+- `src/styles/index.css`: ordered stylesheet entrypoint; it loads global foundations before the legacy feature cascade.
+- `src/styles/foundation.css`: document defaults, design tokens, reset rules, inherited controls, and global focus treatment.
+- `src/styles.css`: intentionally ordered visual system, wallpaper, responsive behavior, and motion fallbacks. Preserve source order unless a change proves equivalent cascade behavior.
 
 Prefer small changes in existing modules. Do not introduce global state or a component framework without a concrete need.
+
+Preserve the enforced dependency direction: domain code is browser- and React-independent; storage does not import UI, features, synchronization, or app-host implementations; synchronization depends on `SyncStorage`; shared components do not import features or platform adapters; composition roots wire unrelated capabilities together.
 
 ## UI Skill Requirement
 
@@ -40,7 +48,7 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 ## Storage And Sync Invariants
 
 - OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.
-- All browser storage operations go through the `src/lib/opfs.ts` facade and `src/platform/storage/` implementation boundary.
+- Browser storage implementations belong in `src/platform/storage/`. Local desktop mutations go through `src/lib/opfs.ts`; namespace, repository, and blob consumers may use the narrower platform modules directly when their capability boundary requires it.
 - Physical browser files use stable UUIDs; user-facing names and folders are metadata.
 - The OPFS SQLite schema is version 8, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, and reserves normalized offline pins without changing their runtime behavior.
 - Offline mutations update the projected SQLite desktop and append an outbox operation atomically.
@@ -60,8 +68,8 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 - Keep TypeScript IDs, names, hierarchy, MIME, coordinates, themes, layout, and settings validation equivalent to the server contract.
 - API paths, multipart field names, content types, and `X-Hiraya-Client-ID` / `X-Hiraya-Operation-ID` headers are durable replay contracts.
 - SSE carries `catalog` revision notifications; health polling remains a fallback for dead streams.
-- Synchronized startup requires `/api/auth/session`; all authenticated 401 responses pause replay and redirect to server-owned login without blocking outbox records. Sync polling uses `/api/sync/health`, not public `/api/health`.
-- Root-relative `/api` routes preserve same-origin deployment. Do not add cross-origin behavior implicitly.
+- Synchronized startup requires `/api/auth/session` with `capabilities.blobTransfer: "direct-b2-v1"`; all authenticated 401 responses pause replay and redirect to server-owned login without blocking outbox records. Sync polling uses `/api/sync/health`, not public `/api/health`.
+- Root-relative `/api` routes preserve same-origin deployment. The explicit cross-origin exception is presigned direct blob transfer: targets must use safe HTTPS URLs, allow the required checksum headers through CORS, and remain revision-qualified. Do not add any other cross-origin behavior implicitly.
 - Outbox operations require schema version 1 and `desktopId`. `catalogId` may be null only until first contact; replay only records belonging to the active authority catalog.
 
 ## Seeded Desktops
@@ -101,6 +109,6 @@ bun run build
 
 For storage or interaction changes, also create, edit, save, rename, upload, drag, reload, and verify persistence. Check the console and test desktop plus an approximately 390px-wide viewport.
 
-For server integration changes, test against the server repository's pinned submodule workflow in two isolated browser sessions. Verify offline mutation, reconnection, SSE propagation, restart persistence, and schema compatibility.
+For server integration changes, test against the server repository's pinned submodule workflow in two isolated browser sessions. Verify direct HTTPS blob upload/download with production-equivalent CORS, offline mutation, reconnection, SSE propagation, restart persistence, and schema compatibility.
 
 For seeded changes, build with `HIRAYA_SEEDED_DIR` unset and with `examples/seeded`, verify fresh versus existing origins, export a ZIP, and build from the extracted package.
