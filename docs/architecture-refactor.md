@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 8 - design system and CSS modularization
+- Current phase: 9 - public desktop composition
 - State: in progress
-- Next action: inventory stylesheet ownership and split stable token, primitive, shell, and feature layers without changing cascade order
+- Next action: move public catalog, file, and wallpaper ownership behind a read-only public desktop controller
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -98,7 +98,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 5: reduce `App.tsx` to authenticated desktop composition.
 - [x] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
 - [x] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
-- [ ] Phase 8: modularize the design system and CSS without redesigning the desktop.
+- [x] Phase 8: modularize the design system and CSS without redesigning the desktop.
 - [ ] Phase 9: recompose the public desktop from read-only capabilities.
 - [ ] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
 - [ ] Final: run frontend, server, browser, synchronized-session, and Docker verification.
@@ -249,6 +249,17 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Added `resolveTouchRelease` as the shared touch-release state transition, including synthetic double-click suppression and next-tap ownership.
 - Updated all three icon surfaces to use the same release arbitration and added direct transition coverage.
 - `bun test`: passed, 403 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 8
+
+- Added `src/styles/index.css` as the explicit ordered stylesheet entrypoint.
+- Moved document defaults, fallback design tokens, reset rules, inherited controls, and global focus treatment into `src/styles/foundation.css`.
+- Kept the existing desktop and feature cascade in one ordered file because its late ownership overrides are behaviorally coupled; arbitrary file slicing would change source order without improving ownership.
+- Added tests locking foundation-before-feature order and preventing document reset rules from drifting back into feature CSS.
+- Browser smoke: desktop and 390px shell/window rendering remained intact with no new console errors.
+- `bun test`: passed, 405 tests across 78 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 

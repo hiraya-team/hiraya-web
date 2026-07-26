@@ -2,7 +2,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { bootstrapSession } from "./lib/auth";
 import { publicTokenFromPath } from "./lib/public-desktop";
-import "./styles.css";
+import "./styles/index.css";
 
 const frontendOnly = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 
