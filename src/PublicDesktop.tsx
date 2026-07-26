@@ -5,10 +5,9 @@ import { EntryTypeIcon } from "./components/FileIcon";
 import { FileWindow } from "./components/FileWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
 import { loginUrl } from "./lib/auth";
-import { fetchPublicDesktop, fetchPublicFile, LargeDownloadAuthRequiredError } from "./lib/public-desktop";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeStyle } from "./lib/themes";
 import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
-import type { DesktopEntry, FileEntry, FolderEntry } from "./types";
+import type { DesktopEntry, FolderEntry } from "./types";
 import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
@@ -17,8 +16,7 @@ import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
-
-type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
+import { usePublicDesktop } from "./features/public-desktop/controller";
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -117,15 +115,8 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
 
 export default function PublicDesktop({ token }: { token: string }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
-  const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
-  const [error, setError] = useState("");
-  const [open, setOpen] = useState<OpenView | null>(null);
-  const [gate, setGate] = useState<{
-    loginUrl: string;
-    fileName: string;
-  } | null>(null);
+  const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, loadFile, resolveLinkedFile } = usePublicDesktop(token);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [wallpaperUrl, setWallpaperUrl] = useState("");
   const [surfaceSize, setSurfaceSize] = useState(() => ({
     width: window.innerWidth,
     height: Math.max(1, window.innerHeight - 44),
@@ -139,11 +130,6 @@ export default function PublicDesktop({ token }: { token: string }) {
   const mobile = useMediaQuery(MOBILE_WINDOW_QUERY);
 
   useEffect(() => {
-    void fetchPublicDesktop(token)
-      .then(setDesktop)
-      .catch((reason) => setError(reason instanceof Error ? reason.message : "The public desktop could not be loaded."));
-  }, [token]);
-  useEffect(() => {
     const surface = surfaceRef.current;
     if (!surface) return;
     const observer = new ResizeObserver(([entry]) =>
@@ -156,57 +142,6 @@ export default function PublicDesktop({ token }: { token: string }) {
     return () => observer.disconnect();
   }, []);
   useEffect(() => setBounds(publicWindowBounds(surfaceSize)), [surfaceSize]);
-  useEffect(() => {
-    setWallpaperUrl("");
-    const source = desktop?.layout.wallpaper.source;
-    if (!desktop || !source?.startsWith("file:")) return;
-    const file = desktop.entries.find((entry) => entry.id === source.slice(5));
-    if (!file || file.kind !== "file") return;
-    let disposed = false;
-    let objectUrl = "";
-    const contentRevision = desktop.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-    void fetchPublicFile(token, file, contentRevision)
-      .then((blob) => {
-        if (disposed) return;
-        objectUrl = URL.createObjectURL(blob);
-        setWallpaperUrl(objectUrl);
-      })
-      .catch(() => undefined);
-    return () => {
-      disposed = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [desktop, token]);
-
-  async function loadFile(file: FileEntry, downloadOnly = false) {
-    if (!downloadOnly && fileCapabilities(file).preview === "none") {
-      setOpen({ kind: "file", file });
-      return;
-    }
-    setOpen(downloadOnly ? open : { kind: "file", file });
-    try {
-      const contentRevision = desktop?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-      const blob = await fetchPublicFile(token, file, contentRevision);
-      if (downloadOnly) {
-        const url = URL.createObjectURL(blob);
-        const anchor = document.createElement("a");
-        anchor.href = url;
-        anchor.download = file.name;
-        anchor.click();
-        window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      } else setOpen({ kind: "file", file, blob });
-    } catch (reason) {
-      if (reason instanceof LargeDownloadAuthRequiredError) setGate({ loginUrl: reason.loginUrl, fileName: file.name });
-      else if (!downloadOnly)
-        setOpen({
-          kind: "file",
-          file,
-          error: reason instanceof Error ? reason.message : "The file could not be opened.",
-        });
-      else setError(reason instanceof Error ? reason.message : "The file could not be downloaded.");
-    }
-  }
-
   function openEntry(entry: DesktopEntry) {
     setSelectedIds(new Set());
     if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id });
@@ -214,43 +149,6 @@ export default function PublicDesktop({ token }: { token: string }) {
   }
   function selectEntry(entry: DesktopEntry) {
     setSelectedIds(new Set([entry.id]));
-  }
-  async function resolveLinkedFile(from: FileEntry, relativePath: string) {
-    if (!desktop) throw new Error("The public desktop is unavailable.");
-    const path = relativePath.split(/[?#]/, 1)[0];
-    if (!path || path.startsWith("/") || path.startsWith("\\") || /^[a-z][a-z\d+.-]*:/i.test(path)) throw new Error("That link is not a local relative file path.");
-    let parentId = from.parentId;
-    let resolved: DesktopEntry | undefined;
-    for (const [position, encoded] of path.split("/").entries()) {
-      let segment: string;
-      try {
-        segment = decodeURIComponent(encoded);
-      } catch {
-        throw new Error("That link contains invalid URL encoding.");
-      }
-      if (!segment || segment === ".") continue;
-      if (segment === "..") {
-        if (parentId === null) throw new Error("That link points outside the desktop.");
-        parentId = desktop.entries.find((entry) => entry.id === parentId)?.parentId ?? null;
-        resolved = undefined;
-        continue;
-      }
-      resolved = desktop.entries.find(
-        (entry) =>
-          entry.parentId === parentId &&
-          entry.name.localeCompare(segment, undefined, {
-            sensitivity: "accent",
-          }) === 0,
-      );
-      if (!resolved || (position < path.split("/").length - 1 && resolved.kind !== "folder")) throw new Error(`No public file exists at “${relativePath}”.`);
-      parentId = resolved.kind === "folder" ? resolved.id : resolved.parentId;
-    }
-    if (!resolved || resolved.kind !== "file") throw new Error(`No public file exists at “${relativePath}”.`);
-    const contentRevision = desktop.entries.find((entry) => entry.id === resolved.id)?.contentRevision ?? 0;
-    return {
-      file: resolved,
-      blob: await fetchPublicFile(token, resolved, contentRevision),
-    };
   }
   const folder = open?.kind === "folder" && open.folderId ? (index.byId.get(open.folderId) as FolderEntry | undefined) : null;
   const roots = index.children.get(null) ?? [];
@@ -447,7 +345,7 @@ export default function PublicDesktop({ token }: { token: string }) {
           </div>
         )}
       </section>
-      {gate && <LargeDownloadGate gate={gate} onClose={() => setGate(null)} />}
+      {downloadGate && <LargeDownloadGate gate={downloadGate} onClose={dismissDownloadGate} />}
     </main>
   );
 }

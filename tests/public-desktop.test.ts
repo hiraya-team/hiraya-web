@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { fetchPublicFile, LargeDownloadAuthRequiredError, publicTokenFromPath } from "../src/lib/public-desktop";
+import { resolvePublicLinkedEntry } from "../src/features/public-desktop/controller";
 
 const file = {
   kind: "file" as const,
@@ -56,5 +57,15 @@ describe("public desktop", () => {
     expect(source).toContain("const closePublicView = () => {\n    setSelectedIds(new Set());");
     expect(source).toContain("const backPublicView = () => {");
     expect(source).toContain("setSelectedIds(new Set());\n    setOpen({");
+  });
+
+  test("resolves linked files within the public desktop only", () => {
+    const folder = { kind: "folder" as const, id: "folder", name: "docs", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const source = { ...file, id: "source", name: "source.md" };
+    const linked = { ...file, id: "linked", name: "guide.md", parentId: folder.id };
+
+    expect(resolvePublicLinkedEntry([folder, source, linked], source, "docs/guide.md")).toEqual(linked);
+    expect(() => resolvePublicLinkedEntry([folder, source, linked], source, "../guide.md")).toThrow("outside the desktop");
+    expect(() => resolvePublicLinkedEntry([folder, source, linked], source, "https://example.com/guide.md")).toThrow("not a local relative file path");
   });
 });

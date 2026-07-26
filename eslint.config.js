@@ -29,7 +29,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/PublicDesktop.tsx", "src/lib/public-desktop.ts", "src/ui/public-desktop-layout.ts"],
+    files: ["src/PublicDesktop.tsx", "src/features/public-desktop/**/*.{ts,tsx}", "src/lib/public-desktop.ts", "src/ui/public-desktop-layout.ts"],
     rules: {
       "no-restricted-imports": [
         "error",

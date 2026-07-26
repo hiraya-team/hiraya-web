@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 9 - public desktop composition
+- Current phase: 10 - scaffolding cleanup and boundary enforcement
 - State: in progress
-- Next action: move public catalog, file, and wallpaper ownership behind a read-only public desktop controller
+- Next action: remove compatibility type barrels, migrate direct domain imports, and resolve remaining temporary scaffolding
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -99,7 +99,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
 - [x] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
 - [x] Phase 8: modularize the design system and CSS without redesigning the desktop.
-- [ ] Phase 9: recompose the public desktop from read-only capabilities.
+- [x] Phase 9: recompose the public desktop from read-only capabilities.
 - [ ] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
 - [ ] Final: run frontend, server, browser, synchronized-session, and Docker verification.
 
@@ -260,6 +260,17 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Added tests locking foundation-before-feature order and preventing document reset rules from drifting back into feature CSS.
 - Browser smoke: desktop and 390px shell/window rendering remained intact with no new console errors.
 - `bun test`: passed, 405 tests across 78 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 9
+
+- Added `src/features/public-desktop/controller.ts` as the read-only authority for public catalog fetch, revision-qualified file reads, downloads, large-file authentication gates, and wallpaper object URLs.
+- Kept selection, folder navigation, responsive window bounds, and rendering in `PublicDesktop` as composition concerns.
+- Added direct local-link resolution coverage, including traversal and external-scheme rejection.
+- Extended the public desktop import boundary to the new controller.
+- Browser smoke: invalid public routes rendered the desktop/mobile unavailable state without authenticated modules or new console errors.
+- `bun test`: passed, 406 tests across 78 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 
