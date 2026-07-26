@@ -125,7 +125,7 @@ import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
@@ -140,6 +140,7 @@ type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | n
 type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
 type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
+type AreaTransition = { source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 const DESKTOP_LONG_PRESS_MS = 500;
 const ONBOARDING_VERSION = 1;
 
@@ -183,7 +184,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [notice, setNotice] = useState("");
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
-  const [areaTransitioning, setAreaTransitioning] = useState(false);
+  const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [selectionScope, setSelectionScope] = useState("desktop");
@@ -254,7 +255,10 @@ function App({ session }: { session: AuthSession | null }) {
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const windowTrackRef = useRef<HTMLDivElement>(null);
+  const frameTrackRef = useRef<HTMLDivElement>(null);
   const areaTransitionTimerRef = useRef<number | null>(null);
+  const areaTransitionGenerationRef = useRef(0);
   const uploadRef = useRef<HTMLInputElement>(null);
   const directoryRef = useRef<HTMLInputElement>(null);
   const uploadParentRef = useRef<string | null>(null);
@@ -423,10 +427,12 @@ function App({ session }: { session: AuthSession | null }) {
   });
   const occupiedColumns = occupiedSegments.map((candidate) => candidate.segment.column);
   const occupiedRows = occupiedSegments.map((candidate) => candidate.segment.row);
-  const minColumn = Math.min(0, activeSegment.column, ...occupiedColumns);
-  const minRow = Math.min(0, activeSegment.row, ...occupiedRows);
-  const maxColumn = Math.max(0, activeSegment.column, ...occupiedColumns);
-  const maxRow = Math.max(0, activeSegment.row, ...occupiedRows);
+  const transitionColumns = areaTransition ? [areaTransition.source.column, areaTransition.target.column] : [];
+  const transitionRows = areaTransition ? [areaTransition.source.row, areaTransition.target.row] : [];
+  const minColumn = Math.min(0, activeSegment.column, ...occupiedColumns, ...transitionColumns);
+  const minRow = Math.min(0, activeSegment.row, ...occupiedRows, ...transitionRows);
+  const maxColumn = Math.max(0, activeSegment.column, ...occupiedColumns, ...transitionColumns);
+  const maxRow = Math.max(0, activeSegment.row, ...occupiedRows, ...transitionRows);
   const segmentColumns = maxColumn - minColumn + 1;
   const segmentRows = maxRow - minRow + 1;
   const minimapColumns = minimapSegments.map((candidate) => candidate.segment.column);
@@ -438,6 +444,7 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, compactChrome);
   const minimapDetailed = minimapExpanded;
   const canvasOffset = { column: activeSegment.column - minColumn, row: activeSegment.row - minRow };
+  const transitionSegmentKeys = new Set(areaTransition ? [segmentKey(areaTransition.source), segmentKey(areaTransition.target)] : []);
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
   const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
   const minimapHeight = minimapDetailed ? Math.min(420, desktopSize.height * 0.56) : 68;
@@ -2956,18 +2963,56 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null, focusDestinationApp = true) {
+  function setAreaTrackTransform(x: number, y: number) {
+    const transform = `translate3d(${x}px, ${y}px, 0)`;
+    if (canvasRef.current) canvasRef.current.style.transform = transform;
+    if (windowTrackRef.current) windowTrackRef.current.style.transform = transform;
+    if (frameTrackRef.current) frameTrackRef.current.style.transform = transform;
+  }
+
+  function setAreaTransitionDepth(depth: number) {
+    const clamped = Math.min(1, Math.max(0, depth));
+    desktopRef.current?.style.setProperty("--area-stage-scale", String(1 - clamped * 0.055));
+    desktopRef.current?.style.setProperty("--area-frame-opacity", String(clamped));
+  }
+
+  function completeAreaTransition() {
+    areaTransitionGenerationRef.current += 1;
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    areaTransitionTimerRef.current = null;
+    setAreaTransition(null);
+    desktopRef.current?.style.removeProperty("--area-stage-scale");
+    desktopRef.current?.style.removeProperty("--area-frame-opacity");
+  }
+
+  function scheduleAreaTransitionCompletion(generation: number) {
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    areaTransitionTimerRef.current = window.setTimeout(() => {
+      if (areaTransitionGenerationRef.current !== generation) return;
+      completeAreaTransition();
+    }, Math.max(80, 500 * activeTheme.motion));
+  }
+
+  function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null, focusDestinationApp = true, animate = true) {
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
-    if (canvasRef.current) {
-      const nextMinColumn = Math.min(0, segment.column, ...occupiedSegments.map((candidate) => candidate.segment.column));
-      const nextMinRow = Math.min(0, segment.row, ...occupiedSegments.map((candidate) => candidate.segment.row));
-      canvasRef.current.style.transform = `translate3d(${-(segment.column - nextMinColumn) * desktopSize.width}px, ${-(segment.row - nextMinRow) * desktopSize.height}px, 0)`;
-    }
     const nextApp = focusDestinationApp ? (preferredApp && appIsInSegment(preferredApp, segment) ? preferredApp : topAppInSegment(runningAppsRef.current, segment)) : null;
     setFocusedApp(nextApp?.id ?? null);
-    if (segmentKey(segment) !== activeSegmentKey) setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
-    navigateRoute(routeForApp(nextApp, { ...currentRoute, ...segment }), mode);
+    const destinationRoute = routeForApp(nextApp, { ...currentRoute, ...segment });
+    if (segmentKey(segment) === activeSegmentKey || !animate || activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      completeAreaTransition();
+      navigateRoute(destinationRoute, mode);
+      return;
+    }
+    setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
+    const generation = ++areaTransitionGenerationRef.current;
+    setAreaTransition({ source: activeSegment, target: segment, phase: "preparing", kind: "programmatic" });
+    window.requestAnimationFrame(() => {
+      if (areaTransitionGenerationRef.current !== generation) return;
+      setAreaTransition({ source: activeSegment, target: segment, phase: "settling", kind: "programmatic" });
+      navigateRoute(destinationRoute, mode);
+      scheduleAreaTransitionCompletion(generation);
+    });
   }
 
   function appIsMaximized(app: RunningApp) {
@@ -3076,10 +3121,10 @@ function App({ session }: { session: AuthSession | null }) {
       desktopPressRef.current = null;
       swipeRef.current = null;
       setSwipePreview(null);
-      setAreaTransitioning(false);
+      completeAreaTransition();
       if (canvasRef.current) {
         delete canvasRef.current.dataset.swiping;
-        canvasRef.current.style.transform = `translate3d(${-(activeSegment.column - minColumn) * desktopSize.width}px, ${-(activeSegment.row - minRow) * desktopSize.height}px, 0)`;
+        setAreaTrackTransform(-(activeSegment.column - minColumn) * desktopSize.width, -(activeSegment.row - minRow) * desktopSize.height);
       }
       return;
     }
@@ -3133,7 +3178,7 @@ function App({ session }: { session: AuthSession | null }) {
     const targetCanvasColumn = targetSegment.column - targetMinColumn;
     const targetCanvasRow = targetSegment.row - targetMinRow;
     edgeDragRef.current = { direction: edge.direction, time: now };
-    goToSegment(targetSegment, "replace");
+    goToSegment(targetSegment, "replace", undefined, true, false);
     return {
       deltaX: (targetCanvasColumn - previousCanvasColumn) * desktopSize.width,
       deltaY: (targetCanvasRow - previousCanvasRow) * desktopSize.height,
@@ -3167,7 +3212,7 @@ function App({ session }: { session: AuthSession | null }) {
     pending.targetSegment = targetSegment;
     windowEdgeDragRef.current = { direction: edge.direction, time: now };
     updateRunningApps((current) => current.map((candidate) => (candidate.id === appId ? movedApp : candidate)));
-    goToSegment(targetSegment, "replace", movedApp);
+    goToSegment(targetSegment, "replace", movedApp, true, false);
     return localBounds;
   }
 
@@ -3244,17 +3289,26 @@ function App({ session }: { session: AuthSession | null }) {
       if (!swipe.axis) return;
       if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
       areaTransitionTimerRef.current = null;
-      setAreaTransitioning(true);
+      const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+      const target = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
+      swipe.previewTarget = null;
+      setAreaTransition({ source: swipe.startSegment, target, phase: "interactive", kind: "gesture" });
       canvasRef.current.dataset.swiping = "true";
       event.currentTarget.setPointerCapture(event.pointerId);
+      return;
     }
     const startColumn = swipe.startSegment.column - minColumn;
     const startRow = swipe.startSegment.row - minRow;
     const x = -startColumn * desktopSize.width + (swipe.axis === "x" ? deltaX : 0);
     const y = -startRow * desktopSize.height + (swipe.axis === "y" ? deltaY : 0);
-    canvasRef.current.style.transform = `translate3d(${x}px, ${y}px, 0)`;
+    setAreaTrackTransform(x, y);
     const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
     const viewportDistance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
+    const transitionTarget = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
+    if (!areaTransition || segmentKey(areaTransition.target) !== segmentKey(transitionTarget)) {
+      setAreaTransition({ source: swipe.startSegment, target: transitionTarget, phase: "interactive", kind: "gesture" });
+    }
+    setAreaTransitionDepth(areaTransitionDepth(primaryDelta, viewportDistance));
     const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
     if (segmentKey(previewTarget ?? swipe.startSegment) !== segmentKey(swipe.previewTarget ?? swipe.startSegment)) {
       swipe.previewTarget = previewTarget;
@@ -3298,20 +3352,28 @@ function App({ session }: { session: AuthSession | null }) {
     }, 0);
     swipeRef.current = null;
     setSwipePreview(null);
+    const transitionTarget = areaTransition?.target ?? (swipe.axis ? adjacentSwipeArea(swipe.startSegment, swipe.axis, swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY) : swipe.startSegment);
+    const generation = ++areaTransitionGenerationRef.current;
+    if (swipe.axis) {
+      setAreaTransition({ source: swipe.startSegment, target: transitionTarget, phase: "settling", kind: "gesture" });
+      window.requestAnimationFrame(() => setAreaTransitionDepth(0));
+    }
     if (canvasRef.current) {
       delete canvasRef.current.dataset.swiping;
       if (!nextSegment) {
         const startColumn = swipe.startSegment.column - minColumn;
         const startRow = swipe.startSegment.row - minRow;
-        canvasRef.current.style.transform = `translate3d(${-startColumn * desktopSize.width}px, ${-startRow * desktopSize.height}px, 0)`;
+        setAreaTrackTransform(-startColumn * desktopSize.width, -startRow * desktopSize.height);
       }
     }
-    if (nextSegment) goToSegment(nextSegment);
+    if (nextSegment && routeRef.current) {
+      const nextApp = topAppInSegment(runningAppsRef.current, nextSegment);
+      setFocusedApp(nextApp?.id ?? null);
+      setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(nextSegment)}`);
+      navigateRoute(routeForApp(nextApp, { ...routeRef.current, ...nextSegment }));
+    }
     if (swipe.axis) {
-      areaTransitionTimerRef.current = window.setTimeout(() => {
-        areaTransitionTimerRef.current = null;
-        setAreaTransitioning(false);
-      }, 450);
+      scheduleAreaTransitionCompletion(generation);
     }
   }
 
@@ -3777,7 +3839,9 @@ function App({ session }: { session: AuthSession | null }) {
       <section
         className="desktop"
         data-browser-pinch-zoom={allowBrowserPinchZoom || undefined}
-        data-area-transitioning={areaTransitioning || undefined}
+        data-area-transitioning={areaTransition || undefined}
+        data-area-transition-phase={areaTransition?.phase}
+        data-area-transition-kind={areaTransition?.kind}
         data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         style={
@@ -3850,22 +3914,16 @@ function App({ session }: { session: AuthSession | null }) {
           }}
         />
         <div className="wallpaper-grain" aria-hidden="true" />
-        <div className="desktop-swipe-dim" aria-hidden="true" />
-        <div
-          className="desktop-canvas"
-          ref={canvasRef}
-          onTransitionEnd={(event) => {
-            if (event.target !== event.currentTarget || event.propertyName !== "transform" || !areaTransitioning) return;
-            if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
-            areaTransitionTimerRef.current = null;
-            setAreaTransitioning(false);
-          }}
-          style={{
-            width: segmentColumns * desktopSize.width,
-            height: segmentRows * desktopSize.height,
-            transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
-          }}
-        >
+        <div className="desktop-area-stage desktop-area-stage--icons">
+          <div
+            className="desktop-canvas desktop-area-track"
+            ref={canvasRef}
+            style={{
+              width: segmentColumns * desktopSize.width,
+              height: segmentRows * desktopSize.height,
+              transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+            }}
+          >
           {responsive.segments.flatMap((desktopSegment) =>
             desktopSegment.entries.map((entry) => {
               const segmentColumn = desktopSegment.segment.column - minColumn;
@@ -3921,6 +3979,7 @@ function App({ session }: { session: AuthSession | null }) {
               );
             }),
           )}
+          </div>
         </div>
         {marquee && (
           <div
@@ -3978,11 +4037,27 @@ function App({ session }: { session: AuthSession | null }) {
           <UploadSimple size={25} /> Drop files or folders to add them
         </div>
 
-        <div className="app-window-layer" role="region" aria-label="Open windows">
+        <div className="desktop-area-stage desktop-area-stage--windows">
+          <div
+            className="app-window-layer desktop-area-track"
+            ref={windowTrackRef}
+            role="region"
+            aria-label="Open windows"
+            style={{
+              width: segmentColumns * desktopSize.width,
+              height: segmentRows * desktopSize.height,
+              transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+            }}
+          >
           {runningApps.map((app, index) => {
             const projection = projectLogicalPosition(app.bounds, desktopSize);
             const segmentActive = projection.segment.column === activeSegment.column && projection.segment.row === activeSegment.row;
-            const localBounds = { ...app.bounds, ...projection.local };
+            const segmentVisible = segmentActive || transitionSegmentKeys.has(segmentKey(projection.segment));
+            const segmentColumn = projection.segment.column - minColumn;
+            const segmentRow = projection.segment.row - minRow;
+            const localBounds = isMobile
+              ? { x: segmentColumn * desktopSize.width, y: segmentRow * desktopSize.height, width: desktopSize.width, height: desktopSize.height }
+              : { ...app.bounds, x: segmentColumn * desktopSize.width + projection.local.x, y: segmentRow * desktopSize.height + projection.local.y };
             const titleId = `running-app-title-${index}`;
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
@@ -4010,6 +4085,7 @@ function App({ session }: { session: AuthSession | null }) {
                 focused={focusedAppId === app.id}
                 minimized={app.minimized}
                 segmentActive={segmentActive}
+                segmentVisible={segmentVisible}
                 mobile={isMobile}
                 hideMobileHeader
                 externalHeaderElements={isMobile && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
@@ -4209,7 +4285,34 @@ function App({ session }: { session: AuthSession | null }) {
               </AppWindow>
             );
           })}
+          </div>
         </div>
+        {areaTransition && (
+          <div className="desktop-area-stage desktop-area-stage--frames" aria-hidden="true">
+            <div
+              className="desktop-area-frame-track desktop-area-track"
+              ref={frameTrackRef}
+              style={{
+                width: segmentColumns * desktopSize.width,
+                height: segmentRows * desktopSize.height,
+                transform: `translate3d(${-canvasOffset.column * desktopSize.width}px, ${-canvasOffset.row * desktopSize.height}px, 0)`,
+              }}
+            >
+              {[areaTransition.source, areaTransition.target].filter((segment, index, segments) => segments.findIndex((candidate) => segmentKey(candidate) === segmentKey(segment)) === index).map((segment) => (
+                <div
+                  className="desktop-area-frame"
+                  key={segmentKey(segment)}
+                  style={{
+                    left: (segment.column - minColumn) * desktopSize.width,
+                    top: (segment.row - minRow) * desktopSize.height,
+                    width: desktopSize.width,
+                    height: desktopSize.height,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
         {swipePreview && (
           <div className="desktop-swipe-preview" role="status">
             <SquaresFour size={20} weight="duotone" />

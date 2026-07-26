@@ -60,4 +60,12 @@ describe("AppWindow mobile actions", () => {
     expect(markup).toContain('aria-label="Maximize Document"');
     expect(markup).toContain('aria-label="Close Document"');
   });
+
+  test("shows a destination preview without exposing it to interaction", () => {
+    const markup = renderToStaticMarkup(<AppWindow {...base} mobile={false} segmentActive={false} segmentVisible />);
+
+    expect(markup).not.toContain("data-segment-hidden");
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).toContain("inert=\"\"");
+  });
 });

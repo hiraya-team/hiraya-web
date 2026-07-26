@@ -18,6 +18,7 @@ export type AppWindowProps = {
   focused: boolean;
   minimized: boolean;
   segmentActive: boolean;
+  segmentVisible?: boolean;
   mobile: boolean;
   onFocus: (id: string) => void;
   onBoundsChange: (id: string, bounds: WindowBounds) => void;
@@ -68,6 +69,7 @@ export function AppWindow({
   focused,
   minimized,
   segmentActive,
+  segmentVisible = segmentActive,
   mobile,
   onFocus,
   onBoundsChange,
@@ -194,7 +196,7 @@ export function AppWindow({
   }, [windowMenuOpen]);
 
   const style: CSSProperties = mobile
-    ? { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex }
+    ? { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex }
     : { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex };
   const headerElements = mobile && hideMobileHeader && externalHeaderElements
     ? externalHeaderElements
@@ -208,7 +210,7 @@ export function AppWindow({
       data-app-window={id}
       data-focused={focused || undefined}
       data-minimized={minimized || undefined}
-      data-segment-hidden={!segmentActive || undefined}
+      data-segment-hidden={!segmentVisible || undefined}
       data-mobile={mobile || undefined}
       role="dialog"
       aria-modal="false"

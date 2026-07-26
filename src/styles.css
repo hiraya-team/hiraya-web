@@ -470,6 +470,66 @@ a:focus-visible {
   pointer-events: none;
 }
 
+.desktop-area-stage {
+  position: absolute;
+  inset: 0;
+  transform: scale(var(--area-stage-scale, 1));
+  transform-origin: center;
+  transition: transform calc(360ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
+  will-change: transform;
+}
+
+.desktop-area-stage--icons { z-index: 1; }
+.desktop-area-stage--windows { z-index: 16; pointer-events: none; }
+.desktop-area-stage--frames { z-index: 17; overflow: hidden; pointer-events: none; }
+
+.desktop-area-track {
+  transition: transform calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
+  will-change: transform;
+}
+
+.desktop-canvas.desktop-area-track { transition-duration: calc(420ms * var(--theme-motion)); }
+
+.app-window-layer.desktop-area-track { right: auto; bottom: auto; }
+.desktop-area-frame-track { position: absolute; inset: 0 auto auto 0; }
+.desktop-area-frame { position: absolute; }
+
+.desktop-area-frame::after {
+  position: absolute;
+  inset: 10px;
+  border: 2px solid color-mix(in srgb, var(--theme-accent) 64%, white);
+  border-radius: calc(var(--radius) + 8px);
+  box-shadow: 0 20px 60px rgba(4, 10, 12, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+  content: "";
+  opacity: var(--area-frame-opacity, 0);
+}
+
+.desktop[data-area-transition-phase="preparing"] .desktop-area-stage,
+.desktop[data-area-transition-phase="preparing"] .desktop-area-track,
+.desktop[data-area-transition-phase="interactive"] .desktop-area-stage,
+.desktop[data-area-transition-phase="interactive"] .desktop-area-track { transition: none; }
+
+.desktop[data-area-transitioning] .app-window,
+.desktop[data-area-transitioning] .file-icon { pointer-events: none; }
+
+.desktop[data-area-transition-kind="programmatic"][data-area-transition-phase="settling"] .desktop-area-stage {
+  animation: area-stage-switch calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
+}
+
+.desktop[data-area-transition-kind="programmatic"][data-area-transition-phase="settling"] .desktop-area-frame::after {
+  animation: area-frame-switch calc(420ms * var(--theme-motion)) ease-out;
+}
+
+@keyframes area-stage-switch {
+  0%, 100% { transform: scale(1); }
+  46% { transform: scale(0.945); }
+}
+
+@keyframes area-frame-switch {
+  0%, 100% { opacity: 0; }
+  35%, 62% { opacity: 1; }
+}
+
 .app-window {
   display: flex;
   flex-direction: column;
@@ -959,21 +1019,6 @@ a:focus-visible {
 .desktop-canvas[data-swiping],
 .desktop-canvas[data-icon-dragging] {
   transition: none;
-}
-
-.desktop-swipe-dim {
-  position: absolute;
-  z-index: 15;
-  inset: 0;
-  background: rgb(4 10 12 / 34%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 180ms ease-out;
-}
-
-.desktop[data-area-transitioning] .desktop-swipe-dim {
-  opacity: 1;
-  transition-duration: 120ms;
 }
 
 .file-icon {

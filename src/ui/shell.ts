@@ -57,6 +57,11 @@ export function swipePreviewReady(delta: number, viewportDistance: number) {
   return Math.abs(delta) >= Math.min(88, Math.max(52, viewportDistance * 0.16));
 }
 
+export function areaTransitionDepth(delta: number, viewportDistance: number) {
+  if (viewportDistance <= 0) return 0;
+  return Math.min(1, Math.abs(delta) / (viewportDistance * 0.28));
+}
+
 export function committedSwipeTarget(previewTarget: SurfaceSegment | null, cancelled: boolean) {
   return cancelled ? null : previewTarget;
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, minimapWindows, occupiedAreaCount, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -53,6 +53,14 @@ describe("cohesive shell view models", () => {
     expect(committedSwipeTarget(null, false)).toBeNull();
     expect(committedSwipeTarget(preview, true)).toBeNull();
     expect(committedSwipeTarget(preview, false)).toEqual(preview);
+  });
+
+  test("builds launcher depth progressively and clamps at the midpoint", () => {
+    expect(areaTransitionDepth(0, 390)).toBe(0);
+    expect(areaTransitionDepth(54.6, 390)).toBeCloseTo(0.5);
+    expect(areaTransitionDepth(-109.2, 390)).toBeCloseTo(1);
+    expect(areaTransitionDepth(300, 390)).toBe(1);
+    expect(areaTransitionDepth(30, 0)).toBe(0);
   });
 
   test("constrains and commits direct area switcher pulls", () => {
