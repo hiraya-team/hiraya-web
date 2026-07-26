@@ -78,11 +78,16 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
   });
 
-  test("mobile area switcher focus and collapse paths share the global opener", async () => {
+  test("mobile switchers use distinct desktop and area controls", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-    expect(app).toContain("mobileAreaSwitcherButtonRef.current?.focus()");
+    expect(app).toContain("areaSwitcherHandleRef.current?.focus()");
+    expect(app).toContain("mobileSummary={homeRelativeAreaLabel(activeSegment)}");
+    expect(app).not.toContain("<MapTrifold /> Expand Area Map");
+    expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
+    expect(desktopSwitcher).toContain('aria-label={`Switch desktop, current desktop');
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
     expect(app).toContain('aria-expanded={minimapDetailed}');
     expect(app).toContain('className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}');
@@ -92,7 +97,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("if (drag.expanded) collapseAreaMap();");
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
     expect(app).toContain("if (isMobile) collapseAreaMap();");
+    expect(app).toContain("if (minimapExpanded) collapseAreaMap(false);");
     expect(css).toContain("calc(100% - 44px + var(--area-switcher-edge-inset))");
     expect(css).toContain(".desktop-minimap[data-dragging] { transition: none; }");
+    expect(css).toContain(".mobile-window-nav > .desktop-switcher[data-mobile-summary]");
   });
 });

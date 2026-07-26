@@ -7,6 +7,7 @@ import { RoleBadge } from "./VisualPrimitives";
 type Props = {
   desktops: readonly DesktopIdentity[];
   activeDesktopId: string;
+  mobileSummary?: string;
   disabled?: boolean;
   quota?: CatalogQuota | null;
   quotaStale?: boolean;
@@ -26,13 +27,15 @@ function formatBytes(value: number) {
 
 function quotaPercent(used: number, limit: number) { return Math.min(100, used / limit * 100); }
 
-export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, quotaStale, onSwitch, onCreate, onRename, onDelete, canManageDesktop = () => true }: Props) {
+export function DesktopSwitcher({ desktops, activeDesktopId, mobileSummary, disabled, quota, quotaStale, onSwitch, onCreate, onRename, onDelete, canManageDesktop = () => true }: Props) {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<{ mode: "create" | "rename"; id?: string; value: string } | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const mobileTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreFocusRef = useRef<HTMLButtonElement | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const active = desktops.find((desktop) => desktop.id === activeDesktopId) ?? desktops[0];
   const owned = desktops.filter((desktop) => desktop.ownership === "owned");
@@ -42,7 +45,13 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
   function close(returnFocus = true) {
     setOpen(false);
     setEditing(null);
-    if (returnFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+    if (returnFocus) requestAnimationFrame(() => (restoreFocusRef.current ?? triggerRef.current)?.focus());
+  }
+
+  function toggle(trigger: HTMLButtonElement | null) {
+    restoreFocusRef.current = trigger;
+    if (open) close(false);
+    else setOpen(true);
   }
 
   useEffect(() => {
@@ -78,7 +87,7 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
     } finally { setSubmitting(false); }
   }
 
-  return <div className="desktop-switcher" ref={rootRef}>
+  return <div className="desktop-switcher" data-mobile-summary={mobileSummary ? true : undefined} ref={rootRef}>
     <button
       ref={triggerRef}
       className="brand-mark desktop-switcher__trigger"
@@ -89,7 +98,7 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
       title={disabled ? "Desktops are still loading." : `Switch desktop from ${active?.name ?? "the current desktop"}`}
       aria-expanded={open}
       aria-controls={open ? "desktop-switcher-dialog" : undefined}
-      onClick={() => { if (open) close(false); else setOpen(true); }}
+      onClick={() => toggle(triggerRef.current)}
       onKeyDown={(event) => {
         if (event.key === "ArrowDown" && !open) {
           event.preventDefault();
@@ -99,6 +108,21 @@ export function DesktopSwitcher({ desktops, activeDesktopId, disabled, quota, qu
     >
       <span className="brand-mark__shape"><span /></span><strong>Hiraya</strong><span className="desktop-switcher__name">{active?.name}</span><CaretDown size={13} />
     </button>
+    {mobileSummary && <button
+      ref={mobileTriggerRef}
+      className="mobile-desktop-switcher"
+      type="button"
+      disabled={disabled}
+      aria-haspopup="dialog"
+      aria-label={`Switch desktop, current desktop ${active?.name ?? "unavailable"}`}
+      aria-expanded={open}
+      aria-controls={open ? "desktop-switcher-dialog" : undefined}
+      onClick={() => toggle(mobileTriggerRef.current)}
+    >
+      <span>{active?.name}</span>
+      <small>{mobileSummary}</small>
+      <CaretDown size={16} aria-hidden="true" />
+    </button>}
     {open && <section id="desktop-switcher-dialog" className="desktop-switcher__panel" role="dialog" aria-modal="false" aria-labelledby="desktop-switcher-title">
       <header><span id="desktop-switcher-title">Desktops</span><button type="button" className="icon-button" onClick={() => close()} aria-label="Close desktop switcher"><X size={16} /></button></header>
       <div className="desktop-switcher__list" role="list">

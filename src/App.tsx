@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, MapTrifold, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { AppWindow } from "./components/AppWindow";
@@ -269,7 +269,7 @@ function App({ session }: { session: AuthSession | null }) {
     timer: number;
   } | null>(null);
   const desktopTouchPointersRef = useRef(new Set<number>());
-  const mobileAreaSwitcherButtonRef = useRef<HTMLButtonElement>(null);
+  const areaSwitcherHandleRef = useRef<HTMLButtonElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
   const areaSwitcherDragRef = useRef<{ expanded: boolean; moved: boolean; pointerId: number; startX: number; travel: number } | null>(null);
@@ -477,7 +477,7 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => {
     if (minimapExpanded || !areaSwitcherRestoreFocusRef.current) return;
     areaSwitcherRestoreFocusRef.current = false;
-    const frame = window.requestAnimationFrame(() => mobileAreaSwitcherButtonRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => areaSwitcherHandleRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [activeSegmentKey, minimapExpanded]);
 
@@ -3535,30 +3535,22 @@ function App({ session }: { session: AuthSession | null }) {
         />}
         {isMobile && (
           <nav className="mobile-window-nav" aria-label="Desktop navigation">
-            <div className="mobile-window-nav__leading">
-              {focusedApp?.kind === "settings" && settingsPage !== "main" ? (
+            {focusedApp ? <>
+              <div className="mobile-window-nav__leading">
+                {focusedApp.kind === "settings" && settingsPage !== "main" ? (
                 <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
                   <ArrowLeft size={18} />
                   <span>Settings</span>
                 </button>
-              ) : focusedApp ? (
+                ) : (
                 <button type="button" className="mobile-window-nav__desktop" aria-label={`Back from ${runningAppLabel(focusedApp)}`} onClick={navigateBack}>
                   <ArrowLeft size={18} />
                   <span>Back</span>
                 </button>
-              ) : (
-                activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />
-              )}
-            </div>
-            {focusedApp ? (
+                )}
+              </div>
               <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-            ) : (
-              <button ref={mobileAreaSwitcherButtonRef} className="mobile-area-switcher" type="button" aria-label={`Open area map, current area ${homeRelativeAreaLabel(activeSegment)}`} onClick={openAreaMap}>
-                <span>{activeDesktopName}</span>
-                <small>{homeRelativeAreaLabel(activeSegment)}</small>
-                <CaretDown size={16} aria-hidden="true" />
-              </button>
-            )}
+            </> : activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
           </nav>
         )}
         <div className="menu-bar__actions">
@@ -3703,15 +3695,6 @@ function App({ session }: { session: AuthSession | null }) {
                     type="button"
                     onClick={() => {
                       dismiss();
-                      openAreaMap();
-                    }}
-                  >
-                    <MapTrifold /> Expand Area Map
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      dismiss();
                       setActivePanel("sync");
                     }}
                   >
@@ -3806,6 +3789,12 @@ function App({ session }: { session: AuthSession | null }) {
         }
         ref={desktopRef}
         aria-label={`${activeDesktopName} desktop`}
+        onFocusCapture={() => {
+          if (minimapExpanded) collapseAreaMap(false);
+        }}
+        onPointerDownCapture={() => {
+          if (minimapExpanded) collapseAreaMap(false);
+        }}
         onClickCapture={(event) => {
           if (!suppressClickRef.current) return;
           suppressClickRef.current = false;
@@ -4232,7 +4221,7 @@ function App({ session }: { session: AuthSession | null }) {
 
       {(isMobile || activeDesktopId) && (
         <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
-          <button className="desktop-minimap__handle" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerDown={(event) => beginAreaSwitcherDrag(event, minimapDetailed)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
+          <button ref={areaSwitcherHandleRef} className="desktop-minimap__handle" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerDown={(event) => beginAreaSwitcherDrag(event, minimapDetailed)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
             <span aria-hidden="true" />
           </button>
           <div className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}>
