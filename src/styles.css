@@ -405,7 +405,6 @@ a:focus-visible {
 .desktop {
   position: absolute;
   inset: 44px 0 0;
-  container-type: size;
   overflow: hidden;
   isolation: isolate;
   -webkit-user-select: none;

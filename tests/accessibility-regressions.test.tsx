@@ -136,15 +136,13 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
   });
 
-  test("live area transitions restore canonical tracks and viewport-sized mobile windows", async () => {
+  test("live area transitions restore canonical tracks and dynamic viewport-sized mobile windows", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
-    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('style.setProperty("--area-track-x"');
     expect(app).toContain('style.removeProperty("--area-track-x")');
     expect(app).toContain("translate3d(var(--area-track-x");
-    expect(appWindow).toContain('width: "100cqw", height: "100cqh"');
-    expect(css).toContain("container-type: size;");
+    expect(appWindow).toContain('width: "100vw", height: "calc(100dvh - 44px)"');
   });
 });

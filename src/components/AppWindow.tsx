@@ -196,7 +196,7 @@ export function AppWindow({
   }, [windowMenuOpen]);
 
   const style: CSSProperties = mobile
-    ? { position: "absolute", left: bounds.x, top: bounds.y, width: "100cqw", height: "100cqh", zIndex }
+    ? { position: "absolute", left: bounds.x, top: bounds.y, width: "100vw", height: "calc(100dvh - 44px)", zIndex }
     : { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex };
   const headerElements = mobile && hideMobileHeader && externalHeaderElements
     ? externalHeaderElements
