@@ -15,7 +15,7 @@ import { useModalDialog } from "./ui/modal-dialog";
 import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-layout";
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
 import { StatusBadge } from "./components/VisualPrimitives";
-import { allowsMouseDoubleClick, recordTouchRelease, touchReleaseAction, type TouchTap } from "./ui/file-icon-gesture";
+import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 
 type OpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
@@ -83,20 +83,19 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
         const current = press.current;
         if (!current || current.pointerId !== event.pointerId) return;
         const releasedAt = performance.now();
-        recordTouchRelease(releasedAt);
         const tap = {
           id: entry.id,
           x: event.clientX,
           y: event.clientY,
           at: releasedAt,
         };
-        const action = touchReleaseAction(lastTap.current, tap, {
+        const { action, nextTap } = resolveTouchRelease(lastTap.current, tap, {
           cancelled: false,
           moved: current.moved,
           longPressed: false,
           releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
         });
-        lastTap.current = action === "select" ? tap : null;
+        lastTap.current = nextTap;
         press.current = null;
         if (action === "select") onSelect();
         else if (action === "open") onOpen();

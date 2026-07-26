@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { allowsMouseDoubleClick, contextMenuPressAction, dismissesSheetDrag, recordTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
+import { allowsMouseDoubleClick, contextMenuPressAction, dismissesSheetDrag, recordTouchRelease, resolveTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
 
 describe("file icon touch release", () => {
   const valid = { cancelled: false, moved: false, longPressed: false, releasedOnVisibleContent: true };
@@ -17,6 +17,14 @@ describe("file icon touch release", () => {
     expect(touchReleaseAction(null, tap, { ...valid, longPressed: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, moved: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, cancelled: true })).toBe("none");
+  });
+
+  test("retains only a selecting tap and records touch compatibility timing", () => {
+    const first = resolveTouchRelease(null, tap, valid);
+    expect(first).toEqual({ action: "select", nextTap: tap });
+    expect(allowsMouseDoubleClick(tap.at + 1)).toBeFalse();
+    expect(resolveTouchRelease(tap, { ...tap, at: 1_200 }, valid)).toEqual({ action: "open", nextTap: null });
+    expect(resolveTouchRelease(null, { ...tap, at: 1_300 }, { ...valid, moved: true })).toEqual({ action: "none", nextTap: null });
   });
 });
 

@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 7 - reusable interaction mechanics
+- Current phase: 8 - design system and CSS modularization
 - State: in progress
-- Next action: audit authenticated and public desktop pointer interactions and extract only behaviorally identical mechanics
+- Next action: inventory stylesheet ownership and split stable token, primitive, shell, and feature layers without changing cascade order
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -97,7 +97,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
 - [x] Phase 5: reduce `App.tsx` to authenticated desktop composition.
 - [x] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
-- [ ] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
+- [x] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
 - [ ] Phase 8: modularize the design system and CSS without redesigning the desktop.
 - [ ] Phase 9: recompose the public desktop from read-only capabilities.
 - [ ] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
@@ -239,6 +239,16 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - The composition root retains route history and running-window publication only after the transaction returns a complete app instance.
 - Browser smoke: launched and closed the bundled text editor from Settings with no new console errors.
 - `bun test`: passed, 402 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 7
+
+- Audited authenticated desktop icons, folder explorer rows, and public desktop icons against the shared touch policy.
+- Retained distinct movement thresholds, long-press behavior, and drag/drop ownership where each surface has different semantics.
+- Added `resolveTouchRelease` as the shared touch-release state transition, including synthetic double-click suppression and next-tap ownership.
+- Updated all three icon surfaces to use the same release arbitration and added direct transition coverage.
+- `bun test`: passed, 403 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 

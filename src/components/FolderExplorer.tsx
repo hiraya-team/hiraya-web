@@ -8,7 +8,7 @@ import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
-import { allowsMouseDoubleClick, contextMenuPressAction, recordTouchRelease, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
+import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -160,20 +160,19 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         suppressClick.current = false;
       }, 0);
       const releasedAt = performance.now();
-      recordTouchRelease(releasedAt);
       const tap = {
         id: current.entry.id,
         x: event.clientX,
         y: event.clientY,
         at: releasedAt,
       };
-      const action = touchReleaseAction(lastTap.current, tap, {
+      const { action, nextTap } = resolveTouchRelease(lastTap.current, tap, {
         cancelled,
         moved: current.moved,
         longPressed: current.longPressed,
         releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
       });
-      lastTap.current = action === "select" ? tap : null;
+      lastTap.current = nextTap;
       if (action === "select")
         onSelect(current.entry, {
           toggle: mobileMultiSelect,

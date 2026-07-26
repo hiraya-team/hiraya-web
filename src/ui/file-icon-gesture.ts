@@ -38,6 +38,12 @@ export function touchReleaseAction(previous: TouchTap | null, tap: TouchTap, sta
   return "select";
 }
 
+export function resolveTouchRelease(previous: TouchTap | null, tap: TouchTap, state: Parameters<typeof touchReleaseAction>[2]) {
+  recordTouchRelease(tap.at);
+  const action = touchReleaseAction(previous, tap, state);
+  return { action, nextTap: action === "select" ? tap : null } as const;
+}
+
 export function contextMenuPressAction(press: ContextMenuPress | null) {
   if (press?.pointerType !== "touch") return "open";
   if (press.moved || press.longPressed) return "suppress";

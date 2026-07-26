@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { allowsMouseDoubleClick, contextMenuPressAction, recordTouchRelease, touchReleaseAction, type TouchTap } from "../ui/file-icon-gesture";
+import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 
 type Props = {
   entry: DesktopEntry;
@@ -243,17 +243,16 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     }
     onDragEndRef.current(cancelled || !succeeded);
     if (completed.pointerType === "touch") {
-      recordTouchRelease(performance.now());
       const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
       const visibleTarget = releaseTarget?.closest(".file-icon__art, .file-icon__name");
       const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: performance.now() };
-      const action = touchReleaseAction(lastTap.current, tap, {
+      const { action, nextTap } = resolveTouchRelease(lastTap.current, tap, {
         cancelled,
         moved: completed.moved,
         longPressed: completed.longPressed,
         releasedOnVisibleContent: Boolean(visibleTarget && iconRef.current?.contains(visibleTarget)),
       });
-      lastTap.current = action === "select" ? tap : null;
+      lastTap.current = nextTap;
       if (action === "select") onTouchSelect();
       else if (action === "open") onOpen();
     }
