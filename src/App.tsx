@@ -4221,13 +4221,13 @@ function App({ session }: { session: AuthSession | null }) {
       </section>
 
       {(isMobile || activeDesktopId) && (
-        <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
+        <nav ref={areaSwitcherRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={minimapDetailed || undefined} data-open-apps={runningApps.length > 0 || undefined} data-obscured={minimapObscured || undefined} aria-label={`${activeDesktopName} areas and open apps`}>
           <button ref={areaSwitcherHandleRef} className="desktop-minimap__handle" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerDown={(event) => beginAreaSwitcherDrag(event, minimapDetailed)} onPointerMove={moveAreaSwitcherDrag} onPointerUp={finishAreaSwitcherDrag} onPointerCancel={(event) => finishAreaSwitcherDrag(event, true)}>
             <span aria-hidden="true" />
           </button>
           <div className="desktop-minimap__body" aria-hidden={!minimapDetailed} inert={!minimapDetailed ? true : undefined}>
-            <header className="desktop-minimap__header">
-              {runningApps.length > 0 && <div className="desktop-minimap__header-tools">
+            {runningApps.length > 0 && <header className="desktop-minimap__header">
+              <div className="desktop-minimap__header-tools">
                 <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
                       {minimapWindowModel.visible.map(({ app }) => {
                         const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
@@ -4242,8 +4242,8 @@ function App({ session }: { session: AuthSession | null }) {
                   {!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)} title={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`} aria-label={`${appIsMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedAppLabel}`}>{appIsMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>}
                   <button className="desktop-minimap__window-close" type="button" onClick={() => void requestCloseApp(focusedApp.id)} title={`Close ${focusedAppLabel}`} aria-label={`Close ${focusedAppLabel}`}><X size={15} /></button>
                 </div>}
-              </div>}
-            </header>
+              </div>
+            </header>}
             <div className="desktop-minimap__grid-viewport" onPointerDown={beginExpandedMinimapSwipe} onPointerMove={moveExpandedMinimapSwipe} onPointerUp={finishExpandedMinimapSwipe} onPointerCancel={(event) => finishExpandedMinimapSwipe(event, true)}>
               <div className="desktop-minimap__grid" style={{ "--minimap-columns": minimapColumnCount, "--minimap-rows": minimapRowCount } as React.CSSProperties}>
                     {minimapSegments.map((desktopSegment, visibleIndex) => {

@@ -108,8 +108,8 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('className="desktop-minimap__window-controls" role="group"');
-    expect(app).toContain('<header className="desktop-minimap__header">');
-    expect(app).toContain('{runningApps.length > 0 && <div className="desktop-minimap__header-tools">');
+    expect(app).toContain('data-open-apps={runningApps.length > 0 || undefined}');
+    expect(app).toContain('{runningApps.length > 0 && <header className="desktop-minimap__header">');
     expect(app).not.toContain("<strong>Areas</strong>");
     expect(app).toContain('aria-label={`Minimize ${focusedAppLabel}`}');
     expect(app).toContain('{!isMobile && <button type="button" onClick={() => toggleMaximizeApp(focusedApp.id)}');
@@ -118,6 +118,9 @@ describe("accessibility regressions", () => {
     expect(app).not.toContain('if (isMobile && focusedAppIdRef.current) showDesktop();');
     expect(css).toContain(".desktop-minimap__window-controls > .desktop-minimap__window-close:hover");
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
+    expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
+    expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__handle { height: 100%; }");
+    expect(css).toContain("height: min(34dvh, 240px);");
     expect(css).toContain("min-height: 52px;");
     expect(css).toContain(".desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }");
     expect(css).toContain(".desktop-minimap__window-target { display: none; }");
