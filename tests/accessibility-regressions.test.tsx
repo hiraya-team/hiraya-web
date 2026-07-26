@@ -130,8 +130,10 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
     expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__handle { height: 100%; }");
     expect(app).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
-    expect(css).toContain(".desktop-minimap__slot { aspect-ratio: var(--desktop-area-width) / var(--desktop-area-height); }");
     expect(css).toContain("(100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap))");
+    expect(css).toContain("(100cqw - (var(--minimap-columns) - 1) * var(--minimap-gap))");
+    expect(css).toContain("grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));");
+    expect(css).not.toContain(".desktop-minimap__slot { aspect-ratio:");
     expect(css).not.toContain("calc(var(--minimap-columns) * 16) / calc(var(--minimap-rows) * 10)");
     expect(css).not.toContain("calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 10)");
     expect(css).toContain(".desktop-minimap__area:not([data-occupied]):not([data-active])::after {");

@@ -6153,15 +6153,14 @@ a:focus-visible {
   --minimap-gap: 5px;
   display: grid;
   width: min(100cqw, calc((100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap)) * var(--minimap-columns) * var(--desktop-area-width) / var(--minimap-rows) / var(--desktop-area-height) + (var(--minimap-columns) - 1) * var(--minimap-gap)));
-  height: auto;
+  height: min(100cqh, calc((100cqw - (var(--minimap-columns) - 1) * var(--minimap-gap)) * var(--minimap-rows) * var(--desktop-area-height) / var(--minimap-columns) / var(--desktop-area-width) + (var(--minimap-rows) - 1) * var(--minimap-gap)));
   min-width: 0;
   min-height: 0;
   grid-template-columns: repeat(var(--minimap-columns), minmax(0, 1fr));
-  grid-template-rows: repeat(var(--minimap-rows), auto);
+  grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));
   gap: var(--minimap-gap);
   touch-action: none;
 }
-.desktop-minimap__slot { aspect-ratio: var(--desktop-area-width) / var(--desktop-area-height); }
 .desktop-minimap__area-title { top: 5px; right: 6px; left: 6px; gap: 5px; }
 .desktop-minimap__area-title strong { font-size: 9px; font-weight: 700; }
 .desktop-minimap__area-title small { font-size: 8px; }
@@ -6194,10 +6193,6 @@ a:focus-visible {
   .desktop-minimap__window-controls { gap: 0; padding-left: 4px; }
   .desktop-minimap__window-target { display: none; }
   .desktop-minimap__window-controls > button { width: var(--touch-target); min-width: var(--touch-target); height: var(--touch-target); }
-  .desktop-minimap__grid,
-  .desktop-minimap[data-mobile][data-expanded] .desktop-minimap__grid {
-    width: min(100cqw, calc((100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap)) * var(--minimap-columns) * var(--desktop-area-width) / var(--minimap-rows) / var(--desktop-area-height) + (var(--minimap-columns) - 1) * var(--minimap-gap)));
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
