@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 5 - authenticated desktop composition
+- Current phase: 6 - app lifecycle isolation
 - State: in progress
-- Next action: separate global panel and overlay rendering from authenticated desktop orchestration
+- Next action: extract verified sandbox instance construction and teardown from the authenticated composition root
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -95,7 +95,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 2: establish neutral domain models and platform ports.
 - [x] Phase 3: split browser persistence by namespace, blobs, database client, and repositories.
 - [x] Phase 4: split synchronization by mutations, replay, reconciliation, connectivity, and transport.
-- [ ] Phase 5: reduce `App.tsx` to authenticated desktop composition.
+- [x] Phase 5: reduce `App.tsx` to authenticated desktop composition.
 - [ ] Phase 6: isolate app installation, launch, sandbox, host service, and teardown lifecycles.
 - [ ] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
 - [ ] Phase 8: modularize the design system and CSS without redesigning the desktop.
@@ -218,6 +218,16 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - Kept drag/swipe ownership, focus restoration, route commits, and direct shell transform coordination in the composition root.
 - Updated source-level area-switcher regression checks to follow the extracted feature boundary.
 - Browser smoke: expanded the switcher, selected an adjacent empty area, resized to 390px, and retained the current-area controls with no new console errors.
+- `bun test`: passed, 402 tests across 77 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
+### Phase 6 Checkpoint: App Platform Ownership
+
+- Added `src/features/app-management/controller.ts` to own app lifecycle, theme, capability, persistent storage, dialog, and notification services.
+- Moved durable installed-app, bundled-app, association, and quarantine loading and mutations behind the app-management controller.
+- Bundled app archives remain identity-verified before their durable records are refreshed.
+- Browser smoke: Settings reported all five bundled apps and launched the system text editor with no new console errors.
 - `bun test`: passed, 402 tests across 77 files
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles

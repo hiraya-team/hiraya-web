@@ -62,7 +62,7 @@ import {
   type SyncStatus,
   type OfflineOperationProgress,
 } from "./lib/sync";
-import { clearAppStorage, installApp, listFileAssociations, listInstalledApps, listQuarantinedApps, pruneLocalDesktops, readAppStorage, readDesktopEntries, readLocalPreferences, readWindowSession, removeAppStorage, removeFileAssociation, removeQuarantinedApp, resetFileAssociations, saveLocalPreferences, saveWindowSession, setFileAssociation, switchDesktop as switchLocalDesktop, uninstallApp, writeAppStorage } from "./lib/opfs";
+import { pruneLocalDesktops, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
 import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
@@ -99,9 +99,9 @@ import { createAppCommandService, RuntimeCommandContributions, type AppCommandCo
 import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { isAppPackageName, RpcDispatcher, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
-import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens, type AppNotification, type DialogRequest } from "./apps/host";
+import { FileService, HostServiceError, grantLaunchCapabilities, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
-import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, removeFileAssociationsForApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
+import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
@@ -135,6 +135,7 @@ import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, ty
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
+import { useAppPlatform } from "./features/app-management/controller";
 import { useDesktopSelection } from "./features/selection/controller";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -159,15 +160,34 @@ function transientMenuOpen() {
 
 function App({ session }: { session: AuthSession | null }) {
   const commandService = useMemo(createAppCommandService, []);
-  const appLifecycle = useMemo(() => new AppLifecycleService(2_000, ({ instanceId }) => closeAppRef.current(instanceId, false)), []);
-  const appTheme = useMemo(() => new AppThemeService(resolveTheme(DEFAULT_THEME_STATE)), []);
-  const appHostServices = useMemo(() => new AppHostServices(appLifecycle, appTheme, new AppPersistentStorageService({ get: readAppStorage, set: writeAppStorage, remove: removeAppStorage, clear: clearAppStorage })), [appLifecycle, appTheme]);
-  const appCapabilities = useMemo(() => new CapabilityStore(), []);
+  const [loading, setLoading] = useState(true);
+  const {
+    lifecycle: appLifecycle,
+    theme: appTheme,
+    hostServices: appHostServices,
+    capabilities: appCapabilities,
+    installedApps,
+    fileAssociations,
+    quarantinedApps,
+    dialogRequests: appDialogRequests,
+    notifications: appNotifications,
+    approveInstall,
+    removeInstall,
+    discardQuarantine,
+    saveAssociation,
+    deleteAssociation,
+    clearAssociations,
+    clearAppData,
+  } = useAppPlatform({
+    enabled: !loading,
+    initialTheme: resolveTheme(DEFAULT_THEME_STATE),
+    onCloseRequest: ({ instanceId }) => closeAppRef.current(instanceId, false),
+    onError: (loadError) => setError(loadError.message),
+  });
   const [entries, setEntries] = useState<DesktopEntry[]>([]);
   const [desktops, setDesktops] = useState<DesktopIdentity[]>([]);
   const [catalogQuota, setCatalogQuota] = useState<CatalogQuota | null>(null);
   const [activeDesktopId, setActiveDesktopId] = useState("");
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [folderImportError, setFolderImportError] = useState("");
   const [notice, setNotice] = useState("");
@@ -198,11 +218,6 @@ function App({ session }: { session: AuthSession | null }) {
   const isMobile = useMediaQuery(MOBILE_WINDOW_QUERY);
   const compactChrome = useMediaQuery(COMPACT_CHROME_QUERY);
   const [settingsPage, setSettingsPage] = useState<AppHistorySettingsPage>("main");
-  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
-  const [fileAssociations, setFileAssociations] = useState<FileAssociation[]>([]);
-  const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
-  const [appDialogRequests, setAppDialogRequests] = useState<readonly DialogRequest[]>([]);
-  const [appNotifications, setAppNotifications] = useState<readonly AppNotification[]>([]);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [externalEmbeddedPreviews, setExternalEmbeddedPreviews] = useState<boolean | null>(null);
   const [allowBrowserPinchZoom, setAllowBrowserPinchZoom] = useState(false);
@@ -547,8 +562,6 @@ function App({ session }: { session: AuthSession | null }) {
     [appLifecycle, updateRunningApps],
   );
 
-  useEffect(() => appHostServices.dialogs.subscribe(setAppDialogRequests), [appHostServices]);
-  useEffect(() => appHostServices.notifications.subscribe(setAppNotifications), [appHostServices]);
   useEffect(() => {
     for (const app of runningAppsRef.current) {
       if (app.kind !== "sandbox") continue;
@@ -585,34 +598,6 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("appinstalled", installed);
     };
   }, []);
-  useEffect(() => {
-    if (loading) return;
-    void Promise.all([listInstalledApps(), listFileAssociations(), listQuarantinedApps()])
-      .then(async ([storedApps, associations, quarantined]) => {
-        const byId = new Map(storedApps.map((app) => [app.appId, app]));
-        const systemApps = await Promise.all(
-          SYSTEM_APP_CATALOG.map(async (item): Promise<InstalledApp> => {
-            const response = await fetch(systemAppArchiveUrl(item));
-            if (!response.ok) throw new Error(`Could not load bundled ${item.manifest.name}.`);
-            const { inspectAppArchive } = await import("@hiraya/app-cli");
-            const inspected = await inspectAppArchive(new Uint8Array(await response.arrayBuffer()));
-            if (inspected.manifest.id !== item.manifest.id) throw new Error(`Bundled ${item.manifest.name} has the wrong identity.`);
-            const current = byId.get(item.manifest.id);
-            const install: InstalledApp = { appId: inspected.manifest.id, source: "system", packageEntryId: null, archivePath: item.archivePath, digest: inspected.digest, version: inspected.manifest.version, manifest: inspected.manifest, approvedAt: current?.approvedAt ?? Date.now() };
-            await installApp(install);
-            return install;
-          }),
-        );
-        const systemIds = new Set(systemApps.map((app) => app.appId));
-        setInstalledApps([...storedApps.filter((app) => app.source === "desktop" && !systemIds.has(app.appId)), ...systemApps]);
-        setFileAssociations(associations);
-        setQuarantinedApps(quarantined);
-      })
-      .catch((loadError) => {
-        console.error("Installed apps could not be loaded.", loadError);
-        setError(loadError instanceof Error ? loadError.message : "Installed apps could not be loaded.");
-      });
-  }, [loading]);
   function setCurrentRoute(next: DesktopRoute) {
     routeRef.current = next;
     setRoute(next);
@@ -2563,8 +2548,7 @@ function App({ session }: { session: AuthSession | null }) {
         if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
         install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
         if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
-        await installApp(install);
-        setInstalledApps((current) => [...current.filter((item) => item.appId !== install!.appId), install!]);
+        await approveInstall(install);
       }
       await launchInstalledApp(install!, launchFile);
     } catch (openError) {
@@ -2595,9 +2579,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (app.source === "system") return;
     if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
-    await uninstallApp(app.appId);
-    setInstalledApps((current) => current.filter((item) => item.appId !== app.appId));
-    setFileAssociations((current) => removeFileAssociationsForApp(current, app.appId));
+    await removeInstall(app.appId);
     setNotice(`${app.manifest.name} uninstalled`);
   }
 
@@ -2612,8 +2594,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function discardQuarantinedApp(app: QuarantinedApp) {
     if (!(await requestConfirmation({ title: `Remove recovered data for ${app.appId}?`, message: "Download the quarantine export first if you may need this app's original manifest and local storage. This removal cannot be undone.", confirmLabel: "Remove recovered data", danger: true }))) return;
-    await removeQuarantinedApp(app.appId);
-    setQuarantinedApps((current) => current.filter((item) => item.appId !== app.appId));
+    await discardQuarantine(app.appId);
   }
 
   async function openInternetShortcut(file: FileEntry, popup: Window | null) {
@@ -4146,20 +4127,14 @@ function App({ session }: { session: AuthSession | null }) {
                             danger: true,
                           }).then(async (confirmed) => {
                             if (confirmed) {
-                              await clearAppStorage(installed.appId);
+                              await clearAppData(installed.appId);
                               setNotice(`${installed.manifest.name} data reset`);
                             }
                           })
                         }
-                        onSetFileAssociation={(matcher, appId) =>
-                          void setFileAssociation({
-                            matcher,
-                            appId,
-                            createdAt: Date.now(),
-                          }).then((association) => setFileAssociations((current) => [...current.filter((item) => item.matcher !== association.matcher), association].sort((a, b) => a.matcher.localeCompare(b.matcher))))
-                        }
-                        onRemoveFileAssociation={(matcher) => void removeFileAssociation(matcher).then(() => setFileAssociations((current) => current.filter((item) => item.matcher !== matcher)))}
-                        onResetFileAssociations={() => void resetFileAssociations().then(() => setFileAssociations([]))}
+                        onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
+                        onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
+                        onResetFileAssociations={() => void clearAssociations()}
                         onListActivity={
                           canViewActivity
                             ? listActivity
@@ -4548,12 +4523,7 @@ function App({ session }: { session: AuthSession | null }) {
                     const matcher = associationCandidates(contextMenuEntry)[0];
                     setContextMenu(null);
                     if (!matcher) return;
-                    void setFileAssociation({
-                      matcher,
-                      appId: app.appId,
-                      createdAt: Date.now(),
-                    }).then((association) => {
-                      setFileAssociations((current) => [...current.filter((item) => item.matcher !== matcher), association].sort((a, b) => a.matcher.localeCompare(b.matcher)));
+                    void saveAssociation(matcher, app.appId).then(() => {
                       setNotice(`${app.manifest.name} will open ${matcher} files`);
                     });
                   },
