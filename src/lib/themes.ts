@@ -1,8 +1,6 @@
 import type { CSSProperties } from "react";
 import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState } from "../domain/theme";
 
-export type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState } from "../domain/theme";
-
 export const BUILTIN_THEME_IDS = ["hiraya-dusk", "warm-paper", "midnight-glass", "high-contrast"] as const;
 export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
 

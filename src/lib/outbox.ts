@@ -1,7 +1,8 @@
 import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type FileEntry, type Wallpaper } from "../types";
 import { assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
-import type { PersistedDesktopState } from "./desktop-state";
-import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
+import type { PersistedDesktopState } from "../domain/desktop-state";
+import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
+import type { CustomTheme } from "../domain/theme";
 
 export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "create-desktop"; desktop: DesktopIdentity }

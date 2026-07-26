@@ -1,4 +1,4 @@
-import type { PersistedDesktopState } from "./desktop-state";
+import type { PersistedDesktopState } from "../domain/desktop-state";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 import type { WindowSession } from "./window-session";
 import type { ActivityPage, ActivityQuery, NewActivityRecord } from "./activity";

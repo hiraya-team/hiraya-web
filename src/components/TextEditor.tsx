@@ -12,7 +12,7 @@ import { Decoration, type DecorationSet, EditorView, keymap, WidgetType } from "
 import { tags } from "@lezer/highlight";
 import { basicSetup } from "codemirror";
 import type { EditorLanguage, EditorSettings, FileEntry } from "../types";
-import type { ThemeDefinition } from "../lib/themes";
+import type { ThemeDefinition } from "../domain/theme";
 import { markdownLinkTargets, markdownPreviewTargets, type EmbeddedPreviewTarget, type ExternalPreviewTarget } from "../lib/embedded-preview";
 import { editorLanguageFor, fileCapabilities } from "../ui/file-capabilities";
 

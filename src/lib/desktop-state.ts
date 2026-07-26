@@ -3,8 +3,6 @@ import type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-
 import { assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision } from "./contracts";
 import { parseThemeState } from "./themes";
 
-export type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
-
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true };
 
 export function emptySyncState(): DesktopSyncState {

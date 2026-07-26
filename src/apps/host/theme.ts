@@ -1,5 +1,5 @@
 import type { ThemeTokens } from "@hiraya/apps-contracts";
-import type { ThemeDefinition } from "../../lib/themes";
+import type { ThemeDefinition } from "../../domain/theme";
 
 export function mapThemeTokens(theme: ThemeDefinition): ThemeTokens {
   const { colors } = theme;

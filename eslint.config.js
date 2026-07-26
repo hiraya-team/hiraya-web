@@ -100,4 +100,52 @@ export default tseslint.config(
       ],
     },
   },
+  {
+    files: ["src/platform/storage/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["react", "react/**", "**/components/**", "**/ui/**", "**/features/**", "**/platform/sync/**", "**/apps/host/**"],
+              message: "Browser storage must remain independent of React, UI, features, synchronization, and app-host implementations.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/components/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/features/**", "**/platform/**", "**/App", "**/PublicDesktop"],
+              message: "Shared components must not depend on product features, platform adapters, or composition roots.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["src/features/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["**/App", "**/PublicDesktop"],
+              message: "Features must remain independent of application composition roots.",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );

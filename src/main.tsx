@@ -45,7 +45,7 @@ async function start() {
   }
   await retireUnscopedServiceWorker();
   const session = await bootstrapSession(frontendOnly);
-  const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./lib/opfs");
+  const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./platform/storage/namespace");
   await configureStorageNamespace(session?.storageId ?? LOCAL_STORAGE_ID);
   const { default: App } = await import("./App");
   createRoot(root).render(

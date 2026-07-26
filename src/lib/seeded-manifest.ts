@@ -1,6 +1,7 @@
 import type { DesktopEntry, DesktopLayout, EditorSettings, FileEntry, FolderEntry } from "../types";
 import { assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout } from "./contracts";
-import { parseThemeState, type ThemeState } from "./themes";
+import { parseThemeState } from "./themes";
+import type { ThemeState } from "../domain/theme";
 
 declare const portableContentUrl: unique symbol;
 declare const bundledContentUrl: unique symbol;

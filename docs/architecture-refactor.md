@@ -5,9 +5,9 @@ This file is the durable handoff record for the capability-oriented frontend ref
 ## Status
 
 - Baseline frontend commit: `c802248`
-- Current phase: 10 - scaffolding cleanup and boundary enforcement
+- Current phase: final verification
 - State: in progress
-- Next action: remove compatibility type barrels, migrate direct domain imports, and resolve remaining temporary scaffolding
+- Next action: run server, browser, synchronized-session, persistence, and Docker verification against the final frontend commit
 - Server gitlink: update only after the complete frontend refactor passes final verification
 - Push policy: do not push as part of this refactor
 
@@ -100,7 +100,7 @@ This is a destination map, not a requirement to create empty directories or one 
 - [x] Phase 7: unify reusable interaction mechanics while retaining feature-owned behavior.
 - [x] Phase 8: modularize the design system and CSS without redesigning the desktop.
 - [x] Phase 9: recompose the public desktop from read-only capabilities.
-- [ ] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
+- [x] Phase 10: remove migration scaffolding and enforce all dependency boundaries.
 - [ ] Final: run frontend, server, browser, synchronized-session, and Docker verification.
 
 ## Phase Acceptance
@@ -274,6 +274,17 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 - `bun run lint`: passed
 - `bun run build`: passed, including storage worker, system app, and example app bundles
 
+### Phase 10
+
+- Removed desktop-state, theme, preference, save-option, conflict, storage-namespace, and staging compatibility exports from `lib/opfs.ts`, `lib/desktop-state.ts`, and `lib/themes.ts`.
+- Migrated consumers to direct domain, storage namespace, and blob platform imports.
+- Replaced the sync storage adapter-derived `Pick` with an explicit, narrower `SyncStorage` contract.
+- Added dependency rules for storage, shared components, and features, plus source-level migration boundary tests.
+- Documented worker entrypoint placement as an intentional build and persisted-parser boundary; no temporary scaffolding remains.
+- `bun test`: passed, 408 tests across 79 files
+- `bun run lint`: passed
+- `bun run build`: passed, including storage worker, system app, and example app bundles
+
 ## Decisions And Cleanup
 
 - Targeted cleanup is allowed, but external or persisted behavior changes require an explicit entry here.
@@ -282,10 +293,9 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ## Temporary Scaffolding
 
-- `src/lib/opfs.ts` re-exports neutral desktop-state, preference, save-option, and conflict contracts while consumers migrate to direct domain imports.
-- `src/lib/desktop-state.ts` and `src/lib/themes.ts` re-export domain types while runtime parser imports migrate.
-- Storage worker entrypoints and protocol/schema leaves remain under `src/lib/`; the platform database client owns them but paths are deferred to avoid mixing a large worker-relative-path move into the behavioral extraction.
-- `src/platform/sync/storage-port.ts` derives its method signatures from the browser adapter during migration; phase 10 should replace this with implementation-independent port declarations once callers have stabilized.
+- None.
+
+Worker entrypoints and protocol/schema leaves remain under `src/lib/` by design: they are build entrypoints and persisted-format parsers, while `src/platform/storage/database-client.ts` owns their browser lifecycle. Moving those files would change worker URLs and migration-relative imports without changing dependency ownership.
 
 ## Known Risks
 

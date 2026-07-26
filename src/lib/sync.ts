@@ -5,7 +5,8 @@ import { assertValidId, parseContentAccessDescriptor, parseEntries, parseLayout,
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, isAccessRevocationRecord, outboxDesktopRetentionIds, outboxOperationDesktopIds } from "./outbox";
-import { parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
+import { parseCustomTheme, parseThemeState } from "./themes";
+import type { CustomTheme } from "../domain/theme";
 import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
 import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";

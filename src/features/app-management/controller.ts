@@ -3,7 +3,7 @@ import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import type { FileAssociation, InstalledApp, QuarantinedApp } from "../../apps/installed-apps";
 import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "../../apps/system-apps";
-import type { ThemeDefinition } from "../../lib/themes";
+import type { ThemeDefinition } from "../../domain/theme";
 import {
   clearAppStorage,
   installApp,

@@ -1,7 +1,7 @@
 import type { AppCapabilities, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
-import type { ThemeDefinition } from "../../lib/themes";
+import type { ThemeDefinition } from "../../domain/theme";
 import type { OfflineAvailabilityStatus } from "../../lib/offline-availability";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";
 import { projectLogicalPosition, restoreLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";

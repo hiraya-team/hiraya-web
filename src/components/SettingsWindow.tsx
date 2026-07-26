@@ -8,13 +8,10 @@ import {
   BUILTIN_THEME_IDS,
   BUILTIN_THEMES,
   isBuiltinThemeId,
-  type CustomTheme,
-  type ThemeColors,
-  type ThemeDefinition,
-  type ThemeState,
   themeContrastIssues,
   themeStyle,
 } from "../lib/themes";
+import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeState } from "../domain/theme";
 import { DEFAULT_WALLPAPER, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type WallpaperPreset } from "../types";
 import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
 import type { AppWindowHeaderElements } from "./AppWindow";

@@ -10,7 +10,8 @@ import {
   type Wallpaper,
 } from "../types";
 import { localDesktopIdentity, READ_ONLY_CAPABILITIES } from "./permissions";
-import { isBuiltinThemeId, parseCustomTheme, parseThemeState, type CustomTheme, type ThemeState } from "./themes";
+import { isBuiltinThemeId, parseCustomTheme, parseThemeState } from "./themes";
+import type { CustomTheme, ThemeState } from "../domain/theme";
 
 const EDITOR_LANGUAGES = new Set<EditorLanguage>(["auto", "plain", "markdown", "json", "javascript", "typescript", "jsx", "tsx", "css", "html", "xml", "yaml"]);
 const WALLPAPER_IDS = new Set<string>(WALLPAPERS);

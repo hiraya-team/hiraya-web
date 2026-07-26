@@ -1,5 +1,5 @@
 import type { DesktopEntry, FileEntry } from "../types";
-import type { PersistedDesktopState } from "./desktop-state";
+import type { PersistedDesktopState } from "../domain/desktop-state";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 
 export type OfflineAvailabilityStatus = "cached" | "pinned" | "protected" | "partial" | "unavailable" | "updating" | "error";

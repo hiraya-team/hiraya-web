@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import type { EditorLanguage, EditorSettings, FileEntry } from "../types";
 import { editorLanguageFor, fileCapabilities } from "../ui/file-capabilities";
 import { TextEditor } from "./TextEditor";
-import type { ThemeDefinition } from "../lib/themes";
+import type { ThemeDefinition } from "../domain/theme";
 import { ImagePreview } from "./ImagePreview";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { MarkdownRenderer } from "./MarkdownRenderer";

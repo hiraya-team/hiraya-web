@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { stageOperationContentsInDirectory } from "../src/lib/opfs";
+import { stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
 
 describe("pending content staging", () => {
   test("removes the whole operation directory after a partial write failure", async () => {

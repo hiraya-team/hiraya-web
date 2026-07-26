@@ -2,9 +2,11 @@
 
 import sqlite3InitModule, { type Database, type SqlValue } from "@sqlite.org/sqlite-wasm";
 import type { DesktopEntry, DesktopIdentity, EditorSettings, Wallpaper } from "../types";
-import { parseDesktopState, type DesktopSyncState, type PersistedDesktopState } from "./desktop-state";
+import { parseDesktopState } from "./desktop-state";
+import type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
 import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord } from "./outbox";
-import { parseCustomTheme, parseThemeState, type CustomTheme } from "./themes";
+import { parseCustomTheme, parseThemeState } from "./themes";
+import type { CustomTheme } from "../domain/theme";
 import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type NewActivityRecord } from "./activity";
 import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";

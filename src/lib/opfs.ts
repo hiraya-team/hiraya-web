@@ -10,12 +10,12 @@ import {
   emptySyncState,
   desktopStateLayout,
   parseDesktopState,
-  type PersistedDesktopState,
 } from "./desktop-state";
 import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition, parseRootEntryPositionUpdates } from "./contracts";
 import { parseOfflinePinResponse } from "./opfs-db-protocol";
 import { wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
-import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState, type CustomTheme, type ThemeState } from "./themes";
+import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState } from "./themes";
+import type { CustomTheme, ThemeState } from "../domain/theme";
 import type { WindowSession } from "./window-session";
 import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./activity";
 import { resolveDesktopContext } from "./desktop-catalog";
@@ -28,22 +28,12 @@ import { getFilesDirectory, materializeOutbox, operationContentIds, readContentC
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
 
-export { stageOperationContentsInDirectory } from "../platform/storage/blobs";
-export { configureStorageNamespace, LOCAL_STORAGE_ID, StorageUnavailableError } from "../platform/storage/namespace";
-
-type DesktopState = PersistedDesktopState;
-export type { DesktopSyncState } from "./desktop-state";
-export type { DesktopStateSnapshot } from "../domain/desktop-state";
-export { ContentRevisionConflictError } from "../domain/files";
-export type { SaveFileOptions } from "../domain/files";
-export type { LocalPreferences } from "../domain/preferences";
+type DesktopState = import("../domain/desktop-state").PersistedDesktopState;
 
 // Local aliases keep mutation code focused on state transitions rather than persistence mechanics.
 type Manifest = DesktopState;
 const parseManifestV13 = parseDesktopState;
 const manifestLayout = desktopStateLayout;
-
-export { DEFAULT_EDITOR_SETTINGS } from "./desktop-state";
 
 async function writeDesktopState(state: DesktopState, activity?: NewActivityRecord) {
   await callDatabase("replaceDesktopState", { state, activity });
