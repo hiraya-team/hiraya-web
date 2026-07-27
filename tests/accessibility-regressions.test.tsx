@@ -232,6 +232,15 @@ describe("accessibility regressions", () => {
     expect(app).toContain("restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}");
   });
 
+  test("mobile menus and notifications use separate reachable overlay zones", async () => {
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+
+    expect(css).toContain("--layer-notification: 4900");
+    expect(css).toContain("--layer-popover: 5000");
+    expect(css).toContain(".desktop-shell:has(.mobile-header-menu__panel, .desktop-switcher__panel) .shell-status-region");
+    expect(css).toContain(".desktop-shell:has(.notification-stack) :is(.mobile-header-menu__panel, .desktop-switcher__panel)");
+  });
+
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {
     const dialog = await Bun.file(new URL("../src/components/GettingStartedDialog.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();

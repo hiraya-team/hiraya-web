@@ -3451,8 +3451,8 @@
   --overlay-edge: max(10px, env(safe-area-inset-left));
   --overlay-top: max(10px, env(safe-area-inset-top));
   --overlay-bottom: max(10px, env(safe-area-inset-bottom));
+  --layer-notification: 4900;
   --layer-popover: 5000;
-  --layer-notification: 5100;
   --layer-panel: 6000;
   --layer-command: 6100;
   --layer-confirmation: 6200;
@@ -5547,6 +5547,8 @@
 
 @media (max-width: 620px) {
   .shell-status-region { top: calc(44px + env(safe-area-inset-top) + 8px); right: 8px; left: 8px; width: auto; }
+  .desktop-shell:has(.mobile-header-menu__panel, .desktop-switcher__panel) .shell-status-region { top: auto; bottom: max(8px, env(safe-area-inset-bottom)); max-height: 38dvh; }
+  .desktop-shell:has(.notification-stack) :is(.mobile-header-menu__panel, .desktop-switcher__panel) { max-height: 42dvh !important; overflow-y: auto; }
   .notice--actionable { grid-template-columns: 1fr 1fr auto; }
   .notification-drawer__list > div { grid-template-columns: auto minmax(0, 1fr) auto; }
   .notification-drawer__list > div > button:not(.notification-dismiss) { grid-column: 2; justify-self: start; }
