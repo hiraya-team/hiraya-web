@@ -21,6 +21,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
   const [submitting, setSubmitting] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const nameRef = useRef<HTMLInputElement>(null);
   useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus);
 
   async function handleSubmit(event: React.FormEvent) {
@@ -32,6 +33,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "The file could not be saved.");
       setSubmitting(false);
+      requestAnimationFrame(() => nameRef.current?.focus());
     }
   }
 
@@ -64,15 +66,17 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
               <label htmlFor="file-name">{noun === "folder" ? "Folder" : "File"} name</label>
               <input
                 id="file-name"
+                ref={nameRef}
                 autoFocus
                 value={name}
-                maxLength={180}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => { setName(event.target.value); setError(""); }}
                 onFocus={(event) => {
                   const dot = event.currentTarget.value.lastIndexOf(".");
                   event.currentTarget.setSelectionRange(0, dot > 0 ? dot : event.currentTarget.value.length);
                 }}
                 aria-describedby={error ? "file-name-error" : undefined}
+                aria-errormessage={error ? "file-name-error" : undefined}
+                aria-invalid={error ? "true" : undefined}
               />
             </>
           )}

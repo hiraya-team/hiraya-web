@@ -214,6 +214,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("fileDialogResultIdRef.current = renamed.id");
     expect(app).not.toContain("setDialog({ type:");
     expect(dialog).toContain("useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus)");
+    expect(dialog).toContain('aria-invalid={error ? "true" : undefined}');
+    expect(dialog).toContain('aria-errormessage={error ? "file-name-error" : undefined}');
+    expect(dialog).toContain("requestAnimationFrame(() => nameRef.current?.focus())");
     expect(modal).toContain("restoreFocusRef.current?.() ?? entry.previousFocus");
   });
 
