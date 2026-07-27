@@ -4,6 +4,7 @@ import type { HirayaAppManifestV1 } from "@hiraya/apps-contracts";
 export type SystemAppCatalogItem = Readonly<{
   slug: string;
   archivePath: string;
+  digest: string;
   manifest: HirayaAppManifestV1;
 }>;
 

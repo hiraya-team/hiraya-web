@@ -1,10 +1,11 @@
 export const FILES_DIRECTORY = "files";
 export const PENDING_DIRECTORY = "pending";
 export const CONTENT_CACHE_DIRECTORY = ".hiraya-content-cache";
+export const LOCAL_MUTATIONS_DIRECTORY = ".hiraya-local-mutations";
 export const LOCAL_STORAGE_ID = "hiraya-local";
 export const FRONTEND_ONLY = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 
-const LEGACY_STORAGE_ENTRIES = [FILES_DIRECTORY, PENDING_DIRECTORY, CONTENT_CACHE_DIRECTORY, ".hiraya-sqlite-v1"];
+const LEGACY_STORAGE_ENTRIES = [FILES_DIRECTORY, PENDING_DIRECTORY, CONTENT_CACHE_DIRECTORY, LOCAL_MUTATIONS_DIRECTORY, ".hiraya-sqlite-v1"];
 const STORAGE_LOCK_TIMEOUT_MS = 30_000;
 
 let storageNamespace: { storageId: string; key: string } | null = null;

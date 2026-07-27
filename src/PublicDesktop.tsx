@@ -57,19 +57,18 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
+      onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
       onDoubleClick={() => {
         if (allowsMouseDoubleClick(performance.now())) onOpen();
       }}
       onPointerDown={(event) => {
         if (event.pointerType !== "touch" || event.button !== 0) return;
-        event.preventDefault();
         press.current = {
           pointerId: event.pointerId,
           x: event.clientX,
           y: event.clientY,
           moved: false,
         };
-        event.currentTarget.setPointerCapture(event.pointerId);
       }}
       onPointerMove={(event) => {
         const current = press.current;

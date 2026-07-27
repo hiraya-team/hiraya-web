@@ -1,10 +1,11 @@
-import { useDeferredValue, useEffect, useId, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { File, Folder, MagnifyingGlass, SquaresFour, TerminalWindow, X } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
 import { filterAndGroupSearchItems, selectedRenderedItem, type SearchCategory, type SearchItem } from "../ui/panel-data";
 import { useModalDialog } from "../ui/modal-dialog";
 import type { CommandId, CommandItem } from "../apps/commands";
 import type { DesktopSearchResponse, DesktopSearchResult } from "../lib/search";
+import { indexSearchBreadcrumbs } from "../ui/search-breadcrumbs";
 
 export type SearchPaletteWindow = {
   id: string;
@@ -60,6 +61,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   const titleId = useId();
   const listId = useId();
   const scopeStatusId = useId();
+  const breadcrumbs = useMemo(() => indexSearchBreadcrumbs(entries), [entries]);
   useModalDialog(backdropRef, dialogRef, onClose);
 
   useEffect(() => {
@@ -94,7 +96,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
     desktopId: activeDesktopId,
     desktopName: activeDesktopName,
     entry,
-    breadcrumb: breadcrumb(entries, entry),
+    breadcrumb: breadcrumbs.get(entry.id) ?? [],
     stale: false,
   }));
   const desktopResults = searchAllDesktops ? (remoteResponse ? [...remoteResponse.results.filter((result) => result.desktopId !== activeDesktopId || result.authorityCatalogId !== activeAuthorityCatalogId), ...activeResults] : [...cachedDesktopResults.filter((result) => result.desktopId !== activeDesktopId || result.authorityCatalogId !== activeAuthorityCatalogId), ...activeResults]) : activeResults;
@@ -210,15 +212,15 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
         )}
         <div id={listId} className="command-palette__results" role="listbox" aria-label="Search results">
           {groups.length === 0 ? (
-            <div className="command-palette__empty" role="status">
+            <div className="command-palette__empty" role="option" aria-disabled="true" aria-selected="false">
               <MagnifyingGlass size={28} weight="duotone" aria-hidden="true" />
               <strong>{query ? "No results found" : "Nothing to suggest yet"}</strong>
               <span>{query ? "Try a file name, window, or command." : "Current windows, recent files, and common commands appear here."}</span>
             </div>
           ) : (
             groups.map((group) => (
-              <section className="command-palette__group" role="group" aria-labelledby={`${listId}-${group.category}`} key={group.category}>
-                <h2 id={`${listId}-${group.category}`}>{CATEGORY_LABELS[group.category]}</h2>
+              <section className="command-palette__group" role="group" aria-label={CATEGORY_LABELS[group.category]} key={group.category}>
+                <h2 aria-hidden="true">{CATEGORY_LABELS[group.category]}</h2>
                 {group.items.map((item) => {
                   const index = resultIndex++;
                   const detailId = item.detail ? `${listId}-option-${index}-detail` : undefined;
@@ -239,17 +241,4 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
       </section>
     </div>
   );
-}
-
-function breadcrumb(entries: readonly DesktopEntry[], entry: DesktopEntry) {
-  const byId = new Map(entries.map((candidate) => [candidate.id, candidate]));
-  const parts: string[] = [];
-  let parentId = entry.parentId;
-  while (parentId) {
-    const parent = byId.get(parentId);
-    if (!parent || parent.kind !== "folder") break;
-    parts.unshift(parent.name);
-    parentId = parent.parentId;
-  }
-  return parts;
 }

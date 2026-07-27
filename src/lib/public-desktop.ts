@@ -1,5 +1,6 @@
 import type { FileEntry } from "../types";
 import { API_ROUTES } from "./api-routes";
+import { sha256Blob } from "./blob-transfer";
 import { isRecord, parseContentAccessDescriptor, parsePublicDesktopState, type RemoteDesktopState } from "./contracts";
 
 export class LargeDownloadAuthRequiredError extends Error {
@@ -32,7 +33,14 @@ export async function fetchPublicFile(token: string, file: FileEntry, contentRev
   let response = await fetchImpl(API_ROUTES.publicDesktopContent(token, file.id), { cache: "no-store", credentials: "same-origin" });
   const gate = await largeDownloadError(response);
   if (gate) throw gate;
-  if (response.ok && !response.headers.get("content-type")?.includes("application/json")) return new File([await response.blob()], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
+  if (response.ok && !response.headers.get("content-type")?.includes("application/json")) {
+    const blob = await response.blob();
+    if (blob.size !== file.size) throw new Error("The downloaded file has an unexpected size.");
+    const digest = response.headers.get("X-Hiraya-Content-SHA256");
+    if (!digest || !/^[a-f0-9]{64}$/.test(digest)) throw new Error("The download did not include valid integrity metadata.");
+    if (await sha256Blob(blob) !== digest) throw new Error("The downloaded file failed integrity verification.");
+    return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
+  }
 
   if (!response.ok && response.status !== 404 && response.status !== 405 && response.status !== 409) throw new Error(`The file could not be downloaded (${response.status}).`);
   response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(token, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
@@ -45,6 +53,7 @@ export async function fetchPublicFile(token: string, file: FileEntry, contentRev
   if (contentGate) throw contentGate;
   if (!contentResponse.ok) throw new Error(`The file could not be downloaded (${contentResponse.status}).`);
   const blob = await contentResponse.blob();
-  if (blob.size !== file.size) throw new Error("The downloaded file has an unexpected size.");
+  if (blob.size !== descriptor.size) throw new Error("The downloaded file has an unexpected size.");
+  if (await sha256Blob(blob) !== descriptor.sha256) throw new Error("The downloaded file failed integrity verification.");
   return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
 }

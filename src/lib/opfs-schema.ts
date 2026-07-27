@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 8;
+export const DATABASE_SCHEMA_VERSION = 9;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -131,4 +131,17 @@ export const PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL = `
 export function migrateSchema7To8Sql(version: number): string {
   if (version !== 7) throw new Error(`Schema 8 migration requires version 7, received ${version}.`);
   return `BEGIN IMMEDIATE; ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL} COMMIT;`;
+}
+
+export const OUTBOX_DIAGNOSTICS_SCHEMA_SQL = `
+  ALTER TABLE outbox ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0);
+  ALTER TABLE outbox ADD COLUMN last_attempt_at INTEGER CHECK (last_attempt_at IS NULL OR last_attempt_at >= 0);
+  ALTER TABLE outbox ADD COLUMN error_code TEXT;
+  ALTER TABLE outbox ADD COLUMN conflict_details_json TEXT;
+  PRAGMA user_version=9;
+`;
+
+export function migrateSchema8To9Sql(version: number): string {
+  if (version !== 8) throw new Error(`Schema 9 migration requires version 8, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${OUTBOX_DIAGNOSTICS_SCHEMA_SQL} COMMIT;`;
 }

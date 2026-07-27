@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, ClockCountdown, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -13,8 +13,6 @@ import { PropertiesWindow } from "./components/PropertiesWindow";
 import { SettingsWindow } from "./components/SettingsWindow";
 import { GettingStartedDialog } from "./components/GettingStartedDialog";
 import { AppPickerDialog } from "./components/AppPickerDialog";
-import { UpdateToast } from "./components/UpdateToast";
-import { NotificationCard } from "./components/NotificationCard";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
@@ -91,7 +89,7 @@ import { PanelDialog } from "./components/PanelDialog";
 import { ConfirmationDialog, type ConfirmationRequest } from "./components/ConfirmationDialog";
 import { SharingDialog } from "./components/SharingDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
-import type { OutboxRecord } from "./lib/outbox";
+import { outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
@@ -116,8 +114,7 @@ import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHand
 import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
-import { AppIcon, StatusBadge, type StatusTone } from "./components/VisualPrimitives";
-import { boundedNotificationVisibility } from "./ui/notifications";
+import { AppIcon } from "./components/VisualPrimitives";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
 import { DesktopTaskbar } from "./components/DesktopTaskbar";
 import { ConnectionPanel } from "./components/ConnectionPanel";
@@ -141,6 +138,9 @@ import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
 import { enteredEdge } from "./ui/edge-entry";
 import { settleAreaSwitcherDrag, type AreaSwitcherDrag, type AreaSwitcherDragSettlement } from "./ui/area-switcher-drag";
+import { DesktopClock } from "./features/shell/DesktopClock";
+import { ConnectionStatusButton } from "./features/connection/ConnectionStatusButton";
+import { ShellNotifications } from "./features/notifications/ShellNotifications";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -148,10 +148,6 @@ const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
-
-function formatClock(date: Date) {
-  return new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(date);
-}
 
 function fileDialogEntryElement(id: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
@@ -216,7 +212,6 @@ function App({ session }: { session: AuthSession | null }) {
   const [windowSessionRestored, setWindowSessionRestored] = useState(false);
   const [routeHistoryReady, setRouteHistoryReady] = useState(false);
   const [route, setRoute] = useState<DesktopRoute | null>(null);
-  const [clock, setClock] = useState(() => new Date());
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
@@ -388,6 +383,7 @@ function App({ session }: { session: AuthSession | null }) {
   const routeSettings = route?.settings;
   const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
   const canMutate = canMutateDesktop(activeDesktop, syncStatus);
+  const activeOutboxRecords = activeDesktopId ? outboxRecords.filter((record) => outboxOperationDesktopIds(record).has(activeDesktopId)) : [];
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
@@ -396,8 +392,6 @@ function App({ session }: { session: AuthSession | null }) {
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
-  const hasPendingSync = outboxRecords.some((record) => record.status === "pending");
-  const syncIndicatorStatus = syncStatus === "online" && isSyncing ? "syncing" : syncStatus === "online" && hasPendingSync ? "waiting" : syncStatus;
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
   const actionSheetOpen = isMobile && Boolean(contextMenu);
   const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
@@ -1327,7 +1321,7 @@ function App({ session }: { session: AuthSession | null }) {
     void getOutboxStatus()
       .then((status) => {
         if (!active) return;
-        const blocked = status.records.find((record) => record.status === "blocked");
+        const blocked = status.records.find((record) => record.status === "blocked" && outboxOperationDesktopIds(record).has(activeDesktopIdRef.current));
         setError(blocked?.error ? `A queued change could not sync: ${blocked.error}` : "A queued change could not sync and needs attention.");
       })
       .catch(() => undefined);
@@ -1393,11 +1387,6 @@ function App({ session }: { session: AuthSession | null }) {
       document.removeEventListener("visibilitychange", checkWhenVisible);
     };
   }, [desktopSearchAvailable]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setClock(new Date()), 30_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!actionSheetOpen) return;
@@ -3526,22 +3515,12 @@ function App({ session }: { session: AuthSession | null }) {
 
   function outboxAffectedLabels(record: OutboxRecord) {
     const operation = record.operation;
-    const ids = operation.kind === "delete" ? [operation.entryId] : operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer" ? operation.entryIds : operation.kind === "update-entry" || operation.kind === "save-content" ? [operation.entry.id] : operation.kind === "create" ? operation.entries.map((entry) => entry.id) : [];
+    const ids = operation.kind === "delete" ? [operation.entryId] : operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer" ? operation.entryIds : operation.kind === "patch-entry" || operation.kind === "save-content" ? [operation.entryId] : operation.kind === "create" ? operation.entries.map((entry) => entry.id) : [];
     const desktopName = desktopsRef.current.find((desktop) => desktop.id === record.desktopId)?.name ?? record.desktopId;
     const entryNames = record.desktopId === activeDesktopIdRef.current ? ids.map((id) => entriesRef.current.find((entry) => entry.id === id)?.name).filter((name): name is string => Boolean(name)) : [];
     return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
-  const notificationVisibility = boundedNotificationVisibility({ error: Boolean(error), notice: Boolean(notice), trash: trashNotifications.length, apps: appNotifications.length });
-  const notificationTotal = notificationVisibility.total;
-  const showErrorNotification = notificationVisibility.showError;
-  const visibleTrashNotifications = trashNotifications.slice(0, notificationVisibility.visibleTrash);
-  const showNoticeNotification = notificationVisibility.showNotice;
-  const visibleAppNotifications = appNotifications.slice(0, notificationVisibility.visibleApps);
-  const hiddenNotificationCount = notificationVisibility.hidden;
-  const hiddenTrashNotifications = trashNotifications.slice(visibleTrashNotifications.length);
-  const hiddenAppNotifications = appNotifications.slice(visibleAppNotifications.length);
-  const syncTone: StatusTone = syncIndicatorStatus === "online" || syncIndicatorStatus === "local" ? "success" : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? "progress" : syncIndicatorStatus === "waiting" ? "neutral" : "danger";
   const shellAnnouncement = error ? "" : importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : notice || (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? ""));
 
   return (
@@ -3636,14 +3615,7 @@ function App({ session }: { session: AuthSession | null }) {
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
           </button>
-          {!isMobile && (
-            <button className="menu-bar__sync" data-status={syncIndicatorStatus} type="button" aria-label="Open Connection and Offline" onClick={() => setActivePanel("sync")}>
-              <StatusBadge tone={syncTone} surface="chrome">
-                {syncIndicatorStatus === "local" ? <HardDrive size={15} /> : syncIndicatorStatus === "online" ? <CloudCheck size={15} /> : syncIndicatorStatus === "waiting" ? <ClockCountdown size={15} /> : syncIndicatorStatus === "blocked" ? <WarningCircle size={15} weight="fill" /> : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? <SpinnerGap size={15} /> : <CloudSlash size={15} />}
-                <span>{syncIndicatorStatus === "local" ? "Saved locally" : syncIndicatorStatus === "syncing" ? "Syncing in background" : syncIndicatorStatus === "waiting" ? "Waiting to sync" : syncIndicatorStatus === "online" ? "Synced" : syncIndicatorStatus === "connecting" ? "Connecting" : syncIndicatorStatus === "blocked" ? "Sync blocked" : "Offline"}</span>
-              </StatusBadge>
-            </button>
-          )}
+          <ConnectionStatusButton status={syncStatus} syncing={isSyncing} outboxRecords={activeOutboxRecords} onOpen={() => setActivePanel("sync")} />
           {isMobile && (
             <MobileHeaderMenu
               label={`Account, system, and windows; ${runningApps.length} open`}
@@ -3781,7 +3753,7 @@ function App({ session }: { session: AuthSession | null }) {
             </MobileHeaderMenu>
           )}
           {!isMobile && <SystemMenu session={session} canOpenTrash={canOpenTrash} canShare={Boolean(session && activeDesktop?.capabilities.manage && canManage)} onSettings={() => openSettingsWindow()} onHelp={() => openHelp()} onShortcuts={() => setActivePanel("shortcuts")} onTrash={() => setActivePanel("trash")} onShare={() => setSharingOpen(true)} />}
-          <span className="menu-bar__clock">{formatClock(clock)}</span>
+          <DesktopClock />
         </div>
       </header>
 
@@ -4367,131 +4339,27 @@ function App({ session }: { session: AuthSession | null }) {
         </div>
       )}
 
-      {(notificationTotal > 0 || importProgress || showUpdateToast) && (
-        <aside className="shell-status-region" aria-label="Notifications and progress">
-          {notificationTotal > 0 && (
-            <div className="notification-stack">
-              {showErrorNotification && (
-                <NotificationCard
-                  badge="Error"
-                  tone="danger"
-                  icon={<WarningCircle size={18} weight="fill" />}
-                  role="alert"
-                  dismissLabel="Dismiss error"
-                  onDismiss={() => {
-                    setError("");
-                    setFolderImportError("");
-                  }}
-                  actions={
-                    error === folderImportError ? (
-                      <button className="notification-action" type="button" onClick={() => openHelp("files-and-folders")}>
-                        Folder import help
-                      </button>
-                    ) : undefined
-                  }
-                >
-                  <span>{error}</span>
-                </NotificationCard>
-              )}
-              {visibleTrashNotifications.map((notification) => (
-                <NotificationCard
-                  badge={notification.state === "failed" ? "Restore failed" : notification.state === "running" ? "Restoring" : "Undo available"}
-                  tone={notification.state === "failed" ? "danger" : notification.state === "running" ? "progress" : "neutral"}
-                  key={notification.id}
-                  dismissLabel={`Dismiss Trash notification for ${notification.label}`}
-                  dismissDisabled={notification.state === "running"}
-                  onDismiss={() => setTrashNotifications((current) => dismissTrashNotification(current, notification.id))}
-                  actions={
-                    <>
-                      <button className="notification-action notification-action--primary" type="button" disabled={notification.state === "running"} onClick={() => void undoMoveToTrash(notification)}>
-                        {notification.state === "failed" ? "Retry Undo" : "Undo"}
-                      </button>
-                      <button className="notification-action" type="button" disabled={notification.state === "running"} onClick={() => void openTrashNotification(notification)}>
-                        View Trash
-                      </button>
-                    </>
-                  }
-                >
-                  <strong>{notification.label} moved to Trash</strong>
-                  <span>{notification.state === "running" ? "Restoring..." : notification.error || "Undo remains available until dismissed."}</span>
-                </NotificationCard>
-              ))}
-              {showNoticeNotification && (
-                <NotificationCard badge="Saved" role="status" dismissLabel="Dismiss notice" onDismiss={() => setNotice("")}>
-                  <span>{notice}</span>
-                </NotificationCard>
-              )}
-              {visibleAppNotifications.map((notification) => (
-                <NotificationCard badge="App" key={notification.id} dismissLabel="Dismiss app notification" onDismiss={() => appHostServices.notifications.dismiss(notification.owner, notification.id)}>
-                  <strong>{notification.title}</strong>
-                  {notification.body && <span>{notification.body}</span>}
-                </NotificationCard>
-              ))}
-              {hiddenNotificationCount > 0 && (
-                <details className="notification-card notification-drawer">
-                  <summary>
-                    {hiddenNotificationCount} more {hiddenNotificationCount === 1 ? "notification" : "notifications"}
-                  </summary>
-                  <div className="notification-drawer__list" aria-label="Notification history">
-                    {!showNoticeNotification && notice && (
-                      <div>
-                        <StatusBadge>Saved</StatusBadge>
-                        <span>{notice}</span>
-                      </div>
-                    )}
-                    {hiddenTrashNotifications.map((notification) => (
-                      <div key={notification.id}>
-                        <StatusBadge tone={notification.state === "failed" ? "danger" : "neutral"}>Trash</StatusBadge>
-                        <span>{notification.label}</span>
-                        <button type="button" disabled={notification.state === "running"} onClick={() => void undoMoveToTrash(notification)}>
-                          {notification.state === "failed" ? "Retry Undo" : "Undo"}
-                        </button>
-                        <button type="button" onClick={() => void openTrashNotification(notification)}>
-                          View
-                        </button>
-                        <button className="notification-dismiss" type="button" disabled={notification.state === "running"} aria-label={`Dismiss notification for ${notification.label}`} onClick={() => setTrashNotifications((current) => dismissTrashNotification(current, notification.id))}>
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                    {hiddenAppNotifications.map((notification) => (
-                      <div key={notification.id}>
-                        <StatusBadge>App</StatusBadge>
-                        <span>{[notification.title, notification.body].filter(Boolean).join(": ")}</span>
-                        <button className="notification-dismiss" type="button" aria-label="Dismiss app notification" onClick={() => appHostServices.notifications.dismiss(notification.owner, notification.id)}>
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </details>
-              )}
-            </div>
-          )}
-          {importProgress && (
-            <NotificationCard badge="Importing" tone="progress" icon={<SpinnerGap className="notification-card__spinner" size={18} />} role="status">
-              <strong>{importProgress.phase === "preparing" ? "Preparing import" : importProgress.phase === "saving" ? "Staging and saving import" : "Staging and synchronizing import"}</strong>
-              <span>
-                {importProgress.folderCount} {importProgress.folderCount === 1 ? "folder" : "folders"}, {importProgress.fileCount} {importProgress.fileCount === 1 ? "file" : "files"}, {formatImportBytes(importProgress.totalBytes)}
-              </span>
-            </NotificationCard>
-          )}
-          {showUpdateToast && (
-            <UpdateToast
-              applying={updateApplying}
-              blocked={updateBlocked}
-              onConfirm={() => void activateUpdate()}
-              onDismiss={() => {
-                setShowUpdateToast(false);
-                setUpdateBlocked(false);
-              }}
-            />
-          )}
-          <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-            {shellAnnouncement}
-          </span>
-        </aside>
-      )}
+      <ShellNotifications
+        error={error}
+        folderImportError={folderImportError}
+        notice={notice}
+        trashNotifications={trashNotifications}
+        appNotifications={appNotifications}
+        importProgress={importProgress}
+        showUpdateToast={showUpdateToast}
+        updateApplying={updateApplying}
+        updateBlocked={updateBlocked}
+        announcement={shellAnnouncement}
+        onDismissError={() => { setError(""); setFolderImportError(""); }}
+        onOpenFolderImportHelp={() => openHelp("files-and-folders")}
+        onDismissNotice={() => setNotice("")}
+        onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
+        onUndoTrash={(notification) => void undoMoveToTrash(notification)}
+        onOpenTrash={(notification) => void openTrashNotification(notification)}
+        onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
+        onActivateUpdate={() => void activateUpdate()}
+        onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
+      />
 
       {contextMenu?.type === "entry" && contextMenuEntry && (
         <ContextMenu

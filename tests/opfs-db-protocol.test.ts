@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseOfflinePinResponse, parseStorageProtocol, validateOfflinePinRequest } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,9 +13,9 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 8", () => {
+describe("local schema 9", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(8);
+    expect(DATABASE_SCHEMA_VERSION).toBe(9);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
@@ -147,11 +147,45 @@ describe("local schema 8", () => {
     db.close();
   });
 
+  test("adds durable safe outbox attempt diagnostics", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE outbox(sequence INTEGER PRIMARY KEY, operation_id TEXT, client_id TEXT, catalog_id TEXT, desktop_id TEXT, operation_schema_version INTEGER, operation_json TEXT, status TEXT, error TEXT); INSERT INTO outbox VALUES (1, 'operation', 'client', NULL, 'desktop', 1, '{}', 'pending', NULL); PRAGMA user_version=8;");
+    db.exec(migrateSchema8To9Sql(8));
+    expect(db.query("SELECT attempt_count,last_attempt_at,error_code,conflict_details_json FROM outbox").get()).toEqual({ attempt_count: 0, last_attempt_at: null, error_code: null, conflict_details_json: null });
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 9 });
+    expect(() => migrateSchema8To9Sql(7)).toThrow("requires version 8");
+    db.close();
+  });
+
+  test("migrates a populated schema-8 outbox without inventing revision preconditions", () => {
+    const operations = [
+      { schemaVersion: 1, kind: "rename-desktop", desktop: { id: "desk", name: "Renamed" } },
+      { schemaVersion: 1, kind: "patch-entry", entryId: "file", changes: { name: "renamed.txt" } },
+      { schemaVersion: 1, kind: "save-content", entryId: "file", mimeType: "text/plain", size: 4, modifiedAt: 2 },
+      { schemaVersion: 1, kind: "root-entry-positions", positions: [{ entryId: "file", position: { x: 1, y: 2 } }] },
+      { schemaVersion: 1, kind: "layout", layout: { snapToGrid: false, wallpaper: { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#172329", overlayOpacity: 0 } } },
+      { schemaVersion: 1, kind: "editor-settings", settings: { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true } },
+      { schemaVersion: 1, kind: "select-theme", themeId: "hiraya-dusk" },
+      { schemaVersion: 1, kind: "delete-desktop", desktopId: "other" },
+    ];
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE outbox(sequence INTEGER PRIMARY KEY, operation_id TEXT, client_id TEXT, catalog_id TEXT, desktop_id TEXT, operation_schema_version INTEGER, operation_json TEXT, status TEXT, error TEXT); PRAGMA user_version=8;");
+    const insert = db.prepare("INSERT INTO outbox VALUES (?, ?, 'client', 'catalog', 'desk', 1, ?, 'pending', NULL)");
+    operations.forEach((operation, index) => insert.run(index + 1, String(index + 1), JSON.stringify(operation)));
+    insert.finalize();
+    db.exec(migrateSchema8To9Sql(8));
+    const migrated = db.query("SELECT operation_json,error_code,conflict_details_json FROM outbox ORDER BY sequence").all() as Array<{ operation_json: string; error_code: null; conflict_details_json: null }>;
+    expect(migrated.map((row) => JSON.parse(row.operation_json))).toEqual(operations);
+    expect(migrated.every((row) => row.error_code === null && row.conflict_details_json === null)).toBe(true);
+    db.close();
+  });
+
   test("migrates a populated schema 2 database through the complete supported chain", () => {
     const db = new Database(":memory:");
     db.exec(`
       PRAGMA foreign_keys=ON;
       CREATE TABLE desktops(id TEXT PRIMARY KEY);
+      CREATE TABLE outbox(sequence INTEGER PRIMARY KEY, operation_id TEXT, client_id TEXT, catalog_id TEXT, desktop_id TEXT, operation_schema_version INTEGER, operation_json TEXT, status TEXT, error TEXT);
       CREATE TABLE preferences(singleton INTEGER PRIMARY KEY, auto_update INTEGER NOT NULL, external_embedded_previews INTEGER NOT NULL);
       INSERT INTO desktops VALUES ('desktop-a');
       INSERT INTO preferences VALUES (1, 0, 1);
@@ -167,6 +201,7 @@ describe("local schema 8", () => {
     db.exec(migrateSchema5To6Sql(5));
     db.exec(migrateSchema6To7Sql(6));
     db.exec(migrateSchema7To8Sql(7));
+    db.exec(migrateSchema8To9Sql(8));
 
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
     expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
@@ -194,7 +229,7 @@ describe("local schema 8", () => {
   test("keeps strict schema-v4 pin requests after later migrations", () => {
     const list = createStorageDbRequest(4, "desktop-a", "listOfflinePins", { desktopId: "desktop-a" });
     const update = createStorageDbRequest(5, "desktop-a", "setOfflinePins", { desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
-    expect(DATABASE_SCHEMA_VERSION).toBe(8);
+    expect(DATABASE_SCHEMA_VERSION).toBe(9);
     expect(list.params).toEqual({ desktopId: "desktop-a" });
     expect(update.params).toEqual({ desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
   });
@@ -208,8 +243,8 @@ describe("local schema 8", () => {
   });
 
   test("handshakes the named worker protocol", () => {
-    expect(STORAGE_PROTOCOL_VERSION).toBe(9);
-    expect(parseStorageProtocol({ version: 9 })).toBe(9);
-    expect(() => parseStorageProtocol({ version: 8 })).toThrow("outdated");
+    expect(STORAGE_PROTOCOL_VERSION).toBe(10);
+    expect(parseStorageProtocol({ version: 10 })).toBe(10);
+    expect(() => parseStorageProtocol({ version: 9 })).toThrow("outdated");
   });
 });

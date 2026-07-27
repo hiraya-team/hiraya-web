@@ -1,6 +1,6 @@
 import { useId } from "react";
-import { ArrowsClockwise, CloudCheck, CloudSlash, Trash, WarningCircle } from "@phosphor-icons/react";
-import type { OutboxRecord } from "../lib/outbox";
+import { ArrowsClockwise, CloudCheck, CloudSlash, GitMerge, Trash, WarningCircle } from "@phosphor-icons/react";
+import { isRevisionConflictRecord, type OutboxRecord } from "../lib/outbox";
 import type { SyncStatus } from "../lib/sync";
 import { outboxRecordLabel, partitionSyncRecords } from "../ui/panel-data";
 
@@ -18,6 +18,8 @@ function statusCopy(status: SyncStatus, recordCount: number, lastSyncedAt?: numb
   if (status === "local") return "Changes stay in this browser.";
   if (status === "offline") return lastSyncedAt ? `Offline. Last synced ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(lastSyncedAt)}.` : "Offline. This desktop has not synced yet.";
   if (status === "blocked") return `${recordCount} ${recordCount === 1 ? "change needs" : "changes need"} attention before sync can continue.`;
+  if (status === "upgrade-required") return "This server uses an unsupported data version. Update Hiraya before queued changes can sync.";
+  if (status === "error") return "The server identity or synchronization response is invalid. Queued changes have not been sent.";
   if (status === "connecting") return "Connecting to the shared desktop...";
   return recordCount > 0 ? "Connected. Pending changes will sync automatically." : "Connected. Everything is up to date.";
 }
@@ -37,11 +39,12 @@ export function SyncIssuesPanel({ status, records, lastSyncedAt, affectedLabels,
       <h3 id={`${titleId}-${label}`}>{label === "blocked" ? "Needs attention" : "Waiting to sync"} <span>{group.length}</span></h3>
       <ul>{group.map((record) => {
         const labels = affectedLabels?.(record) ?? [];
+        const conflict = isRevisionConflictRecord(record) ? record.conflictDetails! : null;
         return <li className="sync-issues-panel__record" key={record.operationId}>
-          <div><strong>{outboxRecordLabel(record)}</strong>{labels.length > 0 && <p>{labels.join(", ")}</p>}{record.error && <p className="form-error">{record.error}</p>}</div>
+          <div><strong>{outboxRecordLabel(record)}</strong>{labels.length > 0 && <p>{labels.join(", ")}</p>}{record.attemptCount > 0 && <p>{record.attemptCount === 1 ? "1 sync attempt" : `${record.attemptCount} sync attempts`}{record.lastAttemptAt ? `, last tried ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(record.lastAttemptAt)}` : ""}</p>}{record.error && <p className="form-error">{record.error}</p>}{conflict && <p>The server has {conflict.resourceKind} revision {conflict.actualRevision}; this change was based on revision {conflict.expectedRevision}. Keep local rebases this exact change onto the current revision. Use server version discards it.</p>}</div>
           {record.status === "blocked" && <div className="sync-issues-panel__actions">
-            <button className="button button--quiet" type="button" onClick={() => onRetry(record)}><ArrowsClockwise size={16} /> Retry</button>
-            <button className="button button--quiet" type="button" onClick={() => onDiscard(record)}><Trash size={16} /> Discard</button>
+            <button className="button button--quiet" type="button" onClick={() => onRetry(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{conflict ? "Keep local and rebase" : "Retry"}</button>
+            <button className="button button--quiet" type="button" onClick={() => onDiscard(record)}><Trash size={16} /> {conflict ? "Use server version" : "Discard"}</button>
           </div>}
         </li>;
       })}</ul>

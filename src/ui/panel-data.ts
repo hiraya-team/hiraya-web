@@ -89,7 +89,7 @@ const OPERATION_LABELS: Record<OutboxOperation["kind"], string> = {
   "rename-desktop": "Rename desktop",
   "delete-desktop": "Delete desktop",
   create: "Create items",
-  "update-entry": "Update item",
+  "patch-entry": "Update item",
   delete: "Delete item",
   "delete-entries": "Delete items",
   "move-entries": "Move items",

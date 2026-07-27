@@ -10,6 +10,18 @@
   --window: #f2f1eb;
   --window-muted: #6f7674;
   --radius: 14px;
+  --radius-control: 8px;
+  --radius-panel: 14px;
+  --touch-target: 44px;
+  --layer-chrome: 20;
+  --layer-notification: 4900;
+  --layer-popover: 5000;
+  --layer-switcher: 5200;
+  --layer-panel: 6000;
+  --layer-command: 6100;
+  --layer-confirmation: 6200;
+  --layer-onboarding: 6250;
+  --layer-modal: 6300;
 }
 
 * {

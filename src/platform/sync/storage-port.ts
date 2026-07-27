@@ -4,7 +4,7 @@ import type { SaveFileOptions } from "../../domain/files";
 import type { CustomTheme, ThemeState } from "../../domain/theme";
 import type { ActivityPage, ActivityQuery } from "../../lib/activity";
 import type { OfflineStorageInventory } from "../../lib/offline-availability";
-import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
+import type { OutboxOperation, OutboxRecord, RevisionConflictDetails } from "../../lib/outbox";
 import type { SeededManifest } from "../../lib/seeded-manifest";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, EditorSettings, EntryPosition, FileEntry, FolderEntry, RootEntryPositionUpdate } from "../../types";
 
@@ -14,7 +14,7 @@ type QueuedMutation = { desktop: DesktopStateSnapshot; record: OutboxRecord };
 export interface SyncStorage {
   loadDesktop(viewport: EntryPosition, seeded?: SeededManifest | null): Promise<DesktopStateSnapshot>;
   readCurrentDesktop(): Promise<DesktopStateSnapshot>;
-  applyRemoteDesktop(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId?: string, force?: boolean, useAcknowledgedContent?: boolean): Promise<DesktopStateSnapshot>;
+  applyRemoteDesktop(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId?: string, force?: boolean, useAcknowledgedContent?: boolean, acknowledgedRevision?: number): Promise<DesktopStateSnapshot>;
   readDesktopState(desktopId: string): Promise<DesktopStateSnapshot>;
 
   createTextFile(name: string, parentId: string | null, position: EntryPosition): Promise<FileEntry>;
@@ -33,7 +33,7 @@ export interface SyncStorage {
 
   readFile(id: FileEntry["id"]): Promise<File>;
   readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<File | null>;
-  cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, content: Blob): Promise<File | null>;
+  cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob): Promise<File | null>;
   removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<unknown>;
   resolveFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string): Promise<FileEntry>;
   saveFile(id: FileEntry["id"], content: Blob, options?: SaveFileOptions): Promise<FileEntry>;
@@ -53,11 +53,16 @@ export interface SyncStorage {
   deleteDesktop(desktopId: string): Promise<unknown>;
 
   enqueueMutation(operation: OutboxOperation, contents?: Map<string, Blob>): Promise<QueuedMutation>;
+  enqueueDesktopCreate(name: string): Promise<{ desktop: DesktopIdentity; record: OutboxRecord }>;
+  enqueueDesktopRename(desktopId: string, name: string, baseRevision: number): Promise<{ desktop: DesktopIdentity; record: OutboxRecord }>;
+  enqueueDesktopDelete(ownerDesktopId: string, desktopId: string, baseRevision: number): Promise<{ record: OutboxRecord }>;
   enqueueTransfer(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null): Promise<QueuedMutation>;
   readOutbox(): Promise<OutboxRecord[]>;
   bindOutboxCatalog(catalogId: string): Promise<unknown>;
   acknowledgeMutation(operationId: string): Promise<unknown>;
-  blockMutation(operationId: string, error: string): Promise<unknown>;
+  blockMutation(operationId: string, error: string, errorCode?: string | null, conflictDetails?: RevisionConflictDetails | null): Promise<unknown>;
+  rebaseBlockedMutation(operationId: string, operation: OutboxOperation): Promise<OutboxRecord>;
+  recordMutationAttempt?(operationId: string, attemptedAt: number): Promise<unknown>;
   discardDesktopProjection(desktopId: string, operationId: string): Promise<{ affectedDesktopIds: string[] }>;
   readPendingContent(operationId: string, entryId: string): Promise<Blob>;
 

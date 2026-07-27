@@ -5,3 +5,5 @@ dist
 .agent-screenshots
 .hiraya-data
 /hiraya-server
+/playwright-report
+/test-results

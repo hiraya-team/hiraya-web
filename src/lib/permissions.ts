@@ -31,8 +31,8 @@ export function localDesktopIdentity(id: string, name: string): DesktopIdentity 
 }
 
 export function canMutateDesktop(desktop: DesktopIdentity | undefined, status: string) {
-  if (!desktop?.capabilities.write || status === "connecting" || status === "blocked") return false;
-  return desktop.ownership === "owned" || status === "online" || status === "local";
+  if (!desktop?.capabilities.write || status === "connecting" || status === "upgrade-required" || status === "error") return false;
+  return desktop.ownership === "owned" || status === "online" || status === "blocked" || status === "local";
 }
 
 export function fileWriteCapability(desktop: DesktopIdentity | undefined, status: string) {
@@ -53,6 +53,6 @@ export function settingsRestrictionReason(desktop: DesktopIdentity | undefined, 
   if (!desktop.capabilities.settings) return "Your role can view this desktop's appearance, but cannot change shared settings.";
   if (desktop.ownership === "shared" && status === "offline") return "Shared settings are unavailable offline. Reconnect to change them.";
   if (status === "connecting") return "Connecting to check whether shared settings changed.";
-  if (status === "blocked") return "A queued change must be resolved before shared settings can be changed.";
+  if (status === "blocked") return "Changes unrelated to the blocked sync item remain available.";
   return "Desktop settings are read-only right now.";
 }

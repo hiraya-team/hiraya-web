@@ -23,8 +23,8 @@ class CapturingEventSource extends FakeEventSource {
   override addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
     if (type === "catalog") this.catalogListener = listener as (event: MessageEvent<string>) => void;
   }
-  emitCatalog(catalogId: string, catalogRevision: number) {
-    this.catalogListener?.({ data: JSON.stringify({ catalogId, catalogRevision }) } as MessageEvent<string>);
+  emitCatalog(catalogId: string, catalogRevision: number, schemaVersion = 1) {
+    this.catalogListener?.({ data: JSON.stringify({ schemaVersion, catalogId, catalogRevision }) } as MessageEvent<string>);
   }
 }
 
@@ -58,7 +58,7 @@ function remoteStorage() {
   const cached = new Map<string, File>();
   const pins = new Set<string>();
   const pending = new Map<string, Map<string, Blob>>();
-  const stats = { cacheWrites: 0, blockWrites: 0, remoteApplications: [] as Array<{ acknowledgedOperationId?: string; force: boolean; useAcknowledgedContent: boolean }> };
+  const stats = { cacheWrites: 0, blockWrites: 0, attemptWrites: 0, remoteApplications: [] as Array<{ acknowledgedOperationId?: string; force: boolean; useAcknowledgedContent: boolean }> };
   const storage = {
     loadDesktop: async () => current,
     readDesktopState: async () => current,
@@ -69,7 +69,7 @@ function remoteStorage() {
     },
     bindOutboxCatalog: async () => undefined,
     readCachedFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number) => cached.get(`${desktopId}:${catalogId}:${id}:${contentRevision}`) ?? null,
-    cacheRemoteFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number, content: Blob) => {
+    cacheRemoteFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number, _sha256: string, content: Blob) => {
       const entry = current.entries.find((candidate) => candidate.id === id && candidate.kind === "file");
       if (!entry || current.sync.catalogId !== catalogId || current.sync.contentRevisions[id] !== contentRevision || content.size !== entry.size) return null;
       const file = new File([content], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
@@ -105,7 +105,7 @@ function remoteStorage() {
     enqueueMutation: async (operation: OutboxOperation, contents = new Map<string, Blob>()) => {
       const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { entries: state.entries, layout: { snapToGrid: state.snapToGrid, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
-      const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null };
+      const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
       pending.set(record.operationId, contents);
       return { desktop: current, record };
@@ -114,15 +114,23 @@ function remoteStorage() {
       const operation: OutboxOperation = { schemaVersion: 1, kind: "entry-transfer", destinationDesktopId, entryIds, parentId };
       const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { ...current, entries: state.entries };
-      const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null };
+      const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
       return { desktop: current, record };
     },
     acknowledgeMutation: async (operationId: string) => { outbox = outbox.filter((record) => record.operationId !== operationId); pending.delete(operationId); },
     readPendingContent: async (operationId: string, entryId: string) => pending.get(operationId)?.get(entryId) ?? (() => { throw new Error("missing pending content"); })(),
-    blockMutation: async (operationId: string, error: string) => {
+    blockMutation: async (operationId: string, error: string, errorCode: string | null = null, conflictDetails: OutboxRecord["conflictDetails"] = null) => {
       stats.blockWrites += 1;
-      outbox = outbox.map((record) => record.operationId === operationId ? { ...record, status: "blocked" as const, error } : record);
+      outbox = outbox.map((record) => record.operationId === operationId ? { ...record, status: "blocked" as const, error, errorCode, conflictDetails } : record);
+    },
+    rebaseBlockedMutation: async (operationId: string, operation: OutboxOperation) => {
+      outbox = outbox.map((record) => record.operationId === operationId ? { ...record, operation, status: "pending" as const, error: null, errorCode: null, conflictDetails: null } : record);
+      return outbox.find((record) => record.operationId === operationId)!;
+    },
+    recordMutationAttempt: async (operationId: string, attemptedAt: number) => {
+      stats.attemptWrites += 1;
+      outbox = outbox.map((record) => record.operationId === operationId ? { ...record, attemptCount: (record.attemptCount ?? 0) + 1, lastAttemptAt: attemptedAt } : record);
     },
     discardDesktopProjection: async (desktopId: string) => {
       const discarded = outbox.filter((record) => record.desktopId === desktopId || record.operation.kind === "entry-transfer" && record.operation.destinationDesktopId === desktopId);
@@ -365,7 +373,7 @@ describe("canonical synchronization", () => {
 
     expect((await engine.listDesktops()).quota).toEqual(catalogQuota);
     catalogId = "new-catalog";
-    expect(await engine.listDesktops()).toMatchObject({ catalogId: null, quota: null, desktops: local });
+    await expect(engine.listDesktops()).rejects.toThrow("different catalog");
   });
 
   function deletionStorage(initialRecords: OutboxRecord[]) {
@@ -380,6 +388,13 @@ describe("canonical synchronization", () => {
         const record: OutboxRecord = { operationId: `operation-${records.length + 1}`, sequence: records.length + 1, clientId: "client", catalogId: "catalog", desktopId: "retained", operation, status: "pending", error: null };
         records.push(record);
         return { desktop: current, record };
+      },
+      enqueueDesktopDelete: async (ownerDesktopId: string, desktopId: string, baseRevision: number) => {
+        deleted.push(desktopId);
+        const operation: OutboxOperation = { schemaVersion: 1, kind: "delete-desktop", desktopId, baseRevision };
+        const record: OutboxRecord = { operationId: `operation-${records.length + 1}`, sequence: records.length + 1, clientId: "client", catalogId: "catalog", desktopId: ownerDesktopId, operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
+        records.push(record);
+        return { record };
       },
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     return { storage, deleted, records: () => records };
@@ -412,7 +427,28 @@ describe("canonical synchronization", () => {
     await engine.start("retained", { x: 0, y: 0 });
     await engine.deleteDesktop("clean");
     expect(harness.deleted).toEqual(["clean"]);
-    expect(harness.records()).toEqual([expect.objectContaining({ desktopId: "retained", operation: { schemaVersion: 1, kind: "delete-desktop", desktopId: "clean" } })]);
+    expect(harness.records()).toEqual([expect.objectContaining({ desktopId: "retained", operation: { schemaVersion: 1, kind: "delete-desktop", desktopId: "clean", baseRevision: 0 } })]);
+    await engine.stop();
+  });
+
+  test("uses atomic desktop projection and outbox storage calls", async () => {
+    const storage = remoteStorage();
+    const calls: string[] = [];
+    storage.enqueueDesktopCreate = async (name: string) => {
+      calls.push(`create:${name}`);
+      const desktop = { id: "new-desktop", name };
+      return { desktop, record: { operationId: "create", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: desktop.id, operation: { schemaVersion: 1, kind: "create-desktop", desktop }, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null } };
+    };
+    storage.enqueueDesktopRename = async (desktopId: string, name: string, baseRevision: number) => {
+      calls.push(`rename:${desktopId}:${name}:${baseRevision}`);
+      const desktop = { id: desktopId, name };
+      return { desktop, record: { operationId: "rename", sequence: 2, clientId: "client", catalogId: "catalog", desktopId, operation: { schemaVersion: 1, kind: "rename-desktop", desktop, baseRevision }, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null } };
+    };
+    const engine = new SyncEngine({ storage, fetch: (async () => { throw new TypeError("offline"); }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    expect(await engine.createDesktop("New")).toEqual({ id: "new-desktop", name: "New" });
+    expect(await engine.renameDesktop("new-desktop", "Renamed")).toEqual({ id: "new-desktop", name: "Renamed" });
+    expect(calls).toEqual(["create:New", "rename:new-desktop:Renamed:0"]);
     await engine.stop();
   });
 
@@ -558,12 +594,27 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
+  test("enters upgrade-required and never replays queued work for an unsupported wire version", async () => {
+    const storage = remoteStorage();
+    const record: OutboxRecord = { operationId: "queued", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "pending", error: null };
+    storage.seedOutbox([record]);
+    const requests: string[] = [];
+    const engine = new SyncEngine({ storage, expectedCatalogId: "catalog", eventSource: FakeEventSource as unknown as typeof EventSource, fetch: (async (input, init) => {
+      requests.push(`${init?.method ?? "GET"} ${String(input)}`);
+      return Response.json({ ...remoteDesktopState(), schemaVersion: 2 });
+    }) as typeof fetch });
+    expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("upgrade-required");
+    expect(requests).toEqual(["GET /api/desktops/desk"]);
+    expect((await engine.getOutboxStatus()).records).toHaveLength(1);
+    await engine.stop();
+  });
+
   test("probes authenticated sync health after an EventSource error", async () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       requests.push(String(input));
       if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/sync/health") return Response.json({ catalogId: "catalog", catalogRevision: 1 });
+      if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 1 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: CapturingEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
@@ -572,6 +623,31 @@ describe("canonical synchronization", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toContain("/api/sync/health");
     await engine.stop();
+  });
+
+  test("rejects unsupported SSE and health envelopes before replay", async () => {
+    for (const source of ["sse", "health"] as const) {
+      const storage = remoteStorage();
+      const record: OutboxRecord = { operationId: source, sequence: 1, clientId: "client", catalogId: "catalog-1", desktopId: "desk", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "pending", error: null };
+      let healthCheck: (() => void) | undefined;
+      const requests: string[] = [];
+      const engine = new SyncEngine({ storage, expectedCatalogId: "catalog-1", eventSource: CapturingEventSource as unknown as typeof EventSource,
+        setTimeout: ((callback: () => void) => { healthCheck = callback; return 1; }) as never, clearTimeout: (() => undefined) as never,
+        fetch: (async (input) => {
+          requests.push(String(input));
+          if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 2 });
+          throw new Error(`Unexpected request: ${String(input)}`);
+        }) as typeof fetch });
+      await engine.start("desk", { x: 0, y: 0 });
+      storage.seedOutbox([record]);
+      if (source === "sse") CapturingEventSource.latest?.emitCatalog("catalog-1", 2, 2);
+      else healthCheck?.();
+      await waitFor(() => (engine as unknown as { status: string }).status === "upgrade-required");
+      expect((await engine.getOutboxStatus()).records).toHaveLength(1);
+      expect(requests.filter((request) => request !== "/api/desktops/desk" && request !== "/api/sync/health")).toEqual([]);
+      await engine.stop();
+    }
   });
 
   test("aborts health work on stop and ignores its stale completion after restart", async () => {
@@ -599,7 +675,7 @@ describe("canonical synchronization", () => {
     expect(healthSignal?.aborted).toBe(true);
 
     await engine.start("desk", { x: 0, y: 0 });
-    finishHealth(Response.json({ catalogId: "stale", catalogRevision: 99 }));
+    finishHealth(Response.json({ schemaVersion: 1, catalogId: "stale", catalogRevision: 99 }));
     await Promise.resolve();
     await Promise.resolve();
     expect(statuses.at(-1)).toBe("online");
@@ -657,7 +733,7 @@ describe("canonical synchronization", () => {
     await engine.start("desk", { x: 0, y: 0 });
     const oldEvents = CapturingEventSource.latest!;
     const blocked = await blockEngineQueue(engine);
-    oldEvents.emitCatalog("catalog", 99);
+    oldEvents.emitCatalog("catalog-1", 99);
     expect((engine as unknown as { pendingWork: number }).pendingWork).toBe(2);
 
     const stopping = engine.stop();
@@ -681,7 +757,7 @@ describe("canonical synchronization", () => {
         fetch: (async (input) => {
           requests.push(String(input));
           if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-          if (String(input) === "/api/sync/health") return Response.json({ catalogId: "catalog", catalogRevision: 1 });
+          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 1 });
           throw new Error(`Unexpected request: ${String(input)}`);
         }) as typeof fetch,
         eventSource: eventSource as typeof EventSource | undefined,
@@ -863,6 +939,47 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
+  test("persists conflict diagnostics across restart and explicitly rebases keep-local intent", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    let conflict = true;
+    const seenBases: Array<number | undefined> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/layout") {
+        const body = JSON.parse(String(init?.body)) as { baseRevision?: number };
+        seenBases.push(body.baseRevision);
+        if (conflict) return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 5 } }, { status: 409 });
+        remote = { ...remote, catalogRevision: 6, layout: { ...remote.layout, snapToGrid: true }, layoutRevision: 6 };
+        return Response.json({ catalogRevision: 6 });
+      }
+      if (String(input) === "/api/desktops/desk/editor-settings") {
+        remote = { ...remote, catalogRevision: 2, editorSettings: { ...remote.editorSettings, fontSize: 15 }, settingsRevision: 2 };
+        return Response.json({ catalogRevision: 2 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await first.start("desk", { x: 0, y: 0 });
+    await first.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await waitFor(async () => (await first.getOutboxStatus()).blocked === 1);
+    const blocked = (await first.listOutboxRecords())[0];
+    expect(blocked).toMatchObject({ errorCode: "revision_conflict", conflictDetails: { resourceKind: "layout", expectedRevision: 1, actualRevision: 5 } });
+    await first.saveEditorSettings({ ...remote.editorSettings, fontSize: 15 });
+    await waitFor(async () => (await first.listOutboxRecords()).length === 1);
+    expect((await first.listOutboxRecords())[0].operationId).toBe(blocked.operationId);
+    await first.stop();
+
+    const restarted = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await restarted.start("desk", { x: 0, y: 0 });
+    expect((await restarted.listOutboxRecords())[0]).toMatchObject({ errorCode: "revision_conflict", conflictDetails: { actualRevision: 5 } });
+    conflict = false;
+    await restarted.retryBlockedOutboxRecord(blocked.operationId);
+    expect(seenBases).toEqual([1, 5]);
+    expect(await restarted.listOutboxRecords()).toEqual([]);
+    await restarted.stop();
+  });
+
   test("discards only the first blocked record and force-reprojects authoritative state", async () => {
     const storage = remoteStorage();
     const remote = remoteDesktopState();
@@ -1020,7 +1137,7 @@ describe("canonical synchronization", () => {
 
     expect(prepareBody).toMatchObject({
       kind: "save-content",
-      items: [{ entry: expect.objectContaining({ id: "file-1", size: 12 }), sha256: "977eefe2ccc906a187bc83d1815feaa068bbc1268f3d38f368a9bb2197f1a807", md5: "e2a4459894e14f0f93cc1c007eae90f8" }],
+      items: [{ entryId: "file-1", size: 12, baseContentRevision: 1, sha256: "977eefe2ccc906a187bc83d1815feaa068bbc1268f3d38f368a9bb2197f1a807", md5: "e2a4459894e14f0f93cc1c007eae90f8" }],
     });
     expect(directInit).toMatchObject({ method: "PUT", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error" });
     expect(new Headers(directInit?.headers).get("X-Test-Upload")).toBe("yes");

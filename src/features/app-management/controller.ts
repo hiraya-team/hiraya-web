@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import type { FileAssociation, InstalledApp, QuarantinedApp } from "../../apps/installed-apps";
-import { SYSTEM_APP_CATALOG, systemAppArchiveUrl } from "../../apps/system-apps";
+import { SYSTEM_APP_CATALOG, type SystemAppCatalogItem } from "../../apps/system-apps";
 import type { ThemeDefinition } from "../../domain/theme";
 import {
   clearAppStorage,
@@ -53,19 +53,12 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
     void Promise.all([listInstalledApps(), listFileAssociations(), listQuarantinedApps()])
       .then(async ([storedApps, associations, quarantined]) => {
         const byId = new Map(storedApps.map((app) => [app.appId, app]));
-        const systemApps = await Promise.all(
-          SYSTEM_APP_CATALOG.map(async (item): Promise<InstalledApp> => {
-            const response = await fetch(systemAppArchiveUrl(item));
-            if (!response.ok) throw new Error(`Could not load bundled ${item.manifest.name}.`);
-            const { inspectAppArchive } = await import("@hiraya/app-cli");
-            const inspected = await inspectAppArchive(new Uint8Array(await response.arrayBuffer()));
-            if (inspected.manifest.id !== item.manifest.id) throw new Error(`Bundled ${item.manifest.name} has the wrong identity.`);
-            const current = byId.get(item.manifest.id);
-            const install: InstalledApp = { appId: inspected.manifest.id, source: "system", packageEntryId: null, archivePath: item.archivePath, digest: inspected.digest, version: inspected.manifest.version, manifest: inspected.manifest, approvedAt: current?.approvedAt ?? Date.now() };
-            await installApp(install);
-            return install;
-          }),
-        );
+        const systemApps = await Promise.all(SYSTEM_APP_CATALOG.map(async (item) => {
+          const current = byId.get(item.manifest.id);
+          const install = systemInstallFromCatalog(item, current);
+          if (!current || !systemInstallMatchesCatalog(current, item)) await installApp(install);
+          return install;
+        }));
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
         setInstalledApps([...storedApps.filter((app) => app.source === "desktop" && !systemIds.has(app.appId)), ...systemApps]);
@@ -131,5 +124,26 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
     deleteAssociation,
     clearAssociations,
     clearAppData: clearAppStorage,
+  };
+}
+
+export function systemInstallMatchesCatalog(install: InstalledApp, item: SystemAppCatalogItem): boolean {
+  return install.source === "system"
+    && install.appId === item.manifest.id
+    && install.archivePath === item.archivePath
+    && install.digest === item.digest
+    && install.version === item.manifest.version;
+}
+
+export function systemInstallFromCatalog(item: SystemAppCatalogItem, current?: InstalledApp): InstalledApp {
+  return {
+    appId: item.manifest.id,
+    source: "system",
+    packageEntryId: null,
+    archivePath: item.archivePath,
+    digest: item.digest,
+    version: item.manifest.version,
+    manifest: item.manifest,
+    approvedAt: current?.approvedAt ?? Date.now(),
   };
 }

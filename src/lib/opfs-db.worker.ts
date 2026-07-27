@@ -4,7 +4,7 @@ import sqlite3InitModule, { type Database, type SqlValue } from "@sqlite.org/sql
 import type { DesktopEntry, DesktopIdentity, EditorSettings, Wallpaper } from "../types";
 import { parseDesktopState } from "./desktop-state";
 import type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
-import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord } from "./outbox";
+import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
 import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
@@ -12,7 +12,7 @@ import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPag
 import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -86,6 +86,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 7) {
     db.exec(migrateSchema7To8Sql(migratedVersion));
+    migratedVersion = 8;
+  }
+  if (migratedVersion === 8) {
+    db.exec(migrateSchema8To9Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -159,7 +163,11 @@ function createSchema(db: Database) {
       operation_schema_version INTEGER NOT NULL CHECK (operation_schema_version = 1),
       operation_json TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('pending', 'blocked')),
-      error TEXT
+      error TEXT,
+      error_code TEXT,
+      conflict_details_json TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+      last_attempt_at INTEGER CHECK (last_attempt_at IS NULL OR last_attempt_at >= 0)
     );
     CREATE TABLE activity (catalog_revision INTEGER PRIMARY KEY AUTOINCREMENT, timestamp INTEGER NOT NULL, action TEXT NOT NULL, source TEXT NOT NULL, summary TEXT NOT NULL, details_json TEXT NOT NULL, search_text TEXT NOT NULL);
     CREATE INDEX activity_timestamp ON activity(timestamp DESC, catalog_revision DESC);
@@ -169,6 +177,7 @@ function createSchema(db: Database) {
     ${MINIMAP_PREFERENCE_SCHEMA_SQL}
     ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL}
     ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL}
+    PRAGMA user_version=9;
     COMMIT;
   `);
 }
@@ -254,7 +263,15 @@ function readOutbox(db: Database, desktopId?: string): OutboxRecord[] {
   return rows(db, desktopId ? "SELECT * FROM outbox WHERE desktop_id=? ORDER BY sequence" : "SELECT * FROM outbox ORDER BY sequence", desktopId ? [desktopId] : undefined).map((row) => ({
     operationId: stringValue(row.operation_id), sequence: numberValue(row.sequence), clientId: stringValue(row.client_id), catalogId: nullableString(row.catalog_id), desktopId: stringValue(row.desktop_id),
     operation: normalizeOutboxOperation(JSON.parse(stringValue(row.operation_json)) as OutboxOperation), status: stringValue(row.status) as OutboxRecord["status"], error: nullableString(row.error),
+    errorCode: nullableString(row.error_code), conflictDetails: row.conflict_details_json === null ? null : parseRevisionConflictDetails(JSON.parse(stringValue(row.conflict_details_json))),
+    attemptCount: numberValue(row.attempt_count), lastAttemptAt: row.last_attempt_at === null ? null : numberValue(row.last_attempt_at),
   }));
+}
+
+function insertOutbox(db: Database, operationId: string, catalogId: string | null, desktopId: string, operation: OutboxOperation) {
+  const identity = rows(db, "SELECT * FROM client_state WHERE singleton=1")[0];
+  const sequence = Number.parseInt(operationId, 10);
+  db.exec({ sql: "INSERT INTO outbox(sequence,operation_id,client_id,catalog_id,desktop_id,operation_schema_version,operation_json,status,error,error_code,conflict_details_json,attempt_count,last_attempt_at) VALUES (?, ?, ?, ?, ?, 1, ?, 'pending', NULL, NULL, NULL, 0, NULL)", bind: [sequence, operationId, stringValue(identity.client_id), catalogId, desktopId, JSON.stringify(operation)] });
 }
 
 function reserveOperation(db: Database) {
@@ -332,7 +349,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         createDesktopRows(db, input.desktop, input.state);
         const reservation = reserveOperation(db);
         const operation: OutboxOperation = { schemaVersion: 1, kind: "create-desktop", desktop: input.desktop };
-        db.exec({ sql: "INSERT INTO outbox VALUES (?, ?, ?, NULL, ?, 1, ?, 'pending', NULL)", bind: [reservation.sequence, reservation.operationId, reservation.clientId, input.desktop.id, JSON.stringify(operation)] });
+        insertOutbox(db, reservation.operationId, null, input.desktop.id, operation);
         return { desktop: input.desktop, record: readOutbox(db).find((record) => record.operationId === reservation.operationId)! };
       }) as StorageDbResponses[M];
     }
@@ -377,7 +394,42 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     case "enqueueMutation": {
       if (!desktopId) throw new Error("No desktop is active for this request.");
       const input = params as StorageDbRequests["enqueueMutation"];
-      return db.transaction("IMMEDIATE", () => { const current = readDesktopState(db, desktopId); const state = parseDesktopState(applyOutboxOperation(current, input.operation)); const identity = rows(db, "SELECT * FROM client_state WHERE singleton=1")[0]; const sequence = Number.parseInt(input.operationId, 10); db.exec({ sql: "INSERT INTO outbox VALUES (?, ?, ?, ?, ?, 1, ?, 'pending', NULL)", bind: [sequence, input.operationId, stringValue(identity.client_id), input.catalogId, desktopId, JSON.stringify(input.operation)] }); replaceDesktopStateRows(db, desktopId, state); return { state, record: readOutbox(db).find((record) => record.operationId === input.operationId)! }; }) as StorageDbResponses[M];
+      return db.transaction("IMMEDIATE", () => { const current = readDesktopState(db, desktopId); const state = parseDesktopState(applyOutboxOperation(current, input.operation)); insertOutbox(db, input.operationId, input.catalogId, desktopId, input.operation); replaceDesktopStateRows(db, desktopId, state); return { state, record: readOutbox(db).find((record) => record.operationId === input.operationId)! }; }) as StorageDbResponses[M];
+    }
+    case "enqueueDesktopCreate": {
+      const input = params as StorageDbRequests["enqueueDesktopCreate"];
+      return db.transaction("IMMEDIATE", () => {
+        createDesktopRows(db, input.desktop, input.state);
+        const operation: OutboxOperation = { schemaVersion: 1, kind: "create-desktop", desktop: input.desktop };
+        insertOutbox(db, input.operationId, input.catalogId, input.desktop.id, operation);
+        return { desktop: input.desktop, record: readOutbox(db).find((record) => record.operationId === input.operationId)! };
+      }) as StorageDbResponses[M];
+    }
+    case "enqueueDesktopRename": {
+      const input = params as StorageDbRequests["enqueueDesktopRename"];
+      return db.transaction("IMMEDIATE", () => {
+        const row = rows(db, "SELECT access_json FROM desktops WHERE id=?", [input.desktop.id])[0];
+        if (!row) throw new Error("That desktop no longer exists.");
+        const identity = row.access_json === null ? input.desktop : { ...(JSON.parse(stringValue(row.access_json)) as DesktopIdentity), name: input.desktop.name };
+        // Stable desktop IDs are the narrow identity precondition. A catalog-wide
+        // revision would reject renames after unrelated desktop mutations.
+        const operation: OutboxOperation = { schemaVersion: 1, kind: "rename-desktop", desktop: identity };
+        db.exec({ sql: "UPDATE desktops SET name=?,access_json=? WHERE id=?", bind: [identity.name, JSON.stringify(identity), identity.id] });
+        insertOutbox(db, input.operationId, input.catalogId, input.desktop.id, operation);
+        return { desktop: identity, record: readOutbox(db).find((record) => record.operationId === input.operationId)! };
+      }) as StorageDbResponses[M];
+    }
+    case "enqueueDesktopDelete": {
+      const input = params as StorageDbRequests["enqueueDesktopDelete"];
+      return db.transaction("IMMEDIATE", () => {
+        const protection = desktopPendingOperationProtection(readOutbox(db), input.desktopId);
+        if (protection) throw new Error(protection);
+        const operation: OutboxOperation = { schemaVersion: 1, kind: "delete-desktop", desktopId: input.desktopId };
+        db.exec({ sql: "DELETE FROM desktops WHERE id=?", bind: [input.desktopId] });
+        if (db.changes() !== 1) throw new Error("That desktop no longer exists.");
+        insertOutbox(db, input.operationId, input.catalogId, input.ownerDesktopId, operation);
+        return { record: readOutbox(db).find((record) => record.operationId === input.operationId)! };
+      }) as StorageDbResponses[M];
     }
     case "enqueueTransfer": {
       const input = params as StorageDbRequests["enqueueTransfer"];
@@ -389,8 +441,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         const nextSource = parseDesktopState(transferred.source);
         const nextDestination = parseDesktopState(transferred.destination);
         replaceDesktopStateRows(db, input.sourceDesktopId, nextSource); replaceDesktopStateRows(db, input.destinationDesktopId, nextDestination);
-        const identity = rows(db, "SELECT * FROM client_state WHERE singleton=1")[0]; const sequence = Number.parseInt(input.operationId, 10);
-        db.exec({ sql: "INSERT INTO outbox VALUES (?, ?, ?, ?, ?, 1, ?, 'pending', NULL)", bind: [sequence, input.operationId, stringValue(identity.client_id), input.catalogId, input.sourceDesktopId, JSON.stringify(operation)] });
+        insertOutbox(db, input.operationId, input.catalogId, input.sourceDesktopId, operation);
         return { state: nextSource, record: readOutbox(db).find((record) => record.operationId === input.operationId)! };
       }) as StorageDbResponses[M];
     }
@@ -404,10 +455,18 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     }
     case "applyRemoteWithOutbox": {
       if (!desktopId) throw new Error("No desktop is active for this request."); const input = params as StorageDbRequests["applyRemoteWithOutbox"];
-      return db.transaction("IMMEDIATE", () => { let state = parseDesktopState(input.state); const blocked: OutboxRecord[] = []; for (const record of readOutbox(db, desktopId)) { if (record.operationId === input.acknowledgedOperationId) continue; if (record.catalogId !== state.sync.catalogId) { const error = "Pending changes belong to a different catalog."; db.exec({ sql: "UPDATE outbox SET status='blocked', error=? WHERE operation_id=?", bind: [error, record.operationId] }); blocked.push({ ...record, status: "blocked", error }); continue; } try { state = parseDesktopState(applyOutboxOperation(state, record.operation)); } catch (error) { const message = error instanceof Error ? error.message : String(error); db.exec({ sql: "UPDATE outbox SET status='blocked', error=? WHERE operation_id=?", bind: [message, record.operationId] }); blocked.push({ ...record, status: "blocked", error: message }); } } replaceDesktopStateRows(db, desktopId, state); return { state, blocked }; }) as StorageDbResponses[M];
+      return db.transaction("IMMEDIATE", () => { let state = parseDesktopState(input.state); const blocked: OutboxRecord[] = []; for (const record of readOutbox(db, desktopId)) { if (record.operationId === input.acknowledgedOperationId) continue; if (record.catalogId !== state.sync.catalogId) { const error = "Pending changes belong to a different catalog."; db.exec({ sql: "UPDATE outbox SET status='blocked',error=?,error_code=NULL,conflict_details_json=NULL WHERE operation_id=?", bind: [error, record.operationId] }); blocked.push({ ...record, status: "blocked", error, errorCode: null, conflictDetails: null }); continue; } try { const operation = input.acknowledgedRevision === undefined ? record.operation : rebaseOutboxOperationAfterAcknowledgement(state, record.operation, input.acknowledgedRevision); if (operation !== record.operation) db.exec({ sql: "UPDATE outbox SET operation_json=? WHERE operation_id=?", bind: [JSON.stringify(operation), record.operationId] }); state = parseDesktopState(applyOutboxOperation(state, operation)); } catch (error) { const message = error instanceof Error ? error.message : String(error); db.exec({ sql: "UPDATE outbox SET status='blocked',error=?,error_code=NULL,conflict_details_json=NULL WHERE operation_id=?", bind: [message, record.operationId] }); blocked.push({ ...record, status: "blocked", error: message, errorCode: null, conflictDetails: null }); } } replaceDesktopStateRows(db, desktopId, state); return { state, blocked }; }) as StorageDbResponses[M];
     }
     case "acknowledgeMutation": db.exec({ sql: "DELETE FROM outbox WHERE operation_id=?", bind: [(params as StorageDbRequests["acknowledgeMutation"]).operationId] }); return undefined as StorageDbResponses[M];
-    case "blockMutation": { const input = params as StorageDbRequests["blockMutation"]; db.exec({ sql: "UPDATE outbox SET status='blocked', error=? WHERE operation_id=?", bind: [input.error, input.operationId] }); return undefined as StorageDbResponses[M]; }
+    case "blockMutation": { const input = params as StorageDbRequests["blockMutation"]; db.exec({ sql: "UPDATE outbox SET status='blocked', error=?,error_code=?,conflict_details_json=? WHERE operation_id=?", bind: [input.error, input.errorCode, input.conflictDetails === null ? null : JSON.stringify(input.conflictDetails), input.operationId] }); return undefined as StorageDbResponses[M]; }
+    case "rebaseBlockedMutation": {
+      const input = params as StorageDbRequests["rebaseBlockedMutation"];
+      const operation = normalizeOutboxOperation(input.operation);
+      db.exec({ sql: "UPDATE outbox SET operation_json=?,status='pending',error=NULL,error_code=NULL,conflict_details_json=NULL WHERE operation_id=? AND status='blocked'", bind: [JSON.stringify(operation), input.operationId] });
+      if (db.changes() !== 1) throw new Error("That blocked change no longer exists.");
+      return readOutbox(db).find((record) => record.operationId === input.operationId)! as StorageDbResponses[M];
+    }
+    case "recordMutationAttempt": { const input = params as StorageDbRequests["recordMutationAttempt"]; db.exec({ sql: "UPDATE outbox SET attempt_count=attempt_count+1,last_attempt_at=? WHERE operation_id=?", bind: [input.attemptedAt, input.operationId] }); return undefined as StorageDbResponses[M]; }
     case "discardDesktopProjection": {
       const input = params as StorageDbRequests["discardDesktopProjection"];
       return db.transaction("IMMEDIATE", () => {

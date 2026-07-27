@@ -1,5 +1,6 @@
 import type { DesktopIdentity } from "../types";
-import { assertValidId, isRecord, parseDesktopIdentity, readRevision } from "./contracts";
+import { isRecord, parseDesktopIdentity, readRevision } from "./contracts";
+import { parseAuthorityIdentity } from "./wire-authority";
 
 export type RemoteDesktopIdentity = DesktopIdentity;
 export type QuotaMeasure = { used: number; limit: number };
@@ -26,8 +27,7 @@ function parseQuotaMeasure(value: unknown, label: string): QuotaMeasure {
 
 export function parseDesktopCatalog(value: unknown): RemoteDesktopCatalog {
   if (!isRecord(value) || !Array.isArray(value.desktops)) throw new Error("The server desktop catalog has an unsupported format.");
-  if (value.schemaVersion !== 1) throw new Error("The server catalog uses an unsupported schema version.");
-  assertValidId(value.catalogId, "The server catalog has an invalid ID.");
+  const authority = parseAuthorityIdentity(value, "The server catalog");
   const desktops = value.desktops.map((candidate): RemoteDesktopIdentity => {
     return parseDesktopIdentity(candidate);
   });
@@ -40,7 +40,7 @@ export function parseDesktopCatalog(value: unknown): RemoteDesktopCatalog {
     entries: parseQuotaMeasure(value.quota.entries, "entry"),
   };
   if (quota.desktops.used !== desktops.filter((desktop) => desktop.ownership === "owned").length) throw new Error("The server catalog has inconsistent desktop quota usage.");
-  return { schemaVersion: 1, catalogId: value.catalogId, catalogRevision: readRevision(value.catalogRevision), desktops, quota };
+  return { ...authority, catalogRevision: readRevision(value.catalogRevision), desktops, quota };
 }
 
 export function resolveDesktopContext(requestedId: string | null, desktops: readonly DesktopIdentity[]) {

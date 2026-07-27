@@ -1,4 +1,5 @@
 import { API_ROUTES, SERVER_ROUTES } from "./api-routes";
+import { parseAuthorityIdentity } from "./wire-authority";
 
 export type SessionUser = {
   displayName: string;
@@ -7,6 +8,8 @@ export type SessionUser = {
 };
 
 export type AuthSession = {
+  schemaVersion: 1;
+  catalogId: string;
   storageId: string;
   user: SessionUser;
   capabilities: {
@@ -32,6 +35,7 @@ function requiredString(value: unknown, label: string) {
 
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
+  const authority = parseAuthorityIdentity(value, "The session bootstrap");
   const session = value as { storageId?: unknown; user?: unknown; capabilities?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
   if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
@@ -42,6 +46,7 @@ export function parseAuthSession(value: unknown): AuthSession {
   const desktopSearch = (session.capabilities as { desktopSearch?: unknown }).desktopSearch;
   if (desktopSearch !== undefined && desktopSearch !== "accessible-desktops-v1") throw new Error("The session bootstrap contains unsupported desktop search capability metadata.");
   return {
+    ...authority,
     storageId: requiredString(session.storageId, "storage ID"),
     user: {
       displayName: requiredString(user.displayName, "display name"),

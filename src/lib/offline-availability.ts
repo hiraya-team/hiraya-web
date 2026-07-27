@@ -46,7 +46,7 @@ function entryMap(entries: readonly DesktopEntry[]) {
 
 function operationReferenceIds(operation: OutboxOperation) {
   if (operation.kind === "create") return operation.entries.map((entry) => entry.id);
-  if (operation.kind === "update-entry" || operation.kind === "save-content") return [operation.entry.id];
+  if (operation.kind === "patch-entry" || operation.kind === "save-content") return [operation.entryId];
   if (operation.kind === "delete") return [operation.entryId];
   if (operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer") return operation.entryIds;
   if (operation.kind === "root-entry-positions") return operation.positions.map((position) => position.entryId);
@@ -58,7 +58,7 @@ export function outboxProtectedFileIds(records: readonly OutboxRecord[], states:
   const protectedIds = new Set<string>();
   const referencedIds = new Set<string>();
   for (const record of records) {
-    if (record.operation.kind === "save-content") protectedIds.add(record.operation.entry.id);
+    if (record.operation.kind === "save-content") protectedIds.add(record.operation.entryId);
     if (record.operation.kind === "create") for (const entry of record.operation.entries) if (entry.kind === "file") protectedIds.add(entry.id);
     for (const id of operationReferenceIds(record.operation)) referencedIds.add(id);
   }

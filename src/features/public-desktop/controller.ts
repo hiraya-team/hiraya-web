@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { fetchPublicDesktop, fetchPublicFile, LargeDownloadAuthRequiredError } from "../../lib/public-desktop";
 import { fileCapabilities } from "../../ui/file-capabilities";
 import type { DesktopEntry, FileEntry } from "../../types";
@@ -8,7 +8,8 @@ export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kin
 export function usePublicDesktop(token: string) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
   const [error, setError] = useState("");
-  const [open, setOpen] = useState<PublicOpenView | null>(null);
+  const [open, setOpenState] = useState<PublicOpenView | null>(null);
+  const fileLoadGenerationRef = useRef(0);
   const [downloadGate, setDownloadGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
 
@@ -49,11 +50,12 @@ export function usePublicDesktop(token: string) {
   }, [desktop, token]);
 
   async function loadFile(file: FileEntry, downloadOnly = false) {
+    const generation = downloadOnly ? null : ++fileLoadGenerationRef.current;
     if (!downloadOnly && fileCapabilities(file).preview === "none") {
-      setOpen({ kind: "file", file });
+      setOpenState({ kind: "file", file });
       return;
     }
-    setOpen(downloadOnly ? open : { kind: "file", file });
+    if (!downloadOnly) setOpenState({ kind: "file", file });
     try {
       const contentRevision = desktop?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
       const blob = await fetchPublicFile(token, file, contentRevision);
@@ -64,12 +66,18 @@ export function usePublicDesktop(token: string) {
         anchor.download = file.name;
         anchor.click();
         window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      } else setOpen({ kind: "file", file, blob });
+      } else if (fileLoadGenerationRef.current === generation) setOpenState({ kind: "file", file, blob });
     } catch (reason) {
+      if (!downloadOnly && fileLoadGenerationRef.current !== generation) return;
       if (reason instanceof LargeDownloadAuthRequiredError) setDownloadGate({ loginUrl: reason.loginUrl, fileName: file.name });
-      else if (!downloadOnly) setOpen({ kind: "file", file, error: reason instanceof Error ? reason.message : "The file could not be opened." });
+      else if (!downloadOnly) setOpenState({ kind: "file", file, error: reason instanceof Error ? reason.message : "The file could not be opened." });
       else setError(reason instanceof Error ? reason.message : "The file could not be downloaded.");
     }
+  }
+
+  function setOpen(next: PublicOpenView | null) {
+    fileLoadGenerationRef.current += 1;
+    setOpenState(next);
   }
 
   async function resolveLinkedFile(from: FileEntry, relativePath: string) {

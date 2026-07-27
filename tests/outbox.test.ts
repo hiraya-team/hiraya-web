@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxDesktopRetentionIds, outboxRecordsDependingOnDesktop, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
-import { desktopStateSnapshot } from "./fixtures";
+import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxDesktopRetentionIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, rebaseOutboxOperationForConflict, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
+import { desktopStateSnapshot, remoteDesktopIdentity } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
@@ -15,6 +15,12 @@ describe("strict outbox", () => {
     expect(normalizeOutboxOperation(operation)).toEqual(operation);
     expect(applyOutboxOperation(state(), operation).snapToGrid).toBe(true);
     expect(() => normalizeOutboxOperation({ ...operation, schemaVersion: 2 } as never)).toThrow("schema version");
+  });
+
+  test("uses stable desktop identity instead of catalog-wide rename and delete revisions", () => {
+    const desktop = { ...remoteDesktopIdentity("desk", "Renamed") };
+    expect(normalizeOutboxOperation({ schemaVersion: 1, kind: "rename-desktop", desktop, baseRevision: 99 })).toEqual({ schemaVersion: 1, kind: "rename-desktop", desktop });
+    expect(normalizeOutboxOperation({ schemaVersion: 1, kind: "delete-desktop", desktopId: desktop.id, baseRevision: 99 })).toEqual({ schemaVersion: 1, kind: "delete-desktop", desktopId: desktop.id });
   });
 
   test("projects canonical entry transfers and retains both desktops", () => {
@@ -81,6 +87,29 @@ describe("strict outbox", () => {
     const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: null, createdAt: 1, modifiedAt: 42, position: { x: 10, y: 10 }, mimeType: "text/plain", size: 0 };
     const projected = applyOutboxOperation({ ...state(), entries: [folder, file] }, { schemaVersion: 1, kind: "move-entries", entryIds: [file.id], parentId: folder.id });
     expect(projected.entries.find(({ id }) => id === file.id)?.modifiedAt).toBe(42);
+  });
+
+  test("preserves disjoint remote entry fields while applying local intent", () => {
+    const file = { kind: "file" as const, id: "file", name: "remote-name.txt", parentId: null, createdAt: 1, modifiedAt: 9, position: { x: 90, y: 80 }, mimeType: "text/plain", size: 1 };
+    const projected = applyOutboxOperation({ ...state(), entries: [file] }, { schemaVersion: 1, kind: "save-content", entryId: file.id, mimeType: "text/markdown", size: 4, modifiedAt: 10, baseContentRevision: 2 });
+    expect(projected.entries[0]).toEqual({ ...file, mimeType: "text/markdown", size: 4, modifiedAt: 10 });
+  });
+
+  test("rebases only causally acknowledged resource revisions", () => {
+    const snapshot = { ...state(), sync: { ...state().sync, catalogRevision: 5, entryRevisions: { "own-change": 5, concurrent: 6 } } };
+    const own = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "own-change", baseRevision: 2, changes: { name: "next" } }, 5);
+    const concurrent = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "concurrent", baseRevision: 2, changes: { name: "stale" } }, 5);
+    expect(own).toMatchObject({ baseRevision: 5 });
+    expect(concurrent).toMatchObject({ baseRevision: 2 });
+  });
+
+  test("validates conflict details and rebases only the matching resource", () => {
+    const conflict = parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: 2, actualRevision: 7 });
+    expect(conflict).not.toBeNull();
+    expect(rebaseOutboxOperationForConflict({ schemaVersion: 1, kind: "patch-entry", entryId: "file", baseRevision: 2, changes: { name: "local.txt" } }, conflict!)).toMatchObject({ baseRevision: 7 });
+    expect(rebaseOutboxOperationForConflict({ schemaVersion: 1, kind: "patch-entry", entryId: "other", baseRevision: 2, changes: { name: "local.txt" } }, conflict!)).toBeNull();
+    expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: -1, actualRevision: 7 })).toBeNull();
+    expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: 2, actualRevision: Number.MAX_SAFE_INTEGER + 1 })).toBeNull();
   });
 
   test("rejects operations whose parent is absent from the desktop", () => {

@@ -24,9 +24,10 @@ import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
 import type { JsonValue } from "@hiraya/apps-contracts";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
 import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
-import { getFilesDirectory, materializeOutbox, operationContentIds, readContentCacheMarker, readStagedContent, removeContentCacheMarker, removeStagedOperation, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
+import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
+import { sha256Blob } from "./blob-transfer";
 
 type DesktopState = import("../domain/desktop-state").PersistedDesktopState;
 
@@ -91,11 +92,7 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
 }
 
 async function readActiveDesktopState(seeded: SeededManifest | null = null): Promise<DesktopState> {
-  databaseInitialization ??= initializeDatabase().catch((error) => {
-    databaseInitialization = null;
-    throw error;
-  });
-  await databaseInitialization;
+  await ensureLocalDatabase();
   const desktopId = getActiveDesktopContext();
   if (!desktopId) throw new Error("No desktop is active.");
   try {
@@ -108,6 +105,24 @@ async function readActiveDesktopState(seeded: SeededManifest | null = null): Pro
     setDesktopContext(desktop.id);
     return state;
   }
+}
+
+async function recoverLocalFileTransactions() {
+  await recoverLocalContentReplacements(async (journal) => {
+    try {
+      const state = parseDesktopState(await callDatabase("readDesktop", { desktopId: journal.desktopId }, null));
+      const entry = state.entries.find((candidate): candidate is FileEntry => candidate.id === journal.id && candidate.kind === "file");
+      return entry?.mimeType === journal.saved.mimeType && entry.size === journal.saved.size && entry.modifiedAt === journal.saved.modifiedAt;
+    } catch { return false; }
+  });
+}
+
+async function ensureLocalDatabase() {
+  databaseInitialization ??= initializeDatabase().then(recoverLocalFileTransactions).catch((error) => {
+    databaseInitialization = null;
+    throw error;
+  });
+  await databaseInitialization;
 }
 
 const readManifest = readActiveDesktopState;
@@ -150,7 +165,7 @@ function emptyDesktopState(): DesktopState {
 }
 
 async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
-  await initializeDatabase();
+  await ensureLocalDatabase();
   const result = await callDatabase("listDesktops", undefined, null);
   const desktops = result.desktops.map((desktop) => parseDesktopIdentity(desktop, true));
   if (desktops.length === 0 && seeded) {
@@ -164,7 +179,7 @@ async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
 }
 
 async function createDesktopUnsafe(nameValue: string) {
-  await initializeDatabase();
+  await ensureLocalDatabase();
   const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
   const registry = await callDatabase("listDesktops", undefined);
   if (registry.desktops.some((candidate) => candidate.name.toLocaleLowerCase() === desktop.name.toLocaleLowerCase())) throw new Error("A desktop with that name already exists.");
@@ -179,7 +194,7 @@ async function createDesktopUnsafe(nameValue: string) {
 }
 
 async function createOfflineDesktopUnsafe(nameValue: string) {
-  await initializeDatabase();
+  await ensureLocalDatabase();
   const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
   const registry = await callDatabase("listDesktops", undefined, null);
   if (registry.desktops.length !== 0) throw new Error("An offline desktop can only initialize an empty browser catalog.");
@@ -190,7 +205,7 @@ async function createOfflineDesktopUnsafe(nameValue: string) {
 }
 
 async function ensureDesktopUnsafe(value: DesktopIdentity) {
-  await initializeDatabase();
+  await ensureLocalDatabase();
   const desktop = parseDesktopIdentity(value, true);
   const registry = await callDatabase("listDesktops", undefined);
   const existing = registry.desktops.find((candidate) => candidate.id === desktop.id);
@@ -214,7 +229,7 @@ async function switchDesktopUnsafe(desktopId: string) {
   const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId }, desktopId));
   setDesktopContext(desktopId);
   desktopLoad = Promise.resolve(manifest);
-  await materializeOutbox(await callDatabase("readOutbox", undefined));
+  await materializeOutbox(await callDatabase("readOutbox", undefined), true);
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
@@ -232,6 +247,46 @@ async function deleteDesktopUnsafe(desktopId: string) {
     const directory = await getFilesDirectory();
     for (const entry of deleted.entries) if (entry.kind === "file" && !retained.has(entry.id)) await directory.removeEntry(entry.id).catch(() => undefined);
   } catch (error) { console.warn("Hiraya could not clean up deleted desktop content.", error); }
+}
+
+async function enqueueDesktopCreateUnsafe(nameValue: string) {
+  await ensureLocalDatabase();
+  const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
+  const registry = await callDatabase("listDesktops", undefined);
+  if (registry.desktops.some((candidate) => candidate.name.toLocaleLowerCase() === desktop.name.toLocaleLowerCase())) throw new Error("A desktop with that name already exists.");
+  const state = emptyDesktopState();
+  const activeDesktopId = getActiveDesktopContext();
+  if (activeDesktopId) {
+    const active = parseDesktopState(await callDatabase("readDesktop", { desktopId: activeDesktopId }, activeDesktopId));
+    state.sync.catalogId = active.sync.catalogId;
+    state.sync.catalogRevision = active.sync.catalogRevision;
+  }
+  const reservation = await callDatabase("reserveOperation", undefined);
+  return callDatabase("enqueueDesktopCreate", { operationId: reservation.operationId, catalogId: state.sync.catalogId, desktop, state });
+}
+
+async function enqueueDesktopRenameUnsafe(desktopId: string, nameValue: string, baseRevision: number) {
+  const name = normalizeDesktopName(nameValue);
+  const registry = await callDatabase("listDesktops", undefined);
+  if (registry.desktops.some((candidate) => candidate.id !== desktopId && candidate.name.toLocaleLowerCase() === name.toLocaleLowerCase())) throw new Error("A desktop with that name already exists.");
+  const existing = registry.desktops.find((candidate) => candidate.id === desktopId);
+  if (!existing) throw new Error("That desktop no longer exists.");
+  const owner = parseDesktopState(await callDatabase("readDesktop", { desktopId: getActiveDesktopContext()! }, null));
+  const reservation = await callDatabase("reserveOperation", undefined);
+  return callDatabase("enqueueDesktopRename", { operationId: reservation.operationId, catalogId: owner.sync.catalogId, desktop: { ...existing, name }, baseRevision });
+}
+
+async function enqueueDesktopDeleteUnsafe(ownerDesktopId: string, desktopId: string, baseRevision: number) {
+  const deleted = parseDesktopState(await callDatabase("readDesktop", { desktopId }, null));
+  const owner = parseDesktopState(await callDatabase("readDesktop", { desktopId: ownerDesktopId }, null));
+  const reservation = await callDatabase("reserveOperation", undefined);
+  const result = await callDatabase("enqueueDesktopDelete", { operationId: reservation.operationId, catalogId: owner.sync.catalogId, ownerDesktopId, desktopId, baseRevision }, null);
+  try {
+    const retained = await retainedFileIdsUnsafe();
+    const directory = await getFilesDirectory();
+    for (const entry of deleted.entries) if (entry.kind === "file" && !retained.has(entry.id)) await directory.removeEntry(entry.id).catch(() => undefined);
+  } catch (error) { console.warn("Hiraya could not clean up deleted desktop content.", error); }
+  return result;
 }
 
 async function retainedFileIdsUnsafe() {
@@ -279,11 +334,11 @@ async function loadDesktopUnsafe(_viewport: EntryPosition, seeded: SeededManifes
     throw error;
   });
   const manifest = await desktopLoad;
-  await materializeOutbox(await callDatabase("readOutbox", undefined));
+  await materializeOutbox(await callDatabase("readOutbox", undefined), true);
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
-async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true) {
+async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true, acknowledgedRevision?: number) {
   if (!desktopId) throw new Error("No desktop is active.");
   const current = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   if (!force && current.sync.catalogId === snapshot.sync.catalogId && current.sync.catalogRevision >= snapshot.sync.catalogRevision) {
@@ -314,16 +369,13 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
     if (!content) continue;
     if (content.size !== entry.size) throw new Error(`The server returned invalid contents for “${entry.name}”.`);
     await writeContent(entry.id, content.slice(0, content.size, entry.mimeType));
-    if (snapshot.sync.catalogId) await writeContentCacheMarker(entry.id, {
-      catalogId: snapshot.sync.catalogId,
-      contentRevision: snapshot.sync.contentRevisions[entry.id],
-      size: entry.size,
-    });
+    // Reconciliation content can originate in the local outbox. Only direct
+    // downloads accompanied by a verified server descriptor publish a cache marker.
   }
-  const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId }, desktopId);
+  const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId, acknowledgedRevision }, desktopId);
   const projected = parseDesktopState(reconciled.state);
   if (desktopId === getActiveDesktopContext()) desktopLoad = Promise.resolve(projected);
-  await materializeOutbox(await callDatabase("readOutbox", undefined));
+  await materializeOutbox(await callDatabase("readOutbox", undefined), true);
 
   const retained = await retainedFileIdsUnsafe();
   const directory = await getFilesDirectory();
@@ -344,21 +396,22 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
   const required = operationContentIds(operation);
   if (required.some((id) => !contents.has(id)) || contents.size !== required.length) throw new Error("Queued file content is incomplete.");
   await stageOperationContents(reservation.operationId, contents);
+  let committed = false;
   try {
     const result = await callDatabase("enqueueMutation", {
       operationId: reservation.operationId,
       catalogId: (await readManifest()).sync.catalogId,
       operation,
     });
+    committed = true;
     const manifest = parseDesktopState(result.state);
     desktopLoad = Promise.resolve(manifest);
-    await materializeOutbox([result.record]);
     return {
       desktop: { entries: manifest.entries, layout: manifestLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync },
       record: result.record,
     };
   } catch (error) {
-    await removeStagedOperation(reservation.operationId);
+    if (!committed) await removeStagedOperation(reservation.operationId);
     throw error;
   }
 }
@@ -476,7 +529,12 @@ async function createTextFileUnsafe(nameValue: string, parentId: string | null, 
     position: parsePosition(position),
   };
   await writeContent(file.id, "");
-  await writeManifest({ ...manifest, entries: [...manifest.entries, file] }, activityRecord("Created file", [`File: ${file.name}`, locationDetail(manifest.entries, parentId)]));
+  try {
+    await writeManifest({ ...manifest, entries: [...manifest.entries, file] }, activityRecord("Created file", [`File: ${file.name}`, locationDetail(manifest.entries, parentId)]));
+  } catch (error) {
+    try { await (await getFilesDirectory()).removeEntry(file.id); } catch { /* best-effort orphan cleanup */ }
+    throw error;
+  }
   return file;
 }
 
@@ -559,11 +617,17 @@ async function importFilesUnsafe(
     modifiedAt: source.lastModified || createdAt,
     position: parsedPositions[index],
   }));
-  for (const [index, file] of imported.entries()) await writeContent(file.id, files[index]);
-  await writeManifest({
-    ...manifest,
-    entries: [...manifest.entries, ...imported],
-  }, activityRecord(imported.length === 1 ? "Imported file" : "Imported files", [...activityDetails(imported), locationDetail(manifest.entries, parentId)]));
+  const written: string[] = [];
+  try {
+    for (const [index, file] of imported.entries()) { await writeContent(file.id, files[index]); written.push(file.id); }
+    await writeManifest({
+      ...manifest,
+      entries: [...manifest.entries, ...imported],
+    }, activityRecord(imported.length === 1 ? "Imported file" : "Imported files", [...activityDetails(imported), locationDetail(manifest.entries, parentId)]));
+  } catch (error) {
+    try { const directory = await getFilesDirectory(); for (const id of written) await directory.removeEntry(id).catch(() => undefined); } catch { /* best-effort orphan cleanup */ }
+    throw error;
+  }
   return imported;
 }
 
@@ -733,6 +797,11 @@ async function updateEntryPositionUnsafe(id: string, position: EntryPosition) {
 async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
   const manifest = await readManifest();
   const entry = getFileEntry(manifest.entries, id);
+  const pending = (await callDatabase("readOutbox", undefined, null)).filter((record) => operationContentIds(record.operation).includes(id)).at(-1);
+  if (pending) {
+    const stored = await readStagedContent(pending.operationId, id);
+    return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
+  }
   const directory = await getFilesDirectory();
   const handle = await directory.getFileHandle(id);
   const stored = await handle.getFile();
@@ -742,16 +811,24 @@ async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
 async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = getFileEntry(manifest.entries, id);
-  const hasPendingContent = (await callDatabase("readOutbox", undefined, null)).some((record) =>
-    record.desktopId === desktopId && operationContentIds(record.operation).includes(id));
+  const pendingContent = (await callDatabase("readOutbox", undefined, null)).filter((record) =>
+    record.desktopId === desktopId && operationContentIds(record.operation).includes(id)).at(-1);
+  const hasPendingContent = pendingContent !== undefined;
+  let marker = null as Awaited<ReturnType<typeof readContentCacheMarker>>;
   if (!hasPendingContent) {
-    const marker = await readContentCacheMarker(id);
+    marker = await readContentCacheMarker(id);
     if (!marker || marker.catalogId !== catalogId || marker.contentRevision !== contentRevision || marker.size !== entry.size) return null;
   }
   try {
-    const stored = await (await (await getFilesDirectory()).getFileHandle(id)).getFile();
+    const stored = pendingContent ? await readStagedContent(pendingContent.operationId, id) : await (await (await getFilesDirectory()).getFileHandle(id)).getFile();
     if (stored.size !== entry.size) {
       if (!hasPendingContent) await removeContentCacheMarker(id);
+      return null;
+    }
+    // Strong revalidation policy: hash every persistent remote-cache read. This
+    // catches same-size OPFS corruption both online and offline.
+    if (!hasPendingContent && marker && !await contentMatchesCacheMarker(stored, marker)) {
+      await removeContentCacheMarker(id);
       return null;
     }
     return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
@@ -764,7 +841,7 @@ async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: Fi
   }
 }
 
-async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, content: Blob): Promise<File | null> {
+async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = manifest.entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
   if (!entry || manifest.sync.catalogId !== catalogId || manifest.sync.contentRevisions[id] !== contentRevision) return null;
@@ -772,9 +849,10 @@ async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: F
     record.desktopId === desktopId && operationContentIds(record.operation).includes(id));
   if (hasPendingContent) return readCachedFileUnsafe(desktopId, catalogId, id, contentRevision);
   if (content.size !== entry.size) throw new Error(`The server contents of “${entry.name}” have an unexpected size.`);
+  if (!/^[a-f0-9]{64}$/.test(sha256) || await sha256Blob(content) !== sha256) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
   const stored = content.slice(0, content.size, entry.mimeType);
   await writeContent(id, stored);
-  await writeContentCacheMarker(id, { catalogId, contentRevision, size: entry.size });
+  await writeContentCacheMarker(id, { catalogId, contentRevision, size: entry.size, sha256 });
   return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
 }
 
@@ -928,12 +1006,16 @@ async function saveFileUnsafe(id: FileEntry["id"], content: Blob, options: SaveF
     ...existing,
     mimeType: options.mimeType ?? existing.mimeType,
     size: content.size,
-    modifiedAt: Date.now(),
+    // Recovery distinguishes committed metadata from the previous row even
+    // for same-size saves performed within one clock millisecond.
+    modifiedAt: Math.max(Date.now(), existing.modifiedAt + 1),
   };
   const next = { ...manifest, entries: manifest.entries.map((entry) => (entry.id === id ? saved : entry)) };
   assertValidManifest(next);
-  await writeContent(id, content.slice(0, content.size, saved.mimeType));
-  await writeManifest(next, activityRecord("Edited file", [`File: ${saved.name}`, `Size: ${saved.size} bytes`]));
+  const desktopId = getActiveDesktopContext();
+  if (!desktopId) throw new Error("No desktop is active.");
+  const prepared = await prepareLocalContentReplacement(desktopId, id, { mimeType: saved.mimeType, size: saved.size, modifiedAt: saved.modifiedAt }, content.slice(0, content.size, saved.mimeType));
+  await publishLocalContentReplacement(prepared, () => writeManifest(next, activityRecord("Edited file", [`File: ${saved.name}`, `Size: ${saved.size} bytes`])));
   return saved;
 }
 
@@ -952,8 +1034,8 @@ export function readCurrentDesktop(): Promise<DesktopStateSnapshot> {
   });
 }
 
-export function applyRemoteDesktop(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId?: string, force = false, useAcknowledgedContent = true) {
-  return serializeStorage(() => applyRemoteDesktopUnsafe(snapshot, contents, acknowledgedOperationId, desktopId, force, useAcknowledgedContent));
+export function applyRemoteDesktop(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId?: string, force = false, useAcknowledgedContent = true, acknowledgedRevision?: number) {
+  return serializeStorage(() => applyRemoteDesktopUnsafe(snapshot, contents, acknowledgedOperationId, desktopId, force, useAcknowledgedContent, acknowledgedRevision));
 }
 
 export function saveEditorSettings(settings: EditorSettings) { return serializeStorage(() => saveEditorSettingsUnsafe(settings)); }
@@ -975,7 +1057,7 @@ export function updateRootEntryPositions(positions: RootEntryPositionUpdate[]) {
 export function updateEntryPosition(id: string, position: EntryPosition) { return serializeStorage(() => updateEntryPositionUnsafe(id, position)); }
 export function readFile(id: FileEntry["id"]) { return serializeStorage(() => readFileUnsafe(id)); }
 export function readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => readCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
-export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, content: Blob) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, content)); }
+export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, sha256, content)); }
 export function removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => removeCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
 export function loadOfflineInventory(desktopId: string) { return serializeStorage(() => loadOfflineInventoryUnsafe(desktopId)); }
 export function setOfflinePins(desktopId: string, entryIds: string[], pinned: boolean) { return serializeStorage(() => setOfflinePinsUnsafe(desktopId, entryIds, pinned)); }
@@ -999,11 +1081,16 @@ export function transferEntries(sourceDesktopId: string, destinationDesktopId: s
 export function readWindowSession(desktopId: string) { return serializeStorage(() => repositories.readWindowSession(desktopId)); }
 export function saveWindowSession(desktopId: string, session: WindowSession) { return serializeStorage(() => repositories.saveWindowSession(desktopId, session)); }
 export function enqueueMutation(operation: OutboxOperation, contents?: Map<string, Blob>) { return serializeStorage(() => enqueueMutationUnsafe(operation, contents)); }
+export function enqueueDesktopCreate(name: string) { return serializeStorage(() => enqueueDesktopCreateUnsafe(name)); }
+export function enqueueDesktopRename(desktopId: string, name: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopRenameUnsafe(desktopId, name, baseRevision)); }
+export function enqueueDesktopDelete(ownerDesktopId: string, desktopId: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopDeleteUnsafe(ownerDesktopId, desktopId, baseRevision)); }
 export function enqueueTransfer(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => enqueueTransferUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
 export function readOutbox() { return serializeStorage(() => callDatabase("readOutbox", undefined)); }
 export function bindOutboxCatalog(catalogId: string) { return serializeStorage(() => callDatabase("bindOutboxCatalog", { catalogId }, null)); }
 export function acknowledgeMutation(operationId: string) { return serializeStorage(() => acknowledgeMutationUnsafe(operationId)); }
-export function blockMutation(operationId: string, error: string) { return serializeStorage(() => callDatabase("blockMutation", { operationId, error })); }
+export function blockMutation(operationId: string, error: string, errorCode: string | null = null, conflictDetails: import("./outbox").RevisionConflictDetails | null = null) { return serializeStorage(() => callDatabase("blockMutation", { operationId, error, errorCode, conflictDetails })); }
+export function rebaseBlockedMutation(operationId: string, operation: OutboxOperation) { return serializeStorage(() => callDatabase("rebaseBlockedMutation", { operationId, operation })); }
+export function recordMutationAttempt(operationId: string, attemptedAt: number) { return serializeStorage(() => callDatabase("recordMutationAttempt", { operationId, attemptedAt })); }
 export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
 export function readPendingContent(operationId: string, entryId: string) { return serializeStorage(() => readStagedContent(operationId, entryId)); }
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }

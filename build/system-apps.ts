@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
@@ -25,7 +26,8 @@ export function systemAppsPlugin(projectRoot: string): Plugin {
         const archive = new Uint8Array(await readFile(archivePath));
         this.addWatchFile(manifestPath);
         archives.set(slug, archive);
-        items.push({ slug, archivePath: `system-apps/${slug}.hiraya.app`, manifest });
+        const digest = createHash("sha256").update(archive).digest("hex");
+        items.push({ slug, archivePath: `system-apps/${slug}.hiraya.app`, digest, manifest });
       }
       catalog = `export default ${JSON.stringify(items)};`;
     },

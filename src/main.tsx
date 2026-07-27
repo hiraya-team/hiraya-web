@@ -1,6 +1,7 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { bootstrapSession } from "./lib/auth";
+import { UpgradeRequiredError } from "./lib/wire-authority";
 import { publicTokenFromPath } from "./lib/public-desktop";
 import "./styles/index.css";
 
@@ -45,6 +46,8 @@ async function start() {
   }
   await retireUnscopedServiceWorker();
   const session = await bootstrapSession(frontendOnly);
+  const { configureSyncAuthority } = await import("./lib/sync");
+  configureSyncAuthority(session?.catalogId ?? null);
   const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./platform/storage/namespace");
   await configureStorageNamespace(session?.storageId ?? LOCAL_STORAGE_ID);
   const { default: App } = await import("./App");
@@ -57,6 +60,7 @@ async function start() {
 
 void start().catch((error: unknown) => {
   if (error instanceof Error && error.name === "AuthenticationRequiredError") return;
-  root.innerHTML = `<main class="startup-error"><h1>Hiraya could not start</h1><p>${String(error instanceof Error ? error.message : error).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]!)}</p><button class="button button--primary" type="button">Reload Hiraya</button></main>`;
+  const upgradeRequired = error instanceof UpgradeRequiredError;
+  root.innerHTML = `<main class="startup-error"><h1>${upgradeRequired ? "Hiraya must be updated" : "Hiraya could not start"}</h1><p>${String(error instanceof Error ? error.message : error).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]!)}</p><button class="button button--primary" type="button">${upgradeRequired ? "Check again" : "Reload Hiraya"}</button></main>`;
   root.querySelector("button")?.addEventListener("click", () => window.location.reload());
 });

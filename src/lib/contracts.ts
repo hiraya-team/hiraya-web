@@ -12,6 +12,7 @@ import {
 import { localDesktopIdentity, READ_ONLY_CAPABILITIES } from "./permissions";
 import { isBuiltinThemeId, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme, ThemeState } from "../domain/theme";
+import { parseAuthorityIdentity } from "./wire-authority";
 
 const EDITOR_LANGUAGES = new Set<EditorLanguage>(["auto", "plain", "markdown", "json", "javascript", "typescript", "jsx", "tsx", "css", "html", "xml", "yaml"]);
 const WALLPAPER_IDS = new Set<string>(WALLPAPERS);
@@ -21,6 +22,7 @@ const MAX_WALLPAPER_BYTES = 20 * 1024 * 1024;
 const WALLPAPER_KEYS = new Set(["source", "fit", "positionX", "positionY", "blur", "dim", "overlayColor", "overlayOpacity"]);
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
 const MIME_TYPE = new RegExp(`^${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`);
+const MIME_PARAMETER_NAME = new RegExp(`;\\s*(${MIME_TOKEN})\\s*=`, "g");
 
 export type RemoteEntry = DesktopEntry & { revision: number; contentRevision: number };
 export type RemoteCustomTheme = CustomTheme & { revision: number };
@@ -59,7 +61,7 @@ export type TrashDeleteResult = { catalogRevision: number; deletedIds: string[] 
 
 export type DirectBlobAccess = { url: string; method: "GET" | "PUT"; headers: Record<string, string>; expiresAt: number };
 export type DirectBlobTarget = { entryId: string; access: DirectBlobAccess };
-export type BlobMutationPreparation = { state: "prepared"; uploadId: string; expiresAt: number; items: DirectBlobTarget[] } | { state: "committed" };
+export type BlobMutationPreparation = { state: "prepared"; uploadId: string; expiresAt: number; items: DirectBlobTarget[] } | { state: "committed"; catalogRevision?: number };
 export type ContentAccessDescriptor = { entryId: string; contentRevision: number; size: number; sha256: string; access: DirectBlobAccess };
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
@@ -109,7 +111,7 @@ export function parseBlobMutationPreparation(value: unknown, expectedEntryIds: r
   if (!isRecord(value) || (value.state !== "prepared" && value.state !== "committed")) {
     throw new Error("The blob mutation preparation response is invalid.");
   }
-  if (value.state === "committed") return { state: "committed" };
+  if (value.state === "committed") return { state: "committed", ...(value.catalogRevision === undefined ? {} : { catalogRevision: readRevision(value.catalogRevision, "The committed blob mutation has an invalid revision.") }) };
   if (typeof value.uploadId !== "string" || !value.uploadId || value.uploadId.length > 1024 || [...value.uploadId].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !Array.isArray(value.items)) {
     throw new Error("The blob mutation preparation response is invalid.");
   }
@@ -242,6 +244,21 @@ export function readRevision(value: unknown, message = "A revision has an unsupp
   return value as number;
 }
 
+export function isValidMimeType(value: unknown): value is string {
+  if (typeof value !== "string" || !value || value.length > 255 || value.trim() !== value || [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 32 || codePoint === 127;
+  }) || !MIME_TYPE.test(value)) return false;
+  const names = new Set<string>();
+  MIME_PARAMETER_NAME.lastIndex = 0;
+  for (let match = MIME_PARAMETER_NAME.exec(value); match; match = MIME_PARAMETER_NAME.exec(value)) {
+    const name = match[1].toLowerCase();
+    if (names.has(name)) return false;
+    names.add(name);
+  }
+  return true;
+}
+
 export function parsePosition(value: unknown): EntryPosition {
   if (!isRecord(value)) throw new Error("An entry has an invalid position.");
   return {
@@ -347,7 +364,7 @@ function parseEntry(value: unknown, remote: boolean): ParsedEntry {
     return { ...base, kind: "folder", ...revisions };
   }
   const mimeType = readString(value.mimeType, "A file has invalid metadata.");
-  if (!mimeType || mimeType.length > 255 || !MIME_TYPE.test(mimeType) || !Number.isSafeInteger(value.size) || (value.size as number) < 0) {
+  if (!isValidMimeType(mimeType) || !Number.isSafeInteger(value.size) || (value.size as number) < 0) {
     throw new Error("A file has invalid metadata.");
   }
   return { ...base, kind: "file", mimeType, size: value.size as number, ...revisions };
@@ -457,12 +474,9 @@ export function parseTrashDeleteResult(value: unknown): TrashDeleteResult {
 
 export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   if (!isRecord(value)) throw new Error("The server desktop has an unsupported format.");
-  const schemaVersion = readRevision(value.schemaVersion, "The server desktop has an unsupported schema version.");
-  if (schemaVersion !== 1) throw new Error("The server desktop uses an unsupported schema version.");
-  assertValidId(value.catalogId, "The server desktop has an invalid catalog identity.");
+  const authority = parseAuthorityIdentity(value, "The server desktop");
   const identity = {
-    schemaVersion: 1 as const,
-    catalogId: value.catalogId,
+    ...authority,
     catalogRevision: readRevision(value.catalogRevision),
   };
   const entries = parseEntries(value.entries, true) as RemoteEntry[];

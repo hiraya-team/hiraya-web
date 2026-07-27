@@ -1,4 +1,4 @@
-import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type FileEntry, type Wallpaper } from "../types";
+import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type Wallpaper } from "../types";
 import { assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
 import type { PersistedDesktopState } from "../domain/desktop-state";
 import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
@@ -6,22 +6,29 @@ import type { CustomTheme } from "../domain/theme";
 
 export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "create-desktop"; desktop: DesktopIdentity }
-  | { kind: "rename-desktop"; desktop: DesktopIdentity }
-  | { kind: "delete-desktop"; desktopId: string }
+  | { kind: "rename-desktop"; desktop: DesktopIdentity; baseRevision?: number }
+  | { kind: "delete-desktop"; desktopId: string; baseRevision?: number }
   | { kind: "create"; entries: DesktopEntry[] }
-  | { kind: "update-entry"; entry: DesktopEntry }
-  | { kind: "delete"; entryId: string }
-  | { kind: "delete-entries"; entryIds: string[] }
-  | { kind: "move-entries"; entryIds: string[]; parentId: string | null; modifiedAt?: number }
+  | { kind: "patch-entry"; entryId: string; baseRevision?: number; changes: { name?: string; parentId?: string | null; position?: DesktopEntry["position"]; modifiedAt?: number } }
+  | { kind: "delete"; entryId: string; baseRevision?: number }
+  | { kind: "delete-entries"; entryIds: string[]; baseRevisions?: Record<string, number> }
+  | { kind: "move-entries"; entryIds: string[]; baseRevisions?: Record<string, number>; parentId: string | null; modifiedAt?: number }
   | { kind: "entry-transfer"; entryIds: string[]; destinationDesktopId: string; parentId: string | null }
-  | { kind: "save-content"; entry: FileEntry }
-  | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[] }
-  | { kind: "layout"; layout: DesktopLayout }
-  | { kind: "editor-settings"; settings: EditorSettings }
-  | { kind: "select-theme"; themeId: string }
-  | { kind: "upsert-theme"; theme: CustomTheme }
-  | { kind: "delete-theme"; themeId: string }
+  | { kind: "save-content"; entryId: string; mimeType: string; size: number; modifiedAt: number; baseContentRevision?: number }
+  | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[]; baseRevisions?: Record<string, number> }
+  | { kind: "layout"; layout: DesktopLayout; baseRevision?: number }
+  | { kind: "editor-settings"; settings: EditorSettings; baseRevision?: number }
+  | { kind: "select-theme"; themeId: string; baseRevision?: number }
+  | { kind: "upsert-theme"; theme: CustomTheme; baseRevision?: number }
+  | { kind: "delete-theme"; themeId: string; baseRevision?: number }
 ));
+
+export type RevisionConflictDetails = {
+  resourceKind: "desktop" | "entry" | "content" | "layout" | "editor-settings" | "theme-selection" | "theme";
+  resourceId: string;
+  expectedRevision: number;
+  actualRevision: number;
+};
 
 export type OutboxRecord = {
   operationId: string;
@@ -32,6 +39,10 @@ export type OutboxRecord = {
   operation: OutboxOperation;
   status: "pending" | "blocked";
   error: string | null;
+  errorCode?: string | null;
+  conflictDetails?: RevisionConflictDetails | null;
+  attemptCount: number;
+  lastAttemptAt: number | null;
 };
 
 export const ACCESS_REVOKED_ERROR = "Access to this desktop was revoked. Local changes have not been uploaded.";
@@ -49,8 +60,46 @@ export function isAccessRevocationRecord(record: Pick<OutboxRecord, "status" | "
   return record.status === "blocked" && record.error === ACCESS_REVOKED_ERROR;
 }
 
+export function parseRevisionConflictDetails(value: unknown): RevisionConflictDetails | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as Record<string, unknown>;
+  const kinds = new Set<RevisionConflictDetails["resourceKind"]>(["desktop", "entry", "content", "layout", "editor-settings", "theme-selection", "theme"]);
+  if (Object.keys(item).some((key) => !["resourceKind", "resourceId", "expectedRevision", "actualRevision"].includes(key))) return null;
+  if (typeof item.resourceKind !== "string" || !kinds.has(item.resourceKind as RevisionConflictDetails["resourceKind"]) || !isValidId(item.resourceId)) return null;
+  if (!validBaseRevision(item.expectedRevision) || !validBaseRevision(item.actualRevision)) return null;
+  return item as RevisionConflictDetails;
+}
+
+export function isRevisionConflictRecord(record: Pick<OutboxRecord, "status" | "errorCode" | "conflictDetails">) {
+  return record.status === "blocked" && record.errorCode === "revision_conflict" && record.conflictDetails != null;
+}
+
 export function outboxRecordsDependingOnDesktop(records: readonly OutboxRecord[], desktopId: string) {
   return records.filter((record) => outboxOperationDesktopIds(record).has(desktopId));
+}
+
+export function outboxCausalKeys(record: Pick<OutboxRecord, "desktopId" | "operation">) {
+  const operation = record.operation;
+  const desktop = (id = record.desktopId) => `desktop:${id}`;
+  const entry = (id: string) => `entry:${record.desktopId}:${id}`;
+  switch (operation.kind) {
+    case "create-desktop": return new Set([desktop(operation.desktop.id)]);
+    case "rename-desktop": return new Set([desktop(operation.desktop.id)]);
+    case "delete-desktop": return new Set([desktop(operation.desktopId)]);
+    case "create": return new Set(operation.entries.flatMap((item) => [entry(item.id), ...(item.parentId ? [entry(item.parentId)] : [])]));
+    case "patch-entry": return new Set([entry(operation.entryId), ...(operation.changes.parentId ? [entry(operation.changes.parentId)] : [])]);
+    case "delete": return new Set([entry(operation.entryId), `content:${record.desktopId}:${operation.entryId}`]);
+    case "delete-entries": return new Set(operation.entryIds.flatMap((id) => [entry(id), `content:${record.desktopId}:${id}`]));
+    case "move-entries": return new Set([...operation.entryIds.map(entry), ...(operation.parentId ? [entry(operation.parentId)] : [])]);
+    case "entry-transfer": return new Set([...operation.entryIds.map(entry), desktop(operation.destinationDesktopId)]);
+    case "save-content": return new Set([`content:${record.desktopId}:${operation.entryId}`]);
+    case "root-entry-positions": return new Set(operation.positions.map(({ entryId }) => entry(entryId)));
+    case "layout": return new Set([`layout:${record.desktopId}`]);
+    case "editor-settings": return new Set([`settings:${record.desktopId}`]);
+    case "select-theme": return new Set([`theme-selection:${record.desktopId}`]);
+    case "upsert-theme": return new Set([`theme:${record.desktopId}:${operation.theme.id}`]);
+    case "delete-theme": return new Set([`theme:${record.desktopId}:${operation.themeId}`, `theme-selection:${record.desktopId}`]);
+  }
 }
 
 export function wallpaperAfterEntryRemoval(entries: readonly DesktopEntry[], wallpaper: Wallpaper) {
@@ -136,29 +185,44 @@ export function transferEntriesBetweenDesktopStates(
 
 export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOperation {
   if (operation.schemaVersion !== 1) throw new Error("The queued operation uses an unsupported schema version.");
+  const legacy = operation as unknown as Record<string, unknown>;
+  if (legacy.kind === "update-entry") {
+    const entry = parseLocalEntry(legacy.entry);
+    operation = { schemaVersion: 1, kind: "patch-entry", entryId: entry.id, changes: { name: entry.name, parentId: entry.parentId, position: entry.position, modifiedAt: entry.modifiedAt } };
+  } else if (operation.kind === "save-content" && "entry" in legacy) {
+    const entry = parseLocalEntry(legacy.entry);
+    if (entry.kind !== "file") throw new Error("Saved content requires a file entry.");
+    operation = { schemaVersion: 1, kind: "save-content", entryId: entry.id, mimeType: entry.mimeType, size: entry.size, modifiedAt: entry.modifiedAt };
+  }
   if (operation.kind === "create") {
     if (!Array.isArray(operation.entries)) throw new Error("The desktop entries have an unsupported format.");
     return { ...operation, entries: operation.entries.map(parseLocalEntry) };
   }
-  if (operation.kind === "update-entry") return { ...operation, entry: parseLocalEntry(operation.entry) };
   if (operation.kind === "save-content") {
-    const entry = parseLocalEntry(operation.entry);
-    if (entry.kind !== "file") throw new Error("Saved content requires a file entry.");
-    return { ...operation, entry };
+    if (!isValidId(operation.entryId) || typeof operation.mimeType !== "string" || !Number.isSafeInteger(operation.size) || operation.size < 0 || !Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0 || !validOptionalBaseRevision(operation.baseContentRevision)) throw new Error("Saved content has unsupported metadata.");
+    return operation;
   }
   switch (operation.kind) {
     case "create-desktop":
-    case "rename-desktop":
       return { ...operation, desktop: parseDesktopIdentity(operation.desktop, true) };
+    case "rename-desktop":
+      if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued desktop operation has an invalid base revision.");
+      return { schemaVersion: 1, kind: "rename-desktop", desktop: parseDesktopIdentity(operation.desktop, true) };
     case "delete-desktop":
-      if (!isValidId(operation.desktopId)) throw new Error("A queued desktop operation has an invalid desktop ID.");
+      if (!isValidId(operation.desktopId) || !validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued desktop operation has invalid metadata.");
+      return { schemaVersion: 1, kind: "delete-desktop", desktopId: operation.desktopId };
+    case "patch-entry": {
+      if (!isValidId(operation.entryId) || !validOptionalBaseRevision(operation.baseRevision) || !operation.changes || typeof operation.changes !== "object") throw new Error("A queued entry patch has invalid metadata.");
+      const allowed = new Set(["name", "parentId", "position", "modifiedAt"]);
+      if (Object.keys(operation.changes).length === 0 || Object.keys(operation.changes).some((key) => !allowed.has(key))) throw new Error("A queued entry patch has unsupported changes.");
       return operation;
+    }
     case "delete":
-      if (!isValidId(operation.entryId)) throw new Error("A queued entry operation has an invalid entry ID.");
+      if (!isValidId(operation.entryId) || !validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued entry operation has invalid metadata.");
       return operation;
     case "delete-entries":
     case "move-entries":
-      if (!Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id))) throw new Error("A queued entry operation has invalid entry IDs.");
+      if (!Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id)) || operation.baseRevisions !== undefined && operation.entryIds.some((id) => !validBaseRevision(operation.baseRevisions?.[id]))) throw new Error("A queued entry operation has invalid entry revisions.");
       if (operation.kind === "move-entries" && (operation.parentId !== null && !isValidId(operation.parentId) || operation.modifiedAt !== undefined && (!Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0))) throw new Error("A queued move has an invalid parent or timestamp.");
       return operation;
     case "entry-transfer":
@@ -167,18 +231,29 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
     case "root-entry-positions":
       return { ...operation, positions: parseRootEntryPositions(operation.positions) };
     case "layout":
+      if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued layout has an invalid base revision.");
       return { ...operation, layout: parseLayout(operation.layout) };
     case "editor-settings":
+      if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("Queued editor settings have an invalid base revision.");
       return { ...operation, settings: parseEditorSettings(operation.settings) };
     case "select-theme":
     case "delete-theme":
-      if (!isValidId(operation.themeId)) throw new Error("A queued theme operation has an invalid theme ID.");
+      if (!isValidId(operation.themeId) || !validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued theme operation has invalid metadata.");
       return operation;
     case "upsert-theme":
+      if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued theme has an invalid base revision.");
       return { ...operation, theme: parseCustomTheme(operation.theme) };
     default:
       throw new Error("The queued operation has an unsupported kind.");
   }
+}
+
+function validBaseRevision(value: unknown): value is number {
+  return Number.isSafeInteger(value) && Number(value) >= 0;
+}
+
+function validOptionalBaseRevision(value: unknown): value is number | undefined {
+  return value === undefined || validBaseRevision(value);
 }
 
 export function applyOutboxOperation(state: PersistedDesktopState, operation: OutboxOperation): PersistedDesktopState {
@@ -192,9 +267,9 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     case "create":
       entries = parseEntries([...entries, ...operation.entries]) as DesktopEntry[];
       break;
-    case "update-entry": {
-      if (!entries.some((entry) => entry.id === operation.entry.id)) throw new Error("That entry no longer exists.");
-      entries = parseEntries(entries.map((entry) => entry.id === operation.entry.id ? operation.entry : entry)) as DesktopEntry[];
+    case "patch-entry": {
+      if (!entries.some((entry) => entry.id === operation.entryId)) throw new Error("That entry no longer exists.");
+      entries = parseEntries(entries.map((entry) => entry.id === operation.entryId ? { ...entry, ...operation.changes } : entry)) as DesktopEntry[];
       break;
     }
     case "delete": {
@@ -247,8 +322,8 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
       break;
     }
     case "save-content":
-      if (!entries.some((entry) => entry.id === operation.entry.id && entry.kind === "file")) throw new Error("That file no longer exists.");
-      entries = parseEntries(entries.map((entry) => entry.id === operation.entry.id ? operation.entry : entry)) as DesktopEntry[];
+      if (!entries.some((entry) => entry.id === operation.entryId && entry.kind === "file")) throw new Error("That file no longer exists.");
+      entries = parseEntries(entries.map((entry) => entry.id === operation.entryId && entry.kind === "file" ? { ...entry, mimeType: operation.mimeType, size: operation.size, modifiedAt: operation.modifiedAt } : entry)) as DesktopEntry[];
       break;
     case "root-entry-positions": {
       const positions = parseRootEntryPositionUpdates(operation.positions, entries);
@@ -281,4 +356,70 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     }
   }
   return resetWallpaperAfterEntryRemoval(state, entries);
+}
+
+export function rebaseOutboxOperationAfterAcknowledgement(state: PersistedDesktopState, operation: OutboxOperation, acknowledgedRevision: number): OutboxOperation {
+  const entryRevision = (id: string, base?: number) => state.sync.entryRevisions[id] === acknowledgedRevision ? acknowledgedRevision : base;
+  switch (operation.kind) {
+    case "patch-entry":
+    case "delete":
+      return { ...operation, baseRevision: entryRevision(operation.entryId, operation.baseRevision) };
+    case "delete-entries":
+    case "move-entries":
+      return { ...operation, baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.entryIds.map((id) => [id, entryRevision(id, operation.baseRevisions![id])!])) };
+    case "root-entry-positions":
+      return { ...operation, baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.positions.map(({ entryId }) => [entryId, entryRevision(entryId, operation.baseRevisions![entryId])!])) };
+    case "save-content":
+      return { ...operation, baseContentRevision: state.sync.contentRevisions[operation.entryId] === acknowledgedRevision ? acknowledgedRevision : operation.baseContentRevision };
+    case "layout":
+      return { ...operation, baseRevision: state.sync.layoutRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+    case "editor-settings":
+      return { ...operation, baseRevision: state.sync.settingsRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+    case "select-theme":
+      return { ...operation, baseRevision: state.sync.themeSelectionRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+    case "upsert-theme":
+    case "delete-theme":
+      return { ...operation, baseRevision: state.sync.themeRevisions[operation.kind === "upsert-theme" ? operation.theme.id : operation.themeId] === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+    case "rename-desktop":
+    case "delete-desktop":
+      return state.sync.catalogRevision === acknowledgedRevision ? { ...operation, baseRevision: acknowledgedRevision } : operation;
+    default:
+      return operation;
+  }
+}
+
+export function rebaseOutboxOperationForConflict(operation: OutboxOperation, conflict: RevisionConflictDetails): OutboxOperation | null {
+  const revision = conflict.actualRevision;
+  switch (operation.kind) {
+    case "rename-desktop":
+      return conflict.resourceKind === "desktop" && conflict.resourceId === operation.desktop.id ? { ...operation, baseRevision: revision } : null;
+    case "delete-desktop":
+      return conflict.resourceKind === "desktop" && conflict.resourceId === operation.desktopId ? { ...operation, baseRevision: revision } : null;
+    case "patch-entry":
+    case "delete":
+      return conflict.resourceKind === "entry" && conflict.resourceId === operation.entryId ? { ...operation, baseRevision: revision } : null;
+    case "delete-entries":
+    case "move-entries":
+      return conflict.resourceKind === "entry" && operation.entryIds.includes(conflict.resourceId)
+        ? { ...operation, baseRevisions: { ...(operation.baseRevisions ?? {}), [conflict.resourceId]: revision } }
+        : null;
+    case "root-entry-positions":
+      return conflict.resourceKind === "entry" && operation.positions.some(({ entryId }) => entryId === conflict.resourceId)
+        ? { ...operation, baseRevisions: { ...(operation.baseRevisions ?? {}), [conflict.resourceId]: revision } }
+        : null;
+    case "save-content":
+      return conflict.resourceKind === "content" && conflict.resourceId === operation.entryId ? { ...operation, baseContentRevision: revision } : null;
+    case "layout":
+      return conflict.resourceKind === "layout" ? { ...operation, baseRevision: revision } : null;
+    case "editor-settings":
+      return conflict.resourceKind === "editor-settings" ? { ...operation, baseRevision: revision } : null;
+    case "select-theme":
+      return conflict.resourceKind === "theme-selection" ? { ...operation, baseRevision: revision } : null;
+    case "upsert-theme":
+      return conflict.resourceKind === "theme" && conflict.resourceId === operation.theme.id ? { ...operation, baseRevision: revision } : null;
+    case "delete-theme":
+      return conflict.resourceKind === "theme" && conflict.resourceId === operation.themeId ? { ...operation, baseRevision: revision } : null;
+    default:
+      return null;
+  }
 }

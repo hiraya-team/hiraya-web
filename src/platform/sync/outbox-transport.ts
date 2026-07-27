@@ -2,7 +2,6 @@ import { parseBlobMutationPreparation } from "../../lib/contracts";
 import { API_ROUTES } from "../../lib/api-routes";
 import { mapWithConcurrency, uploadBlobDigests } from "../../lib/blob-transfer";
 import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
-import type { FileEntry } from "../../types";
 import { SyncRequestError } from "./http-client";
 
 type OutboxTransportDependencies = {
@@ -27,6 +26,10 @@ function idempotencyHeaders(record: OutboxRecord, headers?: HeadersInit) {
   return result;
 }
 
+function revisionHeaders(revision?: number) {
+  return revision === undefined ? undefined : { "X-Hiraya-Base-Revision": String(revision) };
+}
+
 async function abortBlobMutation(record: OutboxRecord, uploadId: string, dependencies: OutboxTransportDependencies) {
   try {
     const response = await dependencies.fetch(API_ROUTES.desktopBlobMutation(record.desktopId, uploadId), {
@@ -44,7 +47,7 @@ async function abortBlobMutation(record: OutboxRecord, uploadId: string, depende
 
 async function sendBlobMutation(record: OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }, dependencies: OutboxTransportDependencies) {
   const operation = record.operation;
-  const files = operation.kind === "create" ? operation.entries.filter((entry): entry is FileEntry => entry.kind === "file") : [operation.entry];
+  const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file") : [{ id: operation.entryId, name: operation.entryId, size: operation.size }];
   const contents = new Map<string, Blob>();
   const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
     const content = await dependencies.readPendingContent(record.operationId, entry.id);
@@ -52,13 +55,14 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
     contents.set(entry.id, content);
     return [entry.id, await uploadBlobDigests(content)] as const;
   }));
-  const entries = operation.kind === "create" ? operation.entries : [operation.entry];
   const prepared = parseBlobMutationPreparation(await dependencies.requestJson(API_ROUTES.desktopBlobMutations(record.desktopId), {
     method: "POST",
     headers: idempotencyHeaders(record, { "Content-Type": "application/json" }),
-    body: JSON.stringify({ kind: operation.kind, items: entries.map((entry) => ({ entry, ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) })) }),
+    body: JSON.stringify({ kind: operation.kind, items: operation.kind === "create"
+      ? operation.entries.map((entry) => ({ entry, ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) }))
+      : [{ entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, baseContentRevision: operation.baseContentRevision, ...hashes.get(operation.entryId)! }] }),
   }), files.map((entry) => entry.id));
-  if (prepared.state === "committed") return;
+  if (prepared.state === "committed") return prepared;
   let commitStarted = false;
   try {
     await mapWithConcurrency(prepared.items, 3, async (target) => {
@@ -81,7 +85,7 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
     });
     commitStarted = true;
     try {
-      await dependencies.requestJson(API_ROUTES.desktopBlobMutationCommit(record.desktopId, prepared.uploadId), {
+      return await dependencies.requestJson(API_ROUTES.desktopBlobMutationCommit(record.desktopId, prepared.uploadId), {
         method: "POST",
         headers: idempotencyHeaders(record),
       });
@@ -101,49 +105,35 @@ export async function sendOutboxOperation(record: OutboxRecord, dependencies: Ou
   const headers = (value?: HeadersInit) => idempotencyHeaders(record, value);
   switch (operation.kind) {
     case "create-desktop":
-      await dependencies.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) });
     case "rename-desktop":
-      await dependencies.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name, baseRevision: operation.baseRevision }) });
     case "delete-desktop":
-      await dependencies.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers() });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) });
     case "create":
     case "save-content":
-      await sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }, dependencies);
-      return;
-    case "update-entry":
-      await dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entry.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.entry) });
-      return;
+      return sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }, dependencies);
+    case "patch-entry":
+      return dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ baseRevision: operation.baseRevision, changes: operation.changes }) });
     case "delete":
-      await dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "DELETE", headers: headers() });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) });
     case "delete-entries":
-      await dependencies.requestJson(API_ROUTES.desktopDeleteEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopDeleteEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, baseRevisions: operation.baseRevisions }) });
     case "move-entries":
-      await dependencies.requestJson(API_ROUTES.desktopMoveEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, parentId: operation.parentId }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopMoveEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, baseRevisions: operation.baseRevisions, parentId: operation.parentId }) });
     case "entry-transfer":
-      await dependencies.requestJson(API_ROUTES.entryTransfers, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ sourceDesktopId: desktopId, destinationDesktopId: operation.destinationDesktopId, entryIds: operation.entryIds, parentId: operation.parentId }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.entryTransfers, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ sourceDesktopId: desktopId, destinationDesktopId: operation.destinationDesktopId, entryIds: operation.entryIds, parentId: operation.parentId }) });
     case "root-entry-positions":
-      await dependencies.requestJson(API_ROUTES.desktopRootEntryPositions(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.positions) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopRootEntryPositions(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ positions: operation.positions, baseRevisions: operation.baseRevisions }) });
     case "layout":
-      await dependencies.requestJson(API_ROUTES.desktopLayout(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.layout) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopLayout(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ layout: operation.layout, baseRevision: operation.baseRevision }) });
     case "editor-settings":
-      await dependencies.requestJson(API_ROUTES.desktopEditorSettings(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.settings) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopEditorSettings(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ ...operation.settings, baseRevision: operation.baseRevision }) });
     case "select-theme":
-      await dependencies.requestJson(API_ROUTES.desktopThemeSelection(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ themeId: operation.themeId }) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopThemeSelection(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ themeId: operation.themeId, baseRevision: operation.baseRevision }) });
     case "upsert-theme":
-      await dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.theme.id), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify(operation.theme) });
-      return;
+      return dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.theme.id), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ ...operation.theme, baseRevision: operation.baseRevision }) });
     case "delete-theme":
-      await dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.themeId), { method: "DELETE", headers: headers() });
+      return dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.themeId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) });
   }
 }

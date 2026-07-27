@@ -41,7 +41,7 @@ export default defineConfig(({ mode }) => {
         },
         workbox: {
           cleanupOutdatedCaches: true,
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json,hiraya.app}"],
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
           navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:login|register|profile|logout|admin)(?:[/?]|$)/],
         },
       }),
@@ -57,6 +57,9 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: ["@sqlite.org/sqlite-wasm"],
+    },
+    build: {
+      manifest: true,
     },
   };
 });

@@ -1,4 +1,4 @@
-import { Children, isValidElement, useEffect, useState, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useRef, useState, type ReactNode } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { FileEntry } from "../types";
@@ -68,14 +68,22 @@ function headingChildren(children: ReactNode) {
 
 export function MarkdownRenderer({ content, externalEmbeddedPreviews, onResolveLink, onOpenLinkedFile, onLinkError, onAnchorLink }: Props) {
   const [linkError, setLinkError] = useState("");
+  const linkGenerationRef = useRef(0);
+
+  useEffect(() => {
+    linkGenerationRef.current += 1;
+  }, [content]);
 
   async function openLocalLink(href: string) {
+    const generation = ++linkGenerationRef.current;
     setLinkError("");
     onLinkError?.("");
     try {
       const { file } = await onResolveLink(href);
+      if (linkGenerationRef.current !== generation) return;
       onOpenLinkedFile(file);
     } catch (error) {
+      if (linkGenerationRef.current !== generation) return;
       const message = error instanceof Error ? error.message : `Could not open ${href}.`;
       setLinkError(message);
       onLinkError?.(message);

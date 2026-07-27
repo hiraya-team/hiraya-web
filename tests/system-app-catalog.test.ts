@@ -11,4 +11,15 @@ describe("bundled system app catalog", () => {
     expect(new Set(manifests.map((manifest) => manifest.id)).size).toBe(5);
     expect(SYSTEM_APP_SLUGS.map((slug) => `system-apps/${slug}.hiraya.app`)).not.toContain("system-apps/folder-explorer.hiraya.app");
   });
+
+  test("emits trusted digests so ordinary startup does not inspect unchanged archives", async () => {
+    const plugin = await Bun.file(new URL("../build/system-apps.ts", import.meta.url)).text();
+    const controller = await Bun.file(new URL("../src/features/app-management/controller.ts", import.meta.url)).text();
+    const launcher = await Bun.file(new URL("../src/features/app-management/launch.ts", import.meta.url)).text();
+
+    expect(plugin).toContain('createHash("sha256")');
+    expect(controller).not.toContain('import("@hiraya/app-cli")');
+    expect(controller).not.toContain("systemAppArchiveUrl");
+    expect(launcher).toContain('import("@hiraya/app-cli")');
+  });
 });

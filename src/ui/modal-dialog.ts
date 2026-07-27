@@ -41,6 +41,7 @@ export function useModalDialog(
   const onCloseRef = useRef(onClose);
   const dismissDisabledRef = useRef(dismissDisabled);
   const restoreFocusRef = useRef(restoreFocus);
+  const invokerRef = useRef<HTMLElement | null>(typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null);
   onCloseRef.current = onClose;
   dismissDisabledRef.current = dismissDisabled;
   restoreFocusRef.current = restoreFocus;
@@ -48,7 +49,7 @@ export function useModalDialog(
     const backdrop = backdropRef.current;
     const dialog = dialogRef.current;
     if (!backdrop || !dialog) return;
-    const entry: ModalEntry = { backdrop, dialog, previousFocus: document.activeElement instanceof HTMLElement ? document.activeElement : null };
+    const entry: ModalEntry = { backdrop, dialog, previousFocus: invokerRef.current };
     modalStack.push(entry);
     observeModalSiblings();
     refreshModalIsolation();

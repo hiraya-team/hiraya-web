@@ -48,6 +48,38 @@ describe("public desktop", () => {
     expect(calls).toBe(0);
   });
 
+  test("validates the size of legacy same-origin downloads", async () => {
+    const fetchImpl = (async () => new Response("short", { headers: { "content-type": "application/zip" } })) as typeof fetch;
+
+    await expect(fetchPublicFile("token", file, 3, fetchImpl)).rejects.toThrow("unexpected size");
+  });
+
+  test("rejects same-size corruption in same-origin downloads", async () => {
+    const sameSize = { ...file, size: 4 };
+    const fetchImpl = (async () => new Response("evil", { headers: { "content-type": "application/zip", "X-Hiraya-Content-SHA256": "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8" } })) as typeof fetch;
+
+    await expect(fetchPublicFile("token", sameSize, 3, fetchImpl)).rejects.toThrow("integrity verification");
+  });
+
+  test("verifies the SHA-256 digest of direct downloads", async () => {
+    const directFile = { ...file, size: 4 };
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      if (calls === 1) return new Response(null, { status: 404 });
+      if (calls === 2) return Response.json({
+        entryId: directFile.id,
+        contentRevision: 3,
+        size: directFile.size,
+        sha256: "0000000000000000000000000000000000000000000000000000000000000000",
+        access: { url: "https://downloads.example.test/file", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+      });
+      return new Response("test");
+    }) as typeof fetch;
+
+    await expect(fetchPublicFile("token", directFile, 3, fetchImpl)).rejects.toThrow("integrity verification");
+  });
+
   test("does not expose public multi-selection behavior", async () => {
     const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
 
@@ -57,6 +89,24 @@ describe("public desktop", () => {
     expect(source).toContain("const closePublicView = () => {\n    setSelectedIds(new Set());");
     expect(source).toContain("const backPublicView = () => {");
     expect(source).toContain("setSelectedIds(new Set());\n    setOpen({");
+  });
+
+  test("keeps public root icons scrollable, focus-reachable, and pinch-magnifiable", async () => {
+    const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+
+    expect(source).toContain('scrollIntoView({ block: "nearest", inline: "nearest" })');
+    expect(source).not.toContain("event.currentTarget.setPointerCapture(event.pointerId);");
+    expect(css).toContain(".public-icon-grid {\n  overflow: auto;");
+    expect(css).toContain("touch-action: pan-x pan-y pinch-zoom;");
+  });
+
+  test("guards public preview completion against a newer open request", async () => {
+    const controller = await Bun.file(new URL("../src/features/public-desktop/controller.ts", import.meta.url)).text();
+
+    expect(controller).toContain("const generation = downloadOnly ? null : ++fileLoadGenerationRef.current;");
+    expect(controller).toContain("fileLoadGenerationRef.current === generation");
+    expect(controller).toContain("fileLoadGenerationRef.current !== generation");
   });
 
   test("resolves linked files within the public desktop only", () => {

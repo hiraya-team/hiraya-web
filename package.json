@@ -11,13 +11,16 @@
     "app": "bun packages/app-cli/src/cli.ts",
     "app:example": "bun run --cwd examples/hello-app build && bun run app package examples/hello-app/dist examples/hello-app.hiraya.app",
     "dev": "vite",
-    "build": "tsc -b && vite build && bun run apps:examples",
+    "build": "tsc -b && vite build && bun run apps:examples && bun run bundle:check",
+    "bundle:check": "bun build/bundle-budget.ts",
     "apps:examples": "bun run --cwd examples/calculator-app build && bun run --cwd examples/zip-browser-app build && bun run --cwd examples/pixel-editor-app build && bun run app package examples/calculator-app/dist dist/experimental-apps/calculator.hiraya.app && bun run app package examples/zip-browser-app/dist dist/experimental-apps/zip-browser.hiraya.app && bun run app package examples/pixel-editor-app/dist dist/experimental-apps/pixel-editor.hiraya.app",
     "apps:system:build": "bun run --cwd apps/system/text-editor build && bun run --cwd apps/system/markdown-preview build && bun run --cwd apps/system/image-viewer build && bun run --cwd apps/system/media-viewer build && bun run --cwd apps/system/file-viewer build",
     "apps:system:test": "bun test apps/system",
     "apps:system": "bun run apps:system:build && bun run app package apps/system/text-editor/dist dist/system-apps/text-editor.hiraya.app && bun run app package apps/system/markdown-preview/dist dist/system-apps/markdown-preview.hiraya.app && bun run app package apps/system/image-viewer/dist dist/system-apps/image-viewer.hiraya.app && bun run app package apps/system/media-viewer/dist dist/system-apps/media-viewer.hiraya.app && bun run app package apps/system/file-viewer/dist dist/system-apps/file-viewer.hiraya.app",
     "lint": "eslint .",
     "test": "bun test",
+    "test:e2e": "HIRAYA_FRONTEND_ONLY=true bun run build && playwright test",
+    "test:e2e:server": "HIRAYA_SERVER_E2E=1 ../scripts/server-browser-e2e.sh",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -49,7 +52,9 @@
     "workbox-window": "^7.4.1"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.12.1",
     "@eslint/js": "^9.30.1",
+    "@playwright/test": "^1.62.0",
     "@types/node": "^26.1.1",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",

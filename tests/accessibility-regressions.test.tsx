@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FileIcon } from "../src/components/FileIcon";
 import { SearchCommandPalette } from "../src/components/SearchCommandPalette";
+import { indexSearchBreadcrumbs } from "../src/ui/search-breadcrumbs";
 
 const baseProps = {
   entries: [],
@@ -56,6 +57,27 @@ describe("accessibility regressions", () => {
     expect(activeId).toBeTruthy();
     expect(markup).toContain(`id="${activeId}"`);
     expect(markup).toContain(`id="${activeId}" class="command-palette__result" type="button" role="option" aria-selected="true"`);
+  });
+
+  test("indexes search breadcrumbs once for the complete entry tree", () => {
+    const entries = [
+      { kind: "folder" as const, id: "plans", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
+      { kind: "folder" as const, id: "current", name: "Current", parentId: "plans", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
+      { kind: "file" as const, id: "brief", name: "brief.md", parentId: "current", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "text/markdown", size: 1 },
+    ];
+
+    expect([...indexSearchBreadcrumbs(entries)]).toEqual([
+      ["plans", []],
+      ["current", ["Plans"]],
+      ["brief", ["Plans", "Current"]],
+    ]);
+  });
+
+  test("guards Markdown link results and rejections by request generation", async () => {
+    const source = await Bun.file(new URL("../src/components/MarkdownRenderer.tsx", import.meta.url)).text();
+
+    expect(source).toContain("const generation = ++linkGenerationRef.current;");
+    expect(source.match(/linkGenerationRef\.current !== generation/g)).toHaveLength(2);
   });
 
   test("mobile shell controls retain fixed 44px targets in the final override", async () => {
