@@ -17,6 +17,7 @@ export function useDesktopSelection() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedIdsRef = useRef<string[]>([]);
   const [selectionScope, setSelectionScope] = useState("desktop");
+  const selectionScopeRef = useRef("desktop");
   const [selectionAnchorId, setSelectionAnchorId] = useState<string | null>(null);
   const [mobileMultiSelectScope, setMobileMultiSelectScope] = useState<string | null>(null);
 
@@ -24,6 +25,7 @@ export function useDesktopSelection() {
     const unique = [...new Set(ids)];
     selectedIdsRef.current = unique;
     setSelectedIds(unique);
+    selectionScopeRef.current = surface;
     setSelectionScope(surface);
     setSelectionAnchorId(anchorId);
     if (!unique.length) setMobileMultiSelectScope((current) => current === surface ? null : current);
@@ -44,8 +46,8 @@ export function useDesktopSelection() {
     const next = selectedIdsRef.current.filter((id) => retainedIds.has(id));
     selectedIdsRef.current = next;
     setSelectedIds(next);
-    if (!next.length) setMobileMultiSelectScope((scope) => scope === selectionScope ? null : scope);
-  }, [selectionScope]);
+    if (!next.length) setMobileMultiSelectScope((scope) => scope === selectionScopeRef.current ? null : scope);
+  }, []);
 
   const beginMobileMultiSelect = useCallback((surface: string) => setMobileMultiSelectScope(surface), []);
 
