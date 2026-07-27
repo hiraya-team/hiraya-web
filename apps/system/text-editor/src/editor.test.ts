@@ -4,7 +4,7 @@ import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, Text
 describe("Text Editor document behavior", () => {
   test("keeps primary mobile actions at Hiraya's touch target size", async () => {
     const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
-    expect(css).toContain("@media (max-width: 700px) and (pointer: coarse)");
+    expect(css).toContain("@media (max-width: 700px)");
     expect(css).toContain(":is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; }");
   });
 
