@@ -27,11 +27,12 @@ type Props = {
   onExternalDrop?: (dataTransfer: DataTransfer) => void;
   offlineAvailability?: OfflineEntryAvailability;
   allowBrowserPinchZoom?: boolean;
+  interactive?: boolean;
 };
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -272,6 +273,9 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
         data-entry-id={entry.id}
         data-folder-id={entry.kind === "folder" ? entry.id : undefined}
         type="button"
+        tabIndex={interactive ? undefined : -1}
+        aria-hidden={interactive ? undefined : true}
+        inert={interactive ? undefined : true}
         aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability ? `, ${offlineStatusLabel(offlineAvailability)}` : ""}`}
         aria-pressed={selected}
         onClick={(event) => { if (event.detail === 0) onSelect(event); }}

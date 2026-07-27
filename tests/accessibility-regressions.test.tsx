@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
+import { FileIcon } from "../src/components/FileIcon";
 import { SearchCommandPalette } from "../src/components/SearchCommandPalette";
 
 const baseProps = {
@@ -191,9 +192,27 @@ describe("accessibility regressions", () => {
 
   test("only the active desktop icon segment is keyboard and accessibility reachable", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const markup = renderToStaticMarkup(<FileIcon
+      entry={{ kind: "folder", id: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }}
+      selected={false}
+      interactive={false}
+      onSelect={() => undefined}
+      onTouchSelect={() => undefined}
+      onLongPressSelect={() => undefined}
+      onOpen={() => undefined}
+      onMove={async () => true}
+      onDragAtEdge={() => null}
+      onDragEnd={() => undefined}
+      onContextMenu={() => undefined}
+      onContextMenuAt={() => undefined}
+    />);
 
     expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
     expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive}');
+    expect(app).toContain("interactive={segmentActive}");
+    expect(markup).toContain('tabindex="-1"');
+    expect(markup).toContain('aria-hidden="true"');
+    expect(markup).toContain('inert=""');
   });
 
   test("programmatically activated file inputs are not hidden keyboard stops", async () => {

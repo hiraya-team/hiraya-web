@@ -3839,6 +3839,7 @@ function App({ session }: { session: AuthSession | null }) {
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
+                  interactive={segmentActive}
                   offlineAvailability={offlineModel.entries[entry.id]}
                   selected={selectedIdSet.has(entry.id)}
                   onSelect={(event) =>
