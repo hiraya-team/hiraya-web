@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "../src/lib/pwa-install";
 
 describe("PWA installation state", () => {
+  test("requests the protected manifest with same-origin credentials", async () => {
+    const config = await Bun.file(new URL("../vite.config.ts", import.meta.url)).text();
+    expect(config).toContain("useCredentials: true");
+  });
+
   test("prioritizes standalone and installed status over prompt guidance", () => {
     const prompt = {} as InstallPromptEvent;
     expect(pwaInstallState(prompt, false, true)).toBe("standalone");

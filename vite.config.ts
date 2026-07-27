@@ -22,6 +22,7 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         injectRegister: null,
         registerType: "prompt",
+        useCredentials: true,
         includeAssets: ["favicon.svg", "apple-touch-icon.png"],
         manifest: {
           name: "Hiraya Desktop",
