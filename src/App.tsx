@@ -142,6 +142,7 @@ import { useDesktopSelection } from "./features/selection/controller";
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 const DESKTOP_LONG_PRESS_MS = 500;
+const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
 
 function formatClock(date: Date) {
@@ -2949,7 +2950,7 @@ function App({ session }: { session: AuthSession | null }) {
   function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
     const target = event.target as Element;
-    if (target.closest(".file-icon, .empty-state__actions, .app-window")) return;
+    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
     if (event.pointerType !== "touch") {
       event.preventDefault();
       const additive = event.metaKey || event.ctrlKey;

@@ -77,6 +77,8 @@ describe("accessibility regressions", () => {
     expect(publicDesktop).toContain("externalHeaderElements={mobile ?");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
+    expect(app).toContain("target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)");
+    expect(app).toContain(".app-window, button, a[href], input, select, textarea");
   });
 
   test("mobile switchers use distinct desktop and area controls", async () => {
