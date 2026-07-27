@@ -5132,10 +5132,10 @@
 .command-palette__result small { color: var(--theme-text-muted); }
 
 .onboarding-backdrop { z-index: 6250; }
-.onboarding-dialog { display: grid; width: min(760px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow: hidden; grid-template-rows: auto minmax(0, 1fr); border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius); color: var(--theme-text); background: var(--theme-window); box-shadow: var(--theme-shadow); }
-.onboarding-dialog__content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.onboarding-dialog { display: block; width: min(760px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius); color: var(--theme-text); background: var(--theme-window); box-shadow: var(--theme-shadow); }
+.onboarding-dialog__content { min-height: 0; }
 .onboarding-dialog > header, .onboarding-dialog__content > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
-.onboarding-dialog > header { border-bottom: var(--theme-border-width) solid var(--theme-border); }
+.onboarding-dialog > header { position: sticky; z-index: 1; top: 0; border-bottom: var(--theme-border-width) solid var(--theme-border); background: var(--theme-window); }
 .onboarding-dialog h2, .onboarding-dialog h3, .onboarding-dialog p { margin: 0; }
 .onboarding-dialog h2 { margin-top: 3px; font-size: 21px; }
 .onboarding-dialog__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 20px; }

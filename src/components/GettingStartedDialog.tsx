@@ -9,7 +9,12 @@ export function GettingStartedDialog({ local, installState, onInstall, onClose }
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(backdropRef, dialogRef, onClose);
-  return <div ref={backdropRef} className="modal-backdrop onboarding-backdrop" role="presentation">
+  return <div ref={backdropRef} className="modal-backdrop onboarding-backdrop" role="presentation" onWheel={(event) => {
+    const dialog = dialogRef.current;
+    if (!dialog || dialog.scrollHeight <= dialog.clientHeight) return;
+    event.preventDefault();
+    dialog.scrollBy({ top: event.deltaY });
+  }}>
     <section ref={dialogRef} className="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="getting-started-title" tabIndex={-1}>
       <header><div><span className="window-kicker">Getting started</span><h2 id="getting-started-title">Know where your work lives</h2></div><button className="icon-button" type="button" aria-label="Close Getting Started" onClick={onClose}><X size={18} /></button></header>
       <div className="onboarding-dialog__content">

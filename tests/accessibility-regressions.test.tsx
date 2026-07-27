@@ -246,7 +246,10 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(dialog).toContain('className="onboarding-dialog__content"');
-    expect(css).toContain(".onboarding-dialog__content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }");
-    expect(css).toContain("grid-template-rows: auto minmax(0, 1fr)");
+    expect(dialog).toContain("dialog.scrollBy({ top: event.deltaY })");
+    expect(css).toContain(".onboarding-dialog { display: block;");
+    expect(css).toContain("overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y;");
+    expect(css).toContain(".onboarding-dialog__content { min-height: 0; }");
+    expect(css).toContain(".onboarding-dialog > header { position: sticky;");
   });
 });
