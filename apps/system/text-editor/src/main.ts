@@ -1,4 +1,4 @@
-import { HirayaSdkError, type FileHandle, type HirayaClient } from "@hiraya/apps-sdk";
+import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
 import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
@@ -56,7 +56,7 @@ async function start() {
     const launchFile = app.launch.files[0];
     if (launchFile) {
       const generation = operations.beginForeground();
-      try { await load(launchFile, generation); }
+      try { await load(launchFile, generation, true); }
       catch (error) { setStatus(describeError(error, "Could not open the launch file."), true); }
       finally { operations.finishForeground(generation); }
     }
@@ -83,15 +83,26 @@ async function open() {
   finally { operations.finishForeground(generation); }
 }
 
-async function read(next: FileHandle) {
+async function statFile(next: FileHandle) {
   const entry = await hiraya.files.stat(next);
   if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const data = await readFileData(hiraya, next, entry.metadata.size);
-  return { entry: entry.metadata, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
+  return entry.metadata;
 }
 
-async function load(next: FileHandle, generation: number) {
-  const loaded = await read(next); if (!operations.isForegroundCurrent(generation)) return;
+async function read(next: FileHandle, entry?: FileMetadata) {
+  entry ??= await statFile(next);
+  const data = await readFileData(hiraya, next, entry.size);
+  return { entry, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
+}
+
+async function load(next: FileHandle, generation: number, identifyBeforeRead = false) {
+  const entry = await statFile(next);
+  if (!operations.isForegroundCurrent(generation)) return;
+  if (identifyBeforeRead) {
+    name = entry.name;
+    renderDirty();
+  }
+  const loaded = await read(next, entry); if (!operations.isForegroundCurrent(generation)) return;
   documentState.load(loaded.text, loaded.entry.contentRevision);
   editor.value = loaded.text;
   handle = next;

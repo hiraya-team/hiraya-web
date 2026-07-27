@@ -2,6 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Text Editor document behavior", () => {
+  test("identifies a launch file before reading its contents", async () => {
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    expect(source).toContain("await load(launchFile, generation, true)");
+
+    const load = source.slice(source.indexOf("async function load("), source.indexOf("async function remoteChanged("));
+    expect(load.indexOf("name = entry.name")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
+    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("name = entry.name"));
+  });
+
+  test("does not replace the current document identity before an interactive file opens", async () => {
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    expect(source).toContain("await load(selected[0], generation)");
+    expect(source).not.toContain("await load(selected[0], generation, true)");
+  });
+
   test("keeps primary mobile actions at Hiraya's touch target size", async () => {
     const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
     expect(css).toContain("@media (max-width: 700px)");
