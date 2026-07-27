@@ -107,7 +107,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
     expect(app).toContain("if (drag.expanded) collapseAreaMap();");
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
-    expect(app).not.toContain("if (isMobile) collapseAreaMap();");
+    expect(app).toContain("if (isMobile) collapseAreaMap();");
     expect(app).not.toContain("if (isMobile) collapseAreaMap(false);");
     expect(app).toContain("onPointerDownCapture={handleShellAreaSwitcherInteraction}");
     expect(app).toContain("onKeyDownCapture={handleShellAreaSwitcherInteraction}");

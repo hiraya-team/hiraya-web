@@ -3309,6 +3309,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function selectAreaFromSwitcher(segment: SurfaceSegment) {
     goToSegment(segment, "push", undefined, !isMobile);
+    if (isMobile) collapseAreaMap();
   }
 
   function areaSwitcherContains(target: EventTarget | null) {
