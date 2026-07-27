@@ -39,6 +39,8 @@ The browser hashes the session `storageId` into a safe account namespace before 
 
 Offline mutations update desktop rows and append a strict schema version 1 outbox record atomically. Every record has a `desktopId`; `catalogId` is nullable only before the first successful catalog fetch. Replay selects records belonging to the active desktop authority without blocking pending work for other authorities. Shared writes require an online connection. File bytes are staged before metadata is exposed; downloaded bytes are accepted only for the matching catalog, desktop, entry revision, and size. The browser cache and outbox are not a backup.
 
+User mutations return after that durable local commit; server replay, upload, reconciliation, and retry are never part of the interaction's critical path. See [Background Synchronization Decision](docs/background-synchronization.md) for the canonical interaction contract, failure semantics, and exceptions.
+
 Synchronized file creates and content saves calculate SHA-256 and MD5 from staged OPFS bytes, reserve an atomic blob mutation with the same durable outbox identity, PUT files directly to the server-authorized object-store targets, and finalize metadata only after server verification. Reads obtain a short-lived content-access target, download directly, verify SHA-256, and then populate the OPFS cache. Presigned targets and object-store credentials are never persisted.
 
 ## Routes And Areas
