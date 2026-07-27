@@ -3783,7 +3783,8 @@ function App({ session }: { session: AuthSession | null }) {
           >
           {responsive.segments.map((desktopSegment) => {
             const origin = areaWorldOrigin(desktopSegment.segment, desktopSize);
-            return <div className="desktop-area-segment" key={desktopSegment.key} style={{ left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
+            const segmentActive = desktopSegment.key === activeSegmentKey;
+            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive} style={{ left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
             {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
               const renderedEntry = { ...entry, position: projectedPosition };

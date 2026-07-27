@@ -185,4 +185,11 @@ describe("accessibility regressions", () => {
     expect(resizeEffect).not.toContain("navigateRouteRef.current");
     expect(resizeEffect).not.toContain("selectedEntry");
   });
+
+  test("only the active desktop icon segment is keyboard and accessibility reachable", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+
+    expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
+    expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive}');
+  });
 });
