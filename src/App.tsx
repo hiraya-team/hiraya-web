@@ -1437,34 +1437,16 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => {
     const previous = previousDesktopSizeRef.current;
     previousDesktopSizeRef.current = desktopSize;
-    const current = routeRef.current;
-    if (!current || (previous.width === desktopSize.width && previous.height === desktopSize.height)) return;
-    const focused = runningAppsRef.current.find((app) => app.id === focusedAppIdRef.current);
-    const selectedEntry = selectedIdsRef.current.map((id) => entriesRef.current.find((entry) => entry.id === id && entry.parentId === null)).find(Boolean);
-    const projectedSegment = focused
-      ? projectLogicalPosition(focused.bounds, desktopSize).segment
-      : selectedEntry
-        ? projectLogicalPosition(selectedEntry.position, desktopSize).segment
-        : {
-            column: Math.floor((current.column * previous.width + previous.width / 2) / desktopSize.width),
-            row: Math.floor((current.row * previous.height + previous.height / 2) / desktopSize.height),
-          };
-    navigateRouteRef.current(
-      {
-        ...current,
-        ...projectedSegment,
-      },
-      "replace",
-    );
+    if (previous.width === desktopSize.width && previous.height === desktopSize.height) return;
     updateRunningApps((currentApps) =>
       currentApps.map((app) => {
-        const projection = projectLogicalPosition(app.bounds, desktopSize);
+        const projection = projectLogicalPosition(app.bounds, previous);
         const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
         const localBounds = clampWindowBounds({ ...app.bounds, ...projection.local }, desktopSize, { minWidth, minHeight });
         return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
       }),
     );
-  }, [desktopSize, focusedAppIdRef, runningAppsRef, selectedIdsRef, updateRunningApps]);
+  }, [desktopSize, updateRunningApps]);
 
   useEffect(() => {
     if (loading) return;

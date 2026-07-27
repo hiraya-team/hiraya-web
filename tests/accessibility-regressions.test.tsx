@@ -175,4 +175,14 @@ describe("accessibility regressions", () => {
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
     expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
   });
+
+  test("viewport resize preserves the signed route and pre-resize window area", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const resizeEffect = app.slice(app.indexOf("const previousDesktopSizeRef"), app.indexOf("if (loading || !windowSessionRestored)"));
+
+    expect(resizeEffect).toContain("projectLogicalPosition(app.bounds, previous)");
+    expect(resizeEffect).toContain("restoreLogicalPosition(localBounds, projection.segment, desktopSize)");
+    expect(resizeEffect).not.toContain("navigateRouteRef.current");
+    expect(resizeEffect).not.toContain("selectedEntry");
+  });
 });
