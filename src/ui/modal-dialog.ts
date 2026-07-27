@@ -36,11 +36,14 @@ export function useModalDialog(
   dialogRef: RefObject<HTMLElement | null>,
   onClose: () => void,
   dismissDisabled = false,
+  restoreFocus?: () => HTMLElement | null,
 ) {
   const onCloseRef = useRef(onClose);
   const dismissDisabledRef = useRef(dismissDisabled);
+  const restoreFocusRef = useRef(restoreFocus);
   onCloseRef.current = onClose;
   dismissDisabledRef.current = dismissDisabled;
+  restoreFocusRef.current = restoreFocus;
   useEffect(() => {
     const backdrop = backdropRef.current;
     const dialog = dialogRef.current;
@@ -92,7 +95,8 @@ export function useModalDialog(
       stopObservingModalSiblings();
       if (wasTop) requestAnimationFrame(() => {
         const next = modalStack.at(-1);
-        if (entry.previousFocus?.isConnected && (!next || next.dialog.contains(entry.previousFocus))) entry.previousFocus.focus();
+        const target = restoreFocusRef.current?.() ?? entry.previousFocus;
+        if (target?.isConnected && (!next || next.dialog.contains(target))) target.focus();
         else next?.dialog.focus();
       });
     };

@@ -203,6 +203,19 @@ describe("accessibility regressions", () => {
     expect(settings).toContain('type="file" tabIndex={-1} aria-hidden="true"');
   });
 
+  test("file dialogs restore their invoker or focus the successful result", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const dialog = await Bun.file(new URL("../src/components/FileDialog.tsx", import.meta.url)).text();
+    const modal = await Bun.file(new URL("../src/ui/modal-dialog.ts", import.meta.url)).text();
+
+    expect(app).toContain("const openFileDialog = useCallback((next: Exclude<DialogState, null>)");
+    expect(app).toContain("fileDialogResultIdRef.current = created.id");
+    expect(app).toContain("fileDialogResultIdRef.current = renamed.id");
+    expect(app).not.toContain("setDialog({ type:");
+    expect(dialog).toContain("useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus)");
+    expect(modal).toContain("restoreFocusRef.current?.() ?? entry.previousFocus");
+  });
+
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {
     const dialog = await Bun.file(new URL("../src/components/GettingStartedDialog.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();

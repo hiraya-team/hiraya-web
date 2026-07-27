@@ -149,6 +149,10 @@ function formatClock(date: Date) {
   return new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" }).format(date);
 }
 
+function fileDialogEntryElement(id: string) {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
+}
+
 function formatImportBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
@@ -254,6 +258,8 @@ function App({ session }: { session: AuthSession | null }) {
   const [pwaInstalled, setPwaInstalled] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
+  const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
+  const fileDialogResultIdRef = useRef<string | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -460,6 +466,20 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || confirmation || contextMenu || appDialogRequests.length);
+
+  const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    fileDialogInvokerRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger")
+      ?? (active?.closest(".context-menu") ? selectedIdsRef.current.map(fileDialogEntryElement).find(Boolean) ?? null : active);
+    fileDialogResultIdRef.current = null;
+    setDialog(next);
+  }, [selectedIdsRef]);
+
+  const restoreFileDialogFocus = useCallback(() => {
+    const result = fileDialogResultIdRef.current;
+    fileDialogResultIdRef.current = null;
+    return result ? fileDialogEntryElement(result) ?? fileDialogInvokerRef.current : fileDialogInvokerRef.current;
+  }, []);
 
   useEffect(() => {
     if (!minimapExpanded) return;
@@ -1533,7 +1553,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key.toLowerCase() === "r" && contextMenuEntry && canMutate) {
-        setDialog({ type: "rename", entryId: contextMenuEntry.id });
+        openFileDialog({ type: "rename", entryId: contextMenuEntry.id });
         setContextMenu(null);
       }
     }
@@ -1543,7 +1563,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("pointerdown", closeMenu);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [canMutate, contextMenuEntry]);
+  }, [canMutate, contextMenuEntry, openFileDialog]);
 
   useEffect(() => {
     function editableTarget(target: EventTarget | null) {
@@ -1575,7 +1595,7 @@ function App({ session }: { session: AuthSession | null }) {
         void beginPasteRef.current(explorer?.folderId ?? null);
       } else if (event.key === "Delete" && selectedIdsRef.current.length && canMutate) {
         event.preventDefault();
-        setDialog({ type: "delete", entryIds: [...selectedIdsRef.current] });
+        openFileDialog({ type: "delete", entryIds: [...selectedIdsRef.current] });
       }
     }
     function onPaste(event: ClipboardEvent) {
@@ -1594,7 +1614,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
+  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
 
   useEffect(() => {
     function onGlobalShortcut(event: KeyboardEvent) {
@@ -2103,6 +2123,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (dialog.type === "create-file" || dialog.type === "create-folder") {
       const parentId = dialog.parentId;
       const created = dialog.type === "create-file" ? await createTextFile(name, parentId, dialog.position ?? positionFor(parentId)) : await createFolder(name, parentId, dialog.position ?? positionFor(parentId));
+      fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);
       setNotice(`${created.name} created`);
@@ -2112,6 +2133,7 @@ function App({ session }: { session: AuthSession | null }) {
         return;
       }
       const renamed = await renameEntry(dialogEntry.id, name);
+      fileDialogResultIdRef.current = renamed.id;
       setEntries((current) => current.map((entry) => (entry.id === renamed.id ? renamed : entry)));
       updateRunningApps((current) =>
         current.map((app) =>
@@ -3262,8 +3284,8 @@ function App({ session }: { session: AuthSession | null }) {
     canMutate,
     canOpenTrash,
     canOpenSettings: true,
-    createFile: () => setDialog({ type: "create-file", parentId: null }),
-    createFolder: () => setDialog({ type: "create-folder", parentId: null }),
+    createFile: () => openFileDialog({ type: "create-file", parentId: null }),
+    createFolder: () => openFileDialog({ type: "create-folder", parentId: null }),
     uploadFiles: () => chooseUpload(null),
     importFolder: () => chooseFolderImport(null),
     openSettings: openSettingsWindow,
@@ -3497,7 +3519,7 @@ function App({ session }: { session: AuthSession | null }) {
                     disabled={!canMutate}
                     onClick={() => {
                       dismiss();
-                      setDialog({ type: "create-file", parentId: null });
+                      openFileDialog({ type: "create-file", parentId: null });
                     }}
                   >
                     <FileGlyph size={17} /> New text file
@@ -3507,7 +3529,7 @@ function App({ session }: { session: AuthSession | null }) {
                     disabled={!canMutate}
                     onClick={() => {
                       dismiss();
-                      setDialog({ type: "create-folder", parentId: null });
+                      openFileDialog({ type: "create-folder", parentId: null });
                     }}
                   >
                     <FolderPlus size={17} /> New folder
@@ -3868,10 +3890,10 @@ function App({ session }: { session: AuthSession | null }) {
             <h1>Your space is ready.</h1>
             <p>{offlineSharedNotice || (syncStatus === "local" ? "Create an item, import a folder, or drop files anywhere. Items are saved only in this browser." : canMutate ? "Create an item, import a folder, or drop files anywhere. Items are saved to this shared desktop and synchronized by the Hiraya server." : "This desktop is read only for your account.")}</p>
             <div className="empty-state__actions">
-              <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => setDialog({ type: "create-file", parentId: null })}>
+              <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: null })}>
                 <Plus size={17} /> New text file
               </button>
-              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => setDialog({ type: "create-folder", parentId: null })}>
+              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-folder", parentId: null })}>
                 <FolderPlus size={17} /> New folder
               </button>
               <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseUpload(null)}>
@@ -3954,8 +3976,8 @@ function App({ session }: { session: AuthSession | null }) {
                           replaceSelection(app.id, []);
                           handleOpen(entry);
                         }}
-                        onCreateFolder={(parentId) => setDialog({ type: "create-folder", parentId })}
-                        onCreateFile={(parentId) => setDialog({ type: "create-file", parentId })}
+                        onCreateFolder={(parentId) => openFileDialog({ type: "create-folder", parentId })}
+                        onCreateFile={(parentId) => openFileDialog({ type: "create-file", parentId })}
                         onUpload={chooseUpload}
                         onImportFolder={chooseFolderImport}
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
@@ -4256,7 +4278,7 @@ function App({ session }: { session: AuthSession | null }) {
             aria-label={`${syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}: ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`}
             disabled={!canMutate}
             onClick={() =>
-              setDialog({
+              openFileDialog({
                 type: "delete",
                 entryIds: mobileFileSelection.map((entry) => entry.id),
               })
@@ -4441,7 +4463,7 @@ function App({ session }: { session: AuthSession | null }) {
               : undefined
           }
           onRename={() => {
-            setDialog({ type: "rename", entryId: contextMenuEntry.id });
+            openFileDialog({ type: "rename", entryId: contextMenuEntry.id });
             setContextMenu(null);
           }}
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
@@ -4490,7 +4512,7 @@ function App({ session }: { session: AuthSession | null }) {
             setContextMenu(null);
           }}
           onDelete={() => {
-            setDialog({
+            openFileDialog({
               type: "delete",
               entryIds: contextMenuEntries.map((entry) => entry.id),
             });
@@ -4506,7 +4528,7 @@ function App({ session }: { session: AuthSession | null }) {
         <DesktopContextMenu
           menu={contextMenu}
           onCreateFile={() => {
-            setDialog({
+            openFileDialog({
               type: "create-file",
               parentId: contextMenu.parentId,
               position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, desktopSize) : contextMenu.position,
@@ -4514,7 +4536,7 @@ function App({ session }: { session: AuthSession | null }) {
             setContextMenu(null);
           }}
           onCreateFolder={() => {
-            setDialog({
+            openFileDialog({
               type: "create-folder",
               parentId: contextMenu.parentId,
               position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, desktopSize) : contextMenu.position,
@@ -4538,7 +4560,7 @@ function App({ session }: { session: AuthSession | null }) {
           onClose={() => setContextMenu(null)}
         />
       )}
-      {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => setDialog(null)} onSubmit={handleDialogSubmit} />}
+      {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => setDialog(null)} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
       {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
         <AppPickerDialog
           request={appDialogRequests[0]}

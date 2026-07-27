@@ -10,9 +10,10 @@ type Props = {
   onClose: () => void;
   onSubmit: (name: string) => Promise<void>;
   trashSupported?: boolean;
+  restoreFocus?: () => HTMLElement | null;
 };
 
-export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, trashSupported = true }: Props) {
+export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, trashSupported = true, restoreFocus }: Props) {
   const creatingFile = dialog.type === "create-file";
   const creatingFolder = dialog.type === "create-folder";
   const [name, setName] = useState(creatingFile ? "untitled.txt" : creatingFolder ? "New folder" : entry?.name ?? "");
@@ -20,7 +21,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
   const [submitting, setSubmitting] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, submitting);
+  useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();

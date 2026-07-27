@@ -404,6 +404,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
             {orderedChildren.map((entry) => (
               <button
                 className="folder-explorer__row"
+                data-entry-id={entry.id}
                 key={entry.id}
                 type="button"
                 aria-pressed={selectedIds.has(entry.id)}
