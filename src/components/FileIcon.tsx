@@ -30,36 +30,42 @@ type Props = {
   interactive?: boolean;
 };
 
+type DragState = {
+  pointerX: number;
+  pointerY: number;
+  pointerId: number;
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  moved: boolean;
+  groupOriginX: number;
+  groupOriginY: number;
+  originX: number;
+  originY: number;
+  baseX: number;
+  baseY: number;
+  x: number;
+  y: number;
+  targetFolderId: string | null;
+  canvas: HTMLElement;
+  finishing: boolean;
+  pointerType: string;
+  longPressed: boolean;
+  longPressTimer?: number;
+  expectedPosition?: EntryPosition;
+  expectedParentId?: string | null;
+  moveSucceeded?: boolean;
+};
+
 export const EntryTypeIcon = EntryIcon;
 
 export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
-  const drag = useRef<{
-    pointerX: number;
-    pointerY: number;
-    pointerId: number;
-    minX: number;
-    minY: number;
-    maxX: number;
-    maxY: number;
-    moved: boolean;
-    groupOriginX: number;
-    groupOriginY: number;
-    originX: number;
-    originY: number;
-    baseX: number;
-    baseY: number;
-    x: number;
-    y: number;
-    targetFolderId: string | null;
-    canvas: HTMLElement;
-    finishing: boolean;
-    pointerType: string;
-    longPressed: boolean;
-    longPressTimer?: number;
-  } | null>(null);
+  const drag = useRef<DragState | null>(null);
+  const renderedEntryRef = useRef({ parentId: entry.parentId, position: entry.position });
   const onMoveRef = useRef(onMove);
   const onDragEndRef = useRef(onDragEnd);
   const getSnapPreviewRef = useRef(getSnapPreview);
@@ -67,18 +73,41 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
   onDragEndRef.current = onDragEnd;
   getSnapPreviewRef.current = getSnapPreview;
 
+  function cleanUpDrag(completed: DragState) {
+    if (drag.current !== completed) return;
+    drag.current = null;
+    delete completed.canvas.dataset.iconDragging;
+    iconRef.current?.style.removeProperty("transform");
+    if (iconRef.current) delete iconRef.current.dataset.dragging;
+    document.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging]").forEach((icon) => {
+      icon.style.removeProperty("transform");
+      delete icon.dataset.groupDragging;
+    });
+  }
+
   useEffect(() => () => {
-    if (drag.current?.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
+    const current = drag.current;
+    if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+    if (current) cleanUpDrag(current);
   }, []);
 
   useLayoutEffect(() => {
+    renderedEntryRef.current = { parentId: entry.parentId, position: entry.position };
     const current = drag.current;
+    if (!current?.moved) return;
     const icon = iconRef.current;
-    if (!current?.moved || !icon) return;
-    current.baseX = icon.offsetLeft;
-    current.baseY = icon.offsetTop;
-    icon.style.transform = `translate3d(${current.x - current.baseX}px, ${current.y - current.baseY}px, 0)`;
-  }, [entry.position.x, entry.position.y]);
+    if (icon) {
+      current.baseX = icon.offsetLeft;
+      current.baseY = icon.offsetTop;
+      icon.style.transform = `translate3d(${current.x - current.baseX}px, ${current.y - current.baseY}px, 0)`;
+    }
+    if (
+      current.moveSucceeded
+      && current.expectedParentId === entry.parentId
+      && current.expectedPosition?.x === entry.position.x
+      && current.expectedPosition.y === entry.position.y
+    ) cleanUpDrag(current);
+  }, [entry.parentId, entry.position]);
 
   function setDropTarget(folderId: string | null) {
     document.querySelectorAll<HTMLElement>(".file-icon[data-drop-target]").forEach((element) => {
@@ -215,24 +244,15 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
     const targetFolderId = completed.moved && !cancelled ? findDropTarget(event.clientX, event.clientY) : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
+    const committedPosition = preview && !targetFolderId ? preview(position) : position;
+    completed.expectedPosition = committedPosition;
+    completed.expectedParentId = targetFolderId;
     const move = completed.moved && !cancelled
-      ? Promise.resolve().then(() => onMoveRef.current(preview && !targetFolderId ? preview(position) : position, targetFolderId, { x: position.x - completed.originX, y: position.y - completed.originY }))
+      ? Promise.resolve().then(() => onMoveRef.current(committedPosition, targetFolderId, { x: position.x - completed.originX, y: position.y - completed.originY }))
       : Promise.resolve(!cancelled);
     setDropTarget(null);
     updateSnapPreview(null);
-    const cleanUp = () => {
-      if (drag.current !== completed) return;
-      drag.current = null;
-      delete completed.canvas.dataset.iconDragging;
-      iconRef.current?.style.removeProperty("transform");
-      if (iconRef.current) delete iconRef.current.dataset.dragging;
-      document.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging]").forEach((icon) => {
-        icon.style.removeProperty("transform");
-        delete icon.dataset.groupDragging;
-      });
-    };
-    if (completed.moved) requestAnimationFrame(cleanUp);
-    else cleanUp();
+    if (!completed.moved || cancelled) cleanUpDrag(completed);
 
     let succeeded = !cancelled;
     if (completed.moved && !cancelled) {
@@ -242,6 +262,15 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
         succeeded = false;
       }
     }
+    if (succeeded && completed.moved) {
+      completed.moveSucceeded = true;
+      const rendered = renderedEntryRef.current;
+      if (
+        rendered.parentId === completed.expectedParentId
+        && rendered.position.x === completed.expectedPosition?.x
+        && rendered.position.y === completed.expectedPosition.y
+      ) cleanUpDrag(completed);
+    } else if (!succeeded) cleanUpDrag(completed);
     onDragEndRef.current(cancelled || !succeeded);
     if (completed.pointerType === "touch") {
       const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);

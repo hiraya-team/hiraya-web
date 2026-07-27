@@ -9,16 +9,34 @@ const catalogQuota = { storageBytes: { used: 12, limit: 100 }, desktops: { used:
 class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  addEventListener() {}
+  addEventListener(type: string, listener: EventListenerOrEventListenerObject) { void type; void listener; }
   close() {}
 }
 
 class CapturingEventSource extends FakeEventSource {
   static latest: CapturingEventSource | null = null;
+  private catalogListener: ((event: MessageEvent<string>) => void) | null = null;
   constructor(readonly url: string) {
     super();
     CapturingEventSource.latest = this;
   }
+  override addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
+    if (type === "catalog") this.catalogListener = listener as (event: MessageEvent<string>) => void;
+  }
+  emitCatalog(catalogId: string, catalogRevision: number) {
+    this.catalogListener?.({ data: JSON.stringify({ catalogId, catalogRevision }) } as MessageEvent<string>);
+  }
+}
+
+async function blockEngineQueue(engine: SyncEngine) {
+  let release!: () => void;
+  let markStarted!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  const started = new Promise<void>((resolve) => { markStarted = resolve; });
+  const queue = (engine as unknown as { queue(operation: () => Promise<void>): Promise<void> }).queue.bind(engine);
+  const pending = queue(async () => { markStarted(); await gate; });
+  await started;
+  return { release, pending };
 }
 
 function remoteStorage() {
@@ -393,7 +411,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk/root-entry-positions") return Response.json({});
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, setInterval: (() => 1) as never, clearInterval: (() => undefined) as never });
+    const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
     await engine.start("desk", { x: 100, y: 100 });
     await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
     expect(requests).toContain("GET /api/desktops/desk");
@@ -427,11 +445,108 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/sync/health") return Response.json({ catalogId: "catalog", catalogRevision: 1 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: CapturingEventSource as unknown as typeof EventSource, setInterval: (() => 1) as never, clearInterval: (() => undefined) as never });
+    const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: CapturingEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
     await engine.start("desk", { x: 0, y: 0 });
     CapturingEventSource.latest?.onerror?.();
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requests).toContain("/api/sync/health");
+    await engine.stop();
+  });
+
+  test("aborts health work on stop and ignores its stale completion after restart", async () => {
+    let healthSignal: AbortSignal | null = null;
+    let finishHealth!: (response: Response) => void;
+    let healthRequests = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/sync/health") {
+        healthRequests += 1;
+        healthSignal = init?.signal as AbortSignal;
+        return new Promise<Response>((resolve) => { finishHealth = resolve; });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const statuses: string[] = [];
+    const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: CapturingEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
+    engine.subscribe(() => undefined, (status) => statuses.push(status));
+
+    await engine.start("desk", { x: 0, y: 0 });
+    CapturingEventSource.latest?.onerror?.();
+    await Promise.resolve();
+    expect(healthRequests).toBe(1);
+    await engine.stop();
+    expect(healthSignal?.aborted).toBe(true);
+
+    await engine.start("desk", { x: 0, y: 0 });
+    finishHealth(Response.json({ catalogId: "stale", catalogRevision: 99 }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(statuses.at(-1)).toBe("online");
+    await engine.stop();
+  });
+
+  test("does not run queued onOpen work after stop and restart", async () => {
+    const requests: string[] = [];
+    const statuses: string[] = [];
+    const engine = new SyncEngine({
+      storage: remoteStorage(),
+      eventSource: CapturingEventSource as unknown as typeof EventSource,
+      setTimeout: (() => 1) as never,
+      clearTimeout: (() => undefined) as never,
+      fetch: (async (input) => {
+        requests.push(String(input));
+        if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+        throw new Error(`Unexpected request: ${String(input)}`);
+      }) as typeof fetch,
+    });
+    engine.subscribe(() => undefined, (status) => statuses.push(status));
+    await engine.start("desk", { x: 0, y: 0 });
+    const oldEvents = CapturingEventSource.latest!;
+    const blocked = await blockEngineQueue(engine);
+    oldEvents.onopen?.();
+    expect((engine as unknown as { pendingWork: number }).pendingWork).toBe(2);
+
+    const stopping = engine.stop();
+    await engine.start("desk", { x: 0, y: 0 });
+    const requestsBeforeRelease = requests.length;
+    blocked.release();
+    await Promise.all([blocked.pending, stopping]);
+    await Promise.resolve();
+
+    expect(requests).toHaveLength(requestsBeforeRelease);
+    expect(requests).not.toContain("/api/catalog");
+    expect(statuses.at(-1)).toBe("online");
+    await engine.stop();
+  });
+
+  test("does not let queued onCatalog work cross lifecycle generations", async () => {
+    const requests: string[] = [];
+    const engine = new SyncEngine({
+      storage: remoteStorage(),
+      eventSource: CapturingEventSource as unknown as typeof EventSource,
+      setTimeout: (() => 1) as never,
+      clearTimeout: (() => undefined) as never,
+      fetch: (async (input) => {
+        requests.push(String(input));
+        if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+        if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+        throw new Error(`Unexpected request: ${String(input)}`);
+      }) as typeof fetch,
+    });
+    await engine.start("desk", { x: 0, y: 0 });
+    const oldEvents = CapturingEventSource.latest!;
+    const blocked = await blockEngineQueue(engine);
+    oldEvents.emitCatalog("catalog", 99);
+    expect((engine as unknown as { pendingWork: number }).pendingWork).toBe(2);
+
+    const stopping = engine.stop();
+    await engine.start("desk", { x: 0, y: 0 });
+    const revisionAfterRestart = (engine as unknown as { catalogRevision: number }).catalogRevision;
+    blocked.release();
+    await Promise.all([blocked.pending, stopping]);
+
+    expect(requests).not.toContain("/api/catalog");
+    expect((engine as unknown as { catalogRevision: number }).catalogRevision).toBe(revisionAfterRestart);
     await engine.stop();
   });
 
@@ -449,8 +564,8 @@ describe("canonical synchronization", () => {
           throw new Error(`Unexpected request: ${String(input)}`);
         }) as typeof fetch,
         eventSource: eventSource as typeof EventSource | undefined,
-        setInterval: ((callback: () => void) => { healthCheck = callback; return 1; }) as never,
-        clearInterval: (() => { cleared += 1; }) as never,
+        setTimeout: ((callback: () => void) => { healthCheck = callback; return 1; }) as never,
+        clearTimeout: (() => { cleared += 1; }) as never,
       });
       expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("online");
       healthCheck?.();

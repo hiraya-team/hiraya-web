@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, TextDocumentState, writeRestrictionMessage } from "./editor";
+import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Text Editor document behavior", () => {
   test("keeps primary mobile actions at Hiraya's touch target size", async () => {
@@ -43,6 +43,35 @@ describe("Text Editor document behavior", () => {
     expect(state.saved("submitted", "submitted", 2)).toBe(false);
     expect(state).toMatchObject({ text: "submitted with newer input", persistedText: "submitted", revision: 2, remoteConflict: false });
     expect(state.dirty).toBe(true);
+  });
+
+  test("foreground opens supersede refreshes and block newer background work until finished", () => {
+    const operations = new TextDocumentOperations();
+    const refresh = operations.beginBackground();
+    expect(refresh).not.toBeNull();
+    const open = operations.beginForeground();
+    expect(operations.isBackgroundCurrent(refresh!)).toBe(false);
+    expect(operations.beginBackground()).toBeNull();
+    expect(operations.isForegroundCurrent(open)).toBe(true);
+    operations.finishForeground(open);
+    const nextRefresh = operations.beginBackground();
+    expect(nextRefresh).not.toBeNull();
+    expect(operations.isBackgroundCurrent(nextRefresh!)).toBe(true);
+  });
+
+  test("background refreshes never supersede an active foreground open", () => {
+    const operations = new TextDocumentOperations();
+    const open = operations.beginForeground();
+    expect(operations.beginBackground()).toBeNull();
+    expect(operations.isForegroundCurrent(open)).toBe(true);
+    operations.finishForeground(open);
+  });
+
+  test("enables recovery controls after initialization while capability-gating writes", () => {
+    expect(textEditorControlState(false, false, true)).toEqual({ open: false, settings: false, write: false });
+    expect(textEditorControlState(true, false, false)).toEqual({ open: true, settings: true, write: false });
+    expect(textEditorControlState(true, false, true)).toEqual({ open: true, settings: true, write: true });
+    expect(textEditorControlState(true, true, true).open).toBe(false);
   });
 
   test("applies formatting only when no newer edits arrived during the save", () => {

@@ -37,6 +37,7 @@ type AreaSwitcherProps = {
   onBeginDrag: (event: PointerEvent<HTMLButtonElement>, expanded: boolean) => void;
   onMoveDrag: (event: PointerEvent<HTMLButtonElement>) => void;
   onFinishDrag: (event: PointerEvent<HTMLButtonElement>, cancelled?: boolean) => void;
+  onCancelDrag: () => void;
   onToggle: () => void;
   onBeginGridSwipe: (event: PointerEvent<HTMLDivElement>) => void;
   onMoveGridSwipe: (event: PointerEvent<HTMLDivElement>) => void;
@@ -79,6 +80,7 @@ export function AreaSwitcher({
   onBeginDrag,
   onMoveDrag,
   onFinishDrag,
+  onCancelDrag,
   onToggle,
   onBeginGridSwipe,
   onMoveGridSwipe,
@@ -99,7 +101,7 @@ export function AreaSwitcher({
 
   return (
     <nav ref={rootRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} areas and open apps`}>
-      <button ref={handleRef} className="desktop-minimap__handle" type="button" aria-label={`${detailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={detailed} onClick={onToggle} onPointerDown={(event) => onBeginDrag(event, detailed)} onPointerMove={onMoveDrag} onPointerUp={onFinishDrag} onPointerCancel={(event) => onFinishDrag(event, true)}>
+      <button ref={handleRef} className="desktop-minimap__handle" type="button" aria-label={`${detailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={detailed} onClick={onToggle} onPointerDown={(event) => onBeginDrag(event, detailed)} onPointerMove={onMoveDrag} onPointerUp={onFinishDrag} onPointerCancel={(event) => onFinishDrag(event, true)} onLostPointerCapture={onCancelDrag}>
         <span aria-hidden="true" />
       </button>
       <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}>

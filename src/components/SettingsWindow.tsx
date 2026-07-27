@@ -236,6 +236,8 @@ export function SettingsWindow({
   const contentRef = useRef<HTMLDivElement>(null);
   const wallpaperUploadRef = useRef<HTMLInputElement>(null);
   const wallpaperCommitTimerRef = useRef<number | null>(null);
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  const previousPageRef = useRef(page);
   const draftSafeColorsRef = useRef<ThemeColors | null>(null);
   const pendingLayoutRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const mainThemesButtonRef = useRef<HTMLButtonElement>(null);
@@ -244,6 +246,7 @@ export function SettingsWindow({
   const themesHeadingRef = useRef<HTMLHeadingElement>(null);
   const activityHeadingRef = useRef<HTMLHeadingElement>(null);
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
+  onLayoutChangeRef.current = onLayoutChange;
   const mutationsDisabled = !canMutate || saving;
   const displayedLayout = layoutDraft.desktopId === activeDesktopId ? layoutDraft.layout : layout;
   const contrastIssues = draft ? themeContrastIssues(draft.definition) : [];
@@ -264,14 +267,19 @@ export function SettingsWindow({
 
   useEffect(() => {
     if (pendingLayoutRef.current?.desktopId === activeDesktopId) return;
+    const pending = pendingLayoutRef.current;
     if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
     wallpaperCommitTimerRef.current = null;
     pendingLayoutRef.current = null;
+    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
     setLayoutDraft({ desktopId: activeDesktopId, layout });
   }, [activeDesktopId, layout]);
 
   useEffect(() => () => {
     if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
+    const pending = pendingLayoutRef.current;
+    pendingLayoutRef.current = null;
+    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
   }, []);
 
   const commitWallpaperDraft = async () => {
@@ -281,6 +289,17 @@ export function SettingsWindow({
     pendingLayoutRef.current = null;
     if (pending) await onLayoutChange(pending.layout, pending.desktopId);
   };
+
+  useEffect(() => {
+    const previousPage = previousPageRef.current;
+    previousPageRef.current = page;
+    if (previousPage !== "themes" || page === "themes") return;
+    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
+    wallpaperCommitTimerRef.current = null;
+    const pending = pendingLayoutRef.current;
+    pendingLayoutRef.current = null;
+    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
+  }, [page]);
 
   const previewWallpaper = (wallpaper: DesktopLayout["wallpaper"]) => {
     const next = { ...displayedLayout, wallpaper };

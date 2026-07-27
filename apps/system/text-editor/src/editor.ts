@@ -29,6 +29,44 @@ export function formatText(name: string, text: string): string {
   return `${text.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").trimEnd()}\n`;
 }
 
+export function textEditorControlState(initialized: boolean, saving: boolean, canWrite: boolean) {
+  return {
+    open: initialized && !saving,
+    settings: initialized,
+    write: initialized && canWrite,
+  };
+}
+
+export class TextDocumentOperations {
+  #foreground = 0;
+  #background = 0;
+  #foregroundPending = false;
+
+  beginForeground(): number {
+    this.#foregroundPending = true;
+    this.#background += 1;
+    return ++this.#foreground;
+  }
+
+  finishForeground(generation: number): void {
+    if (generation === this.#foreground) this.#foregroundPending = false;
+  }
+
+  isForegroundCurrent(generation: number): boolean { return generation === this.#foreground; }
+
+  beginBackground(): number | null {
+    return this.#foregroundPending ? null : ++this.#background;
+  }
+
+  isBackgroundCurrent(generation: number): boolean { return generation === this.#background; }
+
+  invalidate(): void {
+    this.#foreground += 1;
+    this.#background += 1;
+    this.#foregroundPending = false;
+  }
+}
+
 export class TextDocumentState {
   text = "";
   persistedText = "";

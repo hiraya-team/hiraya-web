@@ -64,6 +64,25 @@ describe("strict outbox", () => {
     expect(projected.entries.find(({ id }) => id === file.id)).toMatchObject({ parentId: folder.id, name: "renamed.txt", size: 4 });
   });
 
+  test("replays a move with one persisted timestamp", () => {
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: null, createdAt: 1, modifiedAt: 2, position: { x: 10, y: 10 }, mimeType: "text/plain", size: 0 };
+    const operation = { schemaVersion: 1 as const, kind: "move-entries" as const, entryIds: [file.id], parentId: folder.id, modifiedAt: 1234 };
+    const initial = { ...state(), entries: [folder, file] };
+
+    const first = applyOutboxOperation(initial, operation);
+    const replayed = applyOutboxOperation(initial, normalizeOutboxOperation(JSON.parse(JSON.stringify(operation))));
+    expect(first.entries).toEqual(replayed.entries);
+    expect(first.entries.find(({ id }) => id === file.id)).toMatchObject({ parentId: folder.id, modifiedAt: 1234 });
+  });
+
+  test("replays legacy moves without inventing a timestamp", () => {
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: null, createdAt: 1, modifiedAt: 42, position: { x: 10, y: 10 }, mimeType: "text/plain", size: 0 };
+    const projected = applyOutboxOperation({ ...state(), entries: [folder, file] }, { schemaVersion: 1, kind: "move-entries", entryIds: [file.id], parentId: folder.id });
+    expect(projected.entries.find(({ id }) => id === file.id)?.modifiedAt).toBe(42);
+  });
+
   test("rejects operations whose parent is absent from the desktop", () => {
     const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: "missing", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "text/plain", size: 0 };
     expect(() => applyOutboxOperation(state(), { schemaVersion: 1, kind: "create", entries: [file] })).toThrow("missing parent folder");

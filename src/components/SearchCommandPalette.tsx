@@ -54,6 +54,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   const [remoteResponse, setRemoteResponse] = useState<DesktopSearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const searchGenerationRef = useRef(0);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const titleId = useId();
@@ -62,19 +63,23 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   useModalDialog(backdropRef, dialogRef, onClose);
 
   useEffect(() => {
+    const generation = ++searchGenerationRef.current;
     setRemoteResponse(null);
     setSearchError("");
+    setSearching(false);
     if (!searchAllDesktops || !allDesktopsAvailable || !online || query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSearching(true);
       void onSearchAllDesktops(query.trim(), controller.signal)
-        .then(setRemoteResponse)
+        .then((response) => {
+          if (searchGenerationRef.current === generation) setRemoteResponse(response);
+        })
         .catch((error) => {
-          if (!controller.signal.aborted) setSearchError(error instanceof Error ? error.message : "Search could not be completed.");
+          if (!controller.signal.aborted && searchGenerationRef.current === generation) setSearchError(error instanceof Error ? error.message : "Search could not be completed.");
         })
         .finally(() => {
-          if (!controller.signal.aborted) setSearching(false);
+          if (!controller.signal.aborted && searchGenerationRef.current === generation) setSearching(false);
         });
     }, 250);
     return () => {

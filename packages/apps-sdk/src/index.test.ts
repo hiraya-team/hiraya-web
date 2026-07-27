@@ -109,14 +109,17 @@ describe("apps SDK", () => {
 
   test("supports event unsubscribe", async () => {
     const channel = new MessageChannel();
+    channel.port2.onmessage = ({ data }) => channel.port2.postMessage({ protocolVersion: 1, type: "response", id: data.id, ok: true, result: "barrier" });
     const client = await connectHiraya({ port: channel.port1 });
     const received: string[] = [];
-    const unsubscribe = client.on("commands.invoked", ({ id }) => received.push(id));
+    let first!: () => void;
+    const delivered = new Promise<void>((resolve) => { first = resolve; });
+    const unsubscribe = client.on("commands.invoked", ({ id }) => { received.push(id); first(); });
     channel.port2.postMessage({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: "save" } });
-    await Bun.sleep(0);
+    await delivered;
     unsubscribe();
     channel.port2.postMessage({ protocolVersion: 1, type: "event", event: "commands.invoked", payload: { id: "open" } });
-    await Bun.sleep(0);
+    await client.storage.get("barrier");
     expect(received).toEqual(["save"]);
     client.close();
     channel.port2.close();
@@ -128,21 +131,29 @@ describe("apps SDK", () => {
     const client = await connectHiraya({ port: channel.port1 });
     expect(await client.app.getCapabilities()).toEqual({ files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false });
     const changes: boolean[] = [];
-    client.on("capabilities.changed", ({ files }) => changes.push(files.write));
+    let changed!: () => void;
+    const delivered = new Promise<void>((resolve) => { changed = resolve; });
+    client.on("capabilities.changed", ({ files }) => { changes.push(files.write); changed(); });
     channel.port2.postMessage({ protocolVersion: 1, type: "event", event: "capabilities.changed", payload: { files: { write: true, writeReason: "available" }, externalEmbeddedPreviews: false } });
-    await Bun.sleep(0);
+    await delivered;
     expect(changes).toEqual([true]);
     client.close();
     channel.port2.close();
   });
 
-  test("rejects requests on abort, timeout, and close", async () => {
+  test("keeps explicit deadlines local, supports abort, and rejects on close", async () => {
     const channel = new MessageChannel();
     const client = await connectHiraya({ port: channel.port1, requestTimeoutMs: 10 });
+    const preAborted = new AbortController();
+    preAborted.abort();
+    await expect(client.storage.get("key", { signal: preAborted.signal })).rejects.toEqual(expect.objectContaining({ code: "CANCELLED" }));
+    const request = new Promise<unknown>((resolve) => { channel.port2.onmessage = ({ data }) => resolve(data); });
     const controller = new AbortController();
-    const aborted = client.storage.get("key", { signal: controller.signal });
+    const inFlight = client.storage.get("key", { signal: controller.signal, timeoutMs: 120_000 });
+    const sent = await request;
+    expect(sent).toEqual({ protocolVersion: 1, type: "request", id: expect.any(String), method: "storage.get", params: { key: "key" } });
     controller.abort();
-    await expect(aborted).rejects.toEqual(expect.objectContaining({ code: "CANCELLED" }));
+    await expect(inFlight).rejects.toEqual(expect.objectContaining({ code: "CANCELLED" }));
     await expect(client.storage.get("key")).rejects.toEqual(expect.objectContaining({ code: "TIMEOUT" }));
     const pending = client.storage.get("key", { timeoutMs: 1_000 });
     client.close();

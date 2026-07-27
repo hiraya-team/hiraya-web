@@ -46,6 +46,20 @@ export interface RpcDispatcherOptions {
   maxRequestBytes?: number;
   maxRequestsPerSecond?: number;
   timeoutMs?: number;
+  longRunningTimeoutMs?: number;
+  timers?: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
+}
+
+export const DEFAULT_RPC_TIMEOUT_MS = 15_000;
+export const LONG_RUNNING_RPC_TIMEOUT_MS = 120_000;
+export const LONG_RUNNING_FILE_MUTATION_METHODS = [
+  "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite",
+  "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
+] as const satisfies readonly ServiceMethod[];
+const longRunningFileMutationMethods = new Set<ServiceMethod>(LONG_RUNNING_FILE_MUTATION_METHODS);
+
+export function usesLongRunningRpcDeadline(method: ServiceMethod): boolean {
+  return longRunningFileMutationMethods.has(method);
 }
 
 const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
@@ -63,6 +77,8 @@ export class RpcDispatcher {
   readonly #maxRequestBytes: number;
   readonly #maxRequestsPerSecond: number;
   readonly #timeoutMs: number;
+  readonly #longRunningTimeoutMs: number;
+  readonly #timers: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
   #port: MessagePort | null = null;
   #closed = false;
   #windowStarted = performance.now();
@@ -71,8 +87,13 @@ export class RpcDispatcher {
   constructor(private readonly options: RpcDispatcherOptions) {
     this.#maxRequestBytes = options.maxRequestBytes ?? 4 * 1024 * 1024;
     this.#maxRequestsPerSecond = options.maxRequestsPerSecond ?? 60;
-    this.#timeoutMs = options.timeoutMs ?? 15_000;
-    if (![this.#maxRequestBytes, this.#maxRequestsPerSecond, this.#timeoutMs].every((value) => Number.isFinite(value) && value > 0)) throw new TypeError("RPC limits must be positive.");
+    this.#timeoutMs = options.timeoutMs ?? DEFAULT_RPC_TIMEOUT_MS;
+    this.#longRunningTimeoutMs = options.longRunningTimeoutMs ?? LONG_RUNNING_RPC_TIMEOUT_MS;
+    this.#timers = options.timers ?? {
+      set: (callback, timeoutMs) => setTimeout(callback, timeoutMs) as unknown as number,
+      clear: (timer) => clearTimeout(timer),
+    };
+    if (![this.#maxRequestBytes, this.#maxRequestsPerSecond, this.#timeoutMs, this.#longRunningTimeoutMs].every((value) => Number.isFinite(value) && value > 0) || this.#longRunningTimeoutMs < this.#timeoutMs || this.#longRunningTimeoutMs > LONG_RUNNING_RPC_TIMEOUT_MS) throw new TypeError("RPC limits must be positive, ordered, and within the host cap.");
   }
 
   attach(port: MessagePort): void {
@@ -114,7 +135,8 @@ export class RpcDispatcher {
       const permission = METHOD_PERMISSION[request.method];
       const permissions = typeof this.options.permissions === "function" ? this.options.permissions() : this.options.permissions;
       if (permission && !new Set(permissions).has(permission)) throw rpcError("PERMISSION_DENIED", "The app does not have permission for this operation.");
-      const result = await withTimeout(this.#invoke(request), this.#timeoutMs);
+      const timeoutMs = usesLongRunningRpcDeadline(request.method) ? this.#longRunningTimeoutMs : this.#timeoutMs;
+      const result = await withTimeout(this.#invoke(request), timeoutMs, hasSideEffects(request.method), this.#timers);
       const parsed = parseServiceResult(request.method, result);
       const transfer = request.method === "files.read" || request.method === "files.readChunk" ? [(parsed as { data: ArrayBuffer }).data] : [];
       this.#post({ protocolVersion: APPS_PROTOCOL_VERSION, type: "response", id: request.id, ok: true, result: parsed }, transfer);
@@ -189,9 +211,16 @@ function estimateBytes(value: unknown, seen = new Set<object>()): number {
   return size;
 }
 
-async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number): Promise<T> {
+async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number, sideEffecting: boolean, timers: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void }): Promise<T> {
   let timer = 0;
   try {
-    return await Promise.race([Promise.resolve(operation), new Promise<never>((_, reject) => { timer = setTimeout(() => reject(rpcError("TIMEOUT", "The app request timed out.")), timeoutMs) as unknown as number; })]);
-  } finally { clearTimeout(timer); }
+    return await Promise.race([Promise.resolve(operation), new Promise<never>((_, reject) => { timer = timers.set(() => reject(rpcError(sideEffecting ? "INTERNAL" : "TIMEOUT", sideEffecting ? "The request deadline expired after the operation started; its outcome may be unknown." : "The app request timed out.")), timeoutMs); })]);
+  } finally { timers.clear(timer); }
+}
+
+function hasSideEffects(method: ServiceMethod): boolean {
+  return !new Set<ServiceMethod>([
+    "app.getLaunchContext", "app.getCapabilities", "files.stat", "files.read", "files.readChunk", "files.resolve", "files.list",
+    "host.getEntryStatus", "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm", "window.getState", "theme.get", "storage.get",
+  ]).has(method);
 }

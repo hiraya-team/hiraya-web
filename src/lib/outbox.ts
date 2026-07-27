@@ -12,7 +12,7 @@ export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "update-entry"; entry: DesktopEntry }
   | { kind: "delete"; entryId: string }
   | { kind: "delete-entries"; entryIds: string[] }
-  | { kind: "move-entries"; entryIds: string[]; parentId: string | null }
+  | { kind: "move-entries"; entryIds: string[]; parentId: string | null; modifiedAt?: number }
   | { kind: "entry-transfer"; entryIds: string[]; destinationDesktopId: string; parentId: string | null }
   | { kind: "save-content"; entry: FileEntry }
   | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[] }
@@ -159,7 +159,7 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
     case "delete-entries":
     case "move-entries":
       if (!Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id))) throw new Error("A queued entry operation has invalid entry IDs.");
-      if (operation.kind === "move-entries" && operation.parentId !== null && !isValidId(operation.parentId)) throw new Error("A queued move has an invalid parent ID.");
+      if (operation.kind === "move-entries" && (operation.parentId !== null && !isValidId(operation.parentId) || operation.modifiedAt !== undefined && (!Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0))) throw new Error("A queued move has an invalid parent or timestamp.");
       return operation;
     case "entry-transfer":
       if (!isValidId(operation.destinationDesktopId) || !Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id)) || operation.parentId !== null && !isValidId(operation.parentId)) throw new Error("A queued entry transfer has an unsupported format.");
@@ -243,7 +243,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     case "move-entries": {
       const moving = new Set(operation.entryIds);
       if (moving.size !== operation.entryIds.length || operation.entryIds.some((id) => !entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
-      entries = parseEntries(entries.map((entry) => moving.has(entry.id) ? { ...entry, parentId: operation.parentId, modifiedAt: Date.now() } : entry)) as DesktopEntry[];
+      entries = parseEntries(entries.map((entry) => moving.has(entry.id) ? { ...entry, parentId: operation.parentId, modifiedAt: operation.modifiedAt ?? entry.modifiedAt } : entry)) as DesktopEntry[];
       break;
     }
     case "save-content":

@@ -4,6 +4,7 @@ import { applyThemeTokens, bindTheme } from "@hiraya/apps-ui";
 export interface ConnectedApp {
   hiraya: HirayaClient;
   launch: LaunchContext;
+  onDispose(cleanup: () => void): () => void;
   dispose(): void;
 }
 
@@ -14,12 +15,18 @@ export async function connectSystemApp(appId: string): Promise<ConnectedApp> {
     const launch = await hiraya.app.getLaunchContext();
     applyThemeTokens(launch.theme);
     const unbindTheme = bindTheme(hiraya, launch.theme);
+    const cleanups = new Set<() => void>();
+    let disposed = false;
     const dispose = () => {
+      if (disposed) return;
+      disposed = true;
+      for (const cleanup of cleanups) cleanup();
+      cleanups.clear();
       unbindTheme();
       hiraya.close();
     };
     addEventListener("pagehide", dispose, { once: true });
-    return { hiraya, launch, dispose };
+    return { hiraya, launch, onDispose: (cleanup) => { cleanups.add(cleanup); return () => cleanups.delete(cleanup); }, dispose };
   } catch (error) {
     hiraya.close();
     throw error;
@@ -95,13 +102,41 @@ export function formatBytes(bytes: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
 }
 
-export function downloadBuffer(data: ArrayBuffer, mimeType: string, name: string): void {
-  const url = URL.createObjectURL(new Blob([data], { type: mimeType }));
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+export class LatestOperation {
+  #generation = 0;
+
+  begin(): number { return ++this.#generation; }
+  isLatest(generation: number): boolean { return generation === this.#generation; }
+  invalidate(): void { this.#generation += 1; }
+}
+
+export class DownloadUrlLease {
+  #url: string | null = null;
+  #disposed = false;
+
+  constructor(
+    private readonly urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL,
+    private readonly createAnchor: () => HTMLAnchorElement = () => document.createElement("a"),
+  ) {}
+
+  download(data: ArrayBuffer, mimeType: string, name: string): void {
+    if (this.#disposed) throw new Error("Download URL lease is closed.");
+    if (this.#url) this.urls.revokeObjectURL(this.#url);
+    const url = this.urls.createObjectURL(new Blob([data], { type: mimeType }));
+    this.#url = url;
+    const anchor = this.createAnchor();
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    anchor.remove();
+  }
+
+  dispose(): void {
+    if (this.#disposed) return;
+    this.#disposed = true;
+    if (this.#url) this.urls.revokeObjectURL(this.#url);
+    this.#url = null;
+  }
 }
 
 export function required<T extends Element>(selector: string): T {

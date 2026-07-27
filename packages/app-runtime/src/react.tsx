@@ -14,7 +14,7 @@ export function SandboxAppFrame({ package: appPackage, dispatcher, title, onNavi
     // Embedded CSP enforcement is experimental, but adds an earlier browser-level check where
     // supported. The srcdoc's meta policy remains authoritative elsewhere.
     frame.setAttribute("csp", csp);
-    const dispose = initializeSandboxFrame(frame, appPackage.manifest.id, dispatcher, () => onNavigationRef.current?.());
+    const dispose = initializeSandboxFrame(frame, appPackage.manifest.id, dispatcher, { onNavigation: () => onNavigationRef.current?.() });
     frame.srcdoc = materialized.html;
     return () => { dispose(); frame.removeAttribute("srcdoc"); materialized.revoke(); };
   }, [appPackage, csp, dispatcher]);

@@ -1,6 +1,6 @@
 import { HirayaSdkError, type FileHandle, type HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
-import { formatText, parseTextEditorSettings, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
+import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
 
 const APP_ID = "app.hiraya.text-editor";
@@ -9,12 +9,14 @@ const editor = required<HTMLTextAreaElement>("#editor");
 const status = required<HTMLElement>("#status");
 const title = required<HTMLElement>("#title");
 const documentState = new TextDocumentState();
+const operations = new TextDocumentOperations();
 let hiraya: HirayaClient;
 let handle: FileHandle | null = null;
 let name = "Untitled.txt";
 let settings = parseTextEditorSettings(undefined);
 let autoSaveTimer = 0;
 let saving = false;
+let initialized = false;
 let canWrite = false;
 let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
 
@@ -32,7 +34,7 @@ for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], [
   required<HTMLInputElement>(`#${id}`).addEventListener("change", (event) => void changeSettings({ ...settings, [key]: (event.target as HTMLInputElement).checked }));
 }
 addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (canWrite) void save(event.shiftKey); }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (initialized && canWrite) void save(event.shiftKey); }
 });
 void start();
 
@@ -40,6 +42,7 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
+    app.onDispose(() => { initialized = false; operations.invalidate(); clearTimeout(autoSaveTimer); });
     let copiedSettings: unknown;
     try { copiedSettings = app.launch.arguments[0] ? JSON.parse(app.launch.arguments[0]) : undefined; } catch { copiedSettings = undefined; }
     const stored = await hiraya.storage.get(SETTINGS_KEY);
@@ -48,10 +51,19 @@ async function start() {
     applySettings();
     applyCapabilities(await hiraya.app.getCapabilities());
     hiraya.on("capabilities.changed", applyCapabilities);
-    hiraya.on("commands.invoked", ({ id }) => id === "save" ? canWrite && void save(false) : id === "open" ? void open() : id === "format" ? canWrite && applyFormatting() : undefined);
+    hiraya.on("commands.invoked", ({ id }) => id === "save" ? initialized && !saving && canWrite && void save(false) : id === "open" ? initialized && !saving && void open() : id === "format" ? initialized && !saving && canWrite && applyFormatting() : undefined);
     hiraya.on("files.changed", ({ handles }) => { if (handle && handles.includes(handle)) void remoteChanged(); });
-    if (app.launch.files[0]) await load(app.launch.files[0]);
-    else if (canWrite) setStatus("Ready. Settings are stored for this browser and account.");
+    const launchFile = app.launch.files[0];
+    if (launchFile) {
+      const generation = operations.beginForeground();
+      try { await load(launchFile, generation); }
+      catch (error) { setStatus(describeError(error, "Could not open the launch file."), true); }
+      finally { operations.finishForeground(generation); }
+    }
+    initialized = true;
+    renderControlState();
+    publishCommands();
+    if (!launchFile) setStatus(canWrite ? "Ready. Settings are stored for this browser and account." : writeRestrictionMessage(writeReason, false));
   } catch (error) { setStatus(describeError(error, "Text Editor could not start."), true); }
 }
 
@@ -60,11 +72,15 @@ async function confirmDiscard() {
 }
 
 async function open() {
+  if (!initialized || saving) return;
+  const generation = operations.beginForeground();
   try {
     if (!await confirmDiscard()) return;
+    if (!operations.isForegroundCurrent(generation)) return;
     const selected = await hiraya.dialogs.openFile({ multiple: false });
-    if (selected?.[0]) await load(selected[0]);
-  } catch (error) { setStatus(describeError(error, "Could not open the file."), true); }
+    if (selected?.[0] && operations.isForegroundCurrent(generation)) await load(selected[0], generation);
+  } catch (error) { if (operations.isForegroundCurrent(generation)) setStatus(describeError(error, "Could not open the file."), true); }
+  finally { operations.finishForeground(generation); }
 }
 
 async function read(next: FileHandle) {
@@ -74,8 +90,8 @@ async function read(next: FileHandle) {
   return { entry: entry.metadata, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
 }
 
-async function load(next: FileHandle) {
-  const loaded = await read(next);
+async function load(next: FileHandle, generation: number) {
+  const loaded = await read(next); if (!operations.isForegroundCurrent(generation)) return;
   documentState.load(loaded.text, loaded.entry.contentRevision);
   editor.value = loaded.text;
   handle = next;
@@ -85,9 +101,12 @@ async function load(next: FileHandle) {
 }
 
 async function remoteChanged() {
-  if (!handle) return;
+  if (!handle || saving) return;
+  const generation = operations.beginBackground();
+  if (generation === null) return;
   try {
     const loaded = await read(handle);
+    if (!operations.isBackgroundCurrent(generation)) return;
     if (!documentState.remote(loaded.text, loaded.entry.contentRevision)) {
       setStatus("This file changed elsewhere. Your unsaved text is preserved; use Save as or review before replacing the remote version.", true);
       return;
@@ -96,12 +115,14 @@ async function remoteChanged() {
     name = loaded.entry.name;
     renderDirty();
     setStatus(`Reloaded ${name} after an external change.`);
-  } catch (error) { setStatus(describeError(error, "Could not reload the changed file."), true); }
+  } catch (error) { if (operations.isBackgroundCurrent(generation)) setStatus(describeError(error, "Could not reload the changed file."), true); }
 }
 
 async function save(saveAs: boolean) {
-  if (saving || !canWrite) return;
+  if (!initialized || saving || !canWrite) return;
   saving = true;
+  renderControlState();
+  publishCommands();
   clearTimeout(autoSaveTimer);
   try {
     let destination = saveAs ? null : handle;
@@ -128,11 +149,11 @@ async function save(saveAs: boolean) {
   } catch (error) {
     const message = error instanceof HirayaSdkError && error.code === "CONFLICT" ? "This file changed elsewhere. Your text is preserved; use Save as or review before replacing the remote version." : describeError(error, "Could not save the file.");
     setStatus(message, true);
-  } finally { saving = false; }
+  } finally { saving = false; renderControlState(); publishCommands(); }
 }
 
 function applyFormatting() {
-  if (!canWrite) return;
+  if (!initialized || !canWrite) return;
   try {
     editor.value = formatText(name, editor.value);
     documentState.edit(editor.value);
@@ -144,10 +165,12 @@ function applyFormatting() {
 
 function scheduleAutoSave() {
   clearTimeout(autoSaveTimer);
-  if (canWrite && settings.autoSave && handle && documentState.dirty && !documentState.remoteConflict) autoSaveTimer = setTimeout(() => void save(false), 750) as unknown as number;
+  if (initialized && canWrite && settings.autoSave && handle && documentState.dirty && !documentState.remoteConflict) autoSaveTimer = setTimeout(() => void save(false), 750) as unknown as number;
 }
 
 async function changeSettings(next: TextEditorSettings) {
+  if (!initialized) return;
+  if (settings.autoSave && !next.autoSave && autoSaveTimer) await save(false);
   settings = parseTextEditorSettings(next);
   applySettings();
   await hiraya.storage.set(SETTINGS_KEY, settings);
@@ -174,12 +197,22 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
   const restored = !canWrite && capabilities.files.write;
   canWrite = capabilities.files.write;
   writeReason = capabilities.files.writeReason;
-  editor.readOnly = !canWrite;
-  for (const id of ["save", "save-as", "format", "auto-save", "auto-format"]) required<HTMLButtonElement | HTMLInputElement>(`#${id}`).disabled = !canWrite;
-  required<HTMLElement>("#write-state").hidden = canWrite;
+  renderControlState();
   if (!canWrite) clearTimeout(autoSaveTimer);
   else scheduleAutoSave();
-  void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O" }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: canWrite }, { id: "format", title: "Format document", enabled: canWrite }]);
-  if (!canWrite || restored) setStatus(writeRestrictionMessage(writeReason, documentState.dirty), !canWrite && documentState.dirty);
+  publishCommands();
+  if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, documentState.dirty), !canWrite && documentState.dirty);
+}
+function renderControlState() {
+  const controls = textEditorControlState(initialized, saving, canWrite);
+  required<HTMLButtonElement>("#open").disabled = !controls.open;
+  required<HTMLSelectElement>("#font-size").disabled = !controls.settings;
+  required<HTMLInputElement>("#line-wrap").disabled = !controls.settings;
+  editor.readOnly = !controls.write;
+  for (const id of ["save", "save-as", "format", "auto-save", "auto-format"]) required<HTMLButtonElement | HTMLInputElement>(`#${id}`).disabled = !controls.write;
+  required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
+}
+function publishCommands() {
+  void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && canWrite }, { id: "format", title: "Format document", enabled: initialized && !saving && canWrite }]);
 }
 function setStatus(message: string, error = false) { status.textContent = message; status.classList.toggle("error", error); }

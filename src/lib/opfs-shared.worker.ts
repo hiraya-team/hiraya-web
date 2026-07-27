@@ -1,8 +1,10 @@
 /// <reference lib="webworker" />
 
 import type { StorageDbRequest, StorageDbResponse } from "./opfs-db-protocol";
+import { heartbeatDecision, type HeartbeatProbe } from "../platform/storage/worker-liveness";
 
 const ENGINE_TIMEOUT_MS = 30_000;
+const HEARTBEAT_INTERVAL_MS = 2_000;
 const pending = new Map<number, { port: MessagePort; requestId: number }>();
 const queued: Array<{ port: MessagePort; request: StorageDbRequest }> = [];
 const clients = new Set<MessagePort>();
@@ -11,8 +13,8 @@ let engine: MessagePort | null = null;
 let hostRequested = false;
 let hostRequestId = 0;
 let hostRequestedAt = 0;
-let heartbeatId: number | null = null;
-let heartbeatSentAt = 0;
+let hostCandidate: MessagePort | null = null;
+let heartbeat: HeartbeatProbe | null = null;
 let engineHost: MessagePort | null = null;
 
 function requestHost(candidate?: MessagePort) {
@@ -20,14 +22,19 @@ function requestHost(candidate?: MessagePort) {
   if (!hostRequested) {
     hostRequested = true;
     hostRequestId += 1;
-    hostRequestedAt = Date.now();
+    hostRequestedAt = performance.now();
   }
   if (candidate) {
+    hostCandidate = candidate;
     candidate.postMessage({ type: "need-engine", requestId: hostRequestId });
     return;
   }
-  const first = clients.values().next().value;
-  first?.postMessage({ type: "need-engine", requestId: hostRequestId });
+  const candidates = [...clients];
+  const next = candidates[(candidates.indexOf(hostCandidate!) + 1) % candidates.length];
+  if (next) {
+    hostCandidate = next;
+    next.postMessage({ type: "need-engine", requestId: hostRequestId });
+  }
 }
 
 function loseEngine(message: string) {
@@ -36,8 +43,7 @@ function loseEngine(message: string) {
   engine?.close();
   engine = null;
   engineHost = null;
-  heartbeatId = null;
-  heartbeatSentAt = 0;
+  heartbeat = null;
   hostRequested = false;
   hostRequestedAt = 0;
   for (const destination of pending.values()) {
@@ -55,9 +61,8 @@ function failEngine(message: string) {
 }
 
 function handleEngineMessage(event: MessageEvent<StorageDbResponse>) {
-  if (event.data.id === heartbeatId) {
-    heartbeatId = null;
-    heartbeatSentAt = 0;
+  if (event.data.id === heartbeat?.id) {
+    heartbeat = null;
     return;
   }
   const destination = pending.get(event.data.id);
@@ -101,8 +106,7 @@ scope.onconnect = (event) => {
       engineHost = port;
       hostRequested = false;
       hostRequestedAt = 0;
-      heartbeatId = null;
-      heartbeatSentAt = 0;
+      heartbeat = null;
       engine.onmessage = handleEngineMessage;
       engine.start();
       for (const item of queued.splice(0)) forward(item.port, item.request);
@@ -127,17 +131,25 @@ scope.onconnect = (event) => {
 };
 
 setInterval(() => {
+  const now = performance.now();
   if (!engine) {
-    if (hostRequested && Date.now() - hostRequestedAt > ENGINE_TIMEOUT_MS) hostRequested = false;
+    if (hostRequested && now - hostRequestedAt > ENGINE_TIMEOUT_MS) {
+      hostRequested = false;
+      hostRequestId += 1;
+    }
     requestHost();
     return;
   }
-  if (heartbeatId !== null && Date.now() - heartbeatSentAt > ENGINE_TIMEOUT_MS) {
+  const decision = heartbeatDecision(heartbeat, now, HEARTBEAT_INTERVAL_MS);
+  if (decision === "expired") {
     loseEngine("The local database owner changed. Retry the operation.");
     return;
   }
-  if (heartbeatId !== null) return;
-  heartbeatId = ++engineRequestId;
-  heartbeatSentAt = Date.now();
-  engine.postMessage({ id: heartbeatId, desktopId: null, method: "ping", params: undefined });
-}, 2_000);
+  if (decision === "wait") {
+    heartbeat!.checkedAt = now;
+    return;
+  }
+  const id = ++engineRequestId;
+  heartbeat = { id, checkedAt: now, deadline: now + ENGINE_TIMEOUT_MS };
+  engine.postMessage({ id, desktopId: null, method: "ping", params: undefined });
+}, HEARTBEAT_INTERVAL_MS);

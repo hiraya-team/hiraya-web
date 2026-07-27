@@ -107,7 +107,8 @@ describe("accessibility regressions", () => {
     expect(areaSwitcher).not.toContain('className="desktop-minimap__pull-tab"');
     expect(app).toContain('if (owner === "areaEditor") {');
     expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
-    expect(app).toContain("if (drag.expanded) collapseAreaMap();");
+    expect(app).toContain("if (settlement.nextExpanded) openAreaMap();");
+    expect(areaSwitcher).toContain("onLostPointerCapture={onCancelDrag}");
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
     expect(app).toContain("if (isMobile) collapseAreaMap();");
     expect(app).not.toContain("if (isMobile) collapseAreaMap(false);");

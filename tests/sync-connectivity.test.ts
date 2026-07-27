@@ -1,0 +1,65 @@
+import { expect, test } from "bun:test";
+import { SyncConnectivity } from "../src/platform/sync/connectivity";
+
+class TestEventSource {
+  static latest: TestEventSource | null = null;
+  onopen: (() => void) | null = null;
+  onerror: (() => void) | null = null;
+  constructor(readonly url: string) { TestEventSource.latest = this; }
+  addEventListener() {}
+  close() {}
+}
+
+test("coalesces fallback polling and SSE probes and schedules after completion", async () => {
+  let timerId = 0;
+  const timers = new Map<number, { callback: () => void; delay: number }>();
+  const setTimeoutImpl = ((callback: () => void, delay: number) => {
+    const id = ++timerId;
+    timers.set(id, { callback, delay });
+    return id;
+  }) as typeof globalThis.setTimeout;
+  const clearTimeoutImpl = ((id: number) => { timers.delete(id); }) as typeof globalThis.clearTimeout;
+  let checks = 0;
+  let finish!: () => void;
+  const connectivity = new SyncConnectivity(TestEventSource as unknown as typeof EventSource, setTimeoutImpl, clearTimeoutImpl, "/events");
+  connectivity.start({
+    onOpen: () => undefined,
+    onError: () => undefined,
+    onCatalog: () => undefined,
+    onPoll: async () => { checks += 1; await new Promise<void>((resolve) => { finish = resolve; }); },
+  });
+
+  const [firstId, first] = [...timers.entries()][0];
+  timers.delete(firstId);
+  first.callback();
+  TestEventSource.latest?.onerror?.();
+  await Promise.resolve();
+  expect(checks).toBe(1);
+  expect(timers.size).toBe(0);
+
+  finish();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect([...timers.values()]).toEqual([{ callback: expect.any(Function), delay: 5_000 }]);
+  connectivity.stop();
+});
+
+test("does not reschedule a completed probe from a stopped generation", async () => {
+  let timerId = 0;
+  const timers = new Map<number, () => void>();
+  let finish!: () => void;
+  const connectivity = new SyncConnectivity(
+    undefined,
+    ((callback: () => void) => { const id = ++timerId; timers.set(id, callback); return id; }) as typeof globalThis.setTimeout,
+    ((id: number) => { timers.delete(id); }) as typeof globalThis.clearTimeout,
+    "/events",
+  );
+  connectivity.start({ onOpen: () => undefined, onError: () => undefined, onCatalog: () => undefined, onPoll: () => new Promise<void>((resolve) => { finish = resolve; }) });
+  const [id, callback] = [...timers.entries()][0];
+  timers.delete(id);
+  callback();
+  await Promise.resolve();
+  connectivity.stop();
+  finish();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(timers.size).toBe(0);
+});

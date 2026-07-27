@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
@@ -124,7 +124,7 @@ import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, swipeAxis, swipePreviewReady } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, swipeAxis, swipePreviewReady } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
@@ -138,10 +138,14 @@ import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { useAppPlatform } from "./features/app-management/controller";
 import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
 import { useDesktopSelection } from "./features/selection/controller";
+import { waitForAnimations } from "./ui/animation-completion";
+import { enteredEdge } from "./ui/edge-entry";
+import { settleAreaSwitcherDrag, type AreaSwitcherDrag, type AreaSwitcherDragSettlement } from "./ui/area-switcher-drag";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
-type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
+type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 const DESKTOP_LONG_PRESS_MS = 500;
+const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
 
@@ -272,6 +276,9 @@ function App({ session }: { session: AuthSession | null }) {
   const areaTransitionGenerationRef = useRef(0);
   const areaTransitionRef = useRef<AreaTransition | null>(null);
   const completeAreaTransitionRef = useRef<() => void>(() => undefined);
+  const stopAreaTransitionWaitRef = useRef<(() => void) | null>(null);
+  const areaTransitionNavigationRef = useRef<{ generation: number; mode: "push" | "replace"; route: DesktopRoute } | null>(null);
+  const immediateAreaTransitionRef = useRef<{ generation: number; target: SurfaceSegment } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
   const directoryRef = useRef<HTMLInputElement>(null);
   const uploadParentRef = useRef<string | null>(null);
@@ -290,7 +297,8 @@ function App({ session }: { session: AuthSession | null }) {
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
   const areaSwitcherInternalActivationRef = useRef(false);
-  const areaSwitcherDragRef = useRef<{ expanded: boolean; moved: boolean; pointerId: number; startX: number; travel: number } | null>(null);
+  const areaSwitcherDragRef = useRef<AreaSwitcherDrag | null>(null);
+  const areaSwitcherTransformTargetRef = useRef<boolean | null>(null);
   const suppressAreaSwitcherClickRef = useRef(false);
   const minimapSwipeRef = useRef<{
     axis: "x" | "y" | null;
@@ -307,8 +315,8 @@ function App({ session }: { session: AuthSession | null }) {
   const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
   const handleImportRef = useRef<(files: File[], parentId: string | null, base?: EntryPosition) => Promise<void>>(async () => undefined);
-  const edgeDragRef = useRef({ direction: "", time: 0 });
-  const windowEdgeDragRef = useRef({ direction: "", time: 0 });
+  const edgeDragRef = useRef({ inside: false });
+  const windowEdgeDragRef = useRef({ inside: false });
   const edgeNavigationRef = useRef<{
     route: DesktopRoute;
     historyState: unknown;
@@ -517,6 +525,12 @@ function App({ session }: { session: AuthSession | null }) {
       areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
+  }, [minimapExpanded]);
+
+  useLayoutEffect(() => {
+    if (areaSwitcherTransformTargetRef.current !== minimapExpanded) return;
+    areaSwitcherTransformTargetRef.current = null;
+    areaSwitcherRef.current?.style.removeProperty("--area-switcher-x");
   }, [minimapExpanded]);
 
   useEffect(() => {
@@ -2861,6 +2875,10 @@ function App({ session }: { session: AuthSession | null }) {
 
   function completeAreaTransition() {
     areaTransitionGenerationRef.current += 1;
+    areaTransitionNavigationRef.current = null;
+    immediateAreaTransitionRef.current = null;
+    stopAreaTransitionWaitRef.current?.();
+    stopAreaTransitionWaitRef.current = null;
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
     areaTransitionTimerRef.current = null;
     setAreaTransition(null);
@@ -2870,13 +2888,48 @@ function App({ session }: { session: AuthSession | null }) {
   }
   completeAreaTransitionRef.current = completeAreaTransition;
 
-  function scheduleAreaTransitionCompletion(generation: number) {
+  useEffect(() => {
+    if (areaTransition?.phase !== "preparing") return;
+    const pending = areaTransitionNavigationRef.current;
+    if (!pending || pending.generation !== areaTransition.id || areaTransitionGenerationRef.current !== areaTransition.id) return;
+    setAreaTransition({ ...areaTransition, destination: areaTransition.target, phase: "settling" });
+    navigateRouteRef.current(pending.route, pending.mode);
+  }, [areaTransition]);
+
+  useLayoutEffect(() => {
+    const pending = immediateAreaTransitionRef.current;
+    if (!pending || pending.generation !== areaTransition?.id || activeSegmentKey !== segmentKey(pending.target)) return;
+    immediateAreaTransitionRef.current = null;
+    completeAreaTransitionRef.current();
+  }, [activeSegmentKey, areaTransition?.id]);
+
+  useLayoutEffect(() => {
+    if (areaTransition?.phase !== "settling" || !areaTransition.destination || activeSegmentKey !== segmentKey(areaTransition.destination)) return;
+    const generation = areaTransition.id;
+    if (areaTransition.kind === "gesture") {
+      resetAreaTrackTransform();
+      setAreaTransitionDepth(0);
+    }
+    if (activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      completeAreaTransitionRef.current();
+      return;
+    }
+
+    stopAreaTransitionWaitRef.current?.();
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
     areaTransitionTimerRef.current = window.setTimeout(() => {
-      if (areaTransitionGenerationRef.current !== generation) return;
-      completeAreaTransition();
-    }, Math.max(80, 500 * activeTheme.motion));
-  }
+      if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
+    }, AREA_TRANSITION_WATCHDOG_MS);
+    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-stage, .desktop-area-frame") ?? [];
+    let completedSynchronously = false;
+    const stop = waitForAnimations([...hosts], () => {
+      completedSynchronously = true;
+      if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
+    });
+    if (!completedSynchronously) stopAreaTransitionWaitRef.current = stop;
+    else stop();
+    return () => stop();
+  }, [activeSegmentKey, activeTheme.motion, areaTransition?.destination, areaTransition?.id, areaTransition?.kind, areaTransition?.phase]);
 
   function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null, focusDestinationApp = true, animate = true) {
     const currentRoute = routeRef.current;
@@ -2894,22 +2947,14 @@ function App({ session }: { session: AuthSession | null }) {
       const camera = areaCameraPosition(segment, desktopSizeRef.current);
       setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "interactive", kind: "gesture" });
       setAreaTrackTransform(camera.x, camera.y);
+      immediateAreaTransitionRef.current = { generation, target: segment };
       navigateRoute(destinationRoute, mode);
-      window.requestAnimationFrame(() => {
-        if (areaTransitionGenerationRef.current !== generation) return;
-        completeAreaTransition();
-      });
       return;
     }
     setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
     const generation = ++areaTransitionGenerationRef.current;
     setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "preparing", kind: "programmatic" });
-    window.requestAnimationFrame(() => {
-      if (areaTransitionGenerationRef.current !== generation) return;
-      setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "settling", kind: "programmatic" });
-      navigateRoute(destinationRoute, mode);
-      scheduleAreaTransitionCompletion(generation);
-    });
+    areaTransitionNavigationRef.current = { generation, mode, route: destinationRoute };
   }
 
   function appIsMaximized(app: RunningApp) {
@@ -3047,13 +3092,8 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function handleIconDragAtEdge(entry: DesktopEntry, clientX: number, clientY: number) {
-    const edge = edgeAt(clientX, clientY);
-    if (!edge) {
-      edgeDragRef.current.direction = "";
-      return null;
-    }
-    const now = performance.now();
-    if (edgeDragRef.current.direction === edge.direction && now - edgeDragRef.current.time < 520) return null;
+    const edge = enteredEdge(edgeDragRef.current, edgeAt(clientX, clientY));
+    if (!edge) return null;
     const previousSegment = edgeNavigationRef.current?.targetSegment ?? activeSegment;
     const targetSegment = {
       column: previousSegment.column + (edge.direction === "left" ? -1 : edge.direction === "right" ? 1 : 0),
@@ -3068,7 +3108,6 @@ function App({ session }: { session: AuthSession | null }) {
     const sourceSegment = projectLogicalPosition(entry.position, desktopSize).segment;
     const transfer = areaTransferDelta(previousSegment, targetSegment, desktopSize);
     const targetOffset = areaTransferDelta(sourceSegment, targetSegment, desktopSize);
-    edgeDragRef.current = { direction: edge.direction, time: now };
     goToSegment(targetSegment, "replace", undefined, true, false);
     return {
       deltaX: transfer.x,
@@ -3081,13 +3120,8 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function handleWindowDragAtEdge(appId: string, clientX: number, clientY: number, localBounds: WindowBounds) {
-    const edge = edgeAt(clientX, clientY);
-    if (!edge) {
-      windowEdgeDragRef.current.direction = "";
-      return null;
-    }
-    const now = performance.now();
-    if (windowEdgeDragRef.current.direction === edge.direction && now - windowEdgeDragRef.current.time < 520) return null;
+    const edge = enteredEdge(windowEdgeDragRef.current, edgeAt(clientX, clientY));
+    if (!edge) return null;
     const app = runningAppsRef.current.find((candidate) => candidate.id === appId);
     if (!app) return null;
     const previousSegment = windowEdgeNavigationRef.current?.targetSegment ?? segmentForApp(app);
@@ -3103,7 +3137,6 @@ function App({ session }: { session: AuthSession | null }) {
     const logicalBounds = { ...localBounds, ...restoreLogicalPosition(localBounds, targetSegment, desktopSize) };
     const movedApp = { ...app, bounds: logicalBounds };
     pending.targetSegment = targetSegment;
-    windowEdgeDragRef.current = { direction: edge.direction, time: now };
     updateRunningApps((current) => current.map((candidate) => (candidate.id === appId ? movedApp : candidate)));
     goToSegment(targetSegment, "replace", movedApp, true, false);
     return localBounds;
@@ -3112,7 +3145,7 @@ function App({ session }: { session: AuthSession | null }) {
   function finishWindowEdgeNavigation(appId: string, cancelled: boolean) {
     const pending = windowEdgeNavigationRef.current;
     windowEdgeNavigationRef.current = null;
-    windowEdgeDragRef.current.direction = "";
+    windowEdgeDragRef.current.inside = false;
     if (!pending || pending.appId !== appId) return;
     const finalRoute = routeRef.current;
     window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
@@ -3128,7 +3161,7 @@ function App({ session }: { session: AuthSession | null }) {
   function finishEdgeNavigation(cancelled: boolean) {
     const pending = edgeNavigationRef.current;
     edgeNavigationRef.current = null;
-    edgeDragRef.current.direction = "";
+    edgeDragRef.current.inside = false;
     if (!pending) return;
     const finalRoute = routeRef.current;
     window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
@@ -3247,12 +3280,7 @@ function App({ session }: { session: AuthSession | null }) {
     const transitionTarget = swipe.axis ? adjacentSwipeArea(swipe.startSegment, swipe.axis, swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY) : swipe.startSegment;
     const generation = swipe.transitionId ?? ++areaTransitionGenerationRef.current;
     if (swipe.axis) {
-      setAreaTransition({ id: generation, source: swipe.startSegment, target: transitionTarget, phase: "settling", kind: "gesture" });
-      window.requestAnimationFrame(() => {
-        if (areaTransitionGenerationRef.current !== generation) return;
-        resetAreaTrackTransform();
-        setAreaTransitionDepth(0);
-      });
+      setAreaTransition({ id: generation, source: swipe.startSegment, target: transitionTarget, destination: nextSegment ?? swipe.startSegment, phase: "settling", kind: "gesture" });
     }
     if (canvasRef.current) {
       delete canvasRef.current.dataset.swiping;
@@ -3266,9 +3294,6 @@ function App({ session }: { session: AuthSession | null }) {
       setFocusedApp(nextApp?.id ?? null);
       setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(nextSegment)}`);
       navigateRoute(routeForApp(nextApp, { ...routeRef.current, ...nextSegment }));
-    }
-    if (swipe.axis) {
-      scheduleAreaTransitionCompletion(generation);
     }
   }
 
@@ -3393,6 +3418,7 @@ function App({ session }: { session: AuthSession | null }) {
     const edgeInset = switcher ? Number.parseFloat(window.getComputedStyle(switcher).right) || 0 : 0;
     const travel = Math.max(0, width - 44 + edgeInset);
     areaSwitcherDragRef.current = { expanded, moved: false, pointerId: event.pointerId, startX: event.clientX, travel };
+    event.currentTarget.addEventListener("lostpointercapture", cancelAreaSwitcherDrag, { once: true });
     event.currentTarget.setPointerCapture(event.pointerId);
     areaSwitcherRef.current?.setAttribute("data-dragging", "");
     areaSwitcherRef.current?.style.setProperty("--area-switcher-x", `${expanded ? 0 : travel}px`);
@@ -3407,19 +3433,29 @@ function App({ session }: { session: AuthSession | null }) {
     areaSwitcherRef.current?.style.setProperty("--area-switcher-x", `${position}px`);
   }
 
-  function finishAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
-    const drag = areaSwitcherDragRef.current;
-    if (!drag || drag.pointerId !== event.pointerId) return;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    const deltaX = event.clientX - drag.startX;
-    areaSwitcherDragRef.current = null;
-    suppressAreaSwitcherClickRef.current = drag.moved;
-    areaSwitcherRef.current?.removeAttribute("data-dragging");
-    if (!cancelled && areaSwitcherDragCommits(deltaX, drag.expanded, drag.travel)) {
-      if (drag.expanded) collapseAreaMap();
-      else openAreaMap();
+  function applyAreaSwitcherDragSettlement(settlement: AreaSwitcherDragSettlement) {
+    suppressAreaSwitcherClickRef.current = settlement.suppressClick;
+    if (settlement.removeDraggingAttribute) areaSwitcherRef.current?.removeAttribute("data-dragging");
+    if (settlement.nextExpanded !== null) {
+      areaSwitcherTransformTargetRef.current = settlement.nextExpanded;
+      if (settlement.nextExpanded) openAreaMap();
+      else collapseAreaMap();
+    } else if (settlement.clearTransform) {
+      areaSwitcherTransformTargetRef.current = null;
+      areaSwitcherRef.current?.style.removeProperty("--area-switcher-x");
     }
-    window.requestAnimationFrame(() => areaSwitcherRef.current?.style.removeProperty("--area-switcher-x"));
+  }
+
+  function finishAreaSwitcherDrag(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
+    const settlement = settleAreaSwitcherDrag(areaSwitcherDragRef, { kind: "pointer", cancelled, clientX: event.clientX, pointerId: event.pointerId });
+    if (!settlement) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    applyAreaSwitcherDragSettlement(settlement);
+  }
+
+  function cancelAreaSwitcherDrag() {
+    const settlement = settleAreaSwitcherDrag(areaSwitcherDragRef, { kind: "lost-capture" });
+    if (settlement) applyAreaSwitcherDragSettlement(settlement);
   }
 
   function toggleAreaSwitcher() {
@@ -3817,10 +3853,6 @@ function App({ session }: { session: AuthSession | null }) {
           <div
             className="desktop-canvas desktop-area-track"
             ref={canvasRef}
-            onTransitionEnd={(event) => {
-              if (event.target !== event.currentTarget || event.propertyName !== "transform" || areaTransition?.phase !== "settling") return;
-              completeAreaTransition();
-            }}
             style={{
               width: desktopSize.width,
               height: desktopSize.height,
@@ -4216,6 +4248,7 @@ function App({ session }: { session: AuthSession | null }) {
         onBeginDrag={beginAreaSwitcherDrag}
         onMoveDrag={moveAreaSwitcherDrag}
         onFinishDrag={finishAreaSwitcherDrag}
+        onCancelDrag={cancelAreaSwitcherDrag}
         onToggle={toggleAreaSwitcher}
         onBeginGridSwipe={beginExpandedMinimapSwipe}
         onMoveGridSwipe={moveExpandedMinimapSwipe}

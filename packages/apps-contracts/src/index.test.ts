@@ -74,7 +74,9 @@ describe("apps contracts", () => {
   });
 
   test("strictly validates method params, results, and event payloads", () => {
-    expect(parseRpcRequest({ protocolVersion: 1, type: "request", id: "r1", method: "window.setDirty", params: { dirty: true } })).toEqual(expect.objectContaining({ params: { dirty: true } }));
+    const oldSdkRequest = { protocolVersion: 1, type: "request", id: "r1", method: "window.setDirty", params: { dirty: true } };
+    expect(parseRpcRequest(oldSdkRequest)).toEqual(oldSdkRequest);
+    expect(() => parseRpcRequest({ ...oldSdkRequest, timeoutMs: 120_000 })).toThrow("unsupported shape");
     expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r1", method: "window.setDirty", params: { dirty: "true" } })).toThrow("dirty");
     expect(() => parseRpcRequest({ protocolVersion: 1, type: "request", id: "r1", method: "storage.get", params: { key: "x", extra: true } })).toThrow("unsupported shape");
     expect(parseServiceResult("dialogs.confirm", true)).toBe(true);

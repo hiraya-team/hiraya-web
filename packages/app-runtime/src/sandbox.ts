@@ -121,20 +121,34 @@ export function isAppPackageName(name: string): boolean {
   return name.toLowerCase().endsWith(".hiraya.app");
 }
 
-export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, onNavigation?: () => void, timeoutMs = 10_000): () => void {
-  let disposed = false;
+export type SandboxFrameState = "boot" | "connected" | "ready" | "disposed";
+
+export interface SandboxFrameOptions {
+  onNavigation?(): void;
+  onStateChange?(state: SandboxFrameState): void;
+  bootTimeoutMs?: number;
+  timers?: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
+}
+
+export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, options: SandboxFrameOptions = {}): () => void {
+  let state: SandboxFrameState = "boot";
   let channel: MessageChannel | null = null;
   let timer = 0;
-  let initialLoadComplete = false;
+  let initialDocumentLoaded = false;
+  const timers = options.timers ?? {
+    set: (callback: () => void, timeoutMs: number) => setTimeout(callback, timeoutMs) as unknown as number,
+    clear: (timer: number) => clearTimeout(timer),
+  };
+  const transition = (next: SandboxFrameState) => { state = next; options.onStateChange?.(next); };
   const onLoad = () => {
-    if (!initialLoadComplete) { initialLoadComplete = true; return; }
-    if (disposed) return;
+    if (!initialDocumentLoaded) { initialDocumentLoaded = true; return; }
+    if (state === "disposed") return;
     dispose();
     frame.replaceWith(document.createElement("iframe"));
-    onNavigation?.();
+    options.onNavigation?.();
   };
   const onConnect = (event: MessageEvent<unknown>) => {
-    if (disposed || channel || event.source !== frame.contentWindow || !frame.contentWindow) return;
+    if (state !== "boot" || channel || event.source !== frame.contentWindow || !frame.contentWindow) return;
     let connect;
     try {
       connect = parseAppConnect(event.data);
@@ -142,33 +156,38 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     } catch {
       return;
     }
+    transition("connected");
     channel = new MessageChannel();
     const nonce = crypto.randomUUID().replaceAll("-", "");
     const onReady = (event: MessageEvent<unknown>) => {
       try {
         const ready = parseAppReady(event.data);
         if (ready.appId !== appId || ready.nonce !== nonce) throw new TypeError("App handshake does not match the launched package.");
-        clearTimeout(timer);
+        timers.clear(timer);
         channel?.port1.removeEventListener("message", onReady);
         dispatcher.attach(channel!.port1);
+        transition("ready");
       } catch { dispose(); }
     };
     channel.port1.addEventListener("message", onReady);
     channel.port1.start();
-    timer = setTimeout(dispose, timeoutMs) as unknown as number;
     frame.contentWindow.postMessage({ protocolVersion: APPS_PROTOCOL_VERSION, type: "hiraya:init", appId, nonce }, "*", [channel.port2]);
   };
   const dispose = (closeDispatcher = true) => {
-    if (disposed) return;
-    disposed = true;
-    clearTimeout(timer);
+    if (state === "disposed") return;
+    timers.clear(timer);
     window.removeEventListener("message", onConnect);
     frame.removeEventListener("load", onLoad);
     channel?.port1.close();
     channel?.port2.close();
     if (closeDispatcher) dispatcher.dispose();
     else dispatcher.detach();
+    transition("disposed");
   };
+  const timeoutMs = options.bootTimeoutMs ?? 10_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError("App boot timeout must be positive.");
+  options.onStateChange?.(state);
+  timer = timers.set(dispose, timeoutMs);
   window.addEventListener("message", onConnect);
   frame.addEventListener("load", onLoad);
   return () => dispose(false);

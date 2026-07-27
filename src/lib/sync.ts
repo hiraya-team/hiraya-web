@@ -26,13 +26,20 @@ type OutboxOperationInput = OutboxOperation extends infer Operation
 
 export type SyncStatus = "connecting" | "online" | "offline" | "blocked" | "local";
 export type DesktopRegistry = { schemaVersion: 1; catalogId: string | null; catalogRevision: number; desktops: DesktopIdentity[]; activeDesktopId: string | null; quota: CatalogQuota | null };
+const HEALTH_TIMEOUT_MS = 10_000;
 
 export async function fetchServerBuildTimestamp(fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  const response = await fetchImpl(API_ROUTES.health, { cache: "no-store" });
-  if (!response.ok) throw new Error("The Hiraya server is unavailable.");
-  const health = await response.json() as unknown;
-  if (typeof health !== "object" || health === null || !("buildTimestamp" in health) || typeof health.buildTimestamp !== "string") return null;
-  return health.buildTimestamp || null;
+  const controller = new AbortController();
+  const deadline = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
+  try {
+    const response = await fetchImpl(API_ROUTES.health, { cache: "no-store", signal: controller.signal });
+    if (!response.ok) throw new Error("The Hiraya server is unavailable.");
+    const health = await response.json() as unknown;
+    if (typeof health !== "object" || health === null || !("buildTimestamp" in health) || typeof health.buildTimestamp !== "string") return null;
+    return health.buildTimestamp || null;
+  } finally {
+    globalThis.clearTimeout(deadline);
+  }
 }
 
 export type OfflineOperationProgress = {
@@ -53,8 +60,8 @@ export type SyncEngineOptions = {
   frontendOnly?: boolean;
   fetch?: typeof fetch;
   eventSource?: typeof EventSource;
-  setInterval?: typeof globalThis.setInterval;
-  clearInterval?: typeof globalThis.clearInterval;
+  setTimeout?: typeof globalThis.setTimeout;
+  clearTimeout?: typeof globalThis.clearTimeout;
   storage?: SyncStorage;
   onUnauthorized?: () => void;
 };
@@ -132,6 +139,7 @@ export class SyncEngine {
   private running = false;
   private authenticationPaused = false;
   private generation = 0;
+  private healthAbort: AbortController | null = null;
   private desktopId = "";
   private catalogId: string | null = null;
   private catalogRevision = 0;
@@ -163,8 +171,8 @@ export class SyncEngine {
     });
     this.connectivity = new SyncConnectivity(
       "eventSource" in options ? options.eventSource : globalThis.EventSource,
-      options.setInterval ?? globalThis.setInterval.bind(globalThis),
-      options.clearInterval ?? globalThis.clearInterval.bind(globalThis),
+      options.setTimeout ?? globalThis.setTimeout.bind(globalThis),
+      options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis),
       API_ROUTES.events,
     );
   }
@@ -213,6 +221,8 @@ export class SyncEngine {
     this.generation += 1;
     this.startPromise = null;
     this.connectivity.stop();
+    this.healthAbort?.abort();
+    this.healthAbort = null;
     this.contentLoads.clear();
     this.offlineInventoryLoad = null;
     this.offlineRefresh = null;
@@ -308,8 +318,9 @@ export class SyncEngine {
     return records.some((record) => record.catalogId === this.catalogId && record.status === "blocked" && (!isAccessRevocationRecord(record) || outboxOperationDesktopIds(record).has(this.desktopId)));
   }
 
-  private async updateStatusFromOutbox() {
+  private async updateStatusFromOutbox(generation?: number, desktopId?: string) {
     const records = await this.storage.readOutbox();
+    if (generation !== undefined && desktopId !== undefined) this.assertActiveSession(generation, desktopId);
     this.setStatus(this.activeDesktopIsBlocked(records) ? "blocked" : "online");
     return records;
   }
@@ -328,6 +339,15 @@ export class SyncEngine {
     if (!this.running || this.generation !== generation) {
       throw new DOMException("Desktop synchronization was stopped.", "AbortError");
     }
+  }
+
+  private sessionIsActive(generation: number, desktopId: string) {
+    return this.running && this.generation === generation && this.desktopId === desktopId;
+  }
+
+  private assertActiveSession(generation: number, desktopId: string) {
+    this.assertActive(generation);
+    if (this.desktopId !== desktopId) throw new DOMException("The active desktop changed.", "AbortError");
   }
 
   private queue<T>(operation: () => Promise<T>) {
@@ -357,6 +377,8 @@ export class SyncEngine {
     if (this.authenticationPaused) return;
     this.authenticationPaused = true;
     this.connectivity.stop();
+    this.healthAbort?.abort();
+    this.healthAbort = null;
     this.setStatus("connecting");
   }
 
@@ -400,8 +422,7 @@ export class SyncEngine {
     return this.reconcileActiveWithCreateRecovery(undefined, generation);
   }
 
-  private async reconcile(acknowledgedOperationId?: string, desktopId = this.desktopId) {
-    const generation = this.generation;
+  private async reconcile(acknowledgedOperationId?: string, desktopId = this.desktopId, generation = this.generation) {
     const remote = await this.fetchDesktop(desktopId);
     this.assertActive(generation);
     await this.bindOutboxCatalog(remote.catalogId);
@@ -435,12 +456,12 @@ export class SyncEngine {
     try {
       await this.sendOutboxOperation(record);
       if (record.operation.kind === "create-desktop" && record.operation.desktop.id === this.desktopId) {
-        await this.reconcile(record.operationId, this.desktopId);
+        await this.reconcile(record.operationId, this.desktopId, generation);
       } else if (record.operation.kind === "entry-transfer") {
-        await this.reconcile(record.operationId, record.desktopId);
-        await this.reconcile(undefined, record.operation.destinationDesktopId);
+        await this.reconcile(record.operationId, record.desktopId, generation);
+        await this.reconcile(undefined, record.operation.destinationDesktopId, generation);
       } else if (record.operation.kind !== "create-desktop" && record.operation.kind !== "rename-desktop" && record.operation.kind !== "delete-desktop") {
-        await this.reconcile(record.operationId, record.desktopId);
+        await this.reconcile(record.operationId, record.desktopId, generation);
       }
       await this.storage.acknowledgeMutation(record.operationId);
       await this.publishOutbox();
@@ -453,14 +474,15 @@ export class SyncEngine {
     }
   }
 
-  private async replayThroughActiveDesktopCreation(generation: number) {
+  private async replayThroughActiveDesktopCreation(generation: number, desktopId = this.desktopId) {
     const records = await this.storage.readOutbox();
-    const createIndex = records.findIndex((record) => record.operation.kind === "create-desktop" && record.operation.desktop.id === this.desktopId);
+    this.assertActiveSession(generation, desktopId);
+    const createIndex = records.findIndex((record) => record.operation.kind === "create-desktop" && record.operation.desktop.id === desktopId);
     if (createIndex < 0) return false;
     for (const record of records.slice(0, createIndex + 1)) {
       const ownerDesktopId = record.desktopId;
-      const createsActiveDesktop = record.operation.kind === "create-desktop" && record.operation.desktop.id === this.desktopId;
-      if (ownerDesktopId === this.desktopId && !createsActiveDesktop) {
+      const createsActiveDesktop = record.operation.kind === "create-desktop" && record.operation.desktop.id === desktopId;
+      if (ownerDesktopId === desktopId && !createsActiveDesktop) {
         const message = "A desktop mutation is ordered before its pending desktop creation.";
         await this.storage.blockMutation(record.operationId, message);
         await this.publishOutbox();
@@ -471,60 +493,73 @@ export class SyncEngine {
     return true;
   }
 
-  private async reconcileActiveWithCreateRecovery(acknowledgedOperationId?: string, generation = this.generation) {
+  private async reconcileActiveWithCreateRecovery(acknowledgedOperationId?: string, generation = this.generation, desktopId = this.desktopId) {
     try {
-      return await this.reconcile(acknowledgedOperationId, this.desktopId);
+      return await this.reconcile(acknowledgedOperationId, desktopId, generation);
     } catch (error) {
-      if (!(error instanceof SyncRequestError) || error.status !== 404 || !await this.replayThroughActiveDesktopCreation(generation)) throw error;
-      return this.reconcile(acknowledgedOperationId, this.desktopId);
+      if (!(error instanceof SyncRequestError) || error.status !== 404 || !await this.replayThroughActiveDesktopCreation(generation, desktopId)) throw error;
+      return this.reconcile(acknowledgedOperationId, desktopId, generation);
     }
   }
 
-  private async replayOutbox(generation = this.generation) {
+  private async replayOutbox(generation = this.generation, activeDesktopId?: string) {
+    if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
     if (!this.catalogId) {
       const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.catalog, { cache: "no-store" }));
+      if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
       this.catalogRevision = catalog.catalogRevision;
       await this.bindOutboxCatalog(catalog.catalogId);
     } else {
       await this.bindOutboxCatalog(this.catalogId);
     }
+    if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
     const records = (await this.storage.readOutbox()).filter((candidate) => candidate.catalogId === this.catalogId);
+    if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
     const revokedDesktopIds = new Set(records.filter(isAccessRevocationRecord).flatMap((record) => [...outboxOperationDesktopIds(record)]));
     for (const record of records) {
       if (isAccessRevocationRecord(record) || [...outboxOperationDesktopIds(record)].some((id) => revokedDesktopIds.has(id))) continue;
       try {
         await this.replayRecord(record, generation);
+        if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
       } catch (error) {
         if (!(error instanceof SyncRequestError) || error.status !== 403) throw error;
         for (const id of outboxOperationDesktopIds(record)) revokedDesktopIds.add(id);
       }
     }
-    await this.updateStatusFromOutbox();
+    await this.updateStatusFromOutbox(generation, activeDesktopId);
+    if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
   }
 
   private startEvents() {
+    const generation = this.generation;
+    const desktopId = this.desktopId;
     this.connectivity.start({
       onOpen: () => {
-      if (!this.running) return;
+      if (!this.sessionIsActive(generation, desktopId)) return;
       if (this.status === "blocked") return;
       if (this.status !== "online") this.setStatus("connecting");
       void this.queue(async () => {
-        const catalog = await this.refreshCatalog();
-        if (catalog.desktops.some((desktop) => desktop.id === this.desktopId)) await this.reconcileActiveWithCreateRecovery();
-        return this.replayOutbox();
+        this.assertActiveSession(generation, desktopId);
+        const catalog = await this.refreshCatalog(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
+        if (catalog.desktops.some((desktop) => desktop.id === desktopId)) {
+          await this.reconcileActiveWithCreateRecovery(undefined, generation, desktopId);
+          this.assertActiveSession(generation, desktopId);
+        }
+        await this.replayOutbox(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
       }).then(() => {
-        if (this.running && this.status !== "blocked") this.setStatus("online");
+        if (this.sessionIsActive(generation, desktopId) && this.status !== "blocked") this.setStatus("online");
       }).catch((error) => {
-        if (this.running) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
+        if (this.sessionIsActive(generation, desktopId)) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
       });
       },
       onError: () => {
-      if (!this.running || this.status === "blocked" || this.authenticationPaused) return;
+      if (!this.sessionIsActive(generation, desktopId) || this.status === "blocked" || this.authenticationPaused) return;
       this.setStatus("offline");
-      void this.checkHealth();
       },
       onCatalog: (event) => {
-      if (!this.running) return;
+      if (!this.sessionIsActive(generation, desktopId)) return;
       if (this.status === "blocked") return;
       let revision = Number.NaN;
       let catalogId = "";
@@ -539,25 +574,36 @@ export class SyncEngine {
       }
       if (!Number.isSafeInteger(revision)) return;
       if (catalogId === this.catalogId && revision <= this.catalogRevision) return;
-      this.catalogRevision = revision;
       void this.queue(async () => {
-        const catalog = await this.refreshCatalog();
-        if (catalog.desktops.some((desktop) => desktop.id === this.desktopId)) await this.reconcileActiveWithCreateRecovery();
-        await this.replayOutbox();
-      }).catch(() => {
-        if (this.running) this.setStatus("offline");
+        this.assertActiveSession(generation, desktopId);
+        if (revision > this.catalogRevision) this.catalogRevision = revision;
+        const catalog = await this.refreshCatalog(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
+        if (catalog.desktops.some((desktop) => desktop.id === desktopId)) {
+          await this.reconcileActiveWithCreateRecovery(undefined, generation, desktopId);
+          this.assertActiveSession(generation, desktopId);
+        }
+        await this.replayOutbox(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
+      }).catch((error) => {
+        if (this.sessionIsActive(generation, desktopId)) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
       });
       },
-      onPoll: () => { void this.checkHealth(); },
+      onPoll: () => this.checkHealth(generation, desktopId),
     });
   }
 
-  private async checkHealth() {
-    if (!this.running) return;
+  private async checkHealth(generation: number, desktopId: string) {
+    if (!this.sessionIsActive(generation, desktopId) || this.authenticationPaused) return;
+    const controller = new AbortController();
+    this.healthAbort = controller;
+    const deadline = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
-      const response = this.requireAuthentication(await this.fetchImpl(this.healthRoute(), { cache: "no-store", credentials: "same-origin" }));
+      const response = this.requireAuthentication(await this.fetchImpl(this.healthRoute(), { cache: "no-store", credentials: "same-origin", signal: controller.signal }));
+      this.assertActiveSession(generation, desktopId);
       if (!response.ok) throw new Error("unhealthy");
       const health = await response.json() as unknown;
+      this.assertActiveSession(generation, desktopId);
       const revision = typeof health === "object" && health !== null && "catalogRevision" in health ? Number((health as { catalogRevision: unknown }).catalogRevision) : Number.NaN;
       const catalogId = typeof health === "object" && health !== null && "catalogId" in health && typeof health.catalogId === "string" ? health.catalogId : "";
       if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("invalid health response");
@@ -565,15 +611,27 @@ export class SyncEngine {
       const wasOffline = this.status === "offline";
       if (wasOffline) this.setStatus("connecting");
       const changed = catalogId !== this.current().sync.catalogId || revision > this.catalogRevision;
-      if (revision > this.catalogRevision) this.catalogRevision = revision;
       if (wasOffline || changed) await this.queue(async () => {
-        const catalog = await this.refreshCatalog();
-        if (catalog.desktops.some((desktop) => desktop.id === this.desktopId)) await this.reconcileActiveWithCreateRecovery();
-        await this.replayOutbox();
+        this.assertActiveSession(generation, desktopId);
+        if (revision > this.catalogRevision) this.catalogRevision = revision;
+        const catalog = await this.refreshCatalog(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
+        if (catalog.desktops.some((desktop) => desktop.id === desktopId)) {
+          await this.reconcileActiveWithCreateRecovery(undefined, generation, desktopId);
+          this.assertActiveSession(generation, desktopId);
+        }
+        await this.replayOutbox(generation, desktopId);
+        this.assertActiveSession(generation, desktopId);
       });
-      if (this.running) await this.updateStatusFromOutbox();
+      else if (revision > this.catalogRevision) this.catalogRevision = revision;
+      this.assertActiveSession(generation, desktopId);
+      await this.updateStatusFromOutbox(generation, desktopId);
+      this.assertActiveSession(generation, desktopId);
     } catch (error) {
-      if (this.running && !(error instanceof AuthenticationRequiredError)) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
+      if (this.sessionIsActive(generation, desktopId) && !(error instanceof AuthenticationRequiredError)) this.setStatus(error instanceof SyncRequestError && error.permanent ? "blocked" : "offline");
+    } finally {
+      globalThis.clearTimeout(deadline);
+      if (this.healthAbort === controller) this.healthAbort = null;
     }
   }
 
@@ -715,7 +773,7 @@ export class SyncEngine {
     const unique = [...new Set(ids)];
     if (!unique.length || unique.length !== ids.length || unique.some((id) => !this.current().entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
     this.assertParent(parentId);
-    return this.mutate({ kind: "move-entries", entryIds: unique, parentId }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
+    return this.mutate({ kind: "move-entries", entryIds: unique, parentId, modifiedAt: Date.now() }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
   }
 
   transferEntries(destinationDesktopId: string, ids: string[], parentId: string | null) {
@@ -800,8 +858,10 @@ export class SyncEngine {
     }
   }
 
-  async refreshCatalog() {
-    return this.publishCatalog(await this.listDesktops());
+  async refreshCatalog(generation?: number, desktopId?: string) {
+    const catalog = await this.listDesktops();
+    if (generation !== undefined && desktopId !== undefined) this.assertActiveSession(generation, desktopId);
+    return this.publishCatalog(catalog);
   }
 
   async renameDesktop(desktopId: string, name: string) {
