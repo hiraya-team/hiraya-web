@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
+import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, ClockCountdown, CloudCheck, CloudSlash, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SpinnerGap, SquaresFour, Trash, UploadSimple, WarningCircle, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -396,7 +396,8 @@ function App({ session }: { session: AuthSession | null }) {
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
-  const syncIndicatorStatus = syncStatus === "online" && isSyncing ? "syncing" : syncStatus;
+  const hasPendingSync = outboxRecords.some((record) => record.status === "pending");
+  const syncIndicatorStatus = syncStatus === "online" && isSyncing ? "syncing" : syncStatus === "online" && hasPendingSync ? "waiting" : syncStatus;
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
   const actionSheetOpen = isMobile && Boolean(contextMenu);
   const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
@@ -1118,7 +1119,6 @@ function App({ session }: { session: AuthSession | null }) {
       (nextStatus) => {
         if (!active) return;
         setSyncStatus(nextStatus);
-        if (nextStatus === "online") setLastSyncedAt(Date.now());
       },
       (syncing) => {
         if (active) setIsSyncing(syncing);
@@ -1281,6 +1281,10 @@ function App({ session }: { session: AuthSession | null }) {
     window.addEventListener("beforeunload", warnBeforeUnload);
     return () => window.removeEventListener("beforeunload", warnBeforeUnload);
   }, []);
+
+  useEffect(() => {
+    if (syncStatus === "online" && !isSyncing && outboxRecords.length === 0) setLastSyncedAt(Date.now());
+  }, [isSyncing, outboxRecords.length, syncStatus]);
 
   useEffect(() => {
     if (syncStatus !== "online" || serverBuildTimestamp) return;
@@ -2092,7 +2096,7 @@ function App({ session }: { session: AuthSession | null }) {
       setOfflineProgress(null);
       const desktop = await switchLocalDesktop(desktopId);
       await applyActivatedDesktopState(desktopId, desktop);
-      await initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) });
+      await initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, null, { backgroundServer: true });
       await loadOfflineInventory();
       if (activationGenerationRef.current !== token || activeDesktopIdRef.current !== desktopId) throw new Error("Desktop activation lost ownership.");
       return true;
@@ -2102,7 +2106,7 @@ function App({ session }: { session: AuthSession | null }) {
           await stopDesktopSync();
           const previous = await switchLocalDesktop(previousDesktopId);
           await applyActivatedDesktopState(previousDesktopId, previous);
-          await initializeDesktop(previousDesktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) });
+          await initializeDesktop(previousDesktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, null, { backgroundServer: true });
           await loadOfflineInventory();
         } catch (rollbackError) {
           setError(rollbackError instanceof Error ? `Desktop activation failed and rollback failed: ${rollbackError.message}` : "Desktop activation and rollback failed.");
@@ -2230,7 +2234,7 @@ function App({ session }: { session: AuthSession | null }) {
         return restoreLogicalPosition(localPosition, activeSegment, desktopSize);
       };
       const plan = buildImportPlan(sources, { destinationParentId: parentId, existingEntries: entriesRef.current, positionForRoot });
-      setImportProgress({ folderCount: plan.folderCount, fileCount: plan.fileCount, totalBytes: plan.totalBytes, phase: syncStatus === "online" ? "syncing" : "saving" });
+      setImportProgress({ folderCount: plan.folderCount, fileCount: plan.fileCount, totalBytes: plan.totalBytes, phase: "saving" });
       importOperationIsCurrent(context);
       const imported = await createEntries(plan.entries, plan.contents);
       setEntries((current) => {
@@ -2662,6 +2666,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function makeAvailableOffline(rootIds: string[]) {
     if (offlineBusy) return;
+    const desktopId = activeDesktopIdRef.current;
     setOfflineBusy(true);
     setError("");
     try {
@@ -2676,6 +2681,9 @@ function App({ session }: { session: AuthSession | null }) {
       )
         return;
       await setOfflinePinIntent(estimate.roots, true);
+      if (syncStatus !== "offline") void refreshPinnedContent(estimate.roots).catch((reason) => {
+        if (activeDesktopIdRef.current === desktopId) setError(reason instanceof Error ? reason.message : "Pinned files could not be downloaded.");
+      });
       setNotice(syncStatus === "offline" ? "Offline pin saved. Download will occur after reconnect." : `${estimate.fileCount} ${estimate.fileCount === 1 ? "file is" : "files are"} available or updating for offline use`);
       setContextMenu(null);
     } catch (availabilityError) {
@@ -3533,7 +3541,7 @@ function App({ session }: { session: AuthSession | null }) {
   const hiddenNotificationCount = notificationVisibility.hidden;
   const hiddenTrashNotifications = trashNotifications.slice(visibleTrashNotifications.length);
   const hiddenAppNotifications = appNotifications.slice(visibleAppNotifications.length);
-  const syncTone: StatusTone = syncIndicatorStatus === "online" || syncIndicatorStatus === "local" ? "success" : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? "progress" : "danger";
+  const syncTone: StatusTone = syncIndicatorStatus === "online" || syncIndicatorStatus === "local" ? "success" : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? "progress" : syncIndicatorStatus === "waiting" ? "neutral" : "danger";
   const shellAnnouncement = error ? "" : importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : notice || (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? ""));
 
   return (
@@ -3631,8 +3639,8 @@ function App({ session }: { session: AuthSession | null }) {
           {!isMobile && (
             <button className="menu-bar__sync" data-status={syncIndicatorStatus} type="button" aria-label="Open Connection and Offline" onClick={() => setActivePanel("sync")}>
               <StatusBadge tone={syncTone} surface="chrome">
-                {syncIndicatorStatus === "local" ? <HardDrive size={15} /> : syncIndicatorStatus === "online" ? <CloudCheck size={15} /> : syncIndicatorStatus === "blocked" ? <WarningCircle size={15} weight="fill" /> : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? <SpinnerGap size={15} /> : <CloudSlash size={15} />}
-                <span>{syncIndicatorStatus === "local" ? "Saved locally" : syncIndicatorStatus === "syncing" ? "Syncing" : syncIndicatorStatus === "online" ? "Synced" : syncIndicatorStatus === "connecting" ? "Connecting" : syncIndicatorStatus === "blocked" ? "Sync blocked" : "Offline"}</span>
+                {syncIndicatorStatus === "local" ? <HardDrive size={15} /> : syncIndicatorStatus === "online" ? <CloudCheck size={15} /> : syncIndicatorStatus === "waiting" ? <ClockCountdown size={15} /> : syncIndicatorStatus === "blocked" ? <WarningCircle size={15} weight="fill" /> : syncIndicatorStatus === "connecting" || syncIndicatorStatus === "syncing" ? <SpinnerGap size={15} /> : <CloudSlash size={15} />}
+                <span>{syncIndicatorStatus === "local" ? "Saved locally" : syncIndicatorStatus === "syncing" ? "Syncing in background" : syncIndicatorStatus === "waiting" ? "Waiting to sync" : syncIndicatorStatus === "online" ? "Synced" : syncIndicatorStatus === "connecting" ? "Connecting" : syncIndicatorStatus === "blocked" ? "Sync blocked" : "Offline"}</span>
               </StatusBadge>
             </button>
           )}

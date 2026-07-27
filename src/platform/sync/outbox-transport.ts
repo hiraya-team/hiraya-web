@@ -7,6 +7,7 @@ import { SyncRequestError } from "./http-client";
 
 type OutboxTransportDependencies = {
   fetch: typeof fetch;
+  signal?: AbortSignal;
   requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown>;
   requireAuthentication(response: Response): Response;
   readPendingContent(operationId: string, entryId: string): Promise<Blob>;
@@ -33,6 +34,7 @@ async function abortBlobMutation(record: OutboxRecord, uploadId: string, depende
       headers: idempotencyHeaders(record),
       credentials: "same-origin",
       cache: "no-store",
+      signal: dependencies.signal,
     });
     dependencies.requireAuthentication(response);
   } catch {
@@ -69,8 +71,10 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
           credentials: "omit",
           referrerPolicy: "no-referrer",
           redirect: "error",
+          signal: dependencies.signal,
         });
-      } catch {
+      } catch (error) {
+        if (dependencies.signal?.aborted) throw error;
         throw new SyncRequestError("Direct file upload failed. The change remains queued.", null, false);
       }
       if (!response.ok) throw new SyncRequestError(`Direct file upload failed (${response.status}). The change remains queued.`, null, false);

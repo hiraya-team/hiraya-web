@@ -33,10 +33,22 @@ async function blockEngineQueue(engine: SyncEngine) {
   let markStarted!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
   const started = new Promise<void>((resolve) => { markStarted = resolve; });
-  const queue = (engine as unknown as { queue(operation: () => Promise<void>): Promise<void> }).queue.bind(engine);
+  const queue = (engine as unknown as { queueSync(operation: () => Promise<void>): Promise<void> }).queueSync.bind(engine);
   const pending = queue(async () => { markStarted(); await gate; });
   await started;
   return { release, pending };
+}
+
+async function waitFor(condition: () => boolean | Promise<boolean>, message = "Timed out waiting for background synchronization.") {
+  const deadline = Date.now() + 2_000;
+  while (!await condition()) {
+    if (Date.now() >= deadline) throw new Error(message);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+}
+
+async function waitForOutboxDrain(engine: SyncEngine) {
+  await waitFor(async () => (await engine.getOutboxStatus()).records.length === 0);
 }
 
 function remoteStorage() {
@@ -122,6 +134,113 @@ function remoteStorage() {
 }
 
 describe("canonical synchronization", () => {
+  test("commits later interactions locally while an earlier replay is still in flight", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    let releasePosition!: () => void;
+    let markPositionStarted!: () => void;
+    const positionGate = new Promise<void>((resolve) => { releasePosition = resolve; });
+    const positionStarted = new Promise<void>((resolve) => { markPositionStarted = resolve; });
+    const requests: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const request = `${init?.method ?? "GET"} ${String(input)}`;
+      requests.push(request);
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/root-entry-positions") {
+        markPositionStarted();
+        await positionGate;
+        remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: { x: 20, y: 30 }, revision: 2 }] };
+        return Response.json({});
+      }
+      if (String(input) === "/api/desktops/desk/layout") {
+        remote = { ...remote, catalogRevision: 3, layout: { ...remote.layout, snapToGrid: true }, layoutRevision: 3 };
+        return Response.json({});
+      }
+      throw new Error(`Unexpected request: ${request}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    let latest = desktopStateSnapshot();
+    engine.subscribe((desktop) => { latest = desktop; }, () => undefined);
+    await engine.start("desk", { x: 0, y: 0 });
+
+    await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
+    await positionStarted;
+    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+
+    expect(latest.entries[0].position).toEqual({ x: 20, y: 30 });
+    expect(latest.layout.snapToGrid).toBe(true);
+    expect(await engine.getOutboxStatus()).toMatchObject({ pending: 2, blocked: 0 });
+    expect(requests).not.toContain("PUT /api/desktops/desk/layout");
+
+    releasePosition();
+    await waitForOutboxDrain(engine);
+    expect(requests.indexOf("PUT /api/desktops/desk/root-entry-positions")).toBeLessThan(requests.indexOf("PUT /api/desktops/desk/layout"));
+    await engine.stop();
+  });
+
+  test("stops immediately and starts a new generation while stale replay transport is blocked", async () => {
+    const storage = remoteStorage();
+    const remote = remoteDesktopState();
+    let replayCalls = 0;
+    let staleSignal: AbortSignal | undefined;
+    const statuses: string[] = [];
+    let markReplayStarted!: () => void;
+    const replayStarted = new Promise<void>((resolve) => { markReplayStarted = resolve; });
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/root-entry-positions") {
+        replayCalls += 1;
+        if (replayCalls === 1) {
+          staleSignal = init?.signal ?? undefined;
+          markReplayStarted();
+          return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => setTimeout(() => reject(new TypeError("stale transport failed")), 0), { once: true }));
+        }
+        return Response.json({});
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    engine.subscribe(() => undefined, (status) => statuses.push(status));
+    await engine.start("desk", { x: 0, y: 0 });
+    await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 7, y: 8 } }]);
+    await replayStarted;
+
+    await engine.stop();
+    expect(staleSignal?.aborted).toBe(true);
+
+    expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("online");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(replayCalls).toBe(2);
+    expect(statuses.at(-1)).toBe("online");
+    expect((await engine.getOutboxStatus()).records).toEqual([]);
+    await engine.stop();
+  });
+
+  test("does not let an uncached clipboard read block desktop synchronization shutdown", async () => {
+    const storage = remoteStorage();
+    let descriptorSignal: AbortSignal | undefined;
+    let markDescriptorStarted!: () => void;
+    const descriptorStarted = new Promise<void>((resolve) => { markDescriptorStarted = resolve; });
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") {
+        descriptorSignal = init?.signal ?? undefined;
+        markDescriptorStarted();
+        return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new TypeError("stale descriptor failed")), { once: true }));
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+
+    const capturing = engine.captureEntries(["file-1"]).then(() => null, (error: unknown) => error);
+    await descriptorStarted;
+    await engine.stop();
+
+    expect(descriptorSignal?.aborted).toBe(true);
+    expect(await capturing).toMatchObject({ name: "AbortError" });
+  });
+
   test("projects a complete imported hierarchy as one offline create operation", async () => {
     const storage = remoteStorage();
     const engine = new SyncEngine({ storage, fetch: (async () => { throw new TypeError("offline"); }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -414,6 +533,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
     await engine.start("desk", { x: 100, y: 100 });
     await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
+    await waitFor(() => requests.includes("PUT /api/desktops/desk/root-entry-positions"));
     expect(requests).toContain("GET /api/desktops/desk");
     expect(requests).toContain("PUT /api/desktops/desk/root-entry-positions");
     await engine.stop();
@@ -430,7 +550,8 @@ describe("canonical synchronization", () => {
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, onUnauthorized: () => { unauthorized += 1; } });
     await engine.start("desk", { x: 0, y: 0 });
-    await expect(engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 5, y: 6 } }])).rejects.toThrow("session has expired");
+    await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 5, y: 6 } }]);
+    await waitFor(() => unauthorized === 1);
     expect(await engine.getOutboxStatus()).toMatchObject({ pending: 1, blocked: 0 });
     expect(storage.stats.blockWrites).toBe(0);
     expect(unauthorized).toBe(1);
@@ -659,6 +780,8 @@ describe("canonical synchronization", () => {
 
     await engine.setOfflinePinIntent(["file-1"], true);
     expect((await engine.loadOfflineInventory()).pinIds).toEqual(["file-1"]);
+    void engine.refreshPinnedContent(["file-1"]);
+    await waitFor(() => engine.isFileAvailableOffline("file-1"));
     expect(await engine.isFileAvailableOffline("file-1")).toBe(true);
     expect(requests).toContain("/api/desktops/desk/entries/file-1/content-access?revision=1");
     await engine.setOfflinePinIntent(["file-1"], false);
@@ -726,7 +849,8 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     const unsubscribe = engine.subscribeOutbox((records) => queueSizes.push(records.length));
-    await expect(engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 5, y: 6 } }])).rejects.toThrow("position conflict");
+    await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 5, y: 6 } }]);
+    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
     const [blocked] = await engine.listOutboxRecords();
     expect(blocked.status).toBe("blocked");
 
@@ -751,7 +875,8 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     engine.subscribe((desktop) => { latest = desktop; }, () => undefined);
-    await expect(engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true })).rejects.toThrow("layout conflict");
+    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
     const [blocked] = await engine.listOutboxRecords();
     expect(latest.layout.snapToGrid).toBe(true);
 
@@ -891,6 +1016,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.saveTextFile("file-1", "updated note");
+    await waitForOutboxDrain(engine);
 
     expect(prepareBody).toMatchObject({
       kind: "save-content",
@@ -938,6 +1064,7 @@ describe("canonical synchronization", () => {
       ],
       contents: new Map([["source-file", new Blob(["leaf"], { type: "text/plain" })]]),
     }, null, new Map([["source-folder", "Tree"]]), new Map([["source-folder", { x: 10, y: 20 }]]));
+    await waitForOutboxDrain(engine);
 
     expect(preparedItems.map(({ entry, sha256, md5 }) => ({ kind: entry.kind, id: entry.id, parentId: entry.parentId, sha256, md5 }))).toEqual([
       { kind: "folder", id: preparedItems[0].entry.id, parentId: null, sha256: "", md5: "" },
@@ -970,6 +1097,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.createFolder("Empty", null, { x: 4, y: 5 });
+    await waitForOutboxDrain(engine);
 
     expect(prepareBody).toMatchObject({ kind: "create", items: [{ entry: { kind: "folder" }, sha256: "", md5: "" }] });
     expect(requests.some((request) => request.startsWith("PUT "))).toBe(false);
@@ -994,6 +1122,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.saveTextFile("file-1", "committed");
+    await waitForOutboxDrain(engine);
 
     expect(requests.some((request) => request.startsWith("PUT "))).toBe(false);
     expect(requests.some((request) => request.includes("/commit"))).toBe(false);
@@ -1093,9 +1222,9 @@ describe("canonical synchronization", () => {
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
-    const saving = engine.saveTextFile("file-1", "conflict");
-    if (commitError.blocked) await expect(saving).rejects.toThrow(commitError.message);
-    else await saving;
+    await engine.saveTextFile("file-1", "conflict");
+    if (commitError.blocked) await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
+    else await waitFor(async () => (await engine.getOutboxStatus()).pending === 1);
     expect(await engine.getOutboxStatus()).toMatchObject(commitError.blocked ? { pending: 0, blocked: 1 } : { pending: 1, blocked: 0 });
     expect(storage.stats.blockWrites).toBe(commitError.blocked ? 1 : 0);
     await engine.stop();
@@ -1113,6 +1242,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.transferEntries("other", ["file-1"], null);
+    await waitFor(() => body !== undefined);
     expect(body).toEqual({ sourceDesktopId: "desk", destinationDesktopId: "other", entryIds: ["file-1"], parentId: null });
     await engine.stop();
   });

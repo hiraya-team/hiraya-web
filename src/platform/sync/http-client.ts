@@ -27,10 +27,12 @@ export class SyncHttpClient {
     let response: Response;
     try {
       response = await this.options.fetch(input, { credentials: "same-origin", ...init });
-    } catch {
+    } catch (error) {
+      if (init?.signal?.aborted || error instanceof DOMException && error.name === "AbortError") throw new DOMException("Synchronization was stopped.", "AbortError");
       this.options.onUnavailable();
       throw new SyncRequestError("The Hiraya server is unavailable. The change remains queued.", null, false);
     }
+    if (init?.signal?.aborted) throw new DOMException("Synchronization was stopped.", "AbortError");
     this.requireAuthentication(response);
     if (!response.ok) {
       const body = await response.json().catch(() => null) as { error?: string } | null;
