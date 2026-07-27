@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState, type CSSProperties, type Reac
 type Props = {
   label: string;
   icon: ReactNode;
-  children: (dismiss: () => void) => ReactNode;
+  children: (dismiss: (restoreFocus?: boolean) => void) => ReactNode;
 };
 
 export function MobileHeaderMenu({ label, icon, children }: Props) {
@@ -12,9 +12,9 @@ export function MobileHeaderMenu({ label, icon, children }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
-  const dismiss = () => {
+  const dismiss = (restoreFocus = true) => {
     setOpen(false);
-    requestAnimationFrame(() => triggerRef.current?.focus());
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
   };
 
   const positionPanel = useCallback(() => {

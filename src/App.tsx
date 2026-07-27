@@ -260,6 +260,9 @@ function App({ session }: { session: AuthSession | null }) {
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
   const fileDialogResultIdRef = useRef<string | null>(null);
+  const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
+  const restoreMobileDestinationOriginRef = useRef(false);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -480,6 +483,33 @@ function App({ session }: { session: AuthSession | null }) {
     fileDialogResultIdRef.current = null;
     return result ? fileDialogEntryElement(result) ?? fileDialogInvokerRef.current : fileDialogInvokerRef.current;
   }, []);
+
+  function launchMobileDestination(dismiss: (restoreFocus?: boolean) => void, action: () => void) {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    mobileDestinationOriginRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger") ?? null;
+    dismiss(false);
+    action();
+  }
+
+  const restoreMobileDestinationFocus = useCallback(() => {
+    const target = mobileDestinationOriginRef.current;
+    mobileDestinationOriginRef.current = null;
+    return target;
+  }, []);
+
+  useEffect(() => {
+    if (!isMobile) return;
+    if (focusedAppId) {
+      const frame = window.requestAnimationFrame(() => mobileBackButtonRef.current?.focus({ preventScroll: true }));
+      return () => window.cancelAnimationFrame(frame);
+    }
+    if (!restoreMobileDestinationOriginRef.current) return;
+    restoreMobileDestinationOriginRef.current = false;
+    const target = mobileDestinationOriginRef.current;
+    mobileDestinationOriginRef.current = null;
+    const frame = window.requestAnimationFrame(() => target?.focus({ preventScroll: true }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusedAppId, isMobile]);
 
   useEffect(() => {
     if (!minimapExpanded) return;
@@ -3484,12 +3514,12 @@ function App({ session }: { session: AuthSession | null }) {
             {focusedApp ? <>
               <div className="mobile-window-nav__leading">
                 {focusedApp.kind === "settings" && settingsPage !== "main" ? (
-                <button type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
+                <button ref={mobileBackButtonRef} type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
                   <ArrowLeft size={18} />
                   <span>Settings</span>
                 </button>
                 ) : (
-                <button type="button" className="mobile-window-nav__desktop" aria-label={`Back from ${runningAppLabel(focusedApp)}`} onClick={navigateBack}>
+                <button ref={mobileBackButtonRef} type="button" className="mobile-window-nav__desktop" aria-label={`Back from ${runningAppLabel(focusedApp)}`} onClick={() => { restoreMobileDestinationOriginRef.current = true; navigateBack(); }}>
                   <ArrowLeft size={18} />
                   <span>Back</span>
                 </button>
@@ -3602,8 +3632,7 @@ function App({ session }: { session: AuthSession | null }) {
                       <button
                         type="button"
                         onClick={() => {
-                          dismiss();
-                          setActivePanel("windows");
+                          launchMobileDestination(dismiss, () => setActivePanel("windows"));
                         }}
                       >
                         <SquaresFour /> Switch Window
@@ -3627,8 +3656,7 @@ function App({ session }: { session: AuthSession | null }) {
                       aria-current={window.id === focusedAppId ? "page" : undefined}
                       title={window.title}
                       onClick={() => {
-                        dismiss();
-                        focusApp(window.id);
+                        launchMobileDestination(dismiss, () => focusApp(window.id));
                       }}
                     >
                       <SquaresFour />
@@ -3640,8 +3668,7 @@ function App({ session }: { session: AuthSession | null }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dismiss();
-                      setActivePanel("sync");
+                      launchMobileDestination(dismiss, () => setActivePanel("sync"));
                     }}
                   >
                     <CloudCheck /> Connection &amp; Offline
@@ -3649,8 +3676,7 @@ function App({ session }: { session: AuthSession | null }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dismiss();
-                      openSettingsWindow();
+                      launchMobileDestination(dismiss, () => openSettingsWindow());
                     }}
                   >
                     <GearSix /> Settings
@@ -3658,8 +3684,7 @@ function App({ session }: { session: AuthSession | null }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dismiss();
-                      openHelp();
+                      launchMobileDestination(dismiss, () => openHelp());
                     }}
                   >
                     <BookOpenText /> Help
@@ -3667,8 +3692,7 @@ function App({ session }: { session: AuthSession | null }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dismiss();
-                      setActivePanel("shortcuts");
+                      launchMobileDestination(dismiss, () => setActivePanel("shortcuts"));
                     }}
                   >
                     <Keyboard /> Keyboard shortcuts
@@ -3677,8 +3701,7 @@ function App({ session }: { session: AuthSession | null }) {
                     <button
                       type="button"
                       onClick={() => {
-                        dismiss();
-                        setActivePanel("trash");
+                        launchMobileDestination(dismiss, () => setActivePanel("trash"));
                       }}
                     >
                       <Trash /> Trash
@@ -3690,8 +3713,7 @@ function App({ session }: { session: AuthSession | null }) {
                       disabled={!canManage}
                       title={!canManage ? "Connect to manage sharing." : undefined}
                       onClick={() => {
-                        dismiss();
-                        setSharingOpen(true);
+                        launchMobileDestination(dismiss, () => setSharingOpen(true));
                       }}
                     >
                       <ShareNetwork /> Share desktop
@@ -3700,7 +3722,7 @@ function App({ session }: { session: AuthSession | null }) {
                   {session && (
                     <>
                       <span className="mobile-header-menu__separator" />
-                      <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={dismiss}>
+                      <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={() => dismiss()}>
                         <IdentificationCard /> Profile
                       </a>
                       <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
@@ -4673,7 +4695,7 @@ function App({ session }: { session: AuthSession | null }) {
         />
       )}
       {(activePanel === "sync" || activePanel === "offline") && (
-        <PanelDialog title="Connection and Offline" onClose={() => setActivePanel(null)}>
+        <PanelDialog title="Connection and Offline" onClose={() => setActivePanel(null)} restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}>
           <ConnectionPanel
             status={syncStatus}
             records={outboxRecords}
@@ -4710,7 +4732,7 @@ function App({ session }: { session: AuthSession | null }) {
         </PanelDialog>
       )}
       {activePanel === "windows" && (
-        <PanelDialog title="All windows" onClose={() => setActivePanel(null)}>
+        <PanelDialog title="All windows" onClose={() => setActivePanel(null)} restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}>
           <AllWindowsPanel
             windows={windowItems}
             activeAreaId={activeSegmentKey}
@@ -4727,17 +4749,17 @@ function App({ session }: { session: AuthSession | null }) {
         </PanelDialog>
       )}
       {activePanel === "help" && (
-        <PanelDialog title="User Guide" onClose={() => setActivePanel(null)}>
+        <PanelDialog title="User Guide" onClose={() => setActivePanel(null)} restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}>
           <HelpPanel section={helpSection} onSectionChange={setHelpSection} />
         </PanelDialog>
       )}
       {activePanel === "shortcuts" && (
-        <PanelDialog title="Keyboard shortcuts" onClose={() => setActivePanel(null)}>
+        <PanelDialog title="Keyboard shortcuts" onClose={() => setActivePanel(null)} restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}>
           <KeyboardShortcutsPanel shortcuts={keyboardShortcuts} />
         </PanelDialog>
       )}
       {activePanel === "trash" && activeDesktop?.capabilities.read && syncStatus !== "local" && (
-        <PanelDialog title="Trash" onClose={() => setActivePanel(null)}>
+        <PanelDialog title="Trash" onClose={() => setActivePanel(null)} restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}>
           <TrashWindow
             readOnly={!canMutate}
             onListTrash={() => listTrash(activeDesktopId)}
@@ -4766,6 +4788,7 @@ function App({ session }: { session: AuthSession | null }) {
         <SharingDialog
           desktop={activeDesktop}
           onClose={() => setSharingOpen(false)}
+          restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}
           onOpenHelp={() => {
             setSharingOpen(false);
             openHelp("sharing");

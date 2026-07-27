@@ -12,7 +12,7 @@ function publicUrl(publication: SharingState["publication"]) {
   return publication.token ? new URL(`/shared/${encodeURIComponent(publication.token)}`, window.location.origin).href : "";
 }
 
-export function SharingDialog({ desktop, onClose, onOpenHelp }: { desktop: DesktopIdentity; onClose: () => void; onOpenHelp: () => void }) {
+export function SharingDialog({ desktop, onClose, onOpenHelp, restoreFocus }: { desktop: DesktopIdentity; onClose: () => void; onOpenHelp: () => void; restoreFocus?: () => HTMLElement | null }) {
   const [sharing, setSharing] = useState<SharingState | null>(null);
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<SharingRole>("reader");
@@ -23,7 +23,7 @@ export function SharingDialog({ desktop, onClose, onOpenHelp }: { desktop: Deskt
   const [copied, setCopied] = useState("");
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, busy !== "");
+  useModalDialog(backdropRef, dialogRef, onClose, busy !== "", restoreFocus);
 
   async function refresh() { setSharing(await getSharing(desktop.id)); }
   useEffect(() => { void getSharing(desktop.id).then(setSharing).catch((reason) => setError(reason instanceof Error ? reason.message : "Sharing could not be loaded.")); }, [desktop.id]);

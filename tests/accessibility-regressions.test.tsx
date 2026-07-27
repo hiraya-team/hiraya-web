@@ -216,6 +216,18 @@ describe("accessibility regressions", () => {
     expect(modal).toContain("restoreFocusRef.current?.() ?? entry.previousFocus");
   });
 
+  test("mobile destination launches suppress menu refocus and establish destination focus", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const menu = await Bun.file(new URL("../src/components/MobileHeaderMenu.tsx", import.meta.url)).text();
+
+    expect(menu).toContain("const dismiss = (restoreFocus = true)");
+    expect(menu).toContain("if (restoreFocus) requestAnimationFrame");
+    expect(app).toContain("launchMobileDestination(dismiss, () => openSettingsWindow())");
+    expect(app).toContain("mobileBackButtonRef.current?.focus({ preventScroll: true })");
+    expect(app).toContain("target?.focus({ preventScroll: true })");
+    expect(app).toContain("restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}");
+  });
+
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {
     const dialog = await Bun.file(new URL("../src/components/GettingStartedDialog.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
