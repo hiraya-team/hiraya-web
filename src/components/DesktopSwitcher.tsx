@@ -88,7 +88,7 @@ export function DesktopSwitcher({ desktops, activeDesktopId, mobileSummary, disa
   }
 
   return <div className="desktop-switcher" data-mobile-summary={mobileSummary ? true : undefined} ref={rootRef}>
-    <button
+    {mobileSummary ? <span className="brand-mark desktop-switcher__trigger" aria-hidden="true"><span className="brand-mark__shape"><span /></span></span> : <button
       ref={triggerRef}
       className="brand-mark desktop-switcher__trigger"
       type="button"
@@ -107,7 +107,7 @@ export function DesktopSwitcher({ desktops, activeDesktopId, mobileSummary, disa
       }}
     >
       <span className="brand-mark__shape"><span /></span><strong>Hiraya</strong><span className="desktop-switcher__name">{active?.name}</span><CaretDown size={13} />
-    </button>
+    </button>}
     {mobileSummary && <button
       ref={mobileTriggerRef}
       className="mobile-desktop-switcher"
