@@ -194,4 +194,13 @@ describe("accessibility regressions", () => {
     expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
     expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive}');
   });
+
+  test("Getting Started owns one bounded scroll region at constrained heights", async () => {
+    const dialog = await Bun.file(new URL("../src/components/GettingStartedDialog.tsx", import.meta.url)).text();
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+
+    expect(dialog).toContain('className="onboarding-dialog__content"');
+    expect(css).toContain(".onboarding-dialog__content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }");
+    expect(css).toContain("grid-template-rows: auto minmax(0, 1fr)");
+  });
 });
