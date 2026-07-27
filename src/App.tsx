@@ -4197,8 +4197,9 @@ function App({ session }: { session: AuthSession | null }) {
         ref={uploadRef}
         className="visually-hidden"
         type="file"
+        tabIndex={-1}
+        aria-hidden="true"
         multiple
-        aria-label="Upload files"
         onChange={(event) => {
           const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
           uploadPositionRef.current = undefined;
@@ -4218,8 +4219,9 @@ function App({ session }: { session: AuthSession | null }) {
         }}
         className="visually-hidden"
         type="file"
+        tabIndex={-1}
+        aria-hidden="true"
         multiple
-        aria-label="Import folder"
         onChange={(event) => {
           const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
           uploadPositionRef.current = undefined;

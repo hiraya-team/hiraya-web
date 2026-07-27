@@ -195,6 +195,14 @@ describe("accessibility regressions", () => {
     expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive}');
   });
 
+  test("programmatically activated file inputs are not hidden keyboard stops", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const settings = await Bun.file(new URL("../src/components/SettingsWindow.tsx", import.meta.url)).text();
+
+    expect(app.match(/type="file"\s+tabIndex=\{-1\}\s+aria-hidden="true"/g)).toHaveLength(2);
+    expect(settings).toContain('type="file" tabIndex={-1} aria-hidden="true"');
+  });
+
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {
     const dialog = await Bun.file(new URL("../src/components/GettingStartedDialog.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();

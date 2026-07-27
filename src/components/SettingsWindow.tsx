@@ -682,7 +682,7 @@ export function SettingsWindow({
               <button className="button button--quiet" type="button" disabled={!canMutate || wallpaperBusy || displayedLayout.wallpaper.source === DEFAULT_WALLPAPER.source && JSON.stringify(displayedLayout.wallpaper) === JSON.stringify(DEFAULT_WALLPAPER)} onClick={() => void commitWallpaperChange({ ...DEFAULT_WALLPAPER })}>Reset</button>
             </div>
             <div className="wallpaper-custom__actions">
-              <input ref={wallpaperUploadRef} className="visually-hidden" type="file" accept={WALLPAPER_IMAGE_ACCEPT} onChange={(event) => {
+              <input ref={wallpaperUploadRef} className="visually-hidden" type="file" tabIndex={-1} aria-hidden="true" accept={WALLPAPER_IMAGE_ACCEPT} onChange={(event) => {
                 const file = event.target.files?.[0];
                 event.target.value = "";
                 if (!file) return;
