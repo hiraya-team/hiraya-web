@@ -5,3 +5,4 @@
 .write-state { padding: .15rem .45rem; border: 1px solid var(--hiraya-border); border-radius: 999px; color: var(--hiraya-text-muted); background: var(--hiraya-surface-elevated); font-size: .72rem; font-weight: 650; white-space: nowrap; }
 #editor:read-only { cursor: default; }
 @media (max-width: 700px) { .compact-control { display: none; } }
+@media (max-width: 700px) and (pointer: coarse) { :is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; } }

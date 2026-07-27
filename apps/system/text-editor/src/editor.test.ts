@@ -2,6 +2,12 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Text Editor document behavior", () => {
+  test("keeps primary mobile actions at Hiraya's touch target size", async () => {
+    const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
+    expect(css).toContain("@media (max-width: 700px) and (pointer: coarse)");
+    expect(css).toContain(":is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; }");
+  });
+
   test("reloads a clean document after a remote change", () => {
     const state = new TextDocumentState();
     state.load("one", 1);
