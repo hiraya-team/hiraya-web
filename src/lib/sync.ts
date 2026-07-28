@@ -168,8 +168,10 @@ export class SyncEngine {
   private readonly contentLoads = new Map<string, Promise<File>>();
   private readonly offlineInventoryListeners = new Set<(inventory: OfflineStorageInventory) => void>();
   private readonly offlineProgressListeners = new Set<(progress: OfflineOperationProgress | null) => void>();
+  private readonly entryDownloadListeners = new Set<(entryIds: ReadonlySet<string>) => void>();
+  private readonly activeEntryDownloadIds = new Set<string>();
   private offlineInventoryLoad: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
-  private offlineRefresh: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
+  private offlineDownload: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
 
   constructor(options: SyncEngineOptions = {}) {
     this.frontendOnly = options.frontendOnly ?? false;
@@ -269,8 +271,10 @@ export class SyncEngine {
     if (this.pendingWork > 0) for (const listener of this.syncWorkListeners) listener(false);
     this.pendingWork = 0;
     this.contentLoads.clear();
+    this.activeEntryDownloadIds.clear();
+    this.publishEntryDownloads();
     this.offlineInventoryLoad = null;
-    this.offlineRefresh = null;
+    this.offlineDownload = null;
     await this.work;
   }
 
@@ -325,6 +329,17 @@ export class SyncEngine {
     this.offlineInventoryListeners.add(onInventory);
     if (onProgress) this.offlineProgressListeners.add(onProgress);
     return () => { this.offlineInventoryListeners.delete(onInventory); if (onProgress) this.offlineProgressListeners.delete(onProgress); };
+  }
+
+  subscribeEntryDownloads(listener: (entryIds: ReadonlySet<string>) => void) {
+    this.entryDownloadListeners.add(listener);
+    listener(new Set(this.activeEntryDownloadIds));
+    return () => this.entryDownloadListeners.delete(listener);
+  }
+
+  private publishEntryDownloads() {
+    const entryIds = new Set(this.activeEntryDownloadIds);
+    for (const listener of this.entryDownloadListeners) listener(entryIds);
   }
 
   private publishOfflineProgress(progress: OfflineOperationProgress | null) {
@@ -533,7 +548,6 @@ export class SyncEngine {
     if (remote.catalogRevision > this.catalogRevision) this.catalogRevision = remote.catalogRevision;
     if (desktopId === this.desktopId) this.publish(applied);
     this.publishActivityChange();
-    if (desktopId === this.desktopId && this.status !== "offline") void this.refreshPinnedContent().catch(() => undefined);
     return applied;
   }
 
@@ -1148,6 +1162,8 @@ export class SyncEngine {
     const key = `${desktopId}\n${catalogId}\n${id}\n${contentRevision}`;
     const existing = this.contentLoads.get(key);
     if (existing) return existing;
+    this.activeEntryDownloadIds.add(id);
+    this.publishEntryDownloads();
     const loading = (async () => {
       let descriptorResponse: Response;
       try {
@@ -1190,6 +1206,7 @@ export class SyncEngine {
       const stored = await this.storage.cacheRemoteFile(desktopId, catalogId, id, contentRevision, descriptor.sha256, content);
       this.assertActive(generation);
       if (!stored) throw new VirtualFileChangedError();
+      await this.loadOfflineInventory().catch(() => undefined);
       return stored;
     })();
     this.contentLoads.set(key, loading);
@@ -1197,6 +1214,8 @@ export class SyncEngine {
       return await loading;
     } finally {
       if (this.contentLoads.get(key) === loading) this.contentLoads.delete(key);
+      this.activeEntryDownloadIds.delete(id);
+      this.publishEntryDownloads();
     }
   }
 
@@ -1235,31 +1254,23 @@ export class SyncEngine {
     });
   }
 
-  async setOfflinePinIntent(rootIds: readonly string[], pinned: boolean) {
-    const roots = pinned ? dedupeOfflineRoots(this.current().entries, rootIds) : [...new Set(rootIds)];
-    if (!pinned && (roots.length !== rootIds.length || roots.some((id) => !this.current().entries.some((entry) => entry.id === id)))) throw new Error("An offline selection contains an entry that no longer exists.");
-    await this.storage.setOfflinePins(this.desktopId, roots, pinned);
-    const inventory = await this.loadOfflineInventory();
-    return inventory;
-  }
-
-  refreshPinnedContent(_rootIds?: readonly string[]) {
-    void _rootIds;
+  downloadOfflineCopies(rootIds: readonly string[]) {
     const desktopId = this.desktopId;
     const generation = this.generation;
-    const existing = this.offlineRefresh;
+    const roots = dedupeOfflineRoots(this.current().entries, rootIds);
+    const existing = this.offlineDownload;
     if (existing?.desktopId === desktopId && existing.generation === generation) return existing.promise;
-    const promise = this.refreshPinnedContentInternal(desktopId, generation).finally(() => { if (this.offlineRefresh?.promise === promise) this.offlineRefresh = null; });
-    this.offlineRefresh = { desktopId, generation, promise };
+    const promise = this.downloadOfflineCopiesInternal(desktopId, generation, roots).finally(() => { if (this.offlineDownload?.promise === promise) this.offlineDownload = null; });
+    this.offlineDownload = { desktopId, generation, promise };
     return promise;
   }
 
-  private async refreshPinnedContentInternal(desktopId: string, generation: number) {
-    if (this.frontendOnly || this.status === "offline") return this.loadOfflineInventory();
+  private async downloadOfflineCopiesInternal(desktopId: string, generation: number, rootIds: readonly string[]) {
+    if (this.frontendOnly) return this.loadOfflineInventory();
+    if (this.status === "offline") throw new VirtualFileUnavailableError("Reconnect before downloading offline copies.");
     const inventory = await this.loadOfflineInventory();
     if (this.desktopId !== desktopId || this.generation !== generation) return inventory;
-    const model = buildOfflineAvailability(this.current().entries, inventory);
-    const files = this.current().entries.filter((entry): entry is FileEntry => entry.kind === "file" && model.entries[entry.id]?.pinned);
+    const files = offlineFilesUnderRoots(this.current().entries, rootIds);
     const targets = files.filter((file) => !inventory.files[file.id]?.cached && !inventory.files[file.id]?.protected);
     if (!targets.length) { for (const listener of this.offlineInventoryListeners) listener(inventory); return inventory; }
     const updatingIds = new Set(targets.map((file) => file.id));
@@ -1280,7 +1291,9 @@ export class SyncEngine {
     });
     report(errors.size ? "error" : "complete");
     if (this.desktopId !== desktopId || this.generation !== generation) return inventory;
-    return this.loadOfflineInventory();
+    const refreshed = await this.loadOfflineInventory();
+    if (errors.size) throw new Error(`${errors.size} ${errors.size === 1 ? "file" : "files"} could not be downloaded.`);
+    return refreshed;
   }
 
   async releaseOfflineCopies(rootIds?: readonly string[]) {
@@ -1504,9 +1517,9 @@ export const deleteCustomTheme = defaultEngine.deleteCustomTheme.bind(defaultEng
 export const readFile = defaultEngine.readFile.bind(defaultEngine);
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);
 export const subscribeToOfflineStorage = defaultEngine.subscribeOfflineStorage.bind(defaultEngine);
+export const subscribeToEntryDownloads = defaultEngine.subscribeEntryDownloads.bind(defaultEngine);
 export const estimateOfflineOperation = defaultEngine.estimateOfflineOperation.bind(defaultEngine);
-export const setOfflinePinIntent = defaultEngine.setOfflinePinIntent.bind(defaultEngine);
-export const refreshPinnedContent = defaultEngine.refreshPinnedContent.bind(defaultEngine);
+export const downloadOfflineCopies = defaultEngine.downloadOfflineCopies.bind(defaultEngine);
 export const releaseOfflineCopies = defaultEngine.releaseOfflineCopies.bind(defaultEngine);
 export const getOutboxStatus = defaultEngine.getOutboxStatus.bind(defaultEngine);
 export const listOutboxRecords = defaultEngine.listOutboxRecords.bind(defaultEngine);

@@ -6,7 +6,7 @@ const headingIds = new Set(Array.from(guideMarkdown.matchAll(/^#{1,6}\s+.+?\s+\{
 describe("bundled user guide", () => {
   test("selects one article without duplicating the guide title", () => {
     const article = guideSectionMarkdown(guideMarkdown, "offline");
-    expect(article).toStartWith("## Offline cache and pins");
+    expect(article).toStartWith("## Offline storage");
     expect(article).not.toContain("# Hiraya User Guide");
     expect(article).not.toContain("## Installation and updates");
   });

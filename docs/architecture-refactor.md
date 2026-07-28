@@ -132,7 +132,7 @@ Storage, interaction, and UI phases also require focused browser checks on deskt
 
 ### Phase 1
 
-- Added a populated schema 2 fixture that executes every supported migration through schema 8 and verifies preferences, installed-app storage, offline pins, and foreign keys.
+- Added a populated schema 2 fixture that executes every supported migration and verifies preferences, installed-app storage, retired offline-pin cleanup, and foreign keys.
 - Locked the observable content-revision conflict name, message, expected revision, and actual revision before moving the error below OPFS.
 - `bun test`: passed, 395 tests across 75 files
 - `bun run lint`: passed

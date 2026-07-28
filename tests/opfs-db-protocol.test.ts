@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
-import { createStorageDbRequest, parseOfflinePinResponse, parseStorageProtocol, validateOfflinePinRequest } from "../src/lib/opfs-db-protocol";
+import { createStorageDbRequest, parseStorageProtocol } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,9 +13,9 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 9", () => {
+describe("local schema 10", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(9);
+    expect(DATABASE_SCHEMA_VERSION).toBe(10);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
@@ -157,6 +157,16 @@ describe("local schema 9", () => {
     db.close();
   });
 
+  test("removes durable offline pins without touching downloaded file storage", () => {
+    const db = new Database(":memory:");
+    db.exec("CREATE TABLE offline_pins(desktop_id TEXT, entry_id TEXT, created_at INTEGER); INSERT INTO offline_pins VALUES ('desktop', 'entry', 1); PRAGMA user_version=9;");
+    db.exec(migrateSchema9To10Sql(9));
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 10 });
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='offline_pins'").get()).toBeNull();
+    expect(() => migrateSchema9To10Sql(8)).toThrow("requires version 9");
+    db.close();
+  });
+
   test("migrates a populated schema-8 outbox without inventing revision preconditions", () => {
     const operations = [
       { schemaVersion: 1, kind: "rename-desktop", desktop: { id: "desk", name: "Renamed" } },
@@ -202,6 +212,7 @@ describe("local schema 9", () => {
     db.exec(migrateSchema6To7Sql(6));
     db.exec(migrateSchema7To8Sql(7));
     db.exec(migrateSchema8To9Sql(8));
+    db.exec(migrateSchema9To10Sql(9));
 
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
     expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
@@ -215,7 +226,7 @@ describe("local schema 9", () => {
     });
     expect(db.query("SELECT source,package_entry_id,archive_path FROM installed_apps WHERE app_id='user.editor'").get()).toEqual({ source: "desktop", package_entry_id: "package-entry", archive_path: null });
     expect(db.query("SELECT value_json FROM app_storage WHERE app_id='user.editor'").get()).toEqual({ value_json: '{"text":"kept"}' });
-    expect(db.query("SELECT desktop_id,entry_id,created_at FROM offline_pins").get()).toEqual({ desktop_id: "desktop-a", entry_id: "entry-a", created_at: 20 });
+    expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='offline_pins'").get()).toBeNull();
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     db.close();
   });
@@ -224,22 +235,6 @@ describe("local schema 9", () => {
     const request = createStorageDbRequest(3, null, "readAppStorage", { appId: "test.editor", key: "theme" });
     expect(request.desktopId).toBeNull();
     expect(request.params).toEqual({ appId: "test.editor", key: "theme" });
-  });
-
-  test("keeps strict schema-v4 pin requests after later migrations", () => {
-    const list = createStorageDbRequest(4, "desktop-a", "listOfflinePins", { desktopId: "desktop-a" });
-    const update = createStorageDbRequest(5, "desktop-a", "setOfflinePins", { desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
-    expect(DATABASE_SCHEMA_VERSION).toBe(9);
-    expect(list.params).toEqual({ desktopId: "desktop-a" });
-    expect(update.params).toEqual({ desktopId: "desktop-a", entryIds: ["entry-a"], pinned: true, createdAt: 123 });
-  });
-
-  test("rejects malformed pin requests and cross-desktop responses", () => {
-    expect(() => validateOfflinePinRequest("setOfflinePins", { desktopId: "desktop-a", entryIds: ["entry-a", "entry-a"], pinned: true, createdAt: 1 }, "desktop-a")).toThrow("invalid");
-    expect(() => validateOfflinePinRequest("setOfflinePins", { desktopId: "desktop-a", entryIds: ["entry-a"], pinned: 1, createdAt: 1 }, "desktop-a")).toThrow("invalid");
-    expect(() => validateOfflinePinRequest("listOfflinePins", { desktopId: "desktop-a", extra: true }, "desktop-a")).toThrow("binding");
-    expect(() => parseOfflinePinResponse({ desktopId: "desktop-b", entryIds: ["entry-a"] }, "desktop-a")).toThrow("invalid offline-pin response");
-    expect(() => parseOfflinePinResponse({ desktopId: "desktop-a", entryIds: ["entry-a", "entry-a"] }, "desktop-a")).toThrow("invalid offline-pin response");
   });
 
   test("handshakes the named worker protocol", () => {

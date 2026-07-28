@@ -50,7 +50,7 @@ Preserve the enforced dependency direction: domain code is browser- and React-in
 - OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.
 - Browser storage implementations belong in `src/platform/storage/`. Local desktop mutations go through `src/lib/opfs.ts`; namespace, repository, and blob consumers may use the narrower platform modules directly when their capability boundary requires it.
 - Physical browser files use stable UUIDs; user-facing names and folders are metadata.
-- The OPFS SQLite schema is version 9, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, durable outbox diagnostics, and normalized offline pins.
+- The OPFS SQLite schema is version 10, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, and durable outbox diagnostics. Schema 10 removes retired offline-pin records without deleting downloaded bytes.
 - Offline mutations update the projected SQLite desktop and append an outbox operation atomically.
 - Replay uses stable idempotency headers and preserves blocked operations for user resolution.
 - Desktop rename and delete use the stable desktop ID plus existence and authorization as their identity precondition; do not use the catalog-wide revision, because unrelated catalog mutations must not conflict.

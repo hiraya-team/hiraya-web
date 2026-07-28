@@ -41,13 +41,13 @@ Invitations grant access to a specific person and can expire. A deployment may a
 
 A public link is different from membership: anyone who has its opaque URL can browse and download a read-only publication without signing in. Treat it as a secret. Rotate it to invalidate the previous URL, or unpublish to turn public access off. Public browsing does not expose private Settings, activity, or edit controls.
 
-## Offline cache and pins {#offline}
+## Offline storage {#offline}
 
-In synchronized mode, the server remains authoritative. Opening a file may download a validated browser copy. Pin a file, folder, or selection with **Make available offline**; folder pins include current and new descendants. Open **Connection & Offline** to review connection state, pending or blocked work, downloaded bytes, pins, and storage without deleting server files.
+In synchronized mode, the server remains authoritative. Opening a file may download a validated browser copy. **Make available offline** downloads the files currently selected, or the current descendants of selected folders, once. New folder descendants are not downloaded automatically. Open **Connection & Offline** to review connection state, pending or blocked work, downloaded bytes, and storage without deleting server files.
 
 Offline availability is not a backup. Browser storage is origin-scoped: clearing site data, resetting the browser profile, uninstalling with data removal, private-browsing cleanup, or browser eviction can remove cached copies and queued changes. The origin-wide storage estimate may include Hiraya databases, app data, and other data for this origin, not only downloaded files.
 
-Shared desktops have stricter offline rules. Cached shared content remains read-only, and shared writes require a connection so current permissions can be checked. A file that was not downloaded or pinned before going offline is unavailable until the connection returns.
+Shared desktops have stricter offline rules. Cached shared content remains read-only, and shared writes require a connection so current permissions can be checked. A file that was not downloaded before going offline is unavailable until the connection returns.
 
 ## Installation and updates {#installation-and-updates}
 
@@ -93,7 +93,7 @@ The file was not downloaded, its revision changed, or your shared access cannot 
 
 ### Browser storage full {#storage-full}
 
-Open **Connection & Offline** and release unpinned downloaded copies. Its origin-wide estimate includes all storage reported for this Hiraya origin, not all browser profiles or sites. Remove other origin data only if you understand what it belongs to. Pending uploads, pinned copies, and authoritative browser-local files are protected by Hiraya; download important files individually before making broad storage changes.
+Open **Connection & Offline** and release downloaded copies. Its origin-wide estimate includes all storage reported for this Hiraya origin, not all browser profiles or sites. Remove other origin data only if you understand what it belongs to. Pending uploads and authoritative browser-local files are protected by Hiraya; download important files individually before making broad storage changes.
 
 ### Permission denied or controls unavailable {#permissions}
 

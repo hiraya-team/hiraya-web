@@ -1,8 +1,7 @@
-import type { AppCapabilities, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import type { ThemeDefinition } from "../../domain/theme";
-import type { OfflineAvailabilityStatus } from "../../lib/offline-availability";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";
 import { projectLogicalPosition, restoreLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";
 import { initialWindowBounds } from "../../ui/window-manager";
@@ -51,8 +50,7 @@ type LaunchSandboxAppOptions = {
   importFiles: (parentId: string | null) => void;
   importFolder: (parentId: string | null) => void;
   showEntryActions: (instanceId: string, ids: string[]) => void;
-  getEntryStatus: (id: string) => { status: OfflineAvailabilityStatus; pinned: boolean; directlyPinned: boolean };
-  setOfflinePinned: (ids: string[], pinned: boolean) => Promise<void>;
+  getEntryStatus: (id: string) => { status: OfflineEntryStatus; pinned: boolean; directlyPinned: boolean };
   setExternalEmbeddedPreviews: (enabled: boolean) => Promise<void>;
 };
 
@@ -157,7 +155,8 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           const status = options.getEntryStatus(files.entryForHost(handle).id);
           return { handle, ...status };
         }),
-        setOfflinePinned: async ({ handles, pinned }: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }) => options.setOfflinePinned(entryIds(handles), pinned),
+        // Keep protocol v1 apps operational while making the retired behavior explicit.
+        setOfflinePinned: async () => { throw new HostServiceError("Offline pinning is no longer supported.", "UNAVAILABLE"); },
         setExternalEmbeddedPreviews: async ({ enabled }: { enabled: boolean }) => {
           if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.markdownPreview) throw new HostServiceError("Only the bundled Markdown app can change this preference.", "PERMISSION_DENIED");
           await options.setExternalEmbeddedPreviews(enabled);

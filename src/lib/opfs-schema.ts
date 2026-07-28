@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 9;
+export const DATABASE_SCHEMA_VERSION = 10;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -144,4 +144,14 @@ export const OUTBOX_DIAGNOSTICS_SCHEMA_SQL = `
 export function migrateSchema8To9Sql(version: number): string {
   if (version !== 8) throw new Error(`Schema 9 migration requires version 8, received ${version}.`);
   return `BEGIN IMMEDIATE; ${OUTBOX_DIAGNOSTICS_SCHEMA_SQL} COMMIT;`;
+}
+
+export const OFFLINE_PINS_REMOVAL_SCHEMA_SQL = `
+  DROP TABLE offline_pins;
+  PRAGMA user_version=10;
+`;
+
+export function migrateSchema9To10Sql(version: number): string {
+  if (version !== 9) throw new Error(`Schema 10 migration requires version 9, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL} COMMIT;`;
 }

@@ -2,7 +2,7 @@ import type { DesktopEntry, FileEntry } from "../types";
 import type { PersistedDesktopState } from "../domain/desktop-state";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 
-export type OfflineAvailabilityStatus = "cached" | "pinned" | "protected" | "partial" | "unavailable" | "updating" | "error";
+export type OfflineAvailabilityStatus = "local" | "virtual" | "syncing" | "synced";
 
 export type OfflineFileInventory = {
   cached: boolean;
@@ -14,7 +14,7 @@ export type OfflineFileInventory = {
 
 export type OfflineStorageInventory = {
   desktopId: string;
-  pinIds: string[];
+  authoritativeLocal: boolean;
   files: Record<string, OfflineFileInventory>;
   cachedBytes: number;
   protectedBytes: number;
@@ -25,8 +25,6 @@ export type OfflineStorageInventory = {
 export type OfflineEntryAvailability = {
   status: OfflineAvailabilityStatus;
   cached: boolean;
-  pinned: boolean;
-  directlyPinned: boolean;
   protected: boolean;
   pending: boolean;
   fileCount: number;
@@ -37,7 +35,6 @@ export type OfflineEntryAvailability = {
 
 export type OfflineAvailabilityModel = {
   entries: Record<string, OfflineEntryAvailability>;
-  pinnedFileIds: string[];
 };
 
 function entryMap(entries: readonly DesktopEntry[]) {
@@ -52,6 +49,10 @@ function operationReferenceIds(operation: OutboxOperation) {
   if (operation.kind === "root-entry-positions") return operation.positions.map((position) => position.entryId);
   if (operation.kind === "layout" && operation.layout.wallpaper.source.startsWith("file:")) return [operation.layout.wallpaper.source.slice(5)];
   return [];
+}
+
+export function outboxSyncingEntryIds(records: readonly OutboxRecord[]) {
+  return new Set(records.filter((record) => record.status === "pending").flatMap((record) => operationReferenceIds(record.operation)));
 }
 
 export function outboxProtectedFileIds(records: readonly OutboxRecord[], states: readonly Pick<PersistedDesktopState, "entries">[]) {
@@ -103,19 +104,8 @@ export function offlineFilesUnderRoots(entries: readonly DesktopEntry[], rootIds
 export function buildOfflineAvailability(
   entries: readonly DesktopEntry[],
   inventory: OfflineStorageInventory,
-  activity: { updatingIds?: ReadonlySet<string>; errors?: ReadonlyMap<string, string> } = {},
+  activity: { updatingIds?: ReadonlySet<string>; pendingIds?: ReadonlySet<string> } = {},
 ): OfflineAvailabilityModel {
-  const byId = entryMap(entries);
-  const directPins = new Set(inventory.pinIds.filter((id) => byId.has(id)));
-  const pinnedIds = new Set(directPins);
-  for (let changed = true; changed;) {
-    changed = false;
-    for (const entry of entries) if (entry.parentId && pinnedIds.has(entry.parentId) && !pinnedIds.has(entry.id)) {
-      pinnedIds.add(entry.id);
-      changed = true;
-    }
-  }
-  const pinnedFileIds = entries.filter((entry) => entry.kind === "file" && pinnedIds.has(entry.id)).map((entry) => entry.id);
   const children = new Map<string, DesktopEntry[]>();
   for (const entry of entries) if (entry.parentId) children.set(entry.parentId, [...children.get(entry.parentId) ?? [], entry]);
   const result: Record<string, OfflineEntryAvailability> = {};
@@ -123,45 +113,38 @@ export function buildOfflineAvailability(
   const visit = (entry: DesktopEntry): OfflineEntryAvailability => {
     if (entry.kind === "file") {
       const stored = inventory.files[entry.id] ?? { cached: false, cachedBytes: 0, storedBytes: 0, pending: false, protected: false };
-      const pinned = pinnedIds.has(entry.id);
-      const status: OfflineAvailabilityStatus = activity.errors?.has(entry.id) ? "error"
-        : activity.updatingIds?.has(entry.id) ? "updating"
-          : stored.protected ? "protected"
-            : pinned ? "pinned"
-              : stored.cached ? "cached" : "unavailable";
+      const pending = stored.pending || activity.pendingIds?.has(entry.id) === true;
+      const status: OfflineAvailabilityStatus = activity.updatingIds?.has(entry.id) || pending
+        ? "syncing"
+        : inventory.authoritativeLocal || stored.protected ? "local" : stored.cached ? "synced" : "virtual";
       return result[entry.id] = {
-        status, cached: stored.cached, pinned, directlyPinned: directPins.has(entry.id), protected: stored.protected,
-        pending: stored.pending, fileCount: 1, cachedFileCount: stored.cached ? 1 : 0, bytes: entry.size,
+        status, cached: stored.cached, protected: stored.protected,
+        pending, fileCount: 1, cachedFileCount: stored.cached ? 1 : 0, bytes: entry.size,
         downloadBytes: stored.cached || stored.protected ? 0 : entry.size,
       };
     }
     const descendants = (children.get(entry.id) ?? []).map(visit);
     const fileCount = descendants.reduce((total, child) => total + child.fileCount, 0);
     const cachedFileCount = descendants.reduce((total, child) => total + child.cachedFileCount, 0);
-    const pinned = pinnedIds.has(entry.id);
     const protectedContent = descendants.some((child) => child.protected);
-    const pending = descendants.some((child) => child.pending);
-    const hasError = descendants.some((child) => child.status === "error");
-    const updating = descendants.some((child) => child.status === "updating");
-    const status: OfflineAvailabilityStatus = hasError ? "error" : updating ? "updating" : protectedContent ? "protected"
-      : pinned ? "pinned" : cachedFileCount > 0 && cachedFileCount < fileCount ? "partial" : fileCount > 0 && cachedFileCount === fileCount ? "cached" : "unavailable";
+    const pending = activity.pendingIds?.has(entry.id) === true || descendants.some((child) => child.pending);
+    const updating = activity.updatingIds?.has(entry.id) === true || descendants.some((child) => child.status === "syncing");
+    const status: OfflineAvailabilityStatus = pending || updating ? "syncing"
+      : inventory.authoritativeLocal ? "local" : fileCount === cachedFileCount ? "synced" : "virtual";
     return result[entry.id] = {
-      status, cached: fileCount > 0 && cachedFileCount === fileCount, pinned, directlyPinned: directPins.has(entry.id),
+      status, cached: fileCount > 0 && cachedFileCount === fileCount,
       protected: protectedContent, pending, fileCount, cachedFileCount,
       bytes: descendants.reduce((total, child) => total + child.bytes, 0),
       downloadBytes: descendants.reduce((total, child) => total + child.downloadBytes, 0),
     };
   };
   for (const entry of entries) if (entry.parentId === null) visit(entry);
-  return { entries: result, pinnedFileIds };
+  return { entries: result };
 }
 
 export function offlineStatusLabel(value: OfflineEntryAvailability) {
-  if (value.status === "updating") return "Updating offline copy";
-  if (value.status === "error") return "Offline download failed";
-  if (value.status === "protected") return value.pending ? "Protected pending content" : "Authoritative local content";
-  if (value.status === "pinned") return value.cached ? "Pinned and available offline" : "Pinned, waiting to download";
-  if (value.status === "partial") return `${value.cachedFileCount} of ${value.fileCount} files available offline`;
-  if (value.status === "cached") return "Downloaded for offline use";
-  return "Not available offline";
+  if (value.status === "local") return "Available locally";
+  if (value.status === "virtual") return "Virtual";
+  if (value.status === "syncing") return "Syncing";
+  return "Synced";
 }

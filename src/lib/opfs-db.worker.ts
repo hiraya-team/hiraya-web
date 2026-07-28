@@ -9,10 +9,10 @@ import { parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
 import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type NewActivityRecord } from "./activity";
-import { validateOfflinePinRequest, type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
+import { type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -90,6 +90,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 8) {
     db.exec(migrateSchema8To9Sql(migratedVersion));
+    migratedVersion = 9;
+  }
+  if (migratedVersion === 9) {
+    db.exec(migrateSchema9To10Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -177,7 +181,7 @@ function createSchema(db: Database) {
     ${MINIMAP_PREFERENCE_SCHEMA_SQL}
     ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL}
     ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL}
-    PRAGMA user_version=9;
+    ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL}
     COMMIT;
   `);
 }
@@ -251,7 +255,6 @@ function replaceDesktopStateRows(db: Database, desktopId: string, value: Persist
   try {
     state.entries.forEach((entry, ordinal) => statement.bind([entry.id, desktopId, ordinal, entry.kind, entry.name, entry.parentId, entry.createdAt, entry.modifiedAt, entry.position.x, entry.position.y, entry.kind === "file" ? entry.mimeType : null, entry.kind === "file" ? entry.size : null, state.sync.entryRevisions[entry.id] ?? null, entry.kind === "file" ? state.sync.contentRevisions[entry.id] ?? null : null]).stepReset().clearBindings());
   } finally { statement.finalize(); }
-  db.exec({ sql: "DELETE FROM offline_pins WHERE desktop_id=? AND entry_id NOT IN (SELECT id FROM entries WHERE desktop_id=?)", bind: [desktopId, desktopId] });
 }
 
 function createDesktopRows(db: Database, desktop: DesktopIdentity, state: PersistedDesktopState) {
@@ -332,7 +335,6 @@ const database = ownedNamespace.then(async (namespace) => {
 });
 
 async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbRequests[M], desktopId: string | null): Promise<StorageDbResponses[M]> {
-  if (method === "listOfflinePins" || method === "setOfflinePins") validateOfflinePinRequest(method, params, desktopId);
   const db = await database;
   switch (method) {
     case "ping": return undefined as StorageDbResponses[M];
@@ -485,24 +487,6 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     }
     case "listActivity": return listActivity(db, params as StorageDbRequests["listActivity"]) as StorageDbResponses[M];
     case "pruneDesktops": { const retained = new Set((params as StorageDbRequests["pruneDesktops"]).retainedDesktopIds); db.transaction("IMMEDIATE", () => { for (const row of rows(db, "SELECT id FROM desktops")) { const id = stringValue(row.id); if (!retained.has(id)) db.exec({ sql: "DELETE FROM desktops WHERE id=?", bind: [id] }); } }); return undefined as StorageDbResponses[M]; }
-    case "listOfflinePins": {
-      const id = (params as StorageDbRequests["listOfflinePins"]).desktopId;
-      return { desktopId: id, entryIds: rows(db, "SELECT entry_id FROM offline_pins WHERE desktop_id=? ORDER BY created_at, entry_id", [id]).map((row) => stringValue(row.entry_id)) } as StorageDbResponses[M];
-    }
-    case "setOfflinePins": {
-      const input = params as StorageDbRequests["setOfflinePins"];
-      const entryIds = [...new Set(input.entryIds)];
-      if (entryIds.length !== input.entryIds.length || !Number.isSafeInteger(input.createdAt) || input.createdAt < 0) throw new Error("The offline pin request is invalid.");
-      db.transaction("IMMEDIATE", () => {
-        if (!scalar(db, "SELECT 1 FROM desktops WHERE id=?", [input.desktopId])) throw new Error("That desktop no longer exists.");
-        for (const entryId of entryIds) {
-          if (!scalar(db, "SELECT 1 FROM entries WHERE desktop_id=? AND id=?", [input.desktopId, entryId])) throw new Error("An offline pin entry no longer exists.");
-          if (input.pinned) db.exec({ sql: "INSERT INTO offline_pins(desktop_id,entry_id,created_at) VALUES (?, ?, ?) ON CONFLICT(desktop_id,entry_id) DO NOTHING", bind: [input.desktopId, entryId, input.createdAt] });
-          else db.exec({ sql: "DELETE FROM offline_pins WHERE desktop_id=? AND entry_id=?", bind: [input.desktopId, entryId] });
-        }
-      });
-      return { desktopId: input.desktopId, entryIds: rows(db, "SELECT entry_id FROM offline_pins WHERE desktop_id=? ORDER BY created_at, entry_id", [input.desktopId]).map((row) => stringValue(row.entry_id)) } as StorageDbResponses[M];
-    }
     case "listInstalledApps": return readInstalledApps(db) as StorageDbResponses[M];
     case "installApp": {
       const install = parseInstalledApp((params as StorageDbRequests["installApp"]).install);

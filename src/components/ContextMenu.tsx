@@ -120,7 +120,6 @@ type Props = {
   onDelete: () => void;
   onCopyLink?: () => void;
   onMakeAvailableOffline?: () => void;
-  onUnpinOffline?: () => void;
   onRemoveOfflineCopy?: () => void;
   onOpenOfflineStorage?: () => void;
   offlineBusy?: boolean;
@@ -131,12 +130,11 @@ type Props = {
   onClose: () => void;
 };
 
-export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onUnpinOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
+export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
   const position = useMenuPosition(menu.x, menu.y);
   const onFocus = useRovingMenu(position.ref);
   const offlineItems: SubmenuItem[] = [
     ...(onMakeAvailableOffline ? [{ id: "make-available", label: `Make available${selectionCount > 1 ? ` (${selectionCount})` : ""}`, disabled: offlineBusy, onSelect: onMakeAvailableOffline }] : []),
-    ...(onUnpinOffline ? [{ id: "unpin", label: "Unpin availability", icon: <CloudSlash />, disabled: offlineBusy, onSelect: onUnpinOffline }] : []),
     ...(onRemoveOfflineCopy ? [{ id: "remove-copy", label: "Remove downloaded copies", icon: <CloudSlash />, disabled: offlineBusy, onSelect: onRemoveOfflineCopy }] : []),
     ...(onOpenOfflineStorage ? [{ id: "offline-panel", label: "Connection & Offline", icon: <GearSix />, onSelect: onOpenOfflineStorage }] : []),
   ];

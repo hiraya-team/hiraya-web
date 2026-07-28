@@ -130,7 +130,7 @@ export function createAppCommandService(): CommandService<AppCommandContext> {
     { id: APP_COMMAND_IDS.trash, order: 40, label: "Open Trash", keywords: ["deleted restore"], visible: ({ canOpenTrash }) => canOpenTrash, enabled: ({ canMutate }) => canMutate, execute: ({ openPanel }) => openPanel("trash") },
     { id: APP_COMMAND_IDS.settings, order: 50, label: "Open Settings", visible: ({ canOpenSettings }) => canOpenSettings, execute: ({ openSettings }) => openSettings() },
     { id: APP_COMMAND_IDS.areaMap, order: 60, label: "Expand Area Map", detail: "Navigate spatial desktop areas", keywords: ["areas spaces coordinates regions minimap"], execute: ({ openAreaMap }) => openAreaMap() },
-    { id: APP_COMMAND_IDS.connection, order: 65, label: "Open Connection & Offline", detail: "Review sync, pending work, pins, and storage", keywords: ["sync cache pin download release blocked"], execute: ({ openPanel }) => openPanel("sync") },
+    { id: APP_COMMAND_IDS.connection, order: 65, label: "Open Connection & Offline", detail: "Review sync, pending work, downloads, and storage", keywords: ["sync cache download release blocked"], execute: ({ openPanel }) => openPanel("sync") },
     { id: APP_COMMAND_IDS.help, order: 75, label: "Open User Guide", detail: "Bundled product help and troubleshooting", keywords: ["help documentation manual offline"], execute: ({ openPanel }) => openPanel("help") },
     { id: APP_COMMAND_IDS.shortcuts, order: 80, label: "Show keyboard shortcuts", keywords: ["keys help"], execute: ({ openPanel }) => openPanel("shortcuts") },
   ];

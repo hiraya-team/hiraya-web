@@ -1,5 +1,4 @@
 import {
-  CloudArrowDown,
   CloudCheck,
   CloudSlash,
   File as FileGlyph,
@@ -14,9 +13,9 @@ import {
   GearSix,
   Info,
   LinkSimple,
+  HardDrive,
   Package,
   SpinnerGap,
-  WarningCircle,
 } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
 import type { DesktopEntry } from "../types";
@@ -46,10 +45,9 @@ export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" 
   return <GearSix size={size} aria-hidden="true" />;
 }
 
-export function AvailabilityBadge({ availability, showUnavailable = false }: { availability: OfflineEntryAvailability; showUnavailable?: boolean }) {
-  if (!showUnavailable && availability.status === "unavailable") return null;
+export function AvailabilityBadge({ availability }: { availability: OfflineEntryAvailability }) {
   return <span className="availability-badge" data-status={availability.status} title={offlineStatusLabel(availability)} aria-label={offlineStatusLabel(availability)}>
-    {availability.status === "error" ? <WarningCircle /> : availability.status === "updating" ? <SpinnerGap /> : availability.status === "pinned" ? <CloudArrowDown /> : availability.status === "partial" || availability.status === "unavailable" ? <CloudSlash /> : <CloudCheck />}
+    {availability.status === "local" ? <HardDrive /> : availability.status === "syncing" ? <SpinnerGap /> : availability.status === "virtual" ? <CloudSlash /> : <CloudCheck />}
   </span>;
 }
 

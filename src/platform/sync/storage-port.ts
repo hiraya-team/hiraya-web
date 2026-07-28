@@ -67,7 +67,6 @@ export interface SyncStorage {
   readPendingContent(operationId: string, entryId: string): Promise<Blob>;
 
   loadOfflineInventory(desktopId: string): Promise<OfflineStorageInventory>;
-  setOfflinePins(desktopId: string, entryIds: string[], pinned: boolean): Promise<unknown>;
   releaseOfflineCopies(desktopId: string, rootIds?: string[]): Promise<{ releasedBytes: number; releasedFiles: number; skippedFiles: number }>;
   listActivity(query?: ActivityQuery): Promise<ActivityPage>;
 }

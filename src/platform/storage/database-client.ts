@@ -15,7 +15,7 @@ let hostedDatabaseRequestId: number | null = null;
 let requestId = 0;
 const pendingRequests = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
 const OWNER_CHANGED_MESSAGE = "The local database owner changed. Retry the operation.";
-const RETRYABLE_OWNER_CHANGE_METHODS = new Set<StorageDbMethod>(["status", "protocol", "listDesktops", "readDesktop", "readPreferences", "readWindowSession", "readOutbox", "listActivity", "listOfflinePins"]);
+const RETRYABLE_OWNER_CHANGE_METHODS = new Set<StorageDbMethod>(["status", "protocol", "listDesktops", "readDesktop", "readPreferences", "readWindowSession", "readOutbox", "listActivity"]);
 const DATABASE_REQUEST_TIMEOUT_MS = 15_000;
 
 class LocalDatabaseOwnerChangedError extends Error {}

@@ -5,7 +5,7 @@ export const HELP_SECTIONS = [
   { id: "files-and-folders", title: "Files and folders", summary: "Hierarchy, uploads, and folder import", keywords: ["directory", "empty folders", "drag drop"] },
   { id: "desktops-and-areas", title: "Desktops and areas", summary: "Named desktops and derived spatial regions", keywords: ["coordinates", "navigate", "arrange"] },
   { id: "sharing", title: "Sharing", summary: "Roles, invitations, and public links", keywords: ["owner", "manager", "writer", "reader", "publish"] },
-  { id: "offline", title: "Offline Storage", summary: "Cache, pins, site-data risk, and shared restrictions", keywords: ["download", "storage", "clear site data"] },
+  { id: "offline", title: "Offline Storage", summary: "Downloaded copies, site-data risk, and shared restrictions", keywords: ["download", "storage", "clear site data"] },
   { id: "installation-and-updates", title: "Installation and updates", summary: "Install the PWA and apply releases", keywords: ["add to home screen", "reload", "PWA"] },
   { id: "apps-and-permissions", title: "Apps and permissions", summary: ".hiraya.app packages, approval, and isolation", keywords: ["install app", "capability", "uninstall"] },
   { id: "export-backup-and-recovery", title: "Export, backup, and recovery", summary: "Deployment seeds versus operator recovery", keywords: ["restore", "operator", "server backup"] },

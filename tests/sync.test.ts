@@ -56,7 +56,6 @@ function remoteStorage() {
   let outbox: OutboxRecord[] = [];
   let sequence = 0;
   const cached = new Map<string, File>();
-  const pins = new Set<string>();
   const pending = new Map<string, Map<string, Blob>>();
   const stats = { cacheWrites: 0, blockWrites: 0, attemptWrites: 0, remoteApplications: [] as Array<{ acknowledgedOperationId?: string; force: boolean; useAcknowledgedContent: boolean }> };
   const storage = {
@@ -80,7 +79,7 @@ function remoteStorage() {
     removeCachedFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number) => cached.delete(`${desktopId}:${catalogId}:${id}:${contentRevision}`),
     loadOfflineInventory: async (desktopId: string) => ({
       desktopId,
-      pinIds: [...pins],
+      authoritativeLocal: false,
       files: Object.fromEntries(current.entries.filter((entry) => entry.kind === "file").map((entry) => {
         const revision = current.sync.contentRevisions[entry.id];
         const available = cached.has(`${desktopId}:${current.sync.catalogId}:${entry.id}:${revision}`);
@@ -91,10 +90,6 @@ function remoteStorage() {
       releasableBytes: [...cached.values()].reduce((total, file) => total + file.size, 0),
       browserStorage: null,
     }),
-    setOfflinePins: async (_desktopId: string, entryIds: string[], pinned: boolean) => {
-      for (const id of entryIds) if (pinned) pins.add(id); else pins.delete(id);
-      return [...pins];
-    },
     releaseOfflineCopies: async () => {
       const releasedBytes = [...cached.values()].reduce((total, file) => total + file.size, 0);
       const releasedFiles = cached.size;
@@ -831,17 +826,21 @@ describe("canonical synchronization", () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const activeDownloads: string[][] = [];
+    engine.subscribeEntryDownloads((ids) => activeDownloads.push([...ids]));
     await engine.start("desk", { x: 0, y: 0 });
 
     expect(await engine.isFileAvailableOffline("file-1")).toBe(false);
     expect(await (await engine.makeFileAvailableOffline("file-1")).text()).toBe("note");
     expect(await engine.isFileAvailableOffline("file-1")).toBe(true);
+    expect(activeDownloads).toContainEqual(["file-1"]);
+    expect(activeDownloads.at(-1)).toEqual([]);
     expect(await engine.removeFileFromOfflineCache("file-1")).toBe(true);
     expect(await engine.isFileAvailableOffline("file-1")).toBe(false);
     await engine.stop();
   });
 
-  test("roundtrips durable pin intent and downloads through the verified access path", async () => {
+  test("downloads selected copies once through the verified access path", async () => {
     const storage = remoteStorage();
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
@@ -854,14 +853,10 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
 
-    await engine.setOfflinePinIntent(["file-1"], true);
-    expect((await engine.loadOfflineInventory()).pinIds).toEqual(["file-1"]);
-    void engine.refreshPinnedContent(["file-1"]);
+    void engine.downloadOfflineCopies(["file-1"]);
     await waitFor(() => engine.isFileAvailableOffline("file-1"));
     expect(await engine.isFileAvailableOffline("file-1")).toBe(true);
     expect(requests).toContain("/api/desktops/desk/entries/file-1/content-access?revision=1");
-    await engine.setOfflinePinIntent(["file-1"], false);
-    expect((await engine.loadOfflineInventory()).pinIds).toEqual([]);
     expect(await engine.releaseOfflineCopies()).toMatchObject({ releasedFiles: 1, releasedBytes: 4 });
     await engine.stop();
   });
@@ -885,7 +880,6 @@ describe("canonical synchronization", () => {
 
   test("suppresses late offline progress after the desktop generation stops", async () => {
     const storage = remoteStorage();
-    await storage.setOfflinePins("desk", ["file-1"], true);
     let releaseDownload!: () => void;
     const downloadGate = new Promise<void>((resolve) => { releaseDownload = resolve; });
     const progress: Array<{ phase: string; desktopId: string; generation: number; operationId: string }> = [];
@@ -898,6 +892,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     engine.subscribeOfflineStorage(() => undefined, (value) => { if (value) progress.push(value); });
     await engine.start("desk", { x: 0, y: 0 });
+    void engine.downloadOfflineCopies(["file-1"]);
     while (!progress.length) await new Promise((resolve) => setTimeout(resolve, 0));
     expect(progress[0]).toMatchObject({ phase: "downloading", desktopId: "desk" });
     expect(progress[0].operationId).toBeTruthy();

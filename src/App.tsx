@@ -49,9 +49,9 @@ import {
   discardBlockedOutboxRecord,
   loadOfflineInventory,
   subscribeToOfflineStorage,
+  subscribeToEntryDownloads,
   estimateOfflineOperation,
-  setOfflinePinIntent,
-  refreshPinnedContent,
+  downloadOfflineCopies,
   releaseOfflineCopies,
   listTrash,
   restoreTrash,
@@ -111,7 +111,7 @@ import { createTrashNotification, dismissTrashNotification, updateTrashNotificat
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
 import { areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
-import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
+import { buildOfflineAvailability, outboxSyncingEntryIds, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
 import { AppIcon } from "./components/VisualPrimitives";
@@ -244,6 +244,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
   const [offlineInventory, setOfflineInventory] = useState<OfflineStorageInventory | null>(null);
   const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
+  const [activeEntryDownloadIds, setActiveEntryDownloadIds] = useState<ReadonlySet<string>>(new Set());
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [importProgress, setImportProgress] = useState<{ folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" } | null>(null);
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
@@ -364,8 +365,6 @@ function App({ session }: { session: AuthSession | null }) {
   const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
   const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
   const chooseFolderImportRef = useRef<(parentId: string | null) => Promise<void>>(async () => undefined);
-  const makeAvailableOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
-  const unpinOfflineRef = useRef<(ids: string[]) => Promise<void>>(async () => undefined);
   const windowCommandRef = useRef<{ maximize: (id: string) => void; move: (id: string, direction: "left" | "right" | "up" | "down") => void }>({ maximize: () => {}, move: () => {} });
   const autoUpdateRef = useRef(true);
   const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
@@ -383,7 +382,7 @@ function App({ session }: { session: AuthSession | null }) {
   const routeSettings = route?.settings;
   const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
   const canMutate = canMutateDesktop(activeDesktop, syncStatus);
-  const activeOutboxRecords = activeDesktopId ? outboxRecords.filter((record) => outboxOperationDesktopIds(record).has(activeDesktopId)) : [];
+  const activeOutboxRecords = useMemo(() => activeDesktopId ? outboxRecords.filter((record) => outboxOperationDesktopIds(record).has(activeDesktopId)) : [], [activeDesktopId, outboxRecords]);
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
@@ -401,16 +400,16 @@ function App({ session }: { session: AuthSession | null }) {
         entries,
         offlineInventory ?? {
           desktopId: activeDesktopId,
-          pinIds: [],
+          authoritativeLocal: syncStatus === "local",
           files: {},
           cachedBytes: 0,
           protectedBytes: 0,
           releasableBytes: 0,
           browserStorage: null,
         },
-        { updatingIds: offlineProgress?.updatingIds, errors: offlineProgress?.errors },
+        { updatingIds: new Set([...(offlineProgress?.updatingIds ?? []), ...activeEntryDownloadIds]), pendingIds: outboxSyncingEntryIds(activeOutboxRecords) },
       ),
-    [activeDesktopId, entries, offlineInventory, offlineProgress],
+    [activeDesktopId, entries, offlineInventory, offlineProgress, activeEntryDownloadIds, activeOutboxRecords, syncStatus],
   );
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
@@ -1130,6 +1129,9 @@ function App({ session }: { session: AuthSession | null }) {
         if (active && (!progress || progress.desktopId === activeDesktopIdRef.current)) setOfflineProgress(progress);
       },
     );
+    const unsubscribeEntryDownloads = subscribeToEntryDownloads((entryIds) => {
+      if (active) setActiveEntryDownloadIds(entryIds);
+    });
     const unsubscribeCatalog = subscribeToDesktopCatalog((registry) => {
       if (!active) return;
       desktopsRef.current = registry.desktops;
@@ -1201,6 +1203,7 @@ function App({ session }: { session: AuthSession | null }) {
       unsubscribe();
       unsubscribeOutbox();
       unsubscribeOffline();
+      unsubscribeEntryDownloads();
       unsubscribeCatalog();
       void stopDesktopSync();
     };
@@ -2466,11 +2469,8 @@ function App({ session }: { session: AuthSession | null }) {
         },
         getEntryStatus: (id) => {
           const status = offlineModelRef.current?.entries[id];
-          return { status: status?.status ?? "unavailable", pinned: status?.pinned ?? false, directlyPinned: status?.directlyPinned ?? false };
-        },
-        setOfflinePinned: async (ids, pinned) => {
-          if (pinned) await makeAvailableOfflineRef.current(ids);
-          else await unpinOfflineRef.current(ids);
+          const legacyStatus = status?.status === "local" ? "protected" : status?.status === "syncing" ? "updating" : status?.status === "synced" ? "cached" : "unavailable";
+          return { status: legacyStatus, pinned: false, directlyPinned: false };
         },
         setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
       });
@@ -2655,16 +2655,13 @@ function App({ session }: { session: AuthSession | null }) {
         (estimate.fileCount >= 50 || estimate.downloadBytes >= 100 * 1024 * 1024) &&
         !(await requestConfirmation({
           title: "Make this selection available offline?",
-          message: `${estimate.fileCount} files may download (${formatImportBytes(estimate.downloadBytes)}). Folder pins also include new descendants after synchronization.`,
+          message: `${estimate.fileCount} current files may download (${formatImportBytes(estimate.downloadBytes)}). Future folder descendants are not downloaded automatically.`,
           confirmLabel: "Make available",
         }))
       )
         return;
-      await setOfflinePinIntent(estimate.roots, true);
-      if (syncStatus !== "offline") void refreshPinnedContent(estimate.roots).catch((reason) => {
-        if (activeDesktopIdRef.current === desktopId) setError(reason instanceof Error ? reason.message : "Pinned files could not be downloaded.");
-      });
-      setNotice(syncStatus === "offline" ? "Offline pin saved. Download will occur after reconnect." : `${estimate.fileCount} ${estimate.fileCount === 1 ? "file is" : "files are"} available or updating for offline use`);
+      await downloadOfflineCopies(estimate.roots);
+      if (activeDesktopIdRef.current === desktopId) setNotice(`${estimate.fileCount} ${estimate.fileCount === 1 ? "file is" : "files are"} available locally`);
       setContextMenu(null);
     } catch (availabilityError) {
       setError(availabilityError instanceof Error ? availabilityError.message : "Offline availability could not be changed.");
@@ -2673,28 +2670,13 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  async function unpinOffline(rootIds: string[]) {
-    if (offlineBusy) return;
-    setOfflineBusy(true);
-    try {
-      await setOfflinePinIntent(rootIds, false);
-      setNotice("Offline pin removed. Existing downloaded copies remain until released.");
-      setContextMenu(null);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The offline pin could not be removed.");
-    } finally {
-      setOfflineBusy(false);
-    }
-  }
-  makeAvailableOfflineRef.current = makeAvailableOffline;
-  unpinOfflineRef.current = unpinOffline;
 
   async function removeDownloadedCopies(rootIds?: string[]) {
     if (offlineBusy) return;
     setOfflineBusy(true);
     try {
       const released = await releaseOfflineCopies(rootIds);
-      setNotice(released.releasedFiles ? `${released.releasedFiles} downloaded ${released.releasedFiles === 1 ? "copy" : "copies"} released (${formatImportBytes(released.releasedBytes)})` : released.skippedFiles ? "No copies released. Pinned or protected content was kept." : "No eligible downloaded copies found.");
+      setNotice(released.releasedFiles ? `${released.releasedFiles} downloaded ${released.releasedFiles === 1 ? "copy" : "copies"} released (${formatImportBytes(released.releasedBytes)})` : released.skippedFiles ? "No copies released. Authoritative or pending content was kept." : "No eligible downloaded copies found.");
       setContextMenu(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Downloaded copies could not be released.");
@@ -4032,7 +4014,7 @@ function App({ session }: { session: AuthSession | null }) {
                         viewChangeDisabled={!preferencesLoaded}
                       />
                     )}
-                    {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onUnpin={offlineModel.entries[propertiesEntry.id]?.directlyPinned ? () => void unpinOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
+                    {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
                     {app.kind === "settings" && (
                       <SettingsWindow
                         page={settingsPage}
@@ -4392,13 +4374,12 @@ function App({ session }: { session: AuthSession | null }) {
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
-          onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => !offlineModel.entries[entry.id]?.pinned) ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
-          onUnpinOffline={contextMenuEntries.some((entry) => offlineModel.entries[entry.id]?.directlyPinned) ? () => void unpinOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
+          onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => offlineModel.entries[entry.id]?.status === "virtual") ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
           onRemoveOfflineCopy={
             syncStatus !== "local" &&
             contextMenuEntries.some((entry) => {
               const availability = offlineModel.entries[entry.id];
-              return availability?.cached && !availability.pinned && !availability.protected;
+              return availability?.cached && !availability.protected;
             })
               ? () => void removeDownloadedCopies(contextMenuEntries.map((entry) => entry.id))
               : undefined
@@ -4604,7 +4585,6 @@ function App({ session }: { session: AuthSession | null }) {
             affectedLabels={outboxAffectedLabels}
             entries={entries}
             inventory={offlineInventory}
-            model={offlineModel}
             progress={offlineProgress}
             online={syncStatus === "online"}
             persistence={storagePersistence}
@@ -4625,8 +4605,7 @@ function App({ session }: { session: AuthSession | null }) {
                 }
               });
             }}
-            onRetryDownloads={() => void refreshPinnedContent()}
-            onUnpin={(ids) => void unpinOffline(ids)}
+            onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
             onReleaseAll={() => void removeDownloadedCopies()}
             onOpenHelp={() => openHelp("offline")}
           />

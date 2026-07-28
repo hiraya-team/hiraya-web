@@ -1,17 +1,15 @@
-import { ArrowClockwise, CloudArrowDown, CloudCheck, CloudSlash, HardDrive } from "@phosphor-icons/react";
+import { ArrowClockwise, CloudCheck, CloudSlash, HardDrive } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
-import { offlineStatusLabel, type OfflineAvailabilityModel, type OfflineStorageInventory } from "../lib/offline-availability";
+import type { OfflineStorageInventory } from "../lib/offline-availability";
 import type { OfflineOperationProgress } from "../lib/sync";
 import { StatusBadge } from "./VisualPrimitives";
 
 type Props = {
   entries: readonly DesktopEntry[];
   inventory: OfflineStorageInventory | null;
-  model: OfflineAvailabilityModel;
   progress: OfflineOperationProgress | null;
   online: boolean;
   onRetry: () => void;
-  onUnpin: (ids: string[]) => void;
   onReleaseAll: () => void;
   onOpenHelp: () => void;
 };
@@ -27,8 +25,7 @@ function formatOfflineBytes(bytes: number) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]}`;
 }
 
-export function OfflineStoragePanel({ entries, inventory, model, progress, online, onRetry, onUnpin, onReleaseAll, onOpenHelp }: Props) {
-  const pinnedRoots = entries.filter((entry) => model.entries[entry.id]?.directlyPinned);
+export function OfflineStoragePanel({ entries, inventory, progress, online, onRetry, onReleaseAll, onOpenHelp }: Props) {
   const storage = inventory?.browserStorage;
   const busy = progress?.phase === "downloading";
   return <div className="offline-storage-panel" aria-busy={busy}>
@@ -49,14 +46,7 @@ export function OfflineStoragePanel({ entries, inventory, model, progress, onlin
       {progress.errors.size > 0 && <ul className="offline-storage-failures">{[...progress.errors].map(([id, message]) => <li key={id}><strong>{entries.find((entry) => entry.id === id)?.name ?? id}</strong><span>{message}</span></li>)}</ul>}
       {progress.phase === "error" && <button className="button button--quiet" type="button" disabled={!online || busy} onClick={onRetry}><ArrowClockwise size={15} /> Retry failed downloads</button>}
     </section>}
-    <section aria-labelledby="offline-pins-heading">
-      <header className="offline-storage-section-heading"><div><h3 id="offline-pins-heading">Pinned items</h3><p>Folder pins automatically include current and new descendants.</p></div><span>{pinnedRoots.length}</span></header>
-      {pinnedRoots.length ? <div className="offline-pin-list">{pinnedRoots.map((entry) => {
-        const availability = model.entries[entry.id];
-        return <div className="offline-pin-row" key={entry.id}><span>{entry.kind === "folder" ? <HardDrive size={18} /> : <CloudArrowDown size={18} />}<span><strong>{entry.name}</strong><small>{offlineStatusLabel(availability)} · {availability.fileCount} {availability.fileCount === 1 ? "file" : "files"} · {formatOfflineBytes(availability.bytes)}</small></span></span><button className="button button--quiet" type="button" disabled={busy} onClick={() => onUnpin([entry.id])}><CloudSlash size={15} /> Unpin</button></div>;
-      })}</div> : <p className="offline-storage-empty">Nothing is pinned. Use an item or selection context menu to make it available offline.</p>}
-    </section>
-    <section className="offline-storage-release" aria-labelledby="offline-release-heading"><div><h3 id="offline-release-heading">Release downloaded copies</h3><p>Removes only unpinned cache, including stale copies found during this explicit cleanup. Server files, pinned copies, pending operations, and browser-local authoritative files are never deleted.</p></div><button className="button button--quiet" type="button" disabled={busy || !inventory?.releasableBytes} onClick={onReleaseAll}><CloudSlash size={15} /> Release all unpinned cache</button></section>
+    <section className="offline-storage-release" aria-labelledby="offline-release-heading"><div><h3 id="offline-release-heading">Release downloaded copies</h3><p>Removes releasable cache, including stale copies found during this explicit cleanup. Server files, pending operations, and browser-local authoritative files are never deleted.</p></div><button className="button button--quiet" type="button" disabled={busy || !inventory?.releasableBytes} onClick={onReleaseAll}><CloudSlash size={15} /> Release downloaded copies</button></section>
     <button className="inline-help-link" type="button" onClick={onOpenHelp}>Offline behavior, risks, and troubleshooting</button>
   </div>;
 }
