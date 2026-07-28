@@ -140,7 +140,7 @@ import { enteredEdge } from "./ui/edge-entry";
 import { settleAreaSwitcherDrag, type AreaSwitcherDrag, type AreaSwitcherDragSettlement } from "./ui/area-switcher-drag";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ConnectionStatusButton } from "./features/connection/ConnectionStatusButton";
-import { ShellNotifications } from "./features/notifications/ShellNotifications";
+import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -161,7 +161,7 @@ function formatImportBytes(value: number) {
 }
 
 function transientMenuOpen() {
-  return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .app-window__menu"));
+  return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel, .app-window__menu"));
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -197,6 +197,8 @@ function App({ session }: { session: AuthSession | null }) {
   const [error, setError] = useState("");
   const [folderImportError, setFolderImportError] = useState("");
   const [notice, setNotice] = useState("");
+  const [shellMessages, setShellMessages] = useState<ShellMessage[]>([]);
+  const nextShellMessageIdRef = useRef(0);
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
@@ -1710,9 +1712,16 @@ function App({ session }: { session: AuthSession | null }) {
   }, [contextMenu, dialog, isMobile, minimapExpanded, moveDialogEntries.length, moveDialogSubmitting]);
 
   useEffect(() => {
+    if (!error) return;
+    setShellMessages((current) => [...current, { id: ++nextShellMessageIdRef.current, kind: "error", message: error, folderImportHelp: error === folderImportError }]);
+    setError("");
+    setFolderImportError("");
+  }, [error, folderImportError]);
+
+  useEffect(() => {
     if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(""), 6500);
-    return () => window.clearTimeout(timer);
+    setShellMessages((current) => [...current, { id: ++nextShellMessageIdRef.current, kind: "notice", message: notice }]);
+    setNotice("");
   }, [notice]);
 
   const wallpaperFileId = layout.wallpaper.source.startsWith("file:") ? layout.wallpaper.source.slice(5) : null;
@@ -3489,7 +3498,7 @@ function App({ session }: { session: AuthSession | null }) {
     return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
-  const shellAnnouncement = error ? "" : importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : notice || (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? ""));
+  const shellAnnouncement = shellMessages.at(-1)?.message ?? (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
 
   return (
     <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
@@ -3584,6 +3593,24 @@ function App({ session }: { session: AuthSession | null }) {
             <span className="desktop-action-label">Search</span>
           </button>
           <ConnectionStatusButton status={syncStatus} syncing={isSyncing} outboxRecords={activeOutboxRecords} onOpen={() => setActivePanel("sync")} />
+          <ShellNotifications
+            messages={shellMessages}
+            trashNotifications={trashNotifications}
+            appNotifications={appNotifications}
+            importProgress={importProgress}
+            showUpdateToast={showUpdateToast}
+            updateApplying={updateApplying}
+            updateBlocked={updateBlocked}
+            announcement={shellAnnouncement}
+            onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
+            onOpenFolderImportHelp={() => openHelp("files-and-folders")}
+            onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
+            onUndoTrash={(notification) => void undoMoveToTrash(notification)}
+            onOpenTrash={(notification) => void openTrashNotification(notification)}
+            onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
+            onActivateUpdate={() => void activateUpdate()}
+            onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
+          />
           {isMobile && (
             <MobileHeaderMenu
               label={`Account, system, and windows; ${runningApps.length} open`}
@@ -4308,28 +4335,6 @@ function App({ session }: { session: AuthSession | null }) {
           </>}
         </MobileSelectionToolbar>
       )}
-
-      <ShellNotifications
-        error={error}
-        folderImportError={folderImportError}
-        notice={notice}
-        trashNotifications={trashNotifications}
-        appNotifications={appNotifications}
-        importProgress={importProgress}
-        showUpdateToast={showUpdateToast}
-        updateApplying={updateApplying}
-        updateBlocked={updateBlocked}
-        announcement={shellAnnouncement}
-        onDismissError={() => { setError(""); setFolderImportError(""); }}
-        onOpenFolderImportHelp={() => openHelp("files-and-folders")}
-        onDismissNotice={() => setNotice("")}
-        onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
-        onUndoTrash={(notification) => void undoMoveToTrash(notification)}
-        onOpenTrash={(notification) => void openTrashNotification(notification)}
-        onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
-        onActivateUpdate={() => void activateUpdate()}
-        onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
-      />
 
       {contextMenu?.type === "entry" && contextMenuEntry && (
         <ContextMenu

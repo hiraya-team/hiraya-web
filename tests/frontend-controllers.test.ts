@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { connectionIndicator } from "../src/features/connection/controller";
 import { formatDesktopClock } from "../src/features/shell/clock";
-import { notificationPresentation } from "../src/features/notifications/controller";
+import { nextUnreadNotificationIds } from "../src/features/notifications/controller";
 
 describe("feature-owned shell controllers", () => {
-  test("projects connection and bounded notification presentation", () => {
+  test("projects connection and notification unread state", () => {
     expect(connectionIndicator("online", true, []).status).toBe("syncing");
     expect(connectionIndicator("online", false, [{ status: "pending" } as never]).status).toBe("waiting");
     expect(connectionIndicator("offline", false, []).tone).toBe("danger");
-    expect(notificationPresentation("error", "saved", 2, 2)).toMatchObject({ total: 6, showError: true, hidden: 4 });
+    expect([...nextUnreadNotificationIds(new Set(), new Set(["known"]), new Set(["known", "new"]), false)]).toEqual(["new"]);
   });
 
   test("formats the isolated desktop clock without owning desktop state", () => {

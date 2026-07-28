@@ -276,13 +276,18 @@ describe("accessibility regressions", () => {
     expect(app).toContain("restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}");
   });
 
-  test("mobile menus and notifications use separate reachable overlay zones", async () => {
+  test("notifications use a dedicated keyboard-reachable panel", async () => {
+    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const notifications = await Bun.file(new URL("../src/features/notifications/ShellNotifications.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-    expect(css).toContain("--layer-notification: 4900");
     expect(css).toContain("--layer-popover: 5000");
-    expect(css).toContain(".desktop-shell:has(.mobile-header-menu__panel, .desktop-switcher__panel) .shell-status-region");
-    expect(css).toContain(".desktop-shell:has(.notification-stack) :is(.mobile-header-menu__panel, .desktop-switcher__panel)");
+    expect(app).toContain("messages={shellMessages}");
+    expect(app).not.toContain("window.setTimeout(() => setNotice");
+    expect(notifications).toContain('aria-haspopup="dialog"');
+    expect(notifications).toContain('event.key !== "Escape"');
+    expect(notifications).toContain("triggerRef.current?.focus()");
+    expect(css).toContain(".notification-center__panel");
   });
 
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {
