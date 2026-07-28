@@ -3,7 +3,7 @@ import { parseWindowTargets, type WindowTarget } from "../../lib/window-session"
 import type { AppHistorySettingsPage } from "../../ui/app-history";
 import type { RunningApp } from "./model";
 
-export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentHash?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
+export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
 
 export function parseRunningAppHistory(state: unknown) {
   if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;
@@ -14,8 +14,8 @@ export function parseRunningAppHistory(state: unknown) {
   }
 }
 
-export function createRouteHistoryState(apps: WindowTarget[], instances: string[], settingsPage: AppHistorySettingsPage, parentHash?: string): RouteHistoryState {
-  return { hiraya: true, schemaVersion: 1, ...(parentHash ? { parentHash } : {}), apps, instances, settingsPage };
+export function createRouteHistoryState(apps: WindowTarget[], instances: string[], settingsPage: AppHistorySettingsPage, parentPath?: string): RouteHistoryState {
+  return { hiraya: true, schemaVersion: 1, ...(parentPath ? { parentPath } : {}), apps, instances, settingsPage };
 }
 
 export function routeForRunningApp(app: RunningApp | null, current: DesktopRoute, activeDesktopId: string): DesktopRoute {

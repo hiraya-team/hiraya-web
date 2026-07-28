@@ -45,7 +45,7 @@ Synchronized file creates and content saves calculate SHA-256 and MD5 from stage
 
 ## Routes And Areas
 
-The canonical hash is `#/desktops/{desktopId}/areas/{column}/{row}` with optional explorer, file, properties, or settings suffixes. Root coordinates form one continuous canvas; visible areas are derived segments and are not persisted.
+The canonical pathname is `/desktops/{desktopId}/areas/{column}/{row}` with optional explorer, file, properties, or settings suffixes. Routing uses the browser History API; hashes are not routes. The transient `?open=` file-path query is replaced with the corresponding canonical file pathname after resolution. The static host must serve `index.html` for direct requests to desktop paths; GitHub Pages does not provide the required fallback. Root coordinates form one continuous canvas; visible areas are derived segments and are not persisted.
 
 ## Portable Data
 
@@ -60,12 +60,3 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
 The production build also packages the Calculator, ZIP Browser, and Pixel Editor examples into `dist/experimental-apps`. A Hiraya server uses these archives when it provisions the deployment's read-only `Experimental Apps` desktop. Users copy packages from that desktop to an owned desktop before approving them for access to personal files.
-
-## GitHub Pages
-
-```sh
-HIRAYA_FRONTEND_ONLY=true \
-HIRAYA_SEEDED_DIR=examples/seeded \
-HIRAYA_BASE_PATH=/hiraya/ \
-bun run build
-```

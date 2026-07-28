@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { seededDesktopPlugin } from "./build/seeded";
 import { systemAppsPlugin } from "./build/system-apps";
+import { navigationFallbackDenylist } from "./build/navigation";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "HIRAYA_");
@@ -42,7 +43,7 @@ export default defineConfig(({ mode }) => {
         workbox: {
           cleanupOutdatedCaches: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
-          navigateFallbackDenylist: [/^\/api(?:\/|$)/, /^\/(?:login|register|profile|logout|admin)(?:[/?]|$)/],
+          navigateFallbackDenylist: navigationFallbackDenylist,
         },
       }),
     ],

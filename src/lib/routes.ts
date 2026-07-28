@@ -65,8 +65,8 @@ function parseSuffix(parts: string[], route: DesktopRoute, startIndex: number) {
   return index === parts.length ? next : null;
 }
 
-export function parseDesktopRoute(hash: string): DesktopRoute | null {
-  const parts = hash.replace(/^#\/?/, "").split("/").filter(Boolean);
+export function parseDesktopRoute(pathname: string): DesktopRoute | null {
+  const parts = pathname.split("/").filter(Boolean);
   if (parts.length < 2) return null;
 
   if (parts[0] === "desktops" && decodeId(parts[1]) && parts[2] === "areas" && /^-?\d+$/.test(parts[3] ?? "") && /^-?\d+$/.test(parts[4] ?? "")) {
@@ -81,13 +81,13 @@ export function parseDesktopRoute(hash: string): DesktopRoute | null {
 
 export function formatDesktopRoute(route: DesktopRoute) {
   if (!route.desktopId) throw new Error("A desktop route requires a desktop ID.");
-  let hash = `#/desktops/${encodeURIComponent(route.desktopId)}/areas/${route.column}/${route.row}`;
-  if (route.settings) return `${hash}/settings`;
-  if (route.propertiesEntryId) return `${hash}/properties/${encodeURIComponent(route.propertiesEntryId)}`;
-  if (route.explorerFolderId === null) hash += "/explorer/root";
-  else if (route.explorerFolderId !== undefined) hash += `/explorer/folder/${encodeURIComponent(route.explorerFolderId)}`;
-  if (route.fileId) hash += `/file/${encodeURIComponent(route.fileId)}`;
-  return hash;
+  let pathname = `/desktops/${encodeURIComponent(route.desktopId)}/areas/${route.column}/${route.row}`;
+  if (route.settings) return `${pathname}/settings`;
+  if (route.propertiesEntryId) return `${pathname}/properties/${encodeURIComponent(route.propertiesEntryId)}`;
+  if (route.explorerFolderId === null) pathname += "/explorer/root";
+  else if (route.explorerFolderId !== undefined) pathname += `/explorer/folder/${encodeURIComponent(route.explorerFolderId)}`;
+  if (route.fileId) pathname += `/file/${encodeURIComponent(route.fileId)}`;
+  return pathname;
 }
 
 export function normalizeDesktopRoute(route: DesktopRoute | null, entries: DesktopEntry[], desktopId: string): DesktopRoute {

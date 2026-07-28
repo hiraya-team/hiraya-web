@@ -699,20 +699,20 @@ function App({ session }: { session: AuthSession | null }) {
     return parseRunningAppHistory(state);
   }
 
-  function routeHistoryState(apps: WindowTarget[], parentHash?: string, instances = runningAppIds(), page = settingsPageRef.current): RouteHistoryState {
-    return createRouteHistoryState(apps, instances, page, parentHash);
+  function routeHistoryState(apps: WindowTarget[], parentPath?: string, instances = runningAppIds(), page = settingsPageRef.current): RouteHistoryState {
+    return createRouteHistoryState(apps, instances, page, parentPath);
   }
 
   function writeRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
-    const hash = formatDesktopRoute(next);
-    if (mode === "push" && hash !== window.location.hash) {
+    const pathname = formatDesktopRoute(next);
+    if (mode === "push" && pathname !== window.location.pathname) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
       const previousInstances = current?.hiraya ? historyInstanceIds(current, (previousApps ?? runningAppTargets()).map(builtinAppTargetId)) : (previousApps ?? runningAppTargets()).map(builtinAppTargetId);
-      window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentHash : undefined, previousInstances), "", window.location.href);
-      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash), "", hash);
-    } else if (mode === "replace" || hash !== window.location.hash) {
+      window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentPath : undefined, previousInstances), "", window.location.href);
+      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", pathname);
+    } else if (mode === "replace" || pathname !== window.location.pathname || window.location.search) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
-      window.history.replaceState(routeHistoryState(runningAppTargets(), current?.hiraya ? current.parentHash : undefined), "", hash);
+      window.history.replaceState(routeHistoryState(runningAppTargets(), current?.hiraya ? current.parentPath : undefined), "", pathname);
     }
     setCurrentRoute(next);
   }
@@ -720,10 +720,10 @@ function App({ session }: { session: AuthSession | null }) {
   function applyLocationRoute(entriesValue = entriesRef.current, layoutValue = layoutRef.current) {
     if (!navigationReadyRef.current) return;
     void layoutValue;
-    const normalized = normalizeDesktopRoute(parseDesktopRoute(window.location.hash), entriesValue, activeDesktopIdRef.current);
+    const normalized = normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), entriesValue, activeDesktopIdRef.current);
     if (!normalized) return;
-    const canonicalHash = formatDesktopRoute(normalized);
-    if (canonicalHash !== window.location.hash) writeRoute(normalized, "replace");
+    const canonicalPath = formatDesktopRoute(normalized);
+    if (canonicalPath !== window.location.pathname || window.location.search) writeRoute(normalized, "replace");
     else setCurrentRoute(normalized);
   }
 
@@ -737,8 +737,8 @@ function App({ session }: { session: AuthSession | null }) {
     if (next === previous) return;
     const current = window.history.state as Partial<RouteHistoryState> | null;
     if (next !== "main" && previous === "main" && current?.hiraya) {
-      window.history.replaceState(routeHistoryState(runningAppTargets(), current.parentHash, runningAppIds(), "main"), "", window.location.href);
-      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash, runningAppIds(), next), "", window.location.href);
+      window.history.replaceState(routeHistoryState(runningAppTargets(), current.parentPath, runningAppIds(), "main"), "", window.location.href);
+      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname, runningAppIds(), next), "", window.location.href);
     } else if (next === "main" && current?.hiraya && historySettingsPage(current) !== "main") {
       window.history.back();
       return;
@@ -896,7 +896,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function restoreRunningApps(session: WindowSession, loadedEntries: DesktopEntry[]) {
     const byId = new Map(loadedEntries.map((entry) => [entry.id, entry]));
-    const restoredRoute = routeRef.current ?? normalizeDesktopRoute(parseDesktopRoute(window.location.hash), loadedEntries, activeDesktopIdRef.current);
+    const restoredRoute = routeRef.current ?? normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), loadedEntries, activeDesktopIdRef.current);
     const savedApps = restoreWindowSession(session, loadedEntries, restoredRoute, desktopSize);
     pendingSystemRestoreRef.current = savedApps.flatMap((saved): Array<Extract<WindowSession["apps"][number], { kind: "system" }>> => {
       if (saved.kind === "system") return [saved];
@@ -939,7 +939,7 @@ function App({ session }: { session: AuthSession | null }) {
   }, [fileAssociations, installedApps, updateRunningApps]);
 
   function restoreHistoryApps(targets: WindowTarget[]) {
-    const historySegment = normalizeDesktopRoute(parseDesktopRoute(window.location.hash), entriesRef.current, activeDesktopIdRef.current);
+    const historySegment = normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), entriesRef.current, activeDesktopIdRef.current);
     const existing = new Map(runningAppsRef.current.map((app) => [app.id, app]));
     const restored: RunningApp[] = [];
     const filesToLoad: FileApp[] = [];
@@ -991,7 +991,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
     try {
       const file = resolveOpenFilePath(loadedEntries, openPath);
-      const current = normalizeDesktopRoute(parseDesktopRoute(url.hash), loadedEntries, activeDesktopIdRef.current);
+      const current = normalizeDesktopRoute(parseDesktopRoute(url.pathname), loadedEntries, activeDesktopIdRef.current);
       const next: DesktopRoute = {
         desktopId: current.desktopId ?? activeDesktopIdRef.current,
         column: current.column,
@@ -1000,7 +1000,8 @@ function App({ session }: { session: AuthSession | null }) {
         fileId: file.id,
       };
       url.searchParams.delete("open");
-      url.hash = formatDesktopRoute(next);
+      url.pathname = formatDesktopRoute(next);
+      url.hash = "";
       window.history.replaceState(window.history.state, "", url);
       setCurrentRoute(next);
     } catch (openError) {
@@ -1148,7 +1149,7 @@ function App({ session }: { session: AuthSession | null }) {
     void listDesktops(seededDesktop)
       .then((registry) => {
         if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
-        const routeDesktopId = parseDesktopRoute(window.location.hash)?.desktopId;
+        const routeDesktopId = parseDesktopRoute(window.location.pathname)?.desktopId;
         const desktopId = routeDesktopId && registry.desktops.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && registry.desktops.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : registry.desktops[0].id;
         setDesktops(registry.desktops);
         setCatalogQuota(registry.quota);
@@ -1307,7 +1308,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.history.replaceState({
         hiraya: true,
         schemaVersion: 1,
-        ...(current?.hiraya && current.parentHash ? { parentHash: current.parentHash } : {}),
+        ...(current?.hiraya && current.parentPath ? { parentPath: current.parentPath } : {}),
         apps: runningAppTargets(runningApps),
         instances: runningAppIds(runningApps),
         settingsPage: current?.hiraya ? historySettingsPage(current) : settingsPageRef.current,
@@ -1409,7 +1410,7 @@ function App({ session }: { session: AuthSession | null }) {
       setMoveDialogEntryIds([]);
       if (areaSwitcherRef.current?.hasAttribute("data-expanded")) areaSwitcherRestoreFocusRef.current = true;
       setMinimapExpanded(false);
-      const requestedRoute = parseDesktopRoute(window.location.hash);
+      const requestedRoute = parseDesktopRoute(window.location.pathname);
       const requestedDesktopId = requestedRoute?.desktopId;
       if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId)) {
         void activateDesktopRef.current(requestedDesktopId).then((switched) => {
@@ -1439,26 +1440,17 @@ function App({ session }: { session: AuthSession | null }) {
       }
       applyLocationRouteRef.current();
     }
-    let restoringPopState = false;
     const onPopState = (event: PopStateEvent) => {
       if (actionSheetHistoryRef.current) {
         actionSheetHistoryRef.current = null;
         setContextMenu(null);
         return;
       }
-      restoringPopState = true;
-      void restoreRoute(event.state).finally(() => {
-        restoringPopState = false;
-      });
-    };
-    const onHashChange = () => {
-      if (!restoringPopState) void restoreRoute();
+      void restoreRoute(event.state);
     };
     window.addEventListener("popstate", onPopState);
-    window.addEventListener("hashchange", onHashChange);
     return () => {
       window.removeEventListener("popstate", onPopState);
-      window.removeEventListener("hashchange", onHashChange);
     };
   }, [runningAppIds]);
 
@@ -2490,7 +2482,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (result.shouldFocus) setFocusedApp(result.app.id);
       if (!result.systemTarget && launchSource !== "restore") {
         const current = window.history.state as Partial<RouteHistoryState> | null;
-        if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.hash), "", window.location.href);
+        if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", window.location.href);
       }
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
@@ -2642,8 +2634,7 @@ function App({ session }: { session: AuthSession | null }) {
   async function copyDeepLink(entry: DesktopEntry) {
     const segment = entry.parentId === null ? projectLogicalPosition(entry.position, desktopSizeRef.current).segment : activeSegment;
     const target = entry.kind === "folder" ? { desktopId: activeDesktopIdRef.current, ...segment, explorerFolderId: entry.id } : { desktopId: activeDesktopIdRef.current, ...segment, fileId: entry.id };
-    const url = new URL(window.location.href);
-    url.hash = formatDesktopRoute(target);
+    const url = new URL(formatDesktopRoute(target), window.location.origin);
     try {
       await navigator.clipboard.writeText(url.href);
       setNotice(`Link to ${entry.name} copied`);
@@ -3014,7 +3005,7 @@ function App({ session }: { session: AuthSession | null }) {
       return;
     }
     const current = window.history.state as Partial<RouteHistoryState> | null;
-    if (current?.hiraya && current.parentHash !== undefined) {
+    if (current?.hiraya && current.parentPath !== undefined) {
       window.history.back();
       return;
     }

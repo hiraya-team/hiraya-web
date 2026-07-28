@@ -32,7 +32,8 @@ describe("running window projections", () => {
 
   test("builds strict route history and routes focused windows", () => {
     const targets = runningAppTargets(apps);
-    const state = createRouteHistoryState(targets, runningAppIds(apps), "main", "#/previous");
+    const state = createRouteHistoryState(targets, runningAppIds(apps), "main", "/desktops/desk/areas/0/0");
+    expect(state.parentPath).toBe("/desktops/desk/areas/0/0");
     expect(parseRunningAppHistory(state)).toEqual(targets);
     expect(parseRunningAppHistory({ ...state, schemaVersion: 2 })).toBeNull();
     expect(routeForRunningApp(apps[1], { desktopId: "desktop", column: 1, row: 0 }, "desktop")).toEqual({ desktopId: "desktop", column: 1, row: 0, explorerFolderId: "folder-id" });

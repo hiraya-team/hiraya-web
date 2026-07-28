@@ -26,7 +26,24 @@ async function createFolder(page: Page, name: string) {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 }
 
+async function verifyDirectDesktopLogin(browser: Browser) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  const requestedPath = "/desktops/unavailable/areas/-2/3/settings?view=compact";
+  await page.goto(requestedPath);
+  expect(new URL(page.url()).searchParams.get("returnTo")).toBe(requestedPath);
+  await page.getByLabel("Email").fill(email);
+  await page.getByLabel("Password").fill(password);
+  await Promise.all([
+    page.waitForURL(/\/desktops\/[^/]+\/areas\/-2\/3\/settings$/),
+    page.getByRole("button", { name: "Sign in" }).click(),
+  ]);
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await context.close();
+}
+
 async function primary(browser: Browser) {
+  await verifyDirectDesktopLogin(browser);
   const firstContext = await browser.newContext();
   const secondContext = await browser.newContext();
   const first = await signIn(firstContext);

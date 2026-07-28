@@ -24,9 +24,9 @@ describe("session bootstrap", () => {
   });
 
   test("keeps login returns root-relative", () => {
-    expect(safeReturnPath({ pathname: "/", search: "?open=Notes", hash: "#/desktops/desk" } as Location)).toBe("/?open=Notes#/desktops/desk");
+    expect(safeReturnPath({ pathname: "/desktops/desk/areas/0/0", search: "?open=Notes", hash: "#details" } as Location)).toBe("/desktops/desk/areas/0/0?open=Notes#details");
     expect(safeReturnPath({ pathname: "//example.test", search: "", hash: "" } as Location)).toBe("/");
-    expect(loginUrl({ pathname: "/desk", search: "", hash: "#area" } as Location)).toBe("/login?returnTo=%2Fdesk%23area");
+    expect(loginUrl({ pathname: "/desktops/desk/areas/0/0", search: "", hash: "#details" } as Location)).toBe("/login?returnTo=%2Fdesktops%2Fdesk%2Fareas%2F0%2F0%23details");
   });
 
   test("does not fetch in frontend-only mode", async () => {
