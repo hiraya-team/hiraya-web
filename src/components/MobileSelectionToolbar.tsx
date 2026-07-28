@@ -11,7 +11,7 @@ export function MobileSelectionToolbar({ count, selectionMode = false, onBeginSe
   return <div className="mobile-selection-toolbar" role="toolbar" aria-label={label}>
     {count > 0 && (selectionMode
       ? <span className="mobile-selection-toolbar__mode" role="status" aria-live="polite" aria-atomic="true"><span>Selecting</span><strong>{count}</strong></span>
-      : <button className="mobile-selection-toolbar__count" type="button" title="Select multiple items" aria-label={`Select multiple items; ${itemLabel}`} onClick={onBeginSelectionMode}>{count}</button>)}
+      : <button className="mobile-selection-toolbar__count" type="button" title="Select multiple items" aria-label={`Select multiple items; ${itemLabel}`} onClick={onBeginSelectionMode}><span>{count}</span></button>)}
     {children}
   </div>;
 }

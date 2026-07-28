@@ -10,6 +10,7 @@ describe("MobileSelectionToolbar", () => {
     expect(markup).toContain('mobile-selection-toolbar__count');
     expect(markup).toContain('aria-label="Select multiple items; 1 selected item"');
     expect(markup).toContain('title="Select multiple items"');
+    expect(markup).toContain('<span>1</span>');
     expect(markup).not.toContain("Selecting");
     expect(markup).not.toContain("Done selecting");
   });

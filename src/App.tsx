@@ -4287,15 +4287,6 @@ function App({ session }: { session: AuthSession | null }) {
             <DotsThree size={22} weight="bold" />
           </button>
           </> : <>
-          <button type="button" title="New text file" aria-label="New text file" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: focusedExplorer?.folderId ?? null })}>
-            <FileGlyph size={20} />
-          </button>
-          <button type="button" title="New folder" aria-label="New folder" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-folder", parentId: focusedExplorer?.folderId ?? null })}>
-            <FolderPlus size={20} />
-          </button>
-          <button type="button" title="Upload files" aria-label="Upload files" disabled={!canMutate} onClick={() => chooseUpload(focusedExplorer?.folderId ?? null)}>
-            <UploadSimple size={20} />
-          </button>
           {canMutate && clipboardOffer && !clipboardOffer.dismissed && <>
             <button className="mobile-selection-toolbar__primary" type="button" onClick={() => void beginPaste(focusedExplorer?.folderId ?? null)}>
               <ClipboardText size={20} />
@@ -4305,6 +4296,15 @@ function App({ session }: { session: AuthSession | null }) {
               <X size={19} />
             </button>
           </>}
+          <button type="button" title="New text file" aria-label="New text file" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: focusedExplorer?.folderId ?? null })}>
+            <FileGlyph size={20} />
+          </button>
+          <button type="button" title="New folder" aria-label="New folder" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-folder", parentId: focusedExplorer?.folderId ?? null })}>
+            <FolderPlus size={20} />
+          </button>
+          <button type="button" title="Upload files" aria-label="Upload files" disabled={!canMutate} onClick={() => chooseUpload(focusedExplorer?.folderId ?? null)}>
+            <UploadSimple size={20} />
+          </button>
           </>}
         </MobileSelectionToolbar>
       )}
