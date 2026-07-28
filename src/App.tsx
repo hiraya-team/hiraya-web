@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, BookOpenText, CaretDown, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsLeftRight, BookOpenText, CaretDown, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -4293,7 +4293,7 @@ function App({ session }: { session: AuthSession | null }) {
               setMoveDialogEntryIds(mobileFileSelection.map((entry) => entry.id));
             }}
           >
-            <FolderSimplePlus size={20} />
+            <ArrowsLeftRight size={20} />
           </button>
           <button
             className="mobile-selection-toolbar__danger"

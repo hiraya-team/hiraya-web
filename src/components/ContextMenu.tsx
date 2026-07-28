@@ -1,5 +1,5 @@
 import { useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, FolderSimplePlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
+import { ArrowsLeftRight, Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { MOBILE_WINDOW_QUERY, useMediaQuery } from "../ui/responsive";
@@ -163,7 +163,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
       {selectionCount === 1 && entry.kind === "folder" && onUploadInto && <button type="button" role="menuitem" disabled={readOnly} onClick={onUploadInto}><UploadSimple size={17} /> Upload files into</button>}
       {selectionCount === 1 && entry.kind === "folder" && onImportFolderInto && <button type="button" role="menuitem" disabled={readOnly} onClick={onImportFolderInto}><FolderOpen size={17} /> Import folder into</button>}
       <button className={!onPasteInto ? "context-menu__separated" : undefined} type="button" role="menuitem" disabled={readOnly} onClick={onMove}>
-        <FolderSimplePlus size={17} /> Move to...
+        <ArrowsLeftRight size={17} /> Move to...
       </button>
       {selectionCount === 1 && <button className="context-menu__separated" type="button" role="menuitem" onClick={onProperties}>
         <Info size={17} /> Properties
