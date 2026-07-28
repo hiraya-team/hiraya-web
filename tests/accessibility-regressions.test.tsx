@@ -145,6 +145,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("document.activeElement instanceof HTMLIFrameElement");
     expect(css).toContain("calc(100% - 44px + var(--area-switcher-edge-inset))");
     expect(css).toContain(".desktop-minimap[data-dragging] { transition: none; }");
+    expect(css).toContain("pointer-events: none;\n  transform: translate3d(var(--area-switcher-x");
+    expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__body { pointer-events: auto; }");
+    expect(css).toContain(".app-window__menu) .desktop-minimap__body { pointer-events: none; }");
     expect(css).toContain(".mobile-window-nav > .desktop-switcher[data-mobile-summary]");
   });
 

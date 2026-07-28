@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Page } from "@playwright/test";
 
 async function openLocalDesktop(page: Page) {
   await page.goto("/");
@@ -72,4 +72,36 @@ test("service worker excludes API responses from navigation fallback and caches"
   expect(result.status).not.toBe(200);
   expect(result.text).not.toContain("Hiraya Desktop");
   expect(result.cachedApiCount).toBe(0);
+});
+
+test("collapsed area switcher passes edge swipes through to the desktop", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+
+  const switcher = page.locator(".desktop-minimap");
+  const handle = page.locator(".desktop-minimap__handle");
+  const body = page.locator(".desktop-minimap__body");
+  await expect(switcher).toHaveCSS("pointer-events", "none");
+  await expect(handle).toHaveCSS("pointer-events", "auto");
+  await expect(body).toHaveCSS("pointer-events", "none");
+
+  const blockedStripPoint = await switcher.evaluate((element) => {
+    const bounds = element.getBoundingClientRect();
+    return { x: window.innerWidth - 22, y: bounds.top + 20 };
+  });
+  await expect.poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".desktop")?.classList.contains("desktop") ?? false, blockedStripPoint)).toBe(true);
+
+  const initialLabel = await handle.getAttribute("aria-label");
+  const client = await context.newCDPSession(page);
+  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [blockedStripPoint] });
+  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: blockedStripPoint.x - 40, y: blockedStripPoint.y }] });
+  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: blockedStripPoint.x - 100, y: blockedStripPoint.y }] });
+  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(handle).not.toHaveAttribute("aria-label", initialLabel ?? "");
+
+  await handle.click();
+  await expect(switcher).toHaveAttribute("data-expanded", "true");
+  await expect(body).toHaveCSS("pointer-events", "auto");
+  await context.close();
 });
