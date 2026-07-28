@@ -111,7 +111,7 @@ import { createTrashNotification, dismissTrashNotification, updateTrashNotificat
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
 import { areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
-import { buildOfflineAvailability, outboxSyncingEntryIds, type OfflineStorageInventory } from "./lib/offline-availability";
+import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
 import { AppIcon } from "./components/VisualPrimitives";
@@ -409,9 +409,9 @@ function App({ session }: { session: AuthSession | null }) {
           releasableBytes: 0,
           browserStorage: null,
         },
-        { updatingIds: new Set([...(offlineProgress?.updatingIds ?? []), ...activeEntryDownloadIds]), pendingIds: outboxSyncingEntryIds(activeOutboxRecords) },
+        { updatingIds: new Set([...(offlineProgress?.updatingIds ?? []), ...activeEntryDownloadIds]) },
       ),
-    [activeDesktopId, entries, offlineInventory, offlineProgress, activeEntryDownloadIds, activeOutboxRecords, syncStatus],
+    [activeDesktopId, entries, offlineInventory, offlineProgress, activeEntryDownloadIds, syncStatus],
   );
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
@@ -2473,7 +2473,7 @@ function App({ session }: { session: AuthSession | null }) {
         },
         getEntryStatus: (id) => {
           const status = offlineModelRef.current?.entries[id];
-          const legacyStatus = status?.status === "local" ? "protected" : status?.status === "syncing" ? "updating" : status?.status === "synced" ? "cached" : "unavailable";
+          const legacyStatus = status?.status === "local" || status?.protected ? "protected" : status?.status === "updating" ? "updating" : status?.status === "available" ? "cached" : "unavailable";
           return { status: legacyStatus, pinned: false, directlyPinned: false };
         },
         setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
@@ -4366,7 +4366,7 @@ function App({ session }: { session: AuthSession | null }) {
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
-          onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => offlineModel.entries[entry.id]?.status === "virtual") ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
+          onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => ["partial", "online-only"].includes(offlineModel.entries[entry.id]?.status)) ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
           onRemoveOfflineCopy={
             syncStatus !== "local" &&
             contextMenuEntries.some((entry) => {

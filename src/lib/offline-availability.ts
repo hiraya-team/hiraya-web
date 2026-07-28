@@ -2,7 +2,7 @@ import type { DesktopEntry, FileEntry } from "../types";
 import type { PersistedDesktopState } from "../domain/desktop-state";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 
-export type OfflineAvailabilityStatus = "local" | "virtual" | "syncing" | "synced";
+export type OfflineAvailabilityStatus = "local" | "available" | "partial" | "online-only" | "updating" | "empty";
 
 export type OfflineFileInventory = {
   cached: boolean;
@@ -28,7 +28,7 @@ export type OfflineEntryAvailability = {
   protected: boolean;
   pending: boolean;
   fileCount: number;
-  cachedFileCount: number;
+  availableFileCount: number;
   bytes: number;
   downloadBytes: number;
 };
@@ -49,10 +49,6 @@ function operationReferenceIds(operation: OutboxOperation) {
   if (operation.kind === "root-entry-positions") return operation.positions.map((position) => position.entryId);
   if (operation.kind === "layout" && operation.layout.wallpaper.source.startsWith("file:")) return [operation.layout.wallpaper.source.slice(5)];
   return [];
-}
-
-export function outboxSyncingEntryIds(records: readonly OutboxRecord[]) {
-  return new Set(records.filter((record) => record.status === "pending").flatMap((record) => operationReferenceIds(record.operation)));
 }
 
 export function outboxProtectedFileIds(records: readonly OutboxRecord[], states: readonly Pick<PersistedDesktopState, "entries">[]) {
@@ -104,7 +100,7 @@ export function offlineFilesUnderRoots(entries: readonly DesktopEntry[], rootIds
 export function buildOfflineAvailability(
   entries: readonly DesktopEntry[],
   inventory: OfflineStorageInventory,
-  activity: { updatingIds?: ReadonlySet<string>; pendingIds?: ReadonlySet<string> } = {},
+  activity: { updatingIds?: ReadonlySet<string> } = {},
 ): OfflineAvailabilityModel {
   const children = new Map<string, DesktopEntry[]>();
   for (const entry of entries) if (entry.parentId) children.set(entry.parentId, [...children.get(entry.parentId) ?? [], entry]);
@@ -113,27 +109,30 @@ export function buildOfflineAvailability(
   const visit = (entry: DesktopEntry): OfflineEntryAvailability => {
     if (entry.kind === "file") {
       const stored = inventory.files[entry.id] ?? { cached: false, cachedBytes: 0, storedBytes: 0, pending: false, protected: false };
-      const pending = stored.pending || activity.pendingIds?.has(entry.id) === true;
-      const status: OfflineAvailabilityStatus = activity.updatingIds?.has(entry.id) || pending
-        ? "syncing"
-        : inventory.authoritativeLocal || stored.protected ? "local" : stored.cached ? "synced" : "virtual";
+      const available = stored.cached;
+      const status: OfflineAvailabilityStatus = activity.updatingIds?.has(entry.id)
+        ? "updating"
+        : inventory.authoritativeLocal ? "local" : available ? "available" : "online-only";
       return result[entry.id] = {
         status, cached: stored.cached, protected: stored.protected,
-        pending, fileCount: 1, cachedFileCount: stored.cached ? 1 : 0, bytes: entry.size,
-        downloadBytes: stored.cached || stored.protected ? 0 : entry.size,
+        pending: stored.pending, fileCount: 1, availableFileCount: available ? 1 : 0, bytes: entry.size,
+        downloadBytes: available ? 0 : entry.size,
       };
     }
     const descendants = (children.get(entry.id) ?? []).map(visit);
     const fileCount = descendants.reduce((total, child) => total + child.fileCount, 0);
-    const cachedFileCount = descendants.reduce((total, child) => total + child.cachedFileCount, 0);
+    const availableFileCount = descendants.reduce((total, child) => total + child.availableFileCount, 0);
     const protectedContent = descendants.some((child) => child.protected);
-    const pending = activity.pendingIds?.has(entry.id) === true || descendants.some((child) => child.pending);
-    const updating = activity.updatingIds?.has(entry.id) === true || descendants.some((child) => child.status === "syncing");
-    const status: OfflineAvailabilityStatus = pending || updating ? "syncing"
-      : inventory.authoritativeLocal ? "local" : fileCount === cachedFileCount ? "synced" : "virtual";
+    const pending = descendants.some((child) => child.pending);
+    const updating = activity.updatingIds?.has(entry.id) === true || descendants.some((child) => child.status === "updating");
+    const status: OfflineAvailabilityStatus = fileCount === 0 ? "empty"
+      : updating ? "updating"
+      : inventory.authoritativeLocal ? "local"
+      : availableFileCount === fileCount ? "available"
+      : availableFileCount > 0 ? "partial" : "online-only";
     return result[entry.id] = {
-      status, cached: fileCount > 0 && cachedFileCount === fileCount,
-      protected: protectedContent, pending, fileCount, cachedFileCount,
+      status, cached: fileCount > 0 && descendants.every((child) => child.cached),
+      protected: protectedContent, pending, fileCount, availableFileCount,
       bytes: descendants.reduce((total, child) => total + child.bytes, 0),
       downloadBytes: descendants.reduce((total, child) => total + child.downloadBytes, 0),
     };
@@ -143,8 +142,19 @@ export function buildOfflineAvailability(
 }
 
 export function offlineStatusLabel(value: OfflineEntryAvailability) {
-  if (value.status === "local") return "Available locally";
-  if (value.status === "virtual") return "Virtual";
-  if (value.status === "syncing") return "Syncing";
-  return "Synced";
+  if (value.status === "local") return "Stored in this browser";
+  if (value.status === "available") return "Available offline";
+  if (value.status === "partial") return "Partially available offline";
+  if (value.status === "online-only") return "Online only";
+  if (value.status === "updating") return "Updating offline copy";
+  return "Empty folder";
+}
+
+export function offlineStatusDescription(value: OfflineEntryAvailability) {
+  if (value.status === "local") return "This browser stores the authoritative local content.";
+  if (value.status === "available") return value.fileCount === 1 ? "This file can be opened without a connection." : `All ${value.fileCount} files can be opened without a connection.`;
+  if (value.status === "partial") return `${value.availableFileCount} of ${value.fileCount} files can be opened without a connection.`;
+  if (value.status === "online-only") return value.fileCount === 1 ? "Connect to download this file before using it offline." : `Connect to download these ${value.fileCount} files before using them offline.`;
+  if (value.status === "updating") return "A local offline copy is being downloaded or updated.";
+  return "This folder contains no files to store offline.";
 }

@@ -1,6 +1,7 @@
 import {
   CloudCheck,
   CloudSlash,
+  CircleHalf,
   File as FileGlyph,
   FileArchive,
   FileAudio,
@@ -47,7 +48,7 @@ export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" 
 
 export function AvailabilityBadge({ availability }: { availability: OfflineEntryAvailability }) {
   return <span className="availability-badge" data-status={availability.status} title={offlineStatusLabel(availability)} aria-label={offlineStatusLabel(availability)}>
-    {availability.status === "local" ? <HardDrive /> : availability.status === "syncing" ? <SpinnerGap /> : availability.status === "virtual" ? <CloudSlash /> : <CloudCheck />}
+    {availability.status === "local" ? <HardDrive /> : availability.status === "updating" ? <SpinnerGap /> : availability.status === "online-only" ? <CloudSlash /> : availability.status === "partial" ? <CircleHalf /> : availability.status === "empty" ? <Folder /> : <CloudCheck />}
   </span>;
 }
 

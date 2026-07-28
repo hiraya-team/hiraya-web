@@ -1126,7 +1126,11 @@ describe("canonical synchronization", () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const inventoryUpdates: string[] = [];
+    engine.subscribeOfflineStorage((inventory) => inventoryUpdates.push(inventory.desktopId));
     await engine.start("desk", { x: 0, y: 0 });
+    await engine.loadOfflineInventory();
+    inventoryUpdates.length = 0;
     await engine.saveTextFile("file-1", "updated note");
     await waitForOutboxDrain(engine);
 
@@ -1138,6 +1142,7 @@ describe("canonical synchronization", () => {
     expect(new Headers(directInit?.headers).get("X-Test-Upload")).toBe("yes");
     expect(requests.indexOf("PUT https://uploads.example.test/file-1?signature=secret")).toBeLessThan(requests.indexOf("POST /api/desktops/desk/blob-mutations/upload-1/commit"));
     expect((await engine.getOutboxStatus()).pending).toBe(0);
+    expect(inventoryUpdates).toEqual(["desk"]);
     await engine.stop();
   });
 

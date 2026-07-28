@@ -1,6 +1,6 @@
-import { CloudArrowDown, CloudCheck, CloudSlash, HardDrive, SpinnerGap } from "@phosphor-icons/react";
+import { CircleHalf, CloudArrowDown, CloudCheck, CloudSlash, Folder, HardDrive, SpinnerGap } from "@phosphor-icons/react";
 import type { DesktopEntry, FolderEntry } from "../types";
-import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
+import { offlineStatusDescription, offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { EntryIcon, StatusBadge } from "./VisualPrimitives";
 
 type Props = {
@@ -55,8 +55,8 @@ export function PropertiesWindow({ entry, rootLabel, ancestors, descendants, off
         <div><dt>ID</dt><dd className="properties-window__id">{entry.id}</dd></div>
       </dl>
       {offlineAvailability && <section className="properties-window__offline" aria-label="Offline availability">
-        <div>{offlineAvailability.status === "syncing" ? <SpinnerGap size={18} className="activity-spinner" /> : offlineAvailability.status === "local" ? <HardDrive size={18} /> : offlineAvailability.status === "synced" ? <CloudCheck size={18} /> : <CloudSlash size={18} />}<span><StatusBadge tone={offlineAvailability.status === "syncing" ? "progress" : offlineAvailability.status === "local" || offlineAvailability.status === "synced" ? "success" : "neutral"}>{offlineStatusLabel(offlineAvailability)}</StatusBadge><strong>Offline availability</strong><small>{offlineStatusLabel(offlineAvailability)}. {offlineAvailability.fileCount} {offlineAvailability.fileCount === 1 ? "file" : "files"}.</small></span></div>
-        {offlineAvailability.status === "virtual" && onMakeAvailableOffline && <button className="button button--quiet" type="button" disabled={offlineBusy} onClick={onMakeAvailableOffline}><CloudArrowDown size={15} /> {offlineBusy ? "Downloading..." : "Make available"}</button>}
+        <div>{offlineAvailability.status === "updating" ? <SpinnerGap size={18} className="activity-spinner" /> : offlineAvailability.status === "local" ? <HardDrive size={18} /> : offlineAvailability.status === "available" ? <CloudCheck size={18} /> : offlineAvailability.status === "partial" ? <CircleHalf size={18} /> : offlineAvailability.status === "empty" ? <Folder size={18} /> : <CloudSlash size={18} />}<span><StatusBadge tone={offlineAvailability.status === "updating" ? "progress" : offlineAvailability.status === "local" || offlineAvailability.status === "available" ? "success" : "neutral"}>{offlineStatusLabel(offlineAvailability)}</StatusBadge><strong>Offline availability</strong><small>{offlineStatusDescription(offlineAvailability)}</small></span></div>
+        {(offlineAvailability.status === "partial" || offlineAvailability.status === "online-only") && onMakeAvailableOffline && <button className="button button--quiet" type="button" disabled={offlineBusy} onClick={onMakeAvailableOffline}><CloudArrowDown size={15} /> {offlineBusy ? "Downloading..." : "Make available offline"}</button>}
         {offlineAvailability.cached && !offlineAvailability.protected && onRemoveOfflineCopy && <button className="button button--quiet" type="button" disabled={offlineBusy} onClick={onRemoveOfflineCopy}><CloudSlash size={15} /> {offlineBusy ? "Removing..." : "Remove copy"}</button>}
       </section>}
     </div>

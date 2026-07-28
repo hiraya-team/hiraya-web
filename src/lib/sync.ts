@@ -359,6 +359,12 @@ export class SyncEngine {
     return promise;
   }
 
+  private async refreshOfflineInventory() {
+    const existing = this.offlineInventoryLoad;
+    if (existing?.desktopId === this.desktopId && existing.generation === this.generation) await existing.promise.catch(() => undefined);
+    return this.loadOfflineInventory();
+  }
+
   private publishCatalog(catalog: DesktopRegistry) {
     for (const listener of this.catalogListeners) listener(catalog);
     return catalog;
@@ -604,6 +610,7 @@ export class SyncEngine {
         await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
       }
       await this.storage.acknowledgeMutation(record.operationId);
+      if (this.offlineInventoryListeners.size > 0 && outboxOperationDesktopIds(record).has(this.desktopId)) await this.refreshOfflineInventory();
       await this.publishOutbox();
     } catch (error) {
       if (error instanceof SyncRequestError && error.permanent) {
@@ -1399,6 +1406,7 @@ export class SyncEngine {
       await this.applyRemoteState(remote, generation, record.operationId, record.desktopId, true, false);
       if (destination && destinationDesktopId) await this.applyRemoteState(destination, generation, undefined, destinationDesktopId, true);
       await this.storage.acknowledgeMutation(record.operationId);
+      if (this.offlineInventoryListeners.size > 0 && outboxOperationDesktopIds(record).has(this.desktopId)) await this.refreshOfflineInventory();
       assertInitiatingSession();
       await this.publishOutbox();
       if (record.operation.kind === "create-desktop" || record.operation.kind === "rename-desktop" || record.operation.kind === "delete-desktop") await this.refreshCatalog(generation, activeDesktopId);
