@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
         injectRegister: null,
         registerType: "prompt",
         useCredentials: true,
-        includeAssets: ["favicon.svg", "apple-touch-icon.png"],
+        includeAssets: ["favicon.png", "apple-touch-icon.png", "logo.png"],
         manifest: {
           name: "Hiraya Desktop",
           short_name: "Hiraya",

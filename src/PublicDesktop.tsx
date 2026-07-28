@@ -187,9 +187,7 @@ export default function PublicDesktop({ token }: { token: string }) {
         ) : (
           <>
             <div className="brand-mark">
-              <span className="brand-mark__shape">
-                <span />
-              </span>
+              <img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" />
               <strong>Hiraya</strong>
               <span className="public-menu__desktop">{desktop?.name || "Public desktop"}</span>
             </div>

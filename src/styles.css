@@ -128,20 +128,11 @@
 }
 
 .brand-mark__shape {
-  display: grid;
-  width: 18px;
-  height: 18px;
-  place-items: center;
-  transform: rotate(45deg);
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  border-radius: 5px 1px 5px 1px;
-}
-
-.brand-mark__shape span {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--accent);
+  display: block;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 auto;
+  object-fit: contain;
 }
 
 .desktop-switcher {
@@ -704,8 +695,8 @@
 }
 
 .startup-state .brand-mark__shape {
-  width: 28px;
-  height: 28px;
+  width: 42px;
+  height: 42px;
 }
 
 .startup-error .button {
@@ -3509,11 +3500,8 @@
 .brand-mark { gap: calc(9px * var(--theme-density)); }
 .brand-mark strong { font-size: calc(13px * var(--theme-type-scale)); font-weight: var(--theme-weight); }
 .brand-mark__shape {
-  border-width: var(--theme-border-width);
-  border-color: color-mix(in srgb, var(--theme-chrome-text) 80%, transparent);
-  border-radius: var(--theme-radius-small) calc(var(--theme-radius-small) * 0.15) var(--theme-radius-small) calc(var(--theme-radius-small) * 0.15);
+  border-radius: var(--theme-radius-small);
 }
-.brand-mark__shape span { background: var(--theme-accent); }
 .taskbar,
 .taskbar__windows { gap: calc(5px * var(--theme-density)); }
 .taskbar__desktop {
