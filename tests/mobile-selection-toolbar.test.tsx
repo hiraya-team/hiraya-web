@@ -4,10 +4,11 @@ import { MobileSelectionToolbar } from "../src/components/MobileSelectionToolbar
 
 describe("MobileSelectionToolbar", () => {
   test("marks ordinary selections without presenting selection mode", () => {
-    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={1} onBeginSelectionMode={() => undefined}><button type="button">Copy</button></MobileSelectionToolbar>);
+    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={1} contentKey="selection-actions" onBeginSelectionMode={() => undefined}><button type="button">Copy</button></MobileSelectionToolbar>);
 
     expect(markup).toContain('aria-label="Actions for 1 selected item"');
     expect(markup).toContain('mobile-selection-toolbar__count');
+    expect(markup).toContain('mobile-selection-toolbar__content');
     expect(markup).toContain('aria-label="Select multiple items; 1 selected item"');
     expect(markup).toContain('title="Select multiple items"');
     expect(markup).toContain('<span>1</span>');
@@ -16,7 +17,7 @@ describe("MobileSelectionToolbar", () => {
   });
 
   test("announces multiselect mode without presenting an exit control", () => {
-    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={3} selectionMode />);
+    const markup = renderToStaticMarkup(<MobileSelectionToolbar count={3} contentKey="selection-mode" selectionMode />);
 
     expect(markup).toContain('aria-label="Selection mode: 3 selected items"');
     expect(markup).toContain('role="status"');
@@ -29,7 +30,7 @@ describe("MobileSelectionToolbar", () => {
 
   test("presents file actions without a selection count when empty", () => {
     const markup = renderToStaticMarkup(
-      <MobileSelectionToolbar count={0}>
+      <MobileSelectionToolbar count={0} contentKey="file-actions">
         <button type="button" aria-label="New text file">New</button>
         <button type="button" aria-label="Upload files" disabled>Upload</button>
       </MobileSelectionToolbar>,

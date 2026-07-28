@@ -4278,7 +4278,12 @@ function App({ session }: { session: AuthSession | null }) {
       />
 
       {showMobileSelectionToolbar && (
-        <MobileSelectionToolbar count={mobileFileSelection.length} selectionMode={mobileSelectionMode} onBeginSelectionMode={() => beginMobileMultiSelect(mobileFileSurface)}>
+        <MobileSelectionToolbar
+          count={mobileFileSelection.length}
+          contentKey={mobileFileSelection.length > 0 ? (mobileSelectionMode ? "selection-mode" : "selection-actions") : (canMutate && clipboardOffer && !clipboardOffer.dismissed ? "paste-actions" : "file-actions")}
+          selectionMode={mobileSelectionMode}
+          onBeginSelectionMode={() => beginMobileMultiSelect(mobileFileSurface)}
+        >
           {mobileFileSelection.length > 0 ? <>
           <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}>
             <Copy size={20} />
@@ -4294,21 +4299,6 @@ function App({ session }: { session: AuthSession | null }) {
             }}
           >
             <ArrowsLeftRight size={20} />
-          </button>
-          <button
-            className="mobile-selection-toolbar__danger"
-            type="button"
-            title={syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}
-            aria-label={`${syncStatus !== "local" ? "Move to Trash" : "Delete permanently"}: ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`}
-            disabled={!canMutate}
-            onClick={() =>
-              openFileDialog({
-                type: "delete",
-                entryIds: mobileFileSelection.map((entry) => entry.id),
-              })
-            }
-          >
-            <Trash size={20} />
           </button>
           <button type="button" title="More actions" aria-label="More actions" aria-haspopup="dialog" onClick={() => openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth / 2, window.innerHeight - 20)}>
             <DotsThree size={22} weight="bold" />

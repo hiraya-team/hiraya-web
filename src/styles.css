@@ -4077,6 +4077,7 @@
   background: var(--theme-chrome);
   box-shadow: var(--theme-elevation-3);
 }
+.mobile-selection-toolbar__content { display: flex; align-items: center; gap: 2px; animation: mobile-toolbar-content-in calc(150ms * var(--theme-motion)) cubic-bezier(.22, .75, .24, 1); }
 .mobile-selection-toolbar .mobile-selection-toolbar__count { width: auto; min-width: 44px; height: 44px; flex-basis: auto; padding: 6px; color: var(--theme-accent-text); font-size: 12px; font-weight: 800; }
 .mobile-selection-toolbar__count span { display: grid; min-width: 32px; height: 32px; place-items: center; padding-inline: 7px; border-radius: 999px; background: var(--theme-accent); }
 .mobile-selection-toolbar__mode { display: inline-flex; height: 32px; align-items: center; gap: 6px; margin-inline: 2px 3px; padding: 0 6px 0 11px; border-radius: 999px; color: var(--theme-accent-text); background: var(--theme-accent); font-size: 12px; font-weight: 700; white-space: nowrap; }
@@ -4087,11 +4088,12 @@
 .mobile-selection-toolbar button:active { transform: scale(.96); }
 .mobile-selection-toolbar button:disabled { opacity: .42; cursor: not-allowed; }
 .mobile-selection-toolbar button:disabled:active { transform: none; }
-.mobile-selection-toolbar .mobile-selection-toolbar__danger { color: color-mix(in srgb, var(--theme-danger) 45%, var(--theme-chrome-text)); }
 .mobile-selection-toolbar--paste { padding-left: 5px; }
 .mobile-selection-toolbar .mobile-selection-toolbar__primary { display: inline-flex; width: auto; min-width: 108px; gap: 7px; padding-inline: 15px; color: var(--theme-accent-text); background: var(--theme-accent); font-size: 13px; font-weight: 800; white-space: nowrap; }
 .mobile-selection-toolbar .mobile-selection-toolbar__primary:hover,
 .mobile-selection-toolbar .mobile-selection-toolbar__primary:focus-visible { background: color-mix(in srgb, var(--theme-accent) 88%, var(--theme-chrome-text)); }
+
+@keyframes mobile-toolbar-content-in { from { opacity: .35; transform: translate3d(0, 4px, 0) scale(.98); } }
 
 .action-sheet-backdrop { position: fixed; z-index: var(--layer-modal, 6000); inset: 0; display: grid; align-items: end; padding: 8px; background: color-mix(in srgb, var(--theme-shell) 58%, transparent); animation: backdrop-in 130ms ease-out; }
 .action-sheet { width: 100%; max-height: min(76dvh, 640px); overflow: hidden; border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 22%, transparent); border-radius: var(--theme-radius) var(--theme-radius) var(--theme-radius-small) var(--theme-radius-small); background: var(--theme-chrome); box-shadow: var(--theme-elevation-3); transition: transform 180ms cubic-bezier(.22, .75, .24, 1); animation: sheet-in 180ms cubic-bezier(.22, .75, .24, 1); }
