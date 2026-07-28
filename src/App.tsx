@@ -92,7 +92,7 @@ import { canOpenActivity } from "./ui/activity-navigation";
 import { outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
-import { canMutateDesktop, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
+import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppMaximizeRestoreWindow, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
@@ -388,7 +388,8 @@ function App({ session }: { session: AuthSession | null }) {
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
-  const canViewActivity = Boolean(activeDesktop?.capabilities.activity && syncStatus === "online");
+  const canViewActivity = canViewDesktopActivity(activeDesktop, syncStatus);
+  const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
@@ -1910,7 +1911,6 @@ function App({ session }: { session: AuthSession | null }) {
     try {
       const saved = await saveCustomTheme(theme);
       setAppearance(await selectTheme(saved.id));
-      setNotice(`${saved.name} saved`);
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be saved.");
       throw themeError;
@@ -1921,7 +1921,6 @@ function App({ session }: { session: AuthSession | null }) {
     if (!canSettings) return;
     try {
       setAppearance(await deleteCustomTheme(themeId));
-      setNotice("Custom theme deleted");
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be deleted.");
       throw themeError;
@@ -2134,7 +2133,6 @@ function App({ session }: { session: AuthSession | null }) {
     }
     await deleteDesktopMutation(desktopId);
     setDesktops((current) => current.filter((candidate) => candidate.id !== desktopId));
-    setNotice(`${desktop.name} deleted`);
   }
 
   async function activateUpdate() {
@@ -2162,7 +2160,6 @@ function App({ session }: { session: AuthSession | null }) {
       fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);
-      setNotice(`${created.name} created`);
     } else if (dialog.type === "rename") {
       if (!dialogEntry) {
         setDialog(null);
@@ -2182,7 +2179,6 @@ function App({ session }: { session: AuthSession | null }) {
             : app,
         ),
       );
-      setNotice(`${renamed.kind === "folder" ? "Folder" : "File"} renamed`);
     } else {
       if (!dialogEntry) {
         setDialog(null);
@@ -2199,7 +2195,6 @@ function App({ session }: { session: AuthSession | null }) {
         selectedIdsRef.current.filter((id) => !deletedIds.has(id)),
       );
       const label = ids.length === 1 ? dialogEntry.name : `${ids.length} items`;
-      setNotice(syncStatus === "local" ? `${label} deleted permanently` : `${label} moved to Trash`);
       if (syncStatus === "online") setTrashNotifications((current) => [...current, createTrashNotification(activeDesktopIdRef.current, label, rootIds)]);
     }
     setDialog(null);
@@ -2230,7 +2225,6 @@ function App({ session }: { session: AuthSession | null }) {
         return [...current, ...imported.filter((entry) => !existingIds.has(entry.id))];
       });
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, plan.rootIds);
-      setNotice(`${plan.folderCount} ${plan.folderCount === 1 ? "folder" : "folders"} and ${plan.fileCount} ${plan.fileCount === 1 ? "file" : "files"} added`);
     } catch (importError) {
       if (!(importError instanceof DOMException && importError.name === "AbortError")) reportFolderImportError(importError instanceof Error ? importError.message : "The import could not be completed.");
     } finally {
@@ -2283,7 +2277,6 @@ function App({ session }: { session: AuthSession | null }) {
       setEntries((current) => (current.some((entry) => entry.id === image.id) ? current : [...current, image]));
       replaceSelection("desktop", [image.id]);
       await persistLayout({ ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` } }, desktopId);
-      setNotice(`${image.name} added as wallpaper`);
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "The wallpaper image could not be added.");
     }
@@ -2358,7 +2351,6 @@ function App({ session }: { session: AuthSession | null }) {
       setEntries((current) => current.map((item) => movedById.get(item.id) ?? item));
       replaceSelection(selectionScope, []);
       setContextMenu(null);
-      setNotice(items.length === 1 ? `${items[0].name} moved` : `${items.length} items moved`);
       return true;
     } catch (moveError) {
       const message = moveError instanceof Error ? moveError.message : "The item could not be moved.";
@@ -2412,6 +2404,11 @@ function App({ session }: { session: AuthSession | null }) {
     const currentRoute = routeRef.current;
     if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, settings: true }, "push", previousApps);
     return true;
+  }
+
+  function openActivityLog() {
+    openSettingsWindow();
+    navigateSettingsPage("activity");
   }
 
   function openPropertiesWindow(entryId: string, syncRoute = true) {
@@ -2697,7 +2694,6 @@ function App({ session }: { session: AuthSession | null }) {
       if (activeDesktopIdRef.current !== pending.desktopId && !(await activateDesktop(pending.desktopId))) throw new Error("The desktop could not be opened.");
       for (const id of pending.rootIds) await restoreTrash(pending.desktopId, id, "original");
       setTrashNotifications((current) => dismissTrashNotification(current, pending.id));
-      setNotice(`${pending.label} restored`);
     } catch (restoreError) {
       const message = restoreError instanceof Error ? restoreError.message : "The Trash move could not be undone.";
       setTrashNotifications((current) => updateTrashNotification(current, pending.id, "failed", message));
@@ -2777,7 +2773,6 @@ function App({ session }: { session: AuthSession | null }) {
     setPendingPaste(null);
     setContextMenu(null);
     setClipboardOffer((current) => dismissClipboardOffer(current));
-    setNotice(`${rootIds.length} ${rootIds.length === 1 ? "item" : "items"} pasted`);
   }
 
   async function beginPaste(parentId: string | null, position?: EntryPosition, supplied?: ClipboardEntrySnapshot) {
@@ -3602,6 +3597,7 @@ function App({ session }: { session: AuthSession | null }) {
             updateApplying={updateApplying}
             updateBlocked={updateBlocked}
             announcement={shellAnnouncement}
+            canViewActivity={canViewActivity}
             onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
             onOpenFolderImportHelp={() => openHelp("files-and-folders")}
             onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
@@ -3610,6 +3606,7 @@ function App({ session }: { session: AuthSession | null }) {
             onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
             onActivateUpdate={() => void activateUpdate()}
             onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
+            onViewActivity={openActivityLog}
           />
           {isMobile && (
             <MobileHeaderMenu
@@ -4041,6 +4038,7 @@ function App({ session }: { session: AuthSession | null }) {
                         appearance={appearance}
                         canMutate={canSettings}
                         canViewActivity={canViewActivity}
+                        activityScope={activityScope}
                         restrictionReason={settingsRestrictionReason(activeDesktop, syncStatus)}
                         exportDisabled={loading}
                         exporting={exporting}
@@ -4089,7 +4087,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onResetFileAssociations={() => void clearAssociations()}
                         onListActivity={
                           canViewActivity
-                            ? listActivity
+                            ? (query) => listActivity({ ...query, ...(activityScope === "desktop" ? { desktopId: activeDesktopId } : {}) })
                             : async () => {
                                 throw new Error("Activity is unavailable for your role.");
                               }
@@ -4535,7 +4533,6 @@ function App({ session }: { session: AuthSession | null }) {
               setEntries(next.entries);
               setLayout(next.layout);
               replaceSelection(selectionScope, []);
-              setNotice(`${moveDialogEntries.length === 1 ? moveDialogEntries[0].name : `${moveDialogEntries.length} items`} moved to ${desktops.find((desktop) => desktop.id === desktopId)?.name ?? "desktop"}`);
             }
             setMoveDialogSubmitting(false);
             setMoveDialogEntryIds([]);
@@ -4635,14 +4632,8 @@ function App({ session }: { session: AuthSession | null }) {
           <TrashWindow
             readOnly={!canMutate}
             onListTrash={() => listTrash(activeDesktopId)}
-            onRestore={async (item, destination) => {
-              await restoreTrash(activeDesktopId, item.entry.id, destination);
-              setNotice(`${item.entry.name} restored`);
-            }}
-            onPermanentlyDelete={async (item) => {
-              await permanentlyDeleteTrash(activeDesktopId, item.entry.id);
-              setNotice(`${item.entry.name} permanently deleted`);
-            }}
+            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination); }}
+            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id); }}
             onRequestPermanentDelete={(item: TrashItem, confirmedDelete) => {
               void requestConfirmation({
                 title: `Delete ${item.entry.name} permanently?`,

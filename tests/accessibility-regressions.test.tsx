@@ -287,7 +287,10 @@ describe("accessibility regressions", () => {
     expect(notifications).toContain('aria-haspopup="dialog"');
     expect(notifications).toContain('event.key !== "Escape"');
     expect(notifications).toContain("triggerRef.current?.focus()");
+    expect(notifications).toContain("View activity");
+    expect(notifications).toContain("Current alerts and actions will appear here.");
     expect(css).toContain(".notification-center__panel");
+    expect(css).toContain(".notification-center__footer button");
   });
 
   test("Getting Started owns one bounded scroll region at constrained heights", async () => {

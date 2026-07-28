@@ -32,6 +32,7 @@ export type ActivityQuery = {
   q?: string;
   before?: number;
   limit?: number;
+  desktopId?: string;
 };
 
 export type NewActivityRecord = Omit<ValidActivityRecord, "catalogRevision">;
@@ -99,7 +100,8 @@ export function parseActivityQuery(value: ActivityQuery = {}): Required<Pick<Act
   const before = value.before === undefined ? undefined : positiveInteger(value.before, "The activity cursor has an unsupported format.");
   const limit = positiveInteger(value.limit ?? DEFAULT_ACTIVITY_PAGE_LIMIT, "The activity page limit must be a positive integer.");
   if (limit > MAX_ACTIVITY_PAGE_LIMIT) throw new Error(`The activity page limit must not exceed ${MAX_ACTIVITY_PAGE_LIMIT}.`);
-  return { ...(q ? { q } : {}), ...(before === undefined ? {} : { before }), limit };
+  if (value.desktopId !== undefined && !isValidId(value.desktopId)) throw new Error("The activity desktop has an unsupported format.");
+  return { ...(q ? { q } : {}), ...(before === undefined ? {} : { before }), limit, ...(value.desktopId ? { desktopId: value.desktopId } : {}) };
 }
 
 function localAction(summary: string) {

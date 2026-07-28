@@ -37,11 +37,12 @@ export const API_ROUTES = {
   health: "/api/health",
   syncHealth: "/api/sync/health",
   search: (query: string) => `/api/search?q=${encodeURIComponent(query)}`,
-  activity: (query: { q?: string; before?: number; limit: number }) => {
+  activity: (query: { q?: string; before?: number; limit: number; desktopId?: string }) => {
     const params = new URLSearchParams();
     if (query.q) params.set("q", query.q);
     if (query.before !== undefined) params.set("before", String(query.before));
     params.set("limit", String(query.limit));
+    if (query.desktopId) params.set("desktopId", query.desktopId);
     return `/api/activity?${params}`;
   },
 } as const;

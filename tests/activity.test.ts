@@ -55,10 +55,11 @@ describe("activity contracts", () => {
   });
 
   test("normalizes queries and builds the server route", () => {
-    const query = parseActivityQuery({ q: "  report final  ", before: 42, limit: 25 });
-    expect(query).toEqual({ q: "report final", before: 42, limit: 25 });
-    expect(API_ROUTES.activity(query)).toBe("/api/activity?q=report+final&before=42&limit=25");
+    const query = parseActivityQuery({ q: "  report final  ", before: 42, limit: 25, desktopId: "shared-desktop" });
+    expect(query).toEqual({ q: "report final", before: 42, limit: 25, desktopId: "shared-desktop" });
+    expect(API_ROUTES.activity(query)).toBe("/api/activity?q=report+final&before=42&limit=25&desktopId=shared-desktop");
     expect(() => parseActivityQuery({ limit: 0 })).toThrow("positive integer");
+    expect(() => parseActivityQuery({ desktopId: "bad/id" })).toThrow("unsupported format");
   });
 
   test("constructs bounded local records", () => {

@@ -71,6 +71,7 @@ type Props = {
   appearance: ThemeState;
   canMutate: boolean;
   canViewActivity: boolean;
+  activityScope: "catalog" | "desktop";
   restrictionReason: string;
   exportDisabled: boolean;
   exporting: boolean;
@@ -177,6 +178,7 @@ export function SettingsWindow({
   appearance,
   canMutate,
   canViewActivity,
+  activityScope,
   restrictionReason,
   exportDisabled,
   exporting,
@@ -438,7 +440,7 @@ export function SettingsWindow({
                 <span className="settings-row__icon"><ClockCounterClockwise size={17} /></span>
                 <span className="settings-row__copy">
                   <strong id="activity-link-heading">Activity</strong>
-                  <small>Review and search accepted desktop changes.</small>
+                  <small>{activityScope === "desktop" ? "Review accepted changes from this shared desktop." : "Review accepted changes across your desktops."}</small>
                 </span>
                 <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
@@ -747,7 +749,7 @@ export function SettingsWindow({
               <button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeActivity}><ArrowLeft size={17} /></button>
               <div>
                 <h3 ref={activityHeadingRef} tabIndex={-1}>Activity</h3>
-                <p>Accepted changes from this desktop, newest first.</p>
+                <p>{activityScope === "desktop" ? "Accepted changes from this shared desktop, newest first." : "Accepted changes across your desktops, newest first."}</p>
               </div>
             </header>
             <ActivityLog onListActivity={onListActivity} onSubscribe={onSubscribeToActivity} onOpenAffectedEntries={onOpenAffectedEntries} canOpenAffectedEntries={canOpenAffectedEntries} />

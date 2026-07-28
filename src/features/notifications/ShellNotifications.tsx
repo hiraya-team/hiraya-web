@@ -1,5 +1,5 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Bell, SpinnerGap, Tray, WarningCircle } from "@phosphor-icons/react";
+import { Bell, ClockCounterClockwise, SpinnerGap, Tray, WarningCircle } from "@phosphor-icons/react";
 import type { AppNotification } from "../../apps/host";
 import { NotificationCard } from "../../components/NotificationCard";
 import { UpdateToast } from "../../components/UpdateToast";
@@ -24,6 +24,7 @@ type Props = {
   updateApplying: boolean;
   updateBlocked: boolean;
   announcement: string;
+  canViewActivity: boolean;
   onDismissMessage: (id: number) => void;
   onOpenFolderImportHelp: () => void;
   onDismissTrash: (id: string) => void;
@@ -32,6 +33,7 @@ type Props = {
   onDismissApp: (notification: AppNotification) => void;
   onActivateUpdate: () => void;
   onDismissUpdate: () => void;
+  onViewActivity: () => void;
 };
 
 function formatBytes(value: number) {
@@ -128,8 +130,9 @@ export function ShellNotifications(props: Props) {
           {[...props.appNotifications].reverse().map((notification) => <NotificationCard badge="App" key={`${notification.owner.instanceId}:${notification.id}`} dismissLabel="Dismiss app notification" onDismiss={() => props.onDismissApp(notification)}><strong>{notification.title}</strong>{notification.body && <span>{notification.body}</span>}</NotificationCard>)}
           {props.importProgress && <NotificationCard badge="Importing" tone="progress" icon={<SpinnerGap className="notification-card__spinner" size={18} />}><strong>{props.importProgress.phase === "preparing" ? "Preparing import" : props.importProgress.phase === "saving" ? "Staging and saving import" : "Staging and synchronizing import"}</strong><span>{props.importProgress.folderCount} {props.importProgress.folderCount === 1 ? "folder" : "folders"}, {props.importProgress.fileCount} {props.importProgress.fileCount === 1 ? "file" : "files"}, {formatBytes(props.importProgress.totalBytes)}</span></NotificationCard>}
           {props.showUpdateToast && <UpdateToast applying={props.updateApplying} blocked={props.updateBlocked} onConfirm={props.onActivateUpdate} onDismiss={props.onDismissUpdate} />}
-          {total === 0 && <div className="notification-center__empty"><Tray size={30} weight="duotone" /><strong>No notifications</strong><span>New activity and actions will appear here.</span></div>}
+          {total === 0 && <div className="notification-center__empty"><Tray size={30} weight="duotone" /><strong>No notifications</strong><span>Current alerts and actions will appear here.</span></div>}
         </div>
+        {props.canViewActivity && <footer className="notification-center__footer"><button type="button" onClick={() => { setOpen(false); props.onViewActivity(); }}><ClockCounterClockwise size={17} aria-hidden="true" />View activity</button></footer>}
       </div>}
     </div>
     <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">{props.announcement}</span>
