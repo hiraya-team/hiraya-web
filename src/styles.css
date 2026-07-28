@@ -2958,14 +2958,8 @@
     display: none;
   }
 
-  .menu-bar__actions > .menu-bar__sync {
-    width: auto;
-    min-width: 44px;
-    padding: 0 8px;
-  }
-
-  .menu-bar__actions > .menu-bar__sync span {
-    display: inline;
+  .menu-bar__actions > .menu-bar__sync > .status-badge {
+    display: inline-flex;
   }
 
   .desktop {
