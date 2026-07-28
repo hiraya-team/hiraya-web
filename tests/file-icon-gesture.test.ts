@@ -29,11 +29,11 @@ describe("file icon touch release", () => {
 });
 
 describe("file icon context menu press", () => {
-  test("turns an active touch hold into selection", () => {
-    expect(contextMenuPressAction({ pointerType: "touch", moved: false, longPressed: false })).toBe("select");
+  test("opens the context menu for an active touch hold", () => {
+    expect(contextMenuPressAction({ pointerType: "touch", moved: false, longPressed: false })).toBe("open");
   });
 
-  test("suppresses touch context menus after movement or selection", () => {
+  test("suppresses touch context menus after movement or a handled long press", () => {
     expect(contextMenuPressAction({ pointerType: "touch", moved: true, longPressed: false })).toBe("suppress");
     expect(contextMenuPressAction({ pointerType: "touch", moved: false, longPressed: true })).toBe("suppress");
   });

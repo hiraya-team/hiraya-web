@@ -224,7 +224,6 @@ describe("accessibility regressions", () => {
       interactive={false}
       onSelect={() => undefined}
       onTouchSelect={() => undefined}
-      onLongPressSelect={() => undefined}
       onOpen={() => undefined}
       onMove={async () => true}
       onDragAtEdge={() => null}

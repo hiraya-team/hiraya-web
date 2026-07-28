@@ -47,7 +47,7 @@ export function resolveTouchRelease(previous: TouchTap | null, tap: TouchTap, st
 export function contextMenuPressAction(press: ContextMenuPress | null) {
   if (press?.pointerType !== "touch") return "open";
   if (press.moved || press.longPressed) return "suppress";
-  return "select";
+  return "open";
 }
 
 export function dismissesSheetDrag(distance: number, durationMs: number) {

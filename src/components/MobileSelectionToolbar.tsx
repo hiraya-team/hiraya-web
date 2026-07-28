@@ -1,15 +1,17 @@
 import type { ReactNode } from "react";
 
-export function MobileSelectionToolbar({ count, selectionMode = false, children }: {
+export function MobileSelectionToolbar({ count, selectionMode = false, onBeginSelectionMode, children }: {
   count: number;
   selectionMode?: boolean;
+  onBeginSelectionMode?: () => void;
   children?: ReactNode;
 }) {
   const itemLabel = `${count} selected ${count === 1 ? "item" : "items"}`;
-  return <div className="mobile-selection-toolbar" role="toolbar" aria-label={selectionMode ? `Selection mode: ${itemLabel}` : `Actions for ${itemLabel}`}>
-    {selectionMode
+  const label = count === 0 ? "File actions" : selectionMode ? `Selection mode: ${itemLabel}` : `Actions for ${itemLabel}`;
+  return <div className="mobile-selection-toolbar" role="toolbar" aria-label={label}>
+    {count > 0 && (selectionMode
       ? <span className="mobile-selection-toolbar__mode" role="status" aria-live="polite" aria-atomic="true"><span>Selecting</span><strong>{count}</strong></span>
-      : <span className="mobile-selection-toolbar__count" aria-hidden="true">{count}</span>}
+      : <button className="mobile-selection-toolbar__count" type="button" title="Select multiple items" aria-label={`Select multiple items; ${itemLabel}`} onClick={onBeginSelectionMode}>{count}</button>)}
     {children}
   </div>;
 }

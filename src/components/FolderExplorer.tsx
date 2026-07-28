@@ -28,7 +28,6 @@ export interface FolderExplorerProps {
   onClearSelection?: () => void;
   selectedIds: ReadonlySet<string>;
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
-  onLongPressSelect?: (entry: DesktopEntry, orderedIds: string[]) => void;
   mobileMultiSelect?: boolean;
   onMove: (entry: DesktopEntry, targetParentId: string | null) => void;
   readOnly?: boolean;
@@ -54,7 +53,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, onLongPressSelect, mobileMultiSelect = false, onMove, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const dropTarget = useRef<HTMLElement | null>(null);
   const suppressClick = useRef(false);
@@ -113,14 +112,14 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       pointerType: event.pointerType,
       longPressed: false,
     };
-    if (event.pointerType === "touch" && onLongPressSelect) {
+    if (event.pointerType === "touch") {
       drag.current.longPressTimer = window.setTimeout(() => {
         const current = drag.current;
         if (!current || current.pointerId !== event.pointerId || current.moved) return;
         current.longPressTimer = undefined;
         current.longPressed = true;
         lastTap.current = null;
-        onLongPressSelect(entry, orderedIds);
+        onContextMenu(entry, event.clientX, event.clientY);
       }, 500);
     }
     if (readOnly) return;
@@ -201,76 +200,33 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         createPortal(
           <MobileHeaderMenu label="Folder actions" icon={<DotsThreeVertical size={19} weight="bold" />}>
             {(dismiss) => (
-              <>
-                <nav className="mobile-folder-path" aria-label="Folder path">
+              <nav className="mobile-folder-path" aria-label="Folder path">
+                <button
+                  type="button"
+                  data-folder-target=""
+                  data-current={!folder || undefined}
+                  onClick={() => {
+                    dismiss();
+                    onNavigate(null);
+                  }}
+                >
+                  {rootLabel}
+                </button>
+                {trail.map((item) => (
                   <button
                     type="button"
-                    data-folder-target=""
-                    data-current={!folder || undefined}
+                    key={item.id}
+                    data-folder-target={item.id}
+                    data-current={item.id === folder?.id || undefined}
                     onClick={() => {
                       dismiss();
-                      onNavigate(null);
+                      onNavigate(item);
                     }}
                   >
-                    {rootLabel}
+                    {item.name}
                   </button>
-                  {trail.map((item) => (
-                    <button
-                      type="button"
-                      key={item.id}
-                      data-folder-target={item.id}
-                      data-current={item.id === folder?.id || undefined}
-                      onClick={() => {
-                        dismiss();
-                        onNavigate(item);
-                      }}
-                    >
-                      {item.name}
-                    </button>
-                  ))}
-                </nav>
-                <div className="mobile-header-menu__separator" />
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => {
-                    dismiss();
-                    onCreateFolder(parentId);
-                  }}
-                >
-                  <FolderPlus size={17} /> New folder
-                </button>
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => {
-                    dismiss();
-                    onCreateFile(parentId);
-                  }}
-                >
-                  <FilePlus size={17} /> New text file
-                </button>
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => {
-                    dismiss();
-                    onUpload(parentId);
-                  }}
-                >
-                  <UploadSimple size={17} /> Upload files
-                </button>
-                <button
-                  type="button"
-                  disabled={readOnly}
-                  onClick={() => {
-                    dismiss();
-                    onImportFolder(parentId);
-                  }}
-                >
-                  <FolderOpen size={17} /> Import folder
-                </button>
-              </>
+                ))}
+              </nav>
             )}
           </MobileHeaderMenu>,
           headerElements.actions,
@@ -454,12 +410,13 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                   if (action !== "open") {
                     if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
                     if (current) current.longPressTimer = undefined;
-                    if (action === "select" && current) {
-                      current.longPressed = true;
-                      lastTap.current = null;
-                      onLongPressSelect?.(current.entry, orderedIds);
-                    }
                     return;
+                  }
+                  if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
+                  if (current) {
+                    current.longPressTimer = undefined;
+                    current.longPressed = true;
+                    lastTap.current = null;
                   }
                   if (!selectedIds.has(entry.id))
                     onSelect(entry, {

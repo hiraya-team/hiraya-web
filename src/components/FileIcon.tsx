@@ -9,7 +9,6 @@ type Props = {
   selected: boolean;
   onSelect: (event: React.MouseEvent | React.PointerEvent) => void;
   onTouchSelect: () => void;
-  onLongPressSelect: () => void;
   onOpen: () => void;
   onMove: (position: EntryPosition, targetParentId: string | null, delta: EntryPosition) => Promise<boolean>;
   onDragAtEdge: (clientX: number, clientY: number) => {
@@ -60,7 +59,7 @@ type DragState = {
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPressSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -183,7 +182,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
         current.longPressTimer = undefined;
         current.longPressed = true;
         lastTap.current = null;
-        onLongPressSelect();
+        onContextMenuAt(event.clientX, event.clientY);
       }, 500);
     }
     canvas.dataset.iconDragging = "true";
@@ -316,11 +315,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onLongPress
             event.preventDefault();
             if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
             if (current) current.longPressTimer = undefined;
-            if (action === "select" && current) {
-              current.longPressed = true;
-              lastTap.current = null;
-              onLongPressSelect();
-            }
             return;
           }
           if (current) {

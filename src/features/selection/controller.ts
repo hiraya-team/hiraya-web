@@ -37,11 +37,6 @@ export function useDesktopSelection() {
     if (next) replaceSelection(surface, next.ids, next.anchorId);
   }, [replaceSelection, selectionAnchorId, selectionScope]);
 
-  const addEntryToSelection = useCallback((surface: string, entryId: string) => {
-    const current = selectionScope === surface ? selectedIdsRef.current : [];
-    replaceSelection(surface, current.includes(entryId) ? current : [...current, entryId], entryId);
-  }, [replaceSelection, selectionScope]);
-
   const retainSelection = useCallback((retainedIds: ReadonlySet<string>) => {
     const next = selectedIdsRef.current.filter((id) => retainedIds.has(id));
     selectedIdsRef.current = next;
@@ -58,7 +53,6 @@ export function useDesktopSelection() {
     mobileMultiSelectScope,
     replaceSelection,
     selectEntry,
-    addEntryToSelection,
     retainSelection,
     beginMobileMultiSelect,
   };
