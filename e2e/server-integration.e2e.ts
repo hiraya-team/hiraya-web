@@ -19,8 +19,8 @@ async function signIn(context: BrowserContext) {
 }
 
 async function createFolder(page: Page, name: string) {
-  await page.getByRole("button", { name: "New", exact: true }).click();
-  await page.getByRole("dialog", { name: "New" }).getByRole("button", { name: "New folder" }).click();
+  await page.getByRole("region", { name: "Desktop desktop" }).click({ position: { x: 500, y: 300 } });
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New folder" }).click();
   await page.getByLabel("Folder name").fill(name);
   await page.getByRole("button", { name: "Create folder" }).click();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
