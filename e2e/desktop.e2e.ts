@@ -88,17 +88,39 @@ test("mobile Start and area controls own distinct shell actions", async ({ brows
   await expect(start).toBeFocused();
 
   const switcher = page.locator(".desktop-minimap");
-  const body = page.locator(".desktop-minimap__body");
-  const trigger = page.getByRole("button", { name: /Open area switcher/ });
-  await expect(switcher).toHaveCSS("pointer-events", "none");
-  await expect(body).toHaveCSS("pointer-events", "none");
+  const trigger = page.locator(".mobile-area-switcher-trigger");
+  await expect(switcher).toHaveCount(0);
   await expect(page.locator(".desktop-minimap__handle")).toHaveCount(0);
+
+  for (let cycle = 0; cycle < 3; cycle += 1) {
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    await expect(switcher).toHaveAttribute("data-expanded", "true");
+    await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
+    await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
+    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(switcher).toHaveCount(0);
+    await expect(trigger).toBeFocused();
+  }
+
   await trigger.click();
-  await expect(switcher).toHaveAttribute("data-expanded", "true");
-  await expect(body).toHaveCSS("pointer-events", "auto");
-  await expect(switcher).toHaveCSS("visibility", "visible");
-  await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
+  await start.click();
+  await expect(switcher).toHaveCount(0);
+  await expect(startMenu).toBeVisible();
   await page.keyboard.press("Escape");
+
+  await trigger.click();
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(switcher).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await trigger.click();
+  await page.keyboard.press("Escape");
+  await expect(switcher).toHaveCount(0);
   await expect(trigger).toBeFocused();
   await context.close();
 });

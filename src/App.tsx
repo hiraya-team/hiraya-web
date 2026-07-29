@@ -3344,7 +3344,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function areaSwitcherContains(target: EventTarget | null) {
-    return Boolean(target && areaSwitcherRef.current?.contains(target as Node));
+    return Boolean(target && (areaSwitcherTriggerRef.current?.contains(target as Node) || areaSwitcherRef.current?.contains(target as Node)));
   }
 
   function handleShellAreaSwitcherInteraction(event: React.PointerEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) {
@@ -4093,7 +4093,7 @@ function App({ session }: { session: AuthSession | null }) {
         )}
       </section>
 
-      {(isMobile || activeDesktopId) && <AreaSwitcher
+      {((isMobile && minimapExpanded) || (!isMobile && activeDesktopId)) && <AreaSwitcher
         activeSegment={activeSegment}
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}

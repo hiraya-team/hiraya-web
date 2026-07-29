@@ -143,6 +143,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain("onKeyDownCapture={handleShellAreaSwitcherInteraction}");
     expect(app).toContain("onClickCapture={captureAreaSwitcherActivation}");
     expect(app).toContain("onFocusCapture={handleShellAreaSwitcherFocus}");
+    expect(app).toContain("areaSwitcherTriggerRef.current?.contains(target as Node)");
     expect(app).toContain("areaSwitcherRef.current?.contains(target as Node)");
     expect(app).toContain("if (areaSwitcherInternalActivationRef.current) {");
     expect(app).toContain("if (minimapExpanded && !areaSwitcherContains(event.target)) collapseAreaMap(false);");
@@ -157,7 +158,10 @@ describe("accessibility regressions", () => {
     expect(css).toContain("top: calc(44px * var(--theme-density) + env(safe-area-inset-top) + 8px);");
     expect(css).toContain(".desktop-minimap[data-mobile][data-expanded] {");
     expect(css).toContain("visibility: visible;");
+    expect(css).toContain("transform: none;");
+    expect(css).toContain("animation: notification-panel-in calc(160ms * var(--theme-motion)) ease-out;");
     expect(css).toContain(".desktop-minimap[data-mobile] .desktop-minimap__body { inset: 0;");
+    expect(app).toContain("((isMobile && minimapExpanded) || (!isMobile && activeDesktopId)) && <AreaSwitcher");
   });
 
   test("area switcher exposes breakpoint-appropriate controls for the focused window", async () => {

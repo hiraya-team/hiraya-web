@@ -6179,25 +6179,17 @@
 .desktop-minimap__area-overflow { right: 5px; bottom: 4px; min-width: 18px; padding: 1px 4px; font-size: 8px; }
 
 @media (max-width: 620px) {
-  .desktop-minimap,
-  .desktop-minimap[data-expanded],
-  .desktop-minimap[data-mobile],
   .desktop-minimap[data-mobile][data-expanded] {
     right: max(8px, env(safe-area-inset-right));
     top: calc(44px * var(--theme-density) + env(safe-area-inset-top) + 8px);
     bottom: auto;
     width: calc(100vw - 16px - env(safe-area-inset-left) - env(safe-area-inset-right));
     height: min(34dvh, 240px);
-    opacity: 0;
-    visibility: hidden;
-    transform: translate3d(0, -8px, 0);
-    transition: opacity calc(150ms * var(--theme-motion)) ease, transform calc(180ms * var(--theme-motion)) cubic-bezier(.22, .78, .22, 1), visibility 0s linear calc(180ms * var(--theme-motion));
-  }
-  .desktop-minimap[data-mobile][data-expanded] {
     opacity: 1;
     visibility: visible;
-    transform: translate3d(0, 0, 0);
-    transition-delay: 0s;
+    transform: none;
+    transition: none;
+    animation: notification-panel-in calc(160ms * var(--theme-motion)) ease-out;
   }
   .desktop-minimap[data-mobile] .desktop-minimap__body { inset: 0; padding: 8px; }
   .desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }
@@ -6210,6 +6202,7 @@
   .desktop-minimap,
   .desktop-minimap__handle span,
   .notification-center__trigger { transition: none; }
+  .desktop-minimap[data-mobile][data-expanded],
   .notification-center__panel { animation: none; }
 }
 
