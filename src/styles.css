@@ -340,10 +340,10 @@
 
 .menu-bar__sync[data-status="connecting"] svg,
 .menu-bar__sync[data-status="syncing"] svg {
-  animation: sync-spin 900ms linear infinite;
+  animation: spin 900ms linear infinite;
 }
 
-@keyframes sync-spin {
+@keyframes spin {
   to { transform: rotate(360deg); }
 }
 
@@ -5898,6 +5898,7 @@
   .mobile-start-menu__icon { position: relative; display: grid; width: 44px; height: 44px; place-items: center; }
   .mobile-start-menu__icon::before { position: absolute; width: 32px; height: 32px; border: 2px solid transparent; border-radius: 50%; content: ""; pointer-events: none; }
   .mobile-start-menu__icon[data-syncing]::before { border-color: color-mix(in srgb, var(--theme-accent) 28%, transparent); border-top-color: var(--theme-accent); border-right-color: var(--theme-accent); animation: spin 700ms linear infinite; }
+  .mobile-start-menu__icon[data-offline] { filter: grayscale(1); opacity: 0.52; }
   .mobile-start-menu__icon .brand-mark__shape { position: relative; width: 24px; height: 24px; }
   .mobile-area-switcher-trigger[aria-expanded="true"] { color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
   .mobile-desktop-switcher {

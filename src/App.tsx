@@ -3627,8 +3627,8 @@ function App({ session }: { session: AuthSession | null }) {
           <nav className="mobile-window-nav" aria-label="Desktop navigation">
             <div className="mobile-window-nav__leading">
               <MobileHeaderMenu
-                label={`${syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}
-                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
+                label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}
+                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
               >
                 {renderMobileStartMenu}
               </MobileHeaderMenu>
