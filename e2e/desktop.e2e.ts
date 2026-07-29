@@ -135,6 +135,25 @@ test("mobile Start and area controls own distinct shell actions", async ({ brows
   await context.close();
 });
 
+test("mobile taps select the full desktop icon footprint", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+
+  await page.getByRole("region", { name: "Desktop desktop" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill("touch-target.txt");
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  const icon = page.locator('.file-icon[data-entry-id]').filter({ hasText: "touch-target.txt" });
+  await expect(icon).toBeVisible();
+  const bounds = await icon.boundingBox();
+  expect(bounds).not.toBeNull();
+  await page.touchscreen.tap(bounds!.x + bounds!.width / 2, bounds!.y + 3);
+  await expect(icon).toHaveAttribute("aria-pressed", "true");
+
+  await context.close();
+});
+
 test("taskbar popups stay above the mobile action pill", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 390, height: 360 } });
   const page = await context.newPage();

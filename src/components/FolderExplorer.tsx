@@ -169,7 +169,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         cancelled,
         moved: current.moved,
         longPressed: current.longPressed,
-        releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
+        releasedOnIcon: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
       });
       lastTap.current = nextTap;
       if (action === "select")

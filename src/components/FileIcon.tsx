@@ -273,13 +273,12 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     onDragEndRef.current(cancelled || !succeeded);
     if (completed.pointerType === "touch") {
       const releaseTarget = document.elementFromPoint(event.clientX, event.clientY);
-      const visibleTarget = releaseTarget?.closest(".file-icon__art, .file-icon__name");
       const tap = { id: entry.id, x: event.clientX, y: event.clientY, at: performance.now() };
       const { action, nextTap } = resolveTouchRelease(lastTap.current, tap, {
         cancelled,
         moved: completed.moved,
         longPressed: completed.longPressed,
-        releasedOnVisibleContent: Boolean(visibleTarget && iconRef.current?.contains(visibleTarget)),
+        releasedOnIcon: Boolean(releaseTarget && iconRef.current?.contains(releaseTarget)),
       });
       lastTap.current = nextTap;
       if (action === "select") onTouchSelect();

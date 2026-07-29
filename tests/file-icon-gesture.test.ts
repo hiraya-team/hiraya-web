@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { allowsMouseDoubleClick, contextMenuPressAction, dismissesSheetDrag, recordTouchRelease, resolveTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
 
 describe("file icon touch release", () => {
-  const valid = { cancelled: false, moved: false, longPressed: false, releasedOnVisibleContent: true };
+  const valid = { cancelled: false, moved: false, longPressed: false, releasedOnIcon: true };
   const tap: TouchTap = { id: "file", x: 10, y: 10, at: 1_000 };
 
   test("selects on the first tap and opens on a nearby second tap", () => {
@@ -13,7 +13,7 @@ describe("file icon touch release", () => {
   });
 
   test("ignores cancelled, moved, long-pressed, and off-content releases", () => {
-    expect(touchReleaseAction(null, tap, { ...valid, releasedOnVisibleContent: false })).toBe("none");
+    expect(touchReleaseAction(null, tap, { ...valid, releasedOnIcon: false })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, longPressed: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, moved: true })).toBe("none");
     expect(touchReleaseAction(null, tap, { ...valid, cancelled: true })).toBe("none");

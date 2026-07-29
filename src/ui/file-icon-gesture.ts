@@ -28,9 +28,9 @@ export function touchReleaseAction(previous: TouchTap | null, tap: TouchTap, sta
   cancelled: boolean;
   moved: boolean;
   longPressed: boolean;
-  releasedOnVisibleContent: boolean;
+  releasedOnIcon: boolean;
 }) {
-  if (state.cancelled || state.moved || state.longPressed || !state.releasedOnVisibleContent) return "none";
+  if (state.cancelled || state.moved || state.longPressed || !state.releasedOnIcon) return "none";
   if (previous
     && previous.id === tap.id
     && tap.at - previous.at <= DOUBLE_TAP_DELAY_MS

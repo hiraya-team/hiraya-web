@@ -90,7 +90,7 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
           cancelled: false,
           moved: current.moved,
           longPressed: false,
-          releasedOnVisibleContent: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
+          releasedOnIcon: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
         });
         lastTap.current = nextTap;
         press.current = null;
