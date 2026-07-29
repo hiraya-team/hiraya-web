@@ -8,7 +8,7 @@ Hiraya is a self-hosted, local-first desktop for spatially organizing files.
 
 In a synchronized installation, the server is the authoritative home of desktops and files. The browser keeps a projected desktop, downloaded file copies, and queued changes so supported work can continue through a short outage. In browser-local mode, this browser is authoritative and clearing its site data removes your Hiraya content.
 
-Use the desktop switcher for **named desktops**. Use the [desktop area map](#desktops-and-areas) or the phone app-bar area button to move around within one desktop, and expand the map into a full-width strip when you need more room. Open Search to find files, folders, windows, commands, or the command that opens this guide.
+Use the desktop switcher for **named desktops**. Use the area button in the global header to open the [desktop area map](#desktops-and-areas) and move around within one desktop. Open Search to find files, folders, apps, commands, or the command that opens this guide.
 
 ## Files, folders, and hierarchy import {#files-and-folders}
 
@@ -24,9 +24,9 @@ A **desktop** has its own files, folders, appearance, sharing, and permissions. 
 
 An **area** is a viewport-sized region derived from item and window coordinates on one continuous desktop. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
 
-The lower-right area map provides direct navigation on desktop and phone and always keeps Home addressable. Use its Expand control, the phone app-bar area button, the system menu, or Search to open a full-width spatial map at the bottom of the desktop. Collapse it with its control or Escape. Use the map button at the start of the desktop taskbar to show or hide the compact map; Hiraya remembers this desktop-layout choice on this device. Window-switching controls open a separate **All windows** list grouped by area.
+The area button in the global header opens a temporary spatial map and always keeps Home addressable. Choose an area to navigate and close the map, or dismiss it with Escape. App-switching controls open a separate **All windows** list grouped by area.
 
-On a phone, swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place. Long-press a visible item for its actions. A short tap opens an item only when released over its visible icon or name.
+Swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place. Long-press a visible item for its action sheet. Mouse right-click, double-click, drag and drop, and keyboard shortcuts remain available.
 
 ## Sharing, roles, and public links {#sharing}
 

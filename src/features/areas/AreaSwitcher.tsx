@@ -1,5 +1,5 @@
 import type { MouseEvent, PointerEvent, Ref } from "react";
-import { ArrowsIn, ArrowsOut, Minus, X } from "@phosphor-icons/react";
+import { Minus, X } from "@phosphor-icons/react";
 import { AppIcon, EntryIcon } from "../../components/VisualPrimitives";
 import type { DesktopEntry } from "../../types";
 import type { DesktopSegment, ResponsiveDesktop, SurfaceSegment } from "../../ui/desktop-geometry";
@@ -17,8 +17,6 @@ type AreaSwitcherProps = {
   dirtyAppIds: ReadonlySet<string>;
   focusedApp: RunningApp | undefined;
   focusedAppId: string | null;
-  handleRef: Ref<HTMLButtonElement>;
-  isMobile: boolean;
   obscured: boolean;
   occupiedSegmentKeys: ReadonlySet<string>;
   positions: ResponsiveDesktop["positions"];
@@ -33,19 +31,12 @@ type AreaSwitcherProps = {
   getAppEntry: (app: RunningApp) => DesktopEntry | null;
   getAppLabel: (app: RunningApp) => string;
   getAppSegment: (app: RunningApp) => SurfaceSegment;
-  isAppMaximized: (app: RunningApp) => boolean;
-  onBeginDrag: (event: PointerEvent<HTMLButtonElement>, expanded: boolean) => void;
-  onMoveDrag: (event: PointerEvent<HTMLButtonElement>) => void;
-  onFinishDrag: (event: PointerEvent<HTMLButtonElement>, cancelled?: boolean) => void;
-  onCancelDrag: () => void;
-  onToggle: () => void;
   onBeginGridSwipe: (event: PointerEvent<HTMLDivElement>) => void;
   onMoveGridSwipe: (event: PointerEvent<HTMLDivElement>) => void;
   onFinishGridSwipe: (event: PointerEvent<HTMLDivElement>, cancelled?: boolean) => void;
   onSelectArea: (segment: SurfaceSegment, event: MouseEvent<HTMLButtonElement>) => void;
   onFocusApp: (id: string) => void;
   onMinimizeApp: (id: string) => void;
-  onToggleMaximizeApp: (id: string) => void;
   onCloseApp: (id: string) => void;
   onShowAllWindows: () => void;
 };
@@ -60,8 +51,6 @@ export function AreaSwitcher({
   dirtyAppIds,
   focusedApp,
   focusedAppId,
-  handleRef,
-  isMobile,
   obscured,
   occupiedSegmentKeys,
   positions,
@@ -76,19 +65,12 @@ export function AreaSwitcher({
   getAppEntry,
   getAppLabel,
   getAppSegment,
-  isAppMaximized,
-  onBeginDrag,
-  onMoveDrag,
-  onFinishDrag,
-  onCancelDrag,
-  onToggle,
   onBeginGridSwipe,
   onMoveGridSwipe,
   onFinishGridSwipe,
   onSelectArea,
   onFocusApp,
   onMinimizeApp,
-  onToggleMaximizeApp,
   onCloseApp,
   onShowAllWindows,
 }: AreaSwitcherProps) {
@@ -100,10 +82,7 @@ export function AreaSwitcher({
   const focusedLabel = focusedApp ? getAppLabel(focusedApp) : "";
 
   return (
-    <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} areas and open apps`}>
-      {!isMobile && <button ref={handleRef} className="desktop-minimap__handle" type="button" aria-label={`${detailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={detailed} onClick={onToggle} onPointerDown={(event) => onBeginDrag(event, detailed)} onPointerMove={onMoveDrag} onPointerUp={onFinishDrag} onPointerCancel={(event) => onFinishDrag(event, true)} onLostPointerCapture={onCancelDrag}>
-        <span aria-hidden="true" />
-      </button>}
+    <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} areas and open apps`}>
       <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}>
         {apps.length > 0 && <header className="desktop-minimap__header">
           <div className="desktop-minimap__header-tools">
@@ -117,7 +96,6 @@ export function AreaSwitcher({
             {focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedLabel}`}>
               <span className="desktop-minimap__window-target" title={focusedLabel}><AppIcon kind={focusedApp.kind} entry={getAppEntry(focusedApp)} size={18} /><span>{focusedLabel}</span></span>
               <button type="button" onClick={() => onMinimizeApp(focusedApp.id)} title={`Minimize ${focusedLabel}`} aria-label={`Minimize ${focusedLabel}`}><Minus size={15} /></button>
-              {!isMobile && <button type="button" onClick={() => onToggleMaximizeApp(focusedApp.id)} title={`${isAppMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedLabel}`} aria-label={`${isAppMaximized(focusedApp) ? "Restore" : "Maximize"} ${focusedLabel}`}>{isAppMaximized(focusedApp) ? <ArrowsIn size={15} /> : <ArrowsOut size={15} />}</button>}
               <button className="desktop-minimap__window-close" type="button" onClick={() => onCloseApp(focusedApp.id)} title={`Close ${focusedLabel}`} aria-label={`Close ${focusedLabel}`}><X size={15} /></button>
             </div>}
           </div>

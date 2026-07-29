@@ -33,8 +33,7 @@ test("keyboard modal traps focus, closes with Escape, and restores its invoker",
 test("local mutation persists through reload", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `e2e-${Date.now()}.txt`;
-  await page.getByRole("button", { name: "New", exact: true }).click();
-  const createTextFile = page.locator(".mobile-header-menu__panel").getByRole("button", { name: "New text file" });
+  const createTextFile = page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" });
   await expect(createTextFile).toBeEnabled();
   await createTextFile.click();
   await page.getByLabel("File name").fill(name);
@@ -48,6 +47,7 @@ test("local mutation persists through reload", async ({ page }) => {
 test("reduced motion disables desktop transitions and animations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Open area switcher/ }).click();
   const motion = await page.locator(".desktop-minimap").evaluate((element) => {
     const style = getComputedStyle(element);
     return { animationDuration: style.animationDuration, transitionDuration: style.transitionDuration };
@@ -154,7 +154,7 @@ test("mobile taps select the full desktop icon footprint", async ({ browser }) =
   await context.close();
 });
 
-test("taskbar popups stay above the mobile action pill", async ({ browser }) => {
+test("shell popups stay above the file action pill", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 390, height: 360 } });
   const page = await context.newPage();
   await openLocalDesktop(page);

@@ -6,49 +6,28 @@ const base = {
   id: "window",
   title: "Document",
   titleId: "window-title",
-  bounds: { x: 0, y: 0, width: 400, height: 300 },
   zIndex: 1,
   focused: true,
   minimized: false,
   segmentActive: true,
-  mobile: true,
   onFocus: () => undefined,
-  onBoundsChange: () => undefined,
   children: <div>Content</div>,
 };
 
-describe("AppWindow mobile actions", () => {
-  test("renders mobile actions only when their callbacks exist", () => {
-    const none = renderToStaticMarkup(<AppWindow {...base} />);
-    expect(none).not.toContain("Back to Desktop");
-    expect(none).not.toContain("Switch Window");
-    expect(none).not.toContain(">Close<");
-
-    const backOnly = renderToStaticMarkup(<AppWindow {...base} onShowDesktop={() => undefined} />);
-    expect(backOnly).toContain("Back to Desktop");
-    expect(backOnly).not.toContain("Switch Window");
-    expect(backOnly).not.toContain(">Close<");
-  });
-
-  test("allows the global mobile shell to suppress duplicate window chrome", () => {
-    const markup = renderToStaticMarkup(<AppWindow {...base} hideMobileHeader onShowDesktop={() => undefined} onSwitchWindow={() => undefined} onClose={() => undefined} />);
-    expect(markup).not.toContain("app-window__header");
-    expect(markup).toContain("Content");
-  });
-
-  test("fills the viewport-owned mobile window layer", () => {
+describe("AppWindow focused surface", () => {
+  test("fills its viewport-owned layer without rendering floating bounds", () => {
     const markup = renderToStaticMarkup(<AppWindow {...base} />);
 
+    expect(markup).toContain("data-full-surface");
     expect(markup).toContain("inset:0");
     expect(markup).toContain("width:100%");
     expect(markup).toContain("height:100%");
-    expect(markup).not.toContain("height:300px");
   });
 
-  test("routes suppressed mobile header portals to the global shell", () => {
+  test("suppresses duplicate chrome and routes portals to the global header", () => {
     const actions = {} as HTMLDivElement;
     const markup = renderToStaticMarkup(
-      <AppWindow {...base} hideMobileHeader externalHeaderElements={{ leading: null, actions }}>
+      <AppWindow {...base} hideHeader externalHeaderElements={{ leading: null, actions }}>
         {(elements) => <div data-global-actions={elements.actions === actions}>Content</div>}
       </AppWindow>,
     );
@@ -57,24 +36,19 @@ describe("AppWindow mobile actions", () => {
     expect(markup).toContain('data-global-actions="true"');
   });
 
-  test("renders conventional desktop minimize, maximize, and close controls", () => {
-    const markup = renderToStaticMarkup(<AppWindow
-      {...base}
-      mobile={false}
-      onMinimize={() => undefined}
-      onToggleMaximize={() => undefined}
-      onClose={() => undefined}
-    />);
-    expect(markup).toContain('aria-label="Minimize Document"');
-    expect(markup).toContain('aria-label="Maximize Document"');
-    expect(markup).toContain('aria-label="Close Document"');
+  test("renders header navigation actions only when callbacks exist", () => {
+    const markup = renderToStaticMarkup(<AppWindow {...base} onShowDesktop={() => undefined} onSwitchWindow={() => undefined} onClose={() => undefined} />);
+
+    expect(markup).toContain("Back to Desktop");
+    expect(markup).toContain("Switch Window");
+    expect(markup).toContain(">Close<");
   });
 
-  test("shows a destination preview without exposing it to interaction", () => {
-    const markup = renderToStaticMarkup(<AppWindow {...base} mobile={false} segmentActive={false} segmentVisible />);
+  test("keeps unfocused and off-area apps outside interaction", () => {
+    const markup = renderToStaticMarkup(<AppWindow {...base} focused={false} segmentActive={false} segmentVisible />);
 
     expect(markup).not.toContain("data-segment-hidden");
     expect(markup).toContain('aria-hidden="true"');
-    expect(markup).toContain("inert=\"\"");
+    expect(markup).toContain('inert=""');
   });
 });

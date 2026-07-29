@@ -21,7 +21,6 @@ const LEGACY_FOLDER_EXPLORER_APP_ID = "app.hiraya.folder-explorer";
 export const BUILTIN_APP_REGISTRY = {
   file: {
     window: { width: 920, height: 680, minWidth: 420, minHeight: 320 },
-    maximizeRestoreWindow: { width: 920, height: 680, minWidth: 420, minHeight: 320 },
     extractTarget: (value) => value.kind === "file" && isValidId(value.fileId) && (value.editMode === undefined || typeof value.editMode === "boolean")
       ? { kind: "file", fileId: value.fileId, ...(value.editMode ? { editMode: true } : {}) }
       : null,
@@ -30,7 +29,6 @@ export const BUILTIN_APP_REGISTRY = {
   } satisfies BuiltinAppDefinition<FileAppTarget>,
   explorer: {
     window: { width: 760, height: 590, minWidth: 360, minHeight: 280 },
-    maximizeRestoreWindow: { width: 720, height: 590, minWidth: 360, minHeight: 280 },
     extractTarget: (value) => value.kind === "explorer" && (value.folderId === null || isValidId(value.folderId))
       ? { kind: "explorer", folderId: value.folderId as string | null }
       : null,
@@ -39,7 +37,6 @@ export const BUILTIN_APP_REGISTRY = {
   } satisfies BuiltinAppDefinition<ExplorerAppTarget>,
   properties: {
     window: { width: 520, height: 570, minWidth: 360, minHeight: 320 },
-    maximizeRestoreWindow: { width: 720, height: 590, minWidth: 360, minHeight: 280 },
     extractTarget: (value) => value.kind === "properties" && isValidId(value.entryId)
       ? { kind: "properties", entryId: value.entryId }
       : null,
@@ -48,7 +45,6 @@ export const BUILTIN_APP_REGISTRY = {
   } satisfies BuiltinAppDefinition<PropertiesAppTarget>,
   settings: {
     window: { width: 720, height: 700, minWidth: 360, minHeight: 280 },
-    maximizeRestoreWindow: { width: 720, height: 590, minWidth: 360, minHeight: 280 },
     extractTarget: (value) => value.kind === "settings" ? { kind: "settings" } : null,
     targetId: () => "settings",
     entryDependency: () => null,
@@ -57,10 +53,6 @@ export const BUILTIN_APP_REGISTRY = {
 
 export function builtinAppWindow(kind: BuiltinAppKind): BuiltinAppWindow {
   return BUILTIN_APP_REGISTRY[kind].window;
-}
-
-export function builtinAppMaximizeRestoreWindow(kind: BuiltinAppKind): BuiltinAppWindow {
-  return BUILTIN_APP_REGISTRY[kind].maximizeRestoreWindow;
 }
 
 export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragCommits, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "../src/ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
   test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
@@ -61,18 +61,6 @@ describe("cohesive shell view models", () => {
     expect(areaTransitionDepth(-109.2, 390)).toBeCloseTo(1);
     expect(areaTransitionDepth(300, 390)).toBe(1);
     expect(areaTransitionDepth(30, 0)).toBe(0);
-  });
-
-  test("constrains and commits direct area switcher pulls", () => {
-    expect(areaSwitcherDragPosition(30, false, 300)).toBe(300);
-    expect(areaSwitcherDragPosition(-30, false, 300)).toBe(270);
-    expect(areaSwitcherDragPosition(-30, true, 300)).toBe(0);
-    expect(areaSwitcherDragPosition(30, true, 300)).toBe(30);
-    expect(areaSwitcherDragPosition(400, true, 300)).toBe(300);
-    expect(areaSwitcherDragCommits(-65, false, 300)).toBeFalse();
-    expect(areaSwitcherDragCommits(-66, false, 300)).toBeTrue();
-    expect(areaSwitcherDragCommits(83, true, 300)).toBeFalse();
-    expect(areaSwitcherDragCommits(84, true, 300)).toBeTrue();
   });
 
   test("recognizes only nearby, timely area switcher double taps", () => {

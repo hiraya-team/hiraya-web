@@ -1,39 +1,21 @@
-import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowsIn, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
-import {
-  clampWindowBounds,
-  resizeWindowBounds,
-  type ResizeDirection,
-  type WindowBounds,
-} from "../ui/window-manager";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+import { ArrowLeft, SquaresFour, X } from "@phosphor-icons/react";
 
 export type AppWindowProps = {
   id: string;
   title: string;
   titleId: string;
-  bounds: WindowBounds;
-  minWidth?: number;
-  minHeight?: number;
   zIndex: number;
   focused: boolean;
   minimized: boolean;
   segmentActive: boolean;
   segmentVisible?: boolean;
-  mobile: boolean;
   onFocus: (id: string) => void;
-  onBoundsChange: (id: string, bounds: WindowBounds) => void;
-  onDragAtEdge?: (id: string, clientX: number, clientY: number, bounds: WindowBounds) => WindowBounds | null;
-  onDragEnd?: (id: string, cancelled: boolean) => void;
-  onMinimize?: (id: string) => void;
   onClose?: (id: string) => void;
-  maximized?: boolean;
-  canMoveArea?: boolean;
-  onToggleMaximize?: (id: string) => void;
-  onMoveArea?: (id: string, direction: "left" | "right" | "up" | "down") => void;
   onShowDesktop?: () => void;
   onSwitchWindow?: () => void;
-  mobileBackLabel?: string;
-  hideMobileHeader?: boolean;
+  backLabel?: string;
+  hideHeader?: boolean;
   externalHeaderElements?: AppWindowHeaderElements;
   children: ReactNode | ((headerElements: AppWindowHeaderElements) => ReactNode);
   titleArea?: ReactNode;
@@ -45,248 +27,71 @@ export type AppWindowHeaderElements = {
   actions: HTMLDivElement | null;
 };
 
-type Interaction = {
-  pointerId: number;
-  target: HTMLElement;
-  startX: number;
-  startY: number;
-  startBounds: WindowBounds;
-  currentBounds: WindowBounds;
-  direction?: ResizeDirection;
-};
-
-const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
-const NO_DRAG_SELECTOR = "button, a, input, select, textarea, [contenteditable='true'], [data-window-no-drag]";
-
 export function AppWindow({
   id,
   title,
   titleId,
-  bounds,
-  minWidth,
-  minHeight,
   zIndex,
   focused,
   minimized,
   segmentActive,
   segmentVisible = segmentActive,
-  mobile,
   onFocus,
-  onBoundsChange,
-  onDragAtEdge,
-  onDragEnd,
-  onMinimize,
   onClose,
-  maximized = false,
-  canMoveArea = false,
-  onToggleMaximize,
-  onMoveArea,
   onShowDesktop,
   onSwitchWindow,
-  mobileBackLabel = "Back to Desktop",
-  hideMobileHeader = false,
+  backLabel = "Back to Desktop",
+  hideHeader = false,
   externalHeaderElements,
   children,
   titleArea,
   headerContent,
 }: AppWindowProps) {
-  const windowRef = useRef<HTMLElement>(null);
   const [headerLeadingElement, setHeaderLeadingElement] = useState<HTMLDivElement | null>(null);
   const [headerActionsElement, setHeaderActionsElement] = useState<HTMLDivElement | null>(null);
-  const [windowMenuOpen, setWindowMenuOpen] = useState(false);
-  const windowMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const windowMenuRef = useRef<HTMLDivElement>(null);
-  const interactionRef = useRef<Interaction | null>(null);
-  const onBoundsChangeRef = useRef(onBoundsChange);
-  onBoundsChangeRef.current = onBoundsChange;
-
-  function viewport() {
-    const parent = windowRef.current?.parentElement;
-    return { width: parent?.clientWidth ?? 0, height: parent?.clientHeight ?? 0 };
-  }
-
-  function applyBounds(nextBounds: WindowBounds) {
-    const element = windowRef.current;
-    if (!element) return;
-    element.style.left = `${nextBounds.x}px`;
-    element.style.top = `${nextBounds.y}px`;
-    element.style.width = `${nextBounds.width}px`;
-    element.style.height = `${nextBounds.height}px`;
-  }
-
-  function beginInteraction(event: ReactPointerEvent<HTMLElement>, direction?: ResizeDirection) {
-    if (mobile || event.button !== 0) return;
-    if (!direction && (event.target as Element).closest(NO_DRAG_SELECTOR)) return;
-
-    event.preventDefault();
-    onFocus(id);
-    const target = event.currentTarget;
-    target.setPointerCapture(event.pointerId);
-    interactionRef.current = {
-      pointerId: event.pointerId,
-      target,
-      startX: event.clientX,
-      startY: event.clientY,
-      startBounds: bounds,
-      currentBounds: bounds,
-      direction,
-    };
-  }
-
-  function moveInteraction(event: ReactPointerEvent<HTMLElement>) {
-    const interaction = interactionRef.current;
-    if (!interaction || interaction.pointerId !== event.pointerId) return;
-    const delta = { x: event.clientX - interaction.startX, y: event.clientY - interaction.startY };
-    const nextBounds = interaction.direction
-      ? resizeWindowBounds(interaction.startBounds, interaction.direction, delta, viewport(), { minWidth, minHeight })
-      : clampWindowBounds({
-          ...interaction.startBounds,
-          x: interaction.startBounds.x + delta.x,
-          y: interaction.startBounds.y + delta.y,
-        }, viewport(), { minWidth, minHeight });
-    const transferredBounds = !interaction.direction ? onDragAtEdge?.(id, event.clientX, event.clientY, nextBounds) : null;
-    interaction.currentBounds = transferredBounds ?? nextBounds;
-    if (transferredBounds) {
-      interaction.startX = event.clientX;
-      interaction.startY = event.clientY;
-      interaction.startBounds = transferredBounds;
-    }
-    applyBounds(interaction.currentBounds);
-  }
-
-  function finishInteraction(event: ReactPointerEvent<HTMLElement>, cancelled = false) {
-    const interaction = interactionRef.current;
-    if (!interaction || interaction.pointerId !== event.pointerId) return;
-    interactionRef.current = null;
-    if (cancelled) applyBounds(interaction.startBounds);
-    else onBoundsChangeRef.current(id, interaction.currentBounds);
-    if (!interaction.direction) onDragEnd?.(id, cancelled);
-    if (interaction.target.hasPointerCapture(interaction.pointerId)) {
-      interaction.target.releasePointerCapture(interaction.pointerId);
-    }
-  }
-
-  useEffect(() => () => {
-    const interaction = interactionRef.current;
-    if (interaction?.target.hasPointerCapture(interaction.pointerId)) {
-      interaction.target.releasePointerCapture(interaction.pointerId);
-    }
-    interactionRef.current = null;
-  }, []);
-
-  useEffect(() => {
-    if (!focused || minimized || !segmentActive || windowRef.current?.contains(document.activeElement)) return;
-    windowRef.current?.focus();
-  }, [focused, minimized, segmentActive]);
-
-  useEffect(() => {
-    if (!windowMenuOpen) return;
-    windowMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus();
-    const dismissOutside = (event: PointerEvent | FocusEvent) => {
-      const target = event.target as Node | null;
-      if (!target || windowMenuRef.current?.contains(target) || windowMenuButtonRef.current?.contains(target)) return;
-      setWindowMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", dismissOutside, true);
-    document.addEventListener("focusin", dismissOutside, true);
-    return () => {
-      document.removeEventListener("pointerdown", dismissOutside, true);
-      document.removeEventListener("focusin", dismissOutside, true);
-    };
-  }, [windowMenuOpen]);
-
-  const style: CSSProperties = mobile
-    ? { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex }
-    : { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex };
-  const headerElements = mobile && hideMobileHeader && externalHeaderElements
+  const style: CSSProperties = { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex };
+  const headerElements = hideHeader && externalHeaderElements
     ? externalHeaderElements
     : { leading: headerLeadingElement, actions: headerActionsElement };
 
+  useEffect(() => {
+    const element = document.getElementById(id);
+    if (!focused || minimized || !segmentActive || element?.contains(document.activeElement)) return;
+    element?.focus();
+  }, [focused, id, minimized, segmentActive]);
+
   return (
     <section
-      ref={windowRef}
       id={id}
       className="app-window"
       data-app-window={id}
       data-focused={focused || undefined}
       data-minimized={minimized || undefined}
       data-segment-hidden={!segmentVisible || undefined}
-      data-mobile={mobile || undefined}
+      data-full-surface
       role="dialog"
       aria-modal="false"
       aria-labelledby={titleArea ? undefined : titleId}
       aria-label={titleArea ? title : undefined}
-      aria-hidden={minimized || !segmentActive || mobile && !focused || undefined}
-      inert={!segmentActive}
+      aria-hidden={minimized || !segmentActive || !focused || undefined}
+      inert={!segmentActive || !focused}
       tabIndex={-1}
       style={style}
       onPointerDown={() => { if (!focused) onFocus(id); }}
     >
-      {(!mobile || !hideMobileHeader) && <header
-        className="app-window__header"
-        data-window-drag-handle
-        onDoubleClick={(event) => {
-          if (!mobile && onToggleMaximize && !(event.target as Element).closest(NO_DRAG_SELECTOR)) onToggleMaximize(id);
-        }}
-        onPointerDown={beginInteraction}
-        onPointerMove={moveInteraction}
-        onPointerUp={finishInteraction}
-        onPointerCancel={(event) => finishInteraction(event, true)}
-        onLostPointerCapture={finishInteraction}
-      >
-        {typeof children === "function" && <div ref={setHeaderLeadingElement} className="app-window__header-leading" data-window-no-drag />}
+      {!hideHeader && <header className="app-window__header">
+        {typeof children === "function" && <div ref={setHeaderLeadingElement} className="app-window__header-leading" />}
         <div className="app-window__title-area">
           {titleArea ?? <h2 id={titleId} className="app-window__title">{title}</h2>}
         </div>
-        {(headerContent || typeof children === "function") && <div ref={setHeaderActionsElement} className="app-window__header-content" data-window-no-drag>{headerContent}</div>}
-        <div className="app-window__controls" data-window-no-drag>
-          {mobile ? <>
-            {onShowDesktop && <button className="app-window__control app-window__mobile-action" type="button" onClick={onShowDesktop}><ArrowLeft /> <span>{mobileBackLabel}</span></button>}
-            {onSwitchWindow && <button className="app-window__control app-window__mobile-action" type="button" onClick={onSwitchWindow}><SquaresFour /> <span>Switch Window</span></button>}
-            {onClose && <button className="app-window__control app-window__mobile-action app-window__control--close" type="button" onClick={() => onClose(id)}><X /> <span>Close</span></button>}
-          </> : <>{canMoveArea && onMoveArea && <div className="app-window__menu-wrap">
-            <button ref={windowMenuButtonRef} className="app-window__control" type="button" aria-label={`Window actions for ${title}`} aria-haspopup="menu" aria-expanded={windowMenuOpen} onClick={() => setWindowMenuOpen((open) => !open)}><CaretDown size={15} /></button>
-            {windowMenuOpen && <div ref={windowMenuRef} className="app-window__menu" role="menu" onKeyDown={(event) => {
-              const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)"));
-              const current = items.indexOf(document.activeElement as HTMLButtonElement);
-              if (event.key === "Escape") {
-                event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation();
-                setWindowMenuOpen(false); windowMenuButtonRef.current?.focus();
-              } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-                event.preventDefault();
-                const index = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
-                items[index]?.focus();
-              }
-            }}>
-              {(["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={direction} onClick={() => { onMoveArea(id, direction); setWindowMenuOpen(false); }}>Move to area {direction}<kbd>Alt {direction}</kbd></button>)}
-            </div>}
-          </div>}
-          {onMinimize && <button className="app-window__control app-window__control--minimize" type="button" onClick={() => onMinimize(id)} aria-label={`Minimize ${title}`}>
-            <Minus size={16} />
-          </button>}
-          {onToggleMaximize && <button className="app-window__control app-window__control--maximize" type="button" onClick={() => onToggleMaximize(id)} aria-label={`${maximized ? "Restore" : "Maximize"} ${title}`}>
-            {maximized ? <ArrowsIn size={16} /> : <ArrowsOut size={16} />}
-          </button>}
-          {onClose && <button className="app-window__control app-window__control--close" type="button" onClick={() => onClose(id)} aria-label={`Close ${title}`}>
-            <X size={16} />
-          </button>}
-          </>}
+        {(headerContent || typeof children === "function") && <div ref={setHeaderActionsElement} className="app-window__header-content">{headerContent}</div>}
+        <div className="app-window__controls">
+          {onShowDesktop && <button className="app-window__control app-window__mobile-action" type="button" onClick={onShowDesktop}><ArrowLeft /> <span>{backLabel}</span></button>}
+          {onSwitchWindow && <button className="app-window__control app-window__mobile-action" type="button" onClick={onSwitchWindow}><SquaresFour /> <span>Switch Window</span></button>}
+          {onClose && <button className="app-window__control app-window__mobile-action app-window__control--close" type="button" onClick={() => onClose(id)}><X /> <span>Close</span></button>}
         </div>
       </header>}
       <div className="app-window__content">{typeof children === "function" ? children(headerElements) : children}</div>
-      {!mobile && RESIZE_DIRECTIONS.map((direction) => (
-        <div
-          key={direction}
-          className={`app-window__resize-handle app-window__resize-handle--${direction}`}
-          data-window-resize={direction}
-          aria-hidden="true"
-          onPointerDown={(event) => beginInteraction(event, direction)}
-          onPointerMove={moveInteraction}
-          onPointerUp={finishInteraction}
-          onPointerCancel={(event) => finishInteraction(event, true)}
-          onLostPointerCapture={finishInteraction}
-        />
-      ))}
     </section>
   );
 }

@@ -88,87 +88,57 @@ describe("accessibility regressions", () => {
     expect(finalMobileRules).not.toContain("width: 42px; min-width: 42px");
   });
 
-  test("suppressed mobile windows retain explicit authenticated and public action slots", async () => {
+  test("focused surfaces retain explicit authenticated and public action slots", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const publicDesktop = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('className="mobile-global-actions"');
-    expect(windowLayer).toContain("externalHeaderElements={isMobile && focusedAppId === app.id");
+    expect(windowLayer).toContain("externalHeaderElements={focusedAppId === app.id");
     expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
-    expect(publicDesktop).toContain("externalHeaderElements={mobile ?");
+    expect(publicDesktop).toContain("externalHeaderElements={{ leading: null, actions: mobileHeaderActionsElement }}");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
     expect(app).toContain("target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)");
     expect(app).toContain(".app-window, button, a[href], input, select, textarea");
   });
 
-  test("mobile switchers use distinct desktop and area controls", async () => {
+  test("the universal header keeps desktop and temporary area controls distinct", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
-    const systemMenu = await Bun.file(new URL("../src/components/SystemMenu.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
-    expect(app).toContain("isMobile ? areaSwitcherTriggerRef.current : areaSwitcherHandleRef.current");
+    expect(app).toContain("areaSwitcherTriggerRef.current?.focus()");
     expect(app).toContain('event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space"');
     expect(app).toContain("areaSwitcherRestoreFocusRef.current = minimapExpanded;");
     expect(app).toContain("setMinimapExpanded(!minimapExpanded);");
     expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] }');
     expect(app).toContain("mobileSummary={homeRelativeAreaLabel(activeSegment)}");
-    expect(app).not.toContain("<MapTrifold /> Expand Area Map");
-    expect(systemMenu).not.toContain("Expand Area Map");
-    expect(systemMenu).not.toContain("onAreaMap");
     expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
     expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}');
     expect(app).toContain('className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}');
     expect(css).toContain("@keyframes spin");
     expect(css).toContain(".mobile-start-menu__icon[data-offline] { filter: grayscale(1); opacity: 0.52; }");
-    expect(app).not.toContain("<ConnectionStatusButton");
     expect(app).toContain('className="mobile-area-switcher-trigger"');
-    expect(app).not.toContain("mobileBackButtonRef");
-    expect(desktopSwitcher).not.toContain('mobileSummary ? <span className="brand-mark desktop-switcher__trigger"');
     expect(desktopSwitcher).toContain('aria-label={`Switch desktop, current desktop');
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
-    expect(areaSwitcher).toContain('{!isMobile && <button ref={handleRef}');
-    expect(areaSwitcher).toContain('aria-expanded={detailed}');
+    expect(areaSwitcher).not.toContain("onBeginDrag");
+    expect(areaSwitcher).not.toContain("desktop-minimap__handle");
     expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}');
-    expect(areaSwitcher).not.toContain('className="desktop-minimap__pull-tab"');
-    expect(app).toContain('if (owner === "areaEditor") {');
-    expect(app).toContain("if (isMobile) areaSwitcherRestoreFocusRef.current = true;");
-    expect(app).toContain("if (settlement.nextExpanded) openAreaMap();");
-    expect(areaSwitcher).toContain("onLostPointerCapture={onCancelDrag}");
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
-    expect(app).toContain("if (isMobile) collapseAreaMap();");
-    expect(app).not.toContain("if (isMobile) collapseAreaMap(false);");
+    expect(app).toContain("collapseAreaMap();");
     expect(app).toContain("onPointerDownCapture={handleShellAreaSwitcherInteraction}");
-    expect(app).toContain("onKeyDownCapture={handleShellAreaSwitcherInteraction}");
-    expect(app).toContain("onClickCapture={captureAreaSwitcherActivation}");
-    expect(app).toContain("onFocusCapture={handleShellAreaSwitcherFocus}");
-    expect(app).toContain("areaSwitcherTriggerRef.current?.contains(target as Node)");
-    expect(app).toContain("areaSwitcherRef.current?.contains(target as Node)");
-    expect(app).toContain("if (areaSwitcherInternalActivationRef.current) {");
     expect(app).toContain("if (minimapExpanded && !areaSwitcherContains(event.target)) collapseAreaMap(false);");
-    expect(app).toContain('window.addEventListener("blur", dismissForFrameFocus, true)');
-    expect(app).toContain("document.activeElement instanceof HTMLIFrameElement");
-    expect(css).toContain("calc(100% - 44px + var(--area-switcher-edge-inset))");
-    expect(css).toContain(".desktop-minimap[data-dragging] { transition: none; }");
-    expect(css).toContain("pointer-events: none;\n  transform: translate3d(var(--area-switcher-x");
-    expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__body { pointer-events: auto; }");
-    expect(css).toContain(".app-window__menu) .desktop-minimap__body { pointer-events: none; }");
-    expect(css).toContain(".mobile-window-nav > .desktop-switcher[data-mobile-summary]");
-    expect(css).toContain("top: calc(44px * var(--theme-density) + env(safe-area-inset-top) + 8px);");
-    expect(css).toContain(".desktop-minimap[data-mobile][data-expanded] {");
+    expect(app).toContain("{minimapExpanded && <AreaSwitcher");
+    expect(css).toContain("/* The focused-surface shell is canonical at every viewport width. */");
+    expect(css).toContain("top: calc(44px + env(safe-area-inset-top) + 8px);");
     expect(css).toContain("visibility: visible;");
     expect(css).toContain("transform: none;");
-    expect(css).toContain("animation: notification-panel-in calc(160ms * var(--theme-motion)) ease-out;");
-    expect(css).toContain(".desktop-minimap[data-mobile] .desktop-minimap__body { inset: 0;");
-    expect(app).toContain("((isMobile && minimapExpanded) || (!isMobile && activeDesktopId)) && <AreaSwitcher");
   });
 
-  test("area switcher exposes breakpoint-appropriate controls for the focused window", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+  test("area switcher exposes canonical focused-app controls", async () => {
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
@@ -177,14 +147,13 @@ describe("accessibility regressions", () => {
     expect(areaSwitcher).toContain('{apps.length > 0 && <header className="desktop-minimap__header">');
     expect(areaSwitcher).not.toContain("<strong>Areas</strong>");
     expect(areaSwitcher).toContain('aria-label={`Minimize ${focusedLabel}`}');
-    expect(areaSwitcher).toContain('{!isMobile && <button type="button" onClick={() => onToggleMaximizeApp(focusedApp.id)}');
+    expect(areaSwitcher).not.toContain("onToggleMaximizeApp");
     expect(areaSwitcher).toContain('onClick={() => onCloseApp(focusedApp.id)}');
     expect(areaSwitcher).toContain('focusedApp && !focusedApp.minimized');
-    expect(app).not.toContain('if (isMobile && focusedAppIdRef.current) showDesktop();');
     expect(css).toContain(".desktop-minimap__window-controls > .desktop-minimap__window-close:hover");
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
-    expect(css).toContain(".desktop-minimap[data-expanded] .desktop-minimap__handle { height: 100%; }");
+    expect(css).toContain(".desktop-minimap__handle { display: none; }");
     expect(areaSwitcher).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
     expect(css).toContain("(100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap))");
     expect(css).toContain("(100cqw - (var(--minimap-columns) - 1) * var(--minimap-gap))");
@@ -201,7 +170,7 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
   });
 
-  test("live area transitions keep mobile windows outside the transformed area track", async () => {
+  test("live area transitions keep focused surfaces outside the transformed area track", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
@@ -213,9 +182,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("areaCameraPosition(activeSegment, desktopSize)");
     expect(app).toContain("areaWorldOrigin(desktopSegment.segment, desktopSize)");
     expect(app).not.toContain("segment.column - minColumn");
-    expect(windowLayer).toContain('className={`app-window-layer${isMobile ? "" : " desktop-area-track"}`}');
-    expect(windowLayer).toContain("style={isMobile ? undefined : {");
-    expect(windowLayer).toContain("segmentVisible={isMobile ? segmentActive : segmentVisible}");
+    expect(windowLayer).toContain('className="app-window-layer"');
+    expect(windowLayer).not.toContain("desktop-area-track");
+    expect(windowLayer).toContain("segmentVisible={segmentActive}");
     expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
@@ -291,7 +260,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain('mobileDestinationOriginRef.current = active?.closest(".mobile-header-menu")');
     expect(app).toContain("return target;");
     expect(app).toContain("onClick={() => { dismiss(); focusApp(window.id); }}");
-    expect(app).toContain("restoreFocus={isMobile ? restoreMobileDestinationFocus : undefined}");
+    expect(app).toContain("restoreFocus={restoreMobileDestinationFocus}");
   });
 
   test("notifications use a dedicated keyboard-reachable panel", async () => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
 import { EntryTypeIcon } from "./components/FileIcon";
@@ -11,8 +11,7 @@ import type { DesktopEntry, FolderEntry } from "./types";
 import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
-import { publicFolderBackTarget, publicWindowBounds } from "./ui/public-desktop-layout";
-import { MOBILE_WINDOW_QUERY, useMediaQuery } from "./ui/responsive";
+import { publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
@@ -116,31 +115,10 @@ export default function PublicDesktop({ token }: { token: string }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
   const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, loadFile, resolveLinkedFile } = usePublicDesktop(token);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [surfaceSize, setSurfaceSize] = useState(() => ({
-    width: window.innerWidth,
-    height: Math.max(1, window.innerHeight - 44),
-  }));
-  const [bounds, setBounds] = useState(() => publicWindowBounds(surfaceSize));
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
-  const surfaceRef = useRef<HTMLElement>(null);
   const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
   const appearance = desktop?.appearance ?? DEFAULT_THEME_STATE;
   const theme = resolveTheme(appearance);
-  const mobile = useMediaQuery(MOBILE_WINDOW_QUERY);
-
-  useEffect(() => {
-    const surface = surfaceRef.current;
-    if (!surface) return;
-    const observer = new ResizeObserver(([entry]) =>
-      setSurfaceSize({
-        width: Math.max(1, Math.round(entry.contentRect.width)),
-        height: Math.max(1, Math.round(entry.contentRect.height)),
-      }),
-    );
-    observer.observe(surface);
-    return () => observer.disconnect();
-  }, []);
-  useEffect(() => setBounds(publicWindowBounds(surfaceSize)), [surfaceSize]);
   function openEntry(entry: DesktopEntry) {
     setSelectedIds(new Set());
     if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id });
@@ -172,7 +150,7 @@ export default function PublicDesktop({ token }: { token: string }) {
   return (
     <main className="desktop-shell public-desktop" data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(theme)}>
       <header className="menu-bar public-menu">
-        {mobile && open ? (
+        {open ? (
           <>
             <button className="public-menu__back" type="button" onClick={backPublicView} aria-label={open.kind === "folder" && open.folderId ? "Back to parent folder" : "Back to public desktop"}>
               <ArrowLeft />
@@ -203,7 +181,6 @@ export default function PublicDesktop({ token }: { token: string }) {
         )}
       </header>
       <section
-        ref={surfaceRef}
         className="desktop public-desktop__surface"
         data-wallpaper={wallpaper?.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : (wallpaper?.source ?? "dusk")}
         data-custom-loaded={wallpaperUrl || undefined}
@@ -269,19 +246,16 @@ export default function PublicDesktop({ token }: { token: string }) {
               id="public-view"
               title={open.kind === "folder" ? (folder?.name ?? desktop?.name ?? "Desktop") : open.file.name}
               titleId="public-view-title"
-              bounds={bounds}
               zIndex={1}
               focused
               minimized={false}
               segmentActive
-              mobile={mobile}
-              hideMobileHeader
-              externalHeaderElements={mobile ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
+              hideHeader
+              externalHeaderElements={{ leading: null, actions: mobileHeaderActionsElement }}
               onFocus={() => undefined}
-              onBoundsChange={(_, next) => setBounds(next)}
               onClose={closePublicView}
               onShowDesktop={backPublicView}
-              mobileBackLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}
+              backLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}
               titleArea={
                 <div>
                   <span className="window-kicker">Public · Read only</span>

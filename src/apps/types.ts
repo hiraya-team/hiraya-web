@@ -30,7 +30,6 @@ export type BuiltinAppEntryDependency = {
 
 export type BuiltinAppDefinition<TTarget extends BuiltinAppTarget> = {
   window: BuiltinAppWindow;
-  maximizeRestoreWindow: BuiltinAppWindow;
   extractTarget: (value: Record<string, unknown>) => TTarget | null;
   targetId: (target: TTarget) => string;
   entryDependency: (target: TTarget) => BuiltinAppEntryDependency | null;

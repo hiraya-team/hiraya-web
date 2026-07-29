@@ -80,7 +80,7 @@ export function ShellNotifications(props: Props) {
     ...(props.importProgress ? [{ id: "import", kind: "import" as const, value: props.importProgress }] : []),
     ...(props.showUpdateToast ? [{ id: "update", kind: "update" as const }] : []),
   ], [props.appNotifications, props.fileTransfers, props.importProgress, props.messages, props.showUpdateToast, props.trashNotifications]);
-  const itemIds = items.map((item) => item.id);
+  const itemIds = useMemo(() => items.map((item) => item.id), [items]);
   itemOrderRef.current = nextNotificationOrder(itemOrderRef.current, itemIds);
   const itemById = new Map(items.map((item) => [item.id, item]));
   const orderedItems = itemOrderRef.current.map((id) => itemById.get(id)).filter((item): item is NotificationItem => item !== undefined);

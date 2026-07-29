@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { waitForAnimations } from "../src/ui/animation-completion";
 import { enteredEdge } from "../src/ui/edge-entry";
-import { settleAreaSwitcherDrag, type AreaSwitcherDrag } from "../src/ui/area-switcher-drag";
 import { writeClipboardText } from "../src/ui/clipboard-copy";
 
 function deferred() {
@@ -29,35 +28,6 @@ describe("desktop timing reliability", () => {
     expect(enteredEdge(latch, "up")).toBeNull();
     expect(enteredEdge(latch, null)).toBeNull();
     expect(enteredEdge(latch, "up")).toBe("up");
-  });
-
-  test("lost capture consumes and fully cleans any active drag without changing expanded state", () => {
-    const drag: AreaSwitcherDrag = { expanded: true, moved: true, pointerId: 7, startX: 300, travel: 240 };
-    const holder = { current: drag };
-
-    expect(settleAreaSwitcherDrag(holder, { kind: "lost-capture" })).toEqual({
-      clearTransform: true,
-      nextExpanded: null,
-      removeDraggingAttribute: true,
-      suppressClick: false,
-    });
-    expect(holder.current).toBeNull();
-    expect(settleAreaSwitcherDrag(holder, { kind: "lost-capture" })).toBeNull();
-  });
-
-  test("normal completion validates pointer ID and is idempotent when release causes lost capture", () => {
-    const drag: AreaSwitcherDrag = { expanded: false, moved: true, pointerId: 7, startX: 300, travel: 240 };
-    const holder = { current: drag };
-
-    expect(settleAreaSwitcherDrag(holder, { kind: "pointer", cancelled: false, clientX: 100, pointerId: 6 })).toBeNull();
-    expect(holder.current).toBe(drag);
-    expect(settleAreaSwitcherDrag(holder, { kind: "pointer", cancelled: false, clientX: 100, pointerId: 7 })).toEqual({
-      clearTransform: false,
-      nextExpanded: true,
-      removeDraggingAttribute: true,
-      suppressClick: true,
-    });
-    expect(settleAreaSwitcherDrag(holder, { kind: "lost-capture" })).toBeNull();
   });
 
   test("clipboard rejection resolves as visible-feedback input instead of rejecting", async () => {
@@ -155,14 +125,11 @@ describe("desktop timing reliability", () => {
     const search = await Bun.file(new URL("../src/components/SearchCommandPalette.tsx", import.meta.url)).text();
     const settings = await Bun.file(new URL("../src/components/SettingsWindow.tsx", import.meta.url)).text();
     const sharing = await Bun.file(new URL("../src/components/SharingDialog.tsx", import.meta.url)).text();
-    const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
 
     expect(app).toContain("waitForAnimations([...hosts]");
     expect(app).toContain("AREA_TRANSITION_WATCHDOG_MS");
     expect(app).not.toContain("500 * activeTheme.motion");
     expect(app).not.toContain("now - edgeDragRef.current.time < 520");
-    expect(app).toContain('addEventListener("lostpointercapture", cancelAreaSwitcherDrag, { once: true })');
-    expect(app).toContain("areaSwitcherTransformTargetRef.current !== minimapExpanded");
     expect(fileIcon).not.toContain("requestAnimationFrame(cleanUp)");
     expect(fileIcon).toContain("current.moveSucceeded");
     expect(search).toContain("searchGenerationRef.current === generation");
@@ -170,6 +137,5 @@ describe("desktop timing reliability", () => {
     expect(sharing).toContain("copyGenerationRef.current !== generation");
     expect(sharing).toContain("copiedTimerRef.current === timer");
     expect(sharing).toContain('role={copyFeedback.error ? "alert" : "status"}');
-    expect(areaSwitcher).toContain("onLostPointerCapture={onCancelDrag}");
   });
 });

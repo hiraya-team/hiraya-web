@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import {
   BUILTIN_APP_REGISTRY,
   builtinAppEntryDependency,
-  builtinAppMaximizeRestoreWindow,
   builtinAppTargetId,
   builtinAppTargetOpensFile,
   builtinAppWindow,
@@ -54,11 +53,10 @@ describe("built-in app registry", () => {
     expect(builtinAppTargetOpensFile({ kind: "explorer", folderId: "alpha" }, "alpha")).toBeFalse();
   });
 
-  test("owns launch, minimum, and behavior-compatible maximize restore dimensions", () => {
+  test("owns launch and minimum dimensions", () => {
     expect(builtinAppWindow("file")).toEqual({ width: 920, height: 680, minWidth: 420, minHeight: 320 });
     expect(builtinAppWindow("explorer")).toEqual({ width: 760, height: 590, minWidth: 360, minHeight: 280 });
     expect(builtinAppWindow("properties")).toEqual({ width: 520, height: 570, minWidth: 360, minHeight: 320 });
     expect(builtinAppWindow("settings")).toEqual({ width: 720, height: 700, minWidth: 360, minHeight: 280 });
-    expect(builtinAppMaximizeRestoreWindow("properties")).toEqual({ width: 720, height: 590, minWidth: 360, minHeight: 280 });
   });
 });

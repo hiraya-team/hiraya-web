@@ -72,17 +72,6 @@ export function committedSwipeTarget(previewTarget: SurfaceSegment | null, cance
   return cancelled ? null : previewTarget;
 }
 
-export function areaSwitcherDragPosition(deltaX: number, expanded: boolean, travel: number) {
-  const start = expanded ? 0 : travel;
-  return Math.min(travel, Math.max(0, start + deltaX));
-}
-
-export function areaSwitcherDragCommits(deltaX: number, expanded: boolean, travel: number) {
-  const distance = expanded ? deltaX : -deltaX;
-  const threshold = Math.round(expanded ? Math.min(96, travel * 0.28) : Math.min(72, travel * 0.22));
-  return distance >= threshold;
-}
-
 export function isAreaSwitcherDoubleTap(previous: AreaSwitcherTap | null, current: AreaSwitcherTap) {
   if (!previous) return false;
   const delay = current.at - previous.at;
