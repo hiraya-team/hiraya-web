@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "vite build"
+    "build": "bunx --bun vite build"
   },
   "dependencies": {
     "@hiraya/apps-ui": "workspace:*",

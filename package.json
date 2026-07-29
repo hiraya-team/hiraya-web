@@ -10,8 +10,8 @@
   "scripts": {
     "app": "bun packages/app-cli/src/cli.ts",
     "app:example": "bun run --cwd examples/hello-app build && bun run app package examples/hello-app/dist examples/hello-app.hiraya.app",
-    "dev": "vite",
-    "build": "tsc -b && vite build && bun run apps:examples && bun run bundle:check",
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun tsc -b && bunx --bun vite build && bun run apps:examples && bun run bundle:check",
     "bundle:check": "bun build/bundle-budget.ts",
     "apps:examples": "bun run --cwd examples/calculator-app build && bun run --cwd examples/zip-browser-app build && bun run --cwd examples/pixel-editor-app build && bun run app package examples/calculator-app/dist dist/experimental-apps/calculator.hiraya.app && bun run app package examples/zip-browser-app/dist dist/experimental-apps/zip-browser.hiraya.app && bun run app package examples/pixel-editor-app/dist dist/experimental-apps/pixel-editor.hiraya.app",
     "apps:system:build": "bun run --cwd apps/system/text-editor build && bun run --cwd apps/system/markdown-preview build && bun run --cwd apps/system/image-viewer build && bun run --cwd apps/system/media-viewer build && bun run --cwd apps/system/file-viewer build",
@@ -21,7 +21,7 @@
     "test": "bun test",
     "test:e2e": "HIRAYA_FRONTEND_ONLY=true bun run build && playwright test",
     "test:e2e:server": "HIRAYA_SERVER_E2E=1 ../../scripts/server-browser-e2e.sh",
-    "preview": "vite preview"
+    "preview": "bunx --bun vite preview"
   },
   "dependencies": {
     "@hiraya/apps-contracts": "workspace:*",
