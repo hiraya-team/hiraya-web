@@ -6,6 +6,12 @@ export type MinimapWindow = {
   focused?: boolean;
 };
 
+export type AreaSwitcherTap = {
+  x: number;
+  y: number;
+  at: number;
+};
+
 export function minimapWindows<T extends MinimapWindow>(windows: readonly T[], currentAreaId: string, limit = 6) {
   const ordered = [...windows].sort((left, right) => {
     const leftRank = left.focused ? 0 : left.areaId === currentAreaId ? 1 : 2;
@@ -75,4 +81,10 @@ export function areaSwitcherDragCommits(deltaX: number, expanded: boolean, trave
   const distance = expanded ? deltaX : -deltaX;
   const threshold = Math.round(expanded ? Math.min(96, travel * 0.28) : Math.min(72, travel * 0.22));
   return distance >= threshold;
+}
+
+export function isAreaSwitcherDoubleTap(previous: AreaSwitcherTap | null, current: AreaSwitcherTap) {
+  if (!previous) return false;
+  const delay = current.at - previous.at;
+  return delay >= 0 && delay <= 400 && Math.hypot(current.x - previous.x, current.y - previous.y) <= 24;
 }

@@ -125,7 +125,7 @@ import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { SystemMenu } from "./components/SystemMenu";
-import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, minimapWindowCapacity, swipeAxis, swipePreviewReady } from "./ui/shell";
+import { adjacentSwipeArea, areaDirectionalLabel, areaSwitcherDragPosition, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, swipeAxis, swipePreviewReady, type AreaSwitcherTap } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
@@ -298,6 +298,7 @@ function App({ session }: { session: AuthSession | null }) {
   const desktopTouchPointersRef = useRef(new Set<number>());
   const areaSwitcherHandleRef = useRef<HTMLButtonElement>(null);
   const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const areaSwitcherTapRef = useRef<AreaSwitcherTap | null>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
   const areaSwitcherInternalActivationRef = useRef(false);
@@ -3395,6 +3396,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function selectAreaFromSwitcher(segment: SurfaceSegment) {
+    areaSwitcherTapRef.current = null;
     goToSegment(segment, "push", undefined, !isMobile);
     if (isMobile) collapseAreaMap();
   }
@@ -3475,6 +3477,19 @@ function App({ session }: { session: AuthSession | null }) {
     }
     if (minimapDetailed) collapseAreaMap();
     else openAreaMap();
+  }
+
+  function handleMobileAreaSwitcherTap(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.pointerType !== "touch") return;
+    const tap = { x: event.clientX, y: event.clientY, at: performance.now() };
+    if (!isAreaSwitcherDoubleTap(areaSwitcherTapRef.current, tap)) {
+      areaSwitcherTapRef.current = tap;
+      return;
+    }
+    areaSwitcherTapRef.current = null;
+    suppressAreaSwitcherClickRef.current = true;
+    if (activeSegmentKey !== segmentKey({ column: 0, row: 0 })) goToSegment({ column: 0, row: 0 });
+    collapseAreaMap();
   }
 
   function beginExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
@@ -3708,7 +3723,7 @@ function App({ session }: { session: AuthSession | null }) {
             onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
             onViewActivity={openActivityLog}
           />
-          {isMobile && <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher}>
+          {isMobile && <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
             <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
           </button>}
           {!isMobile && <SystemMenu session={session} canOpenTrash={canOpenTrash} canShare={Boolean(session && activeDesktop?.capabilities.manage && canManage)} onSettings={() => openSettingsWindow()} onHelp={() => openHelp()} onShortcuts={() => setActivePanel("shortcuts")} onTrash={() => setActivePanel("trash")} onShare={() => setSharingOpen(true)} />}

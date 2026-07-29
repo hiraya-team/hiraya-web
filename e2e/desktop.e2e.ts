@@ -122,6 +122,16 @@ test("mobile Start and area controls own distinct shell actions", async ({ brows
   await page.keyboard.press("Escape");
   await expect(switcher).toHaveCount(0);
   await expect(trigger).toBeFocused();
+
+  await trigger.tap();
+  await page.getByRole("button", { name: /1 right of Home/ }).tap();
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await expect(switcher).toHaveCount(0);
+
+  await trigger.tap();
+  await trigger.tap();
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await expect(switcher).toHaveCount(0);
   await context.close();
 });
 
