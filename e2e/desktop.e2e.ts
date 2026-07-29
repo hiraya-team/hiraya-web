@@ -124,3 +124,36 @@ test("mobile Start and area controls own distinct shell actions", async ({ brows
   await expect(trigger).toBeFocused();
   await context.close();
 });
+
+test("taskbar popups stay above the mobile action pill", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 390, height: 360 } });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+
+  const toolbar = page.getByRole("toolbar", { name: "File actions" });
+  await expect(toolbar).toBeVisible();
+  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
+  const panel = page.getByRole("dialog", { name: /Start; account, system, and windows/ });
+  await expect(panel).toBeVisible();
+
+  const toolbarElement = await toolbar.elementHandle();
+  if (!toolbarElement) throw new Error("Mobile action toolbar was not mounted.");
+  const overlap = await panel.evaluate((element, actionToolbar) => {
+    const panelBounds = element.getBoundingClientRect();
+    const toolbarBounds = actionToolbar.getBoundingClientRect();
+    return {
+      left: Math.max(panelBounds.left, toolbarBounds.left),
+      right: Math.min(panelBounds.right, toolbarBounds.right),
+      top: Math.max(panelBounds.top, toolbarBounds.top),
+      bottom: Math.min(panelBounds.bottom, toolbarBounds.bottom),
+    };
+  }, toolbarElement);
+  expect(overlap.right).toBeGreaterThan(overlap.left);
+  expect(overlap.bottom).toBeGreaterThan(overlap.top);
+  await expect.poll(() => page.evaluate(({ left, right, top, bottom }) => {
+    const target = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+    return target?.closest(".mobile-header-menu__panel") !== null;
+  }, overlap)).toBe(true);
+
+  await context.close();
+});

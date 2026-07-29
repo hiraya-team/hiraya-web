@@ -5165,6 +5165,10 @@
 .mobile-header-menu__panel,
 .desktop-switcher__panel { z-index: var(--layer-popover, 5000); }
 
+.menu-bar:has(.mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel) {
+  z-index: var(--layer-shell-popover, 5300);
+}
+
 .mobile-header-menu__panel {
   width: min(280px, calc(100vw - max(20px, env(safe-area-inset-left) + env(safe-area-inset-right))));
   padding: var(--space-2) max(var(--space-2), env(safe-area-inset-right)) max(var(--space-2), env(safe-area-inset-bottom)) max(var(--space-2), env(safe-area-inset-left));
