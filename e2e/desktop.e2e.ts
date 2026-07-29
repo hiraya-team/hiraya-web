@@ -74,34 +74,31 @@ test("service worker excludes API responses from navigation fallback and caches"
   expect(result.cachedApiCount).toBe(0);
 });
 
-test("collapsed area switcher passes edge swipes through to the desktop", async ({ browser }) => {
+test("mobile Start and area controls own distinct shell actions", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();
   await openLocalDesktop(page);
 
+  const start = page.getByRole("button", { name: /Start; account, system, and windows/ });
+  await start.click();
+  const startMenu = page.getByRole("dialog", { name: /Start; account, system, and windows/ });
+  await expect(startMenu).toBeVisible();
+  await expect(startMenu.getByRole("button", { name: "Settings" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(start).toBeFocused();
+
   const switcher = page.locator(".desktop-minimap");
-  const handle = page.locator(".desktop-minimap__handle");
   const body = page.locator(".desktop-minimap__body");
+  const trigger = page.getByRole("button", { name: /Open area switcher/ });
   await expect(switcher).toHaveCSS("pointer-events", "none");
-  await expect(handle).toHaveCSS("pointer-events", "auto");
   await expect(body).toHaveCSS("pointer-events", "none");
-
-  const blockedStripPoint = await switcher.evaluate((element) => {
-    const bounds = element.getBoundingClientRect();
-    return { x: window.innerWidth - 22, y: bounds.top + 20 };
-  });
-  await expect.poll(() => page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest(".desktop")?.classList.contains("desktop") ?? false, blockedStripPoint)).toBe(true);
-
-  const initialLabel = await handle.getAttribute("aria-label");
-  const client = await context.newCDPSession(page);
-  await client.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [blockedStripPoint] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: blockedStripPoint.x - 40, y: blockedStripPoint.y }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: blockedStripPoint.x - 100, y: blockedStripPoint.y }] });
-  await client.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
-  await expect(handle).not.toHaveAttribute("aria-label", initialLabel ?? "");
-
-  await handle.click();
+  await expect(page.locator(".desktop-minimap__handle")).toHaveCount(0);
+  await trigger.click();
   await expect(switcher).toHaveAttribute("data-expanded", "true");
   await expect(body).toHaveCSS("pointer-events", "auto");
+  await expect(switcher).toHaveCSS("visibility", "visible");
+  await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
+  await page.keyboard.press("Escape");
+  await expect(trigger).toBeFocused();
   await context.close();
 });

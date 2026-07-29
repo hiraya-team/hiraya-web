@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowsLeftRight, BookOpenText, CaretDown, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, BookOpenText, CaretDown, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -262,9 +262,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
   const fileDialogResultIdRef = useRef<string | null>(null);
-  const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
   const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
-  const restoreMobileDestinationOriginRef = useRef(false);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -292,6 +290,7 @@ function App({ session }: { session: AuthSession | null }) {
   } | null>(null);
   const desktopTouchPointersRef = useRef(new Set<number>());
   const areaSwitcherHandleRef = useRef<HTMLButtonElement>(null);
+  const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
   const areaSwitcherInternalActivationRef = useRef(false);
@@ -502,20 +501,6 @@ function App({ session }: { session: AuthSession | null }) {
   }, []);
 
   useEffect(() => {
-    if (!isMobile) return;
-    if (focusedAppId) {
-      const frame = window.requestAnimationFrame(() => mobileBackButtonRef.current?.focus({ preventScroll: true }));
-      return () => window.cancelAnimationFrame(frame);
-    }
-    if (!restoreMobileDestinationOriginRef.current) return;
-    restoreMobileDestinationOriginRef.current = false;
-    const target = mobileDestinationOriginRef.current;
-    mobileDestinationOriginRef.current = null;
-    const frame = window.requestAnimationFrame(() => target?.focus({ preventScroll: true }));
-    return () => window.cancelAnimationFrame(frame);
-  }, [focusedAppId, isMobile]);
-
-  useEffect(() => {
     if (!minimapExpanded) return;
     const frame = window.requestAnimationFrame(() => {
       areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus();
@@ -532,9 +517,9 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => {
     if (minimapExpanded || !areaSwitcherRestoreFocusRef.current) return;
     areaSwitcherRestoreFocusRef.current = false;
-    const frame = window.requestAnimationFrame(() => areaSwitcherHandleRef.current?.focus());
+    const frame = window.requestAnimationFrame(() => (isMobile ? areaSwitcherTriggerRef.current : areaSwitcherHandleRef.current)?.focus());
     return () => window.cancelAnimationFrame(frame);
-  }, [activeSegmentKey, minimapExpanded]);
+  }, [activeSegmentKey, isMobile, minimapExpanded]);
 
   useEffect(() => {
     if (!minimapExpanded) return;
@@ -3493,6 +3478,69 @@ function App({ session }: { session: AuthSession | null }) {
     return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
+  function renderMobileStartMenu(dismiss: (restoreFocus?: boolean) => void) {
+    return <>
+      {session && (
+        <div className="account-menu__identity">
+          <strong>{session.user.displayName}</strong>
+          {session.user.email && <span>{session.user.email}</span>}
+        </div>
+      )}
+      <button type="button" onClick={() => { dismiss(); showDesktop(); }}>
+        <Desktop /> Back to Desktop
+      </button>
+      {focusedAppId && <>
+        <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}>
+          <SquaresFour /> Switch Window
+        </button>
+        <button type="button" onClick={() => {
+          const id = focusedAppId;
+          dismiss();
+          requestCloseApp(id);
+        }}>
+          <X /> Close Window
+        </button>
+      </>}
+      {windowItems.map((window) => (
+        <button type="button" key={window.id} aria-current={window.id === focusedAppId ? "page" : undefined} title={window.title} onClick={() => { dismiss(); focusApp(window.id); }}>
+          <SquaresFour />
+          <span>{window.title}</span>
+          <small>{window.areaLabel}</small>
+        </button>
+      ))}
+      <span className="mobile-header-menu__separator" />
+      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("sync"))}>
+        <CloudCheck /> Connection &amp; Offline
+      </button>
+      <button type="button" onClick={() => launchMobileDestination(dismiss, () => openSettingsWindow())}>
+        <GearSix /> Settings
+      </button>
+      <button type="button" onClick={() => launchMobileDestination(dismiss, () => openHelp())}>
+        <BookOpenText /> Help
+      </button>
+      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("shortcuts"))}>
+        <Keyboard /> Keyboard shortcuts
+      </button>
+      {canOpenTrash && <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("trash"))}>
+        <Trash /> Trash
+      </button>}
+      {session && activeDesktop?.capabilities.manage && <button type="button" disabled={!canManage} title={!canManage ? "Connect to manage sharing." : undefined} onClick={() => launchMobileDestination(dismiss, () => setSharingOpen(true))}>
+        <ShareNetwork /> Share desktop
+      </button>}
+      {session && <>
+        <span className="mobile-header-menu__separator" />
+        <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={() => dismiss()}>
+          <IdentificationCard /> Profile
+        </a>
+        <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
+          <button className="account-menu__action" type="submit">
+            <SignOut /> Log out
+          </button>
+        </form>
+      </>}
+    </>;
+  }
+
   const shellAnnouncement = shellMessages.at(-1)?.message ?? (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
 
   return (
@@ -3506,22 +3554,17 @@ function App({ session }: { session: AuthSession | null }) {
         />}
         {isMobile && (
           <nav className="mobile-window-nav" aria-label="Desktop navigation">
-            {focusedApp ? <>
-              <div className="mobile-window-nav__leading">
-                {focusedApp.kind === "settings" && settingsPage !== "main" ? (
-                <button ref={mobileBackButtonRef} type="button" className="mobile-window-nav__desktop" aria-label="Back to Settings" onClick={navigateBack}>
-                  <ArrowLeft size={18} />
-                  <span>Settings</span>
-                </button>
-                ) : (
-                <button ref={mobileBackButtonRef} type="button" className="mobile-window-nav__desktop" aria-label={`Back from ${runningAppLabel(focusedApp)}`} onClick={() => { restoreMobileDestinationOriginRef.current = true; navigateBack(); }}>
-                  <ArrowLeft size={18} />
-                  <span>Back</span>
-                </button>
-                )}
-              </div>
-              <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-            </> : activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
+            <div className="mobile-window-nav__leading">
+              <MobileHeaderMenu
+                label={`Start; account, system, and windows; ${runningApps.length} open`}
+                icon={<span className="mobile-start-menu__icon"><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
+              >
+                {renderMobileStartMenu}
+              </MobileHeaderMenu>
+            </div>
+            {focusedApp
+              ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
+              : activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
           </nav>
         )}
         <div className="menu-bar__actions">
@@ -3608,142 +3651,9 @@ function App({ session }: { session: AuthSession | null }) {
             onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
             onViewActivity={openActivityLog}
           />
-          {isMobile && (
-            <MobileHeaderMenu
-              label={`Account, system, and windows; ${runningApps.length} open`}
-              icon={
-                <span className="mobile-window-nav__count">
-                  <DotsThree size={20} />
-                  <b>{runningApps.length}</b>
-                </span>
-              }
-            >
-              {(dismiss) => (
-                <>
-                  {session && (
-                    <div className="account-menu__identity">
-                      <strong>{session.user.displayName}</strong>
-                      {session.user.email && <span>{session.user.email}</span>}
-                    </div>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      dismiss();
-                      showDesktop();
-                    }}
-                  >
-                    <Desktop /> Back to Desktop
-                  </button>
-                  {focusedAppId && (
-                    <>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          launchMobileDestination(dismiss, () => setActivePanel("windows"));
-                        }}
-                      >
-                        <SquaresFour /> Switch Window
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const id = focusedAppId;
-                          dismiss();
-                          requestCloseApp(id);
-                        }}
-                      >
-                        <X /> Close Window
-                      </button>
-                    </>
-                  )}
-                  {windowItems.map((window) => (
-                    <button
-                      type="button"
-                      key={window.id}
-                      aria-current={window.id === focusedAppId ? "page" : undefined}
-                      title={window.title}
-                      onClick={() => {
-                        launchMobileDestination(dismiss, () => focusApp(window.id));
-                      }}
-                    >
-                      <SquaresFour />
-                      <span>{window.title}</span>
-                      <small>{window.areaLabel}</small>
-                    </button>
-                  ))}
-                  <span className="mobile-header-menu__separator" />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      launchMobileDestination(dismiss, () => setActivePanel("sync"));
-                    }}
-                  >
-                    <CloudCheck /> Connection &amp; Offline
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      launchMobileDestination(dismiss, () => openSettingsWindow());
-                    }}
-                  >
-                    <GearSix /> Settings
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      launchMobileDestination(dismiss, () => openHelp());
-                    }}
-                  >
-                    <BookOpenText /> Help
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      launchMobileDestination(dismiss, () => setActivePanel("shortcuts"));
-                    }}
-                  >
-                    <Keyboard /> Keyboard shortcuts
-                  </button>
-                  {canOpenTrash && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        launchMobileDestination(dismiss, () => setActivePanel("trash"));
-                      }}
-                    >
-                      <Trash /> Trash
-                    </button>
-                  )}
-                  {session && activeDesktop?.capabilities.manage && (
-                    <button
-                      type="button"
-                      disabled={!canManage}
-                      title={!canManage ? "Connect to manage sharing." : undefined}
-                      onClick={() => {
-                        launchMobileDestination(dismiss, () => setSharingOpen(true));
-                      }}
-                    >
-                      <ShareNetwork /> Share desktop
-                    </button>
-                  )}
-                  {session && (
-                    <>
-                      <span className="mobile-header-menu__separator" />
-                      <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={() => dismiss()}>
-                        <IdentificationCard /> Profile
-                      </a>
-                      <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
-                        <button className="account-menu__action" type="submit">
-                          <SignOut /> Log out
-                        </button>
-                      </form>
-                    </>
-                  )}
-                </>
-              )}
-            </MobileHeaderMenu>
-          )}
+          {isMobile && <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher}>
+            <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
+          </button>}
           {!isMobile && <SystemMenu session={session} canOpenTrash={canOpenTrash} canShare={Boolean(session && activeDesktop?.capabilities.manage && canManage)} onSettings={() => openSettingsWindow()} onHelp={() => openHelp()} onShortcuts={() => setActivePanel("shortcuts")} onTrash={() => setActivePanel("trash")} onShare={() => setSharingOpen(true)} />}
           <DesktopClock />
         </div>

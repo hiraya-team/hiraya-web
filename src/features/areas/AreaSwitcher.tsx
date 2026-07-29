@@ -100,10 +100,10 @@ export function AreaSwitcher({
   const focusedLabel = focusedApp ? getAppLabel(focusedApp) : "";
 
   return (
-    <nav ref={rootRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} areas and open apps`}>
-      <button ref={handleRef} className="desktop-minimap__handle" type="button" aria-label={`${detailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={detailed} onClick={onToggle} onPointerDown={(event) => onBeginDrag(event, detailed)} onPointerMove={onMoveDrag} onPointerUp={onFinishDrag} onPointerCancel={(event) => onFinishDrag(event, true)} onLostPointerCapture={onCancelDrag}>
+    <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-mobile={isMobile || undefined} data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} areas and open apps`}>
+      {!isMobile && <button ref={handleRef} className="desktop-minimap__handle" type="button" aria-label={`${detailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-expanded={detailed} onClick={onToggle} onPointerDown={(event) => onBeginDrag(event, detailed)} onPointerMove={onMoveDrag} onPointerUp={onFinishDrag} onPointerCancel={(event) => onFinishDrag(event, true)} onLostPointerCapture={onCancelDrag}>
         <span aria-hidden="true" />
-      </button>
+      </button>}
       <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}>
         {apps.length > 0 && <header className="desktop-minimap__header">
           <div className="desktop-minimap__header-tools">
