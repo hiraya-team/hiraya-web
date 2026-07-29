@@ -28,6 +28,33 @@ class CapturingEventSource extends FakeEventSource {
   }
 }
 
+function xhrUsingFetch(fetchImpl: typeof fetch) {
+  return () => {
+    let method = "GET";
+    let url = "";
+    const headers = new Headers();
+    const request = {
+      status: 0,
+      withCredentials: false,
+      upload: { onprogress: null as ((event: ProgressEvent) => void) | null },
+      onload: null as (() => void) | null,
+      onerror: null as (() => void) | null,
+      onabort: null as (() => void) | null,
+      open(nextMethod: string, nextUrl: string) { method = nextMethod; url = nextUrl; },
+      setRequestHeader(name: string, value: string) { headers.append(name, value); },
+      abort() { request.onabort?.(); },
+      send(body: Blob) {
+        request.upload.onprogress?.({ loaded: body.size } as ProgressEvent);
+        void fetchImpl(url, { method, headers, body, credentials: "omit", referrerPolicy: "no-referrer", redirect: "error" }).then((response) => {
+          request.status = response.status;
+          request.onload?.();
+        }, () => request.onerror?.());
+      },
+    };
+    return request as unknown as XMLHttpRequest;
+  };
+}
+
 async function blockEngineQueue(engine: SyncEngine) {
   let release!: () => void;
   let markStarted!: () => void;
@@ -805,6 +832,11 @@ describe("canonical synchronization", () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const transferPhases: string[] = [];
+    engine.subscribeTransfers((transfers) => {
+      const transfer = transfers.find(({ entryId }) => entryId === "file-1");
+      if (transfer && transferPhases.at(-1) !== transfer.phase) transferPhases.push(transfer.phase);
+    });
     const started = await engine.start("desk", { x: 0, y: 0 });
     expect(started.desktop.entries).toHaveLength(1);
     expect(contentRequests).toBe(0);
@@ -814,6 +846,11 @@ describe("canonical synchronization", () => {
     expect(storage.stats.cacheWrites).toBe(1);
     expect(directInit).toMatchObject({ method: "GET", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", cache: "no-store" });
     expect(new Headers(directInit?.headers).get("X-Test-Download")).toBe("yes");
+    expect(transferPhases).toEqual(["access", "downloading", "finalizing", "complete"]);
+    expect(engine.getTransferSnapshot()).toEqual([expect.objectContaining({ entryId: "file-1", fileName: "notes.txt", direction: "download", phase: "complete", transferredBytes: 4, totalBytes: 4, error: null })]);
+    const transferId = engine.getTransferSnapshot()[0].id;
+    engine.dismissCompletedTransfer(transferId);
+    expect(engine.getTransferSnapshot()).toEqual([]);
     await engine.stop();
   });
 
@@ -1107,6 +1144,8 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     let prepareBody: unknown;
     let directInit: RequestInit | undefined;
+    let releaseCommit!: () => void;
+    const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
       if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
@@ -1120,18 +1159,28 @@ describe("canonical synchronization", () => {
         return new Response(null, { status: 200 });
       }
       if (String(input) === "/api/desktops/desk/blob-mutations/upload-1/commit" && init?.method === "POST") {
+        await commitGate;
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 12, revision: 2, contentRevision: 2 }] };
         return Response.json({});
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
+    const transferPhases: string[] = [];
+    engine.subscribeTransfers((transfers) => {
+      const transfer = transfers.find(({ entryId }) => entryId === "file-1");
+      if (transfer && transferPhases.at(-1) !== transfer.phase) transferPhases.push(transfer.phase);
+    });
     const inventoryUpdates: string[] = [];
     engine.subscribeOfflineStorage((inventory) => inventoryUpdates.push(inventory.desktopId));
     await engine.start("desk", { x: 0, y: 0 });
     await engine.loadOfflineInventory();
     inventoryUpdates.length = 0;
     await engine.saveTextFile("file-1", "updated note");
+    await waitFor(() => engine.getTransferSnapshot()[0]?.phase === "finalizing");
+    expect(engine.getTransferSnapshot()[0].phase).toBe("finalizing");
+    expect((await engine.getOutboxStatus()).pending).toBe(1);
+    releaseCommit();
     await waitForOutboxDrain(engine);
 
     expect(prepareBody).toMatchObject({
@@ -1143,6 +1192,8 @@ describe("canonical synchronization", () => {
     expect(requests.indexOf("PUT https://uploads.example.test/file-1?signature=secret")).toBeLessThan(requests.indexOf("POST /api/desktops/desk/blob-mutations/upload-1/commit"));
     expect((await engine.getOutboxStatus()).pending).toBe(0);
     expect(inventoryUpdates).toEqual(["desk"]);
+    expect(transferPhases).toEqual(["hashing", "access", "uploading", "finalizing", "complete"]);
+    expect(engine.getTransferSnapshot()).toEqual([expect.objectContaining({ direction: "upload", phase: "complete", transferredBytes: 12, totalBytes: 12, error: null })]);
     await engine.stop();
   });
 
@@ -1171,7 +1222,7 @@ describe("canonical synchronization", () => {
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.pasteEntries({
       selectedRootIds: ["source-folder"],
@@ -1269,17 +1320,27 @@ describe("canonical synchronization", () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
 
-    const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     await first.start("desk", { x: 0, y: 0 });
     await first.saveTextFile("file-1", "retry");
+    await waitFor(() => first.getTransferSnapshot()[0]?.phase === "failed");
+    const failedTransfer = first.getTransferSnapshot()[0];
+    expect(failedTransfer).toMatchObject({ direction: "upload", phase: "failed", transferredBytes: 5, totalBytes: 5, error: "Direct file upload failed. The change remains queued." });
     expect((await first.getOutboxStatus()).pending).toBe(1);
     await first.stop();
 
-    const second = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const second = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
+    const retryStates: Array<{ phase: string; transferredBytes: number }> = [];
+    second.subscribeTransfers((transfers) => {
+      const transfer = transfers[0];
+      if (transfer) retryStates.push({ phase: transfer.phase, transferredBytes: transfer.transferredBytes });
+    });
     expect((await second.start("desk", { x: 0, y: 0 })).status).toBe("online");
     expect(prepares).toBe(2);
     expect(requests).toContain("DELETE /api/desktops/desk/blob-mutations/upload-1");
     expect(requests).toContain("PUT https://uploads.example.test/file-1?attempt=2");
+    expect(second.getTransferSnapshot()).toEqual([expect.objectContaining({ id: failedTransfer.id, phase: "complete", error: null })]);
+    expect(retryStates).toContainEqual({ phase: "hashing", transferredBytes: 0 });
     expect((await second.getOutboxStatus()).pending).toBe(0);
     await second.stop();
   });
@@ -1307,13 +1368,13 @@ describe("canonical synchronization", () => {
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
 
-    const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     await first.start("desk", { x: 0, y: 0 });
     await first.saveTextFile("file-1", "retry");
     expect(await first.getOutboxStatus()).toMatchObject({ pending: 1, blocked: 0 });
     await first.stop();
 
-    const second = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const second = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     expect((await second.start("desk", { x: 0, y: 0 })).status).toBe("online");
     expect(prepares).toBe(2);
     expect(commits).toBe(2);
@@ -1337,7 +1398,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk/blob-mutations/conflict/commit") return Response.json({ error: commitError.message }, { status: commitError.status });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.saveTextFile("file-1", "conflict");
     if (commitError.blocked) await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);

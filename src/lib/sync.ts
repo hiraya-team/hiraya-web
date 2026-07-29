@@ -11,14 +11,14 @@ import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
 import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";
 import { AuthenticationRequiredError, redirectToLogin } from "./auth";
-import { mapWithConcurrency, sha256Blob } from "./blob-transfer";
+import { mapWithConcurrency, responseBlobWithProgress } from "./blob-transfer";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, type OfflineStorageInventory } from "./offline-availability";
 import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
 import { browserSyncStorage, type SyncStorage } from "../platform/sync/storage-port";
 import { SyncHttpClient, SyncRequestError } from "../platform/sync/http-client";
 import { SyncConnectivity } from "../platform/sync/connectivity";
-import { sendOutboxOperation } from "../platform/sync/outbox-transport";
+import { sendOutboxOperation, type BlobUploadPhase } from "../platform/sync/outbox-transport";
 import { AuthorityValidationError, parseAuthorityIdentity, UpgradeRequiredError } from "./wire-authority";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
@@ -26,6 +26,16 @@ type OutboxOperationInput = OutboxOperation extends infer Operation
   : never;
 
 export type SyncStatus = "connecting" | "online" | "offline" | "blocked" | "upgrade-required" | "error" | "local";
+export type FileTransferState = {
+  id: string;
+  entryId: string;
+  fileName: string;
+  direction: "upload" | "download";
+  phase: BlobUploadPhase | "downloading" | "complete" | "failed";
+  transferredBytes: number;
+  totalBytes: number;
+  error: string | null;
+};
 export type DesktopRegistry = { schemaVersion: 1; catalogId: string | null; catalogRevision: number; desktops: DesktopIdentity[]; activeDesktopId: string | null; quota: CatalogQuota | null };
 const HEALTH_TIMEOUT_MS = 10_000;
 
@@ -66,6 +76,7 @@ export type SyncEngineOptions = {
   storage?: SyncStorage;
   onUnauthorized?: () => void;
   expectedCatalogId?: string | null;
+  createXMLHttpRequest?: () => XMLHttpRequest;
 };
 
 const REPLAY_RETRY_MIN_MS = 1_000;
@@ -139,6 +150,7 @@ export class SyncEngine {
   private readonly connectivity: SyncConnectivity;
   private readonly setTimeoutImpl: typeof globalThis.setTimeout;
   private readonly clearTimeoutImpl: typeof globalThis.clearTimeout;
+  private readonly createXMLHttpRequest?: () => XMLHttpRequest;
   private readonly directMutationClientId = crypto.randomUUID();
   private desktop: DesktopStateSnapshot | null = null;
   private status: SyncStatus = "connecting";
@@ -169,6 +181,9 @@ export class SyncEngine {
   private readonly offlineInventoryListeners = new Set<(inventory: OfflineStorageInventory) => void>();
   private readonly offlineProgressListeners = new Set<(progress: OfflineOperationProgress | null) => void>();
   private readonly entryDownloadListeners = new Set<(entryIds: ReadonlySet<string>) => void>();
+  private readonly transferListeners = new Set<(transfers: readonly FileTransferState[]) => void>();
+  private readonly transfers = new Map<string, FileTransferState>();
+  private transferSnapshot: readonly FileTransferState[] = [];
   private readonly activeEntryDownloadIds = new Set<string>();
   private offlineInventoryLoad: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
   private offlineDownload: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
@@ -181,6 +196,7 @@ export class SyncEngine {
     this.expectedCatalogId = options.expectedCatalogId ?? null;
     this.setTimeoutImpl = options.setTimeout ?? globalThis.setTimeout.bind(globalThis);
     this.clearTimeoutImpl = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
+    this.createXMLHttpRequest = options.createXMLHttpRequest;
     this.http = new SyncHttpClient({
       fetch: this.fetchImpl,
       onUnauthorized: this.onUnauthorized,
@@ -276,6 +292,8 @@ export class SyncEngine {
     this.offlineInventoryLoad = null;
     this.offlineDownload = null;
     await this.work;
+    this.transfers.clear();
+    this.publishTransfers();
   }
 
   subscribe(onDesktop: (next: DesktopStateSnapshot) => void, onStatus: (next: SyncStatus) => void, onSyncWork?: (syncing: boolean) => void) {
@@ -335,6 +353,71 @@ export class SyncEngine {
     this.entryDownloadListeners.add(listener);
     listener(new Set(this.activeEntryDownloadIds));
     return () => this.entryDownloadListeners.delete(listener);
+  }
+
+  getTransferSnapshot() {
+    return this.transferSnapshot;
+  }
+
+  subscribeTransfers(listener: (transfers: readonly FileTransferState[]) => void) {
+    this.transferListeners.add(listener);
+    listener(this.transferSnapshot);
+    return () => this.transferListeners.delete(listener);
+  }
+
+  dismissTransfer(id: string) {
+    if (!this.transfers.delete(id)) return;
+    this.publishTransfers();
+  }
+
+  dismissCompletedTransfer(id: string) {
+    if (this.transfers.get(id)?.phase !== "complete") return;
+    this.dismissTransfer(id);
+  }
+
+  private publishTransfers() {
+    this.transferSnapshot = [...this.transfers.values()];
+    for (const listener of this.transferListeners) listener(this.transferSnapshot);
+  }
+
+  private updateTransfer(transfer: FileTransferState) {
+    this.transfers.set(transfer.id, transfer);
+    this.publishTransfers();
+  }
+
+  private updateDownloadTransfer(generation: number, desktopId: string, transfer: FileTransferState) {
+    if (!this.sessionIsActive(generation, desktopId)) return;
+    this.updateTransfer(transfer);
+  }
+
+  private uploadFiles(record: OutboxRecord): Array<{ id: string; name: string; size: number }> {
+    if (record.operation.kind === "create") return record.operation.entries.filter((entry): entry is FileEntry => entry.kind === "file");
+    if (record.operation.kind !== "save-content") return [];
+    const entryId = record.operation.entryId;
+    const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.kind === "file" && candidate.id === entryId);
+    return [{ id: entryId, name: entry?.name ?? entryId, size: record.operation.size }];
+  }
+
+  private uploadTransferId(operationId: string, entryId: string) {
+    return `upload:${operationId}:${entryId}`;
+  }
+
+  private updateUploadTransfer(record: OutboxRecord, generation: number, entryId: string, phase: BlobUploadPhase, transferredBytes: number, totalBytes: number) {
+    if (!this.running || this.generation !== generation) return;
+    const file = this.uploadFiles(record).find((entry) => entry.id === entryId);
+    if (!file) return;
+    this.updateTransfer({ id: this.uploadTransferId(record.operationId, entryId), entryId, fileName: file.name, direction: "upload", phase, transferredBytes, totalBytes, error: null });
+  }
+
+  private finishUploadTransfers(record: OutboxRecord, generation: number, error?: unknown) {
+    if (!this.running || this.generation !== generation) return;
+    const prefix = `upload:${record.operationId}:`;
+    for (const [id, current] of this.transfers) {
+      if (!id.startsWith(prefix)) continue;
+      if (!current) continue;
+      if (error !== undefined && current.phase === "complete") continue;
+      this.updateTransfer({ ...current, phase: error === undefined ? "complete" : "failed", transferredBytes: error === undefined ? current.totalBytes : current.transferredBytes, error: error === undefined ? null : error instanceof Error ? error.message : "The file upload failed." });
+    }
   }
 
   private publishEntryDownloads() {
@@ -575,13 +658,15 @@ export class SyncEngine {
     await this.publishOutbox();
   }
 
-  private async sendOutboxOperation(record: OutboxRecord) {
+  private async sendOutboxOperation(record: OutboxRecord, generation: number) {
     return sendOutboxOperation(record, {
       fetch: this.fetchImpl,
       signal: this.syncAbort?.signal,
       requestJson: (input, init) => this.requestJson(input, init),
       requireAuthentication: (response) => this.requireAuthentication(response),
       readPendingContent: (operationId, entryId) => this.storage.readPendingContent(operationId, entryId),
+      createXMLHttpRequest: this.createXMLHttpRequest,
+      onBlobUploadProgress: (entryId, phase, transferredBytes, totalBytes) => this.updateUploadTransfer(record, generation, entryId, phase, transferredBytes, totalBytes),
     });
   }
 
@@ -597,7 +682,7 @@ export class SyncEngine {
     try {
       await this.storage.recordMutationAttempt?.(record.operationId, Date.now());
       await this.publishOutbox();
-      const response = await this.sendOutboxOperation(record);
+      const response = await this.sendOutboxOperation(record, generation);
       const acknowledgedRevision = typeof response === "object" && response !== null && "catalogRevision" in response && Number.isSafeInteger(response.catalogRevision) && Number(response.catalogRevision) > 0 ? Number(response.catalogRevision) : undefined;
       if (record.operation.kind === "create-desktop") {
         await this.reconcile(record.operationId, record.operation.desktop.id, generation, acknowledgedRevision);
@@ -610,9 +695,11 @@ export class SyncEngine {
         await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
       }
       await this.storage.acknowledgeMutation(record.operationId);
+      this.finishUploadTransfers(record, generation);
       if (this.offlineInventoryListeners.size > 0 && outboxOperationDesktopIds(record).has(this.desktopId)) await this.refreshOfflineInventory();
       await this.publishOutbox();
     } catch (error) {
+      this.finishUploadTransfers(record, generation, error);
       if (error instanceof SyncRequestError && error.permanent) {
         await this.storage.blockMutation(record.operationId, error.status === 403 ? ACCESS_REVOKED_ERROR : error.message, error.status === 403 ? "forbidden" : error.code, error.status === 403 ? null : error.details as RevisionConflictDetails | null);
         await this.publishOutbox();
@@ -1169,6 +1256,8 @@ export class SyncEngine {
     const key = `${desktopId}\n${catalogId}\n${id}\n${contentRevision}`;
     const existing = this.contentLoads.get(key);
     if (existing) return existing;
+    const transferId = `download:${key}`;
+    this.updateDownloadTransfer(generation, desktopId, { id: transferId, entryId: id, fileName: entry.name, direction: "download", phase: "access", transferredBytes: 0, totalBytes: entry.size, error: null });
     this.activeEntryDownloadIds.add(id);
     this.publishEntryDownloads();
     const loading = (async () => {
@@ -1206,16 +1295,26 @@ export class SyncEngine {
         throw new VirtualFileUnavailableError("This file could not be downloaded. Reconnect and try again.");
       }
       if (!response.ok) throw new VirtualFileUnavailableError(`This file could not be downloaded (${response.status}). Reconnect and try again.`);
-      const content = await response.blob();
+      this.updateDownloadTransfer(generation, desktopId, { id: transferId, entryId: id, fileName: entry.name, direction: "download", phase: "downloading", transferredBytes: 0, totalBytes: descriptor.size, error: null });
+      const downloaded = await responseBlobWithProgress(response, descriptor.size, (transferredBytes) => {
+        this.updateDownloadTransfer(generation, desktopId, { id: transferId, entryId: id, fileName: entry.name, direction: "download", phase: "downloading", transferredBytes, totalBytes: descriptor.size, error: null });
+      });
+      const content = downloaded.blob;
+      this.updateDownloadTransfer(generation, desktopId, { id: transferId, entryId: id, fileName: entry.name, direction: "download", phase: "finalizing", transferredBytes: content.size, totalBytes: descriptor.size, error: null });
       if (content.size !== descriptor.size || content.size !== entry.size) throw new Error(`The server contents of “${entry.name}” have an unexpected size.`);
-      if (await sha256Blob(content) !== descriptor.sha256) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
+      if (downloaded.sha256 !== descriptor.sha256) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
       this.assertActive(generation);
       const stored = await this.storage.cacheRemoteFile(desktopId, catalogId, id, contentRevision, descriptor.sha256, content);
       this.assertActive(generation);
       if (!stored) throw new VirtualFileChangedError();
       await this.loadOfflineInventory().catch(() => undefined);
+      this.updateDownloadTransfer(generation, desktopId, { id: transferId, entryId: id, fileName: entry.name, direction: "download", phase: "complete", transferredBytes: descriptor.size, totalBytes: descriptor.size, error: null });
       return stored;
-    })();
+    })().catch((error) => {
+      const current = this.transfers.get(transferId);
+      if (current && this.sessionIsActive(generation, desktopId)) this.updateTransfer({ ...current, phase: "failed", error: error instanceof Error ? error.message : "The file download failed." });
+      throw error;
+    });
     this.contentLoads.set(key, loading);
     try {
       return await loading;
@@ -1526,6 +1625,9 @@ export const readFile = defaultEngine.readFile.bind(defaultEngine);
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);
 export const subscribeToOfflineStorage = defaultEngine.subscribeOfflineStorage.bind(defaultEngine);
 export const subscribeToEntryDownloads = defaultEngine.subscribeEntryDownloads.bind(defaultEngine);
+export const subscribeToTransfers = defaultEngine.subscribeTransfers.bind(defaultEngine);
+export const dismissFileTransfer = defaultEngine.dismissTransfer.bind(defaultEngine);
+export const dismissCompletedFileTransfer = defaultEngine.dismissCompletedTransfer.bind(defaultEngine);
 export const estimateOfflineOperation = defaultEngine.estimateOfflineOperation.bind(defaultEngine);
 export const downloadOfflineCopies = defaultEngine.downloadOfflineCopies.bind(defaultEngine);
 export const releaseOfflineCopies = defaultEngine.releaseOfflineCopies.bind(defaultEngine);

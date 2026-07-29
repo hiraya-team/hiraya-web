@@ -3,6 +3,9 @@ import { API_ROUTES } from "../../lib/api-routes";
 import { mapWithConcurrency, uploadBlobDigests } from "../../lib/blob-transfer";
 import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
 import { SyncRequestError } from "./http-client";
+import { uploadDirectBlob } from "./direct-upload";
+
+export type BlobUploadPhase = "hashing" | "access" | "uploading" | "finalizing";
 
 type OutboxTransportDependencies = {
   fetch: typeof fetch;
@@ -10,6 +13,8 @@ type OutboxTransportDependencies = {
   requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown>;
   requireAuthentication(response: Response): Response;
   readPendingContent(operationId: string, entryId: string): Promise<Blob>;
+  createXMLHttpRequest?: () => XMLHttpRequest;
+  onBlobUploadProgress?(entryId: string, phase: BlobUploadPhase, transferredBytes: number, totalBytes: number): void;
 };
 
 function retryableBlobCommitError(error: unknown): error is SyncRequestError {
@@ -50,10 +55,13 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
   const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file") : [{ id: operation.entryId, name: operation.entryId, size: operation.size }];
   const contents = new Map<string, Blob>();
   const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
+    dependencies.onBlobUploadProgress?.(entry.id, "hashing", 0, entry.size);
     const content = await dependencies.readPendingContent(record.operationId, entry.id);
     if (content.size !== entry.size) throw new Error(`The staged contents of “${entry.name}” have an unexpected size.`);
     contents.set(entry.id, content);
-    return [entry.id, await uploadBlobDigests(content)] as const;
+    const digest = await uploadBlobDigests(content, (bytes) => dependencies.onBlobUploadProgress?.(entry.id, "hashing", bytes, entry.size), dependencies.signal);
+    dependencies.onBlobUploadProgress?.(entry.id, "access", 0, entry.size);
+    return [entry.id, digest] as const;
   }));
   const prepared = parseBlobMutationPreparation(await dependencies.requestJson(API_ROUTES.desktopBlobMutations(record.desktopId), {
     method: "POST",
@@ -62,26 +70,31 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
       ? operation.entries.map((entry) => ({ entry, ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) }))
       : [{ entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, baseContentRevision: operation.baseContentRevision, ...hashes.get(operation.entryId)! }] }),
   }), files.map((entry) => entry.id));
-  if (prepared.state === "committed") return prepared;
+  if (prepared.state === "committed") {
+    for (const entry of files) dependencies.onBlobUploadProgress?.(entry.id, "finalizing", entry.size, entry.size);
+    return prepared;
+  }
   let commitStarted = false;
+  const uploadAbort = new AbortController();
+  const abortUploads = () => uploadAbort.abort(dependencies.signal?.reason);
+  if (dependencies.signal?.aborted) abortUploads();
+  else dependencies.signal?.addEventListener("abort", abortUploads, { once: true });
   try {
     await mapWithConcurrency(prepared.items, 3, async (target) => {
-      let response: Response;
       try {
-        response = await dependencies.fetch(target.access.url, {
-          method: target.access.method,
-          headers: target.access.headers,
-          body: contents.get(target.entryId)!,
-          credentials: "omit",
-          referrerPolicy: "no-referrer",
-          redirect: "error",
-          signal: dependencies.signal,
+        const content = contents.get(target.entryId)!;
+        dependencies.onBlobUploadProgress?.(target.entryId, "uploading", 0, content.size);
+        await uploadDirectBlob(target.access, content, {
+          signal: uploadAbort.signal,
+          createRequest: dependencies.createXMLHttpRequest,
+          onProgress: (bytes) => dependencies.onBlobUploadProgress?.(target.entryId, "uploading", bytes, content.size),
         });
       } catch (error) {
+        uploadAbort.abort(error);
         if (dependencies.signal?.aborted) throw error;
         throw new SyncRequestError("Direct file upload failed. The change remains queued.", null, false);
       }
-      if (!response.ok) throw new SyncRequestError(`Direct file upload failed (${response.status}). The change remains queued.`, null, false);
+      dependencies.onBlobUploadProgress?.(target.entryId, "finalizing", contents.get(target.entryId)!.size, contents.get(target.entryId)!.size);
     });
     commitStarted = true;
     try {
@@ -96,6 +109,8 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
   } catch (error) {
     if (!commitStarted) await abortBlobMutation(record, prepared.uploadId, dependencies);
     throw error;
+  } finally {
+    dependencies.signal?.removeEventListener("abort", abortUploads);
   }
 }
 

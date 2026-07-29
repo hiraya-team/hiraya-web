@@ -5631,6 +5631,10 @@
 .notification-card[data-tone="danger"] .notification-card__icon { color: var(--theme-danger-surface-foreground); }
 .notification-card[data-tone="progress"] .notification-card__icon { color: var(--theme-status-foreground); }
 .notification-card__spinner { animation: spin 700ms linear infinite; }
+.notification-transfer__progress { width: 100%; height: 5px; margin-top: 5px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--theme-status-foreground); background: var(--theme-window-muted); }
+.notification-transfer__progress::-webkit-progress-bar { border-radius: inherit; background: var(--theme-window-muted); }
+.notification-transfer__progress::-webkit-progress-value { border-radius: inherit; background: var(--theme-status-foreground); }
+.notification-transfer__progress::-moz-progress-bar { border-radius: inherit; background: var(--theme-status-foreground); }
 .notification-card__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 1px; }
 .notification-card .notification-action { min-width: 92px; min-height: 36px; padding: 7px 12px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); color: var(--theme-text); background: var(--theme-window-muted); font: inherit; cursor: pointer; }
 .notification-card .notification-action--primary { color: var(--theme-accent-text); background: var(--theme-accent); }
@@ -5887,8 +5891,10 @@
   }
   .mobile-window-nav__leading { display: grid; width: 44px; height: 44px; place-items: center; }
   .mobile-window-nav__leading .mobile-header-menu__trigger { display: grid; width: 44px; height: 44px; place-items: center; padding: 0; border: 0; color: var(--theme-chrome-text); background: transparent; }
-  .mobile-start-menu__icon { display: grid; width: 44px; height: 44px; place-items: center; }
-  .mobile-start-menu__icon .brand-mark__shape { width: 24px; height: 24px; }
+  .mobile-start-menu__icon { position: relative; display: grid; width: 44px; height: 44px; place-items: center; }
+  .mobile-start-menu__icon::before { position: absolute; width: 32px; height: 32px; border: 2px solid transparent; border-radius: 50%; content: ""; pointer-events: none; }
+  .mobile-start-menu__icon[data-syncing]::before { border-color: color-mix(in srgb, var(--theme-accent) 28%, transparent); border-top-color: var(--theme-accent); border-right-color: var(--theme-accent); animation: spin 700ms linear infinite; }
+  .mobile-start-menu__icon .brand-mark__shape { position: relative; width: 24px; height: 24px; }
   .mobile-area-switcher-trigger[aria-expanded="true"] { color: var(--theme-accent); background: color-mix(in srgb, var(--theme-accent) 18%, transparent); }
   .mobile-desktop-switcher {
     display: grid;

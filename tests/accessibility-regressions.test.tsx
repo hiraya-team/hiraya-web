@@ -121,8 +121,9 @@ describe("accessibility regressions", () => {
     expect(systemMenu).not.toContain("Expand Area Map");
     expect(systemMenu).not.toContain("onAreaMap");
     expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
-    expect(app).toContain('label={`Start; account, system, and windows; ${runningApps.length} open`}');
-    expect(app).toContain('className="mobile-start-menu__icon"');
+    expect(app).toContain('label={`${syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}');
+    expect(app).toContain('className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined}');
+    expect(app).not.toContain("<ConnectionStatusButton");
     expect(app).toContain('className="mobile-area-switcher-trigger"');
     expect(app).not.toContain("mobileBackButtonRef");
     expect(desktopSwitcher).not.toContain('mobileSummary ? <span className="brand-mark desktop-switcher__trigger"');

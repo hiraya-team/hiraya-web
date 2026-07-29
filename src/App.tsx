@@ -50,6 +50,9 @@ import {
   loadOfflineInventory,
   subscribeToOfflineStorage,
   subscribeToEntryDownloads,
+  subscribeToTransfers,
+  dismissFileTransfer,
+  dismissCompletedFileTransfer,
   estimateOfflineOperation,
   downloadOfflineCopies,
   releaseOfflineCopies,
@@ -59,6 +62,7 @@ import {
   stopDesktopSync,
   type SyncStatus,
   type OfflineOperationProgress,
+  type FileTransferState,
 } from "./lib/sync";
 import { pruneLocalDesktops, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
@@ -139,7 +143,6 @@ import { waitForAnimations } from "./ui/animation-completion";
 import { enteredEdge } from "./ui/edge-entry";
 import { settleAreaSwitcherDrag, type AreaSwitcherDrag, type AreaSwitcherDragSettlement } from "./ui/area-switcher-drag";
 import { DesktopClock } from "./features/shell/DesktopClock";
-import { ConnectionStatusButton } from "./features/connection/ConnectionStatusButton";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -199,7 +202,10 @@ function App({ session }: { session: AuthSession | null }) {
   const [notice, setNotice] = useState("");
   const [shellMessages, setShellMessages] = useState<ShellMessage[]>([]);
   const nextShellMessageIdRef = useRef(0);
+  const transferDismissTimersRef = useRef(new Map<string, number>());
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
+  const [transferAnnouncement, setTransferAnnouncement] = useState("");
+  const transferPhasesRef = useRef(new Map<string, FileTransferState["phase"]>());
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
   const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
@@ -247,6 +253,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [offlineInventory, setOfflineInventory] = useState<OfflineStorageInventory | null>(null);
   const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
   const [activeEntryDownloadIds, setActiveEntryDownloadIds] = useState<ReadonlySet<string>>(new Set());
+  const [fileTransfers, setFileTransfers] = useState<readonly FileTransferState[]>([]);
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [importProgress, setImportProgress] = useState<{ folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" } | null>(null);
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
@@ -383,7 +390,6 @@ function App({ session }: { session: AuthSession | null }) {
   const routeSettings = route?.settings;
   const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
   const canMutate = canMutateDesktop(activeDesktop, syncStatus);
-  const activeOutboxRecords = useMemo(() => activeDesktopId ? outboxRecords.filter((record) => outboxOperationDesktopIds(record).has(activeDesktopId)) : [], [activeDesktopId, outboxRecords]);
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
@@ -1019,6 +1025,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   useEffect(() => {
     let active = true;
+    const transferPhases = transferPhasesRef.current;
     let sessionRestoreStarted = false;
     let savedWindowSession: Promise<{ session: WindowSession; loaded: true } | { session: null; loaded: false }> | null = null;
     const restoreSavedWindowSession = () => {
@@ -1115,6 +1122,25 @@ function App({ session }: { session: AuthSession | null }) {
     const unsubscribeEntryDownloads = subscribeToEntryDownloads((entryIds) => {
       if (active) setActiveEntryDownloadIds(entryIds);
     });
+    let transferFrame = 0;
+    let pendingTransfers: readonly FileTransferState[] = [];
+    const unsubscribeTransfers = subscribeToTransfers((transfers) => {
+      pendingTransfers = transfers;
+      for (const transfer of transfers) {
+        const previous = transferPhases.get(transfer.id);
+        if (previous !== transfer.phase && (transfer.phase === "complete" || transfer.phase === "failed")) {
+          setTransferAnnouncement(`${transfer.direction === "upload" ? "Upload" : "Download"} ${transfer.phase} for ${transfer.fileName}.`);
+        }
+        transferPhases.set(transfer.id, transfer.phase);
+      }
+      const currentIds = new Set(transfers.map((transfer) => transfer.id));
+      for (const id of transferPhases.keys()) if (!currentIds.has(id)) transferPhases.delete(id);
+      if (!active || transferFrame) return;
+      transferFrame = requestAnimationFrame(() => {
+        transferFrame = 0;
+        if (active) setFileTransfers(pendingTransfers);
+      });
+    });
     const unsubscribeCatalog = subscribeToDesktopCatalog((registry) => {
       if (!active) return;
       desktopsRef.current = registry.desktops;
@@ -1187,10 +1213,40 @@ function App({ session }: { session: AuthSession | null }) {
       unsubscribeOutbox();
       unsubscribeOffline();
       unsubscribeEntryDownloads();
+      unsubscribeTransfers();
+      if (transferFrame) cancelAnimationFrame(transferFrame);
+      transferPhases.clear();
       unsubscribeCatalog();
       void stopDesktopSync();
     };
   }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps]);
+
+  useEffect(() => {
+    const completedIds = new Set(fileTransfers.filter((transfer) => transfer.phase === "complete").map((transfer) => transfer.id));
+    for (const [id, timer] of transferDismissTimersRef.current) {
+      if (completedIds.has(id)) continue;
+      window.clearTimeout(timer);
+      transferDismissTimersRef.current.delete(id);
+    }
+    for (const id of completedIds) {
+      if (transferDismissTimersRef.current.has(id)) continue;
+      transferDismissTimersRef.current.set(id, window.setTimeout(() => {
+        transferDismissTimersRef.current.delete(id);
+        dismissCompletedFileTransfer(id);
+      }, 2_000));
+    }
+  }, [fileTransfers]);
+
+  useEffect(() => () => {
+    for (const timer of transferDismissTimersRef.current.values()) window.clearTimeout(timer);
+    transferDismissTimersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!transferAnnouncement) return;
+    const timer = window.setTimeout(() => setTransferAnnouncement(""), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [transferAnnouncement]);
 
   useEffect(() => () => confirmationResolverRef.current?.(false), []);
 
@@ -3541,7 +3597,7 @@ function App({ session }: { session: AuthSession | null }) {
     </>;
   }
 
-  const shellAnnouncement = shellMessages.at(-1)?.message ?? (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
+  const shellAnnouncement = transferAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
 
   return (
     <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
@@ -3556,8 +3612,8 @@ function App({ session }: { session: AuthSession | null }) {
           <nav className="mobile-window-nav" aria-label="Desktop navigation">
             <div className="mobile-window-nav__leading">
               <MobileHeaderMenu
-                label={`Start; account, system, and windows; ${runningApps.length} open`}
-                icon={<span className="mobile-start-menu__icon"><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
+                label={`${syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}
+                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
               >
                 {renderMobileStartMenu}
               </MobileHeaderMenu>
@@ -3630,12 +3686,12 @@ function App({ session }: { session: AuthSession | null }) {
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
           </button>
-          <ConnectionStatusButton status={syncStatus} syncing={isSyncing} outboxRecords={activeOutboxRecords} onOpen={() => setActivePanel("sync")} />
           <ShellNotifications
             messages={shellMessages}
             trashNotifications={trashNotifications}
             appNotifications={appNotifications}
             importProgress={importProgress}
+            fileTransfers={fileTransfers}
             showUpdateToast={showUpdateToast}
             updateApplying={updateApplying}
             updateBlocked={updateBlocked}
@@ -3647,6 +3703,7 @@ function App({ session }: { session: AuthSession | null }) {
             onUndoTrash={(notification) => void undoMoveToTrash(notification)}
             onOpenTrash={(notification) => void openTrashNotification(notification)}
             onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
+            onDismissTransfer={dismissFileTransfer}
             onActivateUpdate={() => void activateUpdate()}
             onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
             onViewActivity={openActivityLog}

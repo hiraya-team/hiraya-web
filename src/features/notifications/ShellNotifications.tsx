@@ -1,9 +1,10 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Bell, ClockCounterClockwise, SpinnerGap, Tray, WarningCircle } from "@phosphor-icons/react";
+import { Bell, ClockCounterClockwise, DownloadSimple, SpinnerGap, Tray, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import type { AppNotification } from "../../apps/host";
 import { NotificationCard } from "../../components/NotificationCard";
 import { UpdateToast } from "../../components/UpdateToast";
 import type { TrashNotification } from "../../lib/trash-notifications";
+import type { FileTransferState } from "../../lib/sync";
 import { nextUnreadNotificationIds } from "./controller";
 
 type ImportProgress = { folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" };
@@ -20,6 +21,7 @@ type Props = {
   trashNotifications: readonly TrashNotification[];
   appNotifications: readonly AppNotification[];
   importProgress: ImportProgress | null;
+  fileTransfers: readonly FileTransferState[];
   showUpdateToast: boolean;
   updateApplying: boolean;
   updateBlocked: boolean;
@@ -31,6 +33,7 @@ type Props = {
   onUndoTrash: (notification: TrashNotification) => void;
   onOpenTrash: (notification: TrashNotification) => void;
   onDismissApp: (notification: AppNotification) => void;
+  onDismissTransfer: (id: string) => void;
   onActivateUpdate: () => void;
   onDismissUpdate: () => void;
   onViewActivity: () => void;
@@ -41,6 +44,15 @@ function formatBytes(value: number) {
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function transferLabel(transfer: FileTransferState) {
+  if (transfer.phase === "failed") return `${transfer.direction === "upload" ? "Upload" : "Download"} failed`;
+  if (transfer.phase === "complete") return `${transfer.direction === "upload" ? "Upload" : "Download"} complete`;
+  if (transfer.phase === "hashing") return "Preparing upload";
+  if (transfer.phase === "access") return `Preparing ${transfer.direction}`;
+  if (transfer.phase === "finalizing") return `Finalizing ${transfer.direction}`;
+  return transfer.direction === "upload" ? "Uploading" : "Downloading";
 }
 
 export function ShellNotifications(props: Props) {
@@ -55,9 +67,10 @@ export function ShellNotifications(props: Props) {
     ...props.messages.map((message) => `message:${message.id}`),
     ...props.trashNotifications.map((notification) => `trash:${notification.id}`),
     ...props.appNotifications.map((notification) => `app:${notification.owner.instanceId}:${notification.id}`),
+    ...props.fileTransfers.map((transfer) => `transfer:${transfer.id}`),
     ...(props.importProgress ? ["import"] : []),
     ...(props.showUpdateToast ? ["update"] : []),
-  ], [props.appNotifications, props.importProgress, props.messages, props.showUpdateToast, props.trashNotifications]);
+  ], [props.appNotifications, props.fileTransfers, props.importProgress, props.messages, props.showUpdateToast, props.trashNotifications]);
   const total = itemIds.length;
 
   useEffect(() => {
@@ -128,6 +141,24 @@ export function ShellNotifications(props: Props) {
           ><span>{message.message}</span></NotificationCard>)}
           {[...props.trashNotifications].reverse().map((notification) => <NotificationCard badge={notification.state === "failed" ? "Restore failed" : notification.state === "running" ? "Restoring" : "Undo available"} tone={notification.state === "failed" ? "danger" : notification.state === "running" ? "progress" : "neutral"} key={notification.id} dismissLabel={`Dismiss Trash notification for ${notification.label}`} dismissDisabled={notification.state === "running"} onDismiss={() => props.onDismissTrash(notification.id)} actions={<><button className="notification-action notification-action--primary" type="button" disabled={notification.state === "running"} onClick={() => props.onUndoTrash(notification)}>{notification.state === "failed" ? "Retry Undo" : "Undo"}</button><button className="notification-action" type="button" disabled={notification.state === "running"} onClick={() => props.onOpenTrash(notification)}>View Trash</button></>}><strong>{notification.label} moved to Trash</strong><span>{notification.state === "running" ? "Restoring..." : notification.error || "Undo remains available until dismissed."}</span></NotificationCard>)}
           {[...props.appNotifications].reverse().map((notification) => <NotificationCard badge="App" key={`${notification.owner.instanceId}:${notification.id}`} dismissLabel="Dismiss app notification" onDismiss={() => props.onDismissApp(notification)}><strong>{notification.title}</strong>{notification.body && <span>{notification.body}</span>}</NotificationCard>)}
+          {[...props.fileTransfers].reverse().map((transfer) => {
+            const label = transferLabel(transfer);
+            const determinate = transfer.phase === "hashing" || transfer.phase === "uploading" || transfer.phase === "downloading" || transfer.phase === "complete";
+            return <NotificationCard
+              badge={transfer.direction === "upload" ? "Upload" : "Download"}
+              tone={transfer.phase === "failed" ? "danger" : transfer.phase === "complete" ? "success" : "progress"}
+              icon={transfer.direction === "upload" ? <UploadSimple size={18} /> : <DownloadSimple size={18} />}
+              key={transfer.id}
+              dismissLabel={transfer.phase === "failed" ? `Dismiss failed ${transfer.direction} for ${transfer.fileName}` : undefined}
+              onDismiss={transfer.phase === "failed" ? () => props.onDismissTransfer(transfer.id) : undefined}
+              role={transfer.phase === "failed" ? "alert" : undefined}
+            >
+              <strong>{transfer.fileName}</strong>
+              <span>{label}{determinate ? `, ${formatBytes(transfer.transferredBytes)} of ${formatBytes(transfer.totalBytes)}` : ""}</span>
+              {transfer.phase !== "failed" && transfer.phase !== "complete" && <progress className="notification-transfer__progress" max={Math.max(1, transfer.totalBytes)} value={determinate ? Math.min(transfer.transferredBytes, transfer.totalBytes) : undefined} aria-label={`${label} progress for ${transfer.fileName}`} />}
+              {transfer.error && <span>{transfer.error}</span>}
+            </NotificationCard>;
+          })}
           {props.importProgress && <NotificationCard badge="Importing" tone="progress" icon={<SpinnerGap className="notification-card__spinner" size={18} />}><strong>{props.importProgress.phase === "preparing" ? "Preparing import" : props.importProgress.phase === "saving" ? "Staging and saving import" : "Staging and synchronizing import"}</strong><span>{props.importProgress.folderCount} {props.importProgress.folderCount === 1 ? "folder" : "folders"}, {props.importProgress.fileCount} {props.importProgress.fileCount === 1 ? "file" : "files"}, {formatBytes(props.importProgress.totalBytes)}</span></NotificationCard>}
           {props.showUpdateToast && <UpdateToast applying={props.updateApplying} blocked={props.updateBlocked} onConfirm={props.onActivateUpdate} onDismiss={props.onDismissUpdate} />}
           {total === 0 && <div className="notification-center__empty"><Tray size={30} weight="duotone" /><strong>No notifications</strong><span>Current alerts and actions will appear here.</span></div>}
