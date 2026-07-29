@@ -170,7 +170,7 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
   });
 
-  test("live area transitions keep focused surfaces outside the transformed area track", async () => {
+  test("live area transitions project windowed apps while focused surfaces stay viewport-owned", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
@@ -182,10 +182,11 @@ describe("accessibility regressions", () => {
     expect(app).toContain("areaCameraPosition(activeSegment, desktopSize)");
     expect(app).toContain("areaWorldOrigin(desktopSegment.segment, desktopSize)");
     expect(app).not.toContain("segment.column - minColumn");
-    expect(windowLayer).toContain('className="app-window-layer"');
-    expect(windowLayer).not.toContain("desktop-area-track");
-    expect(windowLayer).toContain("segmentVisible={segmentActive}");
+    expect(windowLayer).toContain('className={`app-window-layer${windowed ? " desktop-area-track" : ""}`}');
+    expect(windowLayer).toContain("segmentVisible={windowed ? segmentVisible : segmentActive}");
+    expect(windowLayer).toContain("areaWorldOrigin(projection.segment, desktopSize)");
     expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
+    expect(appWindow).toContain('left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height');
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
     expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
@@ -197,6 +198,7 @@ describe("accessibility regressions", () => {
 
     expect(resizeEffect).toContain("projectLogicalPosition(app.bounds, previous)");
     expect(resizeEffect).toContain("restoreLogicalPosition(localBounds, projection.segment, desktopSize)");
+    expect(resizeEffect).toContain("if (!windowed");
     expect(resizeEffect).not.toContain("navigateRouteRef.current");
     expect(resizeEffect).not.toContain("selectedEntry");
   });

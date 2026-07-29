@@ -246,13 +246,16 @@ export default function PublicDesktop({ token }: { token: string }) {
               id="public-view"
               title={open.kind === "folder" ? (folder?.name ?? desktop?.name ?? "Desktop") : open.file.name}
               titleId="public-view-title"
+              bounds={{ x: 0, y: 0, width: 0, height: 0 }}
               zIndex={1}
               focused
               minimized={false}
               segmentActive
-              hideHeader
+              windowed={false}
+              hideFocusedHeader
               externalHeaderElements={{ leading: null, actions: mobileHeaderActionsElement }}
               onFocus={() => undefined}
+              onBoundsChange={() => undefined}
               onClose={closePublicView}
               onShowDesktop={backPublicView}
               backLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}

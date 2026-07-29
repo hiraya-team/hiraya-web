@@ -23,8 +23,8 @@ export interface FolderExplorerProps {
   onUpload: (parentId: string | null) => void;
   onImportFolder: (parentId: string | null) => void;
   onExternalDrop: (dataTransfer: DataTransfer, parentId: string | null) => void;
-  onContextMenu: (entry: DesktopEntry, x: number, y: number) => void;
-  onBlankContextMenu: (parentId: string | null, x: number, y: number) => void;
+  onContextMenu: (entry: DesktopEntry, x: number, y: number, presentation: "menu" | "sheet") => void;
+  onBlankContextMenu: (parentId: string | null, x: number, y: number, presentation: "menu" | "sheet") => void;
   onClearSelection?: () => void;
   selectedIds: ReadonlySet<string>;
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
@@ -119,7 +119,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         current.longPressTimer = undefined;
         current.longPressed = true;
         lastTap.current = null;
-        onContextMenu(entry, event.clientX, event.clientY);
+        onContextMenu(entry, event.clientX, event.clientY, "sheet");
       }, 500);
     }
     if (readOnly) return;
@@ -306,7 +306,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         onContextMenu={(event) => {
           if ((event.target as Element).closest(".folder-explorer__row")) return;
           event.preventDefault();
-          onBlankContextMenu(parentId, event.clientX, event.clientY);
+          onBlankContextMenu(parentId, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
         }}
       >
         {children.length === 0 ? (
@@ -400,7 +400,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                         orderedIds,
                       });
                     const bounds = event.currentTarget.getBoundingClientRect();
-                    onContextMenu(entry, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+                    onContextMenu(entry, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
                   }
                 }}
                 onContextMenu={(event) => {
@@ -424,7 +424,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                       range: false,
                       orderedIds,
                     });
-                  onContextMenu(entry, event.clientX, event.clientY);
+                  onContextMenu(entry, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                 }}
                 onDragOver={
                   entry.kind === "folder" && !readOnly

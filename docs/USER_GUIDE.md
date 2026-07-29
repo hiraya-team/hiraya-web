@@ -26,7 +26,11 @@ An **area** is a viewport-sized region derived from item and window coordinates 
 
 The area button in the global header opens a temporary spatial map and always keeps Home addressable. Choose an area to navigate and close the map, or dismiss it with Escape. App-switching controls open a separate **All windows** list grouped by area.
 
-Swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place. Long-press a visible item for its action sheet. Mouse right-click, double-click, drag and drop, and keyboard shortcuts remain available.
+Swipe the wallpaper horizontally or vertically to preview the next coordinate. Release after the preview appears to enter that one adjacent area, including an empty one; release before the preview to remain in place.
+
+Hiraya adapts to the input devices currently available. When the browser reports a fine pointer that can hover, apps open as overlapping windows with title bars. Drag a title bar to move a window, drag an edge or corner to resize it, and use the title-bar controls to minimize, maximize or restore, and close. The window actions menu provides pointer controls for moving and resizing without dragging. `Alt+Enter` maximizes or restores the focused window, `Alt+Arrow key` moves it to an adjacent area, `Alt+Shift+Arrow key` moves it within the current area, and `Alt+Ctrl+Arrow key` resizes it. Disconnecting the fine pointer switches open apps to focused full-surface views without replacing their saved window positions or sizes. Coarse-only environments always use focused full-surface apps; use the global header, area map, and **All windows** to navigate them.
+
+Actions adapt to each invocation rather than the device as a whole. Mouse or trackpad right-click, pen context invocation, the keyboard Context Menu key, and `Shift+F10` open a positioned menu near the item. Touch long-press and touch **More actions** open an action sheet. On a hybrid laptop, using touch still opens a sheet while the mouse, pen, or keyboard opens a positioned menu. Arrow keys move through menu commands, `Escape` dismisses the current menu or sheet, and focus returns to the invoking control.
 
 ## Sharing, roles, and public links {#sharing}
 

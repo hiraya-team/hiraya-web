@@ -1,10 +1,56 @@
-import { useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
 import { ArrowsLeftRight, Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
-import type { DesktopEntry } from "../types";
+import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { useModalDialog } from "../ui/modal-dialog";
 import { dismissesSheetDrag } from "../ui/file-icon-gesture";
 import { openWithMenuItems, type OpenWithItem } from "../ui/open-with-menu";
+
+const VIEWPORT_MARGIN = 8;
+const MENU_BAR_INSET = 48;
+
+function useMenuPosition(x: number, y: number, enabled: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [style, setStyle] = useState<CSSProperties>({ left: Math.max(VIEWPORT_MARGIN, x), top: Math.max(MENU_BAR_INSET, y) });
+
+  useLayoutEffect(() => {
+    if (!enabled) return;
+    const element = ref.current;
+    if (!element) return;
+    function positionMenu() {
+      const viewport = window.visualViewport;
+      const viewportLeft = viewport?.offsetLeft ?? 0;
+      const viewportTop = viewport?.offsetTop ?? 0;
+      const viewportWidth = viewport?.width ?? window.innerWidth;
+      const viewportHeight = viewport?.height ?? window.innerHeight;
+      const minimumTop = viewportTop + MENU_BAR_INSET;
+      const bounds = element!.getBoundingClientRect();
+      const maxHeight = Math.max(0, viewportTop + viewportHeight - minimumTop - VIEWPORT_MARGIN);
+      const renderedHeight = Math.min(bounds.height, maxHeight);
+      setStyle({
+        left: Math.min(Math.max(viewportLeft + VIEWPORT_MARGIN, x), Math.max(viewportLeft + VIEWPORT_MARGIN, viewportLeft + viewportWidth - VIEWPORT_MARGIN - bounds.width)),
+        top: Math.min(Math.max(minimumTop, y), Math.max(minimumTop, viewportTop + viewportHeight - VIEWPORT_MARGIN - renderedHeight)),
+        maxHeight,
+        overflowY: "auto",
+        overscrollBehavior: "contain",
+      });
+    }
+    positionMenu();
+    const observer = new ResizeObserver(positionMenu);
+    observer.observe(element);
+    window.addEventListener("resize", positionMenu);
+    window.visualViewport?.addEventListener("resize", positionMenu);
+    window.visualViewport?.addEventListener("scroll", positionMenu);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", positionMenu);
+      window.visualViewport?.removeEventListener("resize", positionMenu);
+      window.visualViewport?.removeEventListener("scroll", positionMenu);
+    };
+  }, [enabled, x, y]);
+
+  return { ref, style };
+}
 
 function useRovingMenu(ref: RefObject<HTMLDivElement | null>) {
   useLayoutEffect(() => {
@@ -67,6 +113,7 @@ function MenuSubmenu({ icon, label, items }: { icon: ReactNode; label: string; i
 }
 
 type Props = {
+  menu: Extract<Exclude<ContextMenuState, null>, { type: "entry" }>;
   entry: DesktopEntry;
   onOpen: () => void;
   onEditFile?: () => void;
@@ -91,16 +138,16 @@ type Props = {
   onClose: () => void;
 };
 
-export function ContextMenu({ entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const onFocus = useRovingMenu(menuRef);
+export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
+  const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
+  const onFocus = useRovingMenu(position.ref);
   const offlineItems: SubmenuItem[] = [
     ...(onMakeAvailableOffline ? [{ id: "make-available", label: `Make available${selectionCount > 1 ? ` (${selectionCount})` : ""}`, disabled: offlineBusy, onSelect: onMakeAvailableOffline }] : []),
     ...(onRemoveOfflineCopy ? [{ id: "remove-copy", label: "Remove downloaded copies", icon: <CloudSlash />, disabled: offlineBusy, onSelect: onRemoveOfflineCopy }] : []),
     ...(onOpenOfflineStorage ? [{ id: "offline-panel", label: "Connection & Offline", icon: <GearSix />, onSelect: onOpenOfflineStorage }] : []),
   ];
 
-  return <ActionMenuFrame menuRef={menuRef} label={selectionCount > 1 ? `Actions for ${selectionCount} selected items` : `Actions for ${entry.name}`} onClose={onClose} onFocus={onFocus}>
+  return <ActionMenuFrame key={menu.presentation} menuRef={position.ref} style={position.style} presentation={menu.presentation} label={selectionCount > 1 ? `Actions for ${selectionCount} selected items` : `Actions for ${entry.name}`} onClose={onClose} onFocus={onFocus}>
       {selectionCount === 1 && <button type="button" role="menuitem" onClick={onOpen}>
         <FolderOpen size={17} /> Open
       </button>}
@@ -136,6 +183,7 @@ export function ContextMenu({ entry, onOpen, onEditFile, onRename, onDownload, o
 }
 
 type DesktopProps = {
+  menu: Extract<Exclude<ContextMenuState, null>, { type: "desktop" }>;
   onCreateFile: () => void;
   onCreateFolder: () => void;
   onUpload: () => void;
@@ -146,11 +194,11 @@ type DesktopProps = {
   onClose: () => void;
 };
 
-export function DesktopContextMenu({ onCreateFile, onCreateFolder, onUpload, onImportFolder, onSettings, onPaste, readOnly = false, onClose }: DesktopProps) {
-  const menuRef = useRef<HTMLDivElement>(null);
-  const onFocus = useRovingMenu(menuRef);
+export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUpload, onImportFolder, onSettings, onPaste, readOnly = false, onClose }: DesktopProps) {
+  const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
+  const onFocus = useRovingMenu(position.ref);
 
-  return <ActionMenuFrame menuRef={menuRef} label="Create and desktop actions" onClose={onClose} onFocus={onFocus}>
+  return <ActionMenuFrame key={menu.presentation} menuRef={position.ref} style={position.style} presentation={menu.presentation} label="Create and desktop actions" onClose={onClose} onFocus={onFocus}>
       <button type="button" role="menuitem" disabled={readOnly} onClick={onCreateFile}>
         <FilePlus size={17} /> New text file
       </button>
@@ -170,8 +218,10 @@ export function DesktopContextMenu({ onCreateFile, onCreateFolder, onUpload, onI
   </ActionMenuFrame>;
 }
 
-function ActionMenuFrame({ menuRef, label, onClose, onFocus, children }: {
+function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus, children }: {
   menuRef: RefObject<HTMLDivElement | null>;
+  style: CSSProperties;
+  presentation: "menu" | "sheet";
   label: string;
   onClose: () => void;
   onFocus: (event: React.FocusEvent<HTMLDivElement>) => void;
@@ -180,9 +230,17 @@ function ActionMenuFrame({ menuRef, label, onClose, onFocus, children }: {
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const drag = useRef<{ pointerId: number; startY: number; startedAt: number; moved: boolean } | null>(null);
+  const previousFocusRef = useRef<HTMLElement | null>(typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null);
   useModalDialog(backdropRef, dialogRef, onClose);
 
-  const menu = <div ref={menuRef} className="context-menu" role="menu" onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>{children}</div>;
+  useEffect(() => () => {
+    if (presentation !== "menu") return;
+    const previousFocus = previousFocusRef.current;
+    requestAnimationFrame(() => { if (previousFocus?.isConnected) previousFocus.focus(); });
+  }, [presentation]);
+
+  const menu = <div ref={menuRef} className="context-menu" data-positioned={presentation === "menu" || undefined} role="menu" aria-label={label} style={presentation === "menu" ? style : undefined} onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>{children}</div>;
+  if (presentation === "menu") return menu;
   return <div ref={backdropRef} className="action-sheet-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
     <section ref={dialogRef} className="action-sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
       <div className="action-sheet__handle" aria-hidden="true" onPointerDown={(event) => {

@@ -139,6 +139,7 @@ import { waitForAnimations } from "./ui/animation-completion";
 import { enteredEdge } from "./ui/edge-entry";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
+import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -159,7 +160,7 @@ function formatImportBytes(value: number) {
 }
 
 function transientMenuOpen() {
-  return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel"));
+  return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel, .app-window__menu"));
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -223,6 +224,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+  const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
   const [settingsPage, setSettingsPage] = useState<AppHistorySettingsPage>("main");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [externalEmbeddedPreviews, setExternalEmbeddedPreviews] = useState<boolean | null>(null);
@@ -311,12 +313,20 @@ function App({ session }: { session: AuthSession | null }) {
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
   const handleImportRef = useRef<(files: File[], parentId: string | null, base?: EntryPosition) => Promise<void>>(async () => undefined);
   const edgeDragRef = useRef({ inside: false });
+  const windowEdgeDragRef = useRef({ inside: false });
   const edgeNavigationRef = useRef<{
     route: DesktopRoute;
     historyState: unknown;
     draftEntryId?: string;
     focusedAppId?: string | null;
     targetSegment?: { column: number; row: number };
+  } | null>(null);
+  const windowEdgeNavigationRef = useRef<{
+    appId: string;
+    bounds: WindowBounds;
+    route: DesktopRoute;
+    historyState: unknown;
+    targetSegment?: SurfaceSegment;
   } | null>(null);
   const layoutRef = useRef(layout);
   const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
@@ -348,6 +358,7 @@ function App({ session }: { session: AuthSession | null }) {
   const updaterRef = useRef<PwaUpdater | null>(null);
   const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
   const persistenceRequestedRef = useRef(false);
+  const restoredWindowBoundsRef = useRef(new Map<string, WindowBounds>());
   const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
   const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
   const canMutateRef = useRef(false);
@@ -355,6 +366,11 @@ function App({ session }: { session: AuthSession | null }) {
   const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
   const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
   const chooseFolderImportRef = useRef<(parentId: string | null) => Promise<void>>(async () => undefined);
+  const windowCommandRef = useRef<{
+    maximize: (id: string) => void;
+    move: (id: string, direction: "left" | "right" | "up" | "down") => void;
+    adjust: (id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") => void;
+  }>({ maximize: () => {}, move: () => {}, adjust: () => {} });
   const autoUpdateRef = useRef(true);
   const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
   const updatePreferenceLoadedRef = useRef(false);
@@ -381,7 +397,7 @@ function App({ session }: { session: AuthSession | null }) {
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
-  const actionSheetOpen = Boolean(contextMenu);
+  const actionSheetOpen = contextMenu?.presentation === "sheet";
   const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
   const offlineModel = useMemo(
     () =>
@@ -437,6 +453,7 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, true);
   const minimapDetailed = minimapExpanded;
   const restingCamera = areaCameraPosition(activeSegment, desktopSize);
+  const transitionSegmentKeys = new Set(areaTransition ? [segmentKey(areaTransition.source), segmentKey(areaTransition.target)] : []);
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
   const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
   const minimapHeight = minimapDetailed ? Math.min(420, desktopSize.height * 0.56) : 68;
@@ -790,6 +807,13 @@ function App({ session }: { session: AuthSession | null }) {
       const currentRoute = routeRef.current;
       if (currentRoute) navigateRoute(routeForApp(next, currentRoute), "replace");
     }
+  }
+
+  function updateAppBounds(id: string, bounds: WindowBounds) {
+    if (!windowed) return;
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (target?.kind === "sandbox") appLifecycle.setHostState({ appId: target.package.manifest.id, instanceId: target.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    updateRunningApps((current) => current.map((app) => app.id === id ? { ...app, bounds: { ...bounds, ...restoreLogicalPosition(bounds, segmentForApp(app), desktopSize) } } : app));
   }
 
   function createAppBase(id: string, kind: RunningApp["kind"], index?: number, segment = activeSegment): BaseRunningApp {
@@ -1487,6 +1511,7 @@ function App({ session }: { session: AuthSession | null }) {
   const previousDesktopSizeRef = useRef(desktopSize);
   useEffect(() => {
     const previous = previousDesktopSizeRef.current;
+    if (!windowed) return;
     previousDesktopSizeRef.current = desktopSize;
     if (previous.width === desktopSize.width && previous.height === desktopSize.height) return;
     updateRunningApps((currentApps) =>
@@ -1497,7 +1522,7 @@ function App({ session }: { session: AuthSession | null }) {
         return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
       }),
     );
-  }, [desktopSize, updateRunningApps]);
+  }, [desktopSize, updateRunningApps, windowed]);
 
   useEffect(() => {
     if (loading) return;
@@ -1672,10 +1697,26 @@ function App({ session }: { session: AuthSession | null }) {
         setActivePanel("shortcuts");
         return;
       }
+      const arrowDirection = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+        ? event.key.replace("Arrow", "").toLowerCase() as "left" | "right" | "up" | "down"
+        : null;
+      if (windowed && event.altKey && event.key === "Enter" && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.maximize(focusedAppIdRef.current);
+      } else if (windowed && event.altKey && event.shiftKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.adjust(focusedAppIdRef.current, "move", arrowDirection);
+      } else if (windowed && event.altKey && event.ctrlKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.adjust(focusedAppIdRef.current, "resize", arrowDirection);
+      } else if (windowed && event.altKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.move(focusedAppIdRef.current, arrowDirection);
+      }
     }
     window.addEventListener("keydown", onGlobalShortcut);
     return () => window.removeEventListener("keydown", onGlobalShortcut);
-  }, [focusedAppIdRef, minimapExpanded, shortcutsSuspended]);
+  }, [focusedAppIdRef, minimapExpanded, shortcutsSuspended, windowed]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -1795,15 +1836,15 @@ function App({ session }: { session: AuthSession | null }) {
     return layoutRef.current.snapToGrid ? snapPositionInView(position) : position;
   }
 
-  function openDesktopContextMenu(clientX: number, clientY: number) {
+  function openDesktopContextMenu(clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
     replaceSelection("desktop", []);
-    setContextMenu({ type: "desktop", parentId: null, x: clientX, y: clientY, position: positionAtDesktopPoint(clientX, clientY) });
+    setContextMenu({ type: "desktop", parentId: null, x: clientX, y: clientY, position: positionAtDesktopPoint(clientX, clientY), presentation });
   }
 
-  function openEntryContextMenu(entryId: string, clientX: number, clientY: number) {
+  function openEntryContextMenu(entryId: string, clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
-    setContextMenu({ type: "entry", entryId, x: clientX, y: clientY });
+    setContextMenu({ type: "entry", entryId, x: clientX, y: clientY, presentation });
   }
 
   function captureImportOperation(parentId: string | null, position?: EntryPosition): ImportOperationContext {
@@ -2459,7 +2500,7 @@ function App({ session }: { session: AuthSession | null }) {
         importFolder: (parentId) => chooseFolderImportRef.current(parentId),
         showEntryActions: (instanceId, ids) => {
           replaceSelection(`app:${instanceId}`, ids);
-          setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2) });
+          setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2), presentation: "sheet" });
         },
         getEntryStatus: (id) => {
           const status = offlineModelRef.current?.entries[id];
@@ -2919,6 +2960,71 @@ function App({ session }: { session: AuthSession | null }) {
     areaTransitionNavigationRef.current = { generation, mode, route: destinationRoute };
   }
 
+  function appIsMaximized(app: RunningApp) {
+    const local = projectLogicalPosition(app.bounds, desktopSizeRef.current).local;
+    return local.x === 0 && local.y === 0 && app.bounds.width === desktopSizeRef.current.width && app.bounds.height === desktopSizeRef.current.height;
+  }
+
+  function toggleMaximizeApp(id: string) {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app) return;
+    const size = desktopSizeRef.current;
+    const segment = projectLogicalPosition(app.bounds, size).segment;
+    const restored = restoredWindowBoundsRef.current.get(id);
+    const maximized = appIsMaximized(app);
+    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ?? { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+    const fallback = initialWindowBounds(size, fallbackOptions);
+    const bounds = maximized ? (restored ?? { ...fallback, ...restoreLogicalPosition(fallback, segment, size) }) : { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, size), width: size.width, height: size.height };
+    if (!maximized) restoredWindowBoundsRef.current.set(id, app.bounds);
+    else restoredWindowBoundsRef.current.delete(id);
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? { ...candidate, bounds } : candidate));
+    if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { maximized: !maximized, width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    focusApp(id);
+  }
+
+  function moveAppToArea(id: string, direction: "left" | "right" | "up" | "down") {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app) return;
+    const size = desktopSizeRef.current;
+    const projection = projectLogicalPosition(app.bounds, size);
+    const segment = {
+      column: projection.segment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: projection.segment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
+    };
+    const moved = { ...app, bounds: { ...app.bounds, ...restoreLogicalPosition(projection.local, segment, size) } };
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? moved : candidate));
+    goToSegment(segment, "push", moved);
+  }
+
+  function adjustAppWindow(id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app || appIsMaximized(app)) return;
+    const size = desktopSizeRef.current;
+    const projection = projectLogicalPosition(app.bounds, size);
+    const currentBounds = { ...app.bounds, ...projection.local };
+    const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+    const step = 20;
+    const draft = operation === "move"
+      ? {
+          ...currentBounds,
+          x: currentBounds.x + (direction === "left" ? -step : direction === "right" ? step : 0),
+          y: currentBounds.y + (direction === "up" ? -step : direction === "down" ? step : 0),
+        }
+      : {
+          ...currentBounds,
+          width: currentBounds.width + (direction === "left" ? -step : direction === "right" ? step : 0),
+          height: currentBounds.height + (direction === "up" ? -step : direction === "down" ? step : 0),
+        };
+    const localBounds = clampWindowBounds(draft, size, { minWidth, minHeight });
+    const bounds = { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, size) };
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? { ...candidate, bounds } : candidate));
+    if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    focusApp(id);
+  }
+
   function showDesktop() {
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: false });
     setFocusedApp(null);
@@ -2939,6 +3045,8 @@ function App({ session }: { session: AuthSession | null }) {
     const focusedId = focusedAppIdRef.current;
     if (focusedId) void requestCloseApp(focusedId);
   }
+
+  windowCommandRef.current = { maximize: toggleMaximizeApp, move: moveAppToArea, adjust: adjustAppWindow };
 
   function edgeAt(clientX: number, clientY: number) {
     const desktop = desktopRef.current;
@@ -2999,7 +3107,7 @@ function App({ session }: { session: AuthSession | null }) {
       swipeRef.current = null;
       setSwipePreview(null);
       suppressClickRef.current = true;
-      openDesktopContextMenu(press.startX, press.startY);
+      openDesktopContextMenu(press.startX, press.startY, "sheet");
     }, DESKTOP_LONG_PRESS_MS);
     desktopPressRef.current = press;
   }
@@ -3030,6 +3138,44 @@ function App({ session }: { session: AuthSession | null }) {
       maxX: targetOffset.x + Math.max(8, desktopSize.width - iconMetrics.width),
       maxY: targetOffset.y + Math.max(8, desktopSize.height - iconMetrics.height),
     };
+  }
+
+  function handleWindowDragAtEdge(appId: string, clientX: number, clientY: number, localBounds: WindowBounds) {
+    if (!windowed) return null;
+    const edge = enteredEdge(windowEdgeDragRef.current, edgeAt(clientX, clientY));
+    if (!edge) return null;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === appId);
+    if (!app) return null;
+    const previousSegment = windowEdgeNavigationRef.current?.targetSegment ?? segmentForApp(app);
+    const targetSegment = {
+      column: previousSegment.column + (edge.direction === "left" ? -1 : edge.direction === "right" ? 1 : 0),
+      row: previousSegment.row + (edge.direction === "up" ? -1 : edge.direction === "down" ? 1 : 0),
+    };
+    if (!windowEdgeNavigationRef.current && routeRef.current) windowEdgeNavigationRef.current = { appId, bounds: { ...app.bounds }, route: routeRef.current, historyState: window.history.state };
+    const pending = windowEdgeNavigationRef.current;
+    if (!pending || pending.appId !== appId) return null;
+    const logicalBounds = { ...localBounds, ...restoreLogicalPosition(localBounds, targetSegment, desktopSize) };
+    const movedApp = { ...app, bounds: logicalBounds };
+    pending.targetSegment = targetSegment;
+    updateRunningApps((current) => current.map((candidate) => candidate.id === appId ? movedApp : candidate));
+    goToSegment(targetSegment, "replace", movedApp, true, false);
+    return localBounds;
+  }
+
+  function finishWindowEdgeNavigation(appId: string, cancelled: boolean) {
+    const pending = windowEdgeNavigationRef.current;
+    windowEdgeNavigationRef.current = null;
+    windowEdgeDragRef.current.inside = false;
+    if (!pending || pending.appId !== appId) return;
+    const finalRoute = routeRef.current;
+    window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
+    if (cancelled || !finalRoute) {
+      updateRunningApps((current) => current.map((app) => app.id === appId ? { ...app, bounds: pending.bounds } : app));
+      setCurrentRoute(pending.route);
+      setFocusedApp(appId);
+      return;
+    }
+    writeRoute(finalRoute, "push");
   }
 
   function finishEdgeNavigation(cancelled: boolean) {
@@ -3217,6 +3363,12 @@ function App({ session }: { session: AuthSession | null }) {
     { id: "paste", group: "Files", label: "Paste items", keys: ["Ctrl/⌘", "V"] },
     { id: "trash", group: "Files", label: "Move selected items to Trash", keys: ["Delete"] },
     { id: "save", group: "Editor", label: "Save the open file", keys: ["Ctrl/⌘", "S"] },
+    ...(windowed ? [
+      { id: "maximize", group: "Windows", label: "Maximize or restore focused window", keys: ["Alt", "Enter"] },
+      { id: "move-window", group: "Windows", label: "Move focused window between areas", keys: ["Alt", "Arrow key"] },
+      { id: "nudge-window", group: "Windows", label: "Move focused window within its area", keys: ["Alt", "Shift", "Arrow key"] },
+      { id: "resize-window", group: "Windows", label: "Resize focused window", keys: ["Alt", "Ctrl", "Arrow key"] },
+    ] : []),
     { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "W"] },
     { id: "dismiss", group: "Windows", label: "Dismiss the current menu or dialog", keys: ["Escape"] },
   ];
@@ -3415,7 +3567,7 @@ function App({ session }: { session: AuthSession | null }) {
   const shellAnnouncement = transferAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
 
   return (
-    <main className="desktop-shell" data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
+    <main className="desktop-shell" data-windowed={windowed || undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
         <nav className="mobile-window-nav" aria-label="Desktop navigation">
             <div className="mobile-window-nav__leading">
@@ -3501,7 +3653,7 @@ function App({ session }: { session: AuthSession | null }) {
             press.activated = true;
           }
           swipeRef.current = null;
-          openDesktopContextMenu(event.clientX, event.clientY);
+          openDesktopContextMenu(event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
         }}
         onDragOver={(event) => {
           if (!canMutate) return;
@@ -3588,11 +3740,11 @@ function App({ session }: { session: AuthSession | null }) {
                   onContextMenu={(event) => {
                     event.preventDefault();
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
-                    openEntryContextMenu(entry.id, event.clientX, event.clientY);
+                    openEntryContextMenu(entry.id, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                   }}
-                  onContextMenuAt={(x, y) => {
+                  onContextMenuAt={(x, y, presentation) => {
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
-                    openEntryContextMenu(entry.id, x, y);
+                    openEntryContextMenu(entry.id, x, y, presentation);
                   }}
                 />
               );
@@ -3662,8 +3814,11 @@ function App({ session }: { session: AuthSession | null }) {
           activeSegment={activeSegment}
           desktopSize={desktopSize}
           focusedAppId={focusedAppId}
+          windowed={windowed}
           mobileHeaderActionsElement={mobileHeaderActionsElement}
+          restingCamera={restingCamera}
           trackRef={windowTrackRef}
+          transitionSegmentKeys={transitionSegmentKeys}
           titleForApp={(app) => {
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
@@ -3672,8 +3827,16 @@ function App({ session }: { session: AuthSession | null }) {
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             return app.kind === "sandbox" ? app.title : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
+          isMaximized={appIsMaximized}
           onFocus={focusApp}
+          onBoundsChange={updateAppBounds}
+          onDragAtEdge={handleWindowDragAtEdge}
+          onDragEnd={finishWindowEdgeNavigation}
+          onMinimize={minimizeApp}
           onClose={requestCloseApp}
+          onToggleMaximize={toggleMaximizeApp}
+          onMoveArea={moveAppToArea}
+          onAdjustBounds={adjustAppWindow}
           onShowDesktop={navigateBack}
           onSwitchWindow={() => setActivePanel("windows")}
         >
@@ -3708,11 +3871,11 @@ function App({ session }: { session: AuthSession | null }) {
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
                         offlineAvailability={offlineModel.entries}
                         onMove={(entry, parentId) => void handleMoveTo(selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry], parentId)}
-                        onContextMenu={(entry, x, y) => {
+                        onContextMenu={(entry, x, y, presentation) => {
                           if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
-                          openEntryContextMenu(entry.id, x, y);
+                          openEntryContextMenu(entry.id, x, y, presentation);
                         }}
-                        onBlankContextMenu={(parentId, x, y) => {
+                        onBlankContextMenu={(parentId, x, y, presentation) => {
                           window.getSelection()?.removeAllRanges();
                           replaceSelection(app.id, []);
                           setContextMenu({
@@ -3721,6 +3884,7 @@ function App({ session }: { session: AuthSession | null }) {
                             x,
                             y,
                             position: positionFor(parentId),
+                            presentation,
                           });
                         }}
                         onClearSelection={() => replaceSelection(app.id, [])}
@@ -3995,7 +4159,17 @@ function App({ session }: { session: AuthSession | null }) {
           >
             <ArrowsLeftRight size={20} />
           </button>
-          <button type="button" title="More actions" aria-label="More actions" aria-haspopup="dialog" onClick={() => openEntryContextMenu(mobileFileSelection[0].id, window.innerWidth / 2, window.innerHeight - 20)}>
+          <button type="button" title="More actions" aria-label="More actions" onClick={(event) => {
+            const pointerType = event.nativeEvent instanceof PointerEvent ? event.nativeEvent.pointerType : "";
+            const presentation = pointerType === "touch" ? "sheet" : "menu";
+            const bounds = event.currentTarget.getBoundingClientRect();
+            openEntryContextMenu(
+              mobileFileSelection[0].id,
+              presentation === "sheet" ? window.innerWidth / 2 : bounds.left + bounds.width / 2,
+              presentation === "sheet" ? window.innerHeight - 20 : bounds.top,
+              presentation,
+            );
+          }}>
             <DotsThree size={22} weight="bold" />
           </button>
           </> : <>
@@ -4026,6 +4200,7 @@ function App({ session }: { session: AuthSession | null }) {
 
       {contextMenu?.type === "entry" && contextMenuEntry && (
         <ContextMenu
+          menu={contextMenu}
           entry={contextMenuEntry}
           onOpen={() => {
             replaceSelection(selectionScope, []);
@@ -4119,6 +4294,7 @@ function App({ session }: { session: AuthSession | null }) {
       )}
       {contextMenu?.type === "desktop" && (
         <DesktopContextMenu
+          menu={contextMenu}
           onCreateFile={() => {
             openFileDialog({
               type: "create-file",

@@ -22,7 +22,7 @@ type Props = {
   onDragEnd: (cancelled: boolean) => void;
   getSnapPreview?: (position: EntryPosition) => EntryPosition;
   onContextMenu: (event: React.MouseEvent) => void;
-  onContextMenuAt: (x: number, y: number) => void;
+  onContextMenuAt: (x: number, y: number, presentation: "menu" | "sheet") => void;
   onExternalDrop?: (dataTransfer: DataTransfer) => void;
   offlineAvailability?: OfflineEntryAvailability;
   allowBrowserPinchZoom?: boolean;
@@ -182,7 +182,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         current.longPressTimer = undefined;
         current.longPressed = true;
         lastTap.current = null;
-        onContextMenuAt(event.clientX, event.clientY);
+        onContextMenuAt(event.clientX, event.clientY, "sheet");
       }, 500);
     }
     canvas.dataset.iconDragging = "true";
@@ -368,7 +368,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
           else if (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") {
             event.preventDefault();
             const bounds = event.currentTarget.getBoundingClientRect();
-            onContextMenuAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+            onContextMenuAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
           }
         }}
         onPointerDown={handlePointerDown}

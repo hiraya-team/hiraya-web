@@ -44,6 +44,51 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 });
 
+test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {
+  await openLocalDesktop(page);
+  const shell = page.locator(".desktop-shell");
+  await expect(shell).toHaveAttribute("data-windowed", "true");
+
+  const name = `windowed-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.dblclick();
+
+  const windowTitle = `${name} - Text Editor`;
+  const appWindow = page.getByRole("dialog", { name: windowTitle });
+  await expect(appWindow).toBeVisible();
+  await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
+  await expect(appWindow.getByRole("button", { name: `Minimize ${windowTitle}` })).toBeVisible();
+  await expect(appWindow.getByRole("button", { name: `Maximize ${windowTitle}` })).toBeVisible();
+  await expect(appWindow.getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
+  await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);
+
+  await appWindow.getByRole("button", { name: `Close ${windowTitle}` }).click();
+  await icon.focus();
+  const historyBefore = await page.evaluate(() => history.state?.hirayaActionSheet ?? null);
+  await icon.click({ button: "right" });
+  const menu = page.getByRole("menu", { name: `Actions for ${name}` });
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveAttribute("data-positioned", "true");
+  await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
+  expect(await page.evaluate(() => history.state?.hirayaActionSheet ?? null)).toBe(historyBefore);
+  await page.keyboard.press("Escape");
+  await expect(icon).toBeFocused();
+
+  await page.keyboard.press("Shift+F10");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(icon).toBeFocused();
+
+  await page.getByRole("button", { name: "More actions" }).click();
+  await expect(menu).toBeVisible();
+  await expect(menu).toHaveAttribute("data-positioned", "true");
+  await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
+});
+
 test("reduced motion disables desktop transitions and animations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openLocalDesktop(page);
@@ -151,6 +196,26 @@ test("mobile taps select the full desktop icon footprint", async ({ browser }) =
   await page.touchscreen.tap(bounds!.x + bounds!.width / 2, bounds!.y + 3);
   await expect(icon).toHaveAttribute("aria-pressed", "true");
 
+  await context.close();
+});
+
+test("touch More actions uses an action sheet and browser history", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  await expect(page.locator(".desktop-shell")).not.toHaveAttribute("data-windowed", "true");
+
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill("touch-actions.txt");
+  await page.getByRole("button", { name: "Create file" }).click();
+  await page.locator(".file-icon").filter({ hasText: "touch-actions.txt" }).tap();
+  await page.getByRole("button", { name: "More actions" }).tap();
+
+  await expect(page.locator(".action-sheet-backdrop")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "Actions for touch-actions.txt" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => typeof history.state?.hirayaActionSheet === "string")).toBe(true);
+  await page.goBack();
+  await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
   await context.close();
 });
 
