@@ -1,4 +1,4 @@
-import { parseManifestV1, type AppPackageInspection } from "@hiraya/apps-contracts";
+import { parseManifestV2, type AppPackageInspection } from "@hiraya/apps-contracts";
 import { parse } from "parse5";
 import { unzipSync } from "fflate";
 
@@ -266,7 +266,7 @@ export function validateAppFiles(files: ReadonlyMap<string, Uint8Array>) {
     if (error instanceof TypeError && error.message.endsWith("valid UTF-8.")) throw error;
     throw new TypeError("App manifest must be valid JSON.");
   }
-  const manifest = parseManifestV1(manifestValue);
+  const manifest = parseManifestV2(manifestValue);
   if (!/\.html?$/i.test(manifest.entrypoint)) throw new TypeError("App entrypoint must be an HTML file.");
   if (!normalized.has(manifest.entrypoint)) throw new TypeError(`App entrypoint is missing: ${manifest.entrypoint}.`);
   if (manifest.icon !== undefined && !normalized.has(manifest.icon)) throw new TypeError(`App icon is missing: ${manifest.icon}.`);

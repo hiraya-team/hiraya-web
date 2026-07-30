@@ -7,7 +7,6 @@
     "build": "bunx --bun vite build"
   },
   "dependencies": {
-    "@hiraya/apps-ui": "workspace:*",
     "@hiraya/apps-sdk": "workspace:*"
   },
   "devDependencies": {

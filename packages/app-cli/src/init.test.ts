@@ -13,10 +13,10 @@ describe("hiraya-app init", () => {
     expect(result).toEqual({ destination, appId: "com.example.field-notes", packageName: "hiraya-app-field-notes" });
     const manifest = JSON.parse(await readFile(join(destination, "public", "hiraya.app.json"), "utf8"));
     const packageMetadata = JSON.parse(await readFile(join(destination, "package.json"), "utf8"));
-    expect(manifest).toEqual(expect.objectContaining({ id: "com.example.field-notes", name: "Field Notes" }));
+    expect(manifest).toEqual(expect.objectContaining({ schemaVersion: 2, uiRuntime: 1, id: "com.example.field-notes", name: "Field Notes" }));
     expect(packageMetadata).toEqual(expect.objectContaining({
       name: "hiraya-app-field-notes",
-      dependencies: { "@hiraya/apps-sdk": "workspace:*", "@hiraya/apps-ui": "workspace:*" },
+      dependencies: { "@hiraya/apps-sdk": "workspace:*" },
       devDependencies: expect.objectContaining({ "@hiraya/app-cli": "workspace:*" }),
     }));
     expect(await readFile(join(destination, "src", "main.ts"), "utf8")).toContain('const APP_ID = "com.example.field-notes";');

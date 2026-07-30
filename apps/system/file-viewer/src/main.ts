@@ -1,7 +1,7 @@
 import type { FileHandle, FileMetadata, HirayaClient } from "@hiraya/apps-sdk";
-import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, DownloadUrlLease, formatBytes, LatestOperation, readFileData, required } from "@hiraya/system-apps-shared";
 import "./style.css";
+type HirayaButton = HTMLElement & { disabled: boolean };
 const APP_ID = "app.hiraya.file-viewer"; const status = required<HTMLElement>("#status"); const openButton = required<HirayaButton>("#open"); const download = required<HirayaButton>("#download"); const operations = new LatestOperation(); const downloads = new DownloadUrlLease(); let hiraya: HirayaClient; let file: FileMetadata | null = null;
 openButton.addEventListener("click", () => void open()); download.addEventListener("click", () => void saveCopy()); void start();
 async function start() { try { const app = await connectSystemApp(APP_ID); hiraya = app.hiraya; app.onDispose(() => { operations.invalidate(); downloads.dispose(); }); openButton.disabled = false; if (app.launch.files[0]) await load(app.launch.files[0]); else status.textContent = "Choose any file to inspect it."; } catch (error) { fail(error, "File Viewer could not start."); } }

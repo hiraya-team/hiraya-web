@@ -1,8 +1,9 @@
 import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
-import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
 import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
+
+type HirayaButton = HTMLElement & { disabled: boolean };
 
 const APP_ID = "app.hiraya.text-editor";
 const SETTINGS_KEY = "editor-settings";

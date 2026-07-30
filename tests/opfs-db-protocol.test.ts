@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseStorageProtocol } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,9 +13,9 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 10", () => {
+describe("local schema 11", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(10);
+    expect(DATABASE_SCHEMA_VERSION).toBe(11);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
@@ -167,6 +167,68 @@ describe("local schema 10", () => {
     db.close();
   });
 
+  test("preserves installed app recovery data before resetting incompatible app runtime data", () => {
+    const db = new Database(":memory:");
+    const systemTextEditorManifest = JSON.stringify({ schemaVersion: 1, id: "app.hiraya.text-editor", name: "Text Editor", version: "1.0.0", entrypoint: "index.html", permissions: ["files:read", "storage"] });
+    db.exec(`
+      PRAGMA foreign_keys=ON;
+      CREATE TABLE desktops(id TEXT PRIMARY KEY, catalog_id TEXT, catalog_revision INTEGER);
+      CREATE TABLE entries(id TEXT PRIMARY KEY, desktop_id TEXT REFERENCES desktops(id), name TEXT);
+      CREATE TABLE installed_apps(app_id TEXT PRIMARY KEY, source TEXT NOT NULL, package_entry_id TEXT, archive_path TEXT, digest TEXT NOT NULL, version TEXT NOT NULL, manifest_json TEXT NOT NULL, approved_at INTEGER NOT NULL);
+      CREATE TABLE app_storage(app_id TEXT REFERENCES installed_apps(app_id) ON DELETE CASCADE, key TEXT, value_json TEXT, bytes INTEGER, PRIMARY KEY(app_id, key));
+      CREATE TABLE file_associations(matcher TEXT PRIMARY KEY, app_id TEXT REFERENCES installed_apps(app_id) ON DELETE CASCADE, created_at INTEGER);
+      CREATE TABLE quarantined_apps(app_id TEXT PRIMARY KEY, package_entry_id TEXT NOT NULL, digest TEXT NOT NULL, version TEXT NOT NULL, manifest_json TEXT NOT NULL, approved_at INTEGER NOT NULL, quarantined_at INTEGER NOT NULL);
+      CREATE TABLE quarantined_app_storage(app_id TEXT REFERENCES quarantined_apps(app_id) ON DELETE CASCADE, key TEXT, value_json TEXT, bytes INTEGER, PRIMARY KEY(app_id, key));
+      INSERT INTO desktops VALUES ('desktop-a', 'catalog-a', 7);
+      INSERT INTO entries VALUES ('file-a', 'desktop-a', 'notes.txt');
+       INSERT INTO installed_apps VALUES ('test.editor', 'desktop', 'editor-package', NULL, '${"a".repeat(64)}', '1.0.0', '{"name":"Editor"}', 1);
+       INSERT INTO installed_apps VALUES ('test.viewer', 'desktop', 'viewer-package', NULL, '${"b".repeat(64)}', '1.0.0', '{"name":"Viewer"}', 2);
+       INSERT INTO installed_apps VALUES ('recovery.system.app.hiraya.text-editor', 'desktop', 'collision-package', NULL, '${"e".repeat(64)}', '1.0.0', '{"name":"Collision Editor"}', 3);
+       INSERT INTO installed_apps VALUES ('app.hiraya.text-editor', 'system', NULL, 'system-apps/text-editor.hiraya.app', '${"c".repeat(64)}', '1.0.0', '${systemTextEditorManifest}', 3);
+       INSERT INTO app_storage VALUES ('test.editor', 'draft', '{"text":"quarantine me"}', 22);
+       INSERT INTO app_storage VALUES ('test.viewer', 'layout', '{"view":"grid"}', 15);
+       INSERT INTO app_storage VALUES ('recovery.system.app.hiraya.text-editor', 'draft', '{"text":"recover both"}', 23);
+       INSERT INTO app_storage VALUES ('app.hiraya.text-editor', 'editor-settings', '{"fontSize":18,"lineWrap":false,"autoSave":true,"autoFormat":true}', 67);
+      INSERT INTO file_associations VALUES ('.txt', 'test.editor', 1);
+      INSERT INTO quarantined_apps VALUES ('app.hiraya.text-editor', 'legacy-package', '${"d".repeat(64)}', '0.9.0', '{"name":"Legacy Text Editor"}', 4, 5);
+      INSERT INTO quarantined_app_storage VALUES ('app.hiraya.text-editor', 'draft', '{"text":"preserved"}', 20);
+      PRAGMA user_version=10;
+    `);
+
+    expect(APP_RUNTIME_RESET_SCHEMA_SQL).toContain("WHERE source='desktop'");
+    expect(APP_RUNTIME_RESET_SCHEMA_SQL).toContain("'_recovery.system.' || app_id");
+    expect(APP_RUNTIME_RESET_SCHEMA_SQL).toContain("'_recovery-package.system.' || app_id");
+    expect(APP_RUNTIME_RESET_SCHEMA_SQL).toContain("ON CONFLICT(app_id) DO NOTHING");
+    expect(APP_RUNTIME_RESET_SCHEMA_SQL).toContain("DELETE FROM file_associations");
+    expect(migrateSchema10To11Sql(10)).toMatch(/^BEGIN IMMEDIATE;[\s\S]+COMMIT;$/);
+    db.exec(migrateSchema10To11Sql(10));
+
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 11 });
+    expect(db.query("SELECT * FROM installed_apps").all()).toEqual([]);
+    expect(db.query("SELECT * FROM app_storage").all()).toEqual([]);
+    expect(db.query("SELECT * FROM file_associations").all()).toEqual([]);
+    expect(db.query("SELECT * FROM desktops").get()).toEqual({ id: "desktop-a", catalog_id: "catalog-a", catalog_revision: 7 });
+    expect(db.query("SELECT * FROM entries").get()).toEqual({ id: "file-a", desktop_id: "desktop-a", name: "notes.txt" });
+    expect(db.query("SELECT app_id,package_entry_id,digest,version,manifest_json,approved_at FROM quarantined_apps ORDER BY app_id").all()).toEqual([
+      { app_id: "_recovery.system.app.hiraya.text-editor", package_entry_id: "_recovery-package.system.app.hiraya.text-editor", digest: "c".repeat(64), version: "1.0.0", manifest_json: systemTextEditorManifest, approved_at: 3 },
+      { app_id: "app.hiraya.text-editor", package_entry_id: "legacy-package", digest: "d".repeat(64), version: "0.9.0", manifest_json: '{"name":"Legacy Text Editor"}', approved_at: 4 },
+      { app_id: "recovery.system.app.hiraya.text-editor", package_entry_id: "collision-package", digest: "e".repeat(64), version: "1.0.0", manifest_json: '{"name":"Collision Editor"}', approved_at: 3 },
+      { app_id: "test.editor", package_entry_id: "editor-package", digest: "a".repeat(64), version: "1.0.0", manifest_json: '{"name":"Editor"}', approved_at: 1 },
+      { app_id: "test.viewer", package_entry_id: "viewer-package", digest: "b".repeat(64), version: "1.0.0", manifest_json: '{"name":"Viewer"}', approved_at: 2 },
+    ]);
+    expect(db.query("SELECT app_id,key,value_json,bytes FROM quarantined_app_storage ORDER BY app_id,key").all()).toEqual([
+      { app_id: "_recovery.system.app.hiraya.text-editor", key: "editor-settings", value_json: '{"fontSize":18,"lineWrap":false,"autoSave":true,"autoFormat":true}', bytes: 67 },
+      { app_id: "app.hiraya.text-editor", key: "draft", value_json: '{"text":"preserved"}', bytes: 20 },
+      { app_id: "recovery.system.app.hiraya.text-editor", key: "draft", value_json: '{"text":"recover both"}', bytes: 23 },
+      { app_id: "test.editor", key: "draft", value_json: '{"text":"quarantine me"}', bytes: 22 },
+      { app_id: "test.viewer", key: "layout", value_json: '{"view":"grid"}', bytes: 15 },
+    ]);
+    expect(db.query("SELECT package_entry_id,digest,version,manifest_json,approved_at,quarantined_at FROM quarantined_apps WHERE app_id='app.hiraya.text-editor'").get()).toEqual({ package_entry_id: "legacy-package", digest: "d".repeat(64), version: "0.9.0", manifest_json: '{"name":"Legacy Text Editor"}', approved_at: 4, quarantined_at: 5 });
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(() => migrateSchema10To11Sql(9)).toThrow("requires version 10");
+    db.close();
+  });
+
   test("migrates a populated schema-8 outbox without inventing revision preconditions", () => {
     const operations = [
       { schemaVersion: 1, kind: "rename-desktop", desktop: { id: "desk", name: "Renamed" } },
@@ -213,6 +275,7 @@ describe("local schema 10", () => {
     db.exec(migrateSchema7To8Sql(7));
     db.exec(migrateSchema8To9Sql(8));
     db.exec(migrateSchema9To10Sql(9));
+    db.exec(migrateSchema10To11Sql(10));
 
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
     expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
@@ -224,8 +287,9 @@ describe("local schema 10", () => {
       show_desktop_minimap: 1,
       explorer_view: "list",
     });
-    expect(db.query("SELECT source,package_entry_id,archive_path FROM installed_apps WHERE app_id='user.editor'").get()).toEqual({ source: "desktop", package_entry_id: "package-entry", archive_path: null });
-    expect(db.query("SELECT value_json FROM app_storage WHERE app_id='user.editor'").get()).toEqual({ value_json: '{"text":"kept"}' });
+    expect(db.query("SELECT * FROM installed_apps").all()).toEqual([]);
+    expect(db.query("SELECT * FROM app_storage").all()).toEqual([]);
+    expect(db.query("SELECT * FROM file_associations").all()).toEqual([]);
     expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='offline_pins'").get()).toBeNull();
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     db.close();

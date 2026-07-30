@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { installedAppAcceptsFile, installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, parseInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
+import { installedAppAcceptsFile, installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, parseInstalledApp, parseQuarantinedApp, type InstalledApp } from "../src/apps/installed-apps";
 import { resolveFileApp } from "../src/apps/file-associations";
 
 function install(version = "1.0.0", digest = "a".repeat(64), packageEntryId = "package-one"): InstalledApp {
-  return { appId: "test.editor", source: "desktop", packageEntryId, archivePath: null, digest, version, approvedAt: 10, manifest: { schemaVersion: 1, id: "test.editor", name: "Editor", version, entrypoint: "index.html", permissions: ["files:read"] } };
+  return { appId: "test.editor", source: "desktop", packageEntryId, archivePath: null, digest, version, approvedAt: 10, manifest: { schemaVersion: 2, uiRuntime: 1, id: "test.editor", name: "Editor", version, entrypoint: "index.html", permissions: ["files:read"] } };
 }
 
 describe("installed apps", () => {
@@ -11,6 +11,14 @@ describe("installed apps", () => {
     expect(parseInstalledApp(install())).toEqual(install());
     expect(() => parseInstalledApp({ ...install(), appId: "test.other" })).toThrow("identity");
     expect(() => parseInstalledApp({ ...install(), extra: true })).toThrow("unsupported shape");
+    expect(() => parseInstalledApp({ ...install(), manifest: { ...install().manifest, schemaVersion: 1 } })).toThrow("schema version");
+    expect(() => parseInstalledApp({ ...install(), manifest: { ...install().manifest, uiRuntime: 2 } })).toThrow("UI runtime");
+  });
+
+  test("reads back quarantined app IDs through the manifest limit", () => {
+    const appId = `app.${"a".repeat(157)}`;
+    const quarantined = { appId, packageEntryId: "package-one", digest: "a".repeat(64), version: "1.0.0", manifest: { name: "Recovered" }, approvedAt: 10, storage: [] };
+    expect(parseQuarantinedApp(quarantined)).toEqual(quarantined);
   });
 
   test("matches the complete approved package identity", () => {

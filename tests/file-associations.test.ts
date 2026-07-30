@@ -4,7 +4,7 @@ import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
 function app(appId: string, fileTypes: string[]): InstalledApp {
-  return { appId, source: "system", packageEntryId: null, archivePath: `system-apps/${appId.split(".").at(-1)}.hiraya.app`, digest: "a".repeat(64), version: "1.0.0", approvedAt: 1, manifest: { schemaVersion: 1, id: appId, name: appId, version: "1.0.0", entrypoint: "index.html", permissions: ["files:read"], fileTypes } };
+  return { appId, source: "system", packageEntryId: null, archivePath: `system-apps/${appId.split(".").at(-1)}.hiraya.app`, digest: "a".repeat(64), version: "1.0.0", approvedAt: 1, manifest: { schemaVersion: 2, uiRuntime: 1, id: appId, name: appId, version: "1.0.0", entrypoint: "index.html", permissions: ["files:read"], fileTypes } };
 }
 
 describe("file association resolution", () => {

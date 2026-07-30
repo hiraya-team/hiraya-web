@@ -1,11 +1,7 @@
 import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
-import { bindTheme } from "@hiraya/apps-ui";
-import { defineHirayaPrimitives } from "@hiraya/apps-ui/elements/primitives";
-import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.hello";
-defineHirayaPrimitives();
 const greetings = ["Hello, Hiraya.", "Mabuhay!", "Build something thoughtful."];
 const heading = document.querySelector<HTMLElement>("h1");
 const button = document.querySelector("hiraya-button");
@@ -33,9 +29,8 @@ try {
     await hiraya.window.setTitle(`${greetings[greeting]} (${clicks})`);
   };
 
-  const unsubscribeTheme = bindTheme(hiraya, launch.theme, {
-    onChange: (theme) => { if (themeElement) themeElement.textContent = theme.mode; },
-  });
+  if (themeElement) themeElement.textContent = launch.theme.mode;
+  const unsubscribeTheme = hiraya.on("theme.changed", (theme) => { if (themeElement) themeElement.textContent = theme.mode; });
   renderCount();
   if (launchElement) launchElement.textContent = `${launch.source} / ${launch.launchId}`;
   if (statusElement) statusElement.textContent = "Connected to the Hiraya host.";

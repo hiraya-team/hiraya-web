@@ -1,7 +1,7 @@
 import { lstat, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { parseManifestV1 } from "@hiraya/apps-contracts";
+import { parseManifestV2 } from "@hiraya/apps-contracts";
 
 const TEMPLATE_DIRECTORY = fileURLToPath(new URL("../templates/vanilla-ts", import.meta.url));
 
@@ -33,7 +33,7 @@ export async function initApp(directory: string, requestedAppId?: string): Promi
     const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Record<string, unknown>;
     manifest.id = appId;
     manifest.name = displayName(directoryName);
-    await writeFile(manifestPath, `${JSON.stringify(parseManifestV1(manifest), null, 2)}\n`);
+    await writeFile(manifestPath, `${JSON.stringify(parseManifestV2(manifest), null, 2)}\n`);
 
     const sourcePath = join(destination, "src", "main.ts");
     const source = await readFile(sourcePath, "utf8");
@@ -51,8 +51,9 @@ export async function initApp(directory: string, requestedAppId?: string): Promi
 }
 
 function validateAppId(appId: string): void {
-  parseManifestV1({
-    schemaVersion: 1,
+  parseManifestV2({
+    schemaVersion: 2,
+    uiRuntime: 1,
     id: appId,
     name: "App",
     version: "0.1.0",

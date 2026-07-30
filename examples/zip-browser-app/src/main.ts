@@ -1,6 +1,4 @@
 import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient } from "@hiraya/apps-sdk";
-import { bindTheme } from "@hiraya/apps-ui";
-import "@hiraya/apps-ui/styles.css";
 import { extractFiles, inspectArchive, type Archive, type ArchiveEntry } from "./archive";
 import "./style.css";
 
@@ -22,8 +20,7 @@ let busy = false;
 try {
   hiraya = await connectHiraya({ appId: APP_ID, requestTimeoutMs: 120_000 });
   const launch = await hiraya.app.getLaunchContext();
-  const unsubscribeTheme = bindTheme(hiraya, launch.theme);
-  addEventListener("pagehide", () => { unsubscribeTheme(); hiraya.close(); }, { once: true });
+  addEventListener("pagehide", () => { hiraya.close(); }, { once: true });
   await hiraya.window.setTitle("ZIP Browser");
   setStatus("Ready. Choose a ZIP archive to inspect.");
   if (launch.files[0]) await openArchive(launch.files[0]);

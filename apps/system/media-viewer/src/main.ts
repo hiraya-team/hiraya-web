@@ -1,7 +1,7 @@
 import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
-import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, formatBytes, LatestOperation, readFileData, required } from "@hiraya/system-apps-shared";
 import "./style.css";
+type HirayaButton = HTMLElement & { disabled: boolean };
 const APP_ID = "app.hiraya.media-viewer"; const viewer = required<HTMLElement>("#viewer"); const status = required<HTMLElement>("#status"); const openButton = required<HirayaButton>("#open"); const fullscreenButton = required<HirayaButton>("#fullscreen"); const operations = new LatestOperation(); let hiraya: HirayaClient; let url: string | null = null;
 openButton.addEventListener("click", () => void open()); fullscreenButton.addEventListener("click", () => void toggleFullscreen()); addEventListener("pagehide", () => { operations.invalidate(); clear(); }, { once: true }); void start();
 async function start() { try { const app = await connectSystemApp(APP_ID); hiraya = app.hiraya; openButton.disabled = false; fullscreenButton.disabled = false; if (app.launch.files[0]) await load(app.launch.files[0]); else status.textContent = "Ready."; } catch (error) { fail(error, "Viewer could not start."); } }

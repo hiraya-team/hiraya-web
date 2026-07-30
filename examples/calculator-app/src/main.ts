@@ -1,6 +1,4 @@
 import { connectHiraya, HirayaSdkError, type HirayaClient, type JsonValue } from "@hiraya/apps-sdk";
-import { bindTheme } from "@hiraya/apps-ui";
-import "@hiraya/apps-ui/styles.css";
 import { calculate, formatNumber } from "./calculator";
 import "./style.css";
 
@@ -61,8 +59,7 @@ void initializeHost();
 async function initializeHost(): Promise<void> {
   try {
     hiraya = await connectHiraya({ appId: APP_ID });
-    const launch = await hiraya.app.getLaunchContext();
-    const unsubscribeTheme = bindTheme(hiraya, launch.theme);
+    await hiraya.app.getLaunchContext();
     const [storedHistory, storedMemory] = await Promise.all([
       hiraya.storage.get("history"),
       hiraya.storage.get("memory"),
@@ -80,7 +77,6 @@ async function initializeHost(): Promise<void> {
     });
     addEventListener("pagehide", () => {
       unsubscribeCommand();
-      unsubscribeTheme();
       hiraya?.close();
     }, { once: true });
     hostStatus.textContent = "Synced";

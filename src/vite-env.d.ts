@@ -15,8 +15,15 @@ declare module "virtual:hiraya-seeded" {
 }
 
 declare module "virtual:hiraya-system-apps" {
-  import type { HirayaAppManifestV1 } from "@hiraya/apps-contracts";
+  import type { HirayaAppManifestV2 } from "@hiraya/apps-contracts";
 
-  const catalog: readonly { slug: string; archivePath: string; digest: string; manifest: HirayaAppManifestV1 }[];
+  const catalog: readonly { slug: string; archivePath: string; digest: string; manifest: HirayaAppManifestV2 }[];
   export default catalog;
+}
+
+declare module "virtual:hiraya-apps-ui-runtime" {
+  import type { SandboxUiRuntime } from "@hiraya/app-runtime";
+
+  const runtime: Readonly<SandboxUiRuntime>;
+  export default runtime;
 }

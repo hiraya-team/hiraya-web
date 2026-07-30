@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { parseManifestV1 } from "../packages/apps-contracts/src/index";
+import { parseManifestV2 } from "../packages/apps-contracts/src/index";
 
 const PUBLIC_ID = "virtual:hiraya-system-apps";
 const RESOLVED_ID = `\0${PUBLIC_ID}`;
@@ -22,7 +22,7 @@ export function systemAppsPlugin(projectRoot: string): Plugin {
       for (const slug of SYSTEM_APP_SLUGS) {
         const manifestPath = path.join(projectRoot, "apps", "system", slug, "public", "hiraya.app.json");
         const archivePath = path.join(projectRoot, "dist", "system-apps", `${slug}.hiraya.app`);
-        const manifest = parseManifestV1(JSON.parse(await readFile(manifestPath, "utf8")));
+        const manifest = parseManifestV2(JSON.parse(await readFile(manifestPath, "utf8")));
         const archive = new Uint8Array(await readFile(archivePath));
         this.addWatchFile(manifestPath);
         archives.set(slug, archive);

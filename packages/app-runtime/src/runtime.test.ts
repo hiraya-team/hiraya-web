@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_RPC_TIMEOUT_MS, LONG_RUNNING_FILE_MUTATION_METHODS, LONG_RUNNING_RPC_TIMEOUT_MS, RpcDispatcher, usesLongRunningRpcDeadline } from "./dispatcher";
-import type { ServiceMethod } from "@hiraya/apps-contracts";
-import { createPackageAssetResolver, initializeSandboxFrame, isAppPackageName, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "./sandbox";
+import type { AppPackageInspection, ServiceMethod } from "@hiraya/apps-contracts";
+import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "./sandbox";
 
 function host() {
   let closed = false;
@@ -180,6 +180,35 @@ describe("app runtime", () => {
     expect(TRUSTED_MARKDOWN_CSP).toContain("img-src data: blob: https: http:");
     expect(TRUSTED_MARKDOWN_CSP).toContain("connect-src 'none'");
     expect(TRUSTED_MARKDOWN_FLAGS).toContain("allow-popups-to-escape-sandbox");
+  });
+
+  test("injects CSP, foundation styles, and the UI runtime before package scripts", () => {
+    type FakeElement = { tagName: string; dataset: Record<string, string>; textContent: string; httpEquiv?: string; content?: string };
+    const packageScript: FakeElement = { tagName: "script", dataset: {}, textContent: "package()" };
+    const children: FakeElement[] = [packageScript];
+    const document = {
+      createElement: (tagName: string): FakeElement => ({ tagName, dataset: {}, textContent: "" }),
+      head: { prepend: (...nodes: FakeElement[]) => children.unshift(...nodes) },
+    } as unknown as Document;
+    const uiRuntime: SandboxUiRuntime = { abi: 1, script: "foundation()", styles: ".hiraya-app{}" };
+
+    injectSandboxUiRuntime(document, uiRuntime, SANDBOX_CSP);
+
+    expect(children.map((node) => node.tagName)).toEqual(["meta", "style", "script", "script"]);
+    expect(children[0]).toEqual(expect.objectContaining({ httpEquiv: "Content-Security-Policy", content: SANDBOX_CSP }));
+    expect(children[1]).toEqual(expect.objectContaining({ dataset: { hirayaUiFoundation: "" }, textContent: uiRuntime.styles }));
+    expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: uiRuntime.script }));
+    expect(children[3]).toBe(packageScript);
+    expect(children[0].content).toContain("connect-src 'none'");
+  });
+
+  test("rejects a UI runtime ABI that does not match the package manifest before parsing", () => {
+    const pkg = {
+      manifest: { schemaVersion: 2, uiRuntime: 2, id: "dev.hiraya.test", name: "Test", version: "1.0.0", entrypoint: "index.html", permissions: [] },
+      files: new Map(), digest: "digest", entryCount: 0, compressedBytes: 0, expandedBytes: 0,
+    } as unknown as AppPackageInspection;
+
+    expect(() => materializeAppPackage(pkg, { abi: 1, script: "", styles: "" })).toThrow("UI runtime ABI");
   });
 
   test("allows the initial document load before readiness and navigates on the next load", async () => {

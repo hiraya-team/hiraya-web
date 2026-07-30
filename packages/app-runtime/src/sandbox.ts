@@ -3,6 +3,20 @@ import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 
 export type MaterializedApp = { html: string; revoke(): void };
+export interface SandboxUiRuntime { readonly abi: 1; readonly script: string; readonly styles: string }
+
+export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiRuntime, csp: string): void {
+  const meta = document.createElement("meta");
+  meta.httpEquiv = "Content-Security-Policy";
+  meta.content = csp;
+  const foundation = document.createElement("style");
+  foundation.dataset.hirayaUiFoundation = "";
+  foundation.textContent = uiRuntime.styles;
+  const runtime = document.createElement("script");
+  runtime.dataset.hirayaUiRuntime = String(uiRuntime.abi);
+  runtime.textContent = uiRuntime.script;
+  document.head.prepend(meta, foundation, runtime);
+}
 
 export class ObjectUrlLease {
   readonly #urls: string[] = [];
@@ -65,7 +79,8 @@ export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array
   return resolve;
 }
 
-export function materializeAppPackage(pkg: AppPackageInspection, urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL, csp = SANDBOX_CSP): MaterializedApp {
+export function materializeAppPackage(pkg: AppPackageInspection, uiRuntime: SandboxUiRuntime, urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL, csp = SANDBOX_CSP): MaterializedApp {
+  if (uiRuntime.abi !== 1 || pkg.manifest.uiRuntime !== uiRuntime.abi) throw new TypeError("App UI runtime ABI is unsupported.");
   const lease = new ObjectUrlLease(urls);
   const resolve = createPackageAssetResolver(pkg.files, pkg.manifest.entrypoint);
   const source = new TextDecoder("utf-8", { fatal: true }).decode(pkg.files.get(pkg.manifest.entrypoint)!);
@@ -82,10 +97,6 @@ export function materializeAppPackage(pkg: AppPackageInspection, urls: Pick<type
     if (href && !href.startsWith("#")) element.removeAttribute("href");
     element.removeAttribute("target");
   });
-  const meta = document.createElement("meta");
-  meta.httpEquiv = "Content-Security-Policy";
-  meta.content = csp;
-  document.head.prepend(meta);
   for (const element of document.querySelectorAll<HTMLElement>("[src], [href], [poster], [srcset], [imagesrcset], [ping]")) {
     for (const attribute of ["src", "href", "poster", "srcset", "imagesrcset", "ping"]) {
       const reference = element.getAttribute(attribute);
@@ -112,6 +123,7 @@ export function materializeAppPackage(pkg: AppPackageInspection, urls: Pick<type
       return replacement ? match.replace(reference, replacement) : match;
     }));
   }
+  injectSandboxUiRuntime(document, uiRuntime, csp);
   const html = `<!doctype html>\n${document.documentElement.outerHTML}`;
   let revoked = false;
   return { html, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };

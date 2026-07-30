@@ -24,7 +24,7 @@ The only supported host boundary is the typed `MessagePort` owned by `@hiraya/ap
 
 ## Connection And Lifecycle
 
-The app ID passed to `connectHiraya({ appId })` must exactly match `public/hiraya.app.json`. Keep it as a source constant so package identity changes are explicit.
+The app ID passed to `connectHiraya({ appId })` must exactly match `public/hiraya.app.json`. App manifests require `schemaVersion: 2` and `uiRuntime: 1`; older schemas and unsupported UI runtimes cannot be packaged. Keep the app ID as a source constant so package identity changes are explicit.
 
 ```ts
 const hiraya = await connectHiraya({ appId: "com.example.my-app" });
@@ -82,7 +82,7 @@ Commands can be invoked while focus is elsewhere, so handlers must use current s
 
 ## Theme Variables
 
-Use `launch.theme` immediately and subscribe to `theme.changed`. The starter maps host tokens to these app CSS variables:
+`app.getLaunchContext()`, `theme.get()`, and `theme.changed` automatically map host tokens to these app CSS variables:
 
 ```text
 --hiraya-background
@@ -97,7 +97,7 @@ Use `launch.theme` immediately and subscribe to `theme.changed`. The starter map
 --hiraya-focus
 ```
 
-It also sets `document.documentElement.dataset.theme` to `light` or `dark`. Use token variables rather than fixed colors where possible, preserve readable contrast, style `:focus-visible`, and honor `prefers-reduced-motion`. These variables are app conventions created by `applyTheme`; the sandbox does not inject them automatically.
+The SDK also sets `document.documentElement.dataset.theme` to `light` or `dark`. Use token variables rather than fixed colors where possible, preserve readable contrast, style `:focus-visible`, and honor `prefers-reduced-motion`. Subscribe to `theme.changed` only when app-specific behavior needs the new token values.
 
 ## Local Data And Files
 

@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "uiRuntime": 1,
   "id": "dev.hiraya.zip-browser",
   "name": "ZIP Browser",
   "version": "0.1.0",

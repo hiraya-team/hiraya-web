@@ -11,6 +11,8 @@ const launch = await hiraya.app.getLaunchContext();
 
 The manifest ID and connection ID must match. Apps communicate with Hiraya only through the negotiated message port. The client exposes `app`, `files`, `dialogs`, `window`, `commands`, `notifications`, `theme`, and app-local `storage` services plus typed host events through `hiraya.on(...)`.
 
+The SDK applies host theme tokens to `document.documentElement` after `app.getLaunchContext()` and `theme.get()` and before `theme.changed` subscribers run. It sets `data-theme` plus the `--hiraya-*` token variables, so apps normally only subscribe to theme changes for app-specific behavior. Projection is skipped outside a document; tests can provide `themeTarget` to `connectHiraya`.
+
 File and folder handles are opaque. For safe updates, retain `FileMetadata.contentRevision` and pass it as `expectedRevision` to `files.write`; resolve `CONFLICT` rather than retrying blindly. Declare every used capability in the app manifest and catch `HirayaSdkError` at user-action boundaries.
 
 `timeoutMs` is a client-local waiting bound and is not sent over protocol version 1. The host independently applies method-specific execution deadlines. A local `TIMEOUT` or post-dispatch `CANCELLED` does not prove that a side-effecting host operation stopped, so do not retry mutations blindly; use revision checks or inspect the resulting state first.

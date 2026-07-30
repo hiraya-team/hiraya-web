@@ -1,6 +1,6 @@
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { parseManifestV1 } from "@hiraya/apps-contracts";
+import { parseManifestV2 } from "@hiraya/apps-contracts";
 import { zipSync, type Zippable } from "fflate";
 import {
   APP_ARCHIVE_EXTENSION,
@@ -56,7 +56,7 @@ export function createAppArchive(files: ReadonlyMap<string, Uint8Array>) {
 
 export async function packageApp(input: string, output?: string) {
   const validated = await readAppDirectory(input);
-  const manifest = parseManifestV1(JSON.parse(new TextDecoder().decode(validated.files.get(APP_MANIFEST_PATH)!)));
+  const manifest = parseManifestV2(JSON.parse(new TextDecoder().decode(validated.files.get(APP_MANIFEST_PATH)!)));
   const destination = resolve(output ?? `${basename(resolve(input))}${APP_ARCHIVE_EXTENSION}`);
   if (!destination.endsWith(APP_ARCHIVE_EXTENSION)) throw new TypeError(`Package output must end with ${APP_ARCHIVE_EXTENSION}.`);
   const archive = createAppArchive(validated.files);

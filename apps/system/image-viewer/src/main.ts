@@ -1,11 +1,11 @@
 import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
-import type { HirayaButton } from "@hiraya/apps-ui/elements";
-import { defineHirayaImageViewer, type HirayaImageViewer } from "@hiraya/apps-ui/elements/image-viewer";
 import { connectSystemApp, describeError, formatBytes, LatestOperation, readFileData, required } from "@hiraya/system-apps-shared";
 import "./style.css";
 
+type HirayaButton = HTMLElement & { disabled: boolean };
+type HirayaImageViewer = HTMLElement & { alt: string; rotation: number; src: string; fit(): void; rotateBy(degrees: number): void; zoomBy(delta: number): void };
+
 const APP_ID = "app.hiraya.image-viewer";
-defineHirayaImageViewer();
 const viewer = required<HirayaImageViewer>("#viewer"); const empty = required<HTMLElement>("#empty"); const status = required<HTMLElement>("#status"); const zoomOutput = required<HTMLOutputElement>("#zoom"); const openButton = required<HirayaButton>("#open"); const operations = new LatestOperation();
 let hiraya: HirayaClient; let url: string | null = null;
 openButton.addEventListener("click", () => void open()); required("#minus").addEventListener("click", () => viewer.zoomBy(-.25)); required("#plus").addEventListener("click", () => viewer.zoomBy(.25)); required("#fit").addEventListener("click", () => viewer.fit()); required("#rotate").addEventListener("click", () => viewer.rotateBy(90));

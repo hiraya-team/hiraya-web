@@ -55,7 +55,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -68,7 +67,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -81,7 +79,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -94,7 +91,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -107,7 +103,6 @@
       "version": "0.1.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
       },
     },
     "apps/system/text-editor": {
@@ -115,7 +110,6 @@
       "version": "1.0.0",
       "dependencies": {
         "@hiraya/apps-sdk": "workspace:*",
-        "@hiraya/apps-ui": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {

@@ -8,7 +8,6 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@hiraya/apps-ui": "workspace:*",
     "@hiraya/apps-sdk": "workspace:*"
   },
   "devDependencies": {

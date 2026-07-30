@@ -1,8 +1,4 @@
 import { connectHiraya, HirayaSdkError, type FileHandle, type FileMetadata, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
-import { applyThemeTokens, bindTheme } from "@hiraya/apps-ui";
-import { defineHirayaSystemAppElements } from "@hiraya/apps-ui/elements/system-app";
-
-defineHirayaSystemAppElements();
 
 export interface ConnectedApp {
   hiraya: HirayaClient;
@@ -16,8 +12,6 @@ export async function connectSystemApp(appId: string): Promise<ConnectedApp> {
   const hiraya = await connectHiraya({ appId });
   try {
     const launch = await hiraya.app.getLaunchContext();
-    applyThemeTokens(launch.theme);
-    const unbindTheme = bindTheme(hiraya, launch.theme);
     const cleanups = new Set<() => void>();
     let disposed = false;
     const dispose = () => {
@@ -25,7 +19,6 @@ export async function connectSystemApp(appId: string): Promise<ConnectedApp> {
       disposed = true;
       for (const cleanup of cleanups) cleanup();
       cleanups.clear();
-      unbindTheme();
       hiraya.close();
     };
     addEventListener("pagehide", dispose, { once: true });

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   parseFileHandle,
   parseLaunchContext,
-  parseManifestV1,
+  parseManifestV2,
   parseRpcEvent,
   parseRpcRequest,
   parseRpcResponse,
@@ -25,24 +25,27 @@ const theme = {
 } as const;
 
 describe("apps contracts", () => {
-  test("strictly parses manifest v1", () => {
+  test("strictly parses manifest v2 for UI runtime 1", () => {
     const manifest = {
-      schemaVersion: 1,
+      schemaVersion: 2,
+      uiRuntime: 1,
       id: "dev.hiraya.notes",
       name: "Notes",
       version: "1.2.0",
       entrypoint: "dist/index.html",
       permissions: ["files:read", "storage"],
     };
-    expect(parseManifestV1(manifest)).toEqual(manifest);
-    expect(() => parseManifestV1({ ...manifest, extra: true })).toThrow("unsupported shape");
-    expect(() => parseManifestV1({ ...manifest, permissions: ["files:read", "files:read"] })).toThrow("duplicates");
-    expect(() => parseManifestV1({ ...manifest, entrypoint: "../index.html" })).toThrow("entrypoint");
-    expect(parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300 } }).window).toEqual({ width: 900, height: 700, minWidth: 400, minHeight: 300 });
-    expect(() => parseManifestV1({ ...manifest, window: { width: 300, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("minimums");
-    expect(() => parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300, extra: 1 } })).toThrow("unsupported shape");
-    expect(() => parseManifestV1({ ...manifest, window: { width: 900.5, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("width");
-    expect(() => parseManifestV1({ ...manifest, window: { width: 900, height: 700, minWidth: 400 } })).toThrow("unsupported shape");
+    expect(parseManifestV2(manifest)).toEqual(manifest);
+    expect(() => parseManifestV2({ ...manifest, schemaVersion: 1 })).toThrow("schema version");
+    expect(() => parseManifestV2({ ...manifest, uiRuntime: 2 })).toThrow("UI runtime");
+    expect(() => parseManifestV2({ ...manifest, extra: true })).toThrow("unsupported shape");
+    expect(() => parseManifestV2({ ...manifest, permissions: ["files:read", "files:read"] })).toThrow("duplicates");
+    expect(() => parseManifestV2({ ...manifest, entrypoint: "../index.html" })).toThrow("entrypoint");
+    expect(parseManifestV2({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300 } }).window).toEqual({ width: 900, height: 700, minWidth: 400, minHeight: 300 });
+    expect(() => parseManifestV2({ ...manifest, window: { width: 300, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("minimums");
+    expect(() => parseManifestV2({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300, extra: 1 } })).toThrow("unsupported shape");
+    expect(() => parseManifestV2({ ...manifest, window: { width: 900.5, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("width");
+    expect(() => parseManifestV2({ ...manifest, window: { width: 900, height: 700, minWidth: 400 } })).toThrow("unsupported shape");
   });
 
   test("brands only opaque typed handles", () => {

@@ -12,7 +12,7 @@ import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPag
 import { type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -94,6 +94,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 9) {
     db.exec(migrateSchema9To10Sql(migratedVersion));
+    migratedVersion = 10;
+  }
+  if (migratedVersion === 10) {
+    db.exec(migrateSchema10To11Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -182,6 +186,7 @@ function createSchema(db: Database) {
     ${EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL}
     ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL}
     ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL}
+    ${APP_RUNTIME_RESET_SCHEMA_SQL}
     COMMIT;
   `);
 }

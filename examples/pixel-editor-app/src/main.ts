@@ -4,8 +4,6 @@ import {
   type FileHandle,
   type HirayaClient,
 } from "@hiraya/apps-sdk";
-import { bindTheme } from "@hiraya/apps-ui";
-import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.pixel-editor";
@@ -71,7 +69,6 @@ async function start(): Promise<void> {
   try {
     hiraya = await connectHiraya({ appId: APP_ID });
     const launch = await hiraya.app.getLaunchContext();
-    const unsubscribeTheme = bindTheme(hiraya, launch.theme);
     const savedColor = await hiraya.storage.get("color");
     const savedOpacity = await hiraya.storage.get("opacity");
     if (typeof savedColor === "string" && /^#[0-9a-f]{6}$/i.test(savedColor)) setColor(savedColor);
@@ -80,7 +77,6 @@ async function start(): Promise<void> {
       elements.opacityValue.value = `${savedOpacity}%`;
     }
     addEventListener("pagehide", () => {
-      unsubscribeTheme();
       hiraya?.close();
     }, { once: true });
     await hiraya.window.setTitle("Pixel Editor - Untitled.png");

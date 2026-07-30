@@ -4,6 +4,7 @@ import { VitePWA } from "vite-plugin-pwa";
 import { seededDesktopPlugin } from "./build/seeded";
 import { systemAppsPlugin } from "./build/system-apps";
 import { navigationFallbackDenylist } from "./build/navigation";
+import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "HIRAYA_");
@@ -17,6 +18,7 @@ export default defineConfig(({ mode }) => {
       "import.meta.env.HIRAYA_HISTORY_LIMIT": JSON.stringify(String(historyLimit)),
     },
     plugins: [
+      appsUiRuntimePlugin(process.cwd()),
       seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
       systemAppsPlugin(process.cwd()),
       react(),

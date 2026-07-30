@@ -107,6 +107,7 @@ import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatch
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
+import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
 import type { SystemAppTarget } from "./apps/types";
 import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
 import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
@@ -3846,7 +3847,7 @@ function App({ session }: { session: AuthSession | null }) {
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             return (
               <>
-                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
                         folder={folder}

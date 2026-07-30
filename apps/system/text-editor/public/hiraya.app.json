@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "uiRuntime": 1,
   "id": "app.hiraya.text-editor",
   "name": "Text Editor",
   "version": "1.1.0",

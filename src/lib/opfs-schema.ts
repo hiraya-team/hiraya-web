@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 10;
+export const DATABASE_SCHEMA_VERSION = 11;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -154,4 +154,32 @@ export const OFFLINE_PINS_REMOVAL_SCHEMA_SQL = `
 export function migrateSchema9To10Sql(version: number): string {
   if (version !== 9) throw new Error(`Schema 10 migration requires version 9, received ${version}.`);
   return `BEGIN IMMEDIATE; ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL} COMMIT;`;
+}
+
+export const APP_RUNTIME_RESET_SCHEMA_SQL = `
+  INSERT INTO quarantined_apps(app_id,package_entry_id,digest,version,manifest_json,approved_at,quarantined_at)
+    SELECT app_id,package_entry_id,digest,version,manifest_json,approved_at,CAST(strftime('%s','now') AS INTEGER)*1000
+    FROM installed_apps WHERE source='desktop'
+    ON CONFLICT(app_id) DO NOTHING;
+  INSERT INTO quarantined_app_storage(app_id,key,value_json,bytes)
+    SELECT app_storage.app_id,app_storage.key,app_storage.value_json,app_storage.bytes
+    FROM app_storage INNER JOIN installed_apps ON installed_apps.app_id=app_storage.app_id
+    WHERE installed_apps.source='desktop'
+    ON CONFLICT(app_id,key) DO NOTHING;
+  INSERT INTO quarantined_apps(app_id,package_entry_id,digest,version,manifest_json,approved_at,quarantined_at)
+    SELECT '_recovery.system.' || app_id,'_recovery-package.system.' || app_id,digest,version,manifest_json,approved_at,CAST(strftime('%s','now') AS INTEGER)*1000
+    FROM installed_apps WHERE source='system';
+  INSERT INTO quarantined_app_storage(app_id,key,value_json,bytes)
+    SELECT '_recovery.system.' || installed_apps.app_id,app_storage.key,app_storage.value_json,app_storage.bytes
+    FROM app_storage INNER JOIN installed_apps ON installed_apps.app_id=app_storage.app_id
+    WHERE installed_apps.source='system';
+  DELETE FROM file_associations;
+  DELETE FROM app_storage;
+  DELETE FROM installed_apps;
+  PRAGMA user_version=11;
+`;
+
+export function migrateSchema10To11Sql(version: number): string {
+  if (version !== 10) throw new Error(`Schema 11 migration requires version 10, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${APP_RUNTIME_RESET_SCHEMA_SQL} COMMIT;`;
 }

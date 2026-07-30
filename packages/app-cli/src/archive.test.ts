@@ -8,7 +8,8 @@ import { createAppArchive, packageApp, readAppDirectory } from "./filesystem";
 
 function manifest(overrides: Record<string, unknown> = {}) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    uiRuntime: 1,
     id: "dev.hiraya.test",
     name: "Test App",
     version: "1.0.0",
@@ -94,6 +95,11 @@ describe("Hiraya app archives", () => {
     await expect(inspectAppArchive(archive({ ...appFiles(), [APP_MANIFEST_PATH]: strToU8(JSON.stringify(manifest({ entrypoint: "missing.html" }))) }))).rejects.toThrow("entrypoint is missing");
     await expect(inspectAppArchive(archive({ ...appFiles(), [APP_MANIFEST_PATH]: strToU8(JSON.stringify(manifest({ icon: "missing.svg" }))) }))).rejects.toThrow("icon is missing");
     await expect(inspectAppArchive(archive({ ...appFiles(), [APP_MANIFEST_PATH]: strToU8(JSON.stringify(manifest({ extra: true }))) }))).rejects.toThrow("unsupported shape");
+  });
+
+  test("rejects v1 manifests and unsupported UI runtimes", async () => {
+    await expect(inspectAppArchive(archive({ ...appFiles(), [APP_MANIFEST_PATH]: strToU8(JSON.stringify(manifest({ schemaVersion: 1 }))) }))).rejects.toThrow("schema version");
+    await expect(inspectAppArchive(archive({ ...appFiles(), [APP_MANIFEST_PATH]: strToU8(JSON.stringify(manifest({ uiRuntime: 2 }))) }))).rejects.toThrow("UI runtime");
   });
 
   test("rejects remote scripts, styles, modules, import maps, and frames", async () => {

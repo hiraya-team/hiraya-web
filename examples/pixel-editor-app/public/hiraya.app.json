@@ -1,5 +1,6 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
+  "uiRuntime": 1,
   "id": "dev.hiraya.pixel-editor",
   "name": "Pixel Editor",
   "version": "0.1.0",

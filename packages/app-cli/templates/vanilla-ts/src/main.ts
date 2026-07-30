@@ -1,11 +1,7 @@
 import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
-import { bindTheme } from "@hiraya/apps-ui";
-import { defineHirayaPrimitives } from "@hiraya/apps-ui/elements/primitives";
-import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.starter";
-defineHirayaPrimitives();
 const countElement = document.querySelector<HTMLElement>("#count");
 const statusElement = document.querySelector<HTMLElement>("#status");
 const button = document.querySelector("hiraya-button");
@@ -13,7 +9,6 @@ const button = document.querySelector("hiraya-button");
 try {
   const hiraya = await connectHiraya({ appId: APP_ID });
   const launch = await hiraya.app.getLaunchContext();
-  const unsubscribeTheme = bindTheme(hiraya, launch.theme);
   const storedCount = await hiraya.storage.get("count");
   let count = typeof storedCount === "number" && Number.isSafeInteger(storedCount) && storedCount >= 0 ? storedCount : 0;
 
@@ -41,7 +36,6 @@ try {
   });
   addEventListener("pagehide", () => {
     unsubscribeCommand();
-    unsubscribeTheme();
     hiraya.close();
   }, { once: true });
 } catch (error) {

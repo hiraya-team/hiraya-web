@@ -1,5 +1,29 @@
 import { describe, expect, test } from "bun:test";
-import { connectHiraya, HirayaSdkError, type FileHandle } from "./index";
+import { connectHiraya, HirayaSdkError, type FileHandle, type ThemeTarget, type ThemeTokens } from "./index";
+
+const darkTheme: ThemeTokens = {
+  mode: "dark", background: "#000", surface: "#111", surfaceElevated: "#222", text: "#fff", textMuted: "#aaa", border: "#333", accent: "#fc0", accentText: "#000", danger: "#f00", focus: "#ff0",
+};
+
+const lightTheme: ThemeTokens = {
+  mode: "light", background: "#fff", surface: "#eee", surfaceElevated: "#ddd", text: "#111", textMuted: "#555", border: "#ccc", accent: "#06c", accentText: "#fff", danger: "#c00", focus: "#09f",
+};
+
+function fakeThemeTarget(): { target: ThemeTarget; tokens: Map<string, string> } {
+  const tokens = new Map<string, string>();
+  return {
+    target: {
+      dataset: {},
+      style: {
+        setProperty: (name, value) => {
+          if (value === null) tokens.delete(name);
+          else tokens.set(name, value);
+        },
+      },
+    },
+    tokens,
+  };
+}
 
 describe("apps SDK", () => {
   test("waits for one exact parent init and ignores hostile frames", async () => {
@@ -80,6 +104,40 @@ describe("apps SDK", () => {
       expect.objectContaining({ method: "host.openEntry", params: { handle: "file_0123456789abcdef" } }),
       expect.objectContaining({ method: "files.deleteMany", params: { handles: ["file_0123456789abcdef"], recursive: true } }),
     ]);
+    client.close();
+    channel.port2.close();
+  });
+
+  test("projects launch, queried, and changed themes onto an injected target", async () => {
+    const channel = new MessageChannel();
+    const { target, tokens } = fakeThemeTarget();
+    channel.port2.onmessage = ({ data }) => channel.port2.postMessage({
+      protocolVersion: 1,
+      type: "response",
+      id: data.id,
+      ok: true,
+      result: data.method === "app.getLaunchContext"
+        ? { protocolVersion: 1, appId: "dev.hiraya.test", launchId: "launch-1", source: "launcher", files: [], folders: [], arguments: [], theme: darkTheme }
+        : data.method === "theme.get" ? lightTheme : undefined,
+    });
+    const client = await connectHiraya({ port: channel.port1, themeTarget: target });
+
+    await client.app.getLaunchContext();
+    expect(target.dataset.theme).toBe("dark");
+    expect(tokens.get("--hiraya-surface-elevated")).toBe("#222");
+
+    await client.theme.get();
+    expect(target.dataset.theme).toBe("light");
+    expect(tokens.get("--hiraya-accent")).toBe("#06c");
+
+    const changed = new Promise<void>((resolve) => client.on("theme.changed", (theme) => {
+      expect(theme).toEqual(darkTheme);
+      expect(target.dataset.theme).toBe("dark");
+      expect(tokens.get("--hiraya-focus")).toBe("#ff0");
+      resolve();
+    }));
+    channel.port2.postMessage({ protocolVersion: 1, type: "event", event: "theme.changed", payload: darkTheme });
+    await changed;
     client.close();
     channel.port2.close();
   });

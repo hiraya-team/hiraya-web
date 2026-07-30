@@ -22,8 +22,9 @@ export type AppPermission = (typeof APP_PERMISSIONS)[number];
 export type FileHandle = string & { readonly __fileHandle: unique symbol };
 export type FolderHandle = string & { readonly __folderHandle: unique symbol };
 
-export interface HirayaAppManifestV1 {
-  schemaVersion: 1;
+export interface HirayaAppManifestV2 {
+  schemaVersion: 2;
+  uiRuntime: 1;
   id: string;
   name: string;
   version: string;
@@ -36,7 +37,7 @@ export interface HirayaAppManifestV1 {
 }
 
 export interface AppPackageInspection {
-  manifest: HirayaAppManifestV1;
+  manifest: HirayaAppManifestV2;
   digest: string;
   entryCount: number;
   compressedBytes: number;
@@ -342,18 +343,20 @@ export function parseFolderHandle(value: unknown): FolderHandle {
   return value as FolderHandle;
 }
 
-export function parseManifestV1(value: unknown): HirayaAppManifestV1 {
+export function parseManifestV2(value: unknown): HirayaAppManifestV2 {
   const manifest = record(value, "App manifest");
-  exact(manifest, ["schemaVersion", "id", "name", "version", "entrypoint", "permissions"], ["description", "icon", "fileTypes", "window"], "App manifest");
-  if (manifest.schemaVersion !== 1) throw new TypeError("App manifest schema version is unsupported.");
+  exact(manifest, ["schemaVersion", "uiRuntime", "id", "name", "version", "entrypoint", "permissions"], ["description", "icon", "fileTypes", "window"], "App manifest");
+  if (manifest.schemaVersion !== 2) throw new TypeError("App manifest schema version is unsupported.");
+  if (manifest.uiRuntime !== 1) throw new TypeError("App manifest UI runtime is unsupported.");
   const id = text(manifest.id, "App ID");
   if (!APP_ID.test(id)) throw new TypeError("App ID is invalid.");
   if (typeof manifest.version !== "string" || !VERSION.test(manifest.version)) throw new TypeError("App version is invalid.");
   if (!Array.isArray(manifest.permissions)) throw new TypeError("App permissions are invalid.");
   const permissions = manifest.permissions.map(parsePermission);
   if (new Set(permissions).size !== permissions.length) throw new TypeError("App permissions contain duplicates.");
-  const result: HirayaAppManifestV1 = {
-    schemaVersion: 1,
+  const result: HirayaAppManifestV2 = {
+    schemaVersion: 2,
+    uiRuntime: 1,
     id,
     name: text(manifest.name, "App name", 80),
     version: manifest.version,

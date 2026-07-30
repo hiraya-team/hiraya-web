@@ -14,6 +14,7 @@ import {
   type ServiceEvents,
   type ServiceMethod,
   type ServiceMethods,
+  type ThemeTokens,
 } from "@hiraya/apps-contracts";
 
 export type * from "@hiraya/apps-contracts";
@@ -28,7 +29,13 @@ export interface ConnectOptions {
   appId?: string;
   requestTimeoutMs?: number;
   handshakeTimeoutMs?: number;
+  themeTarget?: ThemeTarget;
 }
+
+export type ThemeTarget = {
+  dataset: { theme?: string };
+  style: Pick<CSSStyleDeclaration, "setProperty">;
+};
 
 export interface FileReadAllOptions extends RequestOptions {
   chunkSize?: number;
@@ -46,6 +53,19 @@ type PendingRequest = {
   reject(reason: unknown): void;
   cleanup(): void;
 };
+
+const THEME_TOKEN_NAMES = [
+  "background",
+  "surface",
+  "surfaceElevated",
+  "text",
+  "textMuted",
+  "border",
+  "accent",
+  "accentText",
+  "danger",
+  "focus",
+] as const;
 
 export class HirayaSdkError extends Error {
   constructor(
@@ -150,6 +170,7 @@ export class HirayaClient {
   constructor(
     private readonly port: MessagePort,
     private readonly defaultTimeoutMs = 15_000,
+    private readonly themeTarget?: ThemeTarget,
   ) {
     if (!Number.isFinite(defaultTimeoutMs) || defaultTimeoutMs <= 0) throw new TypeError("Request timeout must be positive.");
     port.addEventListener("message", this.handleMessage);
@@ -256,12 +277,17 @@ export class HirayaClient {
         const response = parseRpcResponse(message.data);
         const pending = this.pending.get(response.id);
         if (!pending) return;
-        if (response.ok) pending.resolve(parseServiceResult(pending.method, response.result));
+        if (response.ok) {
+          const result = parseServiceResult(pending.method, response.result);
+          this.applyResponseTheme(pending.method, result);
+          pending.resolve(result);
+        }
         else pending.reject(new HirayaSdkError(response.error.message, response.error.code, response.error.details));
         return;
       }
       if (isMessageType(message.data, "event")) {
         const event = parseRpcEvent(message.data);
+        if (event.event === "theme.changed") this.applyTheme(event.payload as ThemeTokens);
         for (const listener of this.subscriptions.get(event.event) ?? []) listener(event.payload as never);
       }
     } catch (error) {
@@ -273,6 +299,18 @@ export class HirayaClient {
   private readonly handleMessageError = () => {
     this.close();
   };
+
+  private applyResponseTheme(method: ServiceMethod, result: unknown): void {
+    if (method === "app.getLaunchContext") this.applyTheme((result as ServiceMethods["app.getLaunchContext"]["result"]).theme);
+    if (method === "theme.get") this.applyTheme(result as ThemeTokens);
+  }
+
+  private applyTheme(theme: ThemeTokens): void {
+    const target = this.themeTarget ?? defaultThemeTarget();
+    if (!target) return;
+    target.dataset.theme = theme.mode;
+    for (const name of THEME_TOKEN_NAMES) target.style.setProperty(`--hiraya-${toKebabCase(name)}`, theme[name]);
+  }
 }
 
 function fileChunkSize(value = MAX_FILE_CHUNK_BYTES): number {
@@ -282,7 +320,7 @@ function fileChunkSize(value = MAX_FILE_CHUNK_BYTES): number {
 
 export async function connectHiraya(options: ConnectOptions = {}): Promise<HirayaClient> {
   const port = options.port ?? await waitForHostInit(options);
-  return new HirayaClient(port, options.requestTimeoutMs);
+  return new HirayaClient(port, options.requestTimeoutMs, options.themeTarget);
 }
 
 async function waitForHostInit(options: ConnectOptions): Promise<MessagePort> {
@@ -325,4 +363,12 @@ function isHostInit(value: unknown): boolean {
 
 function messageId(value: unknown): string | undefined {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" ? value.id : undefined;
+}
+
+function defaultThemeTarget(): ThemeTarget | undefined {
+  return typeof document === "undefined" ? undefined : document.documentElement;
+}
+
+function toKebabCase(value: string): string {
+  return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }

@@ -9,7 +9,6 @@
     "./vite": "./vite.config.ts"
   },
   "dependencies": {
-    "@hiraya/apps-sdk": "workspace:*",
-    "@hiraya/apps-ui": "workspace:*"
+    "@hiraya/apps-sdk": "workspace:*"
   }
 }

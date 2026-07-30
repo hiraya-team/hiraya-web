@@ -1,4 +1,4 @@
-import { parseManifestV1, type HirayaAppManifestV1 } from "@hiraya/apps-contracts";
+import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya/apps-contracts";
 import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
 import type { SystemAppTarget } from "./types";
 
@@ -6,7 +6,7 @@ type InstalledAppBase = Readonly<{
   appId: string;
   digest: string;
   version: string;
-  manifest: HirayaAppManifestV1;
+  manifest: HirayaAppManifestV2;
   approvedAt: number;
 }>;
 
@@ -53,7 +53,7 @@ export function parseQuarantinedApp(value: unknown): QuarantinedApp {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Quarantined app must be an object.");
   const item = value as Record<string, unknown>;
   if (Object.keys(item).some((key) => !["appId", "packageEntryId", "digest", "version", "manifest", "approvedAt", "storage"].includes(key))) throw new TypeError("Quarantined app has an unsupported shape.");
-  if (typeof item.appId !== "string" || item.appId.length === 0 || item.appId.length > 160) throw new TypeError("Quarantined app ID is invalid.");
+  if (typeof item.appId !== "string" || item.appId.length === 0 || item.appId.length > 256) throw new TypeError("Quarantined app ID is invalid.");
   if (typeof item.packageEntryId !== "string" || item.packageEntryId.length === 0 || item.packageEntryId.length > 256) throw new TypeError("Quarantined package entry ID is invalid.");
   if (typeof item.digest !== "string" || !DIGEST.test(item.digest)) throw new TypeError("Quarantined app digest is invalid.");
   if (typeof item.version !== "string" || item.version.length === 0 || item.version.length > 128) throw new TypeError("Quarantined app version is invalid.");
@@ -70,7 +70,7 @@ export function parseQuarantinedApp(value: unknown): QuarantinedApp {
 export function parseInstalledApp(value: unknown): InstalledApp {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Installed app must be an object.");
   const item = value as Record<string, unknown>;
-  const manifest = parseManifestV1(item.manifest);
+  const manifest = parseManifestV2(item.manifest);
   const source = item.source ?? "desktop";
   if (Object.keys(item).some((key) => !["appId", "source", "packageEntryId", "archivePath", "digest", "version", "manifest", "approvedAt"].includes(key))) throw new TypeError("Installed app has an unsupported shape.");
   if (item.appId !== manifest.id || item.version !== manifest.version) throw new TypeError("Installed app identity does not match its manifest.");
