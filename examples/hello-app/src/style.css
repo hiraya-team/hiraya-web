@@ -7,10 +7,11 @@ body {
   place-items: center;
 }
 
-main {
+.hello-panel {
   max-width: 32rem;
-  padding: 3rem;
 }
+
+.hello-panel::part(body) { padding: 3rem; }
 
 .eyebrow {
   color: var(--hiraya-accent, #e1a854);
@@ -24,14 +25,6 @@ h1 {
   line-height: 0.95;
 }
 
-button {
-  padding: 0.8rem 1rem;
-  border: 0;
-  background: var(--hiraya-accent, #e1a854);
-  color: var(--hiraya-accent-text, #172019);
-  cursor: pointer;
-  font: 700 0.9rem system-ui, sans-serif;
-}
 
 #status {
   color: var(--hiraya-text-muted, #b9c5bf);

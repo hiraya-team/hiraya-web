@@ -1,4 +1,5 @@
 import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
+import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
 import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
@@ -216,11 +217,12 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
 }
 function renderControlState() {
   const controls = textEditorControlState(initialized, saving, canWrite);
-  required<HTMLButtonElement>("#open").disabled = !controls.open;
+  required<HirayaButton>("#open").disabled = !controls.open;
   required<HTMLSelectElement>("#font-size").disabled = !controls.settings;
   required<HTMLInputElement>("#line-wrap").disabled = !controls.settings;
   editor.readOnly = !controls.write;
-  for (const id of ["save", "save-as", "format", "auto-save", "auto-format"]) required<HTMLButtonElement | HTMLInputElement>(`#${id}`).disabled = !controls.write;
+  for (const id of ["save", "save-as", "format"]) required<HirayaButton>(`#${id}`).disabled = !controls.write;
+  for (const id of ["auto-save", "auto-format"]) required<HTMLInputElement>(`#${id}`).disabled = !controls.write;
   required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
 }
 function publishCommands() {

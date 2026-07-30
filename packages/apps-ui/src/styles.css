@@ -1,5 +1,22 @@
 /* Opt in on the app body so these foundations never leak into surrounding UI. */
 :where(.hiraya-app) {
+  --hiraya-radius-control: 0.45rem;
+  --hiraya-radius-panel: 0.75rem;
+  --hiraya-border-width: 1px;
+  --hiraya-control-height: 2.25rem;
+  --hiraya-touch-target: 2.75rem;
+  --hiraya-space-1: 0.25rem;
+  --hiraya-space-2: 0.5rem;
+  --hiraya-space-3: 0.75rem;
+  --hiraya-space-4: 1rem;
+  --hiraya-font-size-control: 0.875rem;
+  --hiraya-font-weight-control: 650;
+  --hiraya-shadow-panel: 0 1rem 3rem rgb(0 0 0 / 0.3);
+  --hiraya-motion-fast: 120ms;
+  --hiraya-motion-normal: 180ms;
+  --hiraya-surface-hover: color-mix(in srgb, var(--hiraya-accent, #e2aa52) 12%, var(--hiraya-surface-elevated, #20352d));
+  --hiraya-surface-selected: color-mix(in srgb, var(--hiraya-accent, #e2aa52) 20%, var(--hiraya-surface, #172722));
+  --hiraya-danger-surface: color-mix(in srgb, var(--hiraya-danger, #ff8175) 16%, var(--hiraya-surface, #172722));
   min-inline-size: 300px;
   min-block-size: 100vh;
   min-block-size: 100dvh;

@@ -1,4 +1,5 @@
 import type { FileHandle, FolderHandle, HirayaClient } from "@hiraya/apps-sdk";
+import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, LatestOperation, readFileData, relativeReader, required } from "@hiraya/system-apps-shared";
 import { renderMarkdown } from "./markdown";
 import "./style.css";
@@ -6,7 +7,7 @@ import "./style.css";
 const APP_ID = "app.hiraya.markdown-preview";
 const preview = required<HTMLElement>("#preview");
 const status = required<HTMLElement>("#status");
-const openButton = required<HTMLButtonElement>("#open");
+const openButton = required<HirayaButton>("#open");
 const contentOperations = new LatestOperation();
 const renderOperations = new LatestOperation();
 const linkOperations = new LatestOperation();

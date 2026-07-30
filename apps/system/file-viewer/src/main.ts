@@ -1,7 +1,8 @@
 import type { FileHandle, FileMetadata, HirayaClient } from "@hiraya/apps-sdk";
+import type { HirayaButton } from "@hiraya/apps-ui/elements";
 import { connectSystemApp, describeError, DownloadUrlLease, formatBytes, LatestOperation, readFileData, required } from "@hiraya/system-apps-shared";
 import "./style.css";
-const APP_ID = "app.hiraya.file-viewer"; const status = required<HTMLElement>("#status"); const openButton = required<HTMLButtonElement>("#open"); const download = required<HTMLButtonElement>("#download"); const operations = new LatestOperation(); const downloads = new DownloadUrlLease(); let hiraya: HirayaClient; let file: FileMetadata | null = null;
+const APP_ID = "app.hiraya.file-viewer"; const status = required<HTMLElement>("#status"); const openButton = required<HirayaButton>("#open"); const download = required<HirayaButton>("#download"); const operations = new LatestOperation(); const downloads = new DownloadUrlLease(); let hiraya: HirayaClient; let file: FileMetadata | null = null;
 openButton.addEventListener("click", () => void open()); download.addEventListener("click", () => void saveCopy()); void start();
 async function start() { try { const app = await connectSystemApp(APP_ID); hiraya = app.hiraya; app.onDispose(() => { operations.invalidate(); downloads.dispose(); }); openButton.disabled = false; if (app.launch.files[0]) await load(app.launch.files[0]); else status.textContent = "Choose any file to inspect it."; } catch (error) { fail(error, "File Viewer could not start."); } }
 async function open() { const generation = operations.begin(); try { const selected = await hiraya.dialogs.openFile({ multiple: false }); if (selected?.[0] && operations.isLatest(generation)) await load(selected[0], generation); } catch (error) { if (operations.isLatest(generation)) fail(error, "Could not choose a file."); } finally { if (operations.isLatest(generation) && file) download.disabled = false; } }

@@ -1,12 +1,14 @@
 import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
 import { bindTheme } from "@hiraya/apps-ui";
+import { defineHirayaPrimitives } from "@hiraya/apps-ui/elements/primitives";
 import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.hello";
+defineHirayaPrimitives();
 const greetings = ["Hello, Hiraya.", "Mabuhay!", "Build something thoughtful."];
 const heading = document.querySelector<HTMLElement>("h1");
-const button = document.querySelector<HTMLButtonElement>("button");
+const button = document.querySelector("hiraya-button");
 const countElement = document.querySelector<HTMLElement>("#count");
 const launchElement = document.querySelector<HTMLElement>("#launch");
 const themeElement = document.querySelector<HTMLElement>("#theme");

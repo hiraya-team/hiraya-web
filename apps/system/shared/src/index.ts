@@ -1,5 +1,8 @@
 import { connectHiraya, HirayaSdkError, type FileHandle, type FileMetadata, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
 import { applyThemeTokens, bindTheme } from "@hiraya/apps-ui";
+import { defineHirayaSystemAppElements } from "@hiraya/apps-ui/elements/system-app";
+
+defineHirayaSystemAppElements();
 
 export interface ConnectedApp {
   hiraya: HirayaClient;

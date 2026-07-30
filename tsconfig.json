@@ -5,6 +5,7 @@
     { "path": "./packages/app-runtime" },
     { "path": "./packages/apps-contracts" },
     { "path": "./packages/apps-sdk" },
+    { "path": "./packages/apps-ui" },
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
   ]

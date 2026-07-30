@@ -1,12 +1,14 @@
 import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
 import { bindTheme } from "@hiraya/apps-ui";
+import { defineHirayaPrimitives } from "@hiraya/apps-ui/elements/primitives";
 import "@hiraya/apps-ui/styles.css";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.starter";
+defineHirayaPrimitives();
 const countElement = document.querySelector<HTMLElement>("#count");
 const statusElement = document.querySelector<HTMLElement>("#status");
-const button = document.querySelector<HTMLButtonElement>("button");
+const button = document.querySelector("hiraya-button");
 
 try {
   const hiraya = await connectHiraya({ appId: APP_ID });
