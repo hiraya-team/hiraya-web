@@ -14,7 +14,7 @@ export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiR
   foundation.textContent = uiRuntime.styles;
   const runtime = document.createElement("script");
   runtime.dataset.hirayaUiRuntime = String(uiRuntime.abi);
-  runtime.textContent = uiRuntime.script;
+  runtime.src = dataURL(new TextEncoder().encode(uiRuntime.script), "text/javascript");
   document.head.prepend(meta, foundation, runtime);
 }
 

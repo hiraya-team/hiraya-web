@@ -183,7 +183,7 @@ describe("app runtime", () => {
   });
 
   test("injects CSP, foundation styles, and the UI runtime before package scripts", () => {
-    type FakeElement = { tagName: string; dataset: Record<string, string>; textContent: string; httpEquiv?: string; content?: string };
+    type FakeElement = { tagName: string; dataset: Record<string, string>; textContent: string; httpEquiv?: string; content?: string; src?: string };
     const packageScript: FakeElement = { tagName: "script", dataset: {}, textContent: "package()" };
     const children: FakeElement[] = [packageScript];
     const document = {
@@ -197,7 +197,8 @@ describe("app runtime", () => {
     expect(children.map((node) => node.tagName)).toEqual(["meta", "style", "script", "script"]);
     expect(children[0]).toEqual(expect.objectContaining({ httpEquiv: "Content-Security-Policy", content: SANDBOX_CSP }));
     expect(children[1]).toEqual(expect.objectContaining({ dataset: { hirayaUiFoundation: "" }, textContent: uiRuntime.styles }));
-    expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: uiRuntime.script }));
+    expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
+    expect(atob(children[2].src!.split(",", 2)[1])).toBe(uiRuntime.script);
     expect(children[3]).toBe(packageScript);
     expect(children[0].content).toContain("connect-src 'none'");
   });

@@ -4,6 +4,7 @@ const email = process.env.HIRAYA_SERVER_E2E_EMAIL ?? "e2e-admin@example.test";
 const password = process.env.HIRAYA_SERVER_E2E_PASSWORD ?? "release-gate-e2e-password";
 const onlineFolder = "E2E cross-browser folder";
 const offlineFolder = "E2E persisted offline folder";
+const sandboxRuntimeFile = "E2E sandbox runtime.txt";
 
 async function signIn(context: BrowserContext) {
   const page = await context.newPage();
@@ -23,6 +24,13 @@ async function createFolder(page: Page, name: string) {
   await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New folder" }).click();
   await page.getByLabel("Folder name").fill(name);
   await page.getByRole("button", { name: "Create folder" }).click();
+  await expect(page.getByText(name, { exact: true })).toBeVisible();
+}
+
+async function createTextFile(page: Page, name: string) {
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 }
 
@@ -58,6 +66,19 @@ async function primary(browser: Browser) {
   await firstContext.setOffline(false);
   await first.reload();
   await expect(second.getByText(offlineFolder, { exact: true })).toBeVisible({ timeout: 20_000 });
+
+  await createTextFile(first, sandboxRuntimeFile);
+  await first.locator(".file-icon").filter({ hasText: sandboxRuntimeFile }).dblclick();
+  await expect(first.getByRole("dialog", { name: `${sandboxRuntimeFile} - Text Editor` })).toBeVisible();
+  const appFrame = first.frameLocator("iframe.sandbox-app-frame");
+  await expect(appFrame.locator("#status")).toContainText(`Opened ${sandboxRuntimeFile}.`);
+  await expect.poll(() => appFrame.locator("hiraya-toolbar").evaluate((toolbar) => ({
+    foundation: document.body.classList.contains("hiraya-app"),
+    toolbarDefined: Boolean(customElements.get("hiraya-toolbar")),
+    toolbarShadow: Boolean(toolbar.shadowRoot),
+    buttonDefined: Boolean(customElements.get("hiraya-button")),
+    buttonShadow: Boolean(document.querySelector("hiraya-button")?.shadowRoot),
+  }))).toEqual({ foundation: true, toolbarDefined: true, toolbarShadow: true, buttonDefined: true, buttonShadow: true });
 
   const staleConflict = await second.evaluate(async () => {
     const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
