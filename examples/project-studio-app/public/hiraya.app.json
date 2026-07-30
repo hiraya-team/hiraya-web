@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 2,
+  "uiRuntime": 1,
+  "id": "dev.hiraya.project-studio",
+  "name": "Project Studio",
+  "version": "0.1.0",
+  "entrypoint": "index.html",
+  "description": "Write, preview, and publish a portable Markdown project from a Hiraya folder.",
+  "permissions": [
+    "files:read",
+    "files:write",
+    "dialogs",
+    "window",
+    "commands",
+    "notifications",
+    "theme",
+    "storage"
+  ],
+  "window": {
+    "width": 1120,
+    "height": 760,
+    "minWidth": 320,
+    "minHeight": 480
+  }
+}
