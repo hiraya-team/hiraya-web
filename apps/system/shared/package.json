@@ -5,8 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./styles.css": "./src/styles.css",
-    "./vite": "./vite.config.ts"
+    "./styles.css": "./src/styles.css"
   },
   "dependencies": {
     "@hiraya/apps-sdk": "workspace:*"

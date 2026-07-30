@@ -29,56 +29,20 @@ export async function connectSystemApp(appId: string): Promise<ConnectedApp> {
   }
 }
 
-type ChunkFiles = {
-  readChunk?: (handle: FileHandle, offset: number, length: number) => Promise<{ data: ArrayBuffer; done?: boolean }>;
-  readAll?: (handle: FileHandle) => Promise<{ data: ArrayBuffer; mimeType: string }>;
-};
-
-export async function readFileData(hiraya: HirayaClient, handle: FileHandle, size?: number): Promise<ArrayBuffer> {
-  const files = hiraya.files as ChunkFiles;
-  if (typeof files.readAll === "function") return (await files.readAll(handle)).data;
-  const readChunk = files.readChunk;
-  if (typeof readChunk !== "function") return (await hiraya.files.read(handle)).data;
-  const chunkSize = 1024 * 1024;
-  const chunks: Uint8Array[] = [];
-  let offset = 0;
-  while (size === undefined || offset < size) {
-    const requested = size === undefined ? chunkSize : Math.min(chunkSize, size - offset);
-    const result = await readChunk.call(hiraya.files, handle, offset, requested);
-    const chunk = new Uint8Array(result.data);
-    chunks.push(chunk);
-    offset += chunk.byteLength;
-    if (result.done || chunk.byteLength < requested || chunk.byteLength === 0) break;
-  }
-  const data = new Uint8Array(chunks.reduce((total, chunk) => total + chunk.byteLength, 0));
-  let cursor = 0;
-  for (const chunk of chunks) {
-    data.set(chunk, cursor);
-    cursor += chunk.byteLength;
-  }
-  return data.buffer;
+export async function readFileData(hiraya: HirayaClient, handle: FileHandle): Promise<ArrayBuffer> {
+  return (await hiraya.files.readAll(handle)).data;
 }
 
-export function relativeReader(hiraya: HirayaClient): ((from: FileHandle | FolderHandle, path: string) => Promise<{ data: ArrayBuffer; mimeType: string }>) | null {
-  const files = hiraya.files as unknown as {
-    readRelative?: (from: FileHandle | FolderHandle, path: string) => Promise<{ data: ArrayBuffer; mimeType: string }>;
-    resolve?: (from: FileHandle | FolderHandle, path: string) => Promise<{ kind: "file"; metadata: FileMetadata } | { kind: "folder" }>;
-  };
-  if (typeof files.readRelative === "function") return files.readRelative.bind(files);
-  if (typeof files.resolve !== "function") return null;
+export function relativeReader(hiraya: HirayaClient): (from: FileHandle | FolderHandle, path: string) => Promise<{ data: ArrayBuffer; mimeType: string }> {
   return async (from, path) => {
-    const entry = await files.resolve!(from, path);
+    const entry = await hiraya.files.resolve(from, path);
     if (entry.kind !== "file") throw new TypeError("The relative path does not reference a file.");
-    return { data: await readFileData(hiraya, entry.metadata.handle, entry.metadata.size), mimeType: entry.metadata.mimeType };
+    return { data: await readFileData(hiraya, entry.metadata.handle), mimeType: entry.metadata.mimeType };
   };
 }
 
 export async function writeFileData(hiraya: HirayaClient, handle: FileHandle, data: ArrayBuffer, options: { mimeType: string; expectedRevision?: number }): Promise<FileMetadata> {
-  const files = hiraya.files as unknown as {
-    writeAll?: (handle: FileHandle, data: ArrayBuffer, options: { mimeType: string; expectedRevision?: number }) => Promise<FileMetadata>;
-  };
-  if (typeof files.writeAll === "function") return files.writeAll(handle, data, options);
-  return hiraya.files.write(handle, data, options);
+  return hiraya.files.writeAll(handle, data, options);
 }
 
 export function describeError(error: unknown, fallback: string): string {
@@ -104,35 +68,6 @@ export class LatestOperation {
   begin(): number { return ++this.#generation; }
   isLatest(generation: number): boolean { return generation === this.#generation; }
   invalidate(): void { this.#generation += 1; }
-}
-
-export class DownloadUrlLease {
-  #url: string | null = null;
-  #disposed = false;
-
-  constructor(
-    private readonly urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL,
-    private readonly createAnchor: () => HTMLAnchorElement = () => document.createElement("a"),
-  ) {}
-
-  download(data: ArrayBuffer, mimeType: string, name: string): void {
-    if (this.#disposed) throw new Error("Download URL lease is closed.");
-    if (this.#url) this.urls.revokeObjectURL(this.#url);
-    const url = this.urls.createObjectURL(new Blob([data], { type: mimeType }));
-    this.#url = url;
-    const anchor = this.createAnchor();
-    anchor.href = url;
-    anchor.download = name;
-    anchor.click();
-    anchor.remove();
-  }
-
-  dispose(): void {
-    if (this.#disposed) return;
-    this.#disposed = true;
-    if (this.#url) this.urls.revokeObjectURL(this.#url);
-    this.#url = null;
-  }
 }
 
 export function required<T extends Element>(selector: string): T {

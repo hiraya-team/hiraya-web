@@ -4,24 +4,9 @@
 html, body { width: 100%; min-width: 0; min-height: 100%; margin: 0; }
 body { min-height: 100vh; }
 button, input, textarea, select { color: inherit; font: inherit; }
-button, .button { min-height: 2.25rem; padding: .4rem .75rem; border: 1px solid var(--hiraya-border); border-radius: .45rem; background: var(--hiraya-surface-elevated); cursor: pointer; }
-button:hover:not(:disabled), .button:hover { border-color: var(--hiraya-accent); }
+button { min-height: 2.25rem; padding: .4rem .75rem; border: 1px solid var(--hiraya-border); border-radius: .45rem; background: var(--hiraya-surface-elevated); cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--hiraya-accent); }
 button:disabled { cursor: not-allowed; opacity: .55; }
-button.primary { color: var(--hiraya-accent-text); border-color: var(--hiraya-accent); background: var(--hiraya-accent); font-weight: 650; }
-button.danger { color: var(--hiraya-danger); }
 :focus-visible { outline: 2px solid var(--hiraya-focus); outline-offset: 2px; }
 .app-shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 100vh; }
-.toolbar { display: flex; min-width: 0; align-items: center; gap: .5rem; padding: .55rem .7rem; border-bottom: 1px solid var(--hiraya-border); background: var(--hiraya-surface); }
-.toolbar .spacer { flex: 1; }
 .title { min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.status { min-height: 2rem; padding: .35rem .7rem; overflow: hidden; border-top: 1px solid var(--hiraya-border); color: var(--hiraya-text-muted); background: var(--hiraya-surface); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
-.status.error { color: var(--hiraya-danger); }
-.empty { display: grid; height: 100%; min-height: 14rem; padding: 2rem; place-content: center; text-align: center; color: var(--hiraya-text-muted); }
-.empty strong { color: var(--hiraya-text); font-size: 1.1rem; }
-dialog { width: min(28rem, calc(100% - 2rem)); padding: 0; border: 1px solid var(--hiraya-border); border-radius: .65rem; color: var(--hiraya-text); background: var(--hiraya-surface-elevated); box-shadow: 0 1rem 3rem rgb(0 0 0 / .3); }
-dialog::backdrop { background: rgb(0 0 0 / .5); }
-dialog form { display: grid; gap: 1rem; padding: 1.2rem; }
-dialog h2 { margin: 0; font-size: 1.05rem; }
-dialog input { width: 100%; padding: .55rem; border: 1px solid var(--hiraya-border); border-radius: .4rem; background: var(--hiraya-background); }
-.dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; }
-@media (max-width: 520px) { .toolbar { flex-wrap: wrap; } .toolbar .title { order: -1; width: 100%; } }

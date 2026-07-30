@@ -1,12 +1,10 @@
 import { defineConfig } from "vite";
 
-export function systemAppConfig() {
-  return defineConfig({
-    base: "./",
-    build: {
-      assetsDir: "assets",
-      emptyOutDir: true,
-      sourcemap: false,
-    },
-  });
-}
+export default defineConfig({
+  base: "./",
+  build: {
+    assetsDir: "assets",
+    emptyOutDir: true,
+    sourcemap: false,
+  },
+});

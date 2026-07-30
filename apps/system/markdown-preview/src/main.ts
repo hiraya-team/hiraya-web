@@ -42,13 +42,13 @@ async function open() {
 }
 async function load(handle: FileHandle, generation = contentOperations.begin()) {
   const entry = await hiraya.files.stat(handle); if (!contentOperations.isLatest(generation)) return; if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const data = await readFileData(hiraya, handle, entry.metadata.size); if (!contentOperations.isLatest(generation)) return;
+  const data = await readFileData(hiraya, handle); if (!contentOperations.isLatest(generation)) return;
   currentSource = new TextDecoder().decode(data);
   currentRelativeHandle = relativeFolder ?? handle;
   await renderDocument(renderOperations.begin()); if (!contentOperations.isLatest(generation)) return;
   required("#title").textContent = entry.metadata.name;
   await hiraya.window.setTitle(`${entry.metadata.name} - Markdown Preview`);
-  status.textContent = relativeReader(hiraya) ? "Preview ready. Relative images are supported by this host." : "Preview ready. Relative images require a newer host.";
+  status.textContent = "Preview ready. Relative images are supported by this host.";
 }
 async function renderDocument(generation = renderOperations.begin()) {
   if (!currentRelativeHandle || !renderOperations.isLatest(generation)) return;
@@ -57,7 +57,7 @@ async function renderDocument(generation = renderOperations.begin()) {
   renderExternalContent();
 }
 async function loadRelativeContent(handle: FileHandle | FolderHandle, generation: number) {
-  const readRelative = relativeReader(hiraya); if (!readRelative) return;
+  const readRelative = relativeReader(hiraya);
   await Promise.all([...preview.querySelectorAll<HTMLImageElement>("img[data-relative-src]")].map(async (image) => {
     try { const result = await readRelative(handle, image.dataset.relativeSrc ?? ""); if (!renderOperations.isLatest(generation)) return; const url = URL.createObjectURL(new Blob([result.data], { type: result.mimeType })); if (!renderOperations.isLatest(generation)) { URL.revokeObjectURL(url); return; } objectUrls.push(url); image.src = url; }
     catch { if (renderOperations.isLatest(generation)) image.replaceWith(document.createTextNode(`[Image unavailable: ${image.alt}]`)); }

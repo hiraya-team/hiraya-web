@@ -76,7 +76,6 @@ import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
-import { topOverlay } from "./ui/overlay";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { namesMatch } from "./lib/entry-validation";
@@ -1723,15 +1722,7 @@ function App({ session }: { session: AuthSession | null }) {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key !== "Escape") return;
       if ((event.target as Element | null)?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) return;
-      const owner = topOverlay({
-        dialog: Boolean(dialog),
-        moveDialog: moveDialogEntries.length > 0,
-        settings: false,
-        contextMenu: Boolean(contextMenu),
-        file: false,
-        explorer: false,
-        areaEditor: minimapExpanded,
-      });
+      const owner = contextMenu ? "contextMenu" : moveDialogEntries.length > 0 ? "moveDialog" : dialog ? "dialog" : minimapExpanded ? "areaEditor" : null;
       if (!owner) return;
       if (owner === "moveDialog" && moveDialogSubmitting) return;
       event.preventDefault();

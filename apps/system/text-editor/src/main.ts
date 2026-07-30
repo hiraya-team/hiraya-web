@@ -93,7 +93,7 @@ async function statFile(next: FileHandle) {
 
 async function read(next: FileHandle, entry?: FileMetadata) {
   entry ??= await statFile(next);
-  const data = await readFileData(hiraya, next, entry.size);
+  const data = await readFileData(hiraya, next);
   return { entry, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
 }
 

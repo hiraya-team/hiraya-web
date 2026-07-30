@@ -12,7 +12,7 @@
   "types": "./src/archive.ts",
   "scripts": {
     "test": "bun test",
-    "typecheck": "bunx --bun tsc -p tsconfig.json"
+    "typecheck": "bunx --bun tsc --noEmit -p ../../tsconfig.json"
   },
   "dependencies": {
     "@hiraya/apps-contracts": "workspace:*",
