@@ -24,7 +24,6 @@ import {
   deleteEntries,
   deleteDesktop as deleteDesktopMutation,
   fetchServerBuildTimestamp,
-  getOutboxStatus,
   importFiles,
   installThemePackage,
   initializeDesktop,
@@ -205,7 +204,7 @@ function App({ session }: { session: AuthSession | null }) {
   const nextShellMessageIdRef = useRef(0);
   const transferDismissTimersRef = useRef(new Map<string, number>());
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
-  const [transferAnnouncement, setTransferAnnouncement] = useState("");
+  const [notificationAnnouncement, setNotificationAnnouncement] = useState("");
   const transferPhasesRef = useRef(new Map<string, FileTransferState["phase"]>());
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
@@ -1118,7 +1117,7 @@ function App({ session }: { session: AuthSession | null }) {
       for (const transfer of transfers) {
         const previous = transferPhases.get(transfer.id);
         if (previous !== transfer.phase && (transfer.phase === "complete" || transfer.phase === "failed")) {
-          setTransferAnnouncement(`${transfer.direction === "upload" ? "Upload" : "Download"} ${transfer.phase} for ${transfer.fileName}.`);
+          setNotificationAnnouncement(`${transfer.direction === "upload" ? "Upload" : "Download"} ${transfer.phase} for ${transfer.fileName}.`);
         }
         transferPhases.set(transfer.id, transfer.phase);
       }
@@ -1232,10 +1231,10 @@ function App({ session }: { session: AuthSession | null }) {
   }, []);
 
   useEffect(() => {
-    if (!transferAnnouncement) return;
-    const timer = window.setTimeout(() => setTransferAnnouncement(""), 5_000);
+    if (!notificationAnnouncement) return;
+    const timer = window.setTimeout(() => setNotificationAnnouncement(""), 5_000);
     return () => window.clearTimeout(timer);
-  }, [transferAnnouncement]);
+  }, [notificationAnnouncement]);
 
   useEffect(() => () => confirmationResolverRef.current?.(false), []);
 
@@ -1312,6 +1311,15 @@ function App({ session }: { session: AuthSession | null }) {
     if (syncStatus === "online" && !isSyncing && outboxRecords.length === 0) setLastSyncedAt(Date.now());
   }, [isSyncing, outboxRecords.length, syncStatus]);
 
+  const syncIssue = activeDesktopId ? outboxRecords.find((record) => record.status === "blocked" && outboxOperationDesktopIds(record).has(activeDesktopId)) ?? null : null;
+  const syncIssueError = syncIssue?.error;
+  const syncIssueOperationId = syncIssue?.operationId;
+
+  useEffect(() => {
+    if (!syncIssueOperationId) return;
+    setNotificationAnnouncement(`Sync issue. ${syncIssueError || "A queued change needs attention before sync can continue."}`);
+  }, [syncIssueError, syncIssueOperationId]);
+
   useEffect(() => {
     if (syncStatus !== "online" || serverBuildTimestamp) return;
     let active = true;
@@ -1346,21 +1354,6 @@ function App({ session }: { session: AuthSession | null }) {
       } satisfies RouteHistoryState, "", window.location.href);
     }
   }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
-
-  useEffect(() => {
-    if (syncStatus !== "blocked") return;
-    let active = true;
-    void getOutboxStatus()
-      .then((status) => {
-        if (!active) return;
-        const blocked = status.records.find((record) => record.status === "blocked" && outboxOperationDesktopIds(record).has(activeDesktopIdRef.current));
-        setError(blocked?.error ? `A queued change could not sync: ${blocked.error}` : "A queued change could not sync and needs attention.");
-      })
-      .catch(() => undefined);
-    return () => {
-      active = false;
-    };
-  }, [syncStatus]);
 
   useEffect(() => {
     let active = true;
@@ -3565,6 +3558,27 @@ function App({ session }: { session: AuthSession | null }) {
     return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
+  function retrySyncIssue(record: OutboxRecord) {
+    void retryBlockedOutboxRecord(record.operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The queued change could not be retried."));
+  }
+
+  function discardSyncIssue(record: OutboxRecord) {
+    const removesDesktop = record.error?.startsWith("Access to this desktop was revoked.") || record.operation.kind === "create-desktop";
+    void requestConfirmation({
+      title: removesDesktop ? "Remove local desktop?" : "Discard queued change?",
+      message: removesDesktop ? "This removes this desktop's local projection and every queued change that depends on it. These changes have not reached the server and cannot be recovered." : "Discard this blocked local change and restore the server version? This cannot be undone.",
+      confirmLabel: removesDesktop ? "Remove local desktop" : "Discard change",
+      danger: true,
+    }).then(async (confirmed) => {
+      if (!confirmed) return;
+      try {
+        setOutboxRecords(await discardBlockedOutboxRecord(record.operationId));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "The queued change could not be discarded.");
+      }
+    });
+  }
+
   function renderMobileStartMenu(dismiss: (restoreFocus?: boolean) => void) {
     return <>
       {session && (
@@ -3628,7 +3642,7 @@ function App({ session }: { session: AuthSession | null }) {
     </>;
   }
 
-  const shellAnnouncement = transferAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
+  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
   const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
 
@@ -3655,6 +3669,8 @@ function App({ session }: { session: AuthSession | null }) {
             <span className="desktop-action-label">Search</span>
           </button>
           <ShellNotifications
+            syncIssue={syncIssue}
+            syncIssueLabels={syncIssue ? outboxAffectedLabels(syncIssue) : []}
             messages={shellMessages}
             trashNotifications={trashNotifications}
             appNotifications={appNotifications}
@@ -3665,6 +3681,8 @@ function App({ session }: { session: AuthSession | null }) {
             updateBlocked={updateBlocked}
             announcement={shellAnnouncement}
             canViewActivity={canViewActivity}
+            onRetrySyncIssue={retrySyncIssue}
+            onDiscardSyncIssue={discardSyncIssue}
             onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
             onOpenFolderImportHelp={() => openHelp("files-and-folders")}
             onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
@@ -4537,23 +4555,8 @@ function App({ session }: { session: AuthSession | null }) {
             progress={offlineProgress}
             online={syncStatus === "online"}
             persistence={storagePersistence}
-            onRetryRecord={(record) => void retryBlockedOutboxRecord(record.operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The queued change could not be retried."))}
-            onDiscardRecord={(record) => {
-              const removesDesktop = record.error?.startsWith("Access to this desktop was revoked.") || record.operation.kind === "create-desktop";
-              void requestConfirmation({
-                title: removesDesktop ? "Remove local desktop?" : "Discard queued change?",
-                message: removesDesktop ? "This removes this desktop's local projection and every queued change that depends on it. These changes have not reached the server and cannot be recovered." : "Discard this blocked local change and restore the server version? This cannot be undone.",
-                confirmLabel: removesDesktop ? "Remove local desktop" : "Discard change",
-                danger: true,
-              }).then(async (confirmed) => {
-                if (!confirmed) return;
-                try {
-                  setOutboxRecords(await discardBlockedOutboxRecord(record.operationId));
-                } catch (reason) {
-                  setError(reason instanceof Error ? reason.message : "The queued change could not be discarded.");
-                }
-              });
-            }}
+            onRetryRecord={retrySyncIssue}
+            onDiscardRecord={discardSyncIssue}
             onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
             onReleaseAll={() => void removeDownloadedCopies()}
             onOpenHelp={() => openHelp("offline")}

@@ -5087,7 +5087,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .notification-transfer__progress::-webkit-progress-value { border-radius: inherit; background: var(--theme-status-foreground); }
 .notification-transfer__progress::-moz-progress-bar { border-radius: inherit; background: var(--theme-status-foreground); }
 .notification-card__actions { display: flex; justify-content: flex-end; gap: 8px; padding-top: 1px; }
-.notification-card .notification-action { min-width: 92px; min-height: 36px; padding: 7px 12px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); color: var(--theme-text); background: var(--theme-window-muted); font: inherit; cursor: pointer; }
+.notification-card .notification-action { display: inline-flex; min-width: 92px; min-height: 36px; align-items: center; justify-content: center; gap: 6px; padding: 7px 12px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); color: var(--theme-text); background: var(--theme-window-muted); font: inherit; cursor: pointer; }
 .notification-card .notification-action--primary { color: var(--theme-accent-text); background: var(--theme-accent); }
 .notification-card .notification-action:hover,
 .notification-card .notification-action:focus-visible { background: var(--theme-selected); }

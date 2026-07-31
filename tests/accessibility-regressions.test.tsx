@@ -287,10 +287,14 @@ describe("accessibility regressions", () => {
 
     expect(css).toContain("--layer-popover: 5000");
     expect(app).toContain("messages={shellMessages}");
+    expect(app).toContain("syncIssue={syncIssue}");
     expect(app).not.toContain("window.setTimeout(() => setNotice");
     expect(notifications).toContain('aria-haspopup="dialog"');
     expect(notifications).toContain('event.key !== "Escape"');
     expect(notifications).toContain("triggerRef.current?.focus()");
+    expect(notifications).toContain('badge="Sync issue"');
+    expect(notifications).toContain("Keep local and rebase");
+    expect(notifications).toContain("Use server version");
     expect(notifications).toContain("View activity");
     expect(notifications).toContain("Current alerts and actions will appear here.");
     expect(css).toContain(".notification-center__panel");

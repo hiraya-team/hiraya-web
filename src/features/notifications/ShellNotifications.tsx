@@ -1,15 +1,18 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
-import { Bell, ClockCounterClockwise, DownloadSimple, SpinnerGap, Tray, UploadSimple, WarningCircle } from "@phosphor-icons/react";
+import { ArrowsClockwise, Bell, ClockCounterClockwise, DownloadSimple, GitMerge, SpinnerGap, Trash, Tray, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import type { AppNotification } from "../../apps/host";
 import { NotificationCard } from "../../components/NotificationCard";
 import { UpdateToast } from "../../components/UpdateToast";
+import { isRevisionConflictRecord, type OutboxRecord } from "../../lib/outbox";
 import type { TrashNotification } from "../../lib/trash-notifications";
 import type { FileTransferState } from "../../lib/sync";
+import { outboxRecordLabel } from "../../ui/panel-data";
 import { nextNotificationOrder, nextUnreadNotificationIds } from "./controller";
 
 type ImportProgress = { folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" };
 
 type NotificationItem =
+  | { id: string; kind: "sync"; value: OutboxRecord }
   | { id: string; kind: "message"; value: ShellMessage }
   | { id: string; kind: "trash"; value: TrashNotification }
   | { id: string; kind: "app"; value: AppNotification }
@@ -25,6 +28,8 @@ export type ShellMessage = {
 };
 
 type Props = {
+  syncIssue: OutboxRecord | null;
+  syncIssueLabels: readonly string[];
   messages: readonly ShellMessage[];
   trashNotifications: readonly TrashNotification[];
   appNotifications: readonly AppNotification[];
@@ -35,6 +40,8 @@ type Props = {
   updateBlocked: boolean;
   announcement: string;
   canViewActivity: boolean;
+  onRetrySyncIssue: (record: OutboxRecord) => void;
+  onDiscardSyncIssue: (record: OutboxRecord) => void;
   onDismissMessage: (id: number) => void;
   onOpenFolderImportHelp: () => void;
   onDismissTrash: (id: string) => void;
@@ -73,13 +80,14 @@ export function ShellNotifications(props: Props) {
   const knownItemsRef = useRef<ReadonlySet<string>>(new Set());
   const itemOrderRef = useRef<readonly string[]>([]);
   const items = useMemo<NotificationItem[]>(() => [
+    ...(props.syncIssue ? [{ id: `sync:${props.syncIssue.operationId}`, kind: "sync" as const, value: props.syncIssue }] : []),
     ...props.messages.map((value) => ({ id: `message:${value.id}`, kind: "message" as const, value })),
     ...props.trashNotifications.map((value) => ({ id: `trash:${value.id}`, kind: "trash" as const, value })),
     ...props.appNotifications.map((value) => ({ id: `app:${value.owner.instanceId}:${value.id}`, kind: "app" as const, value })),
     ...props.fileTransfers.map((value) => ({ id: `transfer:${value.id}`, kind: "transfer" as const, value })),
     ...(props.importProgress ? [{ id: "import", kind: "import" as const, value: props.importProgress }] : []),
     ...(props.showUpdateToast ? [{ id: "update", kind: "update" as const }] : []),
-  ], [props.appNotifications, props.fileTransfers, props.importProgress, props.messages, props.showUpdateToast, props.trashNotifications]);
+  ], [props.appNotifications, props.fileTransfers, props.importProgress, props.messages, props.showUpdateToast, props.syncIssue, props.trashNotifications]);
   const itemIds = useMemo(() => items.map((item) => item.id), [items]);
   itemOrderRef.current = nextNotificationOrder(itemOrderRef.current, itemIds);
   const itemById = new Map(items.map((item) => [item.id, item]));
@@ -144,6 +152,15 @@ export function ShellNotifications(props: Props) {
         </header>
         <div className="notification-center__list">
           {orderedItems.map((item) => {
+            if (item.kind === "sync") {
+              const record = item.value;
+              const conflict = isRevisionConflictRecord(record);
+              return <NotificationCard badge="Sync issue" tone="danger" icon={<WarningCircle size={18} weight="fill" />} key={item.id} role="alert" actions={<><button className="notification-action notification-action--primary" type="button" onClick={() => props.onRetrySyncIssue(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{conflict ? "Keep local and rebase" : "Retry"}</button><button className="notification-action" type="button" onClick={() => props.onDiscardSyncIssue(record)}><Trash size={16} />{conflict ? "Use server version" : "Discard"}</button></>}>
+                <strong>{outboxRecordLabel(record)}</strong>
+                {props.syncIssueLabels.length > 0 && <span>{props.syncIssueLabels.join(", ")}</span>}
+                <span>{record.error || "This queued change needs attention before sync can continue."}</span>
+              </NotificationCard>;
+            }
             if (item.kind === "message") {
               const message = item.value;
               return <NotificationCard badge={message.kind === "error" ? "Error" : "Saved"} tone={message.kind === "error" ? "danger" : "neutral"} icon={message.kind === "error" ? <WarningCircle size={18} weight="fill" /> : undefined} key={item.id} dismissLabel={`Dismiss ${message.kind}`} onDismiss={() => props.onDismissMessage(message.id)} actions={message.folderImportHelp ? <button className="notification-action" type="button" onClick={props.onOpenFolderImportHelp}>Folder import help</button> : undefined}><span>{message.message}</span></NotificationCard>;
