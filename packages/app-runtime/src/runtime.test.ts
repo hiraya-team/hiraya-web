@@ -200,6 +200,7 @@ describe("app runtime", () => {
     expect(children[1]).toEqual(expect.objectContaining({ dataset: { hirayaUiFoundation: "" }, textContent: uiRuntime.styles }));
     expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaNavigationGuard: "" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
     expect(atob(children[2].src!.split(",", 2)[1])).toContain("beforeunload");
+    expect(atob(children[2].src!.split(",", 2)[1])).toContain("stop()");
     expect(atob(children[2].src!.split(",", 2)[1])).toContain("materialization-1");
     expect(children[3]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
     expect(atob(children[3].src!.split(",", 2)[1])).toBe(uiRuntime.script);
