@@ -1259,6 +1259,8 @@
 }
 
 .settings-window {
+  container-name: settings-window;
+  container-type: inline-size;
   display: flex;
   width: min(720px, calc(100vw - 40px));
   max-height: min(760px, calc(100dvh - 84px));
@@ -5637,5 +5639,41 @@ button.app-picker__disclosure { cursor: pointer; }
 .desktop-shell[data-windowed] .folder-explorer__import { display: flex !important; }
 .desktop-shell[data-windowed] .settings-window__content--main { display: grid; }
 .desktop-shell[data-windowed] .settings-page__header { display: flex; }
+.desktop-shell[data-windowed] .mobile-global-actions .mobile-header-back { display: none; }
+
+@container settings-window (max-width: 600px) {
+  .settings-window__content { padding: calc(3px * var(--theme-density)) calc(13px * var(--theme-density)) calc(14px * var(--theme-density)); }
+  .settings-window__content--main { display: block !important; }
+  .settings-ia-categories { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
+  .settings-ia-categories button { flex: 0 0 auto; scroll-snap-align: start; }
+  .settings-scope-summary { align-items: flex-start; flex-direction: column; }
+  .settings-section { padding-block: calc(16px * var(--theme-density)); }
+  .wallpaper-options { grid-template-columns: 1fr; }
+  .wallpaper-option { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; }
+  .wallpaper-option__preview { height: 57px; }
+  .wallpaper-option__copy small { white-space: normal; }
+  .wallpaper-custom__current { grid-template-columns: 50px minmax(0, 1fr); }
+  .wallpaper-custom__current > .button { grid-column: 1 / -1; }
+  .wallpaper-custom__thumbnail { width: 50px; }
+  .wallpaper-custom__actions { align-items: stretch; flex-direction: column; }
+  .wallpaper-controls { grid-template-columns: 1fr; }
+  .settings-export { align-items: flex-start; flex-direction: column; }
+  .theme-item { align-items: stretch; flex-direction: column; }
+  .theme-item__action { align-self: flex-end; }
+  .theme-item__actions,
+  .installed-app__actions { flex-wrap: wrap; }
+  .theme-colors { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .theme-control { grid-template-columns: 1fr; gap: 4px; }
+  .theme-control__inputs { grid-template-columns: minmax(80px, 1fr) 64px; }
+  .theme-editor { padding: calc(10px * var(--theme-density)); }
+  .theme-editor__warning { align-items: stretch; flex-direction: column; }
+  .theme-editor__warning .button { align-self: start; }
+  .settings-page--apps .settings-section__heading,
+  .settings-page--apps .settings-row { align-items: stretch; flex-direction: column; }
+  .settings-page--apps .settings-row select { max-width: none; }
+  .activity-item { grid-template-columns: 18px minmax(0, 1fr); }
+  .activity-item__meta { align-items: flex-start; flex-direction: column; gap: 5px; }
+  .activity-item__open { grid-column: 2; justify-self: start; margin: -8px 0 14px; }
+}
 
 .context-menu[data-positioned] { position: fixed; width: min(310px, calc(100vw - 16px)); }

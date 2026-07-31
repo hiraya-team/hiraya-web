@@ -1,5 +1,5 @@
 import AxeBuilder from "@axe-core/playwright";
-import { devices, expect, test, type Page } from "@playwright/test";
+import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
 async function openLocalDesktop(page: Page) {
   await page.goto("/");
@@ -8,6 +8,13 @@ async function openLocalDesktop(page: Page) {
   await expect(onboarding).toBeVisible();
   await onboarding.click();
   await expect(onboarding).toBeHidden();
+}
+
+async function resizeWindowWidth(page: Page, appWindow: Locator, width: number) {
+  for (let step = 0; step < 30 && ((await appWindow.boundingBox())?.width ?? 0) > width + 2; step += 1) {
+    await page.keyboard.press("Alt+Control+ArrowLeft");
+  }
+  await expect.poll(async () => Math.round((await appWindow.boundingBox())?.width ?? 0)).toBeLessThanOrEqual(width + 2);
 }
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
@@ -132,6 +139,64 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(menu).toBeVisible();
   await expect(menu).toHaveAttribute("data-positioned", "true");
   await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
+});
+
+test("Settings adapts to its window and preserves subpage navigation", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+
+  const settingsWindow = page.locator('[data-app-window="settings"]');
+  const settingsContent = settingsWindow.locator(".settings-window__content");
+  await expect(settingsWindow).toBeVisible();
+  await expect(settingsWindow.locator(".settings-window__content--main")).toHaveCSS("display", "grid");
+
+  await resizeWindowWidth(page, settingsWindow, 600);
+  await expect(settingsWindow.locator(".settings-window__content--main")).toHaveCSS("display", "block");
+  await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+
+  const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
+  await themesLauncher.focus();
+  await page.keyboard.press("Enter");
+  await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
+  await expect(settingsWindow.locator(".wallpaper-options")).toHaveCSS("grid-template-columns", /^(?!.*\s).+$/);
+  await settingsWindow.getByRole("button", { name: "Duplicate / edit" }).first().click();
+  await expect.poll(() => settingsWindow.locator(".theme-control").first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
+  await expect(themesLauncher).toBeFocused();
+
+  const categories = settingsWindow.getByRole("navigation", { name: "Settings categories" });
+  await categories.getByRole("button", { name: "Apps & permissions" }).click();
+  const appsLauncher = settingsWindow.locator('[aria-labelledby="apps-link-heading"] .settings-row--navigation');
+  await appsLauncher.click();
+  await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
+  await expect(settingsWindow.locator(".installed-app__actions").first()).toHaveCSS("flex-wrap", "wrap");
+  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
+  await expect(appsLauncher).toBeFocused();
+
+  await resizeWindowWidth(page, settingsWindow, 360);
+  await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await categories.getByRole("button", { name: "Data & admin" }).click();
+  const activityLauncher = settingsWindow.locator('[aria-labelledby="activity-link-heading"] .settings-row--navigation');
+  await activityLauncher.click();
+  await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
+  const narrowResults = await new AxeBuilder({ page }).include(".settings-window").analyze();
+  expect(narrowResults.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and windows/ }).click();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  const mobileSettings = mobilePage.locator('[data-app-window="settings"]');
+  const mobileThemesLauncher = mobileSettings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
+  await mobileThemesLauncher.click();
+  const mobileBack = mobilePage.getByRole("button", { name: "Back to settings" });
+  await expect(mobileBack).toBeVisible();
+  await expect(mobileBack).toBeFocused();
+  await mobileBack.click();
+  await expect(mobileThemesLauncher).toBeFocused();
+  await mobileContext.close();
 });
 
 test("reduced motion disables desktop transitions and animations", async ({ page }) => {

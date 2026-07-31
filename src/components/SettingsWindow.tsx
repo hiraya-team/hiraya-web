@@ -245,6 +245,7 @@ export function SettingsWindow({
   const mainThemesButtonRef = useRef<HTMLButtonElement>(null);
   const mainActivityButtonRef = useRef<HTMLButtonElement>(null);
   const mainAppsButtonRef = useRef<HTMLButtonElement>(null);
+  const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
   const themesHeadingRef = useRef<HTMLHeadingElement>(null);
   const activityHeadingRef = useRef<HTMLHeadingElement>(null);
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -384,10 +385,18 @@ export function SettingsWindow({
     setDraft(null);
   };
 
+  const focusSubpage = (heading: { current: HTMLHeadingElement | null }) => {
+    requestAnimationFrame(() => {
+      const mobileBack = mobileBackButtonRef.current;
+      if (mobileBack?.getClientRects().length) mobileBack.focus();
+      else heading.current?.focus();
+    });
+  };
+
   const openThemes = () => {
     contentRef.current?.scrollTo({ top: 0 });
     onPageChange("themes");
-    if (!mobileHeaderElements) requestAnimationFrame(() => themesHeadingRef.current?.focus());
+    focusSubpage(themesHeadingRef);
   };
 
   const closeThemes = () => {
@@ -401,7 +410,7 @@ export function SettingsWindow({
   const openActivity = () => {
     contentRef.current?.scrollTo({ top: 0 });
     onPageChange("activity");
-    if (!mobileHeaderElements) requestAnimationFrame(() => activityHeadingRef.current?.focus());
+    focusSubpage(activityHeadingRef);
   };
 
   const closeActivity = () => {
@@ -409,16 +418,16 @@ export function SettingsWindow({
     onPageChange("main");
     requestAnimationFrame(() => mainActivityButtonRef.current?.focus());
   };
-  const openApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("apps"); if (!mobileHeaderElements) requestAnimationFrame(() => appsHeadingRef.current?.focus()); };
+  const openApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("apps"); focusSubpage(appsHeadingRef); };
   const closeApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); requestAnimationFrame(() => mainAppsButtonRef.current?.focus()); };
 
   return (
     <div className="settings-window settings-window--embedded">
-      {page !== "main" && mobileHeaderElements?.leading && createPortal(
-        <button className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" disabled={page === "themes" && saving} onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : closeActivity}>
+      {page !== "main" && mobileHeaderElements?.actions && createPortal(
+        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" disabled={page === "themes" && saving} onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : closeActivity}>
           <ArrowLeft size={18} />
         </button>,
-        mobileHeaderElements.leading,
+        mobileHeaderElements.actions,
       )}
       <div className={`settings-window__content${page === "main" ? " settings-window__content--main" : ""}`} ref={contentRef}>
          {page === "main" ? (
