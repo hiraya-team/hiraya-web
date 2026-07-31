@@ -115,7 +115,7 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
 
 export default function PublicDesktop({ token }: { token: string }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
-  const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, loadFile, resolveLinkedFile } = usePublicDesktop(token);
+  const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, resolveLinkedFile } = usePublicDesktop(token);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
@@ -184,8 +184,10 @@ export default function PublicDesktop({ token }: { token: string }) {
       </header>
       <section
         className="desktop public-desktop__surface"
-        data-wallpaper={wallpaper?.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
+        data-loading={!desktop || undefined}
+        data-wallpaper={wallpaper?.source.startsWith("file:") ? "file" : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
         data-custom-loaded={wallpaperUrl || undefined}
+        data-custom-failed={wallpaperFailed || undefined}
         style={
           {
             "--wallpaper-image": wallpaperUrl ? `url(${wallpaperUrl})` : "none",

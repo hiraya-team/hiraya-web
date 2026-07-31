@@ -224,6 +224,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
+  const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
   const [exporting, setExporting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
@@ -1763,6 +1764,7 @@ function App({ session }: { session: AuthSession | null }) {
   const wallpaperKey = wallpaperFileId && activeDesktopId ? `${activeDesktopId}:${wallpaperFileId}:${wallpaperContentRevision}` : null;
   const wallpaperLoadReady = true;
   const wallpaperUrl = wallpaperAsset?.key === wallpaperKey ? wallpaperAsset.url : null;
+  const wallpaperFailed = wallpaperFailedKey === wallpaperKey;
   const themePackageCache = useMemo<ThemePackageCache | undefined>(() => activeDesktopId ? {
     readVerified: (themeId, expected) => readCachedThemePackage(activeDesktopId, themeId, expected),
     write: (themeId, expected, content) => cacheThemePackage(activeDesktopId, themeId, expected, content),
@@ -1772,6 +1774,7 @@ function App({ session }: { session: AuthSession | null }) {
     const previous = wallpaperAssetRef.current;
     wallpaperAssetRef.current = null;
     setWallpaperAsset(null);
+    setWallpaperFailedKey(null);
     if (previous) URL.revokeObjectURL(previous.url);
   }, [wallpaperKey]);
 
@@ -1787,7 +1790,7 @@ function App({ session }: { session: AuthSession | null }) {
         setWallpaperAsset(next);
         if (previous) URL.revokeObjectURL(previous.url);
       })
-      .catch(() => undefined);
+      .catch(() => { if (active) setWallpaperFailedKey(wallpaperKey); });
     return () => {
       active = false;
     };
@@ -3686,8 +3689,10 @@ function App({ session }: { session: AuthSession | null }) {
         data-area-transitioning={areaTransition || undefined}
         data-area-transition-phase={areaTransition?.phase}
         data-area-transition-kind={areaTransition?.kind}
-        data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
+        data-loading={loading || undefined}
+        data-wallpaper={layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
+        data-custom-failed={wallpaperFailed || undefined}
         style={
           {
             "--wallpaper-image": wallpaperUrl ? `url(${wallpaperUrl})` : "none",

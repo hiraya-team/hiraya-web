@@ -321,6 +321,27 @@
   visibility: hidden;
 }
 
+.desktop:is(
+  [data-loading],
+  [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
+  [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
+) {
+  background: var(--theme-shell);
+}
+
+.desktop:is(
+  [data-loading],
+  [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
+  [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
+)::before,
+.desktop:is(
+  [data-loading],
+  [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
+  [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
+)::after {
+  display: none;
+}
+
 .wallpaper-dim {
   z-index: -2;
 }

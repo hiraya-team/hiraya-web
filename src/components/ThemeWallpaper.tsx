@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
-import type { CustomTheme } from "../domain/theme";
+import type { CustomTheme, ThemeWallpaperPackage } from "../domain/theme";
 import type { ThemePackageCache } from "../lib/theme-package";
 
 type Props = { theme: CustomTheme; accessUrl: string; cache?: ThemePackageCache };
@@ -32,14 +32,14 @@ function SceneWallpaper({ loaded, ready, onReady, onError }: { loaded: Extract<L
 export function ThemeWallpaper({ theme, accessUrl, cache }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [ready, setReady] = useState(false);
-  const [visible, setVisible] = useState(document.visibilityState !== "hidden");
+  const [failed, setFailed] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
-
-  useEffect(() => {
-    const update = () => setVisible(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", update);
-    return () => document.removeEventListener("visibilitychange", update);
-  }, []);
+  const assetId = theme.wallpaper?.assetId;
+  const kind = theme.wallpaper?.kind;
+  const size = theme.wallpaper?.size;
+  const sha256 = theme.wallpaper?.sha256;
+  const revision = theme.wallpaper?.revision;
+  const motionFallback = reducedMotion && kind !== "static";
 
   useEffect(() => {
     const query = matchMedia("(prefers-reduced-motion: reduce)");
@@ -50,10 +50,11 @@ export function ThemeWallpaper({ theme, accessUrl, cache }: Props) {
   }, []);
 
   useEffect(() => {
-    const packaged = theme.wallpaper;
     setReady(false);
     setLoaded(null);
-    if (!visible || !packaged || reducedMotion && packaged.kind !== "static") return;
+    setFailed(false);
+    if (!assetId || !kind || size === undefined || !sha256 || revision === undefined || motionFallback) return;
+    const packaged: ThemeWallpaperPackage = { assetId, kind, size, sha256, revision };
     const controller = new AbortController();
     let resource: Loaded | null = null;
     void import("../lib/theme-package").then(async ({ fetchThemePackage, materializeThemeScene, wallpaperAssetBlob, THEME_SCENE_CSP }) => {
@@ -67,19 +68,20 @@ export function ThemeWallpaper({ theme, accessUrl, cache }: Props) {
         resource = { kind: inspection.manifest.wallpaper?.entrypoint.match(/\.(?:mp4|webm)$/i) ? "video" : "image", url, revoke: () => URL.revokeObjectURL(url) };
       }
       setLoaded(resource);
-    }).catch(() => undefined);
+    }).catch(() => { if (!controller.signal.aborted) setFailed(true); });
     return () => { controller.abort(); resource?.revoke(); setLoaded(null); };
-  }, [accessUrl, cache, reducedMotion, theme, visible]);
+  }, [accessUrl, assetId, cache, kind, motionFallback, revision, sha256, size, theme.id]);
 
-  const failed = useCallback(() => {
+  const fail = useCallback(() => {
     setReady(false);
+    setFailed(true);
     setLoaded((current) => { current?.revoke(); return null; });
   }, []);
   const succeeded = useCallback(() => setReady(true), []);
   return <>
-    <div className="wallpaper-image" aria-hidden="true" />
-    {loaded?.kind === "scene" && <SceneWallpaper loaded={loaded} ready={ready} onReady={succeeded} onError={failed} />}
-    {loaded?.kind === "video" && <video className="wallpaper-video" data-ready={ready || undefined} aria-hidden="true" inert src={loaded.url} autoPlay loop muted playsInline onCanPlay={succeeded} onError={failed} />}
-    {loaded?.kind === "image" && <img className="wallpaper-media" data-ready={ready || undefined} aria-hidden="true" inert draggable={false} src={loaded.url} alt="" onLoad={succeeded} onError={failed} />}
+    <div className="wallpaper-image" data-wallpaper-pending={!ready && !failed && !motionFallback || undefined} aria-hidden="true" />
+    {loaded?.kind === "scene" && <SceneWallpaper loaded={loaded} ready={ready} onReady={succeeded} onError={fail} />}
+    {loaded?.kind === "video" && <video className="wallpaper-video" data-ready={ready || undefined} aria-hidden="true" inert src={loaded.url} autoPlay loop muted playsInline onCanPlay={succeeded} onError={fail} />}
+    {loaded?.kind === "image" && <img className="wallpaper-media" data-ready={ready || undefined} aria-hidden="true" inert draggable={false} src={loaded.url} alt="" onLoad={succeeded} onError={fail} />}
   </>;
 }

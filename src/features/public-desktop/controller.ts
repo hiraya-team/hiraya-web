@@ -12,6 +12,7 @@ export function usePublicDesktop(token: string) {
   const fileLoadGenerationRef = useRef(0);
   const [downloadGate, setDownloadGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
+  const [wallpaperFailed, setWallpaperFailed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,6 +30,7 @@ export function usePublicDesktop(token: string) {
 
   useEffect(() => {
     setWallpaperUrl("");
+    setWallpaperFailed(false);
     const source = desktop?.layout.wallpaper.source;
     if (!desktop || !source?.startsWith("file:")) return;
     const file = desktop.entries.find((entry) => entry.id === source.slice(5));
@@ -42,7 +44,7 @@ export function usePublicDesktop(token: string) {
         objectUrl = URL.createObjectURL(blob);
         setWallpaperUrl(objectUrl);
       })
-      .catch(() => undefined);
+      .catch(() => { if (!disposed) setWallpaperFailed(true); });
     return () => {
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
@@ -95,6 +97,7 @@ export function usePublicDesktop(token: string) {
     downloadGate,
     dismissDownloadGate: () => setDownloadGate(null),
     wallpaperUrl,
+    wallpaperFailed,
     loadFile,
     resolveLinkedFile,
   };
