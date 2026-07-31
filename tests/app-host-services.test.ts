@@ -4,7 +4,6 @@ import { BUILTIN_THEMES } from "../src/lib/themes";
 import {
   AppHostServices,
   AppLifecycleService,
-  AppMemoryStorageService,
   AppPersistentStorageService,
   AppNotificationService,
   AppThemeService,
@@ -15,6 +14,9 @@ import {
 
 const windowState: WindowState = { focused: true, maximized: false, fullscreen: false, width: 640, height: 480 };
 const themeDefinition = BUILTIN_THEMES["hiraya-dusk"].definition;
+const emptyStorage = {
+  forInstance: () => ({ get: async () => undefined, set: async () => undefined, remove: async () => undefined, clear: async () => undefined }),
+};
 
 function launch(appId = "test.editor", launchId = "launch-1"): LaunchContext {
   return { protocolVersion: 1, appId, launchId, source: "launcher", files: [], folders: [], arguments: [], theme: mapThemeTokens(themeDefinition) };
@@ -23,7 +25,7 @@ function launch(appId = "test.editor", launchId = "launch-1"): LaunchContext {
 describe("app host context", () => {
   test("binds service calls to an instance and cleans up transient work on close", async () => {
     const lifecycle = new AppLifecycleService();
-    const host = new AppHostServices(lifecycle, new AppThemeService(themeDefinition));
+    const host = new AppHostServices(lifecycle, new AppThemeService(themeDefinition), emptyStorage);
     const context = host.openInstance({ instanceId: "one", launch: launch(), window: windowState, title: "Editor" });
     const dialog = context.dialogs.confirm({ title: "Continue?", message: "There are changes." });
     const notification = await context.notifications.show({ title: "Saved" });
@@ -43,7 +45,7 @@ describe("app host context", () => {
   });
 
   test("publishes FIFO dialog requests for a future renderer", async () => {
-    const host = new AppHostServices(new AppLifecycleService(), new AppThemeService(themeDefinition));
+    const host = new AppHostServices(new AppLifecycleService(), new AppThemeService(themeDefinition), emptyStorage);
     const context = host.openInstance({ instanceId: "one", launch: launch(), window: windowState, title: "Editor" });
     const snapshots: string[][] = [];
     host.dialogs.subscribe((requests) => snapshots.push(requests.map(({ kind }) => kind)));
@@ -125,21 +127,6 @@ describe("bounded app services", () => {
     expect(first.set("large", "x".repeat(20))).rejects.toMatchObject({ code: "QUOTA_EXCEEDED" });
     await first.clear();
     expect(await first.get("state")).toBeUndefined();
-  });
-
-  test("shares isolated app-scoped storage without leaking object references", async () => {
-    const storage = new AppMemoryStorageService(80);
-    const first = storage.forInstance({ appId: "test.editor", instanceId: "one" });
-    const second = storage.forInstance({ appId: "test.editor", instanceId: "two" });
-    const other = storage.forInstance({ appId: "test.viewer", instanceId: "one" });
-    const value = { nested: [1] };
-    await first.set("settings", value);
-    value.nested.push(2);
-
-    expect(await second.get("settings")).toEqual({ nested: [1] });
-    expect(await other.get("settings")).toBeUndefined();
-    expect(first.set("large", "x".repeat(100))).rejects.toMatchObject({ code: "QUOTA_EXCEEDED" });
-    expect(await first.get("large")).toBeUndefined();
   });
 
   test("bounds notifications and enforces instance ownership", async () => {

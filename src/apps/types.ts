@@ -27,10 +27,3 @@ export type BuiltinAppEntryDependency = {
   entryId: string;
   kind: "entry" | "file" | "folder";
 };
-
-export type BuiltinAppDefinition<TTarget extends BuiltinAppTarget> = {
-  window: BuiltinAppWindow;
-  extractTarget: (value: Record<string, unknown>) => TTarget | null;
-  targetId: (target: TTarget) => string;
-  entryDependency: (target: TTarget) => BuiltinAppEntryDependency | null;
-};

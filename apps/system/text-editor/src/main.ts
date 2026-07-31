@@ -1,5 +1,5 @@
 import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, readFileData, required, writeFileData } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, required } from "@hiraya/system-apps-shared";
 import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
 import "./style.css";
 
@@ -93,7 +93,7 @@ async function statFile(next: FileHandle) {
 
 async function read(next: FileHandle, entry?: FileMetadata) {
   entry ??= await statFile(next);
-  const data = await readFileData(hiraya, next);
+  const { data } = await hiraya.files.readAll(next);
   return { entry, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
 }
 
@@ -151,7 +151,7 @@ async function save(saveAs: boolean) {
     const text = settings.autoFormat ? formatText(name, sourceText) : sourceText;
     const bytes = new TextEncoder().encode(text);
     if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, documentState.dirty), documentState.dirty); return; }
-    const saved = await writeFileData(hiraya, destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
+    const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
     handle = destination;
     name = saved.name;
     documentState.saved(sourceText, text, saved.contentRevision);

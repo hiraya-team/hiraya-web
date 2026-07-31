@@ -44,10 +44,6 @@ function owningEntry(event: Event): MenuEntry | null {
   return event.composedPath().find((target): target is MenuEntry => target instanceof Element && isMenuEntry(target)) ?? null;
 }
 
-const menuSurfaceStyles = `
-  .surface { display: block; min-inline-size: 11rem; padding: var(--hiraya-space-1, .25rem); border: 1px solid var(--hiraya-border, #526a60); border-radius: var(--hiraya-radius-panel, .75rem); color: var(--hiraya-text, #f5eedc); background: var(--hiraya-surface-elevated, #20352d); box-shadow: var(--hiraya-shadow-panel, 0 1rem 3rem rgb(0 0 0 / .3)); }
-`;
-
 export class HirayaMenuItem extends HTMLElementBase {
   static readonly observedAttributes = ["disabled", "value"];
   readonly #item: HTMLElement;
@@ -95,7 +91,10 @@ export class HirayaMenu extends HTMLElementBase {
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
-    root.innerHTML = `<style>${elementStyles}${menuSurfaceStyles}:host { display: block; }</style><div class="surface" part="menu" role="menu"><slot></slot></div>`;
+    root.innerHTML = `<style>${elementStyles}
+      :host { display: block; }
+      .surface { display: block; min-inline-size: 11rem; padding: var(--hiraya-space-1, .25rem); border: 1px solid var(--hiraya-border, #526a60); border-radius: var(--hiraya-radius-panel, .75rem); color: var(--hiraya-text, #f5eedc); background: var(--hiraya-surface-elevated, #20352d); box-shadow: var(--hiraya-shadow-panel, 0 1rem 3rem rgb(0 0 0 / .3)); }
+    </style><div class="surface" part="menu" role="menu"><slot></slot></div>`;
     this.#slot = root.querySelector<HTMLSlotElement>("slot")!;
     this.#slot.addEventListener("slotchange", () => syncRovingTabIndex(this.#slot));
     this.addEventListener("focusin", (event) => this.#onFocusIn(event));

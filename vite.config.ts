@@ -23,8 +23,6 @@ export default defineConfig(({ mode }) => {
       systemAppsPlugin(process.cwd()),
       react(),
       VitePWA({
-        injectRegister: null,
-        registerType: "prompt",
         useCredentials: true,
         includeAssets: ["favicon.png", "apple-touch-icon.png", "logo.png"],
         manifest: {
@@ -33,17 +31,15 @@ export default defineConfig(({ mode }) => {
           description: "A private, browser-native desktop for your files.",
           theme_color: "#24333b",
           background_color: "#172329",
-          display: "standalone",
           start_url: ".",
           scope: ".",
           icons: [
             { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
-            { src: "pwa-512x512.png", sizes: "512x512", type: "image/png" },
+            { src: "logo.png", sizes: "512x512", type: "image/png" },
             { src: "pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
           ],
         },
         workbox: {
-          cleanupOutdatedCaches: true,
           globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
           navigateFallbackDenylist: navigationFallbackDenylist,
         },

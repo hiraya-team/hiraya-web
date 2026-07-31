@@ -2,7 +2,7 @@ import type { AppCapabilities, LaunchContext, WindowState } from "@hiraya/apps-c
 import { AppDialogService, type AppDialogApi } from "./dialogs";
 import { AppLifecycleService, type AppWindowApi } from "./lifecycle";
 import { AppNotificationService, type AppNotificationApi } from "./notifications";
-import { AppMemoryStorageService, type AppStorageApi } from "./storage";
+import type { AppStorageApi } from "./storage";
 import { AppThemeService } from "./theme";
 import { unavailable, type AppInstanceOwner } from "./types";
 
@@ -36,7 +36,7 @@ export class AppHostServices {
   constructor(
     readonly lifecycle: AppLifecycleService,
     readonly theme: AppThemeService,
-    storage: { forInstance(owner: AppInstanceOwner): AppStorageApi } = new AppMemoryStorageService(),
+    storage: { forInstance(owner: AppInstanceOwner): AppStorageApi },
   ) {
     this.storage = storage;
   }

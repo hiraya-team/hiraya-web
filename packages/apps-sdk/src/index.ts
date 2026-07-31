@@ -309,7 +309,7 @@ export class HirayaClient {
     const target = this.themeTarget ?? defaultThemeTarget();
     if (!target) return;
     target.dataset.theme = theme.mode;
-    for (const name of THEME_TOKEN_NAMES) target.style.setProperty(`--hiraya-${toKebabCase(name)}`, theme[name]);
+    for (const name of THEME_TOKEN_NAMES) target.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, theme[name]);
   }
 }
 
@@ -367,8 +367,4 @@ function messageId(value: unknown): string | undefined {
 
 function defaultThemeTarget(): ThemeTarget | undefined {
   return typeof document === "undefined" ? undefined : document.documentElement;
-}
-
-function toKebabCase(value: string): string {
-  return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }

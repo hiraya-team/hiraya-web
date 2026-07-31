@@ -1,5 +1,5 @@
 import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, formatBytes, LatestOperation, readFileData, required } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, formatBytes, LatestOperation, required } from "@hiraya/system-apps-shared";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
@@ -15,7 +15,7 @@ async function start() { try { const app = await connectSystemApp(APP_ID); hiray
 async function open() { const generation = operations.begin(); try { const selected = await hiraya.dialogs.openFile({ multiple: false, mimeTypes: ["image/avif", "image/bmp", "image/gif", "image/jpeg", "image/png", "image/svg+xml", "image/webp", "image/x-icon"] }); if (selected?.[0] && operations.isLatest(generation)) await load(selected[0], generation); } catch (error) { if (operations.isLatest(generation)) fail(error, "Could not open the image."); } }
 async function load(handle: FileHandle, generation = operations.begin()) {
   const entry = await hiraya.files.stat(handle); if (!operations.isLatest(generation)) return; if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const data = await readFileData(hiraya, handle); if (!operations.isLatest(generation)) return; const nextUrl = URL.createObjectURL(new Blob([data], { type: entry.metadata.mimeType }));
+  const { data } = await hiraya.files.readAll(handle); if (!operations.isLatest(generation)) return; const nextUrl = URL.createObjectURL(new Blob([data], { type: entry.metadata.mimeType }));
   const next = new Image(); next.src = nextUrl; try { await next.decode(); } catch (error) { URL.revokeObjectURL(nextUrl); throw error; } if (!operations.isLatest(generation)) { URL.revokeObjectURL(nextUrl); return; } clearUrl(); url = nextUrl; viewer.alt = entry.metadata.name; viewer.rotation = 0; viewer.src = nextUrl; viewer.hidden = false; empty.hidden = true; viewer.fit();
   required("#title").textContent = entry.metadata.name; status.textContent = `${next.naturalWidth} × ${next.naturalHeight} · ${formatBytes(entry.metadata.size)}`; await hiraya.window.setTitle(`${entry.metadata.name} - Image Viewer`);
 }

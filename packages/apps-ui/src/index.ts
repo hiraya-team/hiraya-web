@@ -34,7 +34,7 @@ export function applyThemeTokens(theme: ThemeTokens, options: ApplyThemeOptions 
   const target = options.target ?? defaultTarget();
   target.dataset.theme = theme.mode;
   for (const name of TOKEN_NAMES) {
-    target.style.setProperty(`--hiraya-${toKebabCase(name)}`, theme[name]);
+    target.style.setProperty(`--hiraya-${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, theme[name]);
   }
 }
 
@@ -50,8 +50,4 @@ export function bindTheme(source: ThemeSource, initialTheme: ThemeTokens, option
 function defaultTarget(): ThemeTarget {
   if (typeof document === "undefined") throw new Error("applyThemeTokens requires a target outside the browser.");
   return document.documentElement;
-}
-
-function toKebabCase(value: string): string {
-  return value.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
 }

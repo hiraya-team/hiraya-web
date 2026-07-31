@@ -2,8 +2,6 @@ import { parseManifestV2, type AppPackageInspection } from "@hiraya/apps-contrac
 import { parse } from "parse5";
 import { unzipSync } from "fflate";
 
-export type { AppPackageInspection } from "@hiraya/apps-contracts";
-
 export const APP_ARCHIVE_EXTENSION = ".hiraya.app";
 export const APP_MANIFEST_PATH = "hiraya.app.json";
 export const APP_ARCHIVE_LIMITS = {

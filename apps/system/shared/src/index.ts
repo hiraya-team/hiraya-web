@@ -1,4 +1,4 @@
-import { connectHiraya, HirayaSdkError, type FileHandle, type FileMetadata, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
 
 export interface ConnectedApp {
   hiraya: HirayaClient;
@@ -29,20 +29,12 @@ export async function connectSystemApp(appId: string): Promise<ConnectedApp> {
   }
 }
 
-export async function readFileData(hiraya: HirayaClient, handle: FileHandle): Promise<ArrayBuffer> {
-  return (await hiraya.files.readAll(handle)).data;
-}
-
 export function relativeReader(hiraya: HirayaClient): (from: FileHandle | FolderHandle, path: string) => Promise<{ data: ArrayBuffer; mimeType: string }> {
   return async (from, path) => {
     const entry = await hiraya.files.resolve(from, path);
     if (entry.kind !== "file") throw new TypeError("The relative path does not reference a file.");
-    return { data: await readFileData(hiraya, entry.metadata.handle), mimeType: entry.metadata.mimeType };
+    return { data: (await hiraya.files.readAll(entry.metadata.handle)).data, mimeType: entry.metadata.mimeType };
   };
-}
-
-export async function writeFileData(hiraya: HirayaClient, handle: FileHandle, data: ArrayBuffer, options: { mimeType: string; expectedRevision?: number }): Promise<FileMetadata> {
-  return hiraya.files.writeAll(handle, data, options);
 }
 
 export function describeError(error: unknown, fallback: string): string {

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import {
-  BUILTIN_APP_REGISTRY,
   builtinAppEntryDependency,
   builtinAppTargetId,
   builtinAppTargetOpensFile,
@@ -9,10 +8,6 @@ import {
 } from "../src/apps/registry";
 
 describe("built-in app registry", () => {
-  test("contains only the persisted phase 1 app kinds", () => {
-    expect(Object.keys(BUILTIN_APP_REGISTRY)).toEqual(["file", "explorer", "properties", "settings"]);
-  });
-
   test("extracts normalized targets from runtime app state", () => {
     expect(extractBuiltinAppTarget({ kind: "file", fileId: "file", editMode: true, blob: new Blob() })).toEqual({ kind: "file", fileId: "file", editMode: true });
     expect(extractBuiltinAppTarget({ kind: "file", fileId: "file", editMode: false })).toEqual({ kind: "file", fileId: "file" });

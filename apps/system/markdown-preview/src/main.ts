@@ -1,5 +1,5 @@
 import type { FileHandle, FolderHandle, HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, LatestOperation, readFileData, relativeReader, required } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, LatestOperation, relativeReader, required } from "@hiraya/system-apps-shared";
 import { renderMarkdown } from "./markdown";
 import "./style.css";
 
@@ -42,7 +42,7 @@ async function open() {
 }
 async function load(handle: FileHandle, generation = contentOperations.begin()) {
   const entry = await hiraya.files.stat(handle); if (!contentOperations.isLatest(generation)) return; if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const data = await readFileData(hiraya, handle); if (!contentOperations.isLatest(generation)) return;
+  const { data } = await hiraya.files.readAll(handle); if (!contentOperations.isLatest(generation)) return;
   currentSource = new TextDecoder().decode(data);
   currentRelativeHandle = relativeFolder ?? handle;
   await renderDocument(renderOperations.begin()); if (!contentOperations.isLatest(generation)) return;

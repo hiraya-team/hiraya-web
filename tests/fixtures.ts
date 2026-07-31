@@ -22,8 +22,6 @@ export function remoteDesktopState() {
     schemaVersion: 1 as const,
     catalogId: "catalog-1",
     catalogRevision: 1,
-    id: "desk",
-    name: "Desktop",
     ...remoteDesktopIdentity(),
     entries: [{
       kind: "file",
