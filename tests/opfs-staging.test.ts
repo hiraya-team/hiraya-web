@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, rollbackSafeReplacement, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, rollbackSafeReplacement, saveApprovedPackageArchive, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
 describe("pending content staging", () => {
+  test("rejects approved package archives that do not match their content address", async () => {
+    await expect(saveApprovedPackageArchive("not-a-digest", new Blob(["package"]))).rejects.toThrow("digest is invalid");
+    await expect(saveApprovedPackageArchive("a".repeat(64), new Blob(["package"]))).rejects.toThrow("does not match");
+  });
+
   test("detects same-size remote cache corruption from the persisted descriptor digest", async () => {
     const marker = { catalogId: "catalog", contentRevision: 4, size: 4, sha256: "88d4266fd4e6338d13b845fcf289579d209c897823b9217da3e161936f031589" };
     expect(await contentMatchesCacheMarker(new Blob(["abcd"]), marker)).toBe(true);

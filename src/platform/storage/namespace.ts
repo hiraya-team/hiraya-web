@@ -2,6 +2,7 @@ export const FILES_DIRECTORY = "files";
 export const PENDING_DIRECTORY = "pending";
 export const CONTENT_CACHE_DIRECTORY = ".hiraya-content-cache";
 export const LOCAL_MUTATIONS_DIRECTORY = ".hiraya-local-mutations";
+export const APPROVED_PACKAGE_ARCHIVES_DIRECTORY = ".hiraya-approved-package-archives";
 export const LOCAL_STORAGE_ID = "hiraya-local";
 export const FRONTEND_ONLY = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 

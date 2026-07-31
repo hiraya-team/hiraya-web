@@ -13,9 +13,10 @@ export type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: bool
 export type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
 export type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string | null };
 export type SettingsApp = BaseRunningApp & { kind: "settings" };
+export type StoreApp = BaseRunningApp & { kind: "store" };
 export type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
 export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
-export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | SandboxApp;
+export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | SandboxApp;
 
 export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
   return apps.flatMap((app): WindowTarget[] => {

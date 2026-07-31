@@ -15,6 +15,20 @@ describe("installed apps", () => {
     expect(() => parseInstalledApp({ ...install(), manifest: { ...install().manifest, uiRuntime: 2 } })).toThrow("UI runtime");
   });
 
+  test("parses store provenance without changing legacy desktop records", () => {
+    const legacy = { ...install() } as Record<string, unknown>;
+    delete legacy.source;
+    delete legacy.archivePath;
+    expect(parseInstalledApp(legacy)).toEqual(install());
+
+    const stored = parseInstalledApp({ ...install(), source: "store", sourceCatalogId: "catalog-a", sourceDesktopId: "desktop-a", sourceContentRevision: 7 });
+    expect(stored).toEqual({ ...install(), source: "store", sourceCatalogId: "catalog-a", sourceDesktopId: "desktop-a", sourceContentRevision: 7 });
+    expect(installedAppIsAvailable(stored, [])).toBe(true);
+    expect(() => parseInstalledApp({ ...stored, sourceContentRevision: -1 })).toThrow("source");
+    expect(() => parseInstalledApp({ ...stored, sourceDesktopId: null })).toThrow("source");
+    expect(() => parseInstalledApp({ ...install(), sourceCatalogId: "catalog-a" })).toThrow("source metadata");
+  });
+
   test("reads back quarantined app IDs through the manifest limit", () => {
     const appId = `app.${"a".repeat(157)}`;
     const quarantined = { appId, packageEntryId: "package-one", digest: "a".repeat(64), version: "1.0.0", manifest: { name: "Recovered" }, approvedAt: 10, storage: [] };

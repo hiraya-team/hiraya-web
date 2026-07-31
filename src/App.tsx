@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, BookOpenText, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, BookOpenText, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Package, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -131,7 +131,7 @@ import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sh
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
-import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp } from "./features/windows/model";
+import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
@@ -144,13 +144,21 @@ import { enteredEdge } from "./ui/edge-entry";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
+import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
+import { inspectStorePackage, loadStorePackages, subscribeToAppStoreChanges, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
+import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
+type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
 const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
+
+function isDesktopSurface(desktop: DesktopIdentity) {
+  return desktop.purpose !== "app-store" || desktop.ownership === "owned";
+}
 
 function fileDialogEntryElement(id: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
@@ -266,6 +274,12 @@ function App({ session }: { session: AuthSession | null }) {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
+  const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
+  const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState("");
+  const storeInspectionCacheRef = useRef(new Map<string, InspectedStorePackage>());
+  const refreshStoreRef = useRef<() => void>(() => undefined);
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
   const fileDialogResultIdRef = useRef<string | null>(null);
@@ -632,6 +646,58 @@ function App({ session }: { session: AuthSession | null }) {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
   }, [loading, preferencesLoaded]);
   useEffect(() => {
+    const store = desktops.find((desktop) => desktop.purpose === "app-store");
+    if (!session || !store) {
+      setStorePackages([]);
+      setStoreInspections(new Map());
+      setStoreLoading(false);
+      setStoreError("");
+      refreshStoreRef.current = () => undefined;
+      return;
+    }
+    let active = true;
+    const refresh = async () => {
+      setStoreLoading(true);
+      setStoreError("");
+      try {
+        const packages = await loadStorePackages(store);
+        if (!active) return;
+        setStorePackages(packages);
+        const next = new Map<string, StoreInspection>();
+        for (const item of packages) {
+          const key = `${item.entry.id}:${item.contentRevision}`;
+          const cached = storeInspectionCacheRef.current.get(key);
+          if (cached) next.set(key, { status: "ready", value: cached });
+          else {
+            next.set(key, { status: "loading" });
+            void inspectStorePackage(item).then((value) => {
+              if (!active) return;
+              storeInspectionCacheRef.current.set(key, value);
+              setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
+            }).catch((reason) => {
+              if (active) setStoreInspections((current) => new Map(current).set(key, { status: "error", message: reason instanceof Error ? reason.message : "This app package is invalid." }));
+            });
+          }
+        }
+        setStoreInspections(next);
+      } catch (reason) {
+        if (active) setStoreError(reason instanceof Error ? reason.message : "The app store could not be loaded.");
+      } finally {
+        if (active) setStoreLoading(false);
+      }
+    };
+    refreshStoreRef.current = () => { void refresh(); };
+    void refresh();
+    const unsubscribe = subscribeToAppStoreChanges((descriptor) => {
+      if (descriptor.desktopId === store.id) void refresh();
+    });
+    return () => {
+      active = false;
+      unsubscribe();
+      if (refreshStoreRef.current) refreshStoreRef.current = () => undefined;
+    };
+  }, [desktops, session]);
+  useEffect(() => {
     const beforeInstall = (event: Event) => {
       event.preventDefault();
       setInstallPrompt(event as InstallPromptEvent);
@@ -927,6 +993,10 @@ function App({ session }: { session: AuthSession | null }) {
         restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "settings" });
         continue;
       }
+      if (target.kind === "store") {
+        restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "store" });
+        continue;
+      }
       if (target.kind === "explorer") {
         openExplorerWindow(target.folderId, false, false);
         continue;
@@ -1149,7 +1219,8 @@ function App({ session }: { session: AuthSession | null }) {
       .then((registry) => {
         if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
         const routeDesktopId = parseDesktopRoute(window.location.pathname)?.desktopId;
-        const desktopId = routeDesktopId && registry.desktops.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && registry.desktops.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : registry.desktops[0].id;
+        const surfaces = registry.desktops.filter(isDesktopSurface);
+        const desktopId = routeDesktopId && surfaces.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && surfaces.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : surfaces[0].id;
         setDesktops(registry.desktops);
         setCatalogQuota(registry.quota);
         activeDesktopIdRef.current = desktopId;
@@ -1436,7 +1507,7 @@ function App({ session }: { session: AuthSession | null }) {
       setMinimapExpanded(false);
       const requestedRoute = parseDesktopRoute(window.location.pathname);
       const requestedDesktopId = requestedRoute?.desktopId;
-      if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId)) {
+      if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId && isDesktopSurface(desktop))) {
         void activateDesktopRef.current(requestedDesktopId).then((switched) => {
           if (switched && requestedRoute) navigateRouteRef.current(requestedRoute, "replace");
         });
@@ -2437,6 +2508,19 @@ function App({ session }: { session: AuthSession | null }) {
     return true;
   }
 
+  function openStoreWindow() {
+    const id = builtinAppTargetId({ kind: "store" });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      focusApp(id);
+      return;
+    }
+    const app: StoreApp = { ...createAppBase(id, "store"), kind: "store" };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setFocusedApp(id);
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", window.location.href);
+  }
+
   function openActivityLog() {
     openSettingsWindow();
     navigateSettingsPage("activity");
@@ -2538,10 +2622,53 @@ function App({ session }: { session: AuthSession | null }) {
         install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
         if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
         await approveInstall(install);
+        if (approved?.source === "store") await deleteApprovedPackageArchive(approved.digest).catch(() => undefined);
       }
       await launchInstalledApp(install!, launchFile);
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    }
+  }
+
+  async function installStorePackage(item: StorePackage) {
+    setError("");
+    try {
+      const key = `${item.entry.id}:${item.contentRevision}`;
+      const inspected = storeInspectionCacheRef.current.get(key) ?? await inspectStorePackage(item);
+      storeInspectionCacheRef.current.set(key, inspected);
+      const appPackage = inspected.inspection;
+      if (SYSTEM_APP_CATALOG.some((candidate) => candidate.manifest.id === appPackage.manifest.id)) throw new Error("That app ID is reserved for a bundled system app.");
+      const approved = installedApps.find((candidate) => candidate.appId === appPackage.manifest.id);
+      const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
+      const confirmed = await requestConfirmation({
+        title: `${approved ? "Approve update for" : "Install"} ${appPackage.manifest.name}?`,
+        message: `Version ${appPackage.manifest.version}. Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`,
+        confirmLabel: approved ? "Approve update" : "Install",
+      });
+      if (!confirmed) return;
+      const store = desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store");
+      const published = store ? await loadStorePackages(store) : [];
+      if (!published.some((candidate) => candidate.entry.id === item.entry.id && candidate.catalogId === item.catalogId && candidate.contentRevision === item.contentRevision)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
+      await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
+      const install: InstalledApp = {
+        appId: appPackage.manifest.id,
+        source: "store",
+        packageEntryId: item.entry.id,
+        archivePath: null,
+        sourceCatalogId: item.catalogId,
+        sourceDesktopId: item.desktopId,
+        sourceContentRevision: item.contentRevision,
+        digest: appPackage.digest,
+        version: appPackage.manifest.version,
+        manifest: appPackage.manifest,
+        approvedAt: Date.now(),
+      };
+      if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
+      await approveInstall(install);
+      if (approved?.source === "store" && approved.digest !== install.digest) await deleteApprovedPackageArchive(approved.digest).catch(() => undefined);
+      setNotice(`${appPackage.manifest.name} ${approved ? "updated" : "installed"}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The app could not be installed.");
     }
   }
 
@@ -2597,7 +2724,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function launchApp(install: InstalledApp) {
-    if (install.source === "system") void launchInstalledApp(install);
+    if (install.source === "system" || install.source === "store") void launchInstalledApp(install);
     else {
       const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === install.packageEntryId && candidate.kind === "file");
       if (entry) void openAppPackage(entry);
@@ -2611,7 +2738,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (!currentRoute) return;
     const previousApps = runningAppTargets();
     const target: SystemAppTarget = { kind: "system", appId: app.appId, targetKind: "file", entryId: file.id };
-    if (app.source === "system") await launchInstalledApp(app, file);
+    if (app.source === "system" || app.source === "store") await launchInstalledApp(app, file);
     else {
       const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
       if (packageEntry) await openAppPackage(packageEntry, file);
@@ -2629,6 +2756,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
     await removeInstall(app.appId);
+    if (app.source === "store") await deleteApprovedPackageArchive(app.digest).catch(() => undefined);
     setNotice(`${app.manifest.name} uninstalled`);
   }
 
@@ -3390,7 +3518,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function runningAppLabel(app: RunningApp) {
     const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
-    return app.kind === "sandbox" ? app.title : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
+    return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
   }
 
   const windowItems: WindowListItem[] = runningApps.map((app) => {
@@ -3590,6 +3718,9 @@ function App({ session }: { session: AuthSession | null }) {
       <button type="button" onClick={() => { dismiss(); showDesktop(); }}>
         <Desktop /> Back to Desktop
       </button>
+      {session && <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}>
+        <Package /> App Store{storeUpdateCount > 0 && <small>{storeUpdateCount} update{storeUpdateCount === 1 ? "" : "s"}</small>}
+      </button>}
       {focusedAppId && <>
         <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}>
           <SquaresFour /> Switch Window
@@ -3642,7 +3773,16 @@ function App({ session }: { session: AuthSession | null }) {
     </>;
   }
 
-  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
+  const storePackageViews: StorePackageView[] = storePackages.map((item) => {
+    const inspection = storeInspections.get(`${item.entry.id}:${item.contentRevision}`);
+    const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
+    return inspection?.status === "ready"
+      ? { item, name: inspection.value.inspection.manifest.name, description: inspection.value.inspection.manifest.description ?? "No description provided.", version: inspection.value.inspection.manifest.version, appId: inspection.value.inspection.manifest.id, loading: false, error: "" }
+      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
+  });
+  const storeUpdateCount = storePackages.filter((item) => installedApps.some((app) => app.source === "store" && app.sourceCatalogId === item.catalogId && app.sourceDesktopId === item.desktopId && app.packageEntryId === item.entry.id && app.sourceContentRevision !== item.contentRevision)).length;
+  const desktopChoices = desktops.filter(isDesktopSurface);
+  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
   const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
 
@@ -3660,10 +3800,15 @@ function App({ session }: { session: AuthSession | null }) {
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-              : activeDesktopId && <DesktopSwitcher desktops={desktops} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
+              : activeDesktopId && <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
+          {session && <button className="menu-bar__store" type="button" aria-label={`Open App Store${storeUpdateCount ? `, ${storeUpdateCount} updates available` : ""}`} title="App Store" onClick={openStoreWindow}>
+            <Package size={17} />
+            <span className="desktop-action-label">Store</span>
+            {storeUpdateCount > 0 && <span className="menu-bar__badge" aria-hidden="true">{storeUpdateCount}</span>}
+          </button>}
           <button type="button" aria-label="Search apps, files, windows, and commands" title="Search (Ctrl/Command K)" onClick={() => setActivePanel("search")}>
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
@@ -3915,7 +4060,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4096,6 +4241,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onOpenHelp={openHelp}
                       />
                     )}
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} loading={storeLoading} error={storeError || (!session ? "The app store requires a synchronized Hiraya account." : "")} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} />}
               </>
             );
           }}

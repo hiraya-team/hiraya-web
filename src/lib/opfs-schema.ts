@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 11;
+export const DATABASE_SCHEMA_VERSION = 12;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -182,4 +182,53 @@ export const APP_RUNTIME_RESET_SCHEMA_SQL = `
 export function migrateSchema10To11Sql(version: number): string {
   if (version !== 10) throw new Error(`Schema 11 migration requires version 10, received ${version}.`);
   return `BEGIN IMMEDIATE; ${APP_RUNTIME_RESET_SCHEMA_SQL} COMMIT;`;
+}
+
+export const STORE_APP_SCHEMA_SQL = `
+  ALTER TABLE app_storage RENAME TO app_storage_v11;
+  ALTER TABLE file_associations RENAME TO file_associations_v11;
+  ALTER TABLE installed_apps RENAME TO installed_apps_v11;
+  CREATE TABLE installed_apps (
+    app_id TEXT PRIMARY KEY,
+    source TEXT NOT NULL CHECK (source IN ('system', 'desktop', 'store')),
+    package_entry_id TEXT,
+    archive_path TEXT,
+    source_catalog_id TEXT,
+    source_desktop_id TEXT,
+    source_content_revision INTEGER CHECK (source_content_revision IS NULL OR source_content_revision >= 0),
+    digest TEXT NOT NULL CHECK (length(digest) = 64),
+    version TEXT NOT NULL,
+    manifest_json TEXT NOT NULL,
+    approved_at INTEGER NOT NULL CHECK (approved_at >= 0),
+    CHECK (
+      (source = 'desktop' AND package_entry_id IS NOT NULL AND archive_path IS NULL AND source_catalog_id IS NULL AND source_desktop_id IS NULL AND source_content_revision IS NULL)
+      OR (source = 'system' AND package_entry_id IS NULL AND archive_path IS NOT NULL AND source_catalog_id IS NULL AND source_desktop_id IS NULL AND source_content_revision IS NULL)
+      OR (source = 'store' AND package_entry_id IS NOT NULL AND archive_path IS NULL AND source_catalog_id IS NOT NULL AND source_desktop_id IS NOT NULL AND source_content_revision IS NOT NULL)
+    )
+  );
+  CREATE TABLE app_storage (
+    app_id TEXT NOT NULL REFERENCES installed_apps(app_id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    value_json TEXT NOT NULL,
+    bytes INTEGER NOT NULL CHECK (bytes >= 0),
+    PRIMARY KEY (app_id, key)
+  );
+  CREATE TABLE file_associations (
+    matcher TEXT PRIMARY KEY,
+    app_id TEXT NOT NULL REFERENCES installed_apps(app_id) ON DELETE CASCADE,
+    created_at INTEGER NOT NULL CHECK (created_at >= 0)
+  );
+  INSERT INTO installed_apps(app_id,source,package_entry_id,archive_path,source_catalog_id,source_desktop_id,source_content_revision,digest,version,manifest_json,approved_at)
+    SELECT app_id,source,package_entry_id,archive_path,NULL,NULL,NULL,digest,version,manifest_json,approved_at FROM installed_apps_v11;
+  INSERT INTO app_storage(app_id,key,value_json,bytes) SELECT app_id,key,value_json,bytes FROM app_storage_v11;
+  INSERT INTO file_associations(matcher,app_id,created_at) SELECT matcher,app_id,created_at FROM file_associations_v11;
+  DROP TABLE app_storage_v11;
+  DROP TABLE file_associations_v11;
+  DROP TABLE installed_apps_v11;
+  PRAGMA user_version=12;
+`;
+
+export function migrateSchema11To12Sql(version: number): string {
+  if (version !== 11) throw new Error(`Schema 12 migration requires version 11, received ${version}.`);
+  return `PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${STORE_APP_SCHEMA_SQL} COMMIT; PRAGMA foreign_keys=ON;`;
 }

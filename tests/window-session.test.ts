@@ -27,11 +27,13 @@ describe("window and browser sessions", () => {
       { kind: "explorer", folderId: "folder" },
       { kind: "properties", entryId: "entry" },
       { kind: "settings", ignored: true },
+      { kind: "store", ignored: true },
     ] })).toEqual([
       { kind: "file", fileId: "file" },
       { kind: "explorer", folderId: "folder" },
       { kind: "properties", entryId: "entry" },
       { kind: "settings" },
+      { kind: "store" },
     ]);
   });
 

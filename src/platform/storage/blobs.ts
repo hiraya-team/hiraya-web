@@ -1,6 +1,6 @@
 import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
 import { sha256Blob } from "../../lib/blob-transfer";
-import { CONTENT_CACHE_DIRECTORY, FILES_DIRECTORY, LOCAL_MUTATIONS_DIRECTORY, PENDING_DIRECTORY, getRoot, isNotFound } from "./namespace";
+import { APPROVED_PACKAGE_ARCHIVES_DIRECTORY, CONTENT_CACHE_DIRECTORY, FILES_DIRECTORY, LOCAL_MUTATIONS_DIRECTORY, PENDING_DIRECTORY, getRoot, isNotFound } from "./namespace";
 
 export type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number; sha256: string };
 const SHA256_HEX = /^[a-f0-9]{64}$/;
@@ -30,6 +30,10 @@ async function getContentCacheDirectory() {
 
 async function getLocalMutationsDirectory() {
   return (await getRoot()).getDirectoryHandle(LOCAL_MUTATIONS_DIRECTORY, { create: true });
+}
+
+async function getApprovedPackageArchivesDirectory() {
+  return (await getRoot()).getDirectoryHandle(APPROVED_PACKAGE_ARCHIVES_DIRECTORY, { create: true });
 }
 
 async function writeHandleContent(directory: FileSystemDirectoryHandle, name: string, content: Blob | string) {
@@ -80,6 +84,32 @@ export async function removeUnretainedCachedContent(retained: ReadonlySet<string
 
 export async function writeContent(id: string, content: Blob | string) {
   await writeHandleContent(await getFilesDirectory(), id, content);
+}
+
+function validatePackageDigest(digest: string) {
+  if (!SHA256_HEX.test(digest)) throw new TypeError("Approved package digest is invalid.");
+}
+
+export async function saveApprovedPackageArchive(digest: string, archive: Blob) {
+  validatePackageDigest(digest);
+  if (await sha256Blob(archive) !== digest) throw new Error("Approved package archive does not match its digest.");
+  await writeHandleContent(await getApprovedPackageArchivesDirectory(), digest, archive);
+}
+
+export async function readApprovedPackageArchive(digest: string) {
+  validatePackageDigest(digest);
+  const archive = await (await (await getApprovedPackageArchivesDirectory()).getFileHandle(digest)).getFile();
+  if (await sha256Blob(archive) !== digest) throw new Error("Approved package archive does not match its digest.");
+  return archive;
+}
+
+export async function deleteApprovedPackageArchive(digest: string) {
+  validatePackageDigest(digest);
+  try {
+    await (await getApprovedPackageArchivesDirectory()).removeEntry(digest);
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+  }
 }
 
 export type LocalContentJournal = {

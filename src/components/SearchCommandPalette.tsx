@@ -17,7 +17,7 @@ export type SearchPaletteApp = {
   id: string;
   name: string;
   description?: string;
-  source: "system" | "desktop";
+  source: "system" | "desktop" | "store";
   fileTypes?: readonly string[];
   available: boolean;
 };
@@ -120,7 +120,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
       category: "apps",
       label: app.name,
       detail: app.available
-        ? [app.source === "system" ? "Bundled system app" : "Desktop app", app.description].filter(Boolean).join(" · ")
+        ? [app.source === "system" ? "Bundled system app" : app.source === "store" ? "Store app" : "Desktop app", app.description].filter(Boolean).join(" · ")
         : "Desktop app · Package unavailable",
       keywords: [app.id, app.source, ...(app.fileTypes ?? [])],
       disabled: !app.available,

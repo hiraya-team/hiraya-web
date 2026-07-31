@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseStorageProtocol } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,9 +13,9 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 11", () => {
+describe("local schema 12", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(11);
+    expect(DATABASE_SCHEMA_VERSION).toBe(12);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
@@ -229,6 +229,32 @@ describe("local schema 11", () => {
     db.close();
   });
 
+  test("rebuilds installed apps for store provenance without losing existing data", () => {
+    const db = new Database(":memory:");
+    db.exec(`
+      PRAGMA foreign_keys=ON;
+      CREATE TABLE installed_apps(app_id TEXT PRIMARY KEY, source TEXT NOT NULL, package_entry_id TEXT, archive_path TEXT, digest TEXT NOT NULL, version TEXT NOT NULL, manifest_json TEXT NOT NULL, approved_at INTEGER NOT NULL);
+      CREATE TABLE app_storage(app_id TEXT NOT NULL REFERENCES installed_apps(app_id) ON DELETE CASCADE, key TEXT NOT NULL, value_json TEXT NOT NULL, bytes INTEGER NOT NULL, PRIMARY KEY(app_id,key));
+      CREATE TABLE file_associations(matcher TEXT PRIMARY KEY, app_id TEXT NOT NULL REFERENCES installed_apps(app_id) ON DELETE CASCADE, created_at INTEGER NOT NULL);
+      INSERT INTO installed_apps VALUES ('test.editor','desktop','package-a',NULL,'${"a".repeat(64)}','1.0.0','{}',10);
+      INSERT INTO app_storage VALUES ('test.editor','draft','{"text":"kept"}',15);
+      INSERT INTO file_associations VALUES ('.txt','test.editor',11);
+      PRAGMA user_version=11;
+    `);
+
+    expect(STORE_APP_SCHEMA_SQL).toContain("source IN ('system', 'desktop', 'store')");
+    db.exec(migrateSchema11To12Sql(11));
+    expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: 12 });
+    expect(db.query("SELECT app_id,source,package_entry_id,archive_path,source_catalog_id,source_desktop_id,source_content_revision,digest,version,manifest_json,approved_at FROM installed_apps").get()).toEqual({ app_id: "test.editor", source: "desktop", package_entry_id: "package-a", archive_path: null, source_catalog_id: null, source_desktop_id: null, source_content_revision: null, digest: "a".repeat(64), version: "1.0.0", manifest_json: "{}", approved_at: 10 });
+    expect(db.query("SELECT * FROM app_storage").get()).toEqual({ app_id: "test.editor", key: "draft", value_json: '{"text":"kept"}', bytes: 15 });
+    expect(db.query("SELECT * FROM file_associations").get()).toEqual({ matcher: ".txt", app_id: "test.editor", created_at: 11 });
+    expect(() => db.exec(`INSERT INTO installed_apps VALUES ('bad.store','store','package',NULL,NULL,'desktop',1,'${"b".repeat(64)}','1.0.0','{}',1)`)).toThrow();
+    db.exec(`INSERT INTO installed_apps VALUES ('good.store','store','package',NULL,'catalog','desktop',1,'${"b".repeat(64)}','1.0.0','{}',1)`);
+    expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    expect(() => migrateSchema11To12Sql(10)).toThrow("requires version 11");
+    db.close();
+  });
+
   test("migrates a populated schema-8 outbox without inventing revision preconditions", () => {
     const operations = [
       { schemaVersion: 1, kind: "rename-desktop", desktop: { id: "desk", name: "Renamed" } },
@@ -276,6 +302,7 @@ describe("local schema 11", () => {
     db.exec(migrateSchema8To9Sql(8));
     db.exec(migrateSchema9To10Sql(9));
     db.exec(migrateSchema10To11Sql(10));
+    db.exec(migrateSchema11To12Sql(11));
 
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
     expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
@@ -302,8 +329,8 @@ describe("local schema 11", () => {
   });
 
   test("handshakes the named worker protocol", () => {
-    expect(STORAGE_PROTOCOL_VERSION).toBe(10);
-    expect(parseStorageProtocol({ version: 10 })).toBe(10);
-    expect(() => parseStorageProtocol({ version: 9 })).toThrow("outdated");
+    expect(STORAGE_PROTOCOL_VERSION).toBe(11);
+    expect(parseStorageProtocol({ version: 11 })).toBe(11);
+    expect(() => parseStorageProtocol({ version: 10 })).toThrow("outdated");
   });
 });

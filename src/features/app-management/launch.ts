@@ -21,6 +21,7 @@ import {
   type FileSyncFunctions,
 } from "../../apps/host";
 import type { BaseRunningApp, RunningApp, SandboxApp } from "../windows/model";
+import { readApprovedPackageArchive } from "../../platform/storage/blobs";
 
 export type AppLaunchSource = "launcher" | "file" | "restore";
 export type AppLaunchTarget = FileEntry | FolderEntry | "root";
@@ -68,6 +69,8 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
           return response.blob();
         })
+      : install.source === "store"
+        ? await readApprovedPackageArchive(install.digest)
       : await options.fileSync.readFile(install.packageEntryId);
     const { inspectAppArchive } = await import("@hiraya/app-cli");
     const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));

@@ -61,7 +61,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
         }));
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
-        setInstalledApps([...storedApps.filter((app) => app.source === "desktop" && !systemIds.has(app.appId)), ...systemApps]);
+        setInstalledApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...systemApps]);
         setFileAssociations(associations);
         setQuarantinedApps(quarantined);
       })

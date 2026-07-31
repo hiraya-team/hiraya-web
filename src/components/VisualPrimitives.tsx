@@ -38,11 +38,11 @@ export function EntryIcon({ entry, size = 24 }: { entry: DesktopEntry; size?: nu
   return <FileGlyph {...props} />;
 }
 
-export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" | "properties" | "settings" | "sandbox"; entry?: DesktopEntry | null; size?: number }) {
+export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" | "properties" | "settings" | "sandbox" | "store"; entry?: DesktopEntry | null; size?: number }) {
   if (kind === "file" && entry) return <EntryIcon entry={entry} size={size} />;
   if (kind === "explorer") return <Folder size={size} weight="duotone" aria-hidden="true" />;
   if (kind === "properties") return <Info size={size} aria-hidden="true" />;
-  if (kind === "sandbox") return <Package size={size} aria-hidden="true" />;
+  if (kind === "sandbox" || kind === "store") return <Package size={size} aria-hidden="true" />;
   return <GearSix size={size} aria-hidden="true" />;
 }
 

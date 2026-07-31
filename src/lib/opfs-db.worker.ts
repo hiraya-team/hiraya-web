@@ -12,7 +12,7 @@ import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPag
 import { type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -98,6 +98,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 10) {
     db.exec(migrateSchema10To11Sql(migratedVersion));
+    migratedVersion = 11;
+  }
+  if (migratedVersion === 11) {
+    db.exec(migrateSchema11To12Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -187,6 +191,7 @@ function createSchema(db: Database) {
     ${PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL}
     ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL}
     ${APP_RUNTIME_RESET_SCHEMA_SQL}
+    ${STORE_APP_SCHEMA_SQL}
     COMMIT;
   `);
 }
@@ -194,6 +199,7 @@ function createSchema(db: Database) {
 function readInstalledApps(db: Database): InstalledApp[] {
   return rows(db, "SELECT * FROM installed_apps ORDER BY approved_at, app_id").map((row) => parseInstalledApp({
     appId: stringValue(row.app_id), source: stringValue(row.source), packageEntryId: nullableString(row.package_entry_id), archivePath: nullableString(row.archive_path), digest: stringValue(row.digest),
+    sourceCatalogId: nullableString(row.source_catalog_id), sourceDesktopId: nullableString(row.source_desktop_id), sourceContentRevision: row.source_content_revision === null ? null : numberValue(row.source_content_revision),
     version: stringValue(row.version), manifest: JSON.parse(stringValue(row.manifest_json)), approvedAt: numberValue(row.approved_at),
   }));
 }
@@ -498,11 +504,11 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
       db.transaction("IMMEDIATE", () => {
         const currentSource = scalar(db, "SELECT source FROM installed_apps WHERE app_id=?", [install.appId]);
         if (currentSource === "system" && install.source !== "system") throw new Error("Bundled system apps cannot be replaced.");
-        db.exec({ sql: "INSERT INTO installed_apps VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET source=excluded.source,package_entry_id=excluded.package_entry_id,archive_path=excluded.archive_path,digest=excluded.digest,version=excluded.version,manifest_json=excluded.manifest_json,approved_at=excluded.approved_at", bind: [install.appId, install.source, install.packageEntryId, install.archivePath, install.digest, install.version, JSON.stringify(install.manifest), install.approvedAt] });
+        db.exec({ sql: "INSERT INTO installed_apps(app_id,source,package_entry_id,archive_path,source_catalog_id,source_desktop_id,source_content_revision,digest,version,manifest_json,approved_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(app_id) DO UPDATE SET source=excluded.source,package_entry_id=excluded.package_entry_id,archive_path=excluded.archive_path,source_catalog_id=excluded.source_catalog_id,source_desktop_id=excluded.source_desktop_id,source_content_revision=excluded.source_content_revision,digest=excluded.digest,version=excluded.version,manifest_json=excluded.manifest_json,approved_at=excluded.approved_at", bind: [install.appId, install.source, install.packageEntryId, install.archivePath, install.source === "store" ? install.sourceCatalogId : null, install.source === "store" ? install.sourceDesktopId : null, install.source === "store" ? install.sourceContentRevision : null, install.digest, install.version, JSON.stringify(install.manifest), install.approvedAt] });
       });
       return install as StorageDbResponses[M];
     }
-    case "uninstallApp": { db.exec({ sql: "DELETE FROM installed_apps WHERE app_id=? AND source='desktop'", bind: [(params as StorageDbRequests["uninstallApp"]).appId] }); return undefined as StorageDbResponses[M]; }
+    case "uninstallApp": { db.exec({ sql: "DELETE FROM installed_apps WHERE app_id=? AND source!='system'", bind: [(params as StorageDbRequests["uninstallApp"]).appId] }); return undefined as StorageDbResponses[M]; }
     case "listQuarantinedApps": return readQuarantinedApps(db) as StorageDbResponses[M];
     case "removeQuarantinedApp": { db.exec({ sql: "DELETE FROM quarantined_apps WHERE app_id=?", bind: [(params as StorageDbRequests["removeQuarantinedApp"]).appId] }); return undefined as StorageDbResponses[M]; }
     case "listFileAssociations": return readFileAssociations(db) as StorageDbResponses[M];

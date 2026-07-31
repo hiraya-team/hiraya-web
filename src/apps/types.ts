@@ -1,20 +1,21 @@
-export type BuiltinAppKind = "file" | "explorer" | "properties" | "settings";
+export type BuiltinAppKind = "file" | "explorer" | "properties" | "settings" | "store";
 
 export type FileAppTarget = { kind: "file"; fileId: string; editMode?: boolean };
 export type ExplorerAppTarget = { kind: "explorer"; folderId: string | null };
 export type PropertiesAppTarget = { kind: "properties"; entryId: string };
 export type SettingsAppTarget = { kind: "settings" };
+export type StoreAppTarget = { kind: "store" };
 export type SystemAppTarget = {
   kind: "system";
   appId: string;
   targetKind: "file" | "folder" | "root";
   entryId: string | null;
-  source?: "system" | "desktop";
+  source?: "system" | "desktop" | "store";
   digest?: string;
   permissions?: string[];
 };
 
-export type BuiltinAppTarget = FileAppTarget | ExplorerAppTarget | PropertiesAppTarget | SettingsAppTarget | SystemAppTarget;
+export type BuiltinAppTarget = FileAppTarget | ExplorerAppTarget | PropertiesAppTarget | SettingsAppTarget | StoreAppTarget | SystemAppTarget;
 
 export type BuiltinAppWindow = {
   width: number;

@@ -11,6 +11,13 @@ describe("desktop catalog", () => {
     expect(() => parseDesktopCatalog({ ...value, quota: { ...value.quota, entries: { used: 2, limit: 0 } } })).toThrow("entry quota");
   });
 
+  test("identifies the deployment app store without accepting arbitrary purposes", () => {
+    const store = { ...remoteDesktopIdentity(), purpose: "app-store" };
+    const value = { schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 7, desktops: [store], quota: { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } } };
+    expect(parseDesktopCatalog(value).desktops[0].purpose).toBe("app-store");
+    expect(() => parseDesktopCatalog({ ...value, desktops: [{ ...store, purpose: "marketplace" }] })).toThrow("purpose");
+  });
+
   test("uses tab-local selection and protects only the last desktop", () => {
     const desktops = [{ id: "one", name: "One" }, { id: "two", name: "Two" }];
     expect(resolveDesktopContext("two", desktops)).toBe("two");

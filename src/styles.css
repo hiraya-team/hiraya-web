@@ -5704,3 +5704,206 @@ button.app-picker__disclosure { cursor: pointer; }
 }
 
 .context-menu[data-positioned] { position: fixed; width: min(310px, calc(100vw - 16px)); }
+/* App Store */
+.app-store {
+  height: 100%;
+  overflow: auto;
+  color: var(--theme-text);
+  background: var(--theme-window);
+}
+
+.app-store__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: clamp(24px, 5vw, 42px);
+  border-bottom: 1px solid var(--theme-border);
+  background: color-mix(in srgb, var(--theme-window-muted) 46%, var(--theme-window));
+}
+
+.app-store__header h2 {
+  margin: 0 0 8px;
+  font-size: clamp(1.55rem, 4vw, 2.25rem);
+  letter-spacing: -0.035em;
+}
+
+.app-store__header p,
+.app-store__copy p,
+.app-store__state p {
+  color: var(--theme-text-muted);
+}
+
+.app-store__header p {
+  max-width: 54ch;
+  margin: 0;
+  line-height: 1.55;
+}
+
+.app-store__trust {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--theme-border);
+  border-radius: var(--radius-control);
+  color: var(--theme-text-muted);
+  background: color-mix(in srgb, var(--theme-window) 82%, transparent);
+  font-size: .78rem;
+  font-weight: 700;
+}
+
+.app-store__list {
+  padding: 0 clamp(20px, 4vw, 36px) 32px;
+}
+
+.app-store__row {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 112px;
+  padding: 20px 4px;
+  border-top: 1px solid var(--theme-border);
+}
+
+.app-store__row:first-child {
+  border-top: 0;
+}
+
+.app-store__icon {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--theme-accent-on-window) 28%, var(--theme-border));
+  border-radius: 13px;
+  color: var(--theme-accent-on-window);
+  background: color-mix(in srgb, var(--theme-accent-on-window) 10%, var(--theme-window));
+}
+
+.app-store__copy {
+  min-width: 0;
+}
+
+.app-store__copy > div {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+}
+
+.app-store__copy h3,
+.app-store__state h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.app-store__copy span,
+.app-store__copy small {
+  color: var(--theme-text-muted);
+  font-size: .76rem;
+}
+
+.app-store__copy p {
+  max-width: 62ch;
+  margin: 5px 0 4px;
+  overflow: hidden;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-store__row .button {
+  min-width: 96px;
+}
+
+.app-store__state {
+  display: grid;
+  min-height: 330px;
+  padding: 40px 24px;
+  place-items: center;
+  align-content: center;
+  text-align: center;
+}
+
+.app-store__state h3 {
+  margin-top: 14px;
+}
+
+.app-store__state p {
+  max-width: 48ch;
+  margin: 7px 0 18px;
+  line-height: 1.5;
+}
+
+.app-store__loading {
+  display: grid;
+  gap: 18px;
+  padding: 30px clamp(20px, 4vw, 36px);
+}
+
+.app-store__loading span:not(.visually-hidden) {
+  height: 78px;
+  border-radius: var(--radius-control);
+  background: linear-gradient(100deg, var(--theme-window-muted) 25%, color-mix(in srgb, var(--theme-window-muted) 45%, var(--theme-window)) 45%, var(--theme-window-muted) 65%);
+  background-size: 220% 100%;
+  animation: app-store-loading 1.6s ease-in-out infinite;
+}
+
+.menu-bar__store {
+  position: relative;
+}
+
+.menu-bar__badge {
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--theme-accent-text);
+  background: var(--theme-accent);
+  font-size: .65rem;
+  font-weight: 800;
+}
+
+@keyframes app-store-loading {
+  from { background-position: 120% 0; }
+  to { background-position: -120% 0; }
+}
+
+@media (max-width: 640px) {
+  .app-store__header {
+    display: grid;
+    gap: 16px;
+    padding: 24px 20px;
+  }
+
+  .app-store__trust {
+    justify-self: start;
+  }
+
+  .app-store__row {
+    grid-template-columns: 46px minmax(0, 1fr);
+    gap: 12px;
+    padding: 18px 0;
+  }
+
+  .app-store__icon {
+    width: 44px;
+    height: 44px;
+  }
+
+  .app-store__row .button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-store__loading span:not(.visually-hidden) {
+    animation: none;
+  }
+}
