@@ -15,7 +15,7 @@ export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiR
   foundation.textContent = uiRuntime.styles;
   const navigationGuard = document.createElement("script");
   navigationGuard.dataset.hirayaNavigationGuard = "";
-  navigationGuard.textContent = `(()=>{const token=${JSON.stringify(navigationToken)};const notify=phase=>parent.postMessage({type:"hiraya:sandbox-navigation",token,phase},"*");addEventListener("load",()=>notify("load"),{once:true});addEventListener("beforeunload",()=>notify("navigation"),{capture:true,once:true})})()`;
+  navigationGuard.src = dataURL(new TextEncoder().encode(`(()=>{const token=${JSON.stringify(navigationToken)};const notify=phase=>parent.postMessage({type:"hiraya:sandbox-navigation",token,phase},"*");addEventListener("load",()=>notify("load"),{once:true});addEventListener("beforeunload",()=>notify("navigation"),{capture:true,once:true})})()`), "text/javascript");
   const runtime = document.createElement("script");
   runtime.dataset.hirayaUiRuntime = String(uiRuntime.abi);
   runtime.src = dataURL(new TextEncoder().encode(uiRuntime.script), "text/javascript");
