@@ -65,7 +65,7 @@ import {
   type OfflineOperationProgress,
   type FileTransferState,
 } from "./lib/sync";
-import { pruneLocalDesktops, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
+import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
 import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
@@ -103,6 +103,7 @@ import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "
 import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { ThemeWallpaper } from "./components/ThemeWallpaper";
+import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
@@ -1762,6 +1763,10 @@ function App({ session }: { session: AuthSession | null }) {
   const wallpaperKey = wallpaperFileId && activeDesktopId ? `${activeDesktopId}:${wallpaperFileId}:${wallpaperContentRevision}` : null;
   const wallpaperLoadReady = true;
   const wallpaperUrl = wallpaperAsset?.key === wallpaperKey ? wallpaperAsset.url : null;
+  const themePackageCache = useMemo<ThemePackageCache | undefined>(() => activeDesktopId ? {
+    readVerified: (themeId, expected) => readCachedThemePackage(activeDesktopId, themeId, expected),
+    write: (themeId, expected, content) => cacheThemePackage(activeDesktopId, themeId, expected, content),
+  } : undefined, [activeDesktopId]);
 
   useEffect(() => {
     const previous = wallpaperAssetRef.current;
@@ -3737,7 +3742,7 @@ function App({ session }: { session: AuthSession | null }) {
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} cache={themePackageCache} /> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div

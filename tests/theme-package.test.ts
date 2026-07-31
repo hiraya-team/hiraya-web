@@ -16,6 +16,7 @@ describe("theme package downloads", () => {
     const expected = { assetId: "theme-asset", kind: "static" as const, size: bytes.byteLength, sha256: await sha256(bytes), revision: 4 };
     const access = { url: "https://downloads.example.test/theme?signature=secret", method: "GET", headers: { "X-Test": "yes" }, expiresAt: 2_000_000_000_000 };
     const calls: Array<{ input: string; init?: RequestInit }> = [];
+    let cached: Blob | null = null;
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input: String(input), init });
       return calls.length === 1
@@ -23,10 +24,29 @@ describe("theme package downloads", () => {
         : new Response(bytes);
     }) as typeof fetch;
 
-    expect((await fetchThemePackage("/api/theme-access", "aurora", expected)).manifest.id).toBe("aurora");
+    expect((await fetchThemePackage("/api/theme-access", "aurora", expected, undefined, {
+      readVerified: async () => null,
+      write: async (_themeId, _expected, content) => { cached = content; },
+    })).manifest.id).toBe("aurora");
     expect(calls[1]).toMatchObject({ input: access.url, init: { method: "GET", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" } });
     expect(new Headers(calls[1].init?.headers).get("X-Test")).toBe("yes");
+    expect(cached?.size).toBe(bytes.byteLength);
     expect(() => parseThemePackageAccess({ assetId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { ...access, url: "https://user:secret@downloads.example.test/theme" } }, expected)).toThrow("safe HTTPS");
+  });
+
+  test("loads a verified local package without requesting access again", async () => {
+    const bytes = zipSync({
+      [THEME_MANIFEST_PATH]: strToU8(JSON.stringify({ schemaVersion: 1, id: "aurora", name: "Aurora", definition: BUILTIN_THEMES["hiraya-dusk"].definition, wallpaper: { kind: "static", entrypoint: "wallpaper.png" } })),
+      "wallpaper.png": new Uint8Array([1, 2, 3]),
+    });
+    const expected = { assetId: "theme-asset", kind: "static" as const, size: bytes.byteLength, sha256: await sha256(bytes), revision: 4 };
+    globalThis.fetch = (async () => { throw new Error("unexpected network request"); }) as typeof fetch;
+
+    const inspection = await fetchThemePackage("/api/theme-access", "aurora", expected, undefined, {
+      readVerified: async () => new Blob([bytes]),
+      write: async () => { throw new Error("unexpected cache write"); },
+    });
+    expect(inspection.manifest.id).toBe("aurora");
   });
 
   test("includes same-origin credentials for a validated root-relative package URL", async () => {

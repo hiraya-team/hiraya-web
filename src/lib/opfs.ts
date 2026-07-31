@@ -14,7 +14,7 @@ import {
 import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition, parseRootEntryPositionUpdates } from "./contracts";
 import { wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState } from "./themes";
-import type { CustomTheme } from "../domain/theme";
+import type { CustomTheme, ThemeWallpaperPackage } from "../domain/theme";
 import type { WindowSession } from "./window-session";
 import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./activity";
 import { resolveDesktopContext } from "./desktop-catalog";
@@ -23,7 +23,7 @@ import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
 import type { JsonValue } from "@hiraya/apps-contracts";
 import { offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
 import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
-import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
+import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
 import { sha256Blob } from "./blob-transfer";
@@ -135,6 +135,13 @@ async function globallyProtectedFileIdsUnsafe(records: readonly OutboxRecord[]) 
   return outboxProtectedFileIds(records, states);
 }
 
+function stateContentIds(state: Pick<DesktopState, "entries" | "appearance">) {
+  return [
+    ...state.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id),
+    ...state.appearance.customThemes.flatMap((theme) => theme.wallpaper ? [theme.wallpaper.assetId] : []),
+  ];
+}
+
 
 function findParent(entries: DesktopEntry[], parentId: string | null) {
   if (parentId === null) return;
@@ -239,12 +246,15 @@ async function deleteDesktopUnsafe(desktopId: string) {
   for (const desktop of registry.desktops) {
     if (desktop.id === desktopId) continue;
     const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId: desktop.id }));
-    for (const entry of manifest.entries) if (entry.kind === "file") retained.add(entry.id);
+    for (const id of stateContentIds(manifest)) retained.add(id);
   }
   await callDatabase("deleteDesktop", { desktopId });
   try {
     const directory = await getFilesDirectory();
-    for (const entry of deleted.entries) if (entry.kind === "file" && !retained.has(entry.id)) await directory.removeEntry(entry.id).catch(() => undefined);
+    for (const id of stateContentIds(deleted)) if (!retained.has(id)) {
+      await directory.removeEntry(id).catch(() => undefined);
+      await removeContentCacheMarker(id);
+    }
   } catch (error) { console.warn("Hiraya could not clean up deleted desktop content.", error); }
 }
 
@@ -281,19 +291,22 @@ async function enqueueDesktopDeleteUnsafe(ownerDesktopId: string, desktopId: str
   const reservation = await callDatabase("reserveOperation", undefined);
   const result = await callDatabase("enqueueDesktopDelete", { operationId: reservation.operationId, catalogId: owner.sync.catalogId, ownerDesktopId, desktopId, baseRevision }, null);
   try {
-    const retained = await retainedFileIdsUnsafe();
+    const retained = await retainedContentIdsUnsafe();
     const directory = await getFilesDirectory();
-    for (const entry of deleted.entries) if (entry.kind === "file" && !retained.has(entry.id)) await directory.removeEntry(entry.id).catch(() => undefined);
+    for (const id of stateContentIds(deleted)) if (!retained.has(id)) {
+      await directory.removeEntry(id).catch(() => undefined);
+      await removeContentCacheMarker(id);
+    }
   } catch (error) { console.warn("Hiraya could not clean up deleted desktop content.", error); }
   return result;
 }
 
-async function retainedFileIdsUnsafe() {
+async function retainedContentIdsUnsafe() {
   const registry = await callDatabase("listDesktops", undefined, null);
   const retained = new Set<string>();
   for (const desktop of registry.desktops) {
     const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId: desktop.id }, null));
-    for (const entry of manifest.entries) if (entry.kind === "file") retained.add(entry.id);
+    for (const id of stateContentIds(manifest)) retained.add(id);
   }
   return retained;
 }
@@ -305,13 +318,16 @@ async function pruneLocalDesktopsUnsafe(retainedDesktopIds: string[]) {
   for (const desktop of registry.desktops) {
     if (retainedDesktops.has(desktop.id) || desktop.id === getActiveDesktopContext()) continue;
     const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId: desktop.id }, null));
-    for (const entry of manifest.entries) if (entry.kind === "file") candidates.push(entry.id);
+    candidates.push(...stateContentIds(manifest));
   }
   await callDatabase("pruneDesktops", { retainedDesktopIds }, getActiveDesktopContext());
-  const retainedFiles = await retainedFileIdsUnsafe();
+  const retainedFiles = await retainedContentIdsUnsafe();
   try {
     const directory = await getFilesDirectory();
-    for (const id of candidates) if (!retainedFiles.has(id)) await directory.removeEntry(id).catch(() => undefined);
+    for (const id of candidates) if (!retainedFiles.has(id)) {
+      await directory.removeEntry(id).catch(() => undefined);
+      await removeContentCacheMarker(id);
+    }
   } catch (error) { console.warn("Hiraya could not clean up stale desktop content.", error); }
 }
 
@@ -355,6 +371,13 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   const acknowledgedRecord = acknowledgedOperationId && useAcknowledgedContent
     ? (await callDatabase("readOutbox", undefined, null)).find((record) => record.operationId === acknowledgedOperationId)
     : undefined;
+  const acknowledgedOperation = acknowledgedRecord?.operation;
+  const acknowledgedTheme = acknowledgedOperation?.kind === "install-theme-package" && acknowledgedOperation.wallpaperKind !== null
+    ? next.appearance.customThemes.find((theme) => theme.id === acknowledgedOperation.theme.id && theme.wallpaper?.assetId === acknowledgedOperation.assetId)
+    : undefined;
+  const acknowledgedThemeContent = acknowledgedTheme?.wallpaper
+    ? await readStagedContent(acknowledgedRecord!.operationId, acknowledgedTheme.wallpaper.assetId)
+    : null;
 
   for (const entry of snapshot.entries) {
     if (entry.kind !== "file") continue;
@@ -374,18 +397,25 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId, acknowledgedRevision }, desktopId);
   const projected = parseDesktopState(reconciled.state);
   if (desktopId === getActiveDesktopContext()) desktopLoad = Promise.resolve(projected);
+  if (acknowledgedTheme?.wallpaper && acknowledgedThemeContent) {
+    try { await cacheThemePackageUnsafe(desktopId, acknowledgedTheme.id, acknowledgedTheme.wallpaper, acknowledgedThemeContent); }
+    catch (error) { console.warn("Hiraya could not retain the installed theme package locally.", error); }
+  }
   await materializeOutbox(await callDatabase("readOutbox", undefined), true);
 
-  const retained = await retainedFileIdsUnsafe();
+  const retained = await retainedContentIdsUnsafe();
   const directory = await getFilesDirectory();
-  for (const entry of current.entries) {
-    if (entry.kind !== "file" || retained.has(entry.id)) continue;
+  for (const id of stateContentIds(current)) {
+    if (retained.has(id)) continue;
     try {
-      await directory.removeEntry(entry.id);
-      await removeContentCacheMarker(entry.id);
+      await directory.removeEntry(id);
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "NotFoundError")) console.warn("Hiraya could not clean up stale file content.", error);
     }
+    await removeContentCacheMarker(id);
+  }
+  if (acknowledgedOperation?.kind === "install-theme-package" || acknowledgedOperation?.kind === "delete-theme") {
+    await removeUnretainedCachedContent(retained);
   }
   return { entries: projected.entries, layout: manifestLayout(projected), editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
 }
@@ -840,6 +870,46 @@ async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: Fi
   }
 }
 
+function matchesThemePackage(state: Manifest, themeId: string, expected: ThemeWallpaperPackage) {
+  const wallpaper = state.appearance.customThemes.find((theme) => theme.id === themeId)?.wallpaper;
+  return wallpaper?.assetId === expected.assetId
+    && wallpaper.kind === expected.kind
+    && wallpaper.size === expected.size
+    && wallpaper.sha256 === expected.sha256
+    && wallpaper.revision === expected.revision;
+}
+
+async function readCachedThemePackageUnsafe(desktopId: string, themeId: string, expected: ThemeWallpaperPackage): Promise<Blob | null> {
+  const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
+  if (!manifest.sync.catalogId || !matchesThemePackage(manifest, themeId, expected)) return null;
+  const marker = await readContentCacheMarker(expected.assetId);
+  if (!marker || marker.catalogId !== manifest.sync.catalogId || marker.contentRevision !== expected.revision || marker.size !== expected.size || marker.sha256 !== expected.sha256) return null;
+  try {
+    const stored = await (await (await getFilesDirectory()).getFileHandle(expected.assetId)).getFile();
+    if (!await contentMatchesCacheMarker(stored, marker)) {
+      await removeContentCacheMarker(expected.assetId);
+      return null;
+    }
+    return stored;
+  } catch (error) {
+    if (isNotFound(error)) {
+      await removeContentCacheMarker(expected.assetId);
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function cacheThemePackageUnsafe(desktopId: string, themeId: string, expected: ThemeWallpaperPackage, content: Blob) {
+  const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
+  if (!manifest.sync.catalogId || !matchesThemePackage(manifest, themeId, expected)) return false;
+  const marker = { catalogId: manifest.sync.catalogId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256 };
+  if (!await contentMatchesCacheMarker(content, marker)) throw new Error("The theme package failed local cache verification.");
+  await writeContent(expected.assetId, content);
+  await writeContentCacheMarker(expected.assetId, marker);
+  return true;
+}
+
 async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = manifest.entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
@@ -1049,6 +1119,8 @@ export function readFile(id: FileEntry["id"]) { return serializeStorage(() => re
 export function readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => readCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
 export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, sha256, content)); }
 export function removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => removeCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
+export function readCachedThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage) { return serializeStorage(() => readCachedThemePackageUnsafe(desktopId, themeId, expected)); }
+export function cacheThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage, content: Blob) { return serializeStorage(() => cacheThemePackageUnsafe(desktopId, themeId, expected, content)); }
 export function loadOfflineInventory(desktopId: string) { return serializeStorage(() => loadOfflineInventoryUnsafe(desktopId)); }
 export function releaseOfflineCopies(desktopId: string, rootIds?: string[]) { return serializeStorage(() => releaseOfflineCopiesUnsafe(desktopId, rootIds)); }
 export function readDesktopState(desktopId: string) { return serializeStorage(() => readDesktopStateUnsafe(desktopId)); }

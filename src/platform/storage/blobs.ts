@@ -67,6 +67,17 @@ export async function removeContentCacheMarker(id: string) {
   }
 }
 
+export async function removeUnretainedCachedContent(retained: ReadonlySet<string>, cache?: FileSystemDirectoryHandle, files?: FileSystemDirectoryHandle) {
+  cache ??= await getContentCacheDirectory();
+  files ??= await getFilesDirectory();
+  const entries = cache as FileSystemDirectoryHandle & { entries(): AsyncIterableIterator<[string, FileSystemHandle]> };
+  for await (const [id] of entries.entries()) {
+    if (retained.has(id)) continue;
+    await files.removeEntry(id).catch((error) => { if (!isNotFound(error)) throw error; });
+    await cache.removeEntry(id).catch((error) => { if (!isNotFound(error)) throw error; });
+  }
+}
+
 export async function writeContent(id: string, content: Blob | string) {
   await writeHandleContent(await getFilesDirectory(), id, content);
 }

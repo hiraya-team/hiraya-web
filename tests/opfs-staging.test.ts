@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, rollbackSafeReplacement, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, rollbackSafeReplacement, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
@@ -66,5 +66,17 @@ describe("pending content staging", () => {
     })).rejects.toThrow("disk full");
     expect(writes).toBe(2);
     expect(removed).toEqual([{ name: "operation-1", recursive: true }]);
+  });
+
+  test("removes cached bytes and markers no desktop retains", async () => {
+    const removed: string[] = [];
+    const cache = {
+      async *entries() { yield ["keep", {}]; yield ["drop", {}]; },
+      removeEntry: async (id: string) => { removed.push(`marker:${id}`); },
+    } as unknown as FileSystemDirectoryHandle;
+    const files = { removeEntry: async (id: string) => { removed.push(`content:${id}`); } } as unknown as FileSystemDirectoryHandle;
+
+    await removeUnretainedCachedContent(new Set(["keep"]), cache, files);
+    expect(removed).toEqual(["content:drop", "marker:drop"]);
   });
 });

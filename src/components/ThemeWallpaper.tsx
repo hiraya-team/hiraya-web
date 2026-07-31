@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
 import type { CustomTheme } from "../domain/theme";
+import type { ThemePackageCache } from "../lib/theme-package";
 
-type Props = { theme: CustomTheme; accessUrl: string };
+type Props = { theme: CustomTheme; accessUrl: string; cache?: ThemePackageCache };
 type Loaded = { kind: "image" | "video"; url: string; revoke(): void } | { kind: "scene"; html: string; csp: string; navigationToken: string; revoke(): void };
 
 function SceneWallpaper({ loaded, ready, onReady, onError }: { loaded: Extract<Loaded, { kind: "scene" }>; ready: boolean; onReady(): void; onError(): void }) {
@@ -28,7 +29,7 @@ function SceneWallpaper({ loaded, ready, onReady, onError }: { loaded: Extract<L
   return <iframe ref={frameRef} className="wallpaper-scene" data-ready={ready || undefined} title="" aria-hidden="true" inert tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="" onError={onError} />;
 }
 
-export function ThemeWallpaper({ theme, accessUrl }: Props) {
+export function ThemeWallpaper({ theme, accessUrl, cache }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [ready, setReady] = useState(false);
   const [visible, setVisible] = useState(document.visibilityState !== "hidden");
@@ -56,7 +57,7 @@ export function ThemeWallpaper({ theme, accessUrl }: Props) {
     const controller = new AbortController();
     let resource: Loaded | null = null;
     void import("../lib/theme-package").then(async ({ fetchThemePackage, materializeThemeScene, wallpaperAssetBlob, THEME_SCENE_CSP }) => {
-      const inspection = await fetchThemePackage(accessUrl, theme.id, packaged, controller.signal);
+      const inspection = await fetchThemePackage(accessUrl, theme.id, packaged, controller.signal, cache);
       if (controller.signal.aborted) return;
       if (packaged.kind === "scene") {
         const scene = materializeThemeScene(inspection);
@@ -68,7 +69,7 @@ export function ThemeWallpaper({ theme, accessUrl }: Props) {
       setLoaded(resource);
     }).catch(() => undefined);
     return () => { controller.abort(); resource?.revoke(); setLoaded(null); };
-  }, [accessUrl, reducedMotion, theme, visible]);
+  }, [accessUrl, cache, reducedMotion, theme, visible]);
 
   const failed = useCallback(() => {
     setReady(false);
