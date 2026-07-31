@@ -132,6 +132,12 @@ describe("Hiraya app archives", () => {
   test("rejects missing local HTML dependencies", async () => {
     await expect(inspectAppArchive(archive({ ...appFiles(), "index.html": strToU8('<script type="module" src="missing.js"></script>') }))).rejects.toThrow("missing package file");
     await expect(inspectAppArchive(archive({ ...appFiles(), "assets/app.js": strToU8('import "./missing.js"') }))).rejects.toThrow("missing package file");
+    await expect(inspectAppArchive(archive({ ...appFiles(), "assets/app.js": strToU8('import("./missing.js")') }))).rejects.toThrow("missing package file");
+  });
+
+  test("ignores module syntax inside JavaScript strings", async () => {
+    const bytes = archive({ ...appFiles(), "assets/app.js": strToU8('const tags = "import export from"; const example = \'import {name} from "${module}"\';') });
+    await expect(inspectAppArchive(bytes)).resolves.toMatchObject({ manifest: { id: "dev.hiraya.test" } });
   });
 
   test("rejects oversized metadata, excessive compression ratios, entry counts, and symlinks", async () => {

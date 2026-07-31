@@ -1,8 +1,14 @@
 @import "@hiraya/system-apps-shared/styles.css";
-#editor { width: 100%; min-height: 0; padding: 1rem 1.15rem; resize: none; border: 0; outline: 0; color: var(--hiraya-text); background: var(--hiraya-background); font: 14px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; tab-size: 2; }
+:root { --editor-keyword: color-mix(in srgb, var(--hiraya-text) 64%, var(--hiraya-accent)); --editor-string: color-mix(in srgb, var(--hiraya-text) 72%, #3d9b6d); }
+#editor { width: 100%; min-height: 0; overflow: hidden; color: var(--hiraya-text); background: var(--hiraya-background); }
+#editor .cm-editor { height: 100%; color: var(--hiraya-text); background: var(--hiraya-background); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+#editor .cm-editor.cm-focused { outline: 0; }
+#editor .cm-scroller { overflow: auto; font-family: inherit; line-height: 1.55; }
+#editor .cm-content { min-height: 100%; padding: 1rem 1.15rem; caret-color: var(--hiraya-focus); }
+#editor .cm-selectionBackground, #editor .cm-content ::selection { background: color-mix(in srgb, var(--hiraya-focus) 28%, transparent) !important; }
 .compact-control { display: inline-flex; align-items: center; gap: .3rem; color: var(--hiraya-text-muted); font-size: .78rem; white-space: nowrap; }
 .compact-control select { min-width: 3.5rem; }
 .write-state { padding: .15rem .45rem; border: 1px solid var(--hiraya-border); border-radius: 999px; color: var(--hiraya-text-muted); background: var(--hiraya-surface-elevated); font-size: .72rem; font-weight: 650; white-space: nowrap; }
-#editor:read-only { cursor: default; }
+#editor .cm-editor:not(.cm-focused) .cm-cursor { display: none; }
 @media (max-width: 700px) { .compact-control { display: none; } }
 @media (max-width: 700px) { :is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; } }

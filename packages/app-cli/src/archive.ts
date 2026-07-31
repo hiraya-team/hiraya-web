@@ -1,4 +1,5 @@
 import { parseManifestV2, type AppPackageInspection } from "@hiraya/apps-contracts";
+import { parse as parseModule } from "acorn";
 import { parse } from "parse5";
 import { unzipSync } from "fflate";
 import { parseCustomTheme } from "../../../src/lib/themes";
@@ -202,8 +203,25 @@ function validateCss(css: string, path: string, files: ReadonlyMap<string, Uint8
 }
 
 function validateModule(source: string, path: string, files: ReadonlyMap<string, Uint8Array>) {
-  const references = source.matchAll(/(?:\b(?:import|export)\s+(?:[^"'();]*?\sfrom\s*)?|\bimport\s*\(\s*)["']([^"']+)["']/g);
-  for (const match of references) assertReference(match[1], path, `Module ${path}`, files);
+  let module: unknown;
+  try {
+    module = parseModule(source, { ecmaVersion: "latest", sourceType: "module" });
+  } catch {
+    throw new TypeError(`Module ${path} contains invalid JavaScript.`);
+  }
+  const visit = (value: unknown) => {
+    if (Array.isArray(value)) { value.forEach(visit); return; }
+    if (!value || typeof value !== "object") return;
+    const node = value as Record<string, unknown>;
+    const type = node.type;
+    if (type === "ImportDeclaration" || type === "ExportNamedDeclaration" || type === "ExportAllDeclaration" || type === "ImportExpression") {
+      const source = node.source as Record<string, unknown> | null;
+      if (source?.type === "Literal" && typeof source.value === "string") assertReference(source.value, path, `Module ${path}`, files);
+      else if (type === "ImportExpression") throw new TypeError(`Module ${path} contains a non-literal dynamic import.`);
+    }
+    Object.values(node).forEach(visit);
+  };
+  visit(module);
 }
 
 function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap<string, Uint8Array>, depth = 0) {

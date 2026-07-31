@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
+import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Text Editor document behavior", () => {
   test("identifies a launch file before reading its contents", async () => {
@@ -7,8 +7,8 @@ describe("Text Editor document behavior", () => {
     expect(source).toContain("await load(launchFile, generation, true)");
 
     const load = source.slice(source.indexOf("async function load("), source.indexOf("async function remoteChanged("));
-    expect(load.indexOf("name = entry.name")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
-    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("name = entry.name"));
+    expect(load.indexOf("setName(entry.name)")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
+    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("setName(entry.name)"));
   });
 
   test("does not replace the current document identity before an interactive file opens", async () => {
@@ -120,6 +120,14 @@ describe("Text Editor document behavior", () => {
     expect(formatText("notes.txt", "one  \n two\t")).toBe("one\n two\n");
     expect(parseTextEditorSettings({ autoSave: false, autoFormat: true, fontSize: 18, lineWrap: false })).toEqual({ autoSave: false, autoFormat: true, fontSize: 18, lineWrap: false });
     expect(parseTextEditorSettings({ fontSize: 99 })).toEqual(DEFAULT_TEXT_EDITOR_SETTINGS);
+  });
+
+  test("selects syntax highlighting from the file extension", () => {
+    expect(textEditorLanguageFor("component.TSX")).toBe("tsx");
+    expect(textEditorLanguageFor("site.min.js")).toBe("javascript");
+    expect(textEditorLanguageFor("config.yml")).toBe("yaml");
+    expect(textEditorLanguageFor("README.md")).toBe("markdown");
+    expect(textEditorLanguageFor("LICENSE")).toBe("plain");
   });
 
   test("clearly distinguishes preserved drafts from clean read-only documents", () => {

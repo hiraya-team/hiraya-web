@@ -1,17 +1,59 @@
 import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, required } from "@hiraya/system-apps-shared";
-import { formatText, parseTextEditorSettings, textEditorControlState, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorSettings } from "./editor";
+import { css } from "@codemirror/lang-css";
+import { html } from "@codemirror/lang-html";
+import { javascript } from "@codemirror/lang-javascript";
+import { json } from "@codemirror/lang-json";
+import { markdown } from "@codemirror/lang-markdown";
+import { xml } from "@codemirror/lang-xml";
+import { yaml } from "@codemirror/lang-yaml";
+import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
+import { EditorView, placeholder } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
+import { minimalSetup } from "codemirror";
+import { formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorLanguage, type TextEditorSettings } from "./editor";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
 
 const APP_ID = "app.hiraya.text-editor";
 const SETTINGS_KEY = "editor-settings";
-const editor = required<HTMLTextAreaElement>("#editor");
 const status = required<HTMLElement>("#status");
 const title = required<HTMLElement>("#title");
 const documentState = new TextDocumentState();
 const operations = new TextDocumentOperations();
+const languageConfig = new Compartment();
+const fontConfig = new Compartment();
+const lineWrapConfig = new Compartment();
+const editableConfig = new Compartment();
+const editor = new EditorView({
+  parent: required<HTMLElement>("#editor"),
+  extensions: [
+    minimalSetup,
+    EditorState.tabSize.of(2),
+    EditorView.contentAttributes.of({ "aria-label": "Document text", spellcheck: "true" }),
+    placeholder("Start writing..."),
+    languageConfig.of([]),
+    fontConfig.of(EditorView.theme({ "&": { fontSize: "13px" } })),
+    lineWrapConfig.of(EditorView.lineWrapping),
+    editableConfig.of([EditorState.readOnly.of(true), EditorView.editable.of(false)]),
+    syntaxHighlighting(HighlightStyle.define([
+      { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: "var(--editor-keyword)" },
+      { tag: [tags.string, tags.special(tags.string)], color: "var(--editor-string)" },
+      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--hiraya-text-muted)", fontStyle: "italic" },
+      { tag: [tags.number, tags.bool, tags.null], color: "var(--editor-keyword)" },
+      { tag: [tags.heading, tags.strong], color: "var(--editor-keyword)", fontWeight: "700" },
+      { tag: [tags.link, tags.url], color: "var(--editor-keyword)", textDecoration: "underline" },
+    ])),
+    EditorView.updateListener.of((update) => {
+      if (!update.docChanged) return;
+      documentState.edit(update.state.doc.toString());
+      renderDirty();
+      scheduleAutoSave();
+    }),
+  ],
+});
 let hiraya: HirayaClient;
 let handle: FileHandle | null = null;
 let name = "Untitled.txt";
@@ -22,11 +64,6 @@ let initialized = false;
 let canWrite = false;
 let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
 
-editor.addEventListener("input", () => {
-  documentState.edit(editor.value);
-  renderDirty();
-  scheduleAutoSave();
-});
 required("#open").addEventListener("click", () => void open());
 required("#save").addEventListener("click", () => void save(false));
 required("#save-as").addEventListener("click", () => void save(true));
@@ -44,7 +81,7 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
-    app.onDispose(() => { initialized = false; operations.invalidate(); clearTimeout(autoSaveTimer); });
+    app.onDispose(() => { initialized = false; operations.invalidate(); clearTimeout(autoSaveTimer); editor.destroy(); });
     let copiedSettings: unknown;
     try { copiedSettings = app.launch.arguments[0] ? JSON.parse(app.launch.arguments[0]) : undefined; } catch { copiedSettings = undefined; }
     const stored = await hiraya.storage.get(SETTINGS_KEY);
@@ -101,14 +138,14 @@ async function load(next: FileHandle, generation: number, identifyBeforeRead = f
   const entry = await statFile(next);
   if (!operations.isForegroundCurrent(generation)) return;
   if (identifyBeforeRead) {
-    name = entry.name;
+    setName(entry.name);
     renderDirty();
   }
   const loaded = await read(next, entry); if (!operations.isForegroundCurrent(generation)) return;
   documentState.load(loaded.text, loaded.entry.contentRevision);
-  editor.value = loaded.text;
+  replaceEditorText(loaded.text);
   handle = next;
-  name = loaded.entry.name;
+  setName(loaded.entry.name);
   renderDirty();
   setStatus(canWrite ? `Opened ${name}.` : writeRestrictionMessage(writeReason, false));
 }
@@ -124,8 +161,8 @@ async function remoteChanged() {
       setStatus("This file changed elsewhere. Your unsaved text is preserved; use Save as or review before replacing the remote version.", true);
       return;
     }
-    if (editor.value !== documentState.text) editor.value = documentState.text;
-    name = loaded.entry.name;
+    replaceEditorText(documentState.text);
+    setName(loaded.entry.name);
     renderDirty();
     setStatus(`Reloaded ${name} after an external change.`);
   } catch (error) { if (operations.isBackgroundCurrent(generation)) setStatus(describeError(error, "Could not reload the changed file."), true); }
@@ -147,15 +184,15 @@ async function save(saveAs: boolean) {
       if (entry.kind !== "file") throw new Error("The save destination is not a file.");
       expected = entry.metadata.contentRevision;
     }
-    const sourceText = editor.value;
+    const sourceText = editorText();
     const text = settings.autoFormat ? formatText(name, sourceText) : sourceText;
     const bytes = new TextEncoder().encode(text);
     if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, documentState.dirty), documentState.dirty); return; }
     const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
     handle = destination;
-    name = saved.name;
+    setName(saved.name);
     documentState.saved(sourceText, text, saved.contentRevision);
-    if (editor.value !== documentState.text) editor.value = documentState.text;
+    replaceEditorText(documentState.text);
     renderDirty();
     if (documentState.dirty) scheduleAutoSave();
     setStatus(`Saved ${name}.`);
@@ -168,10 +205,7 @@ async function save(saveAs: boolean) {
 function applyFormatting() {
   if (!initialized || !canWrite) return;
   try {
-    editor.value = formatText(name, editor.value);
-    documentState.edit(editor.value);
-    renderDirty();
-    scheduleAutoSave();
+    replaceEditorText(formatText(name, editorText()));
     setStatus("Document formatted.");
   } catch (error) { setStatus(describeError(error, "Could not format the document."), true); }
 }
@@ -192,8 +226,10 @@ async function changeSettings(next: TextEditorSettings) {
 }
 
 function applySettings() {
-  editor.style.fontSize = `${settings.fontSize}px`;
-  editor.wrap = settings.lineWrap ? "soft" : "off";
+  editor.dispatch({ effects: [
+    fontConfig.reconfigure(EditorView.theme({ "&": { fontSize: `${settings.fontSize}px` } })),
+    lineWrapConfig.reconfigure(settings.lineWrap ? EditorView.lineWrapping : []),
+  ] });
   required<HTMLSelectElement>("#font-size").value = String(settings.fontSize);
   required<HTMLInputElement>("#line-wrap").checked = settings.lineWrap;
   required<HTMLInputElement>("#auto-save").checked = settings.autoSave;
@@ -221,7 +257,10 @@ function renderControlState() {
   required<HirayaButton>("#open").disabled = !controls.open;
   required<HTMLSelectElement>("#font-size").disabled = !controls.settings;
   required<HTMLInputElement>("#line-wrap").disabled = !controls.settings;
-  editor.readOnly = !controls.write;
+  editor.dispatch({ effects: editableConfig.reconfigure([
+    EditorState.readOnly.of(!controls.write),
+    EditorView.editable.of(controls.write),
+  ]) });
   for (const id of ["save", "save-as", "format"]) required<HirayaButton>(`#${id}`).disabled = !controls.write;
   for (const id of ["auto-save", "auto-format"]) required<HTMLInputElement>(`#${id}`).disabled = !controls.write;
   required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
@@ -230,3 +269,28 @@ function publishCommands() {
   void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && canWrite }, { id: "format", title: "Format document", enabled: initialized && !saving && canWrite }]);
 }
 function setStatus(message: string, error = false) { status.textContent = message; status.classList.toggle("error", error); }
+
+function languageExtension(language: TextEditorLanguage): Extension {
+  switch (language) {
+    case "markdown": return markdown();
+    case "json": return json();
+    case "javascript": return javascript();
+    case "typescript": return javascript({ typescript: true });
+    case "jsx": return javascript({ jsx: true });
+    case "tsx": return javascript({ jsx: true, typescript: true });
+    case "css": return css();
+    case "html": return html();
+    case "xml": return xml();
+    case "yaml": return yaml();
+    default: return [];
+  }
+}
+
+function editorText() { return editor.state.doc.toString(); }
+function replaceEditorText(text: string) {
+  if (editorText() !== text) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
+}
+function setName(next: string) {
+  name = next;
+  editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(name))) });
+}

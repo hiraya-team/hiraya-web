@@ -5,7 +5,29 @@ export type TextEditorSettings = Readonly<{
   lineWrap: boolean;
 }>;
 
+export type TextEditorLanguage = "plain" | "markdown" | "json" | "javascript" | "typescript" | "jsx" | "tsx" | "css" | "html" | "xml" | "yaml";
+
+const EXTENSION_LANGUAGES: Readonly<Record<string, TextEditorLanguage>> = {
+  css: "css",
+  htm: "html",
+  html: "html",
+  js: "javascript",
+  jsx: "jsx",
+  json: "json",
+  markdown: "markdown",
+  md: "markdown",
+  ts: "typescript",
+  tsx: "tsx",
+  xml: "xml",
+  yaml: "yaml",
+  yml: "yaml",
+};
+
 export const DEFAULT_TEXT_EDITOR_SETTINGS: TextEditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, lineWrap: true };
+
+export function textEditorLanguageFor(name: string): TextEditorLanguage {
+  return EXTENSION_LANGUAGES[name.split(".").pop()?.toLowerCase() ?? ""] ?? "plain";
+}
 
 export function writeRestrictionMessage(reason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable", dirty: boolean) {
   if (reason === "available") return dirty ? "Write access restored. Your unsaved draft is ready to save." : "Write access restored. Editing is available.";
