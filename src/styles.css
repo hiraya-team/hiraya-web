@@ -5699,4 +5699,8 @@ button.app-picker__disclosure { cursor: pointer; }
   .activity-item__open { grid-column: 2; justify-self: start; margin: -8px 0 14px; }
 }
 
+@container settings-window (width > 600px) {
+  .settings-ia-categories { display: grid; overflow-x: visible; padding-bottom: 4px; scroll-snap-type: none; }
+}
+
 .context-menu[data-positioned] { position: fixed; width: min(310px, calc(100vw - 16px)); }

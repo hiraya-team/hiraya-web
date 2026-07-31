@@ -179,11 +179,15 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
 
   const settingsWindow = page.locator('[data-app-window="settings"]');
   const settingsContent = settingsWindow.locator(".settings-window__content");
+  const categories = settingsWindow.getByRole("navigation", { name: "Settings categories" });
   await expect(settingsWindow).toBeVisible();
   await expect(settingsWindow.locator(".settings-window__content--main")).toHaveCSS("display", "grid");
+  await expect(categories).toHaveCSS("display", "grid");
+  await expect.poll(() => categories.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   await resizeWindowWidth(page, settingsWindow, 600);
   await expect(settingsWindow.locator(".settings-window__content--main")).toHaveCSS("display", "block");
+  await expect(categories).toHaveCSS("display", "flex");
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
@@ -196,7 +200,6 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
   await expect(themesLauncher).toBeFocused();
 
-  const categories = settingsWindow.getByRole("navigation", { name: "Settings categories" });
   await categories.getByRole("button", { name: "Apps & permissions" }).click();
   const appsLauncher = settingsWindow.locator('[aria-labelledby="apps-link-heading"] .settings-row--navigation');
   await appsLauncher.click();
