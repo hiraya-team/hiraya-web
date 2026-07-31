@@ -4325,6 +4325,7 @@ function App({ session }: { session: AuthSession | null }) {
       {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => setDialog(null)} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
       {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
         <AppPickerDialog
+          key={appDialogRequests[0].id}
           request={appDialogRequests[0]}
           entries={entries}
           onCancel={() => appHostServices.dialogs.reject(appDialogRequests[0].id)}

@@ -41,6 +41,40 @@ test("search launches installed apps from the keyboard", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
 });
 
+test("app file picker expands folders and keeps hidden selections", async ({ page }) => {
+  await openLocalDesktop(page);
+  const folderName = `picker-${Date.now()}`;
+  const fileName = "nested.txt";
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: folderName }).dblclick();
+
+  const folderWindow = page.getByRole("dialog", { name: folderName });
+  await folderWindow.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Text Editor");
+  await page.keyboard.press("Enter");
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  await editor.frameLocator("iframe").getByRole("button", { name: "Open" }).click();
+
+  const picker = page.getByRole("dialog", { name: "Choose file" });
+  const folder = picker.getByRole("button", { name: folderName });
+  await expect(folder).toHaveAttribute("aria-expanded", "false");
+  await expect(picker.getByRole("radio", { name: fileName })).toHaveCount(0);
+  await folder.click();
+  await picker.getByRole("radio", { name: fileName }).check();
+  await folder.click();
+  await expect(picker.getByText(fileName, { exact: true })).toBeVisible();
+  await expect(picker.getByRole("button", { name: "Choose file" })).toBeEnabled();
+});
+
 test("local mutation persists through reload", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `e2e-${Date.now()}.txt`;
