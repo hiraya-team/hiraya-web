@@ -167,13 +167,14 @@ describe("Hiraya theme archives", () => {
     id: "dev.hiraya.aurora",
     name: "Aurora",
     definition: BUILTIN_THEMES["hiraya-dusk"].definition,
-    wallpaper: { kind: "scene", entrypoint: "wallpaper.html" },
+    wallpaper: { kind: "scene", entrypoint: "wallpaper.html", dim: 0.08, overlayColor: "#10aBcF", overlayOpacity: 0.08 },
   };
 
   test("classifies and validates a sandboxed scene package", async () => {
     const inspection = await inspectHirayaArchive(archive({ [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)), "wallpaper.html": strToU8('<!doctype html><style>body{background:url("glow.webp")}</style>'), "glow.webp": strToU8("image") }));
     expect(inspection.kind).toBe("theme");
     expect(inspection.manifest.id).toBe(themeManifest.id);
+    expect(inspection.manifest.wallpaper?.overlayColor).toBe("#10ABCF");
     await expect(inspectAppArchive(archive({ [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)), "wallpaper.html": strToU8("<!doctype html>") }))).rejects.toThrow("theme, not an app");
   });
 

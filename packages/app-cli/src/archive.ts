@@ -309,7 +309,7 @@ function parseThemeManifest(value: unknown): HirayaThemeManifest {
       ...(wallpaper.positionY === undefined ? {} : { positionY: optionalNumber("positionY", 0, 100, true)! }),
       ...(wallpaper.blur === undefined ? {} : { blur: optionalNumber("blur", 0, 24, true)! }),
       ...(wallpaper.dim === undefined ? {} : { dim: optionalNumber("dim", 0, 0.8)! }),
-      ...(wallpaper.overlayColor === undefined ? {} : { overlayColor: wallpaper.overlayColor.toLowerCase() }),
+      ...(wallpaper.overlayColor === undefined ? {} : { overlayColor: wallpaper.overlayColor.toUpperCase() }),
       ...(wallpaper.overlayOpacity === undefined ? {} : { overlayOpacity: optionalNumber("overlayOpacity", 0, 0.8)! }),
     },
   };
