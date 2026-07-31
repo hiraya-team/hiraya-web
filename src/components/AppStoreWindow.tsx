@@ -43,16 +43,17 @@ export function AppStoreWindow({ packages, installedApps, loading, error, offlin
         const installed = view.appId ? installedApps.find((app) => app.appId === view.appId) : installedApps.find((app) => app.source === "store" && app.packageEntryId === view.item.entry.id);
         const current = installed?.source === "store" && installed.sourceCatalogId === view.item.catalogId && installed.sourceDesktopId === view.item.desktopId && installed.packageEntryId === view.item.entry.id && installed.sourceContentRevision === view.item.contentRevision;
         const launchApproved = Boolean(installed && (current || view.loading || view.error || offline));
-        const action = launchApproved ? "Open" : installed ? "Update" : "Install";
+        const retry = Boolean(view.error && !installed);
+        const action = launchApproved ? "Open" : retry ? "Retry" : installed ? "Update" : "Install";
         return <article className="app-store__row" role="listitem" key={view.item.entry.id}>
           <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
           <div className="app-store__copy">
             <div><h3>{view.name}</h3>{view.version && <span>v{view.version}</span>}</div>
-            <p>{view.loading ? "Inspecting package..." : view.error || view.description}</p>
+            <p role={view.error ? "alert" : undefined}>{view.loading ? "Inspecting package..." : view.error || view.description}</p>
             <small>{formatBytes(view.item.entry.size)}{installed && !current ? " · Update available" : current ? " · Installed on this device" : ""}</small>
           </div>
-          <button className={`button ${launchApproved ? "button--quiet" : "button--primary"}`} type="button" disabled={!launchApproved && (view.loading || Boolean(view.error) || offline)} onClick={() => launchApproved && installed ? onLaunch(installed) : onInstall(view.item)}>
-            {launchApproved ? <Play size={16} weight="fill" /> : <DownloadSimple size={16} />}{action}
+          <button className={`button ${launchApproved || retry ? "button--quiet" : "button--primary"}`} type="button" disabled={!launchApproved && !retry && (view.loading || offline)} onClick={() => launchApproved && installed ? onLaunch(installed) : retry ? onRetry() : onInstall(view.item)}>
+            {launchApproved ? <Play size={16} weight="fill" /> : retry ? <ArrowClockwise size={16} /> : <DownloadSimple size={16} />}{action}
           </button>
         </article>;
       })}
