@@ -12,7 +12,7 @@ async function openLocalDesktop(page: Page) {
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
   await openLocalDesktop(page);
-  const search = page.getByRole("button", { name: "Search files, windows, and commands" });
+  const search = page.getByRole("button", { name: "Search apps, files, windows, and commands" });
   await search.focus();
   await expect(search).toBeFocused();
   await search.click();
@@ -28,6 +28,17 @@ test("keyboard modal traps focus, closes with Escape, and restores its invoker",
   await page.keyboard.press("Escape");
   await expect(dialog).toBeHidden();
   await expect(search).toBeFocused();
+});
+
+test("search launches installed apps from the keyboard", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Text Editor");
+  await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(search).toBeHidden();
+  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
 });
 
 test("local mutation persists through reload", async ({ page }) => {

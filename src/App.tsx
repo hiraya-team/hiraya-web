@@ -2540,6 +2540,15 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  function launchApp(install: InstalledApp) {
+    if (install.source === "system") void launchInstalledApp(install);
+    else {
+      const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === install.packageEntryId && candidate.kind === "file");
+      if (entry) void openAppPackage(entry);
+      else setError("That app package is unavailable.");
+    }
+  }
+
   async function openFileWithApp(app: InstalledApp, file: FileEntry) {
     setContextMenu(null);
     const currentRoute = routeRef.current;
@@ -3347,7 +3356,7 @@ function App({ session }: { session: AuthSession | null }) {
   };
   const searchCommands = commandService.list(commandContext);
   const keyboardShortcuts: KeyboardShortcut[] = [
-    { id: "search", group: "Navigation", label: "Search files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
+    { id: "search", group: "Navigation", label: "Search apps, files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
     { id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] },
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
@@ -3576,7 +3585,7 @@ function App({ session }: { session: AuthSession | null }) {
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
-          <button type="button" aria-label="Search files, windows, and commands" title="Search (Ctrl/Command K)" onClick={() => setActivePanel("search")}>
+          <button type="button" aria-label="Search apps, files, windows, and commands" title="Search (Ctrl/Command K)" onClick={() => setActivePanel("search")}>
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
           </button>
@@ -3919,14 +3928,7 @@ function App({ session }: { session: AuthSession | null }) {
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
                         quarantinedApps={quarantinedApps}
-                        onLaunchApp={(installed) => {
-                          if (installed.source === "system") void launchInstalledApp(installed);
-                          else {
-                            const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === installed.packageEntryId && candidate.kind === "file");
-                            if (entry) void openAppPackage(entry);
-                            else setError("That app package is unavailable.");
-                          }
-                        }}
+                        onLaunchApp={launchApp}
                         onUninstallApp={(installed) => void removeInstalledApp(installed)}
                         onExportQuarantinedApp={exportQuarantinedApp}
                         onRemoveQuarantinedApp={(app) => void discardQuarantinedApp(app)}
@@ -4419,6 +4421,14 @@ function App({ session }: { session: AuthSession | null }) {
           online={syncStatus === "online"}
           onSearchAllDesktops={searchAccessibleDesktops}
           onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
+          apps={installedApps.map((app) => ({
+            id: app.appId,
+            name: app.manifest.name,
+            description: app.manifest.description,
+            source: app.source,
+            fileTypes: app.manifest.fileTypes,
+            available: installedAppIsAvailable(app, entries),
+          }))}
           windows={windowItems.map((window) => ({
             id: window.id,
             title: window.title,
@@ -4426,6 +4436,10 @@ function App({ session }: { session: AuthSession | null }) {
           }))}
           commands={searchCommands}
           onOpenEntry={(result) => void openSearchResult(result)}
+          onLaunchApp={(appId) => {
+            const app = installedApps.find((candidate) => candidate.appId === appId);
+            if (app) launchApp(app);
+          }}
           onFocusWindow={focusApp}
           onRunCommand={runSearchCommand}
           onClose={() => setActivePanel(null)}

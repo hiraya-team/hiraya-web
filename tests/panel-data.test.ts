@@ -8,8 +8,10 @@ describe("panel data helpers", () => {
       { id: "command", category: "commands", label: "Create folder", keywords: ["new directory"] },
       { id: "file", category: "files", label: "Roadmap.md", detail: "text/markdown" },
       { id: "folder", category: "folders", label: "Planning" },
+      { id: "app", category: "apps", label: "Planner" },
     ], "plan");
     expect(groups.map((group) => [group.category, group.items.map((item) => item.id)])).toEqual([
+      ["apps", ["app"]],
       ["folders", ["folder"]],
     ]);
     expect(filterAndGroupSearchItems([

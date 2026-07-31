@@ -1,6 +1,6 @@
 import type { OutboxOperation, OutboxRecord } from "../lib/outbox";
 
-export const SEARCH_CATEGORIES = ["files", "folders", "windows", "commands"] as const;
+export const SEARCH_CATEGORIES = ["apps", "files", "folders", "windows", "commands"] as const;
 export type SearchCategory = typeof SEARCH_CATEGORIES[number];
 
 export type SearchItem = {

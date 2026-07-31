@@ -1,5 +1,5 @@
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
-import { File, Folder, MagnifyingGlass, SquaresFour, TerminalWindow, X } from "@phosphor-icons/react";
+import { File, Folder, MagnifyingGlass, Package, SquaresFour, TerminalWindow, X } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
 import { filterAndGroupSearchItems, selectedRenderedItem, type SearchCategory, type SearchItem } from "../ui/panel-data";
 import { useModalDialog } from "../ui/modal-dialog";
@@ -13,6 +13,15 @@ export type SearchPaletteWindow = {
   detail?: string;
 };
 
+export type SearchPaletteApp = {
+  id: string;
+  name: string;
+  description?: string;
+  source: "system" | "desktop";
+  fileTypes?: readonly string[];
+  available: boolean;
+};
+
 export type SearchCommandPaletteProps<Id extends CommandId> = {
   entries: readonly DesktopEntry[];
   activeDesktopId: string;
@@ -24,9 +33,11 @@ export type SearchCommandPaletteProps<Id extends CommandId> = {
   online: boolean;
   onSearchAllDesktops: (query: string, signal: AbortSignal) => Promise<DesktopSearchResponse>;
   onSearchAllDesktopsChange: (enabled: boolean) => void;
+  apps: readonly SearchPaletteApp[];
   windows: readonly SearchPaletteWindow[];
   commands: readonly CommandItem<Id>[];
   onOpenEntry: (result: DesktopSearchResult) => void;
+  onLaunchApp: (appId: string) => void;
   onFocusWindow: (windowId: string) => void;
   onRunCommand: (commandId: Id) => void;
   onClose: () => void;
@@ -35,6 +46,7 @@ export type SearchCommandPaletteProps<Id extends CommandId> = {
 type PaletteItem = SearchItem & { action: () => void; disabled?: boolean };
 
 const CATEGORY_LABELS: Record<SearchCategory, string> = {
+  apps: "Apps",
   files: "Files",
   folders: "Folders",
   windows: "Open windows",
@@ -42,13 +54,14 @@ const CATEGORY_LABELS: Record<SearchCategory, string> = {
 };
 
 function ResultIcon({ category }: { category: SearchCategory }) {
+  if (category === "apps") return <Package size={18} weight="duotone" aria-hidden="true" />;
   if (category === "files") return <File size={18} weight="duotone" aria-hidden="true" />;
   if (category === "folders") return <Folder size={18} weight="duotone" aria-hidden="true" />;
   if (category === "windows") return <SquaresFour size={18} weight="duotone" aria-hidden="true" />;
   return <TerminalWindow size={18} weight="duotone" aria-hidden="true" />;
 }
 
-export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, windows, commands, onOpenEntry, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
+export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -102,6 +115,17 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   const desktopResults = searchAllDesktops ? (remoteResponse ? [...remoteResponse.results.filter((result) => result.desktopId !== activeDesktopId || result.authorityCatalogId !== activeAuthorityCatalogId), ...activeResults] : [...cachedDesktopResults.filter((result) => result.desktopId !== activeDesktopId || result.authorityCatalogId !== activeAuthorityCatalogId), ...activeResults]) : activeResults;
 
   const items: PaletteItem[] = [
+    ...apps.map((app): PaletteItem => ({
+      id: `app:${app.id}`,
+      category: "apps",
+      label: app.name,
+      detail: app.available
+        ? [app.source === "system" ? "Bundled system app" : "Desktop app", app.description].filter(Boolean).join(" · ")
+        : "Desktop app · Package unavailable",
+      keywords: [app.id, app.source, ...(app.fileTypes ?? [])],
+      disabled: !app.available,
+      action: () => onLaunchApp(app.id),
+    })),
     ...desktopResults.map((result): PaletteItem => ({
       id: `entry:${result.authorityCatalogId ?? "local"}:${result.desktopId}:${result.entry.id}`,
       category: result.entry.kind === "file" ? "files" : "folders",
@@ -127,7 +151,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
       action: () => onRunCommand(command.id),
     })),
   ];
-  const suggestedItems = deferredQuery ? items : [...items.filter((item) => item.category === "windows"), ...items.filter((item) => item.category === "files" || item.category === "folders").slice(0, 5), ...items.filter((item) => item.category === "commands").slice(0, 5)];
+  const suggestedItems = deferredQuery ? items : [...items.filter((item) => item.category === "apps").slice(0, 5), ...items.filter((item) => item.category === "windows"), ...items.filter((item) => item.category === "files" || item.category === "folders").slice(0, 5), ...items.filter((item) => item.category === "commands").slice(0, 5)];
   const groups = filterAndGroupSearchItems(suggestedItems, deferredQuery);
   const results = groups.flatMap((group) => group.items);
   const selectedIndex = results.length === 0 ? -1 : Math.min(activeIndex, results.length - 1);
@@ -167,7 +191,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
         <header className="command-palette__header">
           <MagnifyingGlass size={20} aria-hidden="true" />
           <label className="sr-only" htmlFor={`${titleId}-query`} id={titleId}>
-            Search files, folders, windows, and commands
+            Search apps, files, folders, windows, and commands
           </label>
           <input
             id={`${titleId}-query`}
@@ -215,7 +239,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
             <div className="command-palette__empty" role="option" aria-disabled="true" aria-selected="false">
               <MagnifyingGlass size={28} weight="duotone" aria-hidden="true" />
               <strong>{query ? "No results found" : "Nothing to suggest yet"}</strong>
-              <span>{query ? "Try a file name, window, or command." : "Current windows, recent files, and common commands appear here."}</span>
+              <span>{query ? "Try an app, file name, window, or command." : "Apps, current windows, recent files, and common commands appear here."}</span>
             </div>
           ) : (
             groups.map((group) => (

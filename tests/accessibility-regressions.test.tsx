@@ -21,9 +21,11 @@ const baseProps = {
     results: [],
   }),
   onSearchAllDesktopsChange: () => undefined,
+  apps: [],
   windows: [],
   commands: [],
   onOpenEntry: () => undefined,
+  onLaunchApp: () => undefined,
   onFocusWindow: () => undefined,
   onRunCommand: () => undefined,
   onClose: () => undefined,
@@ -57,6 +59,19 @@ describe("accessibility regressions", () => {
     expect(activeId).toBeTruthy();
     expect(markup).toContain(`id="${activeId}"`);
     expect(markup).toContain(`id="${activeId}" class="command-palette__result" type="button" role="option" aria-selected="true"`);
+  });
+
+  test("search exposes installed apps and disables unavailable packages", () => {
+    const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} apps={[
+      { id: "app.hiraya.text-editor", name: "Text Editor", source: "system", available: true },
+      { id: "example.missing", name: "Missing App", source: "desktop", available: false },
+    ]} />);
+
+    expect(markup).toContain('role="group" aria-label="Apps"');
+    expect(markup).toContain("Text Editor");
+    expect(markup).toMatch(/<button[^>]+aria-disabled="true"[^>]+disabled=""[^>]*>[^<]*<svg[^>]*>/);
+    expect(markup).toContain("Missing App");
+    expect(markup).toContain("Package unavailable");
   });
 
   test("indexes search breadcrumbs once for the complete entry tree", () => {
