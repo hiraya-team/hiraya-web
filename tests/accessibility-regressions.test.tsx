@@ -192,10 +192,12 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('style.setProperty("--area-track-x"');
+    expect(app).toContain('style.setProperty("--icon-area-track-x"');
     expect(app).toContain('style.removeProperty("--area-track-x")');
     expect(app).toContain("translate3d(var(--area-track-x");
+    expect(app).toContain("translate3d(var(--icon-area-track-x");
     expect(app).toContain("areaCameraPosition(activeSegment, desktopSize)");
-    expect(app).toContain("areaWorldOrigin(desktopSegment.segment, desktopSize)");
+    expect(app).toContain("areaWorldOrigin(desktopSegment.segment, iconArea)");
     expect(app).not.toContain("segment.column - minColumn");
     expect(windowLayer).toContain('className={`app-window-layer${windowed ? " desktop-area-track" : ""}`}');
     expect(windowLayer).toContain("segmentVisible={windowed ? segmentVisible : segmentActive}");

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DesktopEntry } from "../src/types";
-import { desktopSlots, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition } from "../src/ui/desktop-geometry";
+import { desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -31,6 +31,27 @@ describe("responsive desktop geometry", () => {
     const slots = desktopSlots(size);
     expect(nextAvailableDesktopSlot(size, [slots[0], slots[2]])).toEqual(slots[1]);
     expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
+  });
+
+  test("aligns icon areas to the active grid with trailing viewport gutters", () => {
+    expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 312, height: 560 });
+    expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 104, height: 112 });
+
+    const themed = { width: 110, height: 114, stepX: 116, stepY: 124 };
+    const size = iconAreaSize({ width: 390, height: 600 }, themed);
+    expect(size).toEqual({ width: 348, height: 496 });
+    expect(size.width % themed.stepX).toBe(0);
+    expect(size.height % themed.stepY).toBe(0);
+  });
+
+  test("keeps signed icon-area origins congruent with home", () => {
+    const size = iconAreaSize({ width: 390, height: 600 });
+    for (const segment of [{ column: -3, row: 2 }, { column: 0, row: 0 }, { column: 4, row: -5 }]) {
+      const origin = restoreLogicalPosition({ x: 0, y: 0 }, segment, size);
+      expect(Math.abs(origin.x % 104)).toBe(0);
+      expect(Math.abs(origin.y % 112)).toBe(0);
+      expect(projectLogicalPosition(origin, size).segment).toEqual(segment);
+    }
   });
 
   test("uses themed icon metrics without changing coordinate-based membership", () => {

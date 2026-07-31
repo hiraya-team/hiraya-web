@@ -74,7 +74,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -286,6 +286,7 @@ function App({ session }: { session: AuthSession | null }) {
   const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
+  const iconAreaSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
   const windowTrackRef = useRef<HTMLDivElement>(null);
   const frameTrackRef = useRef<HTMLDivElement>(null);
@@ -438,8 +439,10 @@ function App({ session }: { session: AuthSession | null }) {
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
+  const iconArea = useMemo(() => iconAreaSize(desktopSize, iconMetrics), [desktopSize, iconMetrics]);
+  iconAreaSizeRef.current = iconArea;
   const rootEntries = entryIndex.roots;
-  const responsive = useMemo(() => responsiveDesktop(entries, desktopSize, iconMetrics), [desktopSize, entries, iconMetrics]);
+  const responsive = useMemo(() => responsiveDesktop(entries, iconArea, iconMetrics), [entries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const actualActiveSegment = responsive.segments.find((candidate) => candidate.key === activeSegmentKey);
   const occupiedSegments = useMemo(() => {
@@ -472,6 +475,7 @@ function App({ session }: { session: AuthSession | null }) {
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, true);
   const minimapDetailed = minimapExpanded;
   const restingCamera = areaCameraPosition(activeSegment, desktopSize);
+  const iconRestingCamera = areaCameraPosition(activeSegment, iconArea);
   const transitionSegmentKeys = new Set(areaTransition ? [segmentKey(areaTransition.source), segmentKey(areaTransition.target)] : []);
   const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
   const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
@@ -480,7 +484,7 @@ function App({ session }: { session: AuthSession | null }) {
     !minimapExpanded &&
     activeDesktopSegment.entries.some((entry) => {
       const position = responsive.positions.get(entry.id) ?? entry.position;
-      return position.x + iconMetrics.width > desktopSize.width - minimapWidth && position.y + iconMetrics.height > desktopSize.height - minimapHeight;
+      return position.x + iconMetrics.width > iconArea.width - minimapWidth && position.y + iconMetrics.height > iconArea.height - minimapHeight;
     });
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
@@ -1874,9 +1878,9 @@ function App({ session }: { session: AuthSession | null }) {
   function positionFor(parentId: string | null) {
     if (parentId === null) {
       const segmentEntryCount = childrenCount(null);
-      const occupied = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, desktopSize).local);
-      const localPosition = nextAvailableDesktopSlot(desktopSize, occupied, responsive.segments.length > 1, segmentEntryCount, iconMetrics);
-      return restoreLogicalPosition(localPosition, activeSegment, desktopSize);
+      const occupied = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local);
+      const localPosition = nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, segmentEntryCount, iconMetrics);
+      return restoreLogicalPosition(localPosition, activeSegment, iconArea);
     }
     const position = nextRootEntryPosition(childrenCount(parentId), window.innerHeight, undefined, iconMetrics);
     return position;
@@ -1884,23 +1888,27 @@ function App({ session }: { session: AuthSession | null }) {
 
   function snapPositionInView(position: EntryPosition) {
     return {
-      x: snapAxis(position.x, GRID_ORIGIN.x, iconMetrics.stepX, Math.max(8, desktopSize.width - iconMetrics.width)),
-      y: snapAxis(position.y, GRID_ORIGIN.y, iconMetrics.stepY, Math.max(8, desktopSize.height - iconMetrics.height)),
+      x: snapAxis(position.x, GRID_ORIGIN.x, iconMetrics.stepX, Math.max(8, iconArea.width - iconMetrics.width)),
+      y: snapAxis(position.y, GRID_ORIGIN.y, iconMetrics.stepY, Math.max(8, iconArea.height - iconMetrics.height)),
+    };
+  }
+
+  function clampPositionInView(position: EntryPosition) {
+    return {
+      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, position.x)),
+      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, position.y)),
     };
   }
 
   function snapRootEntryPosition(position: EntryPosition) {
-    const projection = projectLogicalPosition(position, desktopSize);
-    return restoreLogicalPosition(snapPositionInView(projection.local), projection.segment, desktopSize);
+    const projection = projectLogicalPosition(position, iconArea);
+    return restoreLogicalPosition(snapPositionInView(projection.local), projection.segment, iconArea);
   }
 
   function positionAtDesktopPoint(clientX: number, clientY: number) {
     const bounds = desktopRef.current?.getBoundingClientRect();
     if (!bounds) return { x: 8, y: 8 };
-    const position = {
-      x: Math.min(Math.max(8, desktopSize.width - iconMetrics.width), Math.max(8, clientX - bounds.left - iconMetrics.width / 2)),
-      y: Math.min(Math.max(8, desktopSize.height - iconMetrics.height), Math.max(8, clientY - bounds.top - iconMetrics.height / 2)),
-    };
+    const position = clampPositionInView({ x: clientX - bounds.left - iconMetrics.width / 2, y: clientY - bounds.top - iconMetrics.height / 2 });
     return layoutRef.current.snapToGrid ? snapPositionInView(position) : position;
   }
 
@@ -2311,12 +2319,12 @@ function App({ session }: { session: AuthSession | null }) {
     setImportProgress({ folderCount: 0, fileCount: sources.filter((source) => source.file).length, totalBytes: sources.reduce((total, source) => total + (source.file?.size ?? 0), 0), phase: "preparing" });
     try {
       const offset = childrenCount(parentId);
-      const occupied = parentId === null ? activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, desktopSize).local) : [];
+      const occupied = parentId === null ? activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local) : [];
       const positionForRoot = (index: number) => {
         if (parentId !== null) return nextRootEntryPosition(offset + index, window.innerHeight, base, iconMetrics);
-        const localPosition = base && index === 0 ? (layoutRef.current.snapToGrid ? snapPositionInView(base) : base) : nextAvailableDesktopSlot(desktopSize, occupied, responsive.segments.length > 1, offset + index, iconMetrics);
+        const localPosition = base && index === 0 ? (layoutRef.current.snapToGrid ? snapPositionInView(base) : clampPositionInView(base)) : nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, offset + index, iconMetrics);
         occupied.push(localPosition);
-        return restoreLogicalPosition(localPosition, activeSegment, desktopSize);
+        return restoreLogicalPosition(localPosition, activeSegment, iconArea);
       };
       const plan = buildImportPlan(sources, { destinationParentId: parentId, existingEntries: entriesRef.current, positionForRoot });
       setImportProgress({ folderCount: plan.folderCount, fileCount: plan.fileCount, totalBytes: plan.totalBytes, phase: "saving" });
@@ -2402,17 +2410,17 @@ function App({ session }: { session: AuthSession | null }) {
     if (targetParentId) {
       return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], targetParentId, true);
     }
-    const sourceSegment = projectLogicalPosition(entry.position, desktopSize).segment;
-    const sourceOrigin = areaWorldOrigin(sourceSegment, desktopSize);
+    const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
+    const sourceOrigin = areaWorldOrigin(sourceSegment, iconArea);
     const worldPosition = { x: sourceOrigin.x + position.x, y: sourceOrigin.y + position.y };
     const logicalCanvasPosition = layoutRef.current.snapToGrid ? snapRootEntryPosition(worldPosition) : worldPosition;
-    const projected = projectLogicalPosition(logicalCanvasPosition, desktopSize);
+    const projected = projectLogicalPosition(logicalCanvasPosition, iconArea);
     const targetSegment = edgeNavigationRef.current?.targetSegment ?? projected.segment;
     const localPosition = {
-      x: Math.min(Math.max(8, desktopSize.width - iconMetrics.width), Math.max(8, logicalCanvasPosition.x - targetSegment.column * desktopSize.width)),
-      y: Math.min(Math.max(8, desktopSize.height - iconMetrics.height), Math.max(8, logicalCanvasPosition.y - targetSegment.row * desktopSize.height)),
+      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, logicalCanvasPosition.x - targetSegment.column * iconArea.width)),
+      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, logicalCanvasPosition.y - targetSegment.row * iconArea.height)),
     };
-    const logicalPosition = restoreLogicalPosition(localPosition, targetSegment, desktopSize);
+    const logicalPosition = restoreLogicalPosition(localPosition, targetSegment, iconArea);
     const group = selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
     if (group.length > 1) {
       const delta = { x: logicalPosition.x - entry.position.x, y: logicalPosition.y - entry.position.y };
@@ -2852,7 +2860,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function copyDeepLink(entry: DesktopEntry) {
-    const segment = entry.parentId === null ? projectLogicalPosition(entry.position, desktopSizeRef.current).segment : activeSegment;
+    const segment = entry.parentId === null ? projectLogicalPosition(entry.position, iconAreaSizeRef.current).segment : activeSegment;
     const target = entry.kind === "folder" ? { desktopId: activeDesktopIdRef.current, ...segment, explorerFolderId: entry.id } : { desktopId: activeDesktopIdRef.current, ...segment, fileId: entry.id };
     const url = new URL(formatDesktopRoute(target), window.location.origin);
     try {
@@ -2940,7 +2948,7 @@ function App({ session }: { session: AuthSession | null }) {
       setError("That search result is stale. Search again after reconnecting.");
       return;
     }
-    if (current.parentId === null) goToSegment(projectLogicalPosition(current.position, desktopSizeRef.current).segment);
+    if (current.parentId === null) goToSegment(projectLogicalPosition(current.position, iconAreaSizeRef.current).segment);
     handleOpen(current);
   }
 
@@ -2979,7 +2987,7 @@ function App({ session }: { session: AuthSession | null }) {
       return positions;
     }
     const first = roots[0];
-    const origin = base ? restoreLogicalPosition(base, activeSegment, desktopSize) : positionFor(null);
+    const origin = base ? restoreLogicalPosition(base, activeSegment, iconArea) : positionFor(null);
     for (const entry of roots) positions.set(entry.id, { x: origin.x + entry.position.x - first.position.x, y: origin.y + entry.position.y - first.position.y });
     return positions;
   }
@@ -3045,14 +3053,18 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  function setAreaTrackTransform(x: number, y: number) {
-    desktopRef.current?.style.setProperty("--area-track-x", `${x}px`);
-    desktopRef.current?.style.setProperty("--area-track-y", `${y}px`);
+  function setAreaTrackTransform(windowPosition: EntryPosition, iconPosition: EntryPosition) {
+    desktopRef.current?.style.setProperty("--area-track-x", `${windowPosition.x}px`);
+    desktopRef.current?.style.setProperty("--area-track-y", `${windowPosition.y}px`);
+    desktopRef.current?.style.setProperty("--icon-area-track-x", `${iconPosition.x}px`);
+    desktopRef.current?.style.setProperty("--icon-area-track-y", `${iconPosition.y}px`);
   }
 
   function resetAreaTrackTransform() {
     desktopRef.current?.style.removeProperty("--area-track-x");
     desktopRef.current?.style.removeProperty("--area-track-y");
+    desktopRef.current?.style.removeProperty("--icon-area-track-x");
+    desktopRef.current?.style.removeProperty("--icon-area-track-y");
   }
 
   function setAreaTransitionDepth(depth: number) {
@@ -3133,8 +3145,9 @@ function App({ session }: { session: AuthSession | null }) {
     if (!animate) {
       const generation = ++areaTransitionGenerationRef.current;
       const camera = areaCameraPosition(segment, desktopSizeRef.current);
+      const iconCamera = areaCameraPosition(segment, iconAreaSizeRef.current);
       setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "interactive", kind: "gesture" });
-      setAreaTrackTransform(camera.x, camera.y);
+      setAreaTrackTransform(camera, iconCamera);
       immediateAreaTransitionRef.current = { generation, target: segment };
       navigateRoute(destinationRoute, mode);
       return;
@@ -3311,17 +3324,17 @@ function App({ session }: { session: AuthSession | null }) {
     const pending = edgeNavigationRef.current;
     if (!pending || pending.draftEntryId !== entry.id) return null;
     pending.targetSegment = targetSegment;
-    const sourceSegment = projectLogicalPosition(entry.position, desktopSize).segment;
-    const transfer = areaTransferDelta(previousSegment, targetSegment, desktopSize);
-    const targetOffset = areaTransferDelta(sourceSegment, targetSegment, desktopSize);
+    const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
+    const transfer = areaTransferDelta(previousSegment, targetSegment, iconArea);
+    const targetOffset = areaTransferDelta(sourceSegment, targetSegment, iconArea);
     goToSegment(targetSegment, "replace", undefined, true, false);
     return {
       deltaX: transfer.x,
       deltaY: transfer.y,
       minX: targetOffset.x + 8,
       minY: targetOffset.y + 8,
-      maxX: targetOffset.x + Math.max(8, desktopSize.width - iconMetrics.width),
-      maxY: targetOffset.y + Math.max(8, desktopSize.height - iconMetrics.height),
+      maxX: targetOffset.x + Math.max(8, iconArea.width - iconMetrics.width),
+      maxY: targetOffset.y + Math.max(8, iconArea.height - iconMetrics.height),
     };
   }
 
@@ -3431,7 +3444,8 @@ function App({ session }: { session: AuthSession | null }) {
       return;
     }
     const camera = areaCameraDragPosition(swipe.startSegment, desktopSize, { x: deltaX, y: deltaY }, swipe.axis);
-    setAreaTrackTransform(camera.x, camera.y);
+    const iconCamera = areaCameraDragPosition(swipe.startSegment, iconArea, { x: deltaX, y: deltaY }, swipe.axis);
+    setAreaTrackTransform(camera, iconCamera);
     const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
     const viewportDistance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
     const transitionTarget = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
@@ -3491,7 +3505,8 @@ function App({ session }: { session: AuthSession | null }) {
       delete canvasRef.current.dataset.swiping;
       if (!nextSegment) {
         const camera = areaCameraPosition(swipe.startSegment, desktopSize);
-        setAreaTrackTransform(camera.x, camera.y);
+        const iconCamera = areaCameraPosition(swipe.startSegment, iconArea);
+        setAreaTrackTransform(camera, iconCamera);
       }
     }
     if (nextSegment && routeRef.current) {
@@ -3929,15 +3944,16 @@ function App({ session }: { session: AuthSession | null }) {
             className="desktop-canvas desktop-area-track"
             ref={canvasRef}
             style={{
-              width: desktopSize.width,
-              height: desktopSize.height,
-              transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
+              width: iconArea.width,
+              height: iconArea.height,
+              transform: `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)`,
             }}
           >
           {responsive.segments.map((desktopSegment) => {
-            const origin = areaWorldOrigin(desktopSegment.segment, desktopSize);
+            const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
             const segmentActive = desktopSegment.key === activeSegmentKey;
-            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive} style={{ left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height }}>
+            const segmentVisible = segmentActive || transitionSegmentKeys.has(desktopSegment.key);
+            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
             {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
               const renderedEntry = { ...entry, position: projectedPosition };
@@ -4210,7 +4226,7 @@ function App({ session }: { session: AuthSession | null }) {
                               affected.map((entry) => entry.id),
                             );
                             const root = affected.find((entry) => entry.parentId === null);
-                            if (root) goToSegment(projectLogicalPosition(root.position, desktopSizeRef.current).segment);
+                            if (root) goToSegment(projectLogicalPosition(root.position, iconAreaSizeRef.current).segment);
                           } else setError("The entries affected by this activity no longer exist.");
                         }}
                         onConfirmThemeDelete={(theme) =>
@@ -4287,7 +4303,7 @@ function App({ session }: { session: AuthSession | null }) {
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}
         desktopName={activeDesktopName}
-        desktopSize={desktopSize}
+        desktopSize={iconArea}
         detailed={minimapDetailed}
         dirtyAppIds={dirtyAppIds}
         focusedApp={focusedApp}
@@ -4528,7 +4544,7 @@ function App({ session }: { session: AuthSession | null }) {
             openFileDialog({
               type: "create-file",
               parentId: contextMenu.parentId,
-              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, desktopSize) : contextMenu.position,
+              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) : contextMenu.position,
             });
             setContextMenu(null);
           }}
@@ -4536,7 +4552,7 @@ function App({ session }: { session: AuthSession | null }) {
             openFileDialog({
               type: "create-folder",
               parentId: contextMenu.parentId,
-              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, desktopSize) : contextMenu.position,
+              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) : contextMenu.position,
             });
             setContextMenu(null);
           }}

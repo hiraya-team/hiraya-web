@@ -75,6 +75,13 @@ export function nextAvailableDesktopSlot(size: { width: number; height: number }
   return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, slot, metrics))) ?? slots[fallbackIndex % slots.length];
 }
 
+export function iconAreaSize(viewport: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS) {
+  return {
+    width: Math.max(metrics.stepX, Math.floor(viewport.width / metrics.stepX) * metrics.stepX),
+    height: Math.max(metrics.stepY, Math.floor(viewport.height / metrics.stepY) * metrics.stepY),
+  };
+}
+
 export function projectLogicalAxis(value: number, viewportExtent: number) {
   const extent = Math.max(1, viewportExtent);
   const segment = Math.floor(value / extent);
