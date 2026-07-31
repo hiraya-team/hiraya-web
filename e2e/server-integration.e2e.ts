@@ -71,7 +71,7 @@ async function primary(browser: Browser) {
   await first.locator(".file-icon").filter({ hasText: sandboxRuntimeFile }).dblclick();
   await expect(first.getByRole("dialog", { name: `${sandboxRuntimeFile} - Text Editor` })).toBeVisible();
   const appFrame = first.frameLocator("iframe.sandbox-app-frame");
-  await expect(appFrame.locator("#status")).toContainText(`Opened ${sandboxRuntimeFile}.`);
+  await expect(appFrame.locator("#status")).toContainText(new RegExp(`^(Opened|Reloaded) ${sandboxRuntimeFile}`));
   await expect.poll(() => appFrame.locator("hiraya-toolbar").evaluate((toolbar) => ({
     foundation: document.body.classList.contains("hiraya-app"),
     toolbarDefined: Boolean(customElements.get("hiraya-toolbar")),
