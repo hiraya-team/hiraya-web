@@ -165,7 +165,7 @@ describe("app runtime", () => {
     expect(() => lease.create(new Blob())).toThrow("closed");
   });
 
-  test("allows only opaque local blob sinks needed by package previews and downloads", () => {
+  test("allows script-handled forms while blocking form navigation and remote sinks", () => {
     expect(SANDBOX_CSP).toContain("img-src data: blob:");
     expect(SANDBOX_CSP).toContain("media-src data: blob:");
     expect(SANDBOX_CSP).toContain("frame-src data: blob:");
@@ -174,8 +174,7 @@ describe("app runtime", () => {
     expect(SANDBOX_CSP).toContain("form-action 'none'");
     expect(SANDBOX_CSP).toContain("navigate-to 'none'");
     expect(SANDBOX_CSP).not.toContain("script-src data: blob:");
-    expect(SANDBOX_FLAGS).toBe("allow-scripts allow-downloads");
-    expect(SANDBOX_FLAGS).not.toContain("allow-forms");
+    expect(SANDBOX_FLAGS).toBe("allow-scripts allow-downloads allow-forms");
     expect(SANDBOX_FLAGS).not.toContain("allow-popups");
     expect(SANDBOX_FLAGS).not.toContain("allow-top-navigation");
     expect(TRUSTED_MARKDOWN_CSP).toContain("img-src data: blob: https: http:");

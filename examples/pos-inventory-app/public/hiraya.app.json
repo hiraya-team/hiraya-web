@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "uiRuntime": 1,
+  "id": "dev.hiraya.pos",
+  "name": "Hiraya POS",
+  "version": "0.1.0",
+  "entrypoint": "index.html",
+  "description": "Run a focused point of sale and inventory ledger from one portable Hiraya store file.",
+  "permissions": ["files:read", "files:write", "dialogs", "window", "commands", "theme"],
+  "fileTypes": [".hpos", "application/vnd.hiraya.pos+json"],
+  "window": {
+    "width": 1180,
+    "height": 760,
+    "minWidth": 320,
+    "minHeight": 520
+  }
+}
