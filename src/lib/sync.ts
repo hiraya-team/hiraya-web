@@ -684,19 +684,30 @@ export class SyncEngine {
     try {
       await this.storage.recordMutationAttempt?.(record.operationId, Date.now());
       await this.publishOutbox();
-      const response = await this.sendOutboxOperation(record, generation);
+      const { response, verifiedUploads } = await this.sendOutboxOperation(record, generation);
       const acknowledgedRevision = typeof response === "object" && response !== null && "catalogRevision" in response && Number.isSafeInteger(response.catalogRevision) && Number(response.catalogRevision) > 0 ? Number(response.catalogRevision) : undefined;
+      let reconciled: DesktopStateSnapshot;
       if (record.operation.kind === "create-desktop") {
-        await this.reconcile(record.operationId, record.operation.desktop.id, generation, acknowledgedRevision);
+        reconciled = await this.reconcile(record.operationId, record.operation.desktop.id, generation, acknowledgedRevision);
       } else if (record.operation.kind === "entry-transfer") {
-        await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
+        reconciled = await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
         await this.reconcile(undefined, record.operation.destinationDesktopId, generation);
       } else if (record.operation.kind === "delete-desktop") {
-        await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
+        reconciled = await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
       } else {
-        await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
+        reconciled = await this.reconcile(record.operationId, record.desktopId, generation, acknowledgedRevision);
+      }
+      const retainedUploads: Array<{ id: string; revision: number; sha256: string; content: Blob }> = [];
+      for (const [id, sha256] of verifiedUploads) {
+        const entry = reconciled.entries.find((candidate): candidate is FileEntry => candidate.kind === "file" && candidate.id === id);
+        const revision = reconciled.sync.contentRevisions[id];
+        if (entry && Number.isSafeInteger(revision)) retainedUploads.push({ id, revision, sha256, content: await this.storage.readPendingContent(record.operationId, id) });
       }
       await this.storage.acknowledgeMutation(record.operationId);
+      for (const upload of retainedUploads) {
+        try { await this.storage.cacheRemoteFile(record.desktopId, reconciled.sync.catalogId!, upload.id, upload.revision, upload.sha256, upload.content); }
+        catch (error) { console.warn("Hiraya could not retain uploaded file content locally.", error); }
+      }
       this.finishUploadTransfers(record, generation);
       if (this.offlineInventoryListeners.size > 0 && outboxOperationDesktopIds(record).has(this.desktopId)) await this.refreshOfflineInventory();
       await this.publishOutbox();

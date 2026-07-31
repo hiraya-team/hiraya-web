@@ -291,6 +291,30 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
+  test("retains uploaded files in the verified offline cache after acknowledgement", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, { ...body.items[0].entry, revision: 2, contentRevision: 2 }] };
+        return Response.json({ state: "committed", catalogRevision: 2 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+
+    const [uploaded] = await engine.importFiles([new File(["offline"], "offline.txt", { type: "text/plain" })], null, [{ x: 20, y: 20 }]);
+    await waitForOutboxDrain(engine);
+
+    expect(storage.stats.cacheWrites).toBe(1);
+    expect(await engine.isFileAvailableOffline(uploaded.id)).toBe(true);
+    expect(await engine.readFile(uploaded.id).then((file) => file.text())).toBe("offline");
+    await engine.stop();
+  });
+
   test("stages, replays, and cleans up an installed theme package asset", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
