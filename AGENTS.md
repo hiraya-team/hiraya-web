@@ -42,7 +42,7 @@ Preserve the enforced dependency direction: domain code is browser- and React-in
 
 ## UI Skill Requirement
 
-- Before analyzing, designing, or implementing any UI-related change, invoke the `design-taste-frontend` skill and follow its complete workflow, including its audit and pre-flight requirements. This is mandatory for every UI change, however small.
+- Before analyzing, designing, or implementing any UI-related change, invoke the `impeccable` skill and follow its complete workflow, including setup, the applicable playbook, the craft floor before editing, and bounded verification. This is mandatory for every UI change, however small.
 - Do not begin UI edits until the skill has been invoked. If the skill is unavailable, stop and ask the user how to proceed rather than bypassing it.
 
 ## Storage And Sync Invariants
