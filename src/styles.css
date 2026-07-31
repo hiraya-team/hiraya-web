@@ -280,6 +280,9 @@
 }
 
 .wallpaper-image,
+.wallpaper-media,
+.wallpaper-video,
+.wallpaper-scene,
 .wallpaper-dim,
 .wallpaper-color-overlay {
   position: absolute;
@@ -297,6 +300,27 @@
   filter: blur(var(--wallpaper-blur, 0px));
 }
 
+.wallpaper-media,
+.wallpaper-video,
+.wallpaper-scene {
+  position: absolute;
+  z-index: -3;
+  inset: calc(-1 * var(--wallpaper-blur, 0px));
+  width: calc(100% + 2 * var(--wallpaper-blur, 0px));
+  height: calc(100% + 2 * var(--wallpaper-blur, 0px));
+  border: 0;
+  filter: blur(var(--wallpaper-blur, 0px));
+  object-fit: var(--wallpaper-fit, cover);
+  object-position: var(--wallpaper-position, 50% 50%);
+  pointer-events: none;
+}
+
+.wallpaper-media:not([data-ready]),
+.wallpaper-video:not([data-ready]),
+.wallpaper-scene:not([data-ready]) {
+  visibility: hidden;
+}
+
 .wallpaper-dim {
   z-index: -2;
 }
@@ -305,16 +329,28 @@
   z-index: -1;
 }
 
-.desktop[data-wallpaper="file"][data-custom-loaded] {
+.desktop:is(
+  [data-wallpaper="file"][data-custom-loaded],
+  [data-wallpaper="theme"]:has(:is(.wallpaper-media, .wallpaper-video, .wallpaper-scene)[data-ready])
+) {
   background: transparent;
 }
 
-.desktop[data-wallpaper="file"][data-custom-loaded]::before,
-.desktop[data-wallpaper="file"][data-custom-loaded]::after {
+.desktop:is(
+  [data-wallpaper="file"][data-custom-loaded],
+  [data-wallpaper="theme"]:has(:is(.wallpaper-media, .wallpaper-video, .wallpaper-scene)[data-ready])
+)::before,
+.desktop:is(
+  [data-wallpaper="file"][data-custom-loaded],
+  [data-wallpaper="theme"]:has(:is(.wallpaper-media, .wallpaper-video, .wallpaper-scene)[data-ready])
+)::after {
   display: none;
 }
 
-.desktop[data-wallpaper="file"][data-custom-loaded] .wallpaper-grain {
+.desktop:is(
+  [data-wallpaper="file"][data-custom-loaded],
+  [data-wallpaper="theme"]:has(:is(.wallpaper-media, .wallpaper-video, .wallpaper-scene)[data-ready])
+) .wallpaper-grain {
   opacity: 0.08;
 }
 

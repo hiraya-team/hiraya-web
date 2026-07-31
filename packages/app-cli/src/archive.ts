@@ -1,9 +1,12 @@
 import { parseManifestV2, type AppPackageInspection } from "@hiraya/apps-contracts";
 import { parse } from "parse5";
 import { unzipSync } from "fflate";
+import { parseCustomTheme } from "../../../src/lib/themes";
+import type { CustomTheme, ThemeWallpaperKind } from "../../../src/domain/theme";
 
 export const APP_ARCHIVE_EXTENSION = ".hiraya.app";
 export const APP_MANIFEST_PATH = "hiraya.app.json";
+export const THEME_MANIFEST_PATH = "hiraya.theme.json";
 export const APP_ARCHIVE_LIMITS = {
   archiveBytes: 32 * 1024 * 1024,
   entries: 512,
@@ -27,6 +30,30 @@ interface HtmlNode {
   attrs?: Array<{ name: string; value: string }>;
   childNodes?: HtmlNode[];
 }
+
+export type ThemeWallpaperManifest = {
+  kind: ThemeWallpaperKind;
+  entrypoint: string;
+  fit?: "cover" | "contain";
+  positionX?: number;
+  positionY?: number;
+  blur?: number;
+  dim?: number;
+  overlayColor?: string;
+  overlayOpacity?: number;
+};
+
+export type HirayaThemeManifest = Omit<CustomTheme, "wallpaper"> & { schemaVersion: 1; wallpaper?: ThemeWallpaperManifest };
+export type ThemePackageInspection = {
+  kind: "theme";
+  manifest: HirayaThemeManifest;
+  digest: string;
+  entryCount: number;
+  compressedBytes: number;
+  expandedBytes: number;
+  files: ReadonlyMap<string, Uint8Array>;
+};
+export type HirayaPackageInspection = ({ kind: "app" } & AppPackageInspection) | ThemePackageInspection;
 
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
@@ -244,6 +271,74 @@ function validateHtml(entrypoint: string, files: ReadonlyMap<string, Uint8Array>
   validateHtmlSource(decodeText(files.get(entrypoint)!, "App entrypoint"), entrypoint, files);
 }
 
+function exact(value: Record<string, unknown>, required: string[], optional: string[], label: string) {
+  const allowed = new Set([...required, ...optional]);
+  if (required.some((key) => !(key in value)) || Object.keys(value).some((key) => !allowed.has(key))) throw new TypeError(`${label} has an unsupported shape.`);
+}
+
+function parseThemeManifest(value: unknown): HirayaThemeManifest {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Theme manifest must be an object.");
+  const candidate = value as Record<string, unknown>;
+  exact(candidate, ["schemaVersion", "id", "name", "definition"], ["wallpaper"], "Theme manifest");
+  if (candidate.schemaVersion !== 1) throw new TypeError("Theme manifest schema version is unsupported.");
+  const theme = parseCustomTheme({ id: candidate.id, name: candidate.name, definition: candidate.definition });
+  const { wallpaper: _storedWallpaper, ...themeManifest } = theme;
+  void _storedWallpaper;
+  if (candidate.wallpaper === undefined) return { schemaVersion: 1, ...themeManifest };
+  if (!candidate.wallpaper || typeof candidate.wallpaper !== "object" || Array.isArray(candidate.wallpaper)) throw new TypeError("Theme wallpaper is invalid.");
+  const wallpaper = candidate.wallpaper as Record<string, unknown>;
+  exact(wallpaper, ["kind", "entrypoint"], ["fit", "positionX", "positionY", "blur", "dim", "overlayColor", "overlayOpacity"], "Theme wallpaper");
+  if (wallpaper.kind !== "static" && wallpaper.kind !== "animated" && wallpaper.kind !== "scene") throw new TypeError("Theme wallpaper kind is invalid.");
+  const entrypoint = normalizeArchivePath(String(wallpaper.entrypoint));
+  const optionalNumber = (key: string, min: number, max: number, integer = false) => {
+    const number = wallpaper[key];
+    if (number === undefined) return undefined;
+    if (typeof number !== "number" || !Number.isFinite(number) || number < min || number > max || integer && !Number.isInteger(number)) throw new TypeError(`Theme wallpaper ${key} is invalid.`);
+    return number;
+  };
+  if (wallpaper.fit !== undefined && wallpaper.fit !== "cover" && wallpaper.fit !== "contain") throw new TypeError("Theme wallpaper fit is invalid.");
+  if (wallpaper.overlayColor !== undefined && (typeof wallpaper.overlayColor !== "string" || !/^#[\da-f]{6}$/i.test(wallpaper.overlayColor))) throw new TypeError("Theme wallpaper overlay color is invalid.");
+  return {
+    schemaVersion: 1,
+    ...themeManifest,
+    wallpaper: {
+      kind: wallpaper.kind,
+      entrypoint,
+      ...(wallpaper.fit === undefined ? {} : { fit: wallpaper.fit }),
+      ...(wallpaper.positionX === undefined ? {} : { positionX: optionalNumber("positionX", 0, 100, true)! }),
+      ...(wallpaper.positionY === undefined ? {} : { positionY: optionalNumber("positionY", 0, 100, true)! }),
+      ...(wallpaper.blur === undefined ? {} : { blur: optionalNumber("blur", 0, 24, true)! }),
+      ...(wallpaper.dim === undefined ? {} : { dim: optionalNumber("dim", 0, 0.8)! }),
+      ...(wallpaper.overlayColor === undefined ? {} : { overlayColor: wallpaper.overlayColor.toLowerCase() }),
+      ...(wallpaper.overlayOpacity === undefined ? {} : { overlayOpacity: optionalNumber("overlayOpacity", 0, 0.8)! }),
+    },
+  };
+}
+
+export function validateThemeFiles(files: ReadonlyMap<string, Uint8Array>) {
+  const manifestBytes = files.get(THEME_MANIFEST_PATH);
+  if (!manifestBytes) throw new TypeError(`Package must contain ${THEME_MANIFEST_PATH} at its root.`);
+  if (manifestBytes.byteLength > APP_ARCHIVE_LIMITS.manifestBytes) throw new TypeError("Theme manifest exceeds the size limit.");
+  let value: unknown;
+  try { value = JSON.parse(decodeText(manifestBytes, "Theme manifest")); } catch (error) {
+    if (error instanceof TypeError && error.message.endsWith("valid UTF-8.")) throw error;
+    throw new TypeError("Theme manifest must be valid JSON.");
+  }
+  const manifest = parseThemeManifest(value);
+  if (manifest.wallpaper) {
+    const path = manifest.wallpaper.entrypoint;
+    if (!files.has(path)) throw new TypeError(`Theme wallpaper entrypoint is missing: ${path}.`);
+    if (manifest.wallpaper.kind === "scene") {
+      if (!/\.html?$/i.test(path)) throw new TypeError("Theme scene entrypoint must be an HTML file.");
+      validateHtml(path, files);
+    } else {
+      const allowed = manifest.wallpaper.kind === "static" ? /\.(?:jpe?g|png|webp)$/i : /\.(?:gif|webp|webm|mp4)$/i;
+      if (!allowed.test(path)) throw new TypeError(`Theme ${manifest.wallpaper.kind} wallpaper uses an unsupported file type.`);
+    }
+  }
+  return { manifest, files };
+}
+
 export function validateAppFiles(files: ReadonlyMap<string, Uint8Array>) {
   const normalized = new Map<string, Uint8Array>();
   let expandedBytes = 0;
@@ -278,6 +373,14 @@ export async function sha256(bytes: Uint8Array) {
 }
 
 export async function inspectAppArchive(bytes: Uint8Array): Promise<AppPackageInspection> {
+  const packageInspection = await inspectHirayaArchive(bytes);
+  if (packageInspection.kind !== "app") throw new TypeError("The package contains a theme, not an app.");
+  const { kind: _kind, ...inspection } = packageInspection;
+  void _kind;
+  return inspection;
+}
+
+export async function inspectHirayaArchive(bytes: Uint8Array): Promise<HirayaPackageInspection> {
   const directory = readZipDirectory(bytes);
   let unzipped: Record<string, Uint8Array>;
   try { unzipped = unzipSync(bytes); } catch { throw new TypeError("Archive could not be decompressed."); }
@@ -288,13 +391,18 @@ export async function inspectAppArchive(bytes: Uint8Array): Promise<AppPackageIn
     files.set(entry.path, data);
   }
   if (Object.keys(unzipped).length !== directory.entries.length) throw new TypeError("Archive entries do not match its ZIP directory.");
-  const validated = validateAppFiles(files);
-  return {
-    manifest: validated.manifest,
+  const app = files.has(APP_MANIFEST_PATH);
+  const theme = files.has(THEME_MANIFEST_PATH);
+  if (app === theme) throw new TypeError(`Package must contain exactly one of ${APP_MANIFEST_PATH} or ${THEME_MANIFEST_PATH}.`);
+  const validated = app ? validateAppFiles(files) : validateThemeFiles(files);
+  const common = {
     digest: await sha256(bytes),
     entryCount: files.size,
     compressedBytes: bytes.byteLength,
     expandedBytes: directory.expandedBytes,
     files: validated.files,
   };
+  return app
+    ? { kind: "app", manifest: (validated as ReturnType<typeof validateAppFiles>).manifest, ...common }
+    : { kind: "theme", manifest: (validated as ReturnType<typeof validateThemeFiles>).manifest, ...common };
 }

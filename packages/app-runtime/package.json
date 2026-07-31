@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./navigation": "./src/navigation.ts",
     "./react": "./src/react.tsx"
   },
   "types": "./src/index.ts",

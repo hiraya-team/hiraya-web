@@ -19,10 +19,11 @@ try {
     console.log(`${relativeOutput(result.destination)}\nsha256 ${result.inspection.digest}`);
   } else if (command === "validate") {
     const inspection = await inspectAppInput(input);
-    console.log(`Valid ${inspection.manifest.id}@${inspection.manifest.version}\nsha256 ${inspection.digest}`);
+    console.log(`Valid ${inspection.kind} ${inspection.manifest.id}${inspection.kind === "app" ? `@${inspection.manifest.version}` : ""}\nsha256 ${inspection.digest}`);
   } else if (command === "inspect") {
     const inspection = await inspectAppInput(input);
     console.log(JSON.stringify({
+      kind: inspection.kind,
       manifest: inspection.manifest,
       digest: { algorithm: "SHA-256", value: inspection.digest },
       entries: inspection.entryCount,

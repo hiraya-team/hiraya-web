@@ -26,6 +26,7 @@ import {
   fetchServerBuildTimestamp,
   getOutboxStatus,
   importFiles,
+  installThemePackage,
   initializeDesktop,
   listActivity,
   listDesktops,
@@ -99,7 +100,10 @@ import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settings
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
+import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
+import { ThemeWallpaper } from "./components/ThemeWallpaper";
+import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
@@ -2517,12 +2521,12 @@ function App({ session }: { session: AuthSession | null }) {
   }
   launchInstalledAppRef.current = launchInstalledApp;
 
-  async function openAppPackage(file: FileEntry, launchFile?: FileEntry) {
+  async function openAppPackage(file: FileEntry, launchFile?: FileEntry, inspected?: AppPackageInspection) {
     setError("");
     try {
-      const blob = await readFile(file.id);
+      const blob = inspected ? null : await readFile(file.id);
       const { inspectAppArchive } = await import("@hiraya/app-cli");
-      const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
+      const appPackage = inspected ?? await inspectAppArchive(new Uint8Array(await blob!.arrayBuffer()));
       if (SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appPackage.manifest.id)) throw new Error("That app ID is reserved for a bundled system app.");
       const approved = installedApps.find((item) => item.appId === appPackage.manifest.id);
       let install = approved;
@@ -2537,6 +2541,57 @@ function App({ session }: { session: AuthSession | null }) {
       await launchInstalledApp(install!, launchFile);
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    }
+  }
+
+  async function openHirayaPackage(file: FileEntry) {
+    setError("");
+    try {
+      const blob = await readFile(file.id);
+      const { inspectHirayaArchive } = await import("@hiraya/app-cli");
+      const inspection = await inspectHirayaArchive(new Uint8Array(await blob.arrayBuffer()));
+      if (inspection.kind === "app") {
+        const { kind: _kind, ...appPackage } = inspection;
+        void _kind;
+        await openAppPackage(file, undefined, appPackage);
+        return;
+      }
+      if (!canSettings) throw new Error(settingsRestrictionReason(activeDesktop, syncStatus));
+      const wallpaper = inspection.manifest.wallpaper;
+      const replacedTheme = appearance.customThemes.find((theme) => theme.id === inspection.manifest.id);
+      const replacing = replacedTheme !== undefined;
+      const confirmed = await requestConfirmation({
+        title: `${replacing ? "Replace" : "Import"} ${inspection.manifest.name}?`,
+        message: wallpaper?.kind === "scene"
+          ? "This theme includes executable wallpaper code. Hiraya blocks network, file, host-service, and pointer access, but the scene can still consume processor and memory resources."
+          : wallpaper ? `This theme includes a ${wallpaper.kind} wallpaper stored as a hidden synchronized theme asset.` : "This package contains theme colors and desktop metrics without a wallpaper.",
+        confirmLabel: replacing ? "Replace and apply" : "Import and apply",
+      });
+      if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
+      const theme: CustomTheme = { id: inspection.manifest.id, name: inspection.manifest.name, definition: inspection.manifest.definition };
+      if (!wallpaper && !replacedTheme?.wallpaper) {
+        await saveCustomTheme(theme);
+        await selectTheme(theme.id);
+      } else {
+        const nextLayout: DesktopLayout = {
+          ...layoutRef.current,
+          wallpaper: wallpaper ? {
+            ...layoutRef.current.wallpaper,
+            source: `theme:${theme.id}`,
+            fit: wallpaper.fit ?? "cover",
+            positionX: wallpaper.positionX ?? 50,
+            positionY: wallpaper.positionY ?? 50,
+            blur: wallpaper.blur ?? 0,
+            dim: wallpaper.dim ?? 0,
+            overlayColor: wallpaper.overlayColor ?? "#000000",
+            overlayOpacity: wallpaper.overlayOpacity ?? 0,
+          } : layoutRef.current.wallpaper.source === `theme:${theme.id}` ? { ...DEFAULT_WALLPAPER } : layoutRef.current.wallpaper,
+        };
+        await installThemePackage(theme, wallpaper?.kind ?? null, blob.slice(0, blob.size, "application/vnd.hiraya.theme+zip"), nextLayout);
+      }
+      setNotice(`${inspection.manifest.name} imported and applied`);
+    } catch (packageError) {
+      setError(packageError instanceof Error ? packageError.message : "The Hiraya package could not be opened.");
     }
   }
 
@@ -2608,7 +2663,7 @@ function App({ session }: { session: AuthSession | null }) {
   function handleOpen(entry: DesktopEntry) {
     setContextMenu(null);
     if (entry.kind === "file" && isAppPackageName(entry.name)) {
-      void openAppPackage(entry);
+      void openHirayaPackage(entry);
       return;
     }
     if (entry.kind === "file" && fileCapabilities(entry).preview === "url") {
@@ -3624,7 +3679,7 @@ function App({ session }: { session: AuthSession | null }) {
         data-area-transitioning={areaTransition || undefined}
         data-area-transition-phase={areaTransition?.phase}
         data-area-transition-kind={areaTransition?.kind}
-        data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source}
+        data-wallpaper={layout.wallpaper.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         style={
           {
@@ -3679,7 +3734,11 @@ function App({ session }: { session: AuthSession | null }) {
         onPointerUp={(event) => finishDesktopSwipe(event)}
         onPointerCancel={(event) => finishDesktopSwipe(event, true)}
       >
-        <div className="wallpaper-image" aria-hidden="true" />
+        {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
+          const themeId = layout.wallpaper.source.slice(6);
+          const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
+          return theme?.wallpaper ? <ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
+        })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div
           className="wallpaper-color-overlay"

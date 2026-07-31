@@ -256,9 +256,11 @@ export function SettingsWindow({
     ? BUILTIN_THEMES[appearance.selectedThemeId].name
     : appearance.customThemes.find((theme) => theme.id === appearance.selectedThemeId)?.name ?? "Custom theme";
   const wallpaperFileId = displayedLayout.wallpaper.source.startsWith("file:") ? displayedLayout.wallpaper.source.slice(5) : null;
+  const wallpaperThemeId = displayedLayout.wallpaper.source.startsWith("theme:") ? displayedLayout.wallpaper.source.slice(6) : null;
+  const wallpaperTheme = wallpaperThemeId ? appearance.customThemes.find((theme) => theme.id === wallpaperThemeId && theme.wallpaper) : null;
   const wallpaperFile = wallpaperFileId ? entries.find((entry): entry is FileEntry => entry.id === wallpaperFileId && entry.kind === "file") : null;
   const wallpaperFiles = entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024);
-  const wallpaperName = displayedLayout.wallpaper.source in WALLPAPER_LABELS ? WALLPAPER_LABELS[displayedLayout.wallpaper.source as WallpaperPreset].name : wallpaperFile?.name ?? "Custom image";
+  const wallpaperName = displayedLayout.wallpaper.source in WALLPAPER_LABELS ? WALLPAPER_LABELS[displayedLayout.wallpaper.source as WallpaperPreset].name : wallpaperTheme ? `${wallpaperTheme.name} included` : wallpaperFile?.name ?? "Custom image";
   const activeSettingsCategory = SETTINGS_CATEGORIES.find((category) => category.id === settingsCategory)!;
   const formatBuildTimestamp = (timestamp: string | null) => {
     if (!timestamp) return "Unavailable";
@@ -601,7 +603,7 @@ export function SettingsWindow({
                     <div className="theme-item" data-selected={selected || undefined} key={theme.id}>
                       <button className="theme-item__select" type="button" aria-pressed={selected} disabled={mutationsDisabled} onClick={() => void selectTheme(theme.id)}>
                         <span className="theme-swatch" style={{ background: `linear-gradient(135deg, ${theme.definition.colors.chrome} 0 50%, ${theme.definition.colors.accent} 50%)` }} aria-hidden="true" />
-                        <span className="theme-item__copy"><strong>{theme.name}</strong><small>{selected ? "Selected" : "Custom theme"}</small></span>
+                        <span className="theme-item__copy"><strong>{theme.name}</strong><small>{theme.wallpaper ? `${theme.wallpaper.kind} wallpaper package` : selected ? "Selected" : "Custom theme"}</small></span>
                       </button>
                       <div className="theme-item__actions">
                         <button className="button button--quiet" type="button" disabled={mutationsDisabled} onClick={() => startDraft(theme.name, theme.definition, theme.id)}>Edit</button>

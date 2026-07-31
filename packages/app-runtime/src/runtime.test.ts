@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_RPC_TIMEOUT_MS, LONG_RUNNING_FILE_MUTATION_METHODS, LONG_RUNNING_RPC_TIMEOUT_MS, RpcDispatcher, usesLongRunningRpcDeadline } from "./dispatcher";
 import type { AppPackageInspection, ServiceMethod } from "@hiraya/apps-contracts";
 import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "./sandbox";
+import { terminateSandboxNavigation } from "./navigation";
 
 function host() {
   let closed = false;
@@ -48,7 +49,7 @@ describe("app runtime", () => {
     } });
     try {
       const states: string[] = [];
-      const dispose = initializeSandboxFrame({ contentWindow: child, addEventListener: (_type: string, listener: () => void) => frameListeners.add(listener), removeEventListener: (_type: string, listener: () => void) => frameListeners.delete(listener) } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, { onStateChange: (state) => states.push(state) });
+      const dispose = initializeSandboxFrame({ contentWindow: child, addEventListener: (_type: string, listener: () => void) => frameListeners.add(listener), removeEventListener: (_type: string, listener: () => void) => frameListeners.delete(listener) } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, "materialization-1", { onStateChange: (state) => states.push(state) });
       expect(appPort).toBeUndefined();
       for (const listener of listeners) listener({ source: {}, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
       expect(appPort).toBeUndefined();
@@ -192,14 +193,16 @@ describe("app runtime", () => {
     } as unknown as Document;
     const uiRuntime: SandboxUiRuntime = { abi: 1, script: "foundation()", styles: ".hiraya-app{}" };
 
-    injectSandboxUiRuntime(document, uiRuntime, SANDBOX_CSP);
+    injectSandboxUiRuntime(document, uiRuntime, SANDBOX_CSP, "materialization-1");
 
-    expect(children.map((node) => node.tagName)).toEqual(["meta", "style", "script", "script"]);
+    expect(children.map((node) => node.tagName)).toEqual(["meta", "style", "script", "script", "script"]);
     expect(children[0]).toEqual(expect.objectContaining({ httpEquiv: "Content-Security-Policy", content: SANDBOX_CSP }));
     expect(children[1]).toEqual(expect.objectContaining({ dataset: { hirayaUiFoundation: "" }, textContent: uiRuntime.styles }));
-    expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
-    expect(atob(children[2].src!.split(",", 2)[1])).toBe(uiRuntime.script);
-    expect(children[3]).toBe(packageScript);
+    expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaNavigationGuard: "" }, textContent: expect.stringContaining("beforeunload") }));
+    expect(children[2].textContent).toContain("materialization-1");
+    expect(children[3]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
+    expect(atob(children[3].src!.split(",", 2)[1])).toBe(uiRuntime.script);
+    expect(children[4]).toBe(packageScript);
     expect(children[0].content).toContain("connect-src 'none'");
   });
 
@@ -212,38 +215,28 @@ describe("app runtime", () => {
     expect(() => materializeAppPackage(pkg, { abi: 1, script: "", styles: "" })).toThrow("UI runtime ABI");
   });
 
-  test("allows the initial document load before readiness and navigates on the next load", async () => {
-    const listeners = new Set<() => void>();
+  test("terminates an app navigation reported before its first srcdoc load", () => {
     const windowListeners = new Set<(event: MessageEvent<unknown>) => void>();
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
-    const service = host();
-    const dispatcher = new RpcDispatcher({ permissions: [], host: service.value, files });
+    const dispatcher = new RpcDispatcher({ permissions: [], host: host().value, files });
     let replaced = 0;
     let navigated = 0;
-    let init: { appId: string; nonce: string } | undefined;
-    let appPort: MessagePort | undefined;
+    const child = { postMessage: () => undefined };
     const frame = {
-      contentWindow: { postMessage: (message: { appId: string; nonce: string }, _origin: string, ports: MessagePort[]) => { init = message; appPort = ports[0]; } },
-      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
-      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      contentWindow: child,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
       replaceWith: () => { replaced += 1; },
     };
     Object.defineProperty(globalThis, "window", { configurable: true, value: { addEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => windowListeners.add(listener), removeEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => windowListeners.delete(listener) } });
     Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: () => ({}) } });
     try {
-      initializeSandboxFrame(frame as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, { onNavigation: () => { navigated += 1; } });
-      for (const listener of listeners) listener();
-      expect(replaced).toBe(0);
-      for (const listener of windowListeners) listener({ source: frame.contentWindow, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
-      appPort!.postMessage({ protocolVersion: 1, type: "hiraya:ready", appId: init!.appId, nonce: init!.nonce });
-      const ready = new Promise<unknown>((resolve) => { appPort!.onmessage = ({ data }) => resolve(data); });
-      appPort!.postMessage({ protocolVersion: 1, type: "request", id: "ready", method: "app.getLaunchContext", params: {} });
-      await ready;
-      for (const listener of listeners) listener();
+      initializeSandboxFrame(frame as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, "materialization-1", { onNavigation: () => { navigated += 1; } });
+      for (const listener of windowListeners) listener({ source: child, data: { type: "hiraya:sandbox-navigation", token: "materialization-1", phase: "navigation" } } as unknown as MessageEvent<unknown>);
       expect(replaced).toBe(1);
       expect(navigated).toBe(1);
-      expect(listeners.size).toBe(0);
+      expect(windowListeners.size).toBe(0);
     } finally {
       dispatcher.dispose();
       if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow); else delete (globalThis as { window?: unknown }).window;
@@ -251,40 +244,35 @@ describe("app runtime", () => {
     }
   });
 
-  test("allows the initial document load after readiness and navigates on the next load", async () => {
-    const listeners = new Set<() => void>();
+  test("readies wallpaper only from its materialization token and retains load fallback", () => {
+    const loadListeners = new Set<() => void>();
     const windowListeners = new Set<(event: MessageEvent<unknown>) => void>();
     const originalWindow = Object.getOwnPropertyDescriptor(globalThis, "window");
     const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
-    const dispatcher = new RpcDispatcher({ permissions: [], host: host().value, files });
     let replaced = 0;
     let navigated = 0;
-    let init: { appId: string; nonce: string } | undefined;
-    let appPort: MessagePort | undefined;
+    let ready = 0;
+    const child = {};
     const frame = {
-      contentWindow: { postMessage: (message: { appId: string; nonce: string }, _origin: string, ports: MessagePort[]) => { init = message; appPort = ports[0]; } },
-      addEventListener: (_type: string, listener: () => void) => listeners.add(listener),
-      removeEventListener: (_type: string, listener: () => void) => listeners.delete(listener),
+      contentWindow: child,
+      addEventListener: (_type: string, listener: () => void) => loadListeners.add(listener),
+      removeEventListener: (_type: string, listener: () => void) => loadListeners.delete(listener),
       replaceWith: () => { replaced += 1; },
     };
     Object.defineProperty(globalThis, "window", { configurable: true, value: { addEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => windowListeners.add(listener), removeEventListener: (_type: string, listener: (event: MessageEvent<unknown>) => void) => windowListeners.delete(listener) } });
     Object.defineProperty(globalThis, "document", { configurable: true, value: { createElement: () => ({}) } });
     try {
-      initializeSandboxFrame(frame as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, { onNavigation: () => { navigated += 1; } });
-      for (const listener of windowListeners) listener({ source: frame.contentWindow, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
-      appPort!.postMessage({ protocolVersion: 1, type: "hiraya:ready", appId: init!.appId, nonce: init!.nonce });
-      const ready = new Promise<unknown>((resolve) => { appPort!.onmessage = ({ data }) => resolve(data); });
-      appPort!.postMessage({ protocolVersion: 1, type: "request", id: "ready", method: "app.getLaunchContext", params: {} });
-      await ready;
-      for (const listener of listeners) listener();
+      terminateSandboxNavigation(frame as unknown as HTMLIFrameElement, "materialization-1", { onNavigation: () => { navigated += 1; }, onReady: () => { ready += 1; } });
+      for (const listener of loadListeners) listener();
       expect(replaced).toBe(0);
-      expect(navigated).toBe(0);
-      for (const listener of listeners) listener();
+      for (const listener of windowListeners) listener({ source: child, data: { type: "hiraya:sandbox-navigation", token: "wrong", phase: "load" } } as unknown as MessageEvent<unknown>);
+      expect(ready).toBe(0);
+      for (const listener of windowListeners) listener({ source: child, data: { type: "hiraya:sandbox-navigation", token: "materialization-1", phase: "load" } } as unknown as MessageEvent<unknown>);
+      expect(ready).toBe(1);
+      for (const listener of loadListeners) listener();
       expect(replaced).toBe(1);
       expect(navigated).toBe(1);
     } finally {
-      appPort?.close();
-      dispatcher.dispose();
       if (originalWindow) Object.defineProperty(globalThis, "window", originalWindow); else delete (globalThis as { window?: unknown }).window;
       if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument); else delete (globalThis as { document?: unknown }).document;
     }
@@ -298,7 +286,7 @@ describe("app runtime", () => {
     const states: string[] = [];
     Object.defineProperty(globalThis, "window", { configurable: true, value: { addEventListener: () => undefined, removeEventListener: () => undefined } });
     try {
-      initializeSandboxFrame({ contentWindow: {}, addEventListener: () => undefined, removeEventListener: () => undefined } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, {
+      initializeSandboxFrame({ contentWindow: {}, addEventListener: () => undefined, removeEventListener: () => undefined } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, "materialization-1", {
         onStateChange: (state) => states.push(state),
         timers: { set: (callback) => { deadline = callback; return 1; }, clear: () => undefined },
       });

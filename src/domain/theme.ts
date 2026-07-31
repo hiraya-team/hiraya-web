@@ -33,5 +33,14 @@ export type ThemeDefinition = {
   iconSize: number;
 };
 
-export type CustomTheme = { id: string; name: string; definition: ThemeDefinition };
+export type ThemeWallpaperKind = "static" | "animated" | "scene";
+export type ThemeWallpaperPackage = {
+  assetId: string;
+  kind: ThemeWallpaperKind;
+  size: number;
+  sha256: string;
+  revision: number;
+};
+
+export type CustomTheme = { id: string; name: string; definition: ThemeDefinition; wallpaper?: ThemeWallpaperPackage };
 export type ThemeState = { selectedThemeId: string; customThemes: CustomTheme[] };

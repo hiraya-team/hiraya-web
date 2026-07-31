@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { contentMatchesCacheMarker, parseContentCacheMarker, rollbackSafeReplacement, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, rollbackSafeReplacement, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { BUILTIN_THEMES } from "../src/lib/themes";
+import { DEFAULT_WALLPAPER } from "../src/types";
 
 describe("pending content staging", () => {
   test("detects same-size remote cache corruption from the persisted descriptor digest", async () => {
@@ -31,6 +33,21 @@ describe("pending content staging", () => {
     const pending = { getDirectoryHandle: async () => operationDirectory } as unknown as FileSystemDirectoryHandle;
     await stageOperationContentsInDirectory(pending, "operation-1", new Map([["first", new Blob(["a"])], ["second", new Blob(["bb"])]]), async (_directory, name) => { writes.push(name); });
     expect(writes).toEqual(["first", "second", ".complete"]);
+  });
+
+  test("stages the hidden asset owned by a theme-package install", () => {
+    const operation = {
+      schemaVersion: 1 as const,
+      kind: "install-theme-package" as const,
+      theme: { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES["hiraya-dusk"].definition, wallpaper: { assetId: "theme-asset", kind: "scene" as const, size: 4, sha256: "0".repeat(64), revision: 0 } },
+      assetId: "theme-asset",
+      wallpaperKind: "scene" as const,
+      size: 4,
+      layout: { snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const } },
+    };
+    expect(operationContentIds(operation)).toEqual(["theme-asset"]);
+    expect(operationMaterializationContentIds(operation)).toEqual([]);
+    expect(operationContentIds({ ...operation, theme: { id: "aurora", name: "Aurora", definition: operation.theme.definition }, wallpaperKind: null })).toEqual([]);
   });
 
   test("removes the whole operation directory after a partial write failure", async () => {

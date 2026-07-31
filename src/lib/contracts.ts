@@ -70,6 +70,13 @@ const FORBIDDEN_DIRECT_HEADERS = new Set(["connection", "content-length", "cooki
 
 function parseDirectUrl(value: unknown) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A direct blob target has an invalid URL.");
+  if (value.startsWith("/") && !value.startsWith("//")) {
+    const base = "https://hiraya.invalid";
+    let local: URL;
+    try { local = new URL(value, base); } catch { throw new Error("A direct blob target has an invalid URL."); }
+    if (local.origin !== base || local.hash) throw new Error("A direct blob target has an invalid URL.");
+    return `${local.pathname}${local.search}`;
+  }
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("A direct blob target has an invalid URL."); }
   const loopback = (hostname: string) => hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
@@ -101,7 +108,7 @@ function parseSha256(value: unknown) {
   return value;
 }
 
-function parseDirectAccess(value: unknown, method: "GET" | "PUT"): DirectBlobAccess {
+export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT"): DirectBlobAccess {
   if (!isRecord(value) || value.method !== method) throw new Error(`A direct blob target must use ${method}.`);
   const expiresAt = readNonNegativeInteger(value.expiresAt, "A direct blob target has an invalid expiration.");
   return { url: parseDirectUrl(value.url), method, headers: parseDirectHeaders(value.headers), expiresAt };
@@ -124,7 +131,7 @@ export function parseBlobMutationPreparation(value: unknown, expectedEntryIds: r
       throw new Error("The blob mutation preparation response has unexpected targets.");
     }
     seen.add(candidate.entryId);
-    return { entryId: candidate.entryId, access: parseDirectAccess(candidate.access, "PUT") };
+    return { entryId: candidate.entryId, access: parseDirectBlobAccess(candidate.access, "PUT") };
   });
   return { state: "prepared", uploadId: value.uploadId, expiresAt, items };
 }
@@ -135,7 +142,7 @@ export function parseContentAccessDescriptor(value: unknown, expectedEntryId: st
   const size = readNonNegativeInteger(value.size, "The content access response has an invalid size.");
   if (contentRevision !== expectedRevision) throw new Error("The content access response is for a different revision.");
   if (size !== expectedSize) throw new Error("The content access response has an unexpected size.");
-  return { entryId: expectedEntryId, contentRevision, size, sha256: parseSha256(value.sha256), access: parseDirectAccess(value.access, "GET") };
+  return { entryId: expectedEntryId, contentRevision, size, sha256: parseSha256(value.sha256), access: parseDirectBlobAccess(value.access, "GET") };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -275,7 +282,7 @@ export function parseWallpaper(value: unknown, allowLegacyPreset = false): Wallp
     || Object.keys(value).length !== WALLPAPER_KEYS.size
     || Object.keys(value).some((key) => !WALLPAPER_KEYS.has(key))
     || typeof value.source !== "string"
-    || !(WALLPAPER_IDS.has(value.source) || value.source.startsWith("file:") && isValidId(value.source.slice(5)))
+    || !(WALLPAPER_IDS.has(value.source) || value.source.startsWith("file:") && isValidId(value.source.slice(5)) || value.source.startsWith("theme:") && isValidId(value.source.slice(6)))
     || value.fit !== "cover" && value.fit !== "contain"
     || !Number.isInteger(value.positionX) || (value.positionX as number) < 0 || (value.positionX as number) > 100
     || !Number.isInteger(value.positionY) || (value.positionY as number) < 0 || (value.positionY as number) > 100
@@ -288,7 +295,13 @@ export function parseWallpaper(value: unknown, allowLegacyPreset = false): Wallp
   return value as Wallpaper;
 }
 
-export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpaper: Wallpaper) {
+export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpaper: Wallpaper, appearance?: ThemeState) {
+  if (wallpaper.source.startsWith("theme:")) {
+    if (appearance && !appearance.customThemes.some((theme) => theme.id === wallpaper.source.slice(6) && theme.wallpaper)) {
+      throw new Error("The packaged wallpaper must reference a custom theme on this desktop.");
+    }
+    return;
+  }
   if (!wallpaper.source.startsWith("file:")) return;
   const file = entries.find((entry) => entry.id === wallpaper.source.slice(5));
   if (!file || file.kind !== "file" || !WALLPAPER_IMAGE_TYPES.has(file.mimeType.split(";", 1)[0].trim().toLowerCase()) || file.size > MAX_WALLPAPER_BYTES) {
@@ -481,7 +494,6 @@ export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   };
   const entries = parseEntries(value.entries, true) as RemoteEntry[];
   const layout = parseLayout(value.layout);
-  assertWallpaperSource(entries, layout.wallpaper);
   if (!isRecord(value.appearance) || !Array.isArray(value.appearance.customThemes)) throw new Error("The server appearance has an unsupported format.");
   const customThemes = value.appearance.customThemes.map((candidate) => {
     const theme = parseCustomTheme(candidate);
@@ -489,6 +501,7 @@ export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
     return { ...theme, revision: readRevision(candidate.revision, "A theme has an invalid revision.") };
   });
   const appearance = parseThemeState({ selectedThemeId: value.appearance.selectedThemeId, customThemes });
+  assertWallpaperSource(entries, layout.wallpaper, appearance);
   if (!isBuiltinThemeId(appearance.selectedThemeId) && !customThemes.some((theme) => theme.id === appearance.selectedThemeId)) {
     throw new Error("The selected custom theme does not exist.");
   }

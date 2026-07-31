@@ -100,6 +100,7 @@ const OPERATION_LABELS: Record<OutboxOperation["kind"], string> = {
   "editor-settings": "Update editor settings",
   "select-theme": "Select theme",
   "upsert-theme": "Save theme",
+  "install-theme-package": "Import theme package",
   "delete-theme": "Delete theme",
 };
 

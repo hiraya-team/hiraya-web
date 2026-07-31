@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseBlobMutationPreparation, parseContentAccessDescriptor, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
+import { parseBlobMutationPreparation, parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
 import { remoteDesktopState } from "./fixtures";
 import { DEFAULT_WALLPAPER } from "../src/types";
+import { BUILTIN_THEMES } from "../src/lib/themes";
 
 describe("contracts", () => {
   test("requires createdAt", () => {
@@ -31,6 +32,17 @@ describe("contracts", () => {
     const missingFit = { ...DEFAULT_WALLPAPER } as Partial<typeof DEFAULT_WALLPAPER>;
     delete missingFit.fit;
     expect(() => parseLayout({ snapToGrid: false, wallpaper: missingFit })).toThrow("wallpaper");
+    expect(parseLayout({ snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" } }).wallpaper.source).toBe("theme:aurora");
+    expect(() => parseLayout({ snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:../aurora" } })).toThrow("wallpaper");
+  });
+
+  test("accepts remote packaged wallpaper state only when its theme exists", () => {
+    const remote = remoteDesktopState();
+    const wallpaper = { assetId: "theme-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
+    const theme = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES["hiraya-dusk"].definition, wallpaper, revision: 2 };
+    const themed = { ...remote, catalogRevision: 2, layout: { ...remote.layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const } }, layoutRevision: 2, appearance: { selectedThemeId: theme.id, selectionRevision: 2, customThemes: [theme] } };
+    expect(parseRemoteDesktopState(themed).layout.wallpaper.source).toBe("theme:aurora");
+    expect(() => parseRemoteDesktopState({ ...themed, appearance: { selectedThemeId: "hiraya-dusk", selectionRevision: 2, customThemes: [] } })).toThrow("packaged wallpaper");
   });
 
   test("requires a custom wallpaper to resolve to an eligible file on the same desktop", () => {
@@ -57,11 +69,14 @@ describe("contracts", () => {
     expect(prepared.state === "prepared" && prepared.items[0].entryId).toBe("file-1");
     expect(parseBlobMutationPreparation({ state: "committed" }, ["file-1"])).toEqual({ state: "committed" });
     expect(parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: downloadAccess }, "file-1", 4, 4)).toMatchObject({ contentRevision: 4, size: 4, sha256 });
+    expect(parseDirectBlobAccess({ ...downloadAccess, url: "/api/desktops/desk/themes/aurora/package?revision=4" }, "GET").url).toBe("/api/desktops/desk/themes/aurora/package?revision=4");
     expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "other", access: uploadAccess }] }, ["file-1"])).toThrow("unexpected targets");
     expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, url: "https://user:secret@uploads.example.test/object" } }] }, ["file-1"])).toThrow("safe HTTPS");
     expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, headers: { Cookie: "secret" } } }] }, ["file-1"])).toThrow("unsafe header");
     expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, headers: { "X-Test": "one", "x-test": "two" } } }] }, ["file-1"])).toThrow("unsafe header");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256: sha256.toUpperCase(), access: downloadAccess }, "file-1", 4, 4)).toThrow("SHA-256");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: { ...downloadAccess, method: "PUT" } }, "file-1", 4, 4)).toThrow("must use GET");
+    expect(() => parseDirectBlobAccess({ ...downloadAccess, url: "//evil.example/object" }, "GET")).toThrow();
+    expect(() => parseDirectBlobAccess({ ...downloadAccess, url: "/api/package#secret" }, "GET")).toThrow("invalid URL");
   });
 });

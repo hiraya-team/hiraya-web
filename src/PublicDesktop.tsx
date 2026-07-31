@@ -16,6 +16,8 @@ import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
+import { ThemeWallpaper } from "./components/ThemeWallpaper";
+import { API_ROUTES } from "./lib/api-routes";
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -182,7 +184,7 @@ export default function PublicDesktop({ token }: { token: string }) {
       </header>
       <section
         className="desktop public-desktop__surface"
-        data-wallpaper={wallpaper?.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : (wallpaper?.source ?? "dusk")}
+        data-wallpaper={wallpaper?.source.startsWith("file:") ? (wallpaperUrl ? "file" : "dusk") : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
         data-custom-loaded={wallpaperUrl || undefined}
         style={
           {
@@ -194,7 +196,10 @@ export default function PublicDesktop({ token }: { token: string }) {
         }
         aria-label={desktop ? `${desktop.name} public desktop` : "Public desktop"}
       >
-        <div className="wallpaper-image" aria-hidden="true" />
+        {wallpaper?.source.startsWith("theme:") && (() => {
+          const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
+          return selected?.wallpaper ? <ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(token, selected.id, selected.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
+        })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />
         <div

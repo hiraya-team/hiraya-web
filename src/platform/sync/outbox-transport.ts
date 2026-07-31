@@ -50,9 +50,11 @@ async function abortBlobMutation(record: OutboxRecord, uploadId: string, depende
   }
 }
 
-async function sendBlobMutation(record: OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }, dependencies: OutboxTransportDependencies) {
+async function sendBlobMutation(record: OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" | "install-theme-package" }> }, dependencies: OutboxTransportDependencies) {
   const operation = record.operation;
-  const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file") : [{ id: operation.entryId, name: operation.entryId, size: operation.size }];
+  const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file") : operation.kind === "save-content"
+    ? [{ id: operation.entryId, name: operation.entryId, size: operation.size }]
+    : operation.wallpaperKind === null ? [] : [{ id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, size: operation.size }];
   const contents = new Map<string, Blob>();
   const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
     dependencies.onBlobUploadProgress?.(entry.id, "hashing", 0, entry.size);
@@ -66,9 +68,17 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
   const prepared = parseBlobMutationPreparation(await dependencies.requestJson(API_ROUTES.desktopBlobMutations(record.desktopId), {
     method: "POST",
     headers: idempotencyHeaders(record, { "Content-Type": "application/json" }),
-    body: JSON.stringify({ kind: operation.kind, items: operation.kind === "create"
+    body: JSON.stringify({ kind: operation.kind === "install-theme-package" ? "create" : operation.kind, items: operation.kind === "create"
       ? operation.entries.map((entry) => ({ entry, ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) }))
-      : [{ entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, baseContentRevision: operation.baseContentRevision, ...hashes.get(operation.entryId)! }] }),
+      : operation.kind === "save-content"
+        ? [{ entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, baseContentRevision: operation.baseContentRevision, ...hashes.get(operation.entryId)! }]
+        : [{
+          entry: operation.wallpaperKind === null
+            ? { kind: "folder", id: operation.assetId, name: operation.theme.name, parentId: null, createdAt: null, modifiedAt: Date.now(), position: { x: 0, y: 0 }, revision: 0 }
+            : { kind: "file", id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, parentId: null, createdAt: null, modifiedAt: Date.now(), position: { x: 0, y: 0 }, mimeType: "application/vnd.hiraya.theme+zip", size: operation.size, revision: 0, contentRevision: 0 },
+          ...(operation.wallpaperKind === null ? { sha256: "", md5: "" } : hashes.get(operation.assetId)!),
+          themePackage: { theme: { id: operation.theme.id, name: operation.theme.name, definition: operation.theme.definition }, kind: operation.wallpaperKind, layout: operation.layout, baseThemeRevision: operation.baseThemeRevision, baseSelectionRevision: operation.baseSelectionRevision, baseLayoutRevision: operation.baseLayoutRevision },
+        }] }),
   }), files.map((entry) => entry.id));
   if (prepared.state === "committed") {
     for (const entry of files) dependencies.onBlobUploadProgress?.(entry.id, "finalizing", entry.size, entry.size);
@@ -127,7 +137,8 @@ export async function sendOutboxOperation(record: OutboxRecord, dependencies: Ou
       return dependencies.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) });
     case "create":
     case "save-content":
-      return sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" }> }, dependencies);
+    case "install-theme-package":
+      return sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" | "install-theme-package" }> }, dependencies);
     case "patch-entry":
       return dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ baseRevision: operation.baseRevision, changes: operation.changes }) });
     case "delete":

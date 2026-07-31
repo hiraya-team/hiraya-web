@@ -58,6 +58,25 @@ describe("strict outbox", () => {
     expect(projected.appearance).toEqual({ selectedThemeId: DEFAULT_THEME_ID, customThemes: [] });
   });
 
+  test("atomically removes a replaced package wallpaper and its selected layout source", () => {
+    const wallpaper = { assetId: "old-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
+    const installed = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper };
+    const initial = { ...state(), wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const }, appearance: { selectedThemeId: installed.id, customThemes: [installed] } };
+    const replacement = { id: installed.id, name: "Aurora Plain", definition: installed.definition };
+    const operation = {
+      schemaVersion: 1 as const,
+      kind: "install-theme-package" as const,
+      theme: replacement,
+      assetId: "replacement-asset",
+      wallpaperKind: null,
+      size: 0,
+      layout: { snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER } },
+    };
+    const projected = applyOutboxOperation(initial, normalizeOutboxOperation(operation));
+    expect(projected.appearance).toEqual({ selectedThemeId: replacement.id, customThemes: [replacement] });
+    expect(projected.wallpaper).toEqual(DEFAULT_WALLPAPER);
+  });
+
   test("projects operations on entries beneath an existing folder", () => {
     const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
     const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: folder.id, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 10 }, mimeType: "text/plain", size: 0 };

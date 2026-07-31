@@ -3,7 +3,7 @@ export type EntryPosition = { x: number; y: number };
 export const WALLPAPERS = ["dusk", "grove", "ember"] as const;
 export type WallpaperPreset = typeof WALLPAPERS[number];
 export type Wallpaper = {
-  source: WallpaperPreset | `file:${string}`;
+  source: WallpaperPreset | `file:${string}` | `theme:${string}`;
   fit: "cover" | "contain";
   positionX: number;
   positionY: number;

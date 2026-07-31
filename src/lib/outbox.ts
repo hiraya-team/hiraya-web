@@ -20,6 +20,7 @@ export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "editor-settings"; settings: EditorSettings; baseRevision?: number }
   | { kind: "select-theme"; themeId: string; baseRevision?: number }
   | { kind: "upsert-theme"; theme: CustomTheme; baseRevision?: number }
+  | { kind: "install-theme-package"; theme: CustomTheme; assetId: string; wallpaperKind: "static" | "animated" | "scene" | null; size: number; layout: DesktopLayout; baseThemeRevision?: number; baseSelectionRevision?: number; baseLayoutRevision?: number }
   | { kind: "delete-theme"; themeId: string; baseRevision?: number }
 ));
 
@@ -98,6 +99,7 @@ export function outboxCausalKeys(record: Pick<OutboxRecord, "desktopId" | "opera
     case "editor-settings": return new Set([`settings:${record.desktopId}`]);
     case "select-theme": return new Set([`theme-selection:${record.desktopId}`]);
     case "upsert-theme": return new Set([`theme:${record.desktopId}:${operation.theme.id}`]);
+    case "install-theme-package": return new Set([`theme:${record.desktopId}:${operation.theme.id}`, `theme-selection:${record.desktopId}`, `layout:${record.desktopId}`, `content:${record.desktopId}:${operation.assetId}`]);
     case "delete-theme": return new Set([`theme:${record.desktopId}:${operation.themeId}`, `theme-selection:${record.desktopId}`]);
   }
 }
@@ -243,6 +245,10 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
     case "upsert-theme":
       if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued theme has an invalid base revision.");
       return { ...operation, theme: parseCustomTheme(operation.theme) };
+    case "install-theme-package":
+      if (!isValidId(operation.assetId) || !Number.isSafeInteger(operation.size) || (operation.wallpaperKind === null ? operation.size !== 0 : operation.size < 1 || operation.size > 32 * 1024 * 1024 || !["static", "animated", "scene"].includes(operation.wallpaperKind))
+        || !validOptionalBaseRevision(operation.baseThemeRevision) || !validOptionalBaseRevision(operation.baseSelectionRevision) || !validOptionalBaseRevision(operation.baseLayoutRevision)) throw new Error("A queued theme package has invalid metadata.");
+      return { ...operation, theme: parseCustomTheme(operation.theme), layout: parseLayout(operation.layout) };
     default:
       throw new Error("The queued operation has an unsupported kind.");
   }
@@ -348,11 +354,20 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
         : [...state.appearance.customThemes, theme];
       return { ...state, appearance: parseThemeState({ ...state.appearance, customThemes }) };
     }
+    case "install-theme-package": {
+      const theme = parseCustomTheme(operation.theme);
+      const customThemes = state.appearance.customThemes.some((item) => item.id === theme.id)
+        ? state.appearance.customThemes.map((item) => item.id === theme.id ? theme : item)
+        : [...state.appearance.customThemes, theme];
+      const appearance = parseThemeState({ selectedThemeId: theme.id, customThemes });
+      const layout = parseLayout(operation.wallpaperKind === null ? operation.layout : { ...operation.layout, wallpaper: { ...operation.layout.wallpaper, source: `theme:${theme.id}` } });
+      return { ...state, snapToGrid: layout.snapToGrid, wallpaper: layout.wallpaper, appearance };
+    }
     case "delete-theme": {
       if (!state.appearance.customThemes.some((theme) => theme.id === operation.themeId)) return state;
       const customThemes = state.appearance.customThemes.filter((theme) => theme.id !== operation.themeId);
       const selectedThemeId = state.appearance.selectedThemeId === operation.themeId ? DEFAULT_THEME_ID : state.appearance.selectedThemeId;
-      return { ...state, appearance: parseThemeState({ selectedThemeId, customThemes }) };
+      return { ...state, wallpaper: state.wallpaper.source === `theme:${operation.themeId}` ? DEFAULT_WALLPAPER : state.wallpaper, appearance: parseThemeState({ selectedThemeId, customThemes }) };
     }
   }
   return resetWallpaperAfterEntryRemoval(state, entries);
@@ -380,6 +395,13 @@ export function rebaseOutboxOperationAfterAcknowledgement(state: PersistedDeskto
     case "upsert-theme":
     case "delete-theme":
       return { ...operation, baseRevision: state.sync.themeRevisions[operation.kind === "upsert-theme" ? operation.theme.id : operation.themeId] === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+    case "install-theme-package":
+      return {
+        ...operation,
+        baseThemeRevision: state.sync.themeRevisions[operation.theme.id] === acknowledgedRevision ? acknowledgedRevision : operation.baseThemeRevision,
+        baseSelectionRevision: state.sync.themeSelectionRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseSelectionRevision,
+        baseLayoutRevision: state.sync.layoutRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseLayoutRevision,
+      };
     case "rename-desktop":
     case "delete-desktop":
       return state.sync.catalogRevision === acknowledgedRevision ? { ...operation, baseRevision: acknowledgedRevision } : operation;
@@ -417,6 +439,11 @@ export function rebaseOutboxOperationForConflict(operation: OutboxOperation, con
       return conflict.resourceKind === "theme-selection" ? { ...operation, baseRevision: revision } : null;
     case "upsert-theme":
       return conflict.resourceKind === "theme" && conflict.resourceId === operation.theme.id ? { ...operation, baseRevision: revision } : null;
+    case "install-theme-package":
+      if (conflict.resourceKind === "theme" && conflict.resourceId === operation.theme.id) return { ...operation, baseThemeRevision: revision };
+      if (conflict.resourceKind === "theme-selection") return { ...operation, baseSelectionRevision: revision };
+      if (conflict.resourceKind === "layout") return { ...operation, baseLayoutRevision: revision };
+      return null;
     case "delete-theme":
       return conflict.resourceKind === "theme" && conflict.resourceId === operation.themeId ? { ...operation, baseRevision: revision } : null;
     default:

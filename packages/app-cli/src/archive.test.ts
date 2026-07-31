@@ -3,8 +3,9 @@ import { mkdtemp, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { strToU8, zipSync } from "fflate";
-import { APP_MANIFEST_PATH, inspectAppArchive } from "./archive";
+import { APP_MANIFEST_PATH, THEME_MANIFEST_PATH, inspectAppArchive, inspectHirayaArchive } from "./archive";
 import { createAppArchive, packageApp, readAppDirectory } from "./filesystem";
+import { BUILTIN_THEMES } from "../../../src/lib/themes";
 
 function manifest(overrides: Record<string, unknown> = {}) {
   return {
@@ -157,6 +158,28 @@ describe("Hiraya app archives", () => {
     const local = signatures(bytes, 0x04034b50)[0];
     bytes[local + 30] ^= 1;
     await expect(inspectAppArchive(bytes)).rejects.toThrow("paths do not match");
+  });
+});
+
+describe("Hiraya theme archives", () => {
+  const themeManifest = {
+    schemaVersion: 1,
+    id: "dev.hiraya.aurora",
+    name: "Aurora",
+    definition: BUILTIN_THEMES["hiraya-dusk"].definition,
+    wallpaper: { kind: "scene", entrypoint: "wallpaper.html" },
+  };
+
+  test("classifies and validates a sandboxed scene package", async () => {
+    const inspection = await inspectHirayaArchive(archive({ [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)), "wallpaper.html": strToU8('<!doctype html><style>body{background:url("glow.webp")}</style>'), "glow.webp": strToU8("image") }));
+    expect(inspection.kind).toBe("theme");
+    expect(inspection.manifest.id).toBe(themeManifest.id);
+    await expect(inspectAppArchive(archive({ [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)), "wallpaper.html": strToU8("<!doctype html>") }))).rejects.toThrow("theme, not an app");
+  });
+
+  test("rejects ambiguous packages and remote scene references", async () => {
+    await expect(inspectHirayaArchive(archive({ ...appFiles(), [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)) }))).rejects.toThrow("exactly one");
+    await expect(inspectHirayaArchive(archive({ [THEME_MANIFEST_PATH]: strToU8(JSON.stringify(themeManifest)), "wallpaper.html": strToU8('<script src="https://evil.example/scene.js"></script>') }))).rejects.toThrow("remote reference");
   });
 });
 

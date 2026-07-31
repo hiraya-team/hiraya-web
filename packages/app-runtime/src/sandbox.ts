@@ -1,21 +1,25 @@
 import { APPS_PROTOCOL_VERSION, parseAppConnect, parseAppReady } from "@hiraya/apps-contracts";
 import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
+import { terminateSandboxNavigation } from "./navigation";
 
-export type MaterializedApp = { html: string; revoke(): void };
+export type MaterializedApp = { html: string; navigationToken: string; revoke(): void };
 export interface SandboxUiRuntime { readonly abi: 1; readonly script: string; readonly styles: string }
 
-export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiRuntime, csp: string): void {
+export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiRuntime, csp: string, navigationToken: string): void {
   const meta = document.createElement("meta");
   meta.httpEquiv = "Content-Security-Policy";
   meta.content = csp;
   const foundation = document.createElement("style");
   foundation.dataset.hirayaUiFoundation = "";
   foundation.textContent = uiRuntime.styles;
+  const navigationGuard = document.createElement("script");
+  navigationGuard.dataset.hirayaNavigationGuard = "";
+  navigationGuard.textContent = `(()=>{const token=${JSON.stringify(navigationToken)};const notify=phase=>parent.postMessage({type:"hiraya:sandbox-navigation",token,phase},"*");addEventListener("load",()=>notify("load"),{once:true});addEventListener("beforeunload",()=>notify("navigation"),{capture:true,once:true})})()`;
   const runtime = document.createElement("script");
   runtime.dataset.hirayaUiRuntime = String(uiRuntime.abi);
   runtime.src = dataURL(new TextEncoder().encode(uiRuntime.script), "text/javascript");
-  document.head.prepend(meta, foundation, runtime);
+  document.head.prepend(meta, foundation, navigationGuard, runtime);
 }
 
 export class ObjectUrlLease {
@@ -123,10 +127,11 @@ export function materializeAppPackage(pkg: AppPackageInspection, uiRuntime: Sand
       return replacement ? match.replace(reference, replacement) : match;
     }));
   }
-  injectSandboxUiRuntime(document, uiRuntime, csp);
+  const navigationToken = crypto.randomUUID().replaceAll("-", "");
+  injectSandboxUiRuntime(document, uiRuntime, csp, navigationToken);
   const html = `<!doctype html>\n${document.documentElement.outerHTML}`;
   let revoked = false;
-  return { html, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };
+  return { html, navigationToken, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };
 }
 
 export function isAppPackageName(name: string): boolean {
@@ -142,23 +147,24 @@ export interface SandboxFrameOptions {
   timers?: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
 }
 
-export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, options: SandboxFrameOptions = {}): () => void {
+export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, navigationToken: string, options: SandboxFrameOptions = {}): () => void {
   let state: SandboxFrameState = "boot";
   let channel: MessageChannel | null = null;
   let timer = 0;
-  let initialDocumentLoaded = false;
+  const timeoutMs = options.bootTimeoutMs ?? 10_000;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError("App boot timeout must be positive.");
   const timers = options.timers ?? {
     set: (callback: () => void, timeoutMs: number) => setTimeout(callback, timeoutMs) as unknown as number,
     clear: (timer: number) => clearTimeout(timer),
   };
   const transition = (next: SandboxFrameState) => { state = next; options.onStateChange?.(next); };
-  const onLoad = () => {
-    if (!initialDocumentLoaded) { initialDocumentLoaded = true; return; }
-    if (state === "disposed") return;
-    dispose();
-    frame.replaceWith(document.createElement("iframe"));
-    options.onNavigation?.();
-  };
+  const stopNavigation = terminateSandboxNavigation(frame, navigationToken, {
+    onNavigation: () => {
+      if (state === "disposed") return;
+      dispose();
+      options.onNavigation?.();
+    },
+  });
   const onConnect = (event: MessageEvent<unknown>) => {
     if (state !== "boot" || channel || event.source !== frame.contentWindow || !frame.contentWindow) return;
     let connect;
@@ -189,19 +195,16 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     if (state === "disposed") return;
     timers.clear(timer);
     window.removeEventListener("message", onConnect);
-    frame.removeEventListener("load", onLoad);
+    stopNavigation();
     channel?.port1.close();
     channel?.port2.close();
     if (closeDispatcher) dispatcher.dispose();
     else dispatcher.detach();
     transition("disposed");
   };
-  const timeoutMs = options.bootTimeoutMs ?? 10_000;
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new TypeError("App boot timeout must be positive.");
   options.onStateChange?.(state);
   timer = timers.set(dispose, timeoutMs);
   window.addEventListener("message", onConnect);
-  frame.addEventListener("load", onLoad);
   return () => dispose(false);
 }
 

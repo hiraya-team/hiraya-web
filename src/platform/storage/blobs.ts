@@ -161,7 +161,12 @@ export async function recoverLocalContentReplacements(metadataCommitted: (journa
 export function operationContentIds(operation: OutboxOperation) {
   if (operation.kind === "save-content") return [operation.entryId];
   if (operation.kind === "create") return operation.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id);
+  if (operation.kind === "install-theme-package") return operation.wallpaperKind === null ? [] : [operation.assetId];
   return [];
+}
+
+export function operationMaterializationContentIds(operation: OutboxOperation) {
+  return operation.kind === "install-theme-package" ? [] : operationContentIds(operation);
 }
 
 export async function stageOperationContentsInDirectory(
@@ -212,7 +217,7 @@ export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = 
     }
   }
   for (const record of records) {
-    for (const id of operationContentIds(record.operation)) {
+    for (const id of operationMaterializationContentIds(record.operation)) {
       const content = await readStagedContent(record.operationId, id);
       await writeContent(id, content);
     }

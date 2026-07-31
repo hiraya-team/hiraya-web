@@ -3,6 +3,8 @@ import { SyncEngine, type SyncEngineOptions } from "../src/lib/sync";
 import type { OutboxOperation, OutboxRecord } from "../src/lib/outbox";
 import { applyOutboxOperation, transferEntriesBetweenDesktopStates } from "../src/lib/outbox";
 import { desktopStateSnapshot, remoteDesktopIdentity, remoteDesktopState } from "./fixtures";
+import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
+import { DEFAULT_WALLPAPER } from "../src/types";
 
 const catalogQuota = { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } };
 
@@ -286,6 +288,83 @@ describe("canonical synchronization", () => {
     expect(records).toHaveLength(1);
     expect(records[0].operation).toEqual({ schemaVersion: 1, kind: "create", entries });
     expect(await storage.readPendingContent(records[0].operationId, "import-file").then((content) => content.text())).toBe("note");
+    await engine.stop();
+  });
+
+  test("stages, replays, and cleans up an installed theme package asset", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body));
+        const item = body.items[0];
+        const packaged = item.themePackage;
+        remote = {
+          ...remote,
+          catalogRevision: 2,
+          layout: { ...packaged.layout, wallpaper: { ...packaged.layout.wallpaper, source: `theme:${packaged.theme.id}` } },
+          layoutRevision: 2,
+          appearance: { selectedThemeId: packaged.theme.id, selectionRevision: 2, customThemes: [{ ...packaged.theme, wallpaper: { assetId: item.entry.id, kind: packaged.kind, size: item.entry.size, sha256: item.sha256, revision: 2 }, revision: 2 }] },
+        };
+        return Response.json({ state: "committed", catalogRevision: 2 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    const theme = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition };
+    await engine.installThemePackage(theme, "static", new Blob(["theme package"]), { ...remote.layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" } });
+    const [record] = await storage.readOutbox();
+    expect(record.operation.kind).toBe("install-theme-package");
+    const assetId = record.operation.kind === "install-theme-package" ? record.operation.assetId : "";
+    expect(await storage.readPendingContent(record.operationId, assetId).then((content) => content.text())).toBe("theme package");
+
+    blocked.release();
+    await blocked.pending;
+    await waitForOutboxDrain(engine);
+    await expect(storage.readPendingContent(record.operationId, assetId)).rejects.toThrow("missing pending content");
+    await engine.stop();
+  });
+
+  test("preserves package wallpaper metadata during a normal theme edit", async () => {
+    const storage = remoteStorage();
+    const wallpaper = { assetId: "theme-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
+    const existing = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper, revision: 2 };
+    const remote = { ...remoteDesktopState(), catalogRevision: 2, appearance: { selectedThemeId: existing.id, selectionRevision: 2, customThemes: [existing] } };
+    const engine = new SyncEngine({ storage, fetch: (async (input) => {
+      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      throw new TypeError("offline");
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    const edited = await engine.saveCustomTheme({ id: existing.id, name: "Aurora Edited", definition: existing.definition });
+    expect(edited.wallpaper).toEqual(wallpaper);
+    expect((await storage.readOutbox())[0].operation).toMatchObject({ kind: "upsert-theme", theme: { name: "Aurora Edited", wallpaper } });
+    blocked.release();
+    await blocked.pending;
+    await engine.stop();
+  });
+
+  test("queues a wallpaper-free replacement without staging an unused archive", async () => {
+    const storage = remoteStorage();
+    const wallpaper = { assetId: "theme-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
+    const theme = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper, revision: 2 };
+    const remote = { ...remoteDesktopState(), catalogRevision: 2, layout: { ...remoteDesktopState().layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const } }, layoutRevision: 2, appearance: { selectedThemeId: theme.id, selectionRevision: 2, customThemes: [theme] } };
+    const engine = new SyncEngine({ storage, fetch: (async (input) => {
+      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      throw new TypeError("offline");
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    await engine.installThemePackage({ id: theme.id, name: theme.name, definition: theme.definition }, null, new Blob(["unused package"]), remote.layout);
+    const [record] = await storage.readOutbox();
+    expect(record.operation).toMatchObject({ kind: "install-theme-package", wallpaperKind: null, size: 0, layout: { wallpaper: DEFAULT_WALLPAPER } });
+    if (record.operation.kind !== "install-theme-package") throw new Error("unexpected operation");
+    await expect(storage.readPendingContent(record.operationId, record.operation.assetId)).rejects.toThrow("missing pending content");
+    blocked.release();
+    await blocked.pending;
     await engine.stop();
   });
 

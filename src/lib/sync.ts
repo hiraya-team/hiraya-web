@@ -3,6 +3,7 @@ import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validat
 import { API_ROUTES } from "./api-routes";
 import { assertValidId, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
+import { DEFAULT_WALLPAPER } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, isAccessRevocationRecord, isRevisionConflictRecord, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, rebaseOutboxOperationForConflict, type RevisionConflictDetails } from "./outbox";
 import { parseCustomTheme, parseThemeState } from "./themes";
@@ -125,7 +126,7 @@ function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
     editorSettings: remote.editorSettings,
     appearance: {
       selectedThemeId: remote.appearance.selectedThemeId,
-      customThemes: remote.appearance.customThemes.map(({ id, name, definition }) => ({ id, name, definition })),
+      customThemes: remote.appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, ...(wallpaper ? { wallpaper } : {}) })),
     },
     sync: {
       catalogId: remote.catalogId,
@@ -392,6 +393,7 @@ export class SyncEngine {
 
   private uploadFiles(record: OutboxRecord): Array<{ id: string; name: string; size: number }> {
     if (record.operation.kind === "create") return record.operation.entries.filter((entry): entry is FileEntry => entry.kind === "file");
+    if (record.operation.kind === "install-theme-package") return [{ id: record.operation.assetId, name: `${record.operation.theme.name}.hiraya.app`, size: record.operation.size }];
     if (record.operation.kind !== "save-content") return [];
     const entryId = record.operation.entryId;
     const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.kind === "file" && candidate.id === entryId);
@@ -1220,8 +1222,10 @@ export class SyncEngine {
   }
 
   saveCustomTheme(value: CustomTheme) {
-    const theme = parseCustomTheme(value);
-    const exists = this.current().appearance.customThemes.some((item) => item.id === theme.id);
+    const parsed = parseCustomTheme(value);
+    const existing = this.current().appearance.customThemes.find((item) => item.id === parsed.id);
+    const theme = parseCustomTheme({ ...parsed, wallpaper: parsed.wallpaper ?? existing?.wallpaper });
+    const exists = existing !== undefined;
     parseThemeState({
       ...this.current().appearance,
       customThemes: exists
@@ -1230,6 +1234,26 @@ export class SyncEngine {
     });
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveCustomTheme(theme));
     return this.mutate({ kind: "upsert-theme", theme, baseRevision: this.current().sync.themeRevisions[theme.id] ?? 0 }, (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!);
+  }
+
+  installThemePackage(value: CustomTheme, wallpaperKind: "static" | "animated" | "scene" | null, archive: Blob, layout: DesktopLayout) {
+    if (this.frontendOnly) return Promise.reject(new Error("Packaged wallpaper themes require a synchronized Hiraya server."));
+    const theme = parseCustomTheme(value);
+    const assetId = crypto.randomUUID();
+    const packaged = parseCustomTheme(wallpaperKind === null ? theme : { ...theme, wallpaper: { assetId, kind: wallpaperKind, size: archive.size, sha256: "0".repeat(64), revision: 0 } });
+    const current = this.current();
+    const parsedLayout = parseLayout(wallpaperKind === null && layout.wallpaper.source === `theme:${theme.id}` ? { ...layout, wallpaper: DEFAULT_WALLPAPER } : layout);
+    return this.mutate({
+      kind: "install-theme-package",
+      theme: packaged,
+      assetId,
+      wallpaperKind,
+      size: wallpaperKind === null ? 0 : archive.size,
+      layout: parsedLayout,
+      baseThemeRevision: current.sync.themeRevisions[theme.id] ?? 0,
+      baseSelectionRevision: current.sync.themeSelectionRevision,
+      baseLayoutRevision: current.sync.layoutRevision,
+    }, (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!, wallpaperKind === null ? new Map() : new Map([[assetId, archive]]));
   }
 
   deleteCustomTheme(themeId: string) {
@@ -1620,6 +1644,7 @@ export const saveFile = defaultEngine.saveFile.bind(defaultEngine);
 export const saveDesktopLayout = defaultEngine.saveDesktopLayout.bind(defaultEngine);
 export const selectTheme = defaultEngine.selectTheme.bind(defaultEngine);
 export const saveCustomTheme = defaultEngine.saveCustomTheme.bind(defaultEngine);
+export const installThemePackage = defaultEngine.installThemePackage.bind(defaultEngine);
 export const deleteCustomTheme = defaultEngine.deleteCustomTheme.bind(defaultEngine);
 export const readFile = defaultEngine.readFile.bind(defaultEngine);
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);

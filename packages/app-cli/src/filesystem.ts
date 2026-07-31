@@ -1,14 +1,15 @@
 import { lstat, mkdir, readdir, readFile, realpath, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { parseManifestV2 } from "@hiraya/apps-contracts";
 import { zipSync, type Zippable } from "fflate";
 import {
   APP_ARCHIVE_EXTENSION,
   APP_ARCHIVE_LIMITS,
   APP_MANIFEST_PATH,
-  inspectAppArchive,
+  inspectHirayaArchive,
   normalizeArchivePath,
   validateAppFiles,
+  validateThemeFiles,
+  THEME_MANIFEST_PATH,
 } from "./archive";
 
 const DETERMINISTIC_TIMESTAMP = new Date("1980-01-01T00:00:00.000Z");
@@ -41,7 +42,10 @@ export async function readAppDirectory(input: string) {
     }
   };
   await walk(root);
-  return validateAppFiles(files);
+  const app = files.has(APP_MANIFEST_PATH);
+  const theme = files.has(THEME_MANIFEST_PATH);
+  if (app === theme) throw new TypeError(`Package directory must contain exactly one of ${APP_MANIFEST_PATH} or ${THEME_MANIFEST_PATH}.`);
+  return app ? validateAppFiles(files) : validateThemeFiles(files);
 }
 
 export function createAppArchive(files: ReadonlyMap<string, Uint8Array>) {
@@ -56,14 +60,13 @@ export function createAppArchive(files: ReadonlyMap<string, Uint8Array>) {
 
 export async function packageApp(input: string, output?: string) {
   const validated = await readAppDirectory(input);
-  const manifest = parseManifestV2(JSON.parse(new TextDecoder().decode(validated.files.get(APP_MANIFEST_PATH)!)));
   const destination = resolve(output ?? `${basename(resolve(input))}${APP_ARCHIVE_EXTENSION}`);
   if (!destination.endsWith(APP_ARCHIVE_EXTENSION)) throw new TypeError(`Package output must end with ${APP_ARCHIVE_EXTENSION}.`);
   const archive = createAppArchive(validated.files);
-  const inspection = await inspectAppArchive(archive);
+  const inspection = await inspectHirayaArchive(archive);
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, archive);
-  return { destination, manifest, inspection };
+  return { destination, manifest: inspection.manifest, inspection };
 }
 
 export async function inspectAppInput(input: string) {
@@ -72,10 +75,10 @@ export async function inspectAppInput(input: string) {
   if (stat.isSymbolicLink()) throw new TypeError("App input must not be a symbolic link.");
   if (stat.isDirectory()) {
     const validated = await readAppDirectory(path);
-    return inspectAppArchive(createAppArchive(validated.files));
+    return inspectHirayaArchive(createAppArchive(validated.files));
   }
   if (!stat.isFile() || !path.endsWith(APP_ARCHIVE_EXTENSION)) throw new TypeError(`App archive must end with ${APP_ARCHIVE_EXTENSION}.`);
-  return inspectAppArchive(new Uint8Array(await readFile(path)));
+  return inspectHirayaArchive(new Uint8Array(await readFile(path)));
 }
 
 export function relativeOutput(path: string) {

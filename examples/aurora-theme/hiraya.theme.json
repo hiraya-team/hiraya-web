@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "id": "app.hiraya.theme.aurora",
+  "name": "Aurora Field",
+  "definition": {
+    "colors": {
+      "shell": "#14232B",
+      "chrome": "#101B22",
+      "chromeText": "#F2F7F4",
+      "window": "#EDF3EF",
+      "windowMuted": "#DCE7E1",
+      "text": "#17231F",
+      "textMuted": "#4F6159",
+      "accent": "#E7B964",
+      "accentText": "#20261F",
+      "border": "#B9C9C1",
+      "danger": "#913B36",
+      "dangerSurface": "#F1DDD9",
+      "desktopText": "#FFFFFF",
+      "selection": "#876221",
+      "editorBackground": "#F5F8F5",
+      "editorText": "#21302A",
+      "editorGutter": "#DFE8E2",
+      "editorKeyword": "#795617",
+      "editorString": "#386D57",
+      "editorComment": "#586961"
+    },
+    "shape": { "radius": 16, "borderWidth": 1 },
+    "effects": { "blur": 24, "opacity": 0.9, "shadow": 0.55 },
+    "typography": { "family": "humanist", "scale": 1, "weight": 600 },
+    "density": 1,
+    "motion": 1,
+    "iconSize": 60
+  },
+  "wallpaper": {
+    "kind": "scene",
+    "entrypoint": "wallpaper.html",
+    "fit": "cover",
+    "positionX": 50,
+    "positionY": 50,
+    "blur": 0,
+    "dim": 0.08,
+    "overlayColor": "#10242A",
+    "overlayOpacity": 0.08
+  }
+}

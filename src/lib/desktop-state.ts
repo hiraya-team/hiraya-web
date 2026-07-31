@@ -35,13 +35,14 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
   if (!isRecord(value)) throw new Error("The desktop state has an unsupported format.");
   const entries = parseEntries(value.entries);
   const layout = parseLayout(value, true);
-  assertWallpaperSource(entries, layout.wallpaper);
+  const appearance = parseThemeState(value.appearance);
+  assertWallpaperSource(entries, layout.wallpaper, appearance);
   return {
     entries,
     snapToGrid: layout.snapToGrid,
     wallpaper: layout.wallpaper,
     editorSettings: parseEditorSettings(value.editorSettings),
-    appearance: parseThemeState(value.appearance),
+    appearance,
     sync: parseSyncState(value.sync),
   };
 }

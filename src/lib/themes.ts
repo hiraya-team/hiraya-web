@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState } from "../domain/theme";
+import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState, ThemeWallpaperPackage } from "../domain/theme";
 
 export const BUILTIN_THEME_IDS = ["hiraya-dusk", "warm-paper", "midnight-glass", "high-contrast"] as const;
 export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
@@ -307,7 +307,19 @@ export function parseCustomTheme(value: unknown): CustomTheme {
   }
   const definition = parseThemeDefinition(candidate.definition);
   if (themeContrastIssues(definition).length) throw new Error("The custom theme does not provide sufficient text contrast.");
-  return { id: candidate.id, name: candidate.name, definition };
+  let wallpaper: ThemeWallpaperPackage | undefined;
+  if (candidate.wallpaper !== undefined) {
+    const packaged = record(candidate.wallpaper);
+    if (typeof packaged.assetId !== "string" || !packaged.assetId || packaged.assetId === "." || packaged.assetId === ".." || new TextEncoder().encode(packaged.assetId).byteLength > 180 || packaged.assetId.includes("/") || packaged.assetId.includes("\\") || containsControl(packaged.assetId)
+      || packaged.kind !== "static" && packaged.kind !== "animated" && packaged.kind !== "scene"
+      || !Number.isSafeInteger(packaged.size) || (packaged.size as number) < 1 || (packaged.size as number) > 32 * 1024 * 1024
+      || typeof packaged.sha256 !== "string" || !/^[a-f\d]{64}$/.test(packaged.sha256)
+      || !Number.isSafeInteger(packaged.revision) || (packaged.revision as number) < 0) {
+      throw new Error("The custom theme wallpaper package is invalid.");
+    }
+    wallpaper = packaged as ThemeWallpaperPackage;
+  }
+  return { id: candidate.id, name: candidate.name, definition, ...(wallpaper ? { wallpaper } : {}) };
 }
 
 export function parseThemeState(value: unknown): ThemeState {
