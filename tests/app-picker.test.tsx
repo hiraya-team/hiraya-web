@@ -16,7 +16,7 @@ function request(params: Extract<DialogRequest, { kind: "openFile" }>["params"] 
   return { id: "dialog", owner: { appId: "test.viewer", instanceId: "one" }, kind: "openFile", params };
 }
 
-function render(dialogRequest: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }> = request(), desktopEntries = entries) {
+function render(dialogRequest: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }> = request(), desktopEntries = entries, canCreateFolder = false) {
   return renderToStaticMarkup(<AppPickerDialog
     request={dialogRequest}
     entries={desktopEntries}
@@ -24,6 +24,7 @@ function render(dialogRequest: Extract<DialogRequest, { kind: "openFile" | "open
     onOpenFiles={() => undefined}
     onOpenFolder={() => undefined}
     onSave={async () => undefined}
+    onCreateFolder={canCreateFolder ? async () => entries[0] as Extract<DesktopEntry, { kind: "folder" }> : undefined}
   />);
 }
 
@@ -69,5 +70,17 @@ describe("app file picker", () => {
     expect(saveMarkup).toContain('value="draft.md"');
     expect(saveMarkup).toContain("Desktop selected");
     expect(saveMarkup).not.toContain("notes.txt");
+  });
+
+  test("offers folder creation only to writable folder and save pickers", () => {
+    const owner = { appId: "test.viewer", instanceId: "one" };
+    const readOnly = render({ id: "folder", owner, kind: "openFolder", params: {} });
+    const writableFolder = render({ id: "folder", owner, kind: "openFolder", params: {} }, entries, true);
+    const writable = render({ id: "save", owner, kind: "saveFile", params: {} }, entries, true);
+
+    expect(readOnly).not.toContain("New folder in Desktop");
+    expect(writableFolder).toContain('aria-label="New folder in Desktop"');
+    expect(writable).toContain('aria-label="New folder in Desktop"');
+    expect(writable).toContain("New folder");
   });
 });

@@ -82,6 +82,37 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await expect(picker.getByRole("button", { name: "Choose file" })).toBeEnabled();
 });
 
+test("app save picker creates and selects a folder", async ({ page }) => {
+  await openLocalDesktop(page);
+  const parentName = `picker-parent-${Date.now()}`;
+  const folderName = "Nested destination";
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(parentName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Text Editor");
+  await page.keyboard.press("Enter");
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  const saveAs = editor.frameLocator("iframe").getByRole("button", { name: "Save as" });
+  await expect(saveAs).toBeEnabled();
+  await saveAs.click();
+
+  const picker = page.getByRole("dialog", { name: "Save file" });
+  await picker.getByRole("radio", { name: parentName }).check();
+  await picker.getByRole("button", { name: `New folder in ${parentName}` }).click();
+  const folderDialog = page.getByRole("dialog", { name: "New folder" });
+  await folderDialog.getByLabel("Folder name").fill(folderName);
+  await folderDialog.getByRole("button", { name: "Create folder" }).click();
+
+  await expect(folderDialog).toBeHidden();
+  await expect(picker).toBeVisible();
+  await expect(picker.getByRole("radio", { name: folderName })).toBeChecked();
+  await expect(picker.getByText(`${folderName} selected`, { exact: true })).toBeVisible();
+});
+
 test("local mutation persists through reload", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `e2e-${Date.now()}.txt`;

@@ -3626,6 +3626,8 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   const shellAnnouncement = transferAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
+  const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
+  const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
 
   return (
     <main className="desktop-shell" data-windowed={windowed || undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
@@ -4433,6 +4435,14 @@ function App({ session }: { session: AuthSession | null }) {
             );
             appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, [file])[0]);
           }}
+          onCreateFolder={canCreatePickerFolder ? async (name, parentId) => {
+            const request = appDialogRequests[0];
+            const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
+            if (!running?.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create folders on this desktop right now.", "PERMISSION_DENIED");
+            const folder = await createFolder(name, parentId, positionFor(parentId));
+            setEntries((current) => current.some((entry) => entry.id === folder.id) ? current : [...current, folder]);
+            return folder;
+          } : undefined}
         />
       )}
       {moveDialogEntries.length > 0 && (

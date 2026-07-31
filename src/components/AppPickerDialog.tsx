@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
-import { CaretRight, Desktop, X } from "@phosphor-icons/react";
+import { CaretRight, Desktop, FolderPlus, X } from "@phosphor-icons/react";
 import type { DialogRequest } from "../apps/host/dialogs";
 import { matchingFileType } from "../apps/installed-apps";
 import type { DesktopEntry, FileEntry, FolderEntry } from "../types";
 import { createEntryIndex } from "../ui/entry-index";
 import { useModalDialog } from "../ui/modal-dialog";
+import { FileDialog } from "./FileDialog";
 import { EntryIcon } from "./VisualPrimitives";
 
 type Props = {
@@ -14,11 +15,12 @@ type Props = {
   onOpenFiles: (files: FileEntry[]) => void;
   onOpenFolder: (folder: FolderEntry | null) => void;
   onSave: (name: string, folder: FolderEntry | null) => Promise<void>;
+  onCreateFolder?: (name: string, parentId: string | null) => Promise<FolderEntry>;
 };
 
 const ROOT_ID = "desktop-root";
 
-export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpenFolder, onSave }: Props) {
+export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpenFolder, onSave, onCreateFolder }: Props) {
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -27,6 +29,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
   const [name, setName] = useState(request.kind === "saveFile" ? request.params.suggestedName ?? "untitled" : "");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [creatingFolder, setCreatingFolder] = useState(false);
   useModalDialog(backdropRef, dialogRef, onCancel, busy);
 
   const index = useMemo(() => createEntryIndex(entries), [entries]);
@@ -117,12 +120,21 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
     try { await onSave(name, folder); } catch (reason) { setError(reason instanceof Error ? reason.message : "The file could not be saved."); setBusy(false); }
   }
 
+  async function createPickedFolder(name: string) {
+    if (!onCreateFolder) return;
+    const parentId = folderId || null;
+    const folder = await onCreateFolder(name, parentId);
+    setExpanded((current) => new Set(current).add(parentId ?? ROOT_ID));
+    setFolderId(folder.id);
+    setCreatingFolder(false);
+  }
+
   const selectionStatus = request.kind === "openFile"
     ? multiple ? `${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"} selected` : selectedFiles[0]?.name ?? "Select a file"
     : `${selectedFolder?.name ?? "Desktop"} selected`;
   const actionLabel = request.kind === "saveFile" ? "Save" : request.kind === "openFolder" ? "Choose folder" : multiple ? selectedFiles.length ? `Choose ${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"}` : "Choose files" : "Choose file";
 
-  return <div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
+  return <><div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
     <section ref={dialogRef} className="file-dialog app-picker" role="dialog" aria-modal="true" aria-labelledby="app-picker-title" tabIndex={-1}>
       <header className="window-header"><h2 id="app-picker-title">{title}</h2><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
       <div className="app-picker__content">
@@ -138,10 +150,15 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="app-picker__footer">
-          <span className="app-picker__selection-status" aria-live="polite">{selectionStatus}</span>
+          <div className="app-picker__footer-context">
+            {request.kind !== "openFile" && onCreateFolder && <button className="button button--quiet" type="button" disabled={busy} aria-label={`New folder in ${selectedFolder?.name ?? "Desktop"}`} onClick={() => setCreatingFolder(true)}><FolderPlus size={17} /> New folder</button>}
+            <span className="app-picker__selection-status" aria-live="polite">{selectionStatus}</span>
+          </div>
           <div className="dialog-actions"><button className="button button--quiet" type="button" onClick={onCancel} disabled={busy}>Cancel</button><button className="button button--primary" type="button" disabled={busy || folderIsMissing || request.kind === "openFile" && selectedFiles.length === 0 || request.kind === "saveFile" && !name.trim()} onClick={() => void submit()}>{busy ? "Saving..." : actionLabel}</button></div>
         </div>
       </div>
     </section>
-  </div>;
+  </div>
+  {creatingFolder && <FileDialog dialog={{ type: "create-folder", parentId: folderId || null }} entry={null} onClose={() => setCreatingFolder(false)} onSubmit={createPickedFolder} />}
+  </>;
 }
