@@ -17,6 +17,15 @@ async function resizeWindowWidth(page: Page, appWindow: Locator, width: number) 
   await expect.poll(async () => Math.round((await appWindow.boundingBox())?.width ?? 0)).toBeLessThanOrEqual(width + 2);
 }
 
+async function dragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
+  const bounds = await source.boundingBox();
+  if (!bounds) throw new Error("The drag source is not visible.");
+  await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(clientX, clientY, { steps: 12 });
+  await page.mouse.up();
+}
+
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
   await openLocalDesktop(page);
   const search = page.getByRole("button", { name: "Search apps, files, windows, and commands" });
@@ -125,6 +134,82 @@ test("local mutation persists through reload", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+});
+
+test("moves selected items between the desktop and folder explorer", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const folderName = `drag-folder-${stamp}`;
+  const nestedFolderName = `drag-nested-${stamp}`;
+  const firstName = `drag-first-${stamp}.txt`;
+  const secondName = `drag-second-${stamp}.txt`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  for (const name of [firstName, secondName]) {
+    await page.locator(".desktop").click({ position: { x: 600, y: 300 } });
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+  }
+
+  await page.locator(".file-icon").filter({ hasText: folderName }).dblclick();
+  const explorer = page.getByRole("dialog", { name: folderName });
+  const explorerBounds = await explorer.boundingBox();
+  const explorerHeader = explorer.locator(".app-window__header");
+  const explorerHeaderBounds = await explorerHeader.boundingBox();
+  if (!explorerBounds || !explorerHeaderBounds) throw new Error("The folder explorer is not visible.");
+  await dragPointerTo(page, explorerHeader, explorerBounds.x + explorerBounds.width / 2 + 260, explorerHeaderBounds.y + explorerHeaderBounds.height / 2);
+  const firstIcon = page.locator(".file-icon").filter({ hasText: firstName });
+  const secondIcon = page.locator(".file-icon").filter({ hasText: secondName });
+  await firstIcon.click();
+  await secondIcon.click({ modifiers: ["Control"] });
+  const explorerContent = await explorer.locator(".folder-explorer__content").boundingBox();
+  if (!explorerContent) throw new Error("The folder explorer is not visible.");
+  await dragPointerTo(page, firstIcon, explorerContent.x + explorerContent.width - 28, explorerContent.y + explorerContent.height - 28);
+
+  const firstRow = explorer.locator(".folder-explorer__row").filter({ hasText: firstName });
+  const secondRow = explorer.locator(".folder-explorer__row").filter({ hasText: secondName });
+  await expect(firstRow).toBeVisible();
+  await expect(secondRow).toBeVisible();
+  await expect(firstIcon).toHaveCount(0);
+  await expect(secondIcon).toHaveCount(0);
+
+  await firstRow.click();
+  await secondRow.click({ modifiers: ["Control"] });
+  const desktop = await page.locator(".desktop").boundingBox();
+  if (!desktop) throw new Error("The desktop is not visible.");
+  const dropPoint = { x: desktop.x + 90, y: desktop.y + desktop.height - 90 };
+  await dragPointerTo(page, firstRow, dropPoint.x, dropPoint.y);
+
+  await expect(firstRow).toHaveCount(0);
+  await expect(secondRow).toHaveCount(0);
+  await expect(firstIcon).toBeVisible();
+  await expect(secondIcon).toBeVisible();
+  const movedFirst = await firstIcon.boundingBox();
+  expect(Math.abs((movedFirst?.x ?? 0) + (movedFirst?.width ?? 0) / 2 - dropPoint.x)).toBeLessThan(50);
+
+  await explorer.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(nestedFolderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const nestedFolderRow = explorer.locator(".folder-explorer__row").filter({ hasText: nestedFolderName });
+  const nestedFolderBounds = await nestedFolderRow.boundingBox();
+  if (!nestedFolderBounds) throw new Error("The nested destination folder is not visible.");
+  await firstIcon.click();
+  await dragPointerTo(page, firstIcon, nestedFolderBounds.x + nestedFolderBounds.width / 2, nestedFolderBounds.y + nestedFolderBounds.height / 2);
+  await expect(firstIcon).toHaveCount(0);
+  await nestedFolderRow.dblclick();
+  const nestedExplorer = page.getByRole("dialog", { name: nestedFolderName });
+  const nestedFirstRow = nestedExplorer.locator(".folder-explorer__row").filter({ hasText: firstName });
+  await expect(nestedFirstRow).toBeVisible();
+  await dragPointerTo(page, nestedFirstRow, dropPoint.x, dropPoint.y);
+  await expect(firstIcon).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator(".file-icon").filter({ hasText: firstName })).toBeVisible();
+  await expect(page.locator(".file-icon").filter({ hasText: secondName })).toBeVisible();
 });
 
 test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {

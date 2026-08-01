@@ -9,6 +9,7 @@ import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
+import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -29,7 +30,7 @@ export interface FolderExplorerProps {
   selectedIds: ReadonlySet<string>;
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
   mobileMultiSelect?: boolean;
-  onMove: (entry: DesktopEntry, targetParentId: string | null) => void;
+  onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
   offlineAvailability?: Readonly<Record<string, OfflineEntryAvailability>>;
@@ -55,7 +56,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
-  const dropTarget = useRef<HTMLElement | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
   const [search, setSearch] = useState("");
@@ -84,21 +84,6 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       setSortKey(key);
       setSortDirection("asc");
     }
-  }
-
-  function setDropTarget(target: HTMLElement | null) {
-    if (dropTarget.current === target) return;
-    if (dropTarget.current) delete dropTarget.current.dataset.dropTarget;
-    dropTarget.current = target;
-    if (target) target.dataset.dropTarget = "true";
-  }
-
-  function findDropTarget(x: number, y: number) {
-    for (const element of document.elementsFromPoint(x, y)) {
-      const target = element.closest<HTMLElement>("[data-folder-target]");
-      if (target) return target;
-    }
-    return null;
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, entry: DesktopEntry) {
@@ -134,7 +119,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
     current.longPressTimer = undefined;
     current.moved = true;
     event.currentTarget.dataset.dragging = "true";
-    setDropTarget(findDropTarget(event.clientX, event.clientY));
+    highlightEntryDropTarget(entryDropTargetAt(event.clientX, event.clientY, current.entry.id)?.element ?? null);
   }
 
   function finishPointer(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
@@ -149,10 +134,8 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       window.setTimeout(() => {
         suppressClick.current = false;
       }, 0);
-      const targetId = cancelled ? undefined : dropTarget.current?.dataset.folderTarget;
-      if (targetId !== undefined && targetId !== current.entry.id) {
-        onMove(current.entry, targetId === "" ? null : targetId);
-      }
+      const target = cancelled ? null : entryDropTargetAt(event.clientX, event.clientY, current.entry.id);
+      if (target) onMove(current.entry, target, { clientX: event.clientX, clientY: event.clientY });
     } else if (current.pointerType === "touch") {
       suppressClick.current = true;
       window.setTimeout(() => {
@@ -180,7 +163,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         });
       else if (action === "open") open(current.entry);
     }
-    setDropTarget(null);
+    highlightEntryDropTarget(null);
     drag.current = null;
   }
 
@@ -292,6 +275,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
 
       <div
         className="folder-explorer__content"
+        data-entry-drop-parent={parentId ?? ""}
         onClick={(event) => {
           if (!(event.target as Element).closest(".folder-explorer__row")) onClearSelection?.();
         }}
@@ -367,6 +351,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                 aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability[entry.id] ? `, ${offlineStatusLabel(offlineAvailability[entry.id])}` : ""}`}
                 data-selected={selectedIds.has(entry.id) || undefined}
                 data-folder-target={entry.kind === "folder" ? entry.id : undefined}
+                data-entry-drop-parent={entry.kind === "folder" ? entry.id : undefined}
                 onClick={(event) => {
                   if (suppressClick.current) {
                     suppressClick.current = false;

@@ -3,6 +3,7 @@ import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
+import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 
 type Props = {
   entry: DesktopEntry;
@@ -10,7 +11,7 @@ type Props = {
   onSelect: (event: React.MouseEvent | React.PointerEvent) => void;
   onTouchSelect: () => void;
   onOpen: () => void;
-  onMove: (position: EntryPosition, targetParentId: string | null, delta: EntryPosition) => Promise<boolean>;
+  onMove: (position: EntryPosition, destination: EntryDropDestination, delta: EntryPosition) => Promise<boolean>;
   onDragAtEdge: (clientX: number, clientY: number) => {
     deltaX: number;
     deltaY: number;
@@ -47,7 +48,6 @@ type DragState = {
   baseY: number;
   x: number;
   y: number;
-  targetFolderId: string | null;
   canvas: HTMLElement;
   finishing: boolean;
   pointerType: string;
@@ -109,26 +109,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     ) cleanUpDrag(current);
   }, [entry.parentId, entry.position]);
 
-  function setDropTarget(folderId: string | null) {
-    document.querySelectorAll<HTMLElement>(".file-icon[data-drop-target]").forEach((element) => {
-      delete element.dataset.dropTarget;
-    });
-    if (!folderId) return;
-    document.querySelector<HTMLElement>(`.file-icon[data-folder-id="${CSS.escape(folderId)}"]`)?.setAttribute("data-drop-target", "true");
-  }
-
-  function findDropTarget(clientX: number, clientY: number) {
-    const folders = Array.from(document.querySelectorAll<HTMLElement>(".file-icon[data-folder-id]"));
-    for (const folder of folders.reverse()) {
-      if (folder.dataset.folderId === entry.id || folder.dataset.selected) continue;
-      const bounds = folder.getBoundingClientRect();
-      if (clientX >= bounds.left && clientX <= bounds.right && clientY >= bounds.top && clientY <= bounds.bottom) {
-        return folder.dataset.folderId ?? null;
-      }
-    }
-    return null;
-  }
-
   function updateSnapPreview(position: EntryPosition | null) {
     const preview = snapPreviewRef.current;
     if (!preview) return;
@@ -170,7 +150,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       baseY: event.currentTarget.offsetTop,
       x: event.currentTarget.offsetLeft,
       y: event.currentTarget.offsetTop,
-      targetFolderId: null,
       canvas,
       finishing: false,
       pointerType: event.pointerType,
@@ -220,9 +199,9 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     }
     drag.current.x = x;
     drag.current.y = y;
-    drag.current.targetFolderId = findDropTarget(event.clientX, event.clientY);
-    setDropTarget(drag.current.targetFolderId);
-    updateSnapPreview(getSnapPreview && !drag.current.targetFolderId ? getSnapPreview({ x, y }) : null);
+    const dropTarget = entryDropTargetAt(event.clientX, event.clientY, entry.id);
+    highlightEntryDropTarget(dropTarget?.element ?? null);
+    updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview({ x, y }) : null);
     iconRef.current.style.transform = `translate3d(${x - drag.current.baseX}px, ${y - drag.current.baseY}px, 0)`;
     iconRef.current.dataset.dragging = "true";
     if (iconRef.current.dataset.selected) {
@@ -241,16 +220,16 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     completed.finishing = true;
     if (completed.longPressTimer) window.clearTimeout(completed.longPressTimer);
     if (iconRef.current?.hasPointerCapture(event.pointerId)) iconRef.current.releasePointerCapture(event.pointerId);
-    const targetFolderId = completed.moved && !cancelled ? findDropTarget(event.clientX, event.clientY) : null;
+    const dropTarget = completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
-    const committedPosition = preview && !targetFolderId ? preview(position) : position;
-    completed.expectedPosition = committedPosition;
-    completed.expectedParentId = targetFolderId;
-    const move = completed.moved && !cancelled
-      ? Promise.resolve().then(() => onMoveRef.current(committedPosition, targetFolderId, { x: position.x - completed.originX, y: position.y - completed.originY }))
-      : Promise.resolve(!cancelled);
-    setDropTarget(null);
+    const committedPosition = preview && dropTarget?.desktop ? preview(position) : position;
+    completed.expectedPosition = dropTarget?.desktop ? committedPosition : renderedEntryRef.current.position;
+    completed.expectedParentId = dropTarget?.parentId ?? renderedEntryRef.current.parentId;
+    const move = completed.moved && !cancelled && dropTarget
+      ? Promise.resolve().then(() => onMoveRef.current(committedPosition, dropTarget, { x: position.x - completed.originX, y: position.y - completed.originY }))
+      : Promise.resolve(!completed.moved && !cancelled);
+    highlightEntryDropTarget(null);
     updateSnapPreview(null);
     if (!completed.moved || cancelled) cleanUpDrag(completed);
 
@@ -300,6 +279,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         data-selected={selected || undefined}
         data-entry-id={entry.id}
         data-folder-id={entry.kind === "folder" ? entry.id : undefined}
+        data-entry-drop-parent={entry.kind === "folder" ? entry.id : undefined}
         type="button"
         tabIndex={interactive ? undefined : -1}
         aria-hidden={interactive ? undefined : true}

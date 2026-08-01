@@ -75,6 +75,7 @@ import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, 
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -2405,10 +2406,10 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
-  async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, targetParentId: string | null) {
+  async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
     if (!canMutate) return false;
-    if (targetParentId) {
-      return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], targetParentId, true);
+    if (!destination.desktop) {
+      return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
     }
     const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
     const sourceOrigin = areaWorldOrigin(sourceSegment, iconArea);
@@ -2444,6 +2445,32 @@ function App({ session }: { session: AuthSession | null }) {
     } catch {
       setEntries((current) => current.map((item) => (item.id === entry.id ? { ...item, position: entry.position } : item)));
       setError("The new icon position could not be saved.");
+      return false;
+    }
+  }
+
+  async function handleMoveToDesktop(items: readonly DesktopEntry[], anchor: DesktopEntry, clientX: number, clientY: number) {
+    if (!canMutate) return false;
+    const origin = restoreLogicalPosition(positionAtDesktopPoint(clientX, clientY), activeSegment, iconArea);
+    const positions = items.map((entry) => ({
+      entryId: entry.id,
+      position: { x: origin.x + entry.position.x - anchor.position.x, y: origin.y + entry.position.y - anchor.position.y },
+    }));
+    setError("");
+    try {
+      const moved = items.every((entry) => entry.parentId === null)
+        ? items
+        : await moveEntries(items.map((entry) => entry.id), null);
+      const movedById = new Map(moved.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((entry) => movedById.get(entry.id) ?? entry));
+      const positioned = await updateRootEntryPositions(positions);
+      const positionedById = new Map(positioned.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((entry) => positionedById.get(entry.id) ?? entry));
+      replaceSelection("desktop", items.map((entry) => entry.id));
+      setContextMenu(null);
+      return true;
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : "The items could not be moved to the desktop.");
       return false;
     }
   }
@@ -3979,7 +4006,7 @@ function App({ session }: { session: AuthSession | null }) {
                     replaceSelection("desktop", []);
                     handleOpen(entry);
                   }}
-                  onMove={(position, targetParentId) => handleDesktopMove(entry, position, targetParentId)}
+                  onMove={(position, destination) => handleDesktopMove(entry, position, destination)}
                   onDragAtEdge={(clientX, clientY) => handleIconDragAtEdge(entry, clientX, clientY)}
                   onDragEnd={finishEdgeNavigation}
                   getSnapPreview={layout.snapToGrid ? (position) => {
@@ -4122,7 +4149,12 @@ function App({ session }: { session: AuthSession | null }) {
                         onImportFolder={chooseFolderImport}
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
                         offlineAvailability={offlineModel.entries}
-                        onMove={(entry, parentId) => void handleMoveTo(selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry], parentId)}
+                        onMove={(entry, destination, point) => {
+                          const items = selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
+                          void (destination.desktop
+                            ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
+                            : handleMoveTo(items, destination.parentId));
+                        }}
                         onContextMenu={(entry, x, y, presentation) => {
                           if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
                           openEntryContextMenu(entry.id, x, y, presentation);
