@@ -27,6 +27,7 @@
     },
     "shape": { "radius": 16, "borderWidth": 1 },
     "effects": { "blur": 24, "opacity": 0.9, "shadow": 0.55 },
+    "treatment": { "gradientStrength": 0.35, "gradientAngle": 135, "texture": "halftone", "textureStrength": 0.3, "textureScale": 8, "pixelated": false },
     "typography": { "family": "humanist", "scale": 1, "weight": 600 },
     "density": 1,
     "motion": 1,

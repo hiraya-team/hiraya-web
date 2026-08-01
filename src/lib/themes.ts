@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState, ThemeWallpaperPackage } from "../domain/theme";
+import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState, ThemeTreatment, ThemeWallpaperPackage } from "../domain/theme";
 
 export const BUILTIN_THEME_IDS = ["hiraya-dusk", "warm-paper", "midnight-glass", "high-contrast"] as const;
 export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
@@ -13,6 +13,8 @@ const COLOR_KEYS: Array<keyof ThemeColors> = [
   "editorString", "editorComment",
 ];
 const HEX_COLOR = /^#[\da-f]{6}$/i;
+export const DEFAULT_THEME_TREATMENT: ThemeTreatment = { gradientStrength: 0, gradientAngle: 135, texture: "none", textureStrength: 0, textureScale: 6, pixelated: false };
+const GRADIENT_ANGLES = new Set([0, 45, 90, 135, 180, 225, 270, 315]);
 
 const duskColors: ThemeColors = {
   shell: "#25383d", chrome: "#141c1f", chromeText: "#f4f6f1", window: "#f2f1eb", windowMuted: "#e4e4dd",
@@ -278,6 +280,23 @@ export function parseThemeDefinition(value: unknown): ThemeDefinition {
   if (typography.family !== "humanist" && typography.family !== "system" && typography.family !== "mono") {
     throw new Error("The theme contains an invalid font family.");
   }
+  let treatment: ThemeTreatment | undefined;
+  if (candidate.treatment !== undefined) {
+    const value = record(candidate.treatment);
+    const keys = ["gradientStrength", "gradientAngle", "texture", "textureStrength", "textureScale", "pixelated"];
+    if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))
+      || !GRADIENT_ANGLES.has(value.gradientAngle as number)
+      || value.texture !== "none" && value.texture !== "halftone" && value.texture !== "dither"
+      || typeof value.pixelated !== "boolean") throw new Error("The theme contains an invalid surface treatment.");
+    treatment = {
+      gradientStrength: boundedNumber(value.gradientStrength, 0, 1),
+      gradientAngle: boundedNumber(value.gradientAngle, 0, 315, true),
+      texture: value.texture,
+      textureStrength: boundedNumber(value.textureStrength, 0, 1),
+      textureScale: boundedNumber(value.textureScale, 2, 12, true),
+      pixelated: value.pixelated,
+    };
+  }
   return {
     colors,
     shape: { radius: boundedNumber(shape.radius, 0, 24), borderWidth: boundedNumber(shape.borderWidth, 0, 2) },
@@ -286,6 +305,7 @@ export function parseThemeDefinition(value: unknown): ThemeDefinition {
       opacity: boundedNumber(effects.opacity, 0.65, 1),
       shadow: boundedNumber(effects.shadow, 0, 1),
     },
+    ...(treatment ? { treatment } : {}),
     typography: {
       family: typography.family,
       scale: boundedNumber(typography.scale, 0.85, 1.2),
@@ -354,11 +374,22 @@ function hexToRgb(hex: string) {
   return `${Number.parseInt(hex.slice(1, 3), 16)} ${Number.parseInt(hex.slice(3, 5), 16)} ${Number.parseInt(hex.slice(5, 7), 16)}`;
 }
 
+function treatmentTexture(treatment: ThemeTreatment, color: string) {
+  if (treatment.texture === "none" || treatment.textureStrength === 0) return "none";
+  const ink = `rgb(${hexToRgb(color)} / ${(treatment.textureStrength * 0.18).toFixed(3)})`;
+  return treatment.texture === "halftone"
+    ? `radial-gradient(circle, ${ink} 0 22%, transparent 24%)`
+    : `conic-gradient(from 90deg, ${ink} 25%, transparent 0 75%, ${ink} 0)`;
+}
+
 export function themeStyle(definition: ThemeDefinition): CSSProperties {
   const { colors, shape, effects, typography, density, motion, iconSize } = definition;
+  const treatment = definition.treatment ?? DEFAULT_THEME_TREATMENT;
   const roles = themeSemanticRoles(definition);
   const iconFootprintWidth = Math.round(iconSize + 38);
   const iconFootprintHeight = Math.round(iconSize + 42);
+  const gradient = (from: string, to: string) => treatment.gradientStrength === 0 ? "none" : `linear-gradient(${treatment.gradientAngle}deg, ${from}, ${mixThemeColors(to, from, treatment.gradientStrength)})`;
+  const wallpaperGradient = treatment.gradientStrength === 0 ? "none" : `linear-gradient(${treatment.gradientAngle}deg, rgb(${hexToRgb(colors.shell)} / ${(treatment.gradientStrength * 0.18).toFixed(3)}), rgb(${hexToRgb(colors.chrome)} / ${(treatment.gradientStrength * 0.32).toFixed(3)}))`;
   return {
     "--theme-shell": colors.shell,
     "--theme-chrome": colors.chrome,
@@ -384,12 +415,23 @@ export function themeStyle(definition: ThemeDefinition): CSSProperties {
     "--theme-editor-keyword": colors.editorKeyword,
     "--theme-editor-string": colors.editorString,
     "--theme-editor-comment": colors.editorComment,
-    "--theme-radius": `${shape.radius}px`,
-    "--theme-radius-small": `${Math.max(2, Math.round(shape.radius * 0.62))}px`,
+    "--theme-radius": `${treatment.pixelated ? Math.min(shape.radius, 2) : shape.radius}px`,
+    "--theme-radius-small": `${treatment.pixelated ? Math.min(shape.radius, 2) : Math.max(2, Math.round(shape.radius * 0.62))}px`,
     "--theme-border-width": `${shape.borderWidth}px`,
-    "--theme-blur": `${effects.blur}px`,
+    "--theme-blur": `${treatment.pixelated ? 0 : effects.blur}px`,
     "--theme-opacity": effects.opacity,
     "--theme-shadow-strength": effects.shadow,
+    "--theme-gradient-strength": treatment.gradientStrength,
+    "--theme-gradient-angle": `${treatment.gradientAngle}deg`,
+    "--theme-texture-strength": treatment.textureStrength,
+    "--theme-texture-scale": `${treatment.textureScale}px`,
+    "--theme-pixelated": treatment.pixelated ? 1 : 0,
+    "--theme-surface-texture": treatmentTexture(treatment, colors.text),
+    "--theme-chrome-texture": treatmentTexture(treatment, colors.chromeText),
+    "--theme-window-gradient": gradient(colors.window, colors.windowMuted),
+    "--theme-chrome-gradient": gradient(colors.chrome, colors.shell),
+    "--theme-wallpaper-gradient": wallpaperGradient,
+    "--theme-pixel-shadow": treatment.pixelated ? `${Math.max(2, Math.round(shape.borderWidth * 2))}px ${Math.max(2, Math.round(shape.borderWidth * 2))}px 0 ${colors.border}` : "0 0 0 transparent",
     "--theme-font": FONT_STACKS[typography.family],
     "--theme-type-scale": typography.scale,
     "--theme-weight": typography.weight,

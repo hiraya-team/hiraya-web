@@ -7,11 +7,12 @@ import type { ActivityRecord } from "../lib/activity";
 import {
   BUILTIN_THEME_IDS,
   BUILTIN_THEMES,
+  DEFAULT_THEME_TREATMENT,
   isBuiltinThemeId,
   themeContrastIssues,
   themeStyle,
 } from "../lib/themes";
-import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeState } from "../domain/theme";
+import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeState, ThemeTreatment } from "../domain/theme";
 import { DEFAULT_WALLPAPER, GRID_SIZES, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type GridSize, type WallpaperPreset } from "../types";
 import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
 import type { AppWindowHeaderElements } from "./AppWindow";
@@ -158,6 +159,7 @@ function copyDefinition(definition: ThemeDefinition): ThemeDefinition {
     colors: { ...definition.colors },
     shape: { ...definition.shape },
     effects: { ...definition.effects },
+    ...(definition.treatment ? { treatment: { ...definition.treatment } } : {}),
     typography: { ...definition.typography },
   };
 }
@@ -253,6 +255,7 @@ export function SettingsWindow({
   const mutationsDisabled = !canMutate || saving;
   const displayedLayout = layoutDraft.desktopId === activeDesktopId ? layoutDraft.layout : layout;
   const contrastIssues = draft ? themeContrastIssues(draft.definition) : [];
+  const draftTreatment = draft?.definition.treatment ?? DEFAULT_THEME_TREATMENT;
   const selectedThemeName = isBuiltinThemeId(appearance.selectedThemeId)
     ? BUILTIN_THEMES[appearance.selectedThemeId].name
     : appearance.customThemes.find((theme) => theme.id === appearance.selectedThemeId)?.name ?? "Custom theme";
@@ -338,6 +341,11 @@ export function SettingsWindow({
       return update(current);
     });
   };
+
+  const updateTreatment = (update: Partial<ThemeTreatment>) => updateDraft((current) => ({
+    ...current,
+    definition: { ...current.definition, treatment: { ...DEFAULT_THEME_TREATMENT, ...current.definition.treatment, ...update } },
+  }));
 
   const selectTheme = async (themeId: string) => {
     if (mutationsDisabled) return;
@@ -670,6 +678,26 @@ export function SettingsWindow({
                 <NumberControl label="Opacity" value={draft.definition.effects.opacity} min={0.65} max={1} step={0.01} disabled={mutationsDisabled} onChange={(opacity) => updateDraft((current) => ({ ...current, definition: { ...current.definition, effects: { ...current.definition.effects, opacity } } }))} />
                 <NumberControl label="Shadow" value={draft.definition.effects.shadow} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(shadow) => updateDraft((current) => ({ ...current, definition: { ...current.definition, effects: { ...current.definition.effects, shadow } } }))} />
                 <NumberControl label="Motion" value={draft.definition.motion} min={0} max={1.5} step={0.05} disabled={mutationsDisabled} onChange={(motion) => updateDraft((current) => ({ ...current, definition: { ...current.definition, motion } }))} />
+              </fieldset>
+
+              <fieldset className="theme-group">
+                <legend>Surface treatment</legend>
+                <NumberControl label="Gradient strength" value={draftTreatment.gradientStrength} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(gradientStrength) => updateTreatment({ gradientStrength })} />
+                <label className="theme-field">Gradient direction
+                  <select value={draftTreatment.gradientAngle} disabled={mutationsDisabled || draftTreatment.gradientStrength === 0} onChange={(event) => updateTreatment({ gradientAngle: Number(event.target.value) })}>
+                    <option value={0}>Up</option><option value={45}>Up right</option><option value={90}>Right</option><option value={135}>Down right</option><option value={180}>Down</option><option value={225}>Down left</option><option value={270}>Left</option><option value={315}>Up left</option>
+                  </select>
+                </label>
+                <label className="theme-field">Texture
+                  <select value={draftTreatment.texture} disabled={mutationsDisabled} onChange={(event) => updateTreatment({ texture: event.target.value as ThemeTreatment["texture"] })}>
+                    <option value="none">None</option><option value="halftone">Halftone dots</option><option value="dither">Ordered dither</option>
+                  </select>
+                </label>
+                {draftTreatment.texture !== "none" && <>
+                  <NumberControl label="Texture strength" value={draftTreatment.textureStrength} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(textureStrength) => updateTreatment({ textureStrength })} />
+                  <NumberControl label="Texture scale" value={draftTreatment.textureScale} min={2} max={12} step={1} disabled={mutationsDisabled} onChange={(textureScale) => updateTreatment({ textureScale })} />
+                </>}
+                <label className="theme-field theme-field--toggle"><span><strong>Pixel geometry</strong><small>Use square corners, crisp edges, and stepped shadows.</small></span><input type="checkbox" checked={draftTreatment.pixelated} disabled={mutationsDisabled} onChange={(event) => updateTreatment({ pixelated: event.target.checked })} /></label>
               </fieldset>
 
               <fieldset className="theme-group">

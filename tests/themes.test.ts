@@ -12,6 +12,7 @@ import {
   themeContrastRatio,
   themeIconMetrics,
   themeSemanticRoles,
+  themeStyle,
 } from "../src/lib/themes";
 
 describe("themes", () => {
@@ -79,7 +80,21 @@ describe("themes", () => {
     expect(() => parseThemeDefinition({ ...definition, colors: { ...definition.colors, accent: "red" } })).toThrow();
     expect(() => parseThemeDefinition({ ...definition, iconSize: 73 })).toThrow();
     expect(() => parseThemeDefinition({ ...definition, effects: { ...definition.effects, opacity: 0.5 } })).toThrow();
+    const treatment = { gradientStrength: 0.6, gradientAngle: 135, texture: "halftone", textureStrength: 0.7, textureScale: 6, pixelated: true };
+    expect(parseThemeDefinition({ ...definition, treatment })).toEqual({ ...definition, treatment });
+    expect(() => parseThemeDefinition({ ...definition, treatment: { ...treatment, gradientAngle: 120 } })).toThrow("surface treatment");
+    expect(() => parseThemeDefinition({ ...definition, treatment: { ...treatment, textureScale: 13 } })).toThrow();
+    expect(() => parseThemeDefinition({ ...definition, treatment: { ...treatment, extra: true } })).toThrow("surface treatment");
     expect(() => parseCustomTheme({ id: "theme-1", name: "Invisible", definition: { ...definition, colors: { ...definition.colors, text: definition.colors.window } } })).toThrow("contrast");
+  });
+
+  test("renders optional treatments as scoped CSS variables", () => {
+    const definition = { ...BUILTIN_THEMES[DEFAULT_THEME_ID].definition, treatment: { gradientStrength: 0.6, gradientAngle: 135, texture: "dither" as const, textureStrength: 0.7, textureScale: 5, pixelated: true } };
+    const style = themeStyle(definition) as Record<string, string | number>;
+    expect(style["--theme-surface-texture"]).toContain("conic-gradient");
+    expect(style["--theme-window-gradient"]).toContain("linear-gradient(135deg");
+    expect(style["--theme-radius"]).toBe("2px");
+    expect(style["--theme-blur"]).toBe("0px");
   });
 
   test("requires unique custom themes and a resolvable selection", () => {

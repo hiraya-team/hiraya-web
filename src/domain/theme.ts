@@ -1,4 +1,14 @@
 export type ThemeFontFamily = "humanist" | "system" | "mono";
+export type ThemeTexture = "none" | "halftone" | "dither";
+
+export type ThemeTreatment = {
+  gradientStrength: number;
+  gradientAngle: number;
+  texture: ThemeTexture;
+  textureStrength: number;
+  textureScale: number;
+  pixelated: boolean;
+};
 
 export type ThemeColors = {
   shell: string;
@@ -27,6 +37,7 @@ export type ThemeDefinition = {
   colors: ThemeColors;
   shape: { radius: number; borderWidth: number };
   effects: { blur: number; opacity: number; shadow: number };
+  treatment?: ThemeTreatment;
   typography: { family: ThemeFontFamily; scale: number; weight: number };
   density: number;
   motion: number;
