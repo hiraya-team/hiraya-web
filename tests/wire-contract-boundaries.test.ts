@@ -8,7 +8,7 @@ type Corpus = {
   revisions: Array<{ value: number; valid: boolean }>;
 };
 
-const corpus = await Bun.file(new URL("../../../testdata/wire-contract-boundaries.json", import.meta.url)).json() as Corpus;
+const corpus = await Bun.file(new URL("./fixtures/wire-contract-boundaries.json", import.meta.url)).json() as Corpus;
 
 describe("shared Go and TypeScript wire boundaries", () => {
   for (const item of corpus.themes) test(`theme: ${item.name}`, () => {
