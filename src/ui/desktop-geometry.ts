@@ -4,6 +4,7 @@ import type { DesktopIconMetrics } from "../lib/themes";
 export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
 export const GRID_ORIGIN = { x: 22, y: 22 } as const;
 export const GRID_STEP = { x: 104, y: 112 } as const;
+export const ICON_SUBGRID_STEP = 8;
 export const DEFAULT_ICON_METRICS: DesktopIconMetrics = { ...FILE_ICON_SIZE, stepX: GRID_STEP.x, stepY: GRID_STEP.y };
 
 const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
@@ -75,10 +76,10 @@ export function nextAvailableDesktopSlot(size: { width: number; height: number }
   return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, slot, metrics))) ?? slots[fallbackIndex % slots.length];
 }
 
-export function iconAreaSize(viewport: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS) {
+export function iconAreaSize(viewport: { width: number; height: number }) {
   return {
-    width: Math.max(metrics.stepX, Math.floor(viewport.width / metrics.stepX) * metrics.stepX),
-    height: Math.max(metrics.stepY, Math.floor(viewport.height / metrics.stepY) * metrics.stepY),
+    width: Math.max(ICON_SUBGRID_STEP, Math.floor(viewport.width / ICON_SUBGRID_STEP) * ICON_SUBGRID_STEP),
+    height: Math.max(ICON_SUBGRID_STEP, Math.floor(viewport.height / ICON_SUBGRID_STEP) * ICON_SUBGRID_STEP),
   };
 }
 

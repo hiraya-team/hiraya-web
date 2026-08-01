@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DesktopEntry } from "../src/types";
-import { desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition } from "../src/ui/desktop-geometry";
+import { desktopSlots, ICON_SUBGRID_STEP, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -33,23 +33,24 @@ describe("responsive desktop geometry", () => {
     expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
   });
 
-  test("aligns icon areas to the active grid with trailing viewport gutters", () => {
-    expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 312, height: 560 });
-    expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 104, height: 112 });
+  test("aligns icon areas to an 8px sub-grid with only trailing remainders", () => {
+    expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 384, height: 600 });
+    expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 80, height: 88 });
+    expect(iconAreaSize({ width: 5, height: 7 })).toEqual({ width: 8, height: 8 });
+  });
 
-    const themed = { width: 110, height: 114, stepX: 116, stepY: 124 };
-    const size = iconAreaSize({ width: 390, height: 600 }, themed);
-    expect(size).toEqual({ width: 348, height: 496 });
-    expect(size.width % themed.stepX).toBe(0);
-    expect(size.height % themed.stepY).toBe(0);
+  test("snaps moved icons to the fine grid from the existing visual origin", () => {
+    expect(snapAxis(25, 22, ICON_SUBGRID_STEP, 286)).toBe(22);
+    expect(snapAxis(27, 22, ICON_SUBGRID_STEP, 286)).toBe(30);
+    expect(snapAxis(290, 22, ICON_SUBGRID_STEP, 286)).toBe(286);
   });
 
   test("keeps signed icon-area origins congruent with home", () => {
     const size = iconAreaSize({ width: 390, height: 600 });
     for (const segment of [{ column: -3, row: 2 }, { column: 0, row: 0 }, { column: 4, row: -5 }]) {
       const origin = restoreLogicalPosition({ x: 0, y: 0 }, segment, size);
-      expect(Math.abs(origin.x % 104)).toBe(0);
-      expect(Math.abs(origin.y % 112)).toBe(0);
+      expect(Math.abs(origin.x % ICON_SUBGRID_STEP)).toBe(0);
+      expect(Math.abs(origin.y % ICON_SUBGRID_STEP)).toBe(0);
       expect(projectLogicalPosition(origin, size).segment).toEqual(segment);
     }
   });

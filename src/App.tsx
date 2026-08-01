@@ -74,7 +74,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, ICON_SUBGRID_STEP, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -439,7 +439,7 @@ function App({ session }: { session: AuthSession | null }) {
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
-  const iconArea = useMemo(() => iconAreaSize(desktopSize, iconMetrics), [desktopSize, iconMetrics]);
+  const iconArea = useMemo(() => iconAreaSize(desktopSize), [desktopSize]);
   iconAreaSizeRef.current = iconArea;
   const rootEntries = entryIndex.roots;
   const responsive = useMemo(() => responsiveDesktop(entries, iconArea, iconMetrics), [entries, iconArea, iconMetrics]);
@@ -1888,8 +1888,8 @@ function App({ session }: { session: AuthSession | null }) {
 
   function snapPositionInView(position: EntryPosition) {
     return {
-      x: snapAxis(position.x, GRID_ORIGIN.x, iconMetrics.stepX, Math.max(8, iconArea.width - iconMetrics.width)),
-      y: snapAxis(position.y, GRID_ORIGIN.y, iconMetrics.stepY, Math.max(8, iconArea.height - iconMetrics.height)),
+      x: snapAxis(position.x, GRID_ORIGIN.x, ICON_SUBGRID_STEP, Math.max(8, iconArea.width - iconMetrics.width)),
+      y: snapAxis(position.y, GRID_ORIGIN.y, ICON_SUBGRID_STEP, Math.max(8, iconArea.height - iconMetrics.height)),
     };
   }
 
