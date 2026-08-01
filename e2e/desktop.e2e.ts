@@ -17,12 +17,16 @@ async function resizeWindowWidth(page: Page, appWindow: Locator, width: number) 
   await expect.poll(async () => Math.round((await appWindow.boundingBox())?.width ?? 0)).toBeLessThanOrEqual(width + 2);
 }
 
-async function dragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
+async function beginDragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
   const bounds = await source.boundingBox();
   if (!bounds) throw new Error("The drag source is not visible.");
   await page.mouse.move(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2);
   await page.mouse.down();
   await page.mouse.move(clientX, clientY, { steps: 12 });
+}
+
+async function dragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
+  await beginDragPointerTo(page, source, clientX, clientY);
   await page.mouse.up();
 }
 
@@ -224,7 +228,11 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
   await secondIcon.click({ modifiers: ["Control"] });
   const explorerContent = await explorer.locator(".folder-explorer__content").boundingBox();
   if (!explorerContent) throw new Error("The folder explorer is not visible.");
-  await dragPointerTo(page, firstIcon, explorerContent.x + explorerContent.width - 28, explorerContent.y + explorerContent.height - 28);
+  await beginDragPointerTo(page, firstIcon, explorerContent.x + explorerContent.width - 28, explorerContent.y + explorerContent.height - 28);
+  const dragPreview = page.locator(".entry-drag-preview");
+  await expect(dragPreview).toBeVisible();
+  await expect(dragPreview).toHaveCSS("z-index", "18");
+  await page.mouse.up();
 
   const firstRow = explorer.locator(".folder-explorer__row").filter({ hasText: firstName });
   const secondRow = explorer.locator(".folder-explorer__row").filter({ hasText: secondName });
@@ -238,7 +246,13 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
   const desktop = await page.locator(".desktop").boundingBox();
   if (!desktop) throw new Error("The desktop is not visible.");
   const dropPoint = { x: desktop.x + 90, y: desktop.y + desktop.height - 90 };
-  await dragPointerTo(page, firstRow, dropPoint.x, dropPoint.y);
+  await beginDragPointerTo(page, firstRow, dropPoint.x, dropPoint.y);
+  await expect(dragPreview).toBeVisible();
+  const dropPreview = page.locator(".entry-drop-preview");
+  await expect(dropPreview).toBeVisible();
+  const dropPreviewBounds = await dropPreview.boundingBox();
+  expect(Math.abs((dropPreviewBounds?.x ?? 0) + (dropPreviewBounds?.width ?? 0) / 2 - dropPoint.x)).toBeLessThan(50);
+  await page.mouse.up();
 
   await expect(firstRow).toHaveCount(0);
   await expect(secondRow).toHaveCount(0);

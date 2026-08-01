@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CaretRight, DotsThreeVertical, FilePlus, Folder, FolderOpen, FolderPlus, ListBullets, MagnifyingGlass, SortAscending, SortDescending, SquaresFour, UploadSimple, X } from "@phosphor-icons/react";
-import type { DesktopEntry, FolderEntry } from "../types";
+import type { DesktopEntry, EntryPosition, FolderEntry, GridSize } from "../types";
 import type { ExplorerView } from "../domain/preferences";
 import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary, type FolderSortKey, type SortDirection } from "../ui/folder-explorer";
 import type { AppWindowHeaderElements } from "./AppWindow";
@@ -10,6 +10,7 @@ import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offlin
 import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
+import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -31,6 +32,8 @@ export interface FolderExplorerProps {
   onSelect: (entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[] }) => void;
   mobileMultiSelect?: boolean;
   onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
+  getDesktopDropPreview?: (clientX: number, clientY: number) => EntryPosition;
+  gridSize?: GridSize;
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
   offlineAvailability?: Readonly<Record<string, OfflineEntryAvailability>>;
@@ -48,13 +51,15 @@ type DragState = {
   pointerType: string;
   longPressed: boolean;
   longPressTimer?: number;
+  preview?: PointerDragPreview | null;
+  snapPreview?: HTMLElement | null;
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
@@ -69,6 +74,8 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
   useEffect(
     () => () => {
       if (drag.current?.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
+      removePointerDragPreview(drag.current?.preview);
+      drag.current?.snapPreview?.remove();
     },
     [],
   );
@@ -119,7 +126,27 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
     current.longPressTimer = undefined;
     current.moved = true;
     event.currentTarget.dataset.dragging = "true";
-    highlightEntryDropTarget(entryDropTargetAt(event.clientX, event.clientY, current.entry.id)?.element ?? null);
+    current.preview ??= createPointerDragPreview(event.currentTarget, event.clientX, event.clientY);
+    if (current.preview) movePointerDragPreview(current.preview, event.clientX, event.clientY);
+    const dropTarget = entryDropTargetAt(event.clientX, event.clientY, current.entry.id);
+    highlightEntryDropTarget(dropTarget?.element ?? null);
+    if (dropTarget?.desktop && getDesktopDropPreview) {
+      current.snapPreview ??= document.createElement("span");
+      current.snapPreview.className = "file-icon-snap-preview entry-drop-preview";
+      current.snapPreview.ariaHidden = "true";
+      current.snapPreview.dataset.visible = "true";
+      if (gridSize) {
+        current.snapPreview.dataset.grid = `${gridSize}`;
+        current.snapPreview.style.setProperty("--snap-grid-size", `${gridSize}px`);
+      }
+      if (!current.snapPreview.isConnected) dropTarget.element.append(current.snapPreview);
+      const position = getDesktopDropPreview(event.clientX, event.clientY);
+      current.snapPreview.style.left = `${position.x}px`;
+      current.snapPreview.style.top = `${position.y}px`;
+    } else {
+      current.snapPreview?.remove();
+      current.snapPreview = null;
+    }
   }
 
   function finishPointer(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
@@ -128,6 +155,8 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
     if (current.longPressTimer) window.clearTimeout(current.longPressTimer);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     delete event.currentTarget.dataset.dragging;
+    removePointerDragPreview(current.preview);
+    current.snapPreview?.remove();
 
     if (current.moved) {
       suppressClick.current = true;

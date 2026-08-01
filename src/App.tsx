@@ -4159,6 +4159,8 @@ function App({ session }: { session: AuthSession | null }) {
                             ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
                             : handleMoveTo(items, destination.parentId));
                         }}
+                        getDesktopDropPreview={positionAtDesktopPoint}
+                        gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                         onContextMenu={(entry, x, y, presentation) => {
                           if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
                           openEntryContextMenu(entry.id, x, y, presentation);

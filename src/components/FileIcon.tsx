@@ -5,6 +5,7 @@ import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offlin
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
+import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
 
 type Props = {
   entry: DesktopEntry;
@@ -62,6 +63,7 @@ type DragState = {
   expectedParentId?: string | null;
   moveSucceeded?: boolean;
   edgeDwell: EdgeDwellState;
+  preview?: PointerDragPreview | null;
 };
 
 export const EntryTypeIcon = EntryIcon;
@@ -85,6 +87,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     if (drag.current !== completed) return;
     resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     drag.current = null;
+    removePointerDragPreview(completed.preview);
     delete completed.canvas.dataset.iconDragging;
     iconRef.current?.style.removeProperty("transform");
     if (iconRef.current) delete iconRef.current.dataset.dragging;
@@ -233,6 +236,13 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview({ x, y }) : null);
     applyDragTransform(drag.current);
     iconRef.current.dataset.dragging = "true";
+    if (dropTarget && !dropTarget.desktop) {
+      drag.current.preview ??= createPointerDragPreview(iconRef.current, event.clientX, event.clientY);
+      if (drag.current.preview) movePointerDragPreview(drag.current.preview, event.clientX, event.clientY);
+    } else {
+      removePointerDragPreview(drag.current.preview);
+      drag.current.preview = null;
+    }
   }
 
   async function finishDrag(event: Pick<PointerEvent, "pointerId" | "clientX" | "clientY">, cancelled = false) {
@@ -253,6 +263,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       : Promise.resolve(!completed.moved && !cancelled);
     highlightEntryDropTarget(null);
     updateSnapPreview(null);
+    removePointerDragPreview(completed.preview);
+    completed.preview = null;
     if (!completed.moved || cancelled) cleanUpDrag(completed);
 
     let succeeded = !cancelled;
@@ -290,7 +302,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   return (
     <>
-      <span ref={snapPreviewRef} className="file-icon-snap-preview" aria-hidden="true" style={gridSize ? { "--snap-grid-size": `${gridSize}px` } as React.CSSProperties : undefined} />
+      <span ref={snapPreviewRef} className="file-icon-snap-preview" aria-hidden="true" data-grid={gridSize || undefined} style={gridSize ? { "--snap-grid-size": `${gridSize}px` } as React.CSSProperties : undefined} />
       <button
         ref={iconRef}
         className="file-icon"
