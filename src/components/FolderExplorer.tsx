@@ -152,6 +152,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
   function finishPointer(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
+    drag.current = null;
     if (current.longPressTimer) window.clearTimeout(current.longPressTimer);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     delete event.currentTarget.dataset.dragging;
@@ -193,7 +194,6 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       else if (action === "open") open(current.entry);
     }
     highlightEntryDropTarget(null);
-    drag.current = null;
   }
 
   const previousFolder = trail.length > 1 ? trail.at(-2)! : null;
@@ -469,6 +469,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                 onPointerMove={handlePointerMove}
                 onPointerUp={(event) => finishPointer(event)}
                 onPointerCancel={(event) => finishPointer(event, true)}
+                onLostPointerCapture={(event) => finishPointer(event, true)}
               >
                 <span className="folder-explorer__entry-icon">
                   <EntryIcon entry={entry} size={24} />

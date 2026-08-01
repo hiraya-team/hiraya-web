@@ -253,6 +253,7 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
   const dropPreviewBounds = await dropPreview.boundingBox();
   expect(Math.abs((dropPreviewBounds?.x ?? 0) + (dropPreviewBounds?.width ?? 0) / 2 - dropPoint.x)).toBeLessThan(50);
   await page.mouse.up();
+  await expect(dropPreview).toHaveCount(0);
 
   await expect(firstRow).toHaveCount(0);
   await expect(secondRow).toHaveCount(0);
@@ -274,6 +275,12 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
   const nestedExplorer = page.getByRole("dialog", { name: nestedFolderName });
   const nestedFirstRow = nestedExplorer.locator(".folder-explorer__row").filter({ hasText: firstName });
   await expect(nestedFirstRow).toBeVisible();
+  await beginDragPointerTo(page, nestedFirstRow, dropPoint.x, dropPoint.y);
+  await expect(dropPreview).toBeVisible();
+  await nestedFirstRow.dispatchEvent("lostpointercapture", { pointerId: 1, clientX: dropPoint.x, clientY: dropPoint.y });
+  await expect(dropPreview).toHaveCount(0);
+  await page.mouse.up();
+
   await dragPointerTo(page, nestedFirstRow, dropPoint.x, dropPoint.y);
   await expect(firstIcon).toBeVisible();
 
