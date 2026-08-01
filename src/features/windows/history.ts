@@ -27,7 +27,7 @@ export function routeForRunningApp(app: RunningApp | null, current: DesktopRoute
   if (app.kind === "store") return base;
   if (app.kind === "sandbox") {
     if (app.systemTarget?.targetKind === "file") return { ...base, fileId: app.systemTarget.entryId! };
-    if (app.systemTarget?.targetKind === "folder" || app.systemTarget?.targetKind === "root") return { ...base, explorerFolderId: app.systemTarget.entryId };
+    if (app.systemTarget?.targetKind === "folder") return { ...base, explorerFolderId: app.systemTarget.entryId };
     return base;
   }
   return { ...base, settings: true };

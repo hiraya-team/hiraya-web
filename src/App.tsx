@@ -1082,7 +1082,11 @@ function App({ session }: { session: AuthSession | null }) {
     }
     if (next.propertiesEntryId && entryIndex.byId.has(next.propertiesEntryId)) openPropertiesWindow(next.propertiesEntryId, false);
     if (next.settings) openSettingsWindow(false);
-    if (next.explorerFolderId === undefined && !next.fileId && !next.propertiesEntryId && !next.settings) setFocusedApp(null);
+    if (next.explorerFolderId === undefined && !next.fileId && !next.propertiesEntryId && !next.settings) {
+      const focused = runningAppsRef.current.find((app) => app.id === focusedAppIdRef.current);
+      const route = { ...next, desktopId: activeDesktopIdRef.current };
+      if (!focused || formatDesktopRoute(routeForApp(focused, route)) !== formatDesktopRoute(route)) setFocusedApp(null);
+    }
   };
   closeAppRef.current = requestCloseApp;
 
