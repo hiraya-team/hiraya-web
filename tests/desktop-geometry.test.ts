@@ -33,16 +33,16 @@ describe("responsive desktop geometry", () => {
     expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
   });
 
-  test("aligns icon areas to a 32px sub-grid with only trailing remainders", () => {
-    expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 384, height: 576 });
-    expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 64, height: 64 });
-    expect(iconAreaSize({ width: 5, height: 7 })).toEqual({ width: 32, height: 32 });
+  test("aligns icon areas to a 24px sub-grid with only trailing remainders", () => {
+    expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 384, height: 600 });
+    expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 72, height: 72 });
+    expect(iconAreaSize({ width: 5, height: 7 })).toEqual({ width: 24, height: 24 });
   });
 
   test("snaps moved icons to the fine grid from the existing visual origin", () => {
-    expect(snapAxis(35, 22, ICON_SUBGRID_STEP, 286)).toBe(22);
-    expect(snapAxis(39, 22, ICON_SUBGRID_STEP, 286)).toBe(54);
-    expect(snapAxis(290, 22, ICON_SUBGRID_STEP, 286)).toBe(278);
+    expect(snapAxis(31, 22, ICON_SUBGRID_STEP, 286)).toBe(22);
+    expect(snapAxis(35, 22, ICON_SUBGRID_STEP, 286)).toBe(46);
+    expect(snapAxis(290, 22, ICON_SUBGRID_STEP, 286)).toBe(286);
   });
 
   test("keeps signed icon-area origins congruent with home", () => {

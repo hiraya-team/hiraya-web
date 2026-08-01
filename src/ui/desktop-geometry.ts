@@ -4,7 +4,7 @@ import type { DesktopIconMetrics } from "../lib/themes";
 export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
 export const GRID_ORIGIN = { x: 22, y: 22 } as const;
 export const GRID_STEP = { x: 104, y: 112 } as const;
-export const ICON_SUBGRID_STEP = 32;
+export const ICON_SUBGRID_STEP = 24;
 export const DEFAULT_ICON_METRICS: DesktopIconMetrics = { ...FILE_ICON_SIZE, stepX: GRID_STEP.x, stepY: GRID_STEP.y };
 
 const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
