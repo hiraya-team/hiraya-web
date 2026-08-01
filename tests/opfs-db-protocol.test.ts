@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseStorageProtocol } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, GRID_SIZE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema12To13Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "../src/lib/opfs-schema";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -13,15 +13,17 @@ describe("storage worker request context", () => {
   });
 });
 
-describe("local schema 12", () => {
+describe("local schema 13", () => {
   test("adds app approvals and isolated storage without changing desktop tables", () => {
-    expect(DATABASE_SCHEMA_VERSION).toBe(12);
+    expect(DATABASE_SCHEMA_VERSION).toBe(13);
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE installed_apps");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("CREATE TABLE app_storage");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("ON DELETE CASCADE");
     expect(APP_STORAGE_SCHEMA_SQL).toContain("PRAGMA user_version=3");
     expect(migrateSchema2To3Sql(2)).toMatch(/^BEGIN IMMEDIATE;[\s\S]+COMMIT;$/);
     expect(() => migrateSchema2To3Sql(1)).toThrow("requires version 2");
+    expect(GRID_SIZE_SCHEMA_SQL).toContain("grid_size INTEGER NOT NULL DEFAULT 24");
+    expect(() => migrateSchema12To13Sql(11)).toThrow("requires version 12");
   });
 
   test("migrates app sources and normalized browser-local associations without dropping app storage", () => {
@@ -283,9 +285,11 @@ describe("local schema 12", () => {
     db.exec(`
       PRAGMA foreign_keys=ON;
       CREATE TABLE desktops(id TEXT PRIMARY KEY);
+      CREATE TABLE desktop_layouts(desktop_id TEXT PRIMARY KEY, snap_to_grid INTEGER NOT NULL, wallpaper TEXT NOT NULL);
       CREATE TABLE outbox(sequence INTEGER PRIMARY KEY, operation_id TEXT, client_id TEXT, catalog_id TEXT, desktop_id TEXT, operation_schema_version INTEGER, operation_json TEXT, status TEXT, error TEXT);
       CREATE TABLE preferences(singleton INTEGER PRIMARY KEY, auto_update INTEGER NOT NULL, external_embedded_previews INTEGER NOT NULL);
       INSERT INTO desktops VALUES ('desktop-a');
+      INSERT INTO desktop_layouts VALUES ('desktop-a', 1, 'dusk');
       INSERT INTO preferences VALUES (1, 0, 1);
       PRAGMA user_version=2;
     `);
@@ -303,6 +307,7 @@ describe("local schema 12", () => {
     db.exec(migrateSchema9To10Sql(9));
     db.exec(migrateSchema10To11Sql(10));
     db.exec(migrateSchema11To12Sql(11));
+    db.exec(migrateSchema12To13Sql(12));
 
     expect(db.query("PRAGMA user_version").get()).toEqual({ user_version: DATABASE_SCHEMA_VERSION });
     expect(db.query("SELECT auto_update,external_embedded_previews,allow_browser_pinch_zoom,search_all_desktops,onboarding_version,show_desktop_minimap,explorer_view FROM preferences").get()).toEqual({
@@ -317,6 +322,7 @@ describe("local schema 12", () => {
     expect(db.query("SELECT * FROM installed_apps").all()).toEqual([]);
     expect(db.query("SELECT * FROM app_storage").all()).toEqual([]);
     expect(db.query("SELECT * FROM file_associations").all()).toEqual([]);
+    expect(db.query("SELECT grid_size FROM desktop_layouts WHERE desktop_id='desktop-a'").get()).toEqual({ grid_size: 24 });
     expect(db.query("SELECT name FROM sqlite_master WHERE type='table' AND name='offline_pins'").get()).toBeNull();
     expect(db.query("PRAGMA foreign_key_check").all()).toEqual([]);
     db.close();

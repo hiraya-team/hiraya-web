@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "layout": {
     "snapToGrid": false,
+    "gridSize": 24,
     "wallpaper": {
       "source": "dusk",
       "fit": "cover",

@@ -1,4 +1,4 @@
-import type { DesktopEntry, DesktopLayout, EditorSettings, Wallpaper } from "../types";
+import type { DesktopEntry, DesktopLayout, EditorSettings, GridSize, Wallpaper } from "../types";
 import type { ThemeState } from "./theme";
 
 export type DesktopSyncState = {
@@ -15,6 +15,7 @@ export type DesktopSyncState = {
 export type PersistedDesktopState = {
   entries: DesktopEntry[];
   snapToGrid: boolean;
+  gridSize: GridSize;
   wallpaper: Wallpaper;
   editorSettings: EditorSettings;
   appearance: ThemeState;

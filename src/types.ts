@@ -2,6 +2,9 @@ export type EntryPosition = { x: number; y: number };
 
 export const WALLPAPERS = ["dusk", "grove", "ember"] as const;
 export type WallpaperPreset = typeof WALLPAPERS[number];
+export const GRID_SIZES = [12, 24, 36, 48] as const;
+export type GridSize = typeof GRID_SIZES[number];
+export const DEFAULT_GRID_SIZE: GridSize = 24;
 export type Wallpaper = {
   source: WallpaperPreset | `file:${string}` | `theme:${string}`;
   fit: "cover" | "contain";
@@ -25,6 +28,7 @@ export const DEFAULT_WALLPAPER: Wallpaper = {
 
 export type DesktopLayout = {
   snapToGrid: boolean;
+  gridSize: GridSize;
   wallpaper: Wallpaper;
 };
 

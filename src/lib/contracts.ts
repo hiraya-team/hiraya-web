@@ -1,4 +1,6 @@
 import {
+  DEFAULT_GRID_SIZE,
+  GRID_SIZES,
   WALLPAPERS,
   type DesktopEntry,
   type DesktopIdentity,
@@ -7,6 +9,7 @@ import {
   type EditorLanguage,
   type EditorSettings,
   type EntryPosition,
+  type GridSize,
   type Wallpaper,
 } from "../types";
 import { localDesktopIdentity, READ_ONLY_CAPABILITIES } from "./permissions";
@@ -315,7 +318,9 @@ export function parseLayout(value: unknown, allowLegacyWallpaper = false): Deskt
   if (!isRecord(value) || typeof value.snapToGrid !== "boolean") {
     throw new Error("The desktop layout has an unsupported format.");
   }
-  return { snapToGrid: value.snapToGrid, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper) };
+  const gridSize = value.gridSize === undefined ? DEFAULT_GRID_SIZE : value.gridSize;
+  if (!GRID_SIZES.includes(gridSize as GridSize)) throw new Error("The desktop layout has an unsupported grid size.");
+  return { snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper) };
 }
 
 export function parseRootEntryPositions(value: unknown): RootEntryPositionUpdate[] {

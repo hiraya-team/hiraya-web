@@ -340,7 +340,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     case "layout": {
       const layout = parseLayout(operation.layout);
       assertWallpaperSource(entries, layout.wallpaper);
-      return { ...state, snapToGrid: layout.snapToGrid, wallpaper: layout.wallpaper };
+      return { ...state, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper };
     }
     case "editor-settings":
       return { ...state, editorSettings: parseEditorSettings(operation.settings) };
@@ -361,7 +361,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
         : [...state.appearance.customThemes, theme];
       const appearance = parseThemeState({ selectedThemeId: theme.id, customThemes });
       const layout = parseLayout(operation.wallpaperKind === null ? operation.layout : { ...operation.layout, wallpaper: { ...operation.layout.wallpaper, source: `theme:${theme.id}` } });
-      return { ...state, snapToGrid: layout.snapToGrid, wallpaper: layout.wallpaper, appearance };
+      return { ...state, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, appearance };
     }
     case "delete-theme": {
       if (!state.appearance.customThemes.some((theme) => theme.id === operation.themeId)) return state;

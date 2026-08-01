@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import type { DesktopEntry } from "../src/types";
-import { desktopSlots, ICON_SUBGRID_STEP, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
+import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
+import { desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -33,24 +33,25 @@ describe("responsive desktop geometry", () => {
     expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
   });
 
-  test("aligns icon areas to a 24px sub-grid with only trailing remainders", () => {
+  test("aligns icon areas to the selected sub-grid with only trailing remainders", () => {
     expect(iconAreaSize({ width: 390, height: 600 })).toEqual({ width: 384, height: 600 });
+    expect(iconAreaSize({ width: 390, height: 600 }, 36)).toEqual({ width: 360, height: 576 });
     expect(iconAreaSize({ width: 80, height: 90 })).toEqual({ width: 72, height: 72 });
-    expect(iconAreaSize({ width: 5, height: 7 })).toEqual({ width: 24, height: 24 });
+    expect(iconAreaSize({ width: 5, height: 7 })).toEqual({ width: DEFAULT_GRID_SIZE, height: DEFAULT_GRID_SIZE });
   });
 
   test("snaps moved icons to the fine grid from the existing visual origin", () => {
-    expect(snapAxis(31, 22, ICON_SUBGRID_STEP, 286)).toBe(22);
-    expect(snapAxis(35, 22, ICON_SUBGRID_STEP, 286)).toBe(46);
-    expect(snapAxis(290, 22, ICON_SUBGRID_STEP, 286)).toBe(286);
+    expect(snapAxis(31, 22, DEFAULT_GRID_SIZE, 286)).toBe(22);
+    expect(snapAxis(35, 22, DEFAULT_GRID_SIZE, 286)).toBe(46);
+    expect(snapAxis(290, 22, DEFAULT_GRID_SIZE, 286)).toBe(286);
   });
 
   test("keeps signed icon-area origins congruent with home", () => {
     const size = iconAreaSize({ width: 390, height: 600 });
     for (const segment of [{ column: -3, row: 2 }, { column: 0, row: 0 }, { column: 4, row: -5 }]) {
       const origin = restoreLogicalPosition({ x: 0, y: 0 }, segment, size);
-      expect(Math.abs(origin.x % ICON_SUBGRID_STEP)).toBe(0);
-      expect(Math.abs(origin.y % ICON_SUBGRID_STEP)).toBe(0);
+      expect(Math.abs(origin.x % DEFAULT_GRID_SIZE)).toBe(0);
+      expect(Math.abs(origin.y % DEFAULT_GRID_SIZE)).toBe(0);
       expect(projectLogicalPosition(origin, size).segment).toEqual(segment);
     }
   });

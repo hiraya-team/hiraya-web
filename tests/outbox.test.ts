@@ -6,13 +6,13 @@ import { DEFAULT_WALLPAPER } from "../src/types";
 
 function state() {
   const snapshot = desktopStateSnapshot();
-  return { entries: snapshot.entries, snapToGrid: snapshot.layout.snapToGrid, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
+  return { entries: snapshot.entries, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
 }
 
 describe("strict outbox", () => {
   test("requires operation schema version 1", () => {
     const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { snapToGrid: true, wallpaper: { ...DEFAULT_WALLPAPER } } };
-    expect(normalizeOutboxOperation(operation)).toEqual(operation);
+    expect(normalizeOutboxOperation(operation)).toEqual({ ...operation, layout: { ...operation.layout, gridSize: 24 } });
     expect(applyOutboxOperation(state(), operation).snapToGrid).toBe(true);
     expect(() => normalizeOutboxOperation({ ...operation, schemaVersion: 2 } as never)).toThrow("schema version");
   });

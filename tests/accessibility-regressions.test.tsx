@@ -232,6 +232,7 @@ describe("accessibility regressions", () => {
       onMove={async () => true}
       onDragAtEdge={() => null}
       onDragEnd={() => undefined}
+      gridSize={36}
       onContextMenu={() => undefined}
       onContextMenuAt={() => undefined}
     />);
@@ -242,6 +243,7 @@ describe("accessibility regressions", () => {
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain('inert=""');
+    expect(markup).toContain('--snap-grid-size:36px');
   });
 
   test("programmatically activated file inputs are not hidden keyboard stops", async () => {

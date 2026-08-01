@@ -47,6 +47,7 @@ function readSeeded(value: unknown, portable: boolean): PortableSeededManifest {
   const parsedEntries = parseEntries(plainEntries);
   const layout: DesktopLayout = parseLayout({
     snapToGrid: value.layout.snapToGrid,
+    gridSize: value.layout.gridSize,
     wallpaper: value.layout.wallpaper,
   }, true);
   assertWallpaperSource(parsedEntries, layout.wallpaper);

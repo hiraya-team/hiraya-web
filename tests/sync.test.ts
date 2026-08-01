@@ -127,8 +127,8 @@ function remoteStorage() {
     },
     readOutbox: async () => outbox,
     enqueueMutation: async (operation: OutboxOperation, contents = new Map<string, Blob>()) => {
-      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
-      current = { entries: state.entries, layout: { snapToGrid: state.snapToGrid, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
+      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      current = { entries: state.entries, layout: { snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
       pending.set(record.operationId, contents);
@@ -136,7 +136,7 @@ function remoteStorage() {
     },
     enqueueTransfer: async (_source: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) => {
       const operation: OutboxOperation = { schemaVersion: 1, kind: "entry-transfer", destinationDesktopId, entryIds, parentId };
-      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { ...current, entries: state.entries };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
@@ -185,7 +185,7 @@ describe("canonical synchronization", () => {
         return Response.json({});
       }
       if (String(input) === "/api/desktops/desk/layout") {
-        remote = { ...remote, catalogRevision: 3, layout: { ...remote.layout, snapToGrid: true }, layoutRevision: 3 };
+        remote = { ...remote, catalogRevision: 3, layout: { ...remote.layout, snapToGrid: true, gridSize: 48 }, layoutRevision: 3 };
         return Response.json({});
       }
       throw new Error(`Unexpected request: ${request}`);
@@ -197,10 +197,11 @@ describe("canonical synchronization", () => {
 
     await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
     await positionStarted;
-    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true, gridSize: 48 });
 
     expect(latest.entries[0].position).toEqual({ x: 20, y: 30 });
     expect(latest.layout.snapToGrid).toBe(true);
+    expect(latest.layout.gridSize).toBe(48);
     expect(await engine.getOutboxStatus()).toMatchObject({ pending: 2, blocked: 0 });
     expect(requests).not.toContain("PUT /api/desktops/desk/layout");
 

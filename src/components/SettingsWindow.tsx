@@ -12,7 +12,7 @@ import {
   themeStyle,
 } from "../lib/themes";
 import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeState } from "../domain/theme";
-import { DEFAULT_WALLPAPER, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type WallpaperPreset } from "../types";
+import { DEFAULT_WALLPAPER, GRID_SIZES, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type GridSize, type WallpaperPreset } from "../types";
 import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
 import type { AppWindowHeaderElements } from "./AppWindow";
 import { installedAppAcceptsMatcher, installedAppIsAvailable, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
@@ -479,6 +479,13 @@ export function SettingsWindow({
                   <span className="settings-row__icon"><GridFour size={17} weight={layout.snapToGrid ? "fill" : "regular"} /></span>
                   <span className="settings-row__copy"><strong>Snap to grid</strong><small>Align icons when they are moved.</small></span>
                   <input type="checkbox" checked={layout.snapToGrid} disabled={!canMutate} onChange={(event) => void onLayoutChange({ ...layout, snapToGrid: event.target.checked }, activeDesktopId)} />
+                </label>
+                <label className="settings-row">
+                  <span className="settings-row__icon"><GridFour size={17} /></span>
+                  <span className="settings-row__copy"><strong>Grid size</strong><small>Choose how finely moved icons align.</small></span>
+                  <select className="settings-row__select" value={layout.gridSize} disabled={!canMutate || !layout.snapToGrid} onChange={(event) => void onLayoutChange({ ...layout, gridSize: Number(event.target.value) as GridSize }, activeDesktopId)}>
+                    {GRID_SIZES.map((size) => <option value={size} key={size}>{size}px</option>)}
+                  </select>
                 </label>
                 {fullscreenEnabled && (
                   <div className="settings-row">

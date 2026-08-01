@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { SettingsWindow } from "../src/components/SettingsWindow";
 import { DEFAULT_THEME_STATE } from "../src/lib/themes";
-import { DEFAULT_WALLPAPER } from "../src/types";
+import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import type { InstalledApp } from "../src/apps/installed-apps";
 
 const systemApp: InstalledApp = {
@@ -29,7 +29,7 @@ describe("Settings apps UI", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
       page: "apps",
       onPageChange: () => undefined,
-      layout: { snapToGrid: false, wallpaper: DEFAULT_WALLPAPER },
+      layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER },
       activeDesktopId: "desktop",
       entries: [],
       appearance: DEFAULT_THEME_STATE,
@@ -59,7 +59,7 @@ describe("Settings apps UI", () => {
 
   test("surfaces quarantined app storage with download and removal controls", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "apps", onPageChange: () => undefined, layout: { snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      page: "apps", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
       installedApps: [systemApp], fileAssociations: [], quarantinedApps: [{ appId: systemApp.appId, packageEntryId: "old-package", digest: "b".repeat(64), version: "0.9.0", manifest: { name: "Old editor" }, approvedAt: 1, storage: [{ key: "draft", value: { text: "kept" }, bytes: 15 }] }],
       onLaunchApp: () => undefined, onUninstallApp: () => undefined, onResetApp: () => undefined, onExportQuarantinedApp: () => undefined, onRemoveQuarantinedApp: () => undefined, onSetFileAssociation: () => undefined, onRemoveFileAssociation: () => undefined, onResetFileAssociations: () => undefined, onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
@@ -67,5 +67,15 @@ describe("Settings apps UI", () => {
     expect(markup).toContain("Download export");
     expect(markup).toContain("15 bytes");
     expect(markup).toContain("Remove");
+  });
+
+  test("offers the synchronized icon grid presets", () => {
+    const markup = renderToStaticMarkup(<SettingsWindow {...({
+      page: "main", onPageChange: () => undefined, layout: { snapToGrid: true, gridSize: 36, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined,
+    } as Parameters<typeof SettingsWindow>[0])} />);
+    expect(markup).toContain("Grid size");
+    expect(markup).toContain('<option value="36" selected="">36px</option>');
+    expect(markup).toContain('<option value="48">48px</option>');
   });
 });

@@ -73,8 +73,8 @@ import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipb
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, type DesktopRoute } from "./lib/routes";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
-import { DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, ICON_SUBGRID_STEP, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
+import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -229,7 +229,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [routeHistoryReady, setRouteHistoryReady] = useState(false);
   const [route, setRoute] = useState<DesktopRoute | null>(null);
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
-  const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }));
+  const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
   const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
@@ -439,7 +439,7 @@ function App({ session }: { session: AuthSession | null }) {
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
-  const iconArea = useMemo(() => iconAreaSize(desktopSize), [desktopSize]);
+  const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
   const rootEntries = entryIndex.roots;
   const responsive = useMemo(() => responsiveDesktop(entries, iconArea, iconMetrics), [entries, iconArea, iconMetrics]);
@@ -1888,8 +1888,8 @@ function App({ session }: { session: AuthSession | null }) {
 
   function snapPositionInView(position: EntryPosition) {
     return {
-      x: snapAxis(position.x, GRID_ORIGIN.x, ICON_SUBGRID_STEP, Math.max(8, iconArea.width - iconMetrics.width)),
-      y: snapAxis(position.y, GRID_ORIGIN.y, ICON_SUBGRID_STEP, Math.max(8, iconArea.height - iconMetrics.height)),
+      x: snapAxis(position.x, GRID_ORIGIN.x, layout.gridSize, Math.max(8, iconArea.width - iconMetrics.width)),
+      y: snapAxis(position.y, GRID_ORIGIN.y, layout.gridSize, Math.max(8, iconArea.height - iconMetrics.height)),
     };
   }
 
@@ -3987,6 +3987,7 @@ function App({ session }: { session: AuthSession | null }) {
                     const snapped = snapRootEntryPosition(world);
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
+                  gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                   onExternalDrop={(dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();

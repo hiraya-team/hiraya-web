@@ -40,6 +40,7 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
   return {
     entries,
     snapToGrid: layout.snapToGrid,
+    gridSize: layout.gridSize,
     wallpaper: layout.wallpaper,
     editorSettings: parseEditorSettings(value.editorSettings),
     appearance,
@@ -48,5 +49,5 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
 }
 
 export function desktopStateLayout(state: PersistedDesktopState): DesktopLayout {
-  return { snapToGrid: state.snapToGrid, wallpaper: state.wallpaper };
+  return { snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper };
 }

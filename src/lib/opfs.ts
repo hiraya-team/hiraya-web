@@ -1,4 +1,4 @@
-import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type EntryPosition, type FileEntry, type FolderEntry } from "../types";
+import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type EntryPosition, type FileEntry, type FolderEntry } from "../types";
 import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
 import type { LocalPreferences } from "../domain/preferences";
@@ -80,6 +80,7 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
   const created: DesktopState = {
     entries,
     snapToGrid: parsedSeeded.layout.snapToGrid,
+    gridSize: parsedSeeded.layout.gridSize,
     wallpaper: parsedSeeded.layout.wallpaper,
     editorSettings: parsedSeeded.editorSettings,
     appearance: parsedSeeded.appearance,
@@ -167,7 +168,7 @@ let desktopLoad: Promise<DesktopState> | null = null;
 let databaseInitialization: Promise<void> | null = null;
 
 function emptyDesktopState(): DesktopState {
-  return { entries: [], snapToGrid: false, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
+  return { entries: [], snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
 }
 
 async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
@@ -362,6 +363,7 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   const next: Manifest = {
     entries: snapshot.entries,
     snapToGrid: snapshot.layout.snapToGrid,
+    gridSize: snapshot.layout.gridSize,
     wallpaper: snapshot.layout.wallpaper,
     editorSettings: snapshot.editorSettings,
     appearance: snapshot.appearance,
@@ -494,10 +496,11 @@ async function saveEditorSettingsUnsafe(settings: EditorSettings) {
 async function saveDesktopLayoutUnsafe(layout: DesktopLayout) {
   const manifest = await readManifest();
   const parsed = parseLayout(layout);
-  const next = { ...manifest, snapToGrid: parsed.snapToGrid, wallpaper: parsed.wallpaper };
+  const next = { ...manifest, snapToGrid: parsed.snapToGrid, gridSize: parsed.gridSize, wallpaper: parsed.wallpaper };
   assertValidManifest(next);
   await writeManifest(next, activityRecord("Changed desktop layout", [
     `Snap to grid: ${parsed.snapToGrid ? "On" : "Off"}`,
+    `Grid size: ${parsed.gridSize}px`,
     `Wallpaper: ${parsed.wallpaper.source}`,
   ]));
 }

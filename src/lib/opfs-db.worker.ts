@@ -12,7 +12,7 @@ import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPag
 import { type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
 import { parseJsonValue } from "@hiraya/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
-import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "./opfs-schema";
+import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema12To13Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 
@@ -102,6 +102,10 @@ function createSchema(db: Database) {
   }
   if (migratedVersion === 11) {
     db.exec(migrateSchema11To12Sql(migratedVersion));
+    migratedVersion = 12;
+  }
+  if (migratedVersion === 12) {
+    db.exec(migrateSchema12To13Sql(migratedVersion));
     return;
   }
   if (migratedVersion !== 0 && migratedVersion !== DATABASE_SCHEMA_VERSION) throw new Error(`The desktop database uses unsupported schema version ${migratedVersion}.`);
@@ -122,7 +126,8 @@ function createSchema(db: Database) {
     CREATE TABLE desktop_layouts (
       desktop_id TEXT PRIMARY KEY REFERENCES desktops(id) ON DELETE CASCADE,
       snap_to_grid INTEGER NOT NULL CHECK (snap_to_grid IN (0, 1)),
-      wallpaper TEXT NOT NULL
+      wallpaper TEXT NOT NULL,
+      grid_size INTEGER NOT NULL DEFAULT 24 CHECK (grid_size IN (12, 24, 36, 48))
     );
     CREATE TABLE desktop_editor_settings (
       desktop_id TEXT PRIMARY KEY REFERENCES desktops(id) ON DELETE CASCADE,
@@ -192,6 +197,7 @@ function createSchema(db: Database) {
     ${OFFLINE_PINS_REMOVAL_SCHEMA_SQL}
     ${APP_RUNTIME_RESET_SCHEMA_SQL}
     ${STORE_APP_SCHEMA_SQL}
+    PRAGMA user_version=13;
     COMMIT;
   `);
 }
@@ -248,14 +254,14 @@ function readDesktopState(db: Database, desktopId: string): PersistedDesktopStat
   const wallpaperText = stringValue(layout.wallpaper);
   let wallpaper: Wallpaper | string;
   try { wallpaper = JSON.parse(wallpaperText) as Wallpaper; } catch { wallpaper = wallpaperText; }
-  return parseDesktopState({ entries, snapToGrid: numberValue(layout.snap_to_grid) === 1, wallpaper, editorSettings, appearance: parseThemeState({ selectedThemeId: stringValue(appearanceRow.selected_theme_id), customThemes }), sync });
+  return parseDesktopState({ entries, snapToGrid: numberValue(layout.snap_to_grid) === 1, gridSize: numberValue(layout.grid_size), wallpaper, editorSettings, appearance: parseThemeState({ selectedThemeId: stringValue(appearanceRow.selected_theme_id), customThemes }), sync });
 }
 
 function replaceDesktopStateRows(db: Database, desktopId: string, value: PersistedDesktopState) {
   const state = parseDesktopState(value);
   db.exec({ sql: "UPDATE desktops SET catalog_id=?, catalog_revision=?, layout_revision=?, settings_revision=?, theme_selection_revision=? WHERE id=?", bind: [state.sync.catalogId, state.sync.catalogRevision, state.sync.layoutRevision, state.sync.settingsRevision, state.sync.themeSelectionRevision, desktopId] });
   if (db.changes() !== 1) throw new Error("That desktop no longer exists.");
-  db.exec({ sql: "INSERT INTO desktop_layouts VALUES (?, ?, ?) ON CONFLICT(desktop_id) DO UPDATE SET snap_to_grid=excluded.snap_to_grid, wallpaper=excluded.wallpaper", bind: [desktopId, state.snapToGrid, JSON.stringify(state.wallpaper)] });
+  db.exec({ sql: "INSERT INTO desktop_layouts(desktop_id,snap_to_grid,wallpaper,grid_size) VALUES (?, ?, ?, ?) ON CONFLICT(desktop_id) DO UPDATE SET snap_to_grid=excluded.snap_to_grid, wallpaper=excluded.wallpaper, grid_size=excluded.grid_size", bind: [desktopId, state.snapToGrid, JSON.stringify(state.wallpaper), state.gridSize] });
   db.exec({ sql: "INSERT INTO desktop_editor_settings VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(desktop_id) DO UPDATE SET auto_save=excluded.auto_save, auto_format=excluded.auto_format, font_size=excluded.font_size, language=excluded.language, line_wrap=excluded.line_wrap", bind: [desktopId, state.editorSettings.autoSave, state.editorSettings.autoFormat, state.editorSettings.fontSize, state.editorSettings.language, state.editorSettings.lineWrap] });
   db.exec({ sql: "INSERT INTO desktop_appearance VALUES (?, ?) ON CONFLICT(desktop_id) DO UPDATE SET selected_theme_id=excluded.selected_theme_id", bind: [desktopId, state.appearance.selectedThemeId] });
   db.exec({ sql: "DELETE FROM custom_themes WHERE desktop_id=?", bind: [desktopId] });

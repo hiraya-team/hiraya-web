@@ -1,6 +1,6 @@
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
-export const DATABASE_SCHEMA_VERSION = 12;
+export const DATABASE_SCHEMA_VERSION = 13;
 const RESERVED_SYSTEM_APP_SQL = Object.values(SYSTEM_APP_IDS).map((id) => `'${id}'`).join(",");
 
 export const APP_STORAGE_SCHEMA_SQL = `
@@ -231,4 +231,14 @@ export const STORE_APP_SCHEMA_SQL = `
 export function migrateSchema11To12Sql(version: number): string {
   if (version !== 11) throw new Error(`Schema 12 migration requires version 11, received ${version}.`);
   return `PRAGMA foreign_keys=OFF; BEGIN IMMEDIATE; ${STORE_APP_SCHEMA_SQL} COMMIT; PRAGMA foreign_keys=ON;`;
+}
+
+export const GRID_SIZE_SCHEMA_SQL = `
+  ALTER TABLE desktop_layouts ADD COLUMN grid_size INTEGER NOT NULL DEFAULT 24 CHECK (grid_size IN (12, 24, 36, 48));
+  PRAGMA user_version=13;
+`;
+
+export function migrateSchema12To13Sql(version: number): string {
+  if (version !== 12) throw new Error(`Schema 13 migration requires version 12, received ${version}.`);
+  return `BEGIN IMMEDIATE; ${GRID_SIZE_SCHEMA_SQL} COMMIT;`;
 }
