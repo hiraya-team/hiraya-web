@@ -369,7 +369,7 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
 test("reduced motion disables desktop transitions and animations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openLocalDesktop(page);
-  await page.getByRole("button", { name: /Open area switcher/ }).click();
+  await page.getByRole("button", { name: /Open desktop and area switcher/ }).click();
   const motion = await page.locator(".desktop-minimap").evaluate((element) => {
     const style = getComputedStyle(element);
     return { animationDuration: style.animationDuration, transitionDuration: style.transitionDuration };
@@ -396,7 +396,7 @@ test("service worker excludes API responses from navigation fallback and caches"
   expect(result.cachedApiCount).toBe(0);
 });
 
-test("mobile Start and area controls own distinct shell actions", async ({ browser }) => {
+test("mobile Start and the unified switcher own distinct shell actions", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();
   await openLocalDesktop(page);
@@ -419,6 +419,7 @@ test("mobile Start and area controls own distinct shell actions", async ({ brows
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(switcher).toHaveAttribute("data-expanded", "true");
+    await expect(switcher.getByRole("complementary", { name: "Desktops" })).toBeVisible();
     await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
     await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
     await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);

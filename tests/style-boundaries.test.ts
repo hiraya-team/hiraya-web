@@ -29,7 +29,7 @@ describe("style ownership", () => {
     expect(foundation).toContain("--radius-control: 8px;");
     expect(foundation).toContain("--layer-shell-popover: 5300;");
     expect(foundation).toContain("--layer-modal: 6300;");
-    expect(desktop).toContain(".menu-bar:has(.mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel)");
+    expect(desktop).toContain(".menu-bar:has(.mobile-header-menu__panel, .notification-center__panel)");
     expect(desktop).toContain("z-index: var(--layer-shell-popover, 5300);");
     expect(desktop).toContain("z-index: var(--layer-modal)");
   });

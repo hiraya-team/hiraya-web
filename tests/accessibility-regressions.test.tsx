@@ -119,7 +119,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain(".app-window, button, a[href], input, select, textarea");
   });
 
-  test("the universal header keeps desktop and temporary area controls distinct", async () => {
+  test("the universal header uses one desktop and area switcher", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
@@ -129,15 +129,19 @@ describe("accessibility regressions", () => {
     expect(app).toContain('event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space"');
     expect(app).toContain("areaSwitcherRestoreFocusRef.current = minimapExpanded;");
     expect(app).toContain("setMinimapExpanded(!minimapExpanded);");
-    expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] }');
-    expect(app).toContain("mobileSummary={homeRelativeAreaLabel(activeSegment)}");
-    expect(desktopSwitcher).toContain('className="mobile-desktop-switcher"');
+    expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] }');
+    expect(app).toContain('className="mobile-desktop-summary"');
+    expect(app).toContain("desktopRail={<DesktopSwitcher");
+    expect(desktopSwitcher).toContain('className="desktop-switcher__rail" aria-label="Desktops"');
+    expect(desktopSwitcher).toContain('<details className="desktop-switcher__manage">');
+    expect(desktopSwitcher).not.toContain('aria-haspopup="dialog"');
+    expect(desktopSwitcher).toContain('if (event.key !== "Escape") return;');
     expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}');
     expect(app).toContain('className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}');
     expect(css).toContain("@keyframes spin");
     expect(css).toContain(".mobile-start-menu__icon[data-offline] { filter: grayscale(1); opacity: 0.52; }");
     expect(app).toContain('className="mobile-area-switcher-trigger"');
-    expect(desktopSwitcher).toContain('aria-label={`Switch desktop, current desktop');
+    expect(app).toContain('aria-label={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher');
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
     expect(areaSwitcher).not.toContain("onBeginDrag");
     expect(areaSwitcher).not.toContain("desktop-minimap__handle");

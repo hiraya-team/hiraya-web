@@ -173,7 +173,7 @@ function formatImportBytes(value: number) {
 }
 
 function transientMenuOpen() {
-  return Boolean(document.querySelector(".mobile-header-menu__panel, .desktop-switcher__panel, .notification-center__panel, .app-window__menu"));
+  return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel, .app-window__menu"));
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -3583,7 +3583,7 @@ function App({ session }: { session: AuthSession | null }) {
   const searchCommands = commandService.list(commandContext);
   const keyboardShortcuts: KeyboardShortcut[] = [
     { id: "search", group: "Navigation", label: "Search apps, files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
-    { id: "area-switcher", group: "Navigation", label: "Toggle area switcher", keys: ["Ctrl", "Space"] },
+    { id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] },
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
     { id: "copy", group: "Files", label: "Copy selected items", keys: ["Ctrl/⌘", "C"] },
@@ -3842,7 +3842,7 @@ function App({ session }: { session: AuthSession | null }) {
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-              : activeDesktopId && <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} mobileSummary={homeRelativeAreaLabel(activeSegment)} disabled={loading} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => void activateDesktop(id)} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
+              : activeDesktopId && <span className="mobile-desktop-summary"><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></span>}
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
@@ -3881,7 +3881,7 @@ function App({ session }: { session: AuthSession | null }) {
             onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
             onViewActivity={openActivityLog}
           />
-          <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} area switcher, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
+          <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher, current desktop ${activeDesktopName}, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
             <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
           </button>
           <DesktopClock />
@@ -4347,6 +4347,7 @@ function App({ session }: { session: AuthSession | null }) {
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}
         desktopName={activeDesktopName}
+        desktopRail={<DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => { collapseAreaMap(); void activateDesktop(id); }} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} onDismiss={collapseAreaMap} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
         desktopSize={iconArea}
         detailed={minimapDetailed}
         dirtyAppIds={dirtyAppIds}
