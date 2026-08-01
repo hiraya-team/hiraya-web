@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ArrowLeft, ArrowsIn, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
 import { clampWindowBounds, resizeWindowBounds, type ResizeDirection, type WindowBounds } from "../ui/window-manager";
+import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
 
 export type AppWindowProps = {
   id: string;
@@ -17,7 +18,9 @@ export type AppWindowProps = {
   windowed: boolean;
   onFocus: (id: string) => void;
   onBoundsChange: (id: string, bounds: WindowBounds) => void;
-  onDragAtEdge?: (id: string, clientX: number, clientY: number, bounds: WindowBounds) => WindowBounds | null;
+  dragEdgeAt?: (clientX: number, clientY: number) => EdgeDirection | null;
+  onDragAtEdge?: (id: string, direction: EdgeDirection, bounds: WindowBounds) => WindowBounds | null;
+  onEdgeDwellChange?: (direction: EdgeDirection | null) => void;
   onDragEnd?: (id: string, cancelled: boolean) => void;
   onMinimize?: (id: string) => void;
   onClose?: (id: string) => void;
@@ -48,6 +51,9 @@ type Interaction = {
   startY: number;
   startBounds: WindowBounds;
   currentBounds: WindowBounds;
+  clientX: number;
+  clientY: number;
+  edgeDwell: EdgeDwellState;
   direction?: ResizeDirection;
 };
 
@@ -56,7 +62,8 @@ const NO_DRAG_SELECTOR = "button, a, input, select, textarea, [contenteditable='
 
 export function AppWindow({
   id, title, titleId, bounds, minWidth, minHeight, zIndex, focused, minimized, segmentActive,
-  segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, onDragAtEdge, onDragEnd,
+  segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, dragEdgeAt, onDragAtEdge, onEdgeDwellChange,
+  onDragEnd,
   onMinimize, onClose, maximized = false, canMoveArea = false, onToggleMaximize, onMoveArea, onAdjustBounds,
   onShowDesktop, onSwitchWindow, backLabel = "Back to Desktop", hideFocusedHeader = false,
   externalHeaderElements, children, titleArea, headerContent,
@@ -69,7 +76,9 @@ export function AppWindow({
   const windowMenuRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
   const onBoundsChangeRef = useRef(onBoundsChange);
+  const onEdgeDwellChangeRef = useRef(onEdgeDwellChange);
   onBoundsChangeRef.current = onBoundsChange;
+  onEdgeDwellChangeRef.current = onEdgeDwellChange;
 
   function closeWindowMenu() {
     setWindowMenuOpen(false);
@@ -97,23 +106,31 @@ export function AppWindow({
     onFocus(id);
     const target = event.currentTarget;
     target.setPointerCapture(event.pointerId);
-    interactionRef.current = { pointerId: event.pointerId, target, startX: event.clientX, startY: event.clientY, startBounds: bounds, currentBounds: bounds, direction };
+    interactionRef.current = { pointerId: event.pointerId, target, startX: event.clientX, startY: event.clientY, startBounds: bounds, currentBounds: bounds, clientX: event.clientX, clientY: event.clientY, direction, edgeDwell: { direction: null, latched: false, timer: null } };
   }
 
   function moveInteraction(event: ReactPointerEvent<HTMLElement>) {
     const interaction = interactionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
+    interaction.clientX = event.clientX;
+    interaction.clientY = event.clientY;
     const delta = { x: event.clientX - interaction.startX, y: event.clientY - interaction.startY };
     const nextBounds = interaction.direction
       ? resizeWindowBounds(interaction.startBounds, interaction.direction, delta, viewport(), { minWidth, minHeight })
       : clampWindowBounds({ ...interaction.startBounds, x: interaction.startBounds.x + delta.x, y: interaction.startBounds.y + delta.y }, viewport(), { minWidth, minHeight });
-    const transferredBounds = !interaction.direction ? onDragAtEdge?.(id, event.clientX, event.clientY, nextBounds) : null;
-    interaction.currentBounds = transferredBounds ?? nextBounds;
-    if (transferredBounds) {
-      interaction.startX = event.clientX;
-      interaction.startY = event.clientY;
-      interaction.startBounds = transferredBounds;
-    }
+    interaction.currentBounds = nextBounds;
+    const notifyEdgeDwellChange = onEdgeDwellChangeRef.current;
+    if (!interaction.direction && dragEdgeAt && onDragAtEdge && notifyEdgeDwellChange) updateEdgeDwell(interaction.edgeDwell, dragEdgeAt(event.clientX, event.clientY), (edge) => {
+      const current = interactionRef.current;
+      if (!current) return;
+      const transferredBounds = onDragAtEdge(id, edge, current.currentBounds);
+      if (!transferredBounds) return;
+      current.currentBounds = transferredBounds;
+      current.startX = current.clientX;
+      current.startY = current.clientY;
+      current.startBounds = transferredBounds;
+      applyBounds(transferredBounds);
+    }, notifyEdgeDwellChange, browserEdgeDwellTimers);
     applyBounds(interaction.currentBounds);
   }
 
@@ -121,6 +138,7 @@ export function AppWindow({
     const interaction = interactionRef.current;
     if (!interaction || interaction.pointerId !== event.pointerId) return;
     interactionRef.current = null;
+    if (onEdgeDwellChangeRef.current) resetEdgeDwell(interaction.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     if (cancelled) applyBounds(interaction.startBounds);
     else onBoundsChangeRef.current(id, interaction.currentBounds);
     if (!interaction.direction) onDragEnd?.(id, cancelled);
@@ -129,6 +147,7 @@ export function AppWindow({
 
   useEffect(() => () => {
     const interaction = interactionRef.current;
+    if (interaction && onEdgeDwellChangeRef.current) resetEdgeDwell(interaction.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     if (interaction?.target.hasPointerCapture(interaction.pointerId)) interaction.target.releasePointerCapture(interaction.pointerId);
     interactionRef.current = null;
   }, []);

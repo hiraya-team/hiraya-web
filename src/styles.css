@@ -960,6 +960,105 @@
   box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.12);
 }
 
+.desktop-edge-dwell {
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  pointer-events: none;
+}
+
+.desktop-edge-dwell__rail {
+  position: absolute;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--theme-chrome-text) 22%, transparent);
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--theme-shell) 45%, transparent);
+}
+
+.desktop-edge-dwell__rail > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--theme-accent);
+}
+
+.desktop-edge-dwell__label {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 9px;
+  border: 1px solid color-mix(in srgb, var(--theme-chrome-text) 20%, transparent);
+  border-radius: var(--theme-radius-small);
+  color: var(--theme-chrome-text);
+  background: var(--theme-chrome-surface);
+  box-shadow: 0 5px 16px var(--theme-shadow-soft);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.desktop-edge-dwell[data-direction="left"] .desktop-edge-dwell__rail,
+.desktop-edge-dwell[data-direction="right"] .desktop-edge-dwell__rail {
+  top: 12px;
+  bottom: 12px;
+  width: 5px;
+}
+
+.desktop-edge-dwell[data-direction="left"] .desktop-edge-dwell__rail { left: 8px; }
+.desktop-edge-dwell[data-direction="right"] .desktop-edge-dwell__rail { right: 8px; }
+.desktop-edge-dwell[data-direction="left"] .desktop-edge-dwell__rail > span,
+.desktop-edge-dwell[data-direction="right"] .desktop-edge-dwell__rail > span {
+  transform-origin: center top;
+  animation: desktop-edge-dwell-y var(--edge-dwell-duration) linear both;
+}
+
+.desktop-edge-dwell[data-direction="up"] .desktop-edge-dwell__rail,
+.desktop-edge-dwell[data-direction="down"] .desktop-edge-dwell__rail {
+  right: 12px;
+  left: 12px;
+  height: 5px;
+}
+
+.desktop-edge-dwell[data-direction="up"] .desktop-edge-dwell__rail { top: 8px; }
+.desktop-edge-dwell[data-direction="down"] .desktop-edge-dwell__rail { bottom: 8px; }
+.desktop-edge-dwell[data-direction="up"] .desktop-edge-dwell__rail > span,
+.desktop-edge-dwell[data-direction="down"] .desktop-edge-dwell__rail > span {
+  transform-origin: left center;
+  animation: desktop-edge-dwell-x var(--edge-dwell-duration) linear both;
+}
+
+.desktop-edge-dwell[data-direction="left"] .desktop-edge-dwell__label,
+.desktop-edge-dwell[data-direction="right"] .desktop-edge-dwell__label {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.desktop-edge-dwell[data-direction="left"] .desktop-edge-dwell__label { left: 20px; }
+.desktop-edge-dwell[data-direction="right"] .desktop-edge-dwell__label { right: 20px; }
+.desktop-edge-dwell[data-direction="up"] .desktop-edge-dwell__label,
+.desktop-edge-dwell[data-direction="down"] .desktop-edge-dwell__label {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+.desktop-edge-dwell[data-direction="up"] .desktop-edge-dwell__label { top: 20px; }
+.desktop-edge-dwell[data-direction="down"] .desktop-edge-dwell__label { bottom: 20px; }
+
+@keyframes desktop-edge-dwell-x {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes desktop-edge-dwell-y {
+  from { transform: scaleY(0); }
+  to { transform: scaleY(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .desktop-edge-dwell__rail > span { animation: none !important; opacity: 0.72; }
+}
+
 .file-icon-snap-preview {
   position: absolute;
   z-index: 1;

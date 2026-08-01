@@ -212,6 +212,54 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
   await expect(page.locator(".file-icon").filter({ hasText: secondName })).toBeVisible();
 });
 
+test("edge dwell guards item and window moves between areas", async ({ page }) => {
+  await openLocalDesktop(page);
+  const gettingStarted = page.getByRole("dialog", { name: "Know where your work lives" });
+  await expect(gettingStarted).toBeVisible();
+  await gettingStarted.getByRole("button", { name: "Open desktop" }).click();
+  await expect(gettingStarted).toBeHidden();
+  const folderName = `edge-dwell-${Date.now()}`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+
+  const desktop = page.locator(".desktop");
+  const desktopBounds = await desktop.boundingBox();
+  const folder = page.locator(".file-icon").filter({ hasText: folderName });
+  const folderBounds = await folder.boundingBox();
+  if (!desktopBounds || !folderBounds) throw new Error("The desktop item is not visible.");
+  await page.mouse.move(folderBounds.x + folderBounds.width / 2, folderBounds.y + folderBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(desktopBounds.x + 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
+  const indicator = page.locator('.desktop-edge-dwell[data-direction="left"]');
+  await expect(indicator).toBeVisible();
+  await expect(indicator.locator(".desktop-edge-dwell__rail > span")).toHaveCSS("animation-duration", "1.25s");
+  await page.waitForTimeout(600);
+  await expect(page).not.toHaveURL(/\/areas\/-1\/0$/);
+
+  await page.mouse.move(desktopBounds.x + desktopBounds.width / 2, desktopBounds.y + desktopBounds.height / 2, { steps: 4 });
+  await expect(indicator).toHaveCount(0);
+  await page.mouse.move(desktopBounds.x + 2, desktopBounds.y + desktopBounds.height / 2, { steps: 4 });
+  await expect(indicator).toBeVisible();
+  await page.waitForTimeout(1_350);
+  await expect(page).toHaveURL(/\/areas\/-1\/0$/);
+  await page.mouse.up();
+
+  await folder.dblclick();
+  const explorer = page.getByRole("dialog", { name: folderName });
+  const header = explorer.locator("[data-window-drag-handle]");
+  const headerBounds = await header.boundingBox();
+  if (!headerBounds) throw new Error("The folder window is not visible.");
+  await page.mouse.move(headerBounds.x + headerBounds.width / 2, headerBounds.y + headerBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(desktopBounds.x + desktopBounds.width - 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
+  await expect(page.locator('.desktop-edge-dwell[data-direction="right"]')).toBeVisible();
+  await page.waitForTimeout(1_350);
+  await expect(page).toHaveURL(/\/areas\/0\/0(?:\/|$)/);
+  await page.mouse.up();
+});
+
 test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {
   await openLocalDesktop(page);
   const shell = page.locator(".desktop-shell");

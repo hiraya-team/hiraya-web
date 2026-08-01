@@ -6,7 +6,7 @@ import { projectLogicalPosition, segmentKey, type SurfaceSegment } from "../../u
 import type { RunningApp } from "./model";
 
 type DesktopSize = { width: number; height: number };
-type WindowCallbacks = Pick<AppWindowProps, "onFocus" | "onBoundsChange" | "onDragAtEdge" | "onDragEnd" | "onMinimize" | "onClose" | "onToggleMaximize" | "onMoveArea" | "onAdjustBounds" | "onShowDesktop">;
+type WindowCallbacks = Pick<AppWindowProps, "onFocus" | "onBoundsChange" | "dragEdgeAt" | "onDragAtEdge" | "onEdgeDwellChange" | "onDragEnd" | "onMinimize" | "onClose" | "onToggleMaximize" | "onMoveArea" | "onAdjustBounds" | "onShowDesktop">;
 
 type WindowLayerProps = WindowCallbacks & {
   apps: readonly RunningApp[];

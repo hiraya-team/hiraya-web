@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { waitForAnimations } from "../src/ui/animation-completion";
-import { enteredEdge } from "../src/ui/edge-entry";
+import { EDGE_DWELL_MS, resetEdgeDwell, updateEdgeDwell, type EdgeDwellState } from "../src/ui/edge-entry";
 import { writeClipboardText } from "../src/ui/clipboard-copy";
 
 function deferred() {
@@ -20,14 +20,43 @@ function rejectable() {
 }
 
 describe("desktop timing reliability", () => {
-  test("an edge latch fires once until the pointer leaves every edge zone", () => {
-    const latch = { inside: false };
+  test("an edge dwell restarts across edges, fires once, and resets after leaving", () => {
+    const state: EdgeDwellState = { direction: null, latched: false, timer: null };
+    const callbacks = new Map<number, () => void>();
+    const delays = new Map<number, number>();
+    const changes: Array<string | null> = [];
+    const ready: string[] = [];
+    let nextTimer = 0;
+    const timers = {
+      set: (callback: () => void, delay: number) => {
+        const timer = ++nextTimer;
+        callbacks.set(timer, callback);
+        delays.set(timer, delay);
+        return timer;
+      },
+      clear: (timer: number) => {
+        callbacks.delete(timer);
+      },
+    };
 
-    expect(enteredEdge(latch, "left")).toBe("left");
-    expect(enteredEdge(latch, "left")).toBeNull();
-    expect(enteredEdge(latch, "up")).toBeNull();
-    expect(enteredEdge(latch, null)).toBeNull();
-    expect(enteredEdge(latch, "up")).toBe("up");
+    updateEdgeDwell(state, "left", (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    expect(delays.get(1)).toBe(EDGE_DWELL_MS);
+    updateEdgeDwell(state, "left", (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    expect(nextTimer).toBe(1);
+
+    updateEdgeDwell(state, "up", (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    expect(callbacks.has(1)).toBe(false);
+    callbacks.get(2)?.();
+    expect(ready).toEqual(["up"]);
+    expect(changes).toEqual(["left", "up", null]);
+
+    updateEdgeDwell(state, "right", (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    expect(nextTimer).toBe(2);
+    updateEdgeDwell(state, null, (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    updateEdgeDwell(state, "right", (direction) => ready.push(direction), (direction) => changes.push(direction), timers);
+    expect(nextTimer).toBe(3);
+    resetEdgeDwell(state, (direction) => changes.push(direction), timers);
+    expect(callbacks.has(3)).toBe(false);
   });
 
   test("clipboard rejection resolves as visible-feedback input instead of rejecting", async () => {

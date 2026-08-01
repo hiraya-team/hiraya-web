@@ -117,7 +117,7 @@ import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-c
 import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
 import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
-import { areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
+import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
 import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
@@ -141,7 +141,7 @@ import { useAppPlatform } from "./features/app-management/controller";
 import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
 import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
-import { enteredEdge } from "./ui/edge-entry";
+import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
@@ -253,6 +253,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
   const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(() => restoreClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage));
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [edgeDwell, setEdgeDwell] = useState<{ direction: EdgeDirection; id: number } | null>(null);
   const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "windows" | "help" | "shortcuts" | "trash" | null>(null);
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
   const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
@@ -333,8 +334,7 @@ function App({ session }: { session: AuthSession | null }) {
   const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
   const handleImportRef = useRef<(files: File[], parentId: string | null, base?: EntryPosition) => Promise<void>>(async () => undefined);
-  const edgeDragRef = useRef({ inside: false });
-  const windowEdgeDragRef = useRef({ inside: false });
+  const edgeDwellGenerationRef = useRef(0);
   const edgeNavigationRef = useRef<{
     route: DesktopRoute;
     historyState: unknown;
@@ -3286,8 +3286,12 @@ function App({ session }: { session: AuthSession | null }) {
         { direction: "down" as const, distance: bounds.bottom - clientY },
       ]
         .filter((candidate) => candidate.distance <= threshold)
-        .sort((a, b) => a.distance - b.distance)[0] ?? null
+        .sort((a, b) => a.distance - b.distance)[0]?.direction ?? null
     );
+  }
+
+  function handleEdgeDwellChange(direction: EdgeDirection | null) {
+    setEdgeDwell(direction ? { direction, id: ++edgeDwellGenerationRef.current } : null);
   }
 
   function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
@@ -3337,13 +3341,11 @@ function App({ session }: { session: AuthSession | null }) {
     desktopPressRef.current = press;
   }
 
-  function handleIconDragAtEdge(entry: DesktopEntry, clientX: number, clientY: number) {
-    const edge = enteredEdge(edgeDragRef.current, edgeAt(clientX, clientY));
-    if (!edge) return null;
+  function handleIconDragAtEdge(entry: DesktopEntry, direction: EdgeDirection) {
     const previousSegment = edgeNavigationRef.current?.targetSegment ?? activeSegment;
     const targetSegment = {
-      column: previousSegment.column + (edge.direction === "left" ? -1 : edge.direction === "right" ? 1 : 0),
-      row: previousSegment.row + (edge.direction === "up" ? -1 : edge.direction === "down" ? 1 : 0),
+      column: previousSegment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: previousSegment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
     };
     if (!edgeNavigationRef.current && routeRef.current) {
       edgeNavigationRef.current = { route: routeRef.current, historyState: window.history.state, draftEntryId: entry.id, focusedAppId: focusedAppIdRef.current };
@@ -3365,16 +3367,14 @@ function App({ session }: { session: AuthSession | null }) {
     };
   }
 
-  function handleWindowDragAtEdge(appId: string, clientX: number, clientY: number, localBounds: WindowBounds) {
+  function handleWindowDragAtEdge(appId: string, direction: EdgeDirection, localBounds: WindowBounds) {
     if (!windowed) return null;
-    const edge = enteredEdge(windowEdgeDragRef.current, edgeAt(clientX, clientY));
-    if (!edge) return null;
     const app = runningAppsRef.current.find((candidate) => candidate.id === appId);
     if (!app) return null;
     const previousSegment = windowEdgeNavigationRef.current?.targetSegment ?? segmentForApp(app);
     const targetSegment = {
-      column: previousSegment.column + (edge.direction === "left" ? -1 : edge.direction === "right" ? 1 : 0),
-      row: previousSegment.row + (edge.direction === "up" ? -1 : edge.direction === "down" ? 1 : 0),
+      column: previousSegment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: previousSegment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
     };
     if (!windowEdgeNavigationRef.current && routeRef.current) windowEdgeNavigationRef.current = { appId, bounds: { ...app.bounds }, route: routeRef.current, historyState: window.history.state };
     const pending = windowEdgeNavigationRef.current;
@@ -3390,7 +3390,7 @@ function App({ session }: { session: AuthSession | null }) {
   function finishWindowEdgeNavigation(appId: string, cancelled: boolean) {
     const pending = windowEdgeNavigationRef.current;
     windowEdgeNavigationRef.current = null;
-    windowEdgeDragRef.current.inside = false;
+    setEdgeDwell(null);
     if (!pending || pending.appId !== appId) return;
     const finalRoute = routeRef.current;
     window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
@@ -3406,7 +3406,7 @@ function App({ session }: { session: AuthSession | null }) {
   function finishEdgeNavigation(cancelled: boolean) {
     const pending = edgeNavigationRef.current;
     edgeNavigationRef.current = null;
-    edgeDragRef.current.inside = false;
+    setEdgeDwell(null);
     if (!pending) return;
     const finalRoute = routeRef.current;
     window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
@@ -4007,7 +4007,9 @@ function App({ session }: { session: AuthSession | null }) {
                     handleOpen(entry);
                   }}
                   onMove={(position, destination) => handleDesktopMove(entry, position, destination)}
-                  onDragAtEdge={(clientX, clientY) => handleIconDragAtEdge(entry, clientX, clientY)}
+                  dragEdgeAt={edgeAt}
+                  onDragAtEdge={(direction) => handleIconDragAtEdge(entry, direction)}
+                  onEdgeDwellChange={handleEdgeDwellChange}
                   onDragEnd={finishEdgeNavigation}
                   getSnapPreview={layout.snapToGrid ? (position) => {
                     const world = { x: origin.x + position.x, y: origin.y + position.y };
@@ -4109,7 +4111,9 @@ function App({ session }: { session: AuthSession | null }) {
           isMaximized={appIsMaximized}
           onFocus={focusApp}
           onBoundsChange={updateAppBounds}
+          dragEdgeAt={edgeAt}
           onDragAtEdge={handleWindowDragAtEdge}
+          onEdgeDwellChange={handleEdgeDwellChange}
           onDragEnd={finishWindowEdgeNavigation}
           onMinimize={minimizeApp}
           onClose={requestCloseApp}
@@ -4329,6 +4333,13 @@ function App({ session }: { session: AuthSession | null }) {
             </span>
           </div>
         )}
+        {edgeDwell && (() => {
+          const target = adjacentArea(activeSegment, edgeDwell.direction);
+          return <div key={edgeDwell.id} className="desktop-edge-dwell" data-direction={edgeDwell.direction} aria-hidden="true" style={{ "--edge-dwell-duration": `${EDGE_DWELL_MS}ms` } as React.CSSProperties}>
+            <span className="desktop-edge-dwell__rail"><span /></span>
+            <span className="desktop-edge-dwell__label">Move to <strong>{areaDirectionalLabel(target, activeSegment)}</strong></span>
+          </div>;
+        })()}
       </section>
 
       {minimapExpanded && <AreaSwitcher

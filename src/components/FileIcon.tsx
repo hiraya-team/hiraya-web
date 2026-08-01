@@ -4,6 +4,7 @@ import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
+import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
 
 type Props = {
   entry: DesktopEntry;
@@ -12,7 +13,8 @@ type Props = {
   onTouchSelect: () => void;
   onOpen: () => void;
   onMove: (position: EntryPosition, destination: EntryDropDestination, delta: EntryPosition) => Promise<boolean>;
-  onDragAtEdge: (clientX: number, clientY: number) => {
+  dragEdgeAt: (clientX: number, clientY: number) => EdgeDirection | null;
+  onDragAtEdge: (direction: EdgeDirection) => {
     deltaX: number;
     deltaY: number;
     minX: number;
@@ -20,6 +22,7 @@ type Props = {
     maxX: number;
     maxY: number;
   } | null;
+  onEdgeDwellChange: (direction: EdgeDirection | null) => void;
   onDragEnd: (cancelled: boolean) => void;
   getSnapPreview?: (position: EntryPosition) => EntryPosition;
   gridSize?: GridSize;
@@ -34,6 +37,8 @@ type Props = {
 type DragState = {
   pointerX: number;
   pointerY: number;
+  clientX: number;
+  clientY: number;
   pointerId: number;
   minX: number;
   minY: number;
@@ -56,11 +61,12 @@ type DragState = {
   expectedPosition?: EntryPosition;
   expectedParentId?: string | null;
   moveSucceeded?: boolean;
+  edgeDwell: EdgeDwellState;
 };
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragAtEdge, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -68,13 +74,16 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
   const renderedEntryRef = useRef({ parentId: entry.parentId, position: entry.position });
   const onMoveRef = useRef(onMove);
   const onDragEndRef = useRef(onDragEnd);
+  const onEdgeDwellChangeRef = useRef(onEdgeDwellChange);
   const getSnapPreviewRef = useRef(getSnapPreview);
   onMoveRef.current = onMove;
   onDragEndRef.current = onDragEnd;
+  onEdgeDwellChangeRef.current = onEdgeDwellChange;
   getSnapPreviewRef.current = getSnapPreview;
 
   function cleanUpDrag(completed: DragState) {
     if (drag.current !== completed) return;
+    resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     drag.current = null;
     delete completed.canvas.dataset.iconDragging;
     iconRef.current?.style.removeProperty("transform");
@@ -121,6 +130,17 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     preview.dataset.visible = "true";
   }
 
+  function applyDragTransform(current: DragState) {
+    iconRef.current?.style.setProperty("transform", `translate3d(${current.x - current.baseX}px, ${current.y - current.baseY}px, 0)`);
+    if (!iconRef.current?.dataset.selected) return;
+    const groupDelta = { x: current.x - current.groupOriginX, y: current.y - current.groupOriginY };
+    document.querySelectorAll<HTMLElement>(".file-icon[data-selected]").forEach((icon) => {
+      if (icon === iconRef.current) return;
+      icon.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;
+      icon.dataset.groupDragging = "true";
+    });
+  }
+
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
     if (drag.current && drag.current.pointerId !== event.pointerId) {
@@ -136,6 +156,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     drag.current = {
       pointerX: event.clientX,
       pointerY: event.clientY,
+      clientX: event.clientX,
+      clientY: event.clientY,
       pointerId: event.pointerId,
       minX: 8,
       minY: 8,
@@ -154,6 +176,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       finishing: false,
       pointerType: event.pointerType,
       longPressed: false,
+      edgeDwell: { direction: null, latched: false, timer: null },
     };
     if (event.pointerType === "touch") {
       drag.current.longPressTimer = window.setTimeout(() => {
@@ -174,6 +197,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     if (!drag.current || !iconRef.current) return;
     const deltaX = event.clientX - drag.current.pointerX;
     const deltaY = event.clientY - drag.current.pointerY;
+    drag.current.clientX = event.clientX;
+    drag.current.clientY = event.clientY;
 
     const moveThreshold = drag.current.pointerType === "touch" ? 12 : 4;
     if (!drag.current.moved && Math.hypot(deltaX, deltaY) < moveThreshold) return;
@@ -182,42 +207,39 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     if (drag.current.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
     drag.current.longPressTimer = undefined;
     drag.current.moved = true;
-    let x = Math.min(drag.current.maxX, Math.max(drag.current.minX, drag.current.originX + deltaX));
-    let y = Math.min(drag.current.maxY, Math.max(drag.current.minY, drag.current.originY + deltaY));
-    const pageChange = onDragAtEdge(event.clientX, event.clientY);
-    if (pageChange) {
-      x += pageChange.deltaX;
-      y += pageChange.deltaY;
-      drag.current.pointerX = event.clientX;
-      drag.current.pointerY = event.clientY;
-      drag.current.originX = x;
-      drag.current.originY = y;
-      drag.current.minX = pageChange.minX;
-      drag.current.minY = pageChange.minY;
-      drag.current.maxX = pageChange.maxX;
-      drag.current.maxY = pageChange.maxY;
-    }
+    const x = Math.min(drag.current.maxX, Math.max(drag.current.minX, drag.current.originX + deltaX));
+    const y = Math.min(drag.current.maxY, Math.max(drag.current.minY, drag.current.originY + deltaY));
     drag.current.x = x;
     drag.current.y = y;
+    updateEdgeDwell(drag.current.edgeDwell, dragEdgeAt(event.clientX, event.clientY), (direction) => {
+      const current = drag.current;
+      if (!current || current.finishing) return;
+      const pageChange = onDragAtEdge(direction);
+      if (!pageChange) return;
+      current.x += pageChange.deltaX;
+      current.y += pageChange.deltaY;
+      current.pointerX = current.clientX;
+      current.pointerY = current.clientY;
+      current.originX = current.x;
+      current.originY = current.y;
+      current.minX = pageChange.minX;
+      current.minY = pageChange.minY;
+      current.maxX = pageChange.maxX;
+      current.maxY = pageChange.maxY;
+      applyDragTransform(current);
+    }, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     const dropTarget = entryDropTargetAt(event.clientX, event.clientY, entry.id);
     highlightEntryDropTarget(dropTarget?.element ?? null);
     updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview({ x, y }) : null);
-    iconRef.current.style.transform = `translate3d(${x - drag.current.baseX}px, ${y - drag.current.baseY}px, 0)`;
+    applyDragTransform(drag.current);
     iconRef.current.dataset.dragging = "true";
-    if (iconRef.current.dataset.selected) {
-      const groupDelta = { x: x - drag.current.groupOriginX, y: y - drag.current.groupOriginY };
-      document.querySelectorAll<HTMLElement>(".file-icon[data-selected]").forEach((icon) => {
-        if (icon === iconRef.current) return;
-        icon.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;
-        icon.dataset.groupDragging = "true";
-      });
-    }
   }
 
   async function finishDrag(event: Pick<PointerEvent, "pointerId" | "clientX" | "clientY">, cancelled = false) {
     const completed = drag.current;
     if (!completed || completed.pointerId !== event.pointerId || completed.finishing) return;
     completed.finishing = true;
+    resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     if (completed.longPressTimer) window.clearTimeout(completed.longPressTimer);
     if (iconRef.current?.hasPointerCapture(event.pointerId)) iconRef.current.releasePointerCapture(event.pointerId);
     const dropTarget = completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;

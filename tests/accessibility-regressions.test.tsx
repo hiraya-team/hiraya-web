@@ -230,7 +230,9 @@ describe("accessibility regressions", () => {
       onTouchSelect={() => undefined}
       onOpen={() => undefined}
       onMove={async () => true}
+      dragEdgeAt={() => null}
       onDragAtEdge={() => null}
+      onEdgeDwellChange={() => undefined}
       onDragEnd={() => undefined}
       gridSize={36}
       onContextMenu={() => undefined}
