@@ -301,6 +301,10 @@ export function SettingsWindow({
   useEffect(() => {
     const previousPage = previousPageRef.current;
     previousPageRef.current = page;
+    if (page === "main" && previousPage !== "main") {
+      const button = previousPage === "themes" ? mainThemesButtonRef : previousPage === "activity" ? mainActivityButtonRef : mainAppsButtonRef;
+      requestAnimationFrame(() => button.current?.focus());
+    }
     if (previousPage !== "themes" || page === "themes") return;
     if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
     wallpaperCommitTimerRef.current = null;
@@ -412,7 +416,6 @@ export function SettingsWindow({
     cancelDraft();
     contentRef.current?.scrollTo({ top: 0 });
     onPageChange("main");
-    requestAnimationFrame(() => mainThemesButtonRef.current?.focus());
   };
 
   const openActivity = () => {
@@ -424,10 +427,9 @@ export function SettingsWindow({
   const closeActivity = () => {
     contentRef.current?.scrollTo({ top: 0 });
     onPageChange("main");
-    requestAnimationFrame(() => mainActivityButtonRef.current?.focus());
   };
   const openApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("apps"); focusSubpage(appsHeadingRef); };
-  const closeApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); requestAnimationFrame(() => mainAppsButtonRef.current?.focus()); };
+  const closeApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); };
 
   return (
     <div className="settings-window settings-window--embedded">
