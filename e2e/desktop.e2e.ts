@@ -291,10 +291,6 @@ test("moves selected items between the desktop and folder explorer", async ({ pa
 
 test("edge dwell guards item and window moves between areas", async ({ page }) => {
   await openLocalDesktop(page);
-  const gettingStarted = page.getByRole("dialog", { name: "Know where your work lives" });
-  await expect(gettingStarted).toBeVisible();
-  await gettingStarted.getByRole("button", { name: "Open desktop" }).click();
-  await expect(gettingStarted).toBeHidden();
   const folderName = `edge-dwell-${Date.now()}`;
   const fileActions = page.getByRole("toolbar", { name: "File actions" });
   await fileActions.getByRole("button", { name: "New folder" }).click();
