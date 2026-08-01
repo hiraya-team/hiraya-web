@@ -10,7 +10,7 @@ class TestEventSource {
   close() {}
 }
 
-test("coalesces fallback polling and SSE probes and schedules after completion", async () => {
+test("polls only while SSE is disconnected and stops after it reopens", async () => {
   let timerId = 0;
   const timers = new Map<number, { callback: () => void; delay: number }>();
   const setTimeoutImpl = ((callback: () => void, delay: number) => {
@@ -29,9 +29,8 @@ test("coalesces fallback polling and SSE probes and schedules after completion",
     onPoll: async () => { checks += 1; await new Promise<void>((resolve) => { finish = resolve; }); },
   });
 
-  const [firstId, first] = [...timers.entries()][0];
-  timers.delete(firstId);
-  first.callback();
+  expect(timers.size).toBe(0);
+  TestEventSource.latest?.onerror?.();
   TestEventSource.latest?.onerror?.();
   await Promise.resolve();
   expect(checks).toBe(1);
@@ -40,6 +39,8 @@ test("coalesces fallback polling and SSE probes and schedules after completion",
   finish();
   await new Promise((resolve) => setTimeout(resolve, 0));
   expect([...timers.values()]).toEqual([{ callback: expect.any(Function), delay: 5_000 }]);
+  TestEventSource.latest?.onopen?.();
+  expect(timers.size).toBe(0);
   connectivity.stop();
 });
 

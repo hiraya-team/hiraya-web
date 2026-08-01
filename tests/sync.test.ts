@@ -771,10 +771,9 @@ describe("canonical synchronization", () => {
     for (const source of ["sse", "health"] as const) {
       const storage = remoteStorage();
       const record: OutboxRecord = { operationId: source, sequence: 1, clientId: "client", catalogId: "catalog-1", desktopId: "desk", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "pending", error: null };
-      let healthCheck: (() => void) | undefined;
       const requests: string[] = [];
       const engine = new SyncEngine({ storage, expectedCatalogId: "catalog-1", eventSource: CapturingEventSource as unknown as typeof EventSource,
-        setTimeout: ((callback: () => void) => { healthCheck = callback; return 1; }) as never, clearTimeout: (() => undefined) as never,
+        setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never,
         fetch: (async (input) => {
           requests.push(String(input));
           if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
@@ -784,7 +783,7 @@ describe("canonical synchronization", () => {
       await engine.start("desk", { x: 0, y: 0 });
       storage.seedOutbox([record]);
       if (source === "sse") CapturingEventSource.latest?.emitCatalog("catalog-1", 2, 2);
-      else healthCheck?.();
+      else CapturingEventSource.latest?.onerror?.();
       await waitFor(() => (engine as unknown as { status: string }).status === "upgrade-required");
       expect((await engine.getOutboxStatus()).records).toHaveLength(1);
       expect(requests.filter((request) => request !== "/api/desktops/desk" && request !== "/api/sync/health")).toEqual([]);

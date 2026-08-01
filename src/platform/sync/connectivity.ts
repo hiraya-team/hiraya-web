@@ -23,8 +23,9 @@ export class SyncConnectivity {
   start(handlers: SyncConnectivityHandlers) {
     this.stop();
     const generation = this.generation;
+    let streamOpen = false;
     const schedulePoll = () => {
-      if (this.generation !== generation) return;
+      if (this.generation !== generation || streamOpen) return;
       this.healthTimer = this.setTimeoutImpl(() => {
         this.healthTimer = null;
         void poll();
@@ -48,12 +49,21 @@ export class SyncConnectivity {
     } catch {
       events = null;
     }
-    schedulePoll();
-    if (!events) return;
+    if (!events) {
+      schedulePoll();
+      return;
+    }
     this.events = events;
-    events.onopen = () => { if (this.generation === generation) handlers.onOpen(); };
+    events.onopen = () => {
+      if (this.generation !== generation) return;
+      streamOpen = true;
+      if (this.healthTimer !== null) this.clearTimeoutImpl(this.healthTimer);
+      this.healthTimer = null;
+      handlers.onOpen();
+    };
     events.onerror = () => {
       if (this.generation !== generation) return;
+      streamOpen = false;
       handlers.onError();
       void poll();
     };

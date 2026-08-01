@@ -49,6 +49,9 @@ export async function inspectStorePackage(item: StorePackage): Promise<Inspected
 export function subscribeToAppStoreChanges(onChange: (descriptor: AppStoreDescriptor) => void) {
   let active = true;
   let current = "";
+  let streamOpen = false;
+  let timer: ReturnType<typeof globalThis.setTimeout> | null = null;
+  let healthCheck: Promise<void> | null = null;
   const publish = (value: unknown) => {
     const descriptor = parseDescriptor(value);
     if (!active || !descriptor) return;
@@ -57,21 +60,49 @@ export function subscribeToAppStoreChanges(onChange: (descriptor: AppStoreDescri
     current = key;
     onChange(descriptor);
   };
-  const events = typeof EventSource === "undefined" ? null : new EventSource(API_ROUTES.events);
-  events?.addEventListener("app-store", (event) => {
-    try { publish(JSON.parse((event as MessageEvent<string>).data)); } catch { /* Health polling remains authoritative. */ }
-  });
-  const poll = async () => {
-    try {
-      const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin" }));
-      if (response.ok) publish((await response.json() as { appStore?: unknown }).appStore);
-    } catch { /* The main connection UI reports connectivity failures. */ }
+  const schedulePoll = () => {
+    if (!active || streamOpen) return;
+    timer = globalThis.setTimeout(() => {
+      timer = null;
+      void poll();
+    }, 5_000);
   };
-  void poll();
-  const timer = globalThis.setInterval(poll, 5_000);
+  const poll = async () => {
+    if (!active || streamOpen) return;
+    if (healthCheck) return healthCheck;
+    const check = (async () => {
+      try {
+        const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin" }));
+        if (response.ok) publish((await response.json() as { appStore?: unknown }).appStore);
+      } catch { /* The main connection UI reports connectivity failures. */ }
+    })().finally(() => {
+      if (healthCheck === check) healthCheck = null;
+      schedulePoll();
+    });
+    healthCheck = check;
+    return check;
+  };
+  let events: EventSource | null = null;
+  try { if (typeof EventSource !== "undefined") events = new EventSource(API_ROUTES.events); } catch { events = null; }
+  if (events) {
+    events.onopen = () => {
+      streamOpen = true;
+      if (timer !== null) globalThis.clearTimeout(timer);
+      timer = null;
+    };
+    events.onerror = () => {
+      streamOpen = false;
+      void poll();
+    };
+    events.addEventListener("app-store", (event) => {
+      try { publish(JSON.parse((event as MessageEvent<string>).data)); } catch { /* A reconnect or fallback probe will provide the current descriptor. */ }
+    });
+  } else {
+    void poll();
+  }
   return () => {
     active = false;
     events?.close();
-    globalThis.clearInterval(timer);
+    if (timer !== null) globalThis.clearTimeout(timer);
   };
 }
