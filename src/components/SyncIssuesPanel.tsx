@@ -1,6 +1,6 @@
 import { useId } from "react";
 import { ArrowsClockwise, CloudCheck, CloudSlash, GitMerge, Trash, WarningCircle } from "@phosphor-icons/react";
-import { isRevisionConflictRecord, type OutboxRecord } from "../lib/outbox";
+import { isRevisionConflictRecord, outboxBlockingRecord, type OutboxRecord } from "../lib/outbox";
 import type { SyncStatus } from "../lib/sync";
 import { outboxRecordLabel, partitionSyncRecords } from "../ui/panel-data";
 
@@ -40,11 +40,12 @@ export function SyncIssuesPanel({ status, records, lastSyncedAt, affectedLabels,
       <ul>{group.map((record) => {
         const labels = affectedLabels?.(record) ?? [];
         const conflict = isRevisionConflictRecord(record) ? record.conflictDetails! : null;
+        const blocker = record.status === "pending" ? outboxBlockingRecord(records, record) : null;
         return <li className="sync-issues-panel__record" key={record.operationId}>
-          <div><strong>{outboxRecordLabel(record)}</strong>{labels.length > 0 && <p>{labels.join(", ")}</p>}{record.attemptCount > 0 && <p>{record.attemptCount === 1 ? "1 sync attempt" : `${record.attemptCount} sync attempts`}{record.lastAttemptAt ? `, last tried ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(record.lastAttemptAt)}` : ""}</p>}{record.error && <p className="form-error">{record.error}</p>}{conflict && <p>The server has {conflict.resourceKind} revision {conflict.actualRevision}; this change was based on revision {conflict.expectedRevision}. Keep local rebases this exact change onto the current revision. Use server version discards it.</p>}</div>
+          <div><strong>{outboxRecordLabel(record)}</strong>{labels.length > 0 && <p>{labels.join(", ")}</p>}{record.attemptCount > 0 && <p>{record.attemptCount === 1 ? "1 sync attempt" : `${record.attemptCount} sync attempts`}{record.lastAttemptAt ? `, last tried ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(record.lastAttemptAt)}` : ""}</p>}{record.error && <p className="form-error">{record.error}</p>}{conflict && <p>Your change remains saved locally. Keep your change applies it over the latest server state; use server state discards this queued change.</p>}{blocker && <p>Waiting for {outboxRecordLabel(blocker)} to be resolved.</p>}</div>
           {record.status === "blocked" && <div className="sync-issues-panel__actions">
-            <button className="button button--quiet" type="button" onClick={() => onRetry(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{conflict ? "Keep local and rebase" : "Retry"}</button>
-            <button className="button button--quiet" type="button" onClick={() => onDiscard(record)}><Trash size={16} /> {conflict ? "Use server version" : "Discard"}</button>
+            <button className="button button--quiet" type="button" onClick={() => onRetry(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{conflict ? "Keep my change" : "Retry"}</button>
+            <button className="button button--quiet" type="button" onClick={() => onDiscard(record)}><Trash size={16} /> {conflict ? "Use server state" : "Discard"}</button>
           </div>}
         </li>;
       })}</ul>

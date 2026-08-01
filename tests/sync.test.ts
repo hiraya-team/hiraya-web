@@ -1091,6 +1091,35 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
+  test("automatically merges and retries disjoint offline layout changes", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    const requests: Array<{ baseRevision?: number; layout: typeof remote.layout }> = [];
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/layout") {
+        const body = JSON.parse(String(init?.body)) as { baseRevision?: number; layout: typeof remote.layout };
+        requests.push(body);
+        if (requests.length === 1) {
+          remote = { ...remote, catalogRevision: 2, layoutRevision: 2, layout: { ...remote.layout, wallpaper: { ...remote.layout.wallpaper, dim: 0.8 } } };
+          return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
+        }
+        remote = { ...remote, catalogRevision: 3, layoutRevision: 3, layout: body.layout };
+        return Response.json({ catalogRevision: 3 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+
+    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await waitFor(async () => (await engine.listOutboxRecords()).length === 0);
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toMatchObject({ baseRevision: 2, layout: { snapToGrid: true, wallpaper: { dim: 0.8 } } });
+    await engine.stop();
+  });
+
   test("persists conflict diagnostics across restart and explicitly rebases keep-local intent", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
@@ -1101,7 +1130,10 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk/layout") {
         const body = JSON.parse(String(init?.body)) as { baseRevision?: number };
         seenBases.push(body.baseRevision);
-        if (conflict) return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 5 } }, { status: 409 });
+        if (conflict) {
+          remote = { ...remote, catalogRevision: 5, layout: { ...remote.layout, gridSize: 12 }, layoutRevision: 5 };
+          return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 5 } }, { status: 409 });
+        }
         remote = { ...remote, catalogRevision: 6, layout: { ...remote.layout, snapToGrid: true }, layoutRevision: 6 };
         return Response.json({ catalogRevision: 6 });
       }
@@ -1113,7 +1145,7 @@ describe("canonical synchronization", () => {
     }) as typeof fetch;
     const first = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await first.start("desk", { x: 0, y: 0 });
-    await first.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await first.saveDesktopLayout({ ...remote.layout, gridSize: 36 });
     await waitFor(async () => (await first.getOutboxStatus()).blocked === 1);
     const blocked = (await first.listOutboxRecords())[0];
     expect(blocked).toMatchObject({ errorCode: "revision_conflict", conflictDetails: { resourceKind: "layout", expectedRevision: 1, actualRevision: 5 } });

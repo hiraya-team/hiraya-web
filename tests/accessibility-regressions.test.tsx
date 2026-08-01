@@ -297,8 +297,8 @@ describe("accessibility regressions", () => {
     expect(notifications).toContain('event.key !== "Escape"');
     expect(notifications).toContain("triggerRef.current?.focus()");
     expect(notifications).toContain('badge="Sync issue"');
-    expect(notifications).toContain("Keep local and rebase");
-    expect(notifications).toContain("Use server version");
+    expect(notifications).toContain("Keep my change");
+    expect(notifications).toContain("Use server state");
     expect(notifications).toContain("View activity");
     expect(notifications).toContain("Current alerts and actions will appear here.");
     expect(css).toContain(".notification-center__panel");

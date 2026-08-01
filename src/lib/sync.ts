@@ -5,7 +5,7 @@ import { assertValidId, parseContentAccessDescriptor, parseEntries, parseLayout,
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import { DEFAULT_WALLPAPER } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
-import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, isAccessRevocationRecord, isRevisionConflictRecord, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, rebaseOutboxOperationForConflict, type RevisionConflictDetails } from "./outbox";
+import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, forceRebaseOutboxOperation, isAccessRevocationRecord, isRevisionConflictRecord, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, resolveOutboxRevisionConflict, type EntryConflictBase, type RevisionConflictDetails } from "./outbox";
 import { parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
 import type { ClipboardEntrySnapshot } from "./clipboard";
@@ -139,6 +139,21 @@ function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
       themeRevisions,
     },
   };
+}
+
+function conflictBase(entry: DesktopEntry): EntryConflictBase {
+  return { name: entry.name, parentId: entry.parentId, position: entry.position };
+}
+
+function currentConflict(conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): RevisionConflictDetails {
+  let actualRevision = conflict.actualRevision;
+  if (conflict.resourceKind === "entry") actualRevision = remote.sync.entryRevisions[conflict.resourceId] ?? actualRevision;
+  else if (conflict.resourceKind === "content") actualRevision = remote.sync.contentRevisions[conflict.resourceId] ?? actualRevision;
+  else if (conflict.resourceKind === "layout") actualRevision = remote.sync.layoutRevision;
+  else if (conflict.resourceKind === "editor-settings") actualRevision = remote.sync.settingsRevision;
+  else if (conflict.resourceKind === "theme-selection") actualRevision = remote.sync.themeSelectionRevision;
+  else if (conflict.resourceKind === "theme") actualRevision = remote.sync.themeRevisions[conflict.resourceId] ?? 0;
+  return { ...conflict, actualRevision: Math.max(actualRevision, conflict.actualRevision) };
 }
 
 export class SyncEngine {
@@ -672,7 +687,7 @@ export class SyncEngine {
     });
   }
 
-  private async replayRecord(record: OutboxRecord, generation: number, retryBlocked = false) {
+  private async replayRecord(record: OutboxRecord, generation: number, retryBlocked = false, autoResolveConflict = true) {
     this.assertActive(generation);
     if (record.status === "blocked" && !retryBlocked) throw new SyncRequestError(record.error ?? "A pending change is blocked.", 409, true);
     if (!this.catalogId || record.catalogId !== this.catalogId) {
@@ -714,7 +729,23 @@ export class SyncEngine {
     } catch (error) {
       this.finishUploadTransfers(record, generation, error);
       if (error instanceof SyncRequestError && error.permanent) {
-        await this.storage.blockMutation(record.operationId, error.status === 403 ? ACCESS_REVOKED_ERROR : error.message, error.status === 403 ? "forbidden" : error.code, error.status === 403 ? null : error.details as RevisionConflictDetails | null);
+        const conflict = error.code === "revision_conflict" ? error.details as RevisionConflictDetails | null : null;
+        if (autoResolveConflict && conflict) {
+          const remote = toSnapshot(await this.fetchDesktop(record.desktopId));
+          this.assertActive(generation);
+          const latestConflict = currentConflict(conflict, remote);
+          const resolution = resolveOutboxRevisionConflict(record.operation, latestConflict, remote);
+          if (resolution.kind === "rebase") {
+            await this.storage.blockMutation(record.operationId, error.message, error.code, latestConflict);
+            const rebased = await this.storage.rebaseBlockedMutation(record.operationId, resolution.operation);
+            await this.replayRecord(rebased, generation, false, false);
+            return;
+          }
+          const fields = resolution.fields.join(", ");
+          await this.storage.blockMutation(record.operationId, `Both your change and the server changed ${fields}. Choose which version to keep.`, error.code, latestConflict);
+        } else {
+          await this.storage.blockMutation(record.operationId, error.status === 403 ? ACCESS_REVOKED_ERROR : error.message, error.status === 403 ? "forbidden" : error.code, error.status === 403 ? null : conflict);
+        }
         await this.publishOutbox();
       }
       throw error;
@@ -983,7 +1014,7 @@ export class SyncEngine {
     if (!existing) throw new Error("That entry no longer exists.");
     const name = validateEntryName(nameValue);
     assertUniqueName(this.current().entries, name, existing.parentId, id);
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, changes: { name, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { name, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   deleteEntry(id: string) {
@@ -1007,7 +1038,7 @@ export class SyncEngine {
     const existing = this.current().entries.find((entry) => entry.id === id);
     if (!existing) throw new Error("That entry no longer exists.");
     this.assertParent(parentId);
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, changes: { parentId, position: parsedPosition, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { parentId, position: parsedPosition, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   moveEntries(ids: string[], parentId: string | null) {
@@ -1015,7 +1046,8 @@ export class SyncEngine {
     const unique = [...new Set(ids)];
     if (!unique.length || unique.length !== ids.length || unique.some((id) => !this.current().entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
     this.assertParent(parentId);
-    return this.mutate({ kind: "move-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, this.current().sync.entryRevisions[id] ?? 0])), parentId, modifiedAt: Date.now() }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
+    const entries = new Map(this.current().entries.map((entry) => [entry.id, entry]));
+    return this.mutate({ kind: "move-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, this.current().sync.entryRevisions[id] ?? 0])), conflictBases: Object.fromEntries(unique.map((id) => [id, conflictBase(entries.get(id)!)])), parentId, modifiedAt: Date.now() }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
   }
 
   transferEntries(destinationDesktopId: string, ids: string[], parentId: string | null) {
@@ -1181,13 +1213,14 @@ export class SyncEngine {
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateEntryPosition(id, position));
     const existing = this.current().entries.find((entry) => entry.id === id);
     if (!existing) throw new Error("That entry no longer exists.");
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, changes: { position: parsedPosition } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { position: parsedPosition } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   updateRootEntryPositions(positionValues: RootEntryPositionUpdate[]) {
     const positions = parseRootEntryPositionUpdates(positionValues, this.current().entries);
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateRootEntryPositions(positions));
-    return this.mutate({ kind: "root-entry-positions", positions, baseRevisions: Object.fromEntries(positions.map(({ entryId }) => [entryId, this.current().sync.entryRevisions[entryId] ?? 0])) }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
+    const entries = new Map(this.current().entries.map((entry) => [entry.id, entry]));
+    return this.mutate({ kind: "root-entry-positions", positions, baseRevisions: Object.fromEntries(positions.map(({ entryId }) => [entryId, this.current().sync.entryRevisions[entryId] ?? 0])), conflictBases: Object.fromEntries(positions.map(({ entryId }) => [entryId, conflictBase(entries.get(entryId)!)])) }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
   }
 
   saveFile(id: string, content: Blob, options: SaveFileOptions = {}) {
@@ -1218,12 +1251,12 @@ export class SyncEngine {
   saveDesktopLayout(layout: DesktopLayout) {
     const parsed = parseLayout(layout);
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveDesktopLayout(parsed), false);
-    return this.mutate({ kind: "layout", layout: parsed, baseRevision: this.current().sync.layoutRevision }, () => undefined);
+    return this.mutate({ kind: "layout", layout: parsed, baseRevision: this.current().sync.layoutRevision, conflictBase: this.current().layout }, () => undefined);
   }
 
   saveEditorSettings(settings: EditorSettings) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveEditorSettings(settings), false);
-    return this.mutate({ kind: "editor-settings", settings, baseRevision: this.current().sync.settingsRevision }, () => undefined);
+    return this.mutate({ kind: "editor-settings", settings, baseRevision: this.current().sync.settingsRevision, conflictBase: this.current().editorSettings }, () => undefined);
   }
 
   selectTheme(themeId: string) {
@@ -1479,7 +1512,9 @@ export class SyncEngine {
           let record = queued;
           if (record.status === "blocked" && recordIndex !== index) throw new Error("Resolve the earlier blocked change first.");
           if (recordIndex === index && isRevisionConflictRecord(record)) {
-            const operation = rebaseOutboxOperationForConflict(record.operation, record.conflictDetails!);
+            const remote = toSnapshot(await this.fetchDesktop(record.desktopId));
+            assertInitiatingSession();
+            const operation = forceRebaseOutboxOperation(record.operation, currentConflict(record.conflictDetails!, remote), remote);
             if (!operation) throw new Error("This conflict cannot be safely rebased. Discard the local change and use the server version.");
             record = await this.storage.rebaseBlockedMutation(record.operationId, operation);
           }

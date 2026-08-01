@@ -1,6 +1,6 @@
 import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type Wallpaper } from "../types";
-import { assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
-import type { PersistedDesktopState } from "../domain/desktop-state";
+import { assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parsePosition, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
+import type { DesktopStateSnapshot, PersistedDesktopState } from "../domain/desktop-state";
 import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
 
@@ -9,20 +9,22 @@ export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "rename-desktop"; desktop: DesktopIdentity; baseRevision?: number }
   | { kind: "delete-desktop"; desktopId: string; baseRevision?: number }
   | { kind: "create"; entries: DesktopEntry[] }
-  | { kind: "patch-entry"; entryId: string; baseRevision?: number; changes: { name?: string; parentId?: string | null; position?: DesktopEntry["position"]; modifiedAt?: number } }
+  | { kind: "patch-entry"; entryId: string; baseRevision?: number; conflictBase?: EntryConflictBase; changes: { name?: string; parentId?: string | null; position?: DesktopEntry["position"]; modifiedAt?: number } }
   | { kind: "delete"; entryId: string; baseRevision?: number }
   | { kind: "delete-entries"; entryIds: string[]; baseRevisions?: Record<string, number> }
-  | { kind: "move-entries"; entryIds: string[]; baseRevisions?: Record<string, number>; parentId: string | null; modifiedAt?: number }
+  | { kind: "move-entries"; entryIds: string[]; baseRevisions?: Record<string, number>; conflictBases?: Record<string, EntryConflictBase>; parentId: string | null; modifiedAt?: number }
   | { kind: "entry-transfer"; entryIds: string[]; destinationDesktopId: string; parentId: string | null }
   | { kind: "save-content"; entryId: string; mimeType: string; size: number; modifiedAt: number; baseContentRevision?: number }
-  | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[]; baseRevisions?: Record<string, number> }
-  | { kind: "layout"; layout: DesktopLayout; baseRevision?: number }
-  | { kind: "editor-settings"; settings: EditorSettings; baseRevision?: number }
+  | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[]; baseRevisions?: Record<string, number>; conflictBases?: Record<string, EntryConflictBase> }
+  | { kind: "layout"; layout: DesktopLayout; baseRevision?: number; conflictBase?: DesktopLayout }
+  | { kind: "editor-settings"; settings: EditorSettings; baseRevision?: number; conflictBase?: EditorSettings }
   | { kind: "select-theme"; themeId: string; baseRevision?: number }
   | { kind: "upsert-theme"; theme: CustomTheme; baseRevision?: number }
   | { kind: "install-theme-package"; theme: CustomTheme; assetId: string; wallpaperKind: "static" | "animated" | "scene" | null; size: number; layout: DesktopLayout; baseThemeRevision?: number; baseSelectionRevision?: number; baseLayoutRevision?: number }
   | { kind: "delete-theme"; themeId: string; baseRevision?: number }
 ));
+
+export type EntryConflictBase = Pick<DesktopEntry, "name" | "parentId" | "position">;
 
 export type RevisionConflictDetails = {
   resourceKind: "desktop" | "entry" | "content" | "layout" | "editor-settings" | "theme-selection" | "theme";
@@ -102,6 +104,11 @@ export function outboxCausalKeys(record: Pick<OutboxRecord, "desktopId" | "opera
     case "install-theme-package": return new Set([`theme:${record.desktopId}:${operation.theme.id}`, `theme-selection:${record.desktopId}`, `layout:${record.desktopId}`, `content:${record.desktopId}:${operation.assetId}`]);
     case "delete-theme": return new Set([`theme:${record.desktopId}:${operation.themeId}`, `theme-selection:${record.desktopId}`]);
   }
+}
+
+export function outboxBlockingRecord(records: readonly OutboxRecord[], record: OutboxRecord) {
+  const keys = outboxCausalKeys(record);
+  return records.find((candidate) => candidate.sequence < record.sequence && candidate.status === "blocked" && [...outboxCausalKeys(candidate)].some((key) => keys.has(key))) ?? null;
 }
 
 export function wallpaperAfterEntryRemoval(entries: readonly DesktopEntry[], wallpaper: Wallpaper) {
@@ -217,7 +224,7 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
       if (!isValidId(operation.entryId) || !validOptionalBaseRevision(operation.baseRevision) || !operation.changes || typeof operation.changes !== "object") throw new Error("A queued entry patch has invalid metadata.");
       const allowed = new Set(["name", "parentId", "position", "modifiedAt"]);
       if (Object.keys(operation.changes).length === 0 || Object.keys(operation.changes).some((key) => !allowed.has(key))) throw new Error("A queued entry patch has unsupported changes.");
-      return operation;
+      return operation.conflictBase === undefined ? operation : { ...operation, conflictBase: parseEntryConflictBase(operation.conflictBase) };
     }
     case "delete":
       if (!isValidId(operation.entryId) || !validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued entry operation has invalid metadata.");
@@ -226,18 +233,18 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
     case "move-entries":
       if (!Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id)) || operation.baseRevisions !== undefined && operation.entryIds.some((id) => !validBaseRevision(operation.baseRevisions?.[id]))) throw new Error("A queued entry operation has invalid entry revisions.");
       if (operation.kind === "move-entries" && (operation.parentId !== null && !isValidId(operation.parentId) || operation.modifiedAt !== undefined && (!Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0))) throw new Error("A queued move has an invalid parent or timestamp.");
-      return operation;
+      return operation.kind === "move-entries" && operation.conflictBases !== undefined ? { ...operation, conflictBases: parseEntryConflictBases(operation.conflictBases, operation.entryIds) } : operation;
     case "entry-transfer":
       if (!isValidId(operation.destinationDesktopId) || !Array.isArray(operation.entryIds) || operation.entryIds.length === 0 || new Set(operation.entryIds).size !== operation.entryIds.length || operation.entryIds.some((id) => !isValidId(id)) || operation.parentId !== null && !isValidId(operation.parentId)) throw new Error("A queued entry transfer has an unsupported format.");
       return operation;
     case "root-entry-positions":
-      return { ...operation, positions: parseRootEntryPositions(operation.positions) };
+      return { ...operation, positions: parseRootEntryPositions(operation.positions), ...(operation.conflictBases === undefined ? {} : { conflictBases: parseEntryConflictBases(operation.conflictBases, operation.positions.map(({ entryId }) => entryId)) }) };
     case "layout":
       if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued layout has an invalid base revision.");
-      return { ...operation, layout: parseLayout(operation.layout) };
+      return { ...operation, layout: parseLayout(operation.layout), ...(operation.conflictBase === undefined ? {} : { conflictBase: parseLayout(operation.conflictBase) }) };
     case "editor-settings":
       if (!validOptionalBaseRevision(operation.baseRevision)) throw new Error("Queued editor settings have an invalid base revision.");
-      return { ...operation, settings: parseEditorSettings(operation.settings) };
+      return { ...operation, settings: parseEditorSettings(operation.settings), ...(operation.conflictBase === undefined ? {} : { conflictBase: parseEditorSettings(operation.conflictBase) }) };
     case "select-theme":
     case "delete-theme":
       if (!isValidId(operation.themeId) || !validOptionalBaseRevision(operation.baseRevision)) throw new Error("A queued theme operation has invalid metadata.");
@@ -260,6 +267,20 @@ function validBaseRevision(value: unknown): value is number {
 
 function validOptionalBaseRevision(value: unknown): value is number | undefined {
   return value === undefined || validBaseRevision(value);
+}
+
+function parseEntryConflictBase(value: unknown): EntryConflictBase {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A queued entry conflict base has an unsupported format.");
+  const base = value as Record<string, unknown>;
+  if (Object.keys(base).some((key) => !["name", "parentId", "position"].includes(key)) || typeof base.name !== "string" || base.parentId !== null && !isValidId(base.parentId)) throw new Error("A queued entry conflict base has an unsupported format.");
+  return { name: base.name, parentId: base.parentId as string | null, position: parsePosition(base.position) };
+}
+
+function parseEntryConflictBases(value: unknown, entryIds: readonly string[]) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Queued entry conflict bases have an unsupported format.");
+  const bases = value as Record<string, unknown>;
+  if (Object.keys(bases).length !== entryIds.length || entryIds.some((id) => !(id in bases))) throw new Error("Queued entry conflict bases are incomplete.");
+  return Object.fromEntries(entryIds.map((id) => [id, parseEntryConflictBase(bases[id])]));
 }
 
 export function applyOutboxOperation(state: PersistedDesktopState, operation: OutboxOperation): PersistedDesktopState {
@@ -446,6 +467,94 @@ export function rebaseOutboxOperationForConflict(operation: OutboxOperation, con
       return null;
     case "delete-theme":
       return conflict.resourceKind === "theme" && conflict.resourceId === operation.themeId ? { ...operation, baseRevision: revision } : null;
+    default:
+      return null;
+  }
+}
+
+export type OutboxConflictResolution =
+  | { kind: "rebase"; operation: OutboxOperation }
+  | { kind: "blocked"; fields: string[] };
+
+const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+const entryBase = (entry: DesktopEntry): EntryConflictBase => ({ name: entry.name, parentId: entry.parentId, position: entry.position });
+
+function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, remote: DesktopLayout) {
+  const base = operation.conflictBase;
+  if (!base) return operation.layout;
+  return parseLayout({
+    snapToGrid: same(operation.layout.snapToGrid, base.snapToGrid) ? remote.snapToGrid : operation.layout.snapToGrid,
+    gridSize: same(operation.layout.gridSize, base.gridSize) ? remote.gridSize : operation.layout.gridSize,
+    wallpaper: same(operation.layout.wallpaper, base.wallpaper) ? remote.wallpaper : operation.layout.wallpaper,
+  });
+}
+
+function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor-settings" }>, remote: EditorSettings) {
+  const base = operation.conflictBase;
+  if (!base) return operation.settings;
+  return parseEditorSettings(Object.fromEntries((Object.keys(base) as Array<keyof EditorSettings>).map((key) => [key, same(operation.settings[key], base[key]) ? remote[key] : operation.settings[key]])));
+}
+
+export function resolveOutboxRevisionConflict(operation: OutboxOperation, conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): OutboxConflictResolution {
+  const rebased = rebaseOutboxOperationForConflict(operation, conflict);
+  if (!rebased) return { kind: "blocked", fields: [conflict.resourceKind] };
+  if (operation.kind === "patch-entry") {
+    const current = remote.entries.find((entry) => entry.id === operation.entryId);
+    if (!operation.conflictBase || !current) return { kind: "blocked", fields: ["item"] };
+    const currentBase = entryBase(current);
+    const fields = (["name", "parentId", "position"] as const).filter((key) => key in operation.changes && !same(currentBase[key], operation.conflictBase![key]) && !same(currentBase[key], operation.changes[key]));
+    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "parentId" ? "folder" : field) } : { kind: "rebase", operation: rebased };
+  }
+  if (operation.kind === "move-entries" && conflict.resourceKind === "entry") {
+    const base = operation.conflictBases?.[conflict.resourceId];
+    const current = remote.entries.find((entry) => entry.id === conflict.resourceId);
+    if (!base || !current || current.parentId !== base.parentId && current.parentId !== operation.parentId) return { kind: "blocked", fields: ["folder"] };
+    return { kind: "rebase", operation: rebased };
+  }
+  if (operation.kind === "root-entry-positions" && conflict.resourceKind === "entry") {
+    const base = operation.conflictBases?.[conflict.resourceId];
+    const current = remote.entries.find((entry) => entry.id === conflict.resourceId);
+    const intended = operation.positions.find(({ entryId }) => entryId === conflict.resourceId)?.position;
+    if (!base || !current || !intended || !same(current.position, base.position) && !same(current.position, intended)) return { kind: "blocked", fields: ["position"] };
+    return { kind: "rebase", operation: rebased };
+  }
+  if (operation.kind === "layout") {
+    if (!operation.conflictBase) return { kind: "blocked", fields: ["layout"] };
+    const fields = (["snapToGrid", "gridSize", "wallpaper"] as const).filter((key) => !same(operation.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.layout[key]));
+    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "snapToGrid" ? "grid snapping" : field === "gridSize" ? "grid size" : "wallpaper") } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, layout: mergeLayout(operation, remote.layout) } };
+  }
+  if (operation.kind === "editor-settings") {
+    if (!operation.conflictBase) return { kind: "blocked", fields: ["editor settings"] };
+    const fields = (Object.keys(operation.conflictBase) as Array<keyof EditorSettings>).filter((key) => !same(operation.settings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.settings[key]));
+    return fields.length ? { kind: "blocked", fields: fields.map((field) => field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)) } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, settings: mergeEditorSettings(operation, remote.editorSettings) } };
+  }
+  return { kind: "blocked", fields: [conflict.resourceKind] };
+}
+
+export function forceRebaseOutboxOperation(operation: OutboxOperation, conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): OutboxOperation | null {
+  if (!rebaseOutboxOperationForConflict(operation, conflict)) return null;
+  switch (operation.kind) {
+    case "patch-entry":
+    case "delete":
+      return { ...operation, baseRevision: Math.max(remote.sync.entryRevisions[operation.entryId] ?? 0, conflict.actualRevision) };
+    case "delete-entries":
+    case "move-entries":
+      return { ...operation, baseRevisions: Object.fromEntries(operation.entryIds.map((id) => [id, remote.sync.entryRevisions[id] ?? operation.baseRevisions?.[id] ?? 0])) };
+    case "root-entry-positions":
+      return { ...operation, baseRevisions: Object.fromEntries(operation.positions.map(({ entryId }) => [entryId, remote.sync.entryRevisions[entryId] ?? operation.baseRevisions?.[entryId] ?? 0])) };
+    case "save-content":
+      return { ...operation, baseContentRevision: Math.max(remote.sync.contentRevisions[operation.entryId] ?? 0, conflict.actualRevision) };
+    case "layout":
+      return { ...operation, layout: mergeLayout(operation, remote.layout), baseRevision: Math.max(remote.sync.layoutRevision, conflict.actualRevision) };
+    case "editor-settings":
+      return { ...operation, settings: mergeEditorSettings(operation, remote.editorSettings), baseRevision: Math.max(remote.sync.settingsRevision, conflict.actualRevision) };
+    case "select-theme":
+      return { ...operation, baseRevision: Math.max(remote.sync.themeSelectionRevision, conflict.actualRevision) };
+    case "upsert-theme":
+    case "delete-theme":
+      return { ...operation, baseRevision: Math.max(remote.sync.themeRevisions[operation.kind === "upsert-theme" ? operation.theme.id : operation.themeId] ?? 0, conflict.actualRevision) };
+    case "install-theme-package":
+      return { ...operation, baseThemeRevision: remote.sync.themeRevisions[operation.theme.id] ?? 0, baseSelectionRevision: remote.sync.themeSelectionRevision, baseLayoutRevision: remote.sync.layoutRevision };
     default:
       return null;
   }

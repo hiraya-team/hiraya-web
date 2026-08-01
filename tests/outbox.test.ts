@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxDesktopRetentionIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, rebaseOutboxOperationForConflict, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
+import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxBlockingRecord, outboxDesktopRetentionIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, rebaseOutboxOperationForConflict, resolveOutboxRevisionConflict, transferEntriesBetweenDesktopStates, type OutboxRecord } from "../src/lib/outbox";
 import { desktopStateSnapshot, remoteDesktopIdentity } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
@@ -129,6 +129,33 @@ describe("strict outbox", () => {
     expect(rebaseOutboxOperationForConflict({ schemaVersion: 1, kind: "patch-entry", entryId: "other", baseRevision: 2, changes: { name: "local.txt" } }, conflict!)).toBeNull();
     expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: -1, actualRevision: 7 })).toBeNull();
     expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: 2, actualRevision: Number.MAX_SAFE_INTEGER + 1 })).toBeNull();
+  });
+
+  test("automatically rebases disjoint entry changes and blocks same-field changes", () => {
+    const base = { ...desktopStateSnapshot().entries[0], name: "note.txt", position: { x: 0, y: 0 } };
+    const conflict = { resourceKind: "entry" as const, resourceId: base.id, expectedRevision: 1, actualRevision: 2 };
+    const operation = { schemaVersion: 1 as const, kind: "patch-entry" as const, entryId: base.id, baseRevision: 1, conflictBase: { name: base.name, parentId: base.parentId, position: base.position }, changes: { name: "local.txt" } };
+    const remote = { ...desktopStateSnapshot(), entries: [{ ...base, position: { x: 40, y: 50 } }], sync: { ...desktopStateSnapshot().sync, entryRevisions: { [base.id]: 2 } } };
+
+    expect(resolveOutboxRevisionConflict(operation, conflict, remote)).toMatchObject({ kind: "rebase", operation: { baseRevision: 2, changes: { name: "local.txt" } } });
+    expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, entries: [{ ...base, name: "remote.txt" }] })).toEqual({ kind: "blocked", fields: ["name"] });
+  });
+
+  test("three-way merges disjoint layout fields without overwriting remote state", () => {
+    const snapshot = desktopStateSnapshot();
+    const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { ...snapshot.layout, snapToGrid: true }, baseRevision: 1, conflictBase: snapshot.layout };
+    const remote = { ...snapshot, layout: { ...snapshot.layout, wallpaper: { ...snapshot.layout.wallpaper, dim: 0.8 } }, sync: { ...snapshot.sync, layoutRevision: 2 } };
+    const resolution = resolveOutboxRevisionConflict(operation, { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 }, remote);
+
+    expect(resolution).toMatchObject({ kind: "rebase", operation: { baseRevision: 2, layout: { snapToGrid: true, wallpaper: { dim: 0.8 } } } });
+  });
+
+  test("identifies pending changes waiting on an earlier causal conflict", () => {
+    const blocked: OutboxRecord = { operationId: "1", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation: { schemaVersion: 1, kind: "patch-entry", entryId: "file", changes: { name: "blocked.txt" } }, status: "blocked", error: "conflict" };
+    const dependent: OutboxRecord = { ...blocked, operationId: "2", sequence: 2, operation: { schemaVersion: 1, kind: "patch-entry", entryId: "file", changes: { position: { x: 1, y: 2 } } }, status: "pending", error: null };
+    const independent: OutboxRecord = { ...dependent, operationId: "3", sequence: 3, operation: { schemaVersion: 1, kind: "editor-settings", settings: state().editorSettings } };
+    expect(outboxBlockingRecord([blocked, dependent, independent], dependent)).toBe(blocked);
+    expect(outboxBlockingRecord([blocked, dependent, independent], independent)).toBeNull();
   });
 
   test("rejects operations whose parent is absent from the desktop", () => {
