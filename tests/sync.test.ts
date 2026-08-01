@@ -166,6 +166,22 @@ function remoteStorage() {
 }
 
 describe("canonical synchronization", () => {
+  test("does not invent a content revision when saving a pending new file", async () => {
+    const storage = remoteStorage();
+    const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    const file = await engine.createFile("store.hpos", null, { x: 0, y: 0 }, new Blob([]));
+    await engine.saveFile(file.id, new Blob(["store"]), { expectedContentRevision: 0 });
+    expect((await engine.getOutboxStatus()).records.at(-1)?.operation).toMatchObject({ kind: "save-content", entryId: file.id, baseContentRevision: undefined });
+    blocked.release();
+    await blocked.pending;
+    await engine.stop();
+  });
+
   test("commits later interactions locally while an earlier replay is still in flight", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();

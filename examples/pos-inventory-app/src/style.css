@@ -232,6 +232,7 @@ h1, h2, p { margin-top: 0; }
 .sheet-heading { display: flex; align-items: start; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
 .sheet-heading h2 { margin-bottom: .25rem; font-size: 1.25rem; }
 .sheet-heading p { margin-bottom: 0; color: var(--hiraya-text-muted); font-size: .8rem; }
+.sheet-heading p.sheet-error { color: var(--hiraya-danger); }
 .sheet-actions { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .5rem; }
 
 .welcome-shell { display: grid; min-height: 100dvh; overflow: auto; background: var(--hiraya-background); }

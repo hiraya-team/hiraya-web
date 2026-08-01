@@ -64,6 +64,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
   const [receipt, setReceipt] = useState<Sale | null>(null);
   const [productDraft, setProductDraft] = useState<ProductDraft | null>(null);
   const [stockDraft, setStockDraft] = useState<StockDraft | null>(null);
+  const [formError, setFormError] = useState("");
   const [selectedSaleId, setSelectedSaleId] = useState<string | null>(null);
   const [storeName, setStoreName] = useState("My Store");
   const [storeCurrency, setStoreCurrency] = useState("PHP");
@@ -336,7 +337,9 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       });
       if (committed) setProductDraft(null);
     } catch (error) {
-      setStatus({ message: describeError(error, "The product could not be saved."), danger: true });
+      const message = describeError(error, "The product could not be saved.");
+      setFormError(message);
+      setStatus({ message, danger: true });
     }
   }
 
@@ -357,7 +360,9 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       const committed = await commit(next, "Inventory updated.", (candidate) => candidate.movements.some((movement) => movement.id === movementId));
       if (committed) setStockDraft(null);
     } catch (error) {
-      setStatus({ message: describeError(error, "Inventory could not be updated."), danger: true });
+      const message = describeError(error, "Inventory could not be updated.");
+      setFormError(message);
+      setStatus({ message, danger: true });
     }
   }
 
@@ -462,11 +467,11 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         )}
 
         {view === "products" && (
-          <ManagementSurface title="Products" description={`${document.products.filter((product) => product.active).length} active catalog products`} action={<button className="primary-button" type="button" onClick={() => setProductDraft(EMPTY_PRODUCT)} disabled={!canWrite}><Plus /> Add product</button>}>
+          <ManagementSurface title="Products" description={`${document.products.filter((product) => product.active).length} active catalog products`} action={<button className="primary-button" type="button" onClick={() => { setFormError(""); setProductDraft(EMPTY_PRODUCT); }} disabled={!canWrite}><Plus /> Add product</button>}>
             <div className="table-list product-table" role="table" aria-label="Products">
               <div className="table-header" role="row"><span role="columnheader">Name</span><span role="columnheader">SKU</span><span role="columnheader">Price</span><span role="columnheader">Stock</span><span role="columnheader">Actions</span></div>
               {document.products.map((product) => <div className={`table-row${product.active ? "" : " table-row--muted"}`} role="row" key={product.id}>
-                <span role="cell"><button className="row-title" type="button" onClick={() => setProductDraft(productToDraft(product, document.store.currency))}><strong>{product.name}</strong><small>{product.active ? "Active" : "Archived"}</small></button></span>
+                <span role="cell"><button className="row-title" type="button" onClick={() => { setFormError(""); setProductDraft(productToDraft(product, document.store.currency)); }}><strong>{product.name}</strong><small>{product.active ? "Active" : "Archived"}</small></button></span>
                 <span role="cell">{product.sku}</span><strong role="cell">{formatMoney(product.priceMinor, document.store.currency)}</strong><span role="cell">{product.stock}</span>
                 <span role="cell"><button className="quiet-button" type="button" onClick={() => void toggleProduct(product)} disabled={!canWrite}>{product.active ? "Archive" : "Restore"}</button></span>
               </div>)}
@@ -483,7 +488,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
                 {document.products.filter((product) => product.active).map((product) => <div className="table-row" role="row" key={product.id}>
                   <span className="row-title" role="cell"><strong>{product.name}</strong><small>{product.sku}</small></span>
                   <strong role="cell" className={product.stock <= product.reorderLevel ? "danger-text" : ""}>{product.stock}</strong><span role="cell">{product.reorderLevel}</span>
-                  <span role="cell"><button className="secondary-button" type="button" onClick={() => setStockDraft({ productId: product.id, direction: "receive", quantity: "1", note: "" })} disabled={!canWrite}>Adjust</button></span>
+                  <span role="cell"><button className="secondary-button" type="button" onClick={() => { setFormError(""); setStockDraft({ productId: product.id, direction: "receive", quantity: "1", note: "" }); }} disabled={!canWrite}>Adjust</button></span>
                 </div>)}
               </div>
               <section className="movement-ledger" aria-labelledby="movement-title"><div className="section-heading"><h2 id="movement-title">Recent movement</h2><ClockCounterClockwise /></div>
@@ -506,7 +511,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         )}
       </section>
 
-      <footer className={status.danger ? "statusbar statusbar--danger" : "statusbar"} role="status" aria-live="polite">{status.danger ? <WarningCircle /> : <Check />}<span>{status.message}</span><span className="status-file">.hpos · rev {session?.revision ?? 0}</span></footer>
+      <div className={status.danger ? "statusbar statusbar--danger" : "statusbar"} role="status" aria-live="polite">{status.danger ? <WarningCircle /> : <Check />}<span>{status.message}</span><span className="status-file">.hpos · rev {session?.revision ?? 0}</span></div>
 
       <nav className="mobile-nav" aria-label="Hiraya POS">
         <NavButton active={view === "sell"} onClick={() => setView("sell")} icon={<Basket />} label="Sell" />
@@ -516,7 +521,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       </nav>
 
       {productDraft && <Modal labelledBy="product-form-title" onClose={() => setProductDraft(null)}><form onSubmit={submitProduct}>
-        <div className="sheet-heading"><div><h2 id="product-form-title">{productDraft.id ? "Edit product" : "Add product"}</h2><p>Catalog details are shared with checkout and inventory.</p></div><button className="icon-button" type="button" onClick={() => setProductDraft(null)} aria-label="Close product form"><X /></button></div>
+        <div className="sheet-heading"><div><h2 id="product-form-title">{productDraft.id ? "Edit product" : "Add product"}</h2><p className={formError ? "sheet-error" : undefined} role={formError ? "alert" : undefined}>{formError || "Catalog details are shared with checkout and inventory."}</p></div><button className="icon-button" type="button" onClick={() => setProductDraft(null)} aria-label="Close product form"><X /></button></div>
         <label className="field"><span>Product name</span><input value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} maxLength={120} required autoFocus /></label>
         <label className="field"><span>SKU</span><input value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} maxLength={48} required /></label>
         <label className="field"><span>Final price ({document.store.currency})</span><input inputMode="decimal" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} placeholder={moneyPlaceholder(document.store.currency)} required /></label>
@@ -526,7 +531,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       </form></Modal>}
 
       {stockDraft && <Modal labelledBy="stock-form-title" onClose={() => setStockDraft(null)}><form onSubmit={submitStock}>
-        <div className="sheet-heading"><div><h2 id="stock-form-title">Adjust inventory</h2><p>{document.products.find((product) => product.id === stockDraft.productId)?.name}</p></div><button className="icon-button" type="button" onClick={() => setStockDraft(null)} aria-label="Close inventory form"><X /></button></div>
+        <div className="sheet-heading"><div><h2 id="stock-form-title">Adjust inventory</h2><p className={formError ? "sheet-error" : undefined} role={formError ? "alert" : undefined}>{formError || document.products.find((product) => product.id === stockDraft.productId)?.name}</p></div><button className="icon-button" type="button" onClick={() => setStockDraft(null)} aria-label="Close inventory form"><X /></button></div>
         <fieldset className="tender-methods"><legend>Change</legend><label><input type="radio" name="direction" checked={stockDraft.direction === "receive"} onChange={() => setStockDraft({ ...stockDraft, direction: "receive" })} /><span>Receive</span></label><label><input type="radio" name="direction" checked={stockDraft.direction === "remove"} onChange={() => setStockDraft({ ...stockDraft, direction: "remove" })} /><span>Remove</span></label></fieldset>
         <label className="field"><span>Quantity</span><input type="number" min="1" step="1" value={stockDraft.quantity} onChange={(event) => setStockDraft({ ...stockDraft, quantity: event.target.value })} required autoFocus /></label>
         <label className="field"><span>Reason</span><input value={stockDraft.note} onChange={(event) => setStockDraft({ ...stockDraft, note: event.target.value })} maxLength={200} placeholder={stockDraft.direction === "receive" ? "Supplier delivery" : "Damage, expiry, or correction"} required /></label>

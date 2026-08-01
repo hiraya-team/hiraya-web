@@ -219,4 +219,17 @@ describe("apps SDK", () => {
     await expect(client.storage.get("key")).rejects.toEqual(expect.objectContaining({ code: "UNAVAILABLE" }));
     channel.port2.close();
   });
+
+  test("allows user dialogs to remain open past the ordinary request deadline", async () => {
+    const channel = new MessageChannel();
+    let respond!: () => void;
+    channel.port2.onmessage = ({ data }) => { respond = () => channel.port2.postMessage({ protocolVersion: 1, type: "response", id: data.id, ok: true, result: null }); };
+    const client = await connectHiraya({ port: channel.port1, requestTimeoutMs: 10 });
+    const pending = client.dialogs.saveFile();
+    await Bun.sleep(20);
+    respond();
+    expect(await pending).toBeNull();
+    client.close();
+    channel.port2.close();
+  });
 });

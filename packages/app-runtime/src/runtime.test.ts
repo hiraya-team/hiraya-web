@@ -322,13 +322,14 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
-  test("classifies every direct, staged, metadata, and recursive file mutation as long-running", () => {
+  test("classifies file mutations and user dialogs as long-running", () => {
     const expected = [
       "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite",
       "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
     ] satisfies ServiceMethod[];
     expect([...LONG_RUNNING_FILE_MUTATION_METHODS]).toEqual(expected);
     for (const method of expected) expect(usesLongRunningRpcDeadline(method)).toBe(true);
+    for (const method of ["dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm"] satisfies ServiceMethod[]) expect(usesLongRunningRpcDeadline(method)).toBe(true);
     for (const method of ["files.stat", "files.read", "storage.set"] satisfies ServiceMethod[]) expect(usesLongRunningRpcDeadline(method)).toBe(false);
   });
 

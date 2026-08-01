@@ -57,9 +57,10 @@ export const LONG_RUNNING_FILE_MUTATION_METHODS = [
   "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
 ] as const satisfies readonly ServiceMethod[];
 const longRunningFileMutationMethods = new Set<ServiceMethod>(LONG_RUNNING_FILE_MUTATION_METHODS);
+const userInteractionMethods = new Set<ServiceMethod>(["dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm"]);
 
 export function usesLongRunningRpcDeadline(method: ServiceMethod): boolean {
-  return longRunningFileMutationMethods.has(method);
+  return longRunningFileMutationMethods.has(method) || userInteractionMethods.has(method);
 }
 
 const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {

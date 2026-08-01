@@ -67,6 +67,8 @@ const THEME_TOKEN_NAMES = [
   "focus",
 ] as const;
 
+const USER_INTERACTION_TIMEOUT_MS = 120_000;
+
 export class HirayaSdkError extends Error {
   constructor(
     message: string,
@@ -126,10 +128,10 @@ export class HirayaClient {
   };
 
   readonly dialogs = {
-    openFile: (params: ServiceMethods["dialogs.openFile"]["params"] = {}, options?: RequestOptions) => this.request("dialogs.openFile", params, options),
-    openFolder: (options?: RequestOptions) => this.request("dialogs.openFolder", {}, options),
-    saveFile: (params: ServiceMethods["dialogs.saveFile"]["params"] = {}, options?: RequestOptions) => this.request("dialogs.saveFile", params, options),
-    confirm: (params: ServiceMethods["dialogs.confirm"]["params"], options?: RequestOptions) => this.request("dialogs.confirm", params, options),
+    openFile: (params: ServiceMethods["dialogs.openFile"]["params"] = {}, options?: RequestOptions) => this.request("dialogs.openFile", params, { timeoutMs: USER_INTERACTION_TIMEOUT_MS, ...options }),
+    openFolder: (options?: RequestOptions) => this.request("dialogs.openFolder", {}, { timeoutMs: USER_INTERACTION_TIMEOUT_MS, ...options }),
+    saveFile: (params: ServiceMethods["dialogs.saveFile"]["params"] = {}, options?: RequestOptions) => this.request("dialogs.saveFile", params, { timeoutMs: USER_INTERACTION_TIMEOUT_MS, ...options }),
+    confirm: (params: ServiceMethods["dialogs.confirm"]["params"], options?: RequestOptions) => this.request("dialogs.confirm", params, { timeoutMs: USER_INTERACTION_TIMEOUT_MS, ...options }),
   };
 
   readonly window = {
