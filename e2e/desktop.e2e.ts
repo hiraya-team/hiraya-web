@@ -163,6 +163,35 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 });
 
+test("lost pointer capture clears icon drag feedback", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLocalDesktop(page);
+
+  const name = `lost-capture-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+
+  const iconBounds = await icon.boundingBox();
+  const desktopBounds = await page.locator(".desktop").boundingBox();
+  if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
+  await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(desktopBounds.x + desktopBounds.width / 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
+  await expect(icon).toHaveAttribute("data-dragging", "true");
+  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(1);
+  const preview = page.locator(".file-icon-snap-preview").first();
+  await preview.evaluate((element) => { (element as HTMLElement).dataset.visible = "true"; });
+  await expect(preview).toBeVisible();
+
+  await icon.dispatchEvent("lostpointercapture", { pointerId: 1, clientX: desktopBounds.x + desktopBounds.width / 2, clientY: desktopBounds.y + desktopBounds.height / 2 });
+  await expect(preview).not.toHaveAttribute("data-visible");
+  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
+  await expect(icon).not.toHaveAttribute("data-dragging");
+  await page.mouse.up();
+});
+
 test("moves selected items between the desktop and folder explorer", async ({ page }) => {
   await openLocalDesktop(page);
   const stamp = Date.now();

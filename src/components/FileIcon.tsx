@@ -378,6 +378,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onPointerMove={handlePointerMove}
         onPointerUp={(event) => { void finishDrag(event); }}
         onPointerCancel={(event) => { void finishDrag(event, true); }}
+        onLostPointerCapture={(event) => { void finishDrag(event, true); }}
       >
         <span className="file-icon__art">
           <EntryIcon entry={entry} size={43} />
