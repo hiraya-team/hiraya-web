@@ -13,9 +13,11 @@ async function signIn(context: BrowserContext) {
   await page.getByLabel("Password").fill(password);
   await Promise.all([page.waitForURL("/"), page.getByRole("button", { name: "Sign in" }).click()]);
   await expect(page.locator(".desktop-shell")).toBeVisible();
-  const onboarding = page.getByRole("button", { name: "Open desktop" });
+  const dialog = page.getByRole("dialog", { name: "Know where your work lives" });
+  const onboarding = dialog.getByRole("button", { name: "Open desktop" });
   await expect(onboarding).toBeVisible();
   await onboarding.click();
+  await expect(dialog).toBeHidden();
   return page;
 }
 
@@ -24,7 +26,7 @@ async function createFolder(page: Page, name: string) {
   await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New folder" }).click();
   await page.getByLabel("Folder name").fill(name);
   await page.getByRole("button", { name: "Create folder" }).click();
-  await expect(page.getByText(name, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `${name}, folder` })).toBeVisible();
 }
 
 async function createTextFile(page: Page, name: string) {
@@ -58,14 +60,14 @@ async function primary(browser: Browser) {
   const second = await signIn(secondContext);
 
   await createFolder(first, onlineFolder);
-  await expect(second.getByText(onlineFolder, { exact: true })).toBeVisible({ timeout: 15_000 });
+  await expect(second.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible({ timeout: 15_000 });
 
   await firstContext.setOffline(true);
   await createFolder(first, offlineFolder);
-  await expect(second.getByText(offlineFolder, { exact: true })).toBeHidden();
+  await expect(second.getByRole("button", { name: `${offlineFolder}, folder` })).toBeHidden();
   await firstContext.setOffline(false);
   await first.reload();
-  await expect(second.getByText(offlineFolder, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await expect(second.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible({ timeout: 20_000 });
 
   await createTextFile(first, sandboxRuntimeFile);
   await first.locator(".file-icon").filter({ hasText: sandboxRuntimeFile }).dblclick();
@@ -100,8 +102,8 @@ async function primary(browser: Browser) {
 async function afterRestart(browser: Browser) {
   const context = await browser.newContext();
   const page = await signIn(context);
-  await expect(page.getByText(onlineFolder, { exact: true })).toBeVisible();
-  await expect(page.getByText(offlineFolder, { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible();
+  await expect(page.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible();
   await context.close();
 }
 
