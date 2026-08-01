@@ -49,8 +49,14 @@ describe("app runtime", () => {
     } });
     try {
       const states: string[] = [];
-      const dispose = initializeSandboxFrame({ contentWindow: child, addEventListener: (_type: string, listener: () => void) => frameListeners.add(listener), removeEventListener: (_type: string, listener: () => void) => frameListeners.delete(listener) } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, "materialization-1", { onStateChange: (state) => states.push(state) });
+      let activations = 0;
+      const dispose = initializeSandboxFrame({ contentWindow: child, addEventListener: (_type: string, listener: () => void) => frameListeners.add(listener), removeEventListener: (_type: string, listener: () => void) => frameListeners.delete(listener) } as unknown as HTMLIFrameElement, "dev.hiraya.test", dispatcher, "materialization-1", { onActivate: () => { activations += 1; }, onStateChange: (state) => states.push(state) });
       expect(appPort).toBeUndefined();
+      for (const listener of listeners) listener({ source: {}, data: { type: "hiraya:sandbox-activate", token: "materialization-1" } } as unknown as MessageEvent<unknown>);
+      for (const listener of listeners) listener({ source: child, data: { type: "hiraya:sandbox-activate", token: "wrong" } } as unknown as MessageEvent<unknown>);
+      expect(activations).toBe(0);
+      for (const listener of listeners) listener({ source: child, data: { type: "hiraya:sandbox-activate", token: "materialization-1" } } as unknown as MessageEvent<unknown>);
+      expect(activations).toBe(1);
       for (const listener of listeners) listener({ source: {}, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
       expect(appPort).toBeUndefined();
       for (const listener of listeners) listener({ source: child, data: { protocolVersion: 1, type: "hiraya:connect", appId: "dev.hiraya.test" } } as unknown as MessageEvent<unknown>);
@@ -60,6 +66,8 @@ describe("app runtime", () => {
       appPort!.postMessage({ protocolVersion: 1, type: "request", id: "launch", method: "app.getLaunchContext", params: {} });
       expect(await response).toEqual(expect.objectContaining({ id: "launch", ok: true }));
       expect(states).toEqual(["boot", "connected", "ready"]);
+      for (const listener of listeners) listener({ source: child, data: { type: "hiraya:sandbox-activate", token: "materialization-1" } } as unknown as MessageEvent<unknown>);
+      expect(activations).toBe(2);
       dispose();
       expect(states.at(-1)).toBe("disposed");
       expect(listeners.size).toBe(0);
@@ -199,6 +207,7 @@ describe("app runtime", () => {
     expect(children[1]).toEqual(expect.objectContaining({ dataset: { hirayaUiFoundation: "" }, textContent: uiRuntime.styles }));
     expect(children[2]).toEqual(expect.objectContaining({ dataset: { hirayaNavigationGuard: "" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));
     expect(atob(children[2].src!.split(",", 2)[1])).toContain("beforeunload");
+    expect(atob(children[2].src!.split(",", 2)[1])).toContain("hiraya:sandbox-activate");
     expect(atob(children[2].src!.split(",", 2)[1])).toContain("stop()");
     expect(atob(children[2].src!.split(",", 2)[1])).toContain("materialization-1");
     expect(children[3]).toEqual(expect.objectContaining({ dataset: { hirayaUiRuntime: "1" }, textContent: "", src: expect.stringContaining("data:text/javascript;base64,") }));

@@ -4129,7 +4129,7 @@ function App({ session }: { session: AuthSession | null }) {
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             return (
               <>
-                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
                         folder={folder}

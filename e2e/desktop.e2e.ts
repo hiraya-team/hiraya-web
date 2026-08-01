@@ -4,9 +4,9 @@ import { devices, expect, test, type Locator, type Page } from "@playwright/test
 async function openLocalDesktop(page: Page) {
   await page.goto("/");
   await expect(page.locator(".desktop-shell")).toBeVisible();
-  const onboarding = page.getByRole("button", { name: "Open desktop" });
+  const onboarding = page.getByRole("dialog", { name: "Know where your work lives" });
   await expect(onboarding).toBeVisible();
-  await onboarding.click();
+  await onboarding.getByRole("button", { name: "Close Getting Started" }).click();
   await expect(onboarding).toBeHidden();
 }
 
@@ -55,6 +55,33 @@ test("search launches installed apps from the keyboard", async ({ page }) => {
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
   await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+});
+
+test("clicking inside a sandbox app focuses and raises its window", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.keyboard.press("Control+k");
+  let search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Text Editor");
+  await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ }).click();
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open" });
+  await expect(editor).toBeVisible();
+  await expect(open).toBeVisible();
+
+  await page.keyboard.press("Control+k");
+  search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Settings");
+  await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toHaveAttribute("data-focused", "true");
+  const viewport = page.viewportSize();
+  if (!viewport) throw new Error("The viewport is unavailable.");
+  await dragPointerTo(page, settings.locator(".app-window__header"), viewport.width - 80, 80);
+  await expect(settings).toHaveAttribute("data-focused", "true");
+
+  await editor.frameLocator("iframe").locator("body").click({ position: { x: 12, y: 12 } });
+  await expect(editor).toHaveAttribute("data-focused", "true");
+  await expect.poll(async () => Number(await editor.evaluate((element) => getComputedStyle(element).zIndex))).toBeGreaterThan(Number(await settings.evaluate((element) => getComputedStyle(element).zIndex)));
 });
 
 test("app file picker expands folders and keeps hidden selections", async ({ page }) => {

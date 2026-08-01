@@ -3,9 +3,11 @@ import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 import { initializeSandboxFrame, materializeAppPackage, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime } from "./sandbox";
 
-export function SandboxAppFrame({ package: appPackage, dispatcher, title, uiRuntime, onNavigation, csp = SANDBOX_CSP, sandbox = SANDBOX_FLAGS }: { package: AppPackageInspection; dispatcher: RpcDispatcher; title: string; uiRuntime: SandboxUiRuntime; onNavigation?: () => void; csp?: string; sandbox?: string }) {
+export function SandboxAppFrame({ package: appPackage, dispatcher, title, uiRuntime, onActivate, onNavigation, csp = SANDBOX_CSP, sandbox = SANDBOX_FLAGS }: { package: AppPackageInspection; dispatcher: RpcDispatcher; title: string; uiRuntime: SandboxUiRuntime; onActivate?: () => void; onNavigation?: () => void; csp?: string; sandbox?: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
+  const onActivateRef = useRef(onActivate);
   const onNavigationRef = useRef(onNavigation);
+  onActivateRef.current = onActivate;
   onNavigationRef.current = onNavigation;
   useEffect(() => {
     const materialized = materializeAppPackage(appPackage, uiRuntime, URL, csp);
@@ -14,7 +16,7 @@ export function SandboxAppFrame({ package: appPackage, dispatcher, title, uiRunt
     // Embedded CSP enforcement is experimental, but adds an earlier browser-level check where
     // supported. The srcdoc's meta policy remains authoritative elsewhere.
     frame.setAttribute("csp", csp);
-    const dispose = initializeSandboxFrame(frame, appPackage.manifest.id, dispatcher, materialized.navigationToken, { onNavigation: () => onNavigationRef.current?.() });
+    const dispose = initializeSandboxFrame(frame, appPackage.manifest.id, dispatcher, materialized.navigationToken, { onActivate: () => onActivateRef.current?.(), onNavigation: () => onNavigationRef.current?.() });
     frame.srcdoc = materialized.html;
     return () => { dispose(); frame.removeAttribute("srcdoc"); materialized.revoke(); };
   }, [appPackage, csp, dispatcher, uiRuntime]);

@@ -15,7 +15,7 @@ export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiR
   foundation.textContent = uiRuntime.styles;
   const navigationGuard = document.createElement("script");
   navigationGuard.dataset.hirayaNavigationGuard = "";
-  navigationGuard.src = dataURL(new TextEncoder().encode(`(()=>{const token=${JSON.stringify(navigationToken)};const notify=phase=>parent.postMessage({type:"hiraya:sandbox-navigation",token,phase},"*");addEventListener("load",()=>notify("load"),{once:true});addEventListener("beforeunload",()=>{stop();notify("navigation")},{capture:true,once:true})})()`), "text/javascript");
+  navigationGuard.src = dataURL(new TextEncoder().encode(`(()=>{const token=${JSON.stringify(navigationToken)};const notify=phase=>parent.postMessage({type:"hiraya:sandbox-navigation",token,phase},"*");const activate=()=>parent.postMessage({type:"hiraya:sandbox-activate",token},"*");addEventListener("pointerdown",activate,{capture:true});addEventListener("focus",activate);addEventListener("load",()=>notify("load"),{once:true});addEventListener("beforeunload",()=>{stop();notify("navigation")},{capture:true,once:true})})()`), "text/javascript");
   const runtime = document.createElement("script");
   runtime.dataset.hirayaUiRuntime = String(uiRuntime.abi);
   runtime.src = dataURL(new TextEncoder().encode(uiRuntime.script), "text/javascript");
@@ -141,6 +141,7 @@ export function isAppPackageName(name: string): boolean {
 export type SandboxFrameState = "boot" | "connected" | "ready" | "disposed";
 
 export interface SandboxFrameOptions {
+  onActivate?(): void;
   onNavigation?(): void;
   onStateChange?(state: SandboxFrameState): void;
   bootTimeoutMs?: number;
@@ -166,7 +167,12 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
     },
   });
   const onConnect = (event: MessageEvent<unknown>) => {
-    if (state !== "boot" || channel || event.source !== frame.contentWindow || !frame.contentWindow) return;
+    if (event.source !== frame.contentWindow || !frame.contentWindow) return;
+    if (event.data && typeof event.data === "object" && (event.data as Record<string, unknown>).type === "hiraya:sandbox-activate" && (event.data as Record<string, unknown>).token === navigationToken) {
+      options.onActivate?.();
+      return;
+    }
+    if (state !== "boot" || channel) return;
     let connect;
     try {
       connect = parseAppConnect(event.data);
