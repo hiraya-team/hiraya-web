@@ -22,7 +22,7 @@ Some browsers do not provide directory picking or directory-drop details. When *
 
 A **desktop** has its own files, folders, appearance, sharing, and permissions. Use the desktop switcher to create, rename, switch, or delete desktops when your role allows it.
 
-An **area** is a region derived from item and window coordinates on one continuous desktop. Icon areas use the largest whole 8-pixel sub-grid extent that fits the viewport, leaving at most 7 pixels of non-placement space on the right and bottom; windows continue to use the full viewport. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
+An **area** is a region derived from item and window coordinates on one continuous desktop. Icon areas use the largest whole 32-pixel sub-grid extent that fits the viewport, leaving at most 31 pixels of non-placement space on the right and bottom; windows continue to use the full viewport. Areas are not named containers, folders, or separately saved records. Moving the last contents out of an area can make that derived area disappear.
 
 The area button in the global header opens a temporary spatial map and always keeps Home addressable. Choose an area to navigate and close the map, or dismiss it with Escape. App-switching controls open a separate **All windows** list grouped by area.
 
