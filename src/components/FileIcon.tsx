@@ -64,7 +64,6 @@ type DragState = {
   moveSucceeded?: boolean;
   edgeDwell: EdgeDwellState;
   preview?: PointerDragPreview | null;
-  stopReleaseTracking?: () => void;
 };
 
 export const EntryTypeIcon = EntryIcon;
@@ -86,7 +85,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function cleanUpDrag(completed: DragState) {
     if (drag.current !== completed) return;
-    completed.stopReleaseTracking?.();
+    if (snapPreviewRef.current) delete snapPreviewRef.current.dataset.visible;
     resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     drag.current = null;
     removePointerDragPreview(completed.preview);
@@ -184,15 +183,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       longPressed: false,
       edgeDwell: { direction: null, latched: false, timer: null },
     };
-    const finishReleasedPointer = (released: PointerEvent) => {
-      if (released.pointerId === drag.current?.pointerId) void finishDrag(released, released.type === "pointercancel");
-    };
-    window.addEventListener("pointerup", finishReleasedPointer);
-    window.addEventListener("pointercancel", finishReleasedPointer);
-    drag.current.stopReleaseTracking = () => {
-      window.removeEventListener("pointerup", finishReleasedPointer);
-      window.removeEventListener("pointercancel", finishReleasedPointer);
-    };
     if (event.pointerType === "touch") {
       drag.current.longPressTimer = window.setTimeout(() => {
         const current = drag.current;
@@ -261,11 +251,17 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const completed = drag.current;
     if (!completed || completed.pointerId !== event.pointerId || completed.finishing) return;
     completed.finishing = true;
-    completed.stopReleaseTracking?.();
-    completed.stopReleaseTracking = undefined;
+    highlightEntryDropTarget(null);
+    updateSnapPreview(null);
+    removePointerDragPreview(completed.preview);
+    completed.preview = null;
     resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     if (completed.longPressTimer) window.clearTimeout(completed.longPressTimer);
-    if (iconRef.current?.hasPointerCapture(event.pointerId)) iconRef.current.releasePointerCapture(event.pointerId);
+    try {
+      if (iconRef.current?.hasPointerCapture(event.pointerId)) iconRef.current.releasePointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture may be released implicitly between the check and call.
+    }
     const dropTarget = completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
@@ -275,10 +271,6 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const move = completed.moved && !cancelled && dropTarget
       ? Promise.resolve().then(() => onMoveRef.current(committedPosition, dropTarget, { x: position.x - completed.originX, y: position.y - completed.originY }))
       : Promise.resolve(!completed.moved && !cancelled);
-    highlightEntryDropTarget(null);
-    updateSnapPreview(null);
-    removePointerDragPreview(completed.preview);
-    completed.preview = null;
     if (!completed.moved || cancelled) cleanUpDrag(completed);
 
     let succeeded = !cancelled;
