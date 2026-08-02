@@ -334,6 +334,36 @@ test("edge dwell guards item and window moves between areas", async ({ page }) =
   await page.mouse.up();
 });
 
+test("desktop wheel gestures switch one area while app scrolling stays native", async ({ page }) => {
+  await openLocalDesktop(page);
+  const desktop = page.locator(".desktop");
+
+  for (let step = 0; step < 4; step += 1) await desktop.dispatchEvent("wheel", { deltaX: 4 });
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await page.waitForTimeout(200);
+
+  await desktop.dispatchEvent("wheel", { deltaY: 20 });
+  await expect(page).toHaveURL(/\/areas\/1\/1$/);
+  await page.waitForTimeout(200);
+  await desktop.dispatchEvent("wheel", { deltaY: -20 });
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await page.waitForTimeout(200);
+  await desktop.dispatchEvent("wheel", { deltaX: -20 });
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await page.waitForTimeout(200);
+
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Settings");
+  await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.dispatchEvent("wheel", { deltaY: 100 });
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
+
+  await desktop.dispatchEvent("wheel", { deltaY: 100, ctrlKey: true });
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
+});
+
 test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {
   await openLocalDesktop(page);
   const shell = page.locator(".desktop-shell");

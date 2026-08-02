@@ -154,6 +154,7 @@ type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegme
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
 const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
+const WHEEL_SWIPE_END_MS = 160;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
 
@@ -305,6 +306,7 @@ function App({ session }: { session: AuthSession | null }) {
   const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
   const importOperationRef = useRef<ImportOperationContext | null>(null);
   const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null; transitionId?: number } | null>(null);
+  const wheelSwipeRef = useRef<{ deltaX: number; deltaY: number; switched: boolean; timer: number } | null>(null);
   const desktopPressRef = useRef<{
     activated: boolean;
     pointerId: number;
@@ -1585,6 +1587,7 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => () => {
     areaTransitionGenerationRef.current += 1;
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    if (wheelSwipeRef.current) window.clearTimeout(wheelSwipeRef.current.timer);
   }, []);
 
   const previousDesktopSizeRef = useRef(desktopSize);
@@ -3345,6 +3348,26 @@ function App({ session }: { session: AuthSession | null }) {
     desktopPressRef.current = press;
   }
 
+  function handleDesktopWheel(event: React.WheelEvent<HTMLElement>) {
+    if (event.ctrlKey || (event.target as Element).closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
+    event.preventDefault();
+    const gesture = wheelSwipeRef.current ?? { deltaX: 0, deltaY: 0, switched: false, timer: 0 };
+    window.clearTimeout(gesture.timer);
+    const lineScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+    gesture.deltaX += event.deltaX * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.width : lineScale);
+    gesture.deltaY += event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.height : lineScale);
+    gesture.timer = window.setTimeout(() => {
+      if (wheelSwipeRef.current === gesture) wheelSwipeRef.current = null;
+    }, WHEEL_SWIPE_END_MS);
+    wheelSwipeRef.current = gesture;
+    if (gesture.switched) return;
+    const axis = swipeAxis(gesture.deltaX, gesture.deltaY);
+    if (!axis) return;
+    gesture.switched = true;
+    const delta = axis === "x" ? gesture.deltaX : gesture.deltaY;
+    goToSegment(adjacentSwipeArea(activeSegment, axis, -delta));
+  }
+
   function handleIconDragAtEdge(entry: DesktopEntry, direction: EdgeDirection) {
     const previousSegment = edgeNavigationRef.current?.targetSegment ?? activeSegment;
     const targetSegment = {
@@ -3954,6 +3977,7 @@ function App({ session }: { session: AuthSession | null }) {
         onPointerMove={handleDesktopPointerMove}
         onPointerUp={(event) => finishDesktopSwipe(event)}
         onPointerCancel={(event) => finishDesktopSwipe(event, true)}
+        onWheel={handleDesktopWheel}
       >
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
