@@ -23,11 +23,13 @@ describe("canonical routes", () => {
     expect(API_ROUTES.desktopContentAccess("d", "a/b", 7)).toBe("/api/desktops/d/entries/a%2Fb/content-access?revision=7");
     expect(API_ROUTES.desktopRootEntryPositions("d")).toBe("/api/desktops/d/root-entry-positions");
     expect(API_ROUTES.entryTransfers).toBe("/api/entry-transfers");
+    expect(API_ROUTES.shortLinks).toBe("/api/short-links");
+    expect(API_ROUTES.shortLink("launch/notes")).toBe("/api/short-links/launch%2Fnotes");
   });
 
   test("leaves server-owned navigations to the server and handles desktop paths", () => {
     const denied = (pathname: string) => navigationFallbackDenylist.some((pattern) => pattern.test(pathname));
-    for (const pathname of ["/api/health", "/assets/app.js", "/login", "/login?returnTo=%2Fdesktops%2Fdesk%2Fareas%2F0%2F0", "/register?token=invite", "/profile", "/logout", "/admin/accounts", "/shared/token"]) {
+    for (const pathname of ["/api/health", "/assets/app.js", "/login", "/login?returnTo=%2Fdesktops%2Fdesk%2Fareas%2F0%2F0", "/register?token=invite", "/profile", "/logout", "/admin/accounts", "/shared/token", "/r/launch-notes"]) {
       expect(denied(pathname)).toBeTrue();
     }
     expect(denied("/desktops/desk/areas/0/0/file/note")).toBeFalse();

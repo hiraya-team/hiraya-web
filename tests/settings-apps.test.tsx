@@ -78,4 +78,13 @@ describe("Settings apps UI", () => {
     expect(markup).toContain('<option value="36" selected="">36px</option>');
     expect(markup).toContain('<option value="48">48px</option>');
   });
+
+  test("shows account short links only when the session advertises support", () => {
+    const props = {
+      page: "main", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: false,
+      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, shortLinkBaseUrl: "https://go.example.test/r/",
+    } as Parameters<typeof SettingsWindow>[0];
+    expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable={false} />)).not.toContain("Create and manage account-wide redirect URLs.");
+    expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable />)).toContain("Create and manage account-wide redirect URLs.");
+  });
 });

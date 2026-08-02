@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, MagnifyingGlass, PaintBrush, Package, Play, Trash, UploadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, Play, Trash, UploadSimple } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
@@ -20,6 +20,8 @@ import { installedAppAcceptsMatcher, installedAppIsAvailable, type FileAssociati
 import { SYSTEM_FILE_DEFAULTS } from "../apps/file-associations";
 import type { PwaInstallState } from "../lib/pwa-install";
 import { RoleBadge, StatusBadge } from "./VisualPrimitives";
+import { ShortLinksSettings } from "./ShortLinksSettings";
+import type { ShortLink } from "../lib/short-links";
 
 const WALLPAPER_LABELS: Record<WallpaperPreset, { name: string; description: string }> = {
   dusk: { name: "Dusk", description: "Misty green with a warm horizon" },
@@ -62,8 +64,8 @@ const SETTINGS_CATEGORIES = [
 type SettingsCategory = typeof SETTINGS_CATEGORIES[number]["id"];
 
 type Props = {
-  page: "main" | "themes" | "activity" | "apps";
-  onPageChange: (page: "main" | "themes" | "activity" | "apps") => void;
+  page: "main" | "themes" | "activity" | "apps" | "short-links";
+  onPageChange: (page: "main" | "themes" | "activity" | "apps" | "short-links") => void;
   mobileHeaderElements?: AppWindowHeaderElements;
   layout: DesktopLayout;
   activeDesktopId: string;
@@ -87,6 +89,8 @@ type Props = {
   localPreferencesLoaded: boolean;
   searchAllDesktops: boolean;
   desktopSearchAvailable: boolean;
+  shortLinksAvailable: boolean;
+  shortLinkBaseUrl: string;
   installState: PwaInstallState;
   serverBuildTimestamp: string | null;
   installedApps: InstalledApp[];
@@ -100,6 +104,11 @@ type Props = {
   onSetFileAssociation: (matcher: string, appId: string) => void;
   onRemoveFileAssociation: (matcher: string) => void;
   onResetFileAssociations: () => void;
+  onListShortLinks: () => Promise<ShortLink[]>;
+  onCreateShortLink: (input: { slug?: string; destinationUrl: string }) => Promise<ShortLink>;
+  onUpdateShortLink: (slug: string, input: { destinationUrl?: string; enabled?: boolean }) => Promise<ShortLink>;
+  onDeleteShortLink: (slug: string) => Promise<void>;
+  onConfirmShortLinkDelete: (link: ShortLink) => Promise<boolean>;
   onListActivity: (query?: ActivityQuery) => Promise<ActivityPage>;
   onSubscribeToActivity: (listener: () => void) => () => void;
   onOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => void;
@@ -195,6 +204,8 @@ export function SettingsWindow({
   localPreferencesLoaded,
   searchAllDesktops,
   desktopSearchAvailable,
+  shortLinksAvailable,
+  shortLinkBaseUrl,
   installState,
   serverBuildTimestamp,
   installedApps,
@@ -208,6 +219,11 @@ export function SettingsWindow({
   onSetFileAssociation,
   onRemoveFileAssociation,
   onResetFileAssociations,
+  onListShortLinks,
+  onCreateShortLink,
+  onUpdateShortLink,
+  onDeleteShortLink,
+  onConfirmShortLinkDelete,
   onListActivity,
   onSubscribeToActivity,
   onOpenAffectedEntries,
@@ -247,10 +263,12 @@ export function SettingsWindow({
   const mainThemesButtonRef = useRef<HTMLButtonElement>(null);
   const mainActivityButtonRef = useRef<HTMLButtonElement>(null);
   const mainAppsButtonRef = useRef<HTMLButtonElement>(null);
+  const mainShortLinksButtonRef = useRef<HTMLButtonElement>(null);
   const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
   const themesHeadingRef = useRef<HTMLHeadingElement>(null);
   const activityHeadingRef = useRef<HTMLHeadingElement>(null);
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
+  const shortLinksHeadingRef = useRef<HTMLHeadingElement>(null);
   onLayoutChangeRef.current = onLayoutChange;
   const mutationsDisabled = !canMutate || saving;
   const displayedLayout = layoutDraft.desktopId === activeDesktopId ? layoutDraft.layout : layout;
@@ -302,7 +320,7 @@ export function SettingsWindow({
     const previousPage = previousPageRef.current;
     previousPageRef.current = page;
     if (page === "main" && previousPage !== "main") {
-      const button = previousPage === "themes" ? mainThemesButtonRef : previousPage === "activity" ? mainActivityButtonRef : mainAppsButtonRef;
+      const button = previousPage === "themes" ? mainThemesButtonRef : previousPage === "activity" ? mainActivityButtonRef : previousPage === "short-links" ? mainShortLinksButtonRef : mainAppsButtonRef;
       requestAnimationFrame(() => button.current?.focus());
     }
     if (previousPage !== "themes" || page === "themes") return;
@@ -430,11 +448,13 @@ export function SettingsWindow({
   };
   const openApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("apps"); focusSubpage(appsHeadingRef); };
   const closeApps = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); };
+  const openShortLinks = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("short-links"); focusSubpage(shortLinksHeadingRef); };
+  const closeShortLinks = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); };
 
   return (
     <div className="settings-window settings-window--embedded">
       {page !== "main" && mobileHeaderElements?.actions && createPortal(
-        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" disabled={page === "themes" && saving} onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : closeActivity}>
+        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" disabled={page === "themes" && saving} onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
           <ArrowLeft size={18} />
         </button>,
         mobileHeaderElements.actions,
@@ -463,6 +483,14 @@ export function SettingsWindow({
                   <strong id="activity-link-heading">Activity</strong>
                   <small>{activityScope === "desktop" ? "Review accepted changes from this shared desktop." : "Review accepted changes across your desktops."}</small>
                 </span>
+                <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+              </button>
+            </section>}
+
+            {shortLinksAvailable && <section className="settings-section" aria-labelledby="short-links-link-heading" hidden={settingsCategory !== "data"}>
+              <button className="settings-row settings-row--navigation" type="button" ref={mainShortLinksButtonRef} onClick={openShortLinks}>
+                <span className="settings-row__icon"><LinkSimple size={17} /></span>
+                <span className="settings-row__copy"><strong id="short-links-link-heading">Short Links</strong><small>Create and manage account-wide redirect URLs.</small></span>
                 <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
             </section>}
@@ -802,6 +830,8 @@ export function SettingsWindow({
             </header>
             <ActivityLog onListActivity={onListActivity} onSubscribe={onSubscribeToActivity} onOpenAffectedEntries={onOpenAffectedEntries} canOpenAffectedEntries={canOpenAffectedEntries} />
           </div>
+        ) : page === "short-links" ? (
+          <ShortLinksSettings headingRef={shortLinksHeadingRef} baseUrl={shortLinkBaseUrl} onBack={closeShortLinks} onList={onListShortLinks} onCreate={onCreateShortLink} onUpdate={onUpdateShortLink} onDelete={onDeleteShortLink} onConfirmDelete={onConfirmShortLinkDelete} />
         ) : (
           <div className="settings-page settings-page--apps">
             <header className="settings-page__header"><button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeApps}><ArrowLeft size={17} /></button><div><h3 ref={appsHeadingRef} tabIndex={-1}>Apps</h3><p>Installed bundled apps, user-approved packages, and device-local data.</p></div></header>

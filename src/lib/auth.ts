@@ -15,7 +15,9 @@ export type AuthSession = {
   capabilities: {
     blobTransfer: "direct-b2-v1";
     desktopSearch?: "accessible-desktops-v1";
+    shortLinks?: "account-short-links-v1";
   };
+  shortLinkBaseUrl?: string;
 };
 
 const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-v1";
@@ -33,10 +35,30 @@ function requiredString(value: unknown, label: string) {
   return value;
 }
 
+export function isSafeRootRelativePath(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  try {
+    const url = new URL(value, "https://hiraya.invalid");
+    return url.origin === "https://hiraya.invalid" && url.pathname === value && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
+function isSafeAbsoluteHttpUrl(value: string) {
+  if (value.trim() !== value || value.includes("\\") || !/^https?:\/\//i.test(value)) return false;
+  try {
+    const url = new URL(value);
+    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
-  const session = value as { storageId?: unknown; user?: unknown; capabilities?: unknown };
+  const session = value as { storageId?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
   if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
     throw new Error("The session bootstrap requires direct-b2-v1 blob transfer support.");
@@ -45,6 +67,11 @@ export function parseAuthSession(value: unknown): AuthSession {
   const optionalString = (candidate: unknown, label: string) => candidate === undefined ? undefined : requiredString(candidate, label);
   const desktopSearch = (session.capabilities as { desktopSearch?: unknown }).desktopSearch;
   if (desktopSearch !== undefined && desktopSearch !== "accessible-desktops-v1") throw new Error("The session bootstrap contains unsupported desktop search capability metadata.");
+  const shortLinks = (session.capabilities as { shortLinks?: unknown }).shortLinks;
+  if (shortLinks !== undefined && shortLinks !== "account-short-links-v1") throw new Error("The session bootstrap contains unsupported short-link capability metadata.");
+  const shortLinkBaseUrl = session.shortLinkBaseUrl === undefined ? undefined : requiredString(session.shortLinkBaseUrl, "short-link base URL");
+  if ((shortLinks === undefined) !== (shortLinkBaseUrl === undefined)) throw new Error("The session bootstrap contains incomplete short-link capability metadata.");
+  if (shortLinkBaseUrl && !isSafeRootRelativePath(shortLinkBaseUrl) && !isSafeAbsoluteHttpUrl(shortLinkBaseUrl)) throw new Error("The session bootstrap contains an invalid short-link base URL.");
   return {
     ...authority,
     storageId: requiredString(session.storageId, "storage ID"),
@@ -53,7 +80,8 @@ export function parseAuthSession(value: unknown): AuthSession {
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),
       ...(user.avatarUrl === undefined ? {} : { avatarUrl: optionalString(user.avatarUrl, "avatar URL") }),
     },
-    capabilities: { blobTransfer: "direct-b2-v1", ...(desktopSearch ? { desktopSearch } : {}) },
+    capabilities: { blobTransfer: "direct-b2-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}) },
+    ...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
   };
 }
 
