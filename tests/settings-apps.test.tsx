@@ -24,8 +24,8 @@ const systemApp: InstalledApp = {
   },
 };
 
-describe("Settings apps UI", () => {
-  test("shows bundled trust, reset, and file defaults without an uninstall action", () => {
+describe("Settings app data UI", () => {
+  test("keeps file defaults without duplicating installed-app management", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
       page: "apps",
       onPageChange: () => undefined,
@@ -48,12 +48,11 @@ describe("Settings apps UI", () => {
       onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
 
-    expect(markup).toContain("Bundled system app");
-    expect(markup).toContain("Installed bundled apps, user-approved packages");
-    expect(markup).toContain("Trusted by Hiraya");
-    expect(markup).toContain("Reset data");
+    expect(markup).toContain("App data &amp; file types");
     expect(markup).toContain("Text and source files");
     expect(markup).toContain("Preferred app for .txt");
+    expect(markup).not.toContain("Bundled system app");
+    expect(markup).not.toContain("Reset data");
     expect(markup).not.toContain("Uninstall");
   });
 

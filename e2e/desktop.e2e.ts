@@ -226,9 +226,10 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
 test("rapid icon releases cannot accumulate snap previews", async ({ page }) => {
   await openLocalDesktop(page);
 
-  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
-  await page.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Desktop & sharing" }).click();
   await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
 
@@ -481,8 +482,8 @@ test("fine pointers use overlapping window chrome and positioned context menus",
 
 test("Settings adapts to its window and preserves subpage navigation", async ({ page, browser }) => {
   await openLocalDesktop(page);
-  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
-  await page.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
 
   const settingsWindow = page.locator('[data-app-window="settings"]');
   const settingsContent = settingsWindow.locator(".settings-window__content");
@@ -492,9 +493,9 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await expect(categories).toHaveCSS("display", "grid");
   await expect.poll(() => categories.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
-  await resizeWindowWidth(page, settingsWindow, 600);
+  await resizeWindowWidth(page, settingsWindow, 580);
   await expect(settingsWindow.locator(".settings-window__content--main")).toHaveCSS("display", "block");
-  await expect(categories).toHaveCSS("display", "flex");
+  await expect(categories).toHaveCSS("display", "grid");
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
   const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
@@ -507,17 +508,18 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
   await expect(themesLauncher).toBeFocused();
 
-  await categories.getByRole("button", { name: "Apps & permissions" }).click();
+  await categories.getByRole("button", { name: "Files & apps" }).click();
   const appsLauncher = settingsWindow.locator('[aria-labelledby="apps-link-heading"] .settings-row--navigation');
   await appsLauncher.click();
   await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
-  await expect(settingsWindow.locator(".installed-app__actions").first()).toHaveCSS("flex-wrap", "wrap");
+  await expect(settingsWindow.locator(".settings-page__header h3")).toHaveText("App data & file types");
+  await expect(settingsWindow.locator(".installed-app__actions")).toHaveCount(0);
   await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
   await expect(appsLauncher).toBeFocused();
 
   await resizeWindowWidth(page, settingsWindow, 360);
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await categories.getByRole("button", { name: "Data & admin" }).click();
+  await categories.getByRole("button", { name: "Sync & data" }).click();
   const activityLauncher = settingsWindow.locator('[aria-labelledby="activity-link-heading"] .settings-row--navigation');
   await activityLauncher.click();
   await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
@@ -527,8 +529,8 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
   const mobilePage = await mobileContext.newPage();
   await openLocalDesktop(mobilePage);
-  await mobilePage.getByRole("button", { name: /Start; account, system, and windows/ }).click();
-  await mobilePage.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const mobileSettings = mobilePage.locator('[data-app-window="settings"]');
   const mobileThemesLauncher = mobileSettings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
   await mobileThemesLauncher.click();
@@ -575,16 +577,34 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   const page = await context.newPage();
   await openLocalDesktop(page);
 
-  const start = page.getByRole("button", { name: /Start; account, system, and windows/ });
+  const start = page.getByRole("button", { name: /Start; account, system, and applications/ });
   await start.click();
-  const startMenu = page.getByRole("dialog", { name: /Start; account, system, and windows/ });
+  const startMenu = page.getByRole("dialog", { name: /Start; account, system, and applications/ });
   await expect(startMenu).toBeVisible();
   await expect(startMenu.getByRole("button", { name: "Settings" })).toBeVisible();
+  await expect(startMenu.getByRole("button", { name: "Switch Window" })).toHaveCount(0);
+  await expect(startMenu.getByRole("button", { name: "Back to Desktop" })).toHaveCount(0);
+  await expect(page.locator(".menu-bar__store")).toHaveCount(0);
+  await startMenu.locator(".mobile-start-applications > summary").click();
+  await expect(startMenu.getByRole("button", { name: "Text Editor" })).toBeVisible();
+  await expect(startMenu.getByRole("button", { name: "App Store" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(start).toBeFocused();
 
   const switcher = page.locator(".desktop-minimap");
   const trigger = page.locator(".mobile-area-switcher-trigger");
+  await start.click();
+  await startMenu.locator(".mobile-start-applications > summary").click();
+  await startMenu.getByRole("button", { name: "App Store" }).click();
+  const appStore = page.locator('[data-app-window="store"]');
+  await expect(appStore.getByRole("heading", { name: "Applications" })).toBeVisible();
+  await expect(appStore.getByRole("heading", { name: "Installed" })).toBeVisible();
+  await expect(appStore.getByText("Text Editor", { exact: true })).toBeVisible();
+  await trigger.click();
+  await expect(switcher.getByRole("button", { name: "Back to desktop" })).toBeVisible();
+  await switcher.getByRole("button", { name: "Back to desktop" }).click();
+  await expect(switcher.getByRole("button", { name: "Back to desktop" })).toHaveCount(0);
+  await trigger.click();
   await expect(switcher).toHaveCount(0);
   await expect(page.locator(".desktop-minimap__handle")).toHaveCount(0);
 
@@ -594,6 +614,11 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(switcher).toHaveAttribute("data-expanded", "true");
     await expect(switcher.getByRole("complementary", { name: "Desktops" })).toBeVisible();
+    await expect.poll(() => switcher.evaluate((element) => {
+      const areas = element.querySelector(".desktop-minimap__area-pane")?.getBoundingClientRect();
+      const desktops = element.querySelector(".desktop-switcher__rail")?.getBoundingClientRect();
+      return Boolean(areas && desktops && areas.bottom <= desktops.top);
+    })).toBe(true);
     await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
     await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
     await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
@@ -678,28 +703,26 @@ test("shell popups stay above the file action pill", async ({ browser }) => {
 
   const toolbar = page.getByRole("toolbar", { name: "File actions" });
   await expect(toolbar).toBeVisible();
-  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
-  const panel = page.getByRole("dialog", { name: /Start; account, system, and windows/ });
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  const panel = page.getByRole("dialog", { name: /Start; account, system, and applications/ });
   await expect(panel).toBeVisible();
 
   const toolbarElement = await toolbar.elementHandle();
   if (!toolbarElement) throw new Error("Mobile action toolbar was not mounted.");
-  const overlap = await panel.evaluate((element, actionToolbar) => {
+  const stacking = await panel.evaluate((element, actionToolbar) => {
     const panelBounds = element.getBoundingClientRect();
-    const toolbarBounds = actionToolbar.getBoundingClientRect();
     return {
-      left: Math.max(panelBounds.left, toolbarBounds.left),
-      right: Math.min(panelBounds.right, toolbarBounds.right),
-      top: Math.max(panelBounds.top, toolbarBounds.top),
-      bottom: Math.min(panelBounds.bottom, toolbarBounds.bottom),
+      panelZ: Number(getComputedStyle(element.closest(".menu-bar")!).zIndex),
+      toolbarZ: Number(getComputedStyle(actionToolbar).zIndex),
+      x: panelBounds.left + panelBounds.width / 2,
+      y: panelBounds.top + panelBounds.height / 2,
     };
   }, toolbarElement);
-  expect(overlap.right).toBeGreaterThan(overlap.left);
-  expect(overlap.bottom).toBeGreaterThan(overlap.top);
-  await expect.poll(() => page.evaluate(({ left, right, top, bottom }) => {
-    const target = document.elementFromPoint((left + right) / 2, (top + bottom) / 2);
+  expect(stacking.panelZ).toBeGreaterThan(stacking.toolbarZ);
+  await expect.poll(() => page.evaluate(({ x, y }) => {
+    const target = document.elementFromPoint(x, y);
     return target?.closest(".mobile-header-menu__panel") !== null;
-  }, overlap)).toBe(true);
+  }, stacking)).toBe(true);
 
   await context.close();
 });

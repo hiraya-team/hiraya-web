@@ -136,7 +136,11 @@ describe("accessibility regressions", () => {
     expect(desktopSwitcher).toContain('<details className="desktop-switcher__manage">');
     expect(desktopSwitcher).not.toContain('aria-haspopup="dialog"');
     expect(desktopSwitcher).toContain('if (event.key !== "Escape") return;');
-    expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}');
+    expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}');
+    expect(app).toContain('className="mobile-start-applications"');
+    expect(app).not.toContain("<SquaresFour /> Switch Window");
+    expect(app).not.toContain("<Desktop /> Back to Desktop");
+    expect(app).not.toContain('className="menu-bar__store"');
     expect(app).toContain('className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}');
     expect(css).toContain("@keyframes spin");
     expect(css).toContain(".mobile-start-menu__icon[data-offline] { filter: grayscale(1); opacity: 0.52; }");
@@ -166,6 +170,7 @@ describe("accessibility regressions", () => {
     expect(areaSwitcher).toContain('{apps.length > 0 && <header className="desktop-minimap__header">');
     expect(areaSwitcher).not.toContain("<strong>Areas</strong>");
     expect(areaSwitcher).toContain('aria-label={`Minimize ${focusedLabel}`}');
+    expect(areaSwitcher).toContain('aria-label="Back to desktop"');
     expect(areaSwitcher).not.toContain("onToggleMaximizeApp");
     expect(areaSwitcher).toContain('onClick={() => onCloseApp(focusedApp.id)}');
     expect(areaSwitcher).toContain('focusedApp && !focusedApp.minimized');
@@ -187,6 +192,8 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }");
     expect(css).toContain(".desktop-minimap__window-target { display: none; }");
     expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
+    expect(css).toContain(".desktop-minimap__area-pane { grid-row: 1; }");
+    expect(css).toContain(".desktop-switcher__rail { grid-row: 2;");
   });
 
   test("live area transitions project windowed apps while focused surfaces stay viewport-owned", async () => {
@@ -287,7 +294,7 @@ describe("accessibility regressions", () => {
     expect(app).not.toContain("mobileBackButtonRef");
     expect(app).toContain('mobileDestinationOriginRef.current = active?.closest(".mobile-header-menu")');
     expect(app).toContain("return target;");
-    expect(app).toContain("onClick={() => { dismiss(); focusApp(window.id); }}");
+    expect(app).toContain("launchMobileDestination(dismiss, () => launchApp(app))");
     expect(app).toContain("restoreFocus={restoreMobileDestinationFocus}");
   });
 
