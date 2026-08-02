@@ -64,6 +64,7 @@ type DragState = {
   moveSucceeded?: boolean;
   edgeDwell: EdgeDwellState;
   preview?: PointerDragPreview | null;
+  stopReleaseTracking?: () => void;
 };
 
 export const EntryTypeIcon = EntryIcon;
@@ -85,6 +86,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function cleanUpDrag(completed: DragState) {
     if (drag.current !== completed) return;
+    completed.stopReleaseTracking?.();
     resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     drag.current = null;
     removePointerDragPreview(completed.preview);
@@ -146,9 +148,10 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
-    if (drag.current && drag.current.pointerId !== event.pointerId) {
-      void finishDrag({ pointerId: drag.current.pointerId, clientX: drag.current.pointerX, clientY: drag.current.pointerY }, true);
-      return;
+    if (drag.current) {
+      const current = drag.current;
+      void finishDrag({ pointerId: current.pointerId, clientX: current.pointerX, clientY: current.pointerY }, true);
+      if (drag.current) return;
     }
     const surface = event.currentTarget.parentElement;
     if (!surface) return;
@@ -180,6 +183,15 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       pointerType: event.pointerType,
       longPressed: false,
       edgeDwell: { direction: null, latched: false, timer: null },
+    };
+    const finishReleasedPointer = (released: PointerEvent) => {
+      if (released.pointerId === drag.current?.pointerId) void finishDrag(released, released.type === "pointercancel");
+    };
+    window.addEventListener("pointerup", finishReleasedPointer);
+    window.addEventListener("pointercancel", finishReleasedPointer);
+    drag.current.stopReleaseTracking = () => {
+      window.removeEventListener("pointerup", finishReleasedPointer);
+      window.removeEventListener("pointercancel", finishReleasedPointer);
     };
     if (event.pointerType === "touch") {
       drag.current.longPressTimer = window.setTimeout(() => {
@@ -249,6 +261,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const completed = drag.current;
     if (!completed || completed.pointerId !== event.pointerId || completed.finishing) return;
     completed.finishing = true;
+    completed.stopReleaseTracking?.();
+    completed.stopReleaseTracking = undefined;
     resetEdgeDwell(completed.edgeDwell, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     if (completed.longPressTimer) window.clearTimeout(completed.longPressTimer);
     if (iconRef.current?.hasPointerCapture(event.pointerId)) iconRef.current.releasePointerCapture(event.pointerId);

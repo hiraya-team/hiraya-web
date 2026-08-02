@@ -223,9 +223,14 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   await expect(editor.locator(".cm-content")).toHaveText(contents);
 });
 
-test("lost pointer capture clears icon drag feedback", async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 844 });
+test("a rapid pointer release outside the icon clears drag feedback", async ({ page }) => {
   await openLocalDesktop(page);
+
+  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
 
   const name = `lost-capture-${Date.now()}.txt`;
   await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
@@ -236,16 +241,22 @@ test("lost pointer capture clears icon drag feedback", async ({ page }) => {
   const iconBounds = await icon.boundingBox();
   const desktopBounds = await page.locator(".desktop").boundingBox();
   if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
+  const releasePoint = {
+    x: Math.min(desktopBounds.x + desktopBounds.width - 100, iconBounds.x + iconBounds.width / 2 + 150),
+    y: Math.min(desktopBounds.y + desktopBounds.height - 100, iconBounds.y + iconBounds.height / 2 + 80),
+  };
   await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
   await page.mouse.down();
-  await page.mouse.move(desktopBounds.x + desktopBounds.width / 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
+  await page.mouse.move(releasePoint.x, releasePoint.y, { steps: 2 });
   await expect(icon).toHaveAttribute("data-dragging", "true");
   await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(1);
   const preview = page.locator(".file-icon-snap-preview").first();
-  await preview.evaluate((element) => { (element as HTMLElement).dataset.visible = "true"; });
+  await expect(preview).toHaveAttribute("data-grid");
   await expect(preview).toBeVisible();
 
-  await icon.dispatchEvent("lostpointercapture", { pointerId: 1, clientX: desktopBounds.x + desktopBounds.width / 2, clientY: desktopBounds.y + desktopBounds.height / 2 });
+  await page.evaluate(({ clientX, clientY }) => {
+    window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, clientX, clientY }));
+  }, { clientX: releasePoint.x, clientY: releasePoint.y });
   await expect(preview).not.toHaveAttribute("data-visible");
   await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
   await expect(icon).not.toHaveAttribute("data-dragging");
