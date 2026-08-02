@@ -65,7 +65,9 @@ export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array
     let body = bytes;
     if (/\.(?:m?js|css)$/i.test(path)) {
       let text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-      const pattern = /(?:\b(?:import|export)\s+(?:[^"'();]*?\sfrom\s*)?|\bimport\s*\(\s*|@import\s+(?:url\(\s*)?|url\(\s*)(["']?)([^"')\s;]+)\1/g;
+      const pattern = /\.css$/i.test(path)
+        ? /(?:@import\s+(?:url\(\s*)?|url\(\s*)(["']?)([^"')\s;]+)\1/gi
+        : /(?:\b(?:import|export)\s+(?:[^"'();]*?\sfrom\s*)?|\bimport\s*\(\s*)(["'])([^"']+)\1/g;
       text = text.replace(pattern, (match, _quote: string, reference: string) => {
         const target = resolvePackagePath(reference, path);
         const replacement = target ? resolve(target) : undefined;
@@ -111,9 +113,16 @@ export function materializeAppPackage(pkg: AppPackageInspection, uiRuntime: Sand
       else element.removeAttribute(attribute);
     }
   }
-  for (const element of document.querySelectorAll<HTMLElement>("script:not([src]), style")) {
-    const path = pkg.manifest.entrypoint;
-    element.textContent = (element.textContent ?? "").replace(/(?:\b(?:import|export)\s+(?:[^"'();]*?\sfrom\s*)?|\bimport\s*\(\s*|url\(\s*)(["']?)([^"')\s]+)\1/g, (match, _quote: string, reference: string) => {
+  for (const element of document.querySelectorAll<HTMLElement>('script:not([src])[type="module"]')) {
+    element.textContent = (element.textContent ?? "").replace(/(?:\b(?:import|export)\s+(?:[^"'();]*?\sfrom\s*)?|\bimport\s*\(\s*)(["'])([^"']+)\1/g, (match, _quote: string, reference: string) => {
+      const target = resolvePackagePath(reference, pkg.manifest.entrypoint);
+      const replacement = target ? resolve(target) : undefined;
+      return replacement ? match.replace(reference, replacement) : match;
+    });
+  }
+  for (const element of document.querySelectorAll<HTMLElement>("style")) {
+    element.textContent = (element.textContent ?? "").replace(/(?:@import\s+(?:url\(\s*)?|url\(\s*)(["']?)([^"')\s;]+)\1/gi, (match, _quote: string, reference: string) => {
+      const path = pkg.manifest.entrypoint;
       const target = resolvePackagePath(reference, path);
       const replacement = target ? resolve(target) : undefined;
       return replacement ? match.replace(reference, replacement) : match;
@@ -215,8 +224,10 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
 }
 
 function resolvePackagePath(reference: string, from: string): string | null {
+  const trimmed = reference.trim();
+  if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("data:")) return null;
   try {
-    const url = new URL(reference, `https://package.invalid/${from}`);
+    const url = new URL(trimmed, `https://package.invalid/${from}`);
     if (url.origin !== "https://package.invalid") return null;
     return decodeURIComponent(url.pathname.slice(1));
   } catch { return null; }

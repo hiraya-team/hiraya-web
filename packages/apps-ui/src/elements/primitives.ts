@@ -1,7 +1,7 @@
 import { HirayaBadge } from "./badge";
 import { HirayaButton } from "./button";
 import { HirayaConfirmDialog, HirayaDialog } from "./dialog";
-import { HirayaEmptyState, HirayaPanel, HirayaStatusBar, HirayaToolbar } from "./layout";
+import { HirayaEmptyState, HirayaLoadingState, HirayaPanel, HirayaStatusBar, HirayaToolbar } from "./layout";
 import { HirayaNotice } from "./notice";
 import { defineElement } from "./shared";
 
@@ -12,6 +12,7 @@ export function defineHirayaPrimitives(): void {
   defineElement("hiraya-panel", HirayaPanel);
   defineElement("hiraya-status-bar", HirayaStatusBar);
   defineElement("hiraya-empty-state", HirayaEmptyState);
+  defineElement("hiraya-loading-state", HirayaLoadingState);
   defineElement("hiraya-notice", HirayaNotice);
   defineElement("hiraya-dialog", HirayaDialog);
   defineElement("hiraya-confirm-dialog", HirayaConfirmDialog);

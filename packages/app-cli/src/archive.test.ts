@@ -136,8 +136,27 @@ describe("Hiraya app archives", () => {
   });
 
   test("ignores module syntax inside JavaScript strings", async () => {
-    const bytes = archive({ ...appFiles(), "assets/app.js": strToU8('const tags = "import export from"; const example = \'import {name} from "${module}"\';') });
+    const bytes = archive({ ...appFiles(), "assets/app.js": strToU8('const tags = "import export from"; const example = \'import {name} from "${module}"\'; const fragment = "url(#preview)"; const data = "data:image/svg+xml,x";') });
     await expect(inspectAppArchive(bytes)).resolves.toMatchObject({ manifest: { id: "dev.hiraya.test" } });
+  });
+
+  test("accepts classic scripts without parsing them as modules", async () => {
+    const bytes = archive({ ...appFiles(), "index.html": strToU8('<script src="assets/app.js"></script>'), "assets/app.js": strToU8("with ({ ready: true }) document.body.dataset.ready = String(ready);") });
+    await expect(inspectAppArchive(bytes)).resolves.toMatchObject({ manifest: { id: "dev.hiraya.test" } });
+  });
+
+  test("validates nested dependencies and rejects reachable cycles with their chain", async () => {
+    await expect(inspectAppArchive(archive({
+      ...appFiles(),
+      "assets/app.js": strToU8('import "./nested.js?cache=1#module";'),
+      "assets/nested.js": strToU8('import "./missing.js";'),
+    }))).rejects.toThrow("Module assets/nested.js references missing package file: assets/missing.js");
+
+    await expect(inspectAppArchive(archive({
+      ...appFiles(),
+      "assets/app.css": strToU8('@import "./theme.css"; body { mask: url("#preview"); background: url("data:image/svg+xml,x") }'),
+      "assets/theme.css": strToU8('@import "./app.css";'),
+    }))).rejects.toThrow("assets/app.css -> assets/theme.css -> assets/app.css");
   });
 
   test("rejects oversized metadata, excessive compression ratios, entry counts, and symlinks", async () => {

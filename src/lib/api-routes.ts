@@ -38,6 +38,8 @@ export const API_ROUTES = {
   events: "/api/events",
   health: "/api/health",
   syncHealth: "/api/sync/health",
+  shortLinks: "/api/short-links",
+  shortLink: (slug: string) => `/api/short-links/${encodeURIComponent(slug)}`,
   search: (query: string) => `/api/search?q=${encodeURIComponent(query)}`,
   activity: (query: { q?: string; before?: number; limit: number; desktopId?: string }) => {
     const params = new URLSearchParams();

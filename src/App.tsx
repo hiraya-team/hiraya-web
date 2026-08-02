@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, BookOpenText, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Package, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -142,6 +142,7 @@ import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./
 import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
 import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
+import { createShortLink, deleteShortLink, listShortLinks, updateShortLink } from "./lib/short-links";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
@@ -154,6 +155,7 @@ type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegme
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
 const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
+const WHEEL_SWIPE_END_MS = 160;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
 
@@ -305,6 +307,7 @@ function App({ session }: { session: AuthSession | null }) {
   const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
   const importOperationRef = useRef<ImportOperationContext | null>(null);
   const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null; transitionId?: number } | null>(null);
+  const wheelSwipeRef = useRef<{ deltaX: number; deltaY: number; switched: boolean; timer: number } | null>(null);
   const desktopPressRef = useRef<{
     activated: boolean;
     pointerId: number;
@@ -415,6 +418,7 @@ function App({ session }: { session: AuthSession | null }) {
   const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
+  const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "account-short-links-v1");
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
@@ -647,6 +651,16 @@ function App({ session }: { session: AuthSession | null }) {
       }
     }
   }, [canViewActivity, settingsPage]);
+  useEffect(() => {
+    if (!shortLinksAvailable && settingsPage === "short-links") {
+      const current = window.history.state;
+      if (historySettingsPage(current) === "short-links") window.history.back();
+      else {
+        settingsPageRef.current = "main";
+        setSettingsPage("main");
+      }
+    }
+  }, [settingsPage, shortLinksAvailable]);
   useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
   }, [loading, preferencesLoaded]);
@@ -1585,6 +1599,7 @@ function App({ session }: { session: AuthSession | null }) {
   useEffect(() => () => {
     areaTransitionGenerationRef.current += 1;
     if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    if (wheelSwipeRef.current) window.clearTimeout(wheelSwipeRef.current.timer);
   }, []);
 
   const previousDesktopSizeRef = useRef(desktopSize);
@@ -3345,6 +3360,26 @@ function App({ session }: { session: AuthSession | null }) {
     desktopPressRef.current = press;
   }
 
+  function handleDesktopWheel(event: React.WheelEvent<HTMLElement>) {
+    if (event.ctrlKey || (event.target as Element).closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
+    event.preventDefault();
+    const gesture = wheelSwipeRef.current ?? { deltaX: 0, deltaY: 0, switched: false, timer: 0 };
+    window.clearTimeout(gesture.timer);
+    const lineScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+    gesture.deltaX += event.deltaX * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.width : lineScale);
+    gesture.deltaY += event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.height : lineScale);
+    gesture.timer = window.setTimeout(() => {
+      if (wheelSwipeRef.current === gesture) wheelSwipeRef.current = null;
+    }, WHEEL_SWIPE_END_MS);
+    wheelSwipeRef.current = gesture;
+    if (gesture.switched) return;
+    const axis = swipeAxis(gesture.deltaX, gesture.deltaY);
+    if (!axis) return;
+    gesture.switched = true;
+    const delta = axis === "x" ? gesture.deltaX : gesture.deltaY;
+    goToSegment(adjacentSwipeArea(activeSegment, axis, -delta));
+  }
+
   function handleIconDragAtEdge(entry: DesktopEntry, direction: EdgeDirection) {
     const previousSegment = edgeNavigationRef.current?.targetSegment ?? activeSegment;
     const targetSegment = {
@@ -3787,23 +3822,11 @@ function App({ session }: { session: AuthSession | null }) {
         </button>
       ))}
       <span className="mobile-header-menu__separator" />
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("sync"))}>
-        <CloudCheck /> Connection &amp; Offline
-      </button>
       <button type="button" onClick={() => launchMobileDestination(dismiss, () => openSettingsWindow())}>
         <GearSix /> Settings
       </button>
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => openHelp())}>
-        <BookOpenText /> Help
-      </button>
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("shortcuts"))}>
-        <Keyboard /> Keyboard shortcuts
-      </button>
       {canOpenTrash && <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("trash"))}>
         <Trash /> Trash
-      </button>}
-      {session && activeDesktop?.capabilities.manage && <button type="button" disabled={!canManage} title={!canManage ? "Connect to manage sharing." : undefined} onClick={() => launchMobileDestination(dismiss, () => setSharingOpen(true))}>
-        <ShareNetwork /> Share desktop
       </button>}
       {session && <>
         <span className="mobile-header-menu__separator" />
@@ -3954,6 +3977,7 @@ function App({ session }: { session: AuthSession | null }) {
         onPointerMove={handleDesktopPointerMove}
         onPointerUp={(event) => finishDesktopSwipe(event)}
         onPointerCancel={(event) => finishDesktopSwipe(event, true)}
+        onWheel={handleDesktopWheel}
       >
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
@@ -4112,7 +4136,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4219,6 +4243,10 @@ function App({ session }: { session: AuthSession | null }) {
                         localPreferencesLoaded={externalEmbeddedPreviews !== null}
                         searchAllDesktops={searchAllDesktops}
                         desktopSearchAvailable={desktopSearchAvailable}
+                        shortLinksAvailable={shortLinksAvailable}
+                        shortLinkBaseUrl={session?.shortLinkBaseUrl ?? ""}
+                        sharingAvailable={Boolean(session && activeDesktop?.capabilities.manage)}
+                        sharingDisabled={!canManage}
                         installState={installState}
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
@@ -4244,6 +4272,11 @@ function App({ session }: { session: AuthSession | null }) {
                         onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
                         onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
                         onResetFileAssociations={() => void clearAssociations()}
+                        onListShortLinks={listShortLinks}
+                        onCreateShortLink={createShortLink}
+                        onUpdateShortLink={updateShortLink}
+                        onDeleteShortLink={deleteShortLink}
+                        onConfirmShortLinkDelete={(link) => requestConfirmation({ title: `Delete ${link.slug}?`, message: `Delete “${link.url}”? Existing visits will stop redirecting.`, confirmLabel: "Delete link", danger: true })}
                         onListActivity={
                           canViewActivity
                             ? (query) => listActivity({ ...query, ...(activityScope === "desktop" ? { desktopId: activeDesktopId } : {}) })
@@ -4297,6 +4330,8 @@ function App({ session }: { session: AuthSession | null }) {
                         onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
                         onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
                         onOpenGettingStarted={() => setShowGettingStarted(true)}
+                        onOpenKeyboardShortcuts={() => setActivePanel("shortcuts")}
+                        onOpenSharing={() => setSharingOpen(true)}
                         onInstall={() => void installPwa()}
                         onOpenOfflineStorage={() => setActivePanel("offline")}
                         onOpenHelp={openHelp}

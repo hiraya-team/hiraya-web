@@ -21,6 +21,14 @@ describe("session bootstrap", () => {
     expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "accessible-desktops-v1" } }).capabilities.desktopSearch).toBe("accessible-desktops-v1");
     expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "legacy" } })).toThrow("desktop search");
     expect(() => parseAuthSession({ ...authority, schemaVersion: 2, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("Update Hiraya");
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" })).toMatchObject({ capabilities: { shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" });
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "https://go.hiraya.sh" }).shortLinkBaseUrl).toBe("https://go.hiraya.sh");
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "http://127.0.0.1:8080/r" }).shortLinkBaseUrl).toBe("http://127.0.0.1:8080/r");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "legacy" }, shortLinkBaseUrl: "/r" })).toThrow("short-link capability");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" } })).toThrow("incomplete short-link");
+    for (const shortLinkBaseUrl of ["r", "//example.test/r", "/r?from=session", "/r#links", "/\\example.test/r", "https:example.test/r", "https://user:secret@example.test/r", "https://example.test/r?from=session", "https://example.test/r#links", "https://example.test\\@evil.test/r", "ftp://example.test/r"]) {
+      expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl })).toThrow("short-link base URL");
+    }
   });
 
   test("keeps login returns root-relative", () => {

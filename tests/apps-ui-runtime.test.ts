@@ -21,7 +21,7 @@ describe("host apps UI runtime", () => {
     expect(runtime.abi).toBe(1);
     expect(runtime.styles).toContain(":where(.hiraya-app)");
     expect(defined).toEqual([
-      "hiraya-button", "hiraya-badge", "hiraya-toolbar", "hiraya-panel", "hiraya-status-bar", "hiraya-empty-state",
+      "hiraya-button", "hiraya-badge", "hiraya-toolbar", "hiraya-panel", "hiraya-status-bar", "hiraya-empty-state", "hiraya-loading-state",
       "hiraya-notice", "hiraya-dialog", "hiraya-confirm-dialog", "hiraya-popover", "hiraya-menu-item", "hiraya-menu",
       "hiraya-submenu", "hiraya-action-sheet", "hiraya-selection-toolbar", "hiraya-image-viewer",
     ]);

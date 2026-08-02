@@ -9,4 +9,7 @@ button:hover:not(:disabled) { border-color: var(--hiraya-accent); }
 button:disabled { cursor: not-allowed; opacity: .55; }
 :focus-visible { outline: 2px solid var(--hiraya-focus); outline-offset: 2px; }
 .app-shell { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; min-height: 100vh; }
+.app-content { display: grid; min-width: 0; min-height: 0; isolation: isolate; }
+.app-content > * { min-width: 0; min-height: 0; grid-area: 1 / 1; }
+.app-content > hiraya-loading-state { z-index: 1; background: var(--hiraya-background); }
 .title { min-width: 0; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }

@@ -1,5 +1,5 @@
 import type { FileHandle, FolderHandle, HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, LatestOperation, relativeReader, required } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, LatestOperation, relativeReader, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { renderMarkdown } from "./markdown";
 import "./style.css";
 
@@ -9,6 +9,8 @@ const APP_ID = "app.hiraya.markdown-preview";
 const preview = required<HTMLElement>("#preview");
 const status = required<HTMLElement>("#status");
 const openButton = required<HirayaButton>("#open");
+const content = required<HTMLElement>("#content");
+const loading = required<HTMLElement>("#loading");
 const contentOperations = new LatestOperation();
 const renderOperations = new LatestOperation();
 const linkOperations = new LatestOperation();
@@ -32,8 +34,8 @@ async function start() {
       externalEmbeddedPreviews = capabilities.externalEmbeddedPreviews;
        if (currentRelativeHandle) void renderDocument(renderOperations.begin());
     });
-    if (app.launch.files[0]) await load(app.launch.files[0]); else status.textContent = "Ready.";
-  } catch (error) { fail(error, "Markdown Preview could not start."); }
+    if (app.launch.files[0]) await load(app.launch.files[0]); else { setAppLoading(content, preview, loading); status.textContent = "Ready."; }
+  } catch (error) { setAppLoading(content, preview, loading); fail(error, "Markdown Preview could not start."); }
 }
 async function open() {
   const generation = contentOperations.begin();
@@ -41,14 +43,20 @@ async function open() {
   catch (error) { if (contentOperations.isLatest(generation)) fail(error, "Could not open the document."); }
 }
 async function load(handle: FileHandle, generation = contentOperations.begin()) {
-  const entry = await hiraya.files.stat(handle); if (!contentOperations.isLatest(generation)) return; if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const { data } = await hiraya.files.readAll(handle); if (!contentOperations.isLatest(generation)) return;
-  currentSource = new TextDecoder().decode(data);
-  currentRelativeHandle = relativeFolder ?? handle;
-  await renderDocument(renderOperations.begin()); if (!contentOperations.isLatest(generation)) return;
-  required("#title").textContent = entry.metadata.name;
-  await hiraya.window.setTitle(`${entry.metadata.name} - Markdown Preview`);
-  status.textContent = "Preview ready. Relative images are supported by this host.";
+  setAppLoading(content, preview, loading, "Opening file...");
+  try {
+    const entry = await hiraya.files.stat(handle); if (!contentOperations.isLatest(generation)) return; if (entry.kind !== "file") throw new Error("The selected item is not a file.");
+    setAppLoading(content, preview, loading, `Opening ${entry.metadata.name}...`);
+    const { data } = await hiraya.files.readAll(handle); if (!contentOperations.isLatest(generation)) return;
+    currentSource = new TextDecoder().decode(data);
+    currentRelativeHandle = relativeFolder ?? handle;
+    await renderDocument(renderOperations.begin()); if (!contentOperations.isLatest(generation)) return;
+    required("#title").textContent = entry.metadata.name;
+    await hiraya.window.setTitle(`${entry.metadata.name} - Markdown Preview`);
+    status.textContent = "Preview ready. Relative images are supported by this host.";
+  } finally {
+    if (contentOperations.isLatest(generation)) setAppLoading(content, preview, loading);
+  }
 }
 async function renderDocument(generation = renderOperations.begin()) {
   if (!currentRelativeHandle || !renderOperations.isLatest(generation)) return;

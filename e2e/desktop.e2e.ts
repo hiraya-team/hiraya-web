@@ -167,33 +167,103 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 });
 
-test("lost pointer capture clears icon drag feedback", async ({ page }) => {
+test("opens an imported RTF document in the document viewer", async ({ page }) => {
+  const pageErrors: string[] = [];
+  const cycleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().includes("Package asset dependency cycle")) cycleErrors.push(message.text());
+  });
+  await openLocalDesktop(page);
+  const name = `preview-${Date.now()}.rtf`;
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({
+    name,
+    mimeType: "application/rtf",
+    buffer: Buffer.from(String.raw`{\rtf1\ansi\deff0{\fonttbl{\f0 Calibri;}}\viewkind4\uc1\pard\f0\fs24 Hiraya RTF preview smoke.\par}`),
+  });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await expect(icon).toBeVisible();
+  await icon.dblclick();
+  const viewer = page.getByRole("dialog", { name: "Document & Media Viewer" });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.frameLocator("iframe").getByLabel("Document preview")).toContainText("Hiraya RTF preview smoke.", { timeout: 30_000 });
+  await expect(viewer.frameLocator("iframe").getByText("application/rtf", { exact: false })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+  expect(cycleErrors).toEqual([]);
+});
+
+test("undo after opening a text file preserves its loaded contents", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
+  const name = `undo-open-${Date.now()}.txt`;
+  const contents = "Loaded text must not be undoable.";
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
 
-  const name = `lost-capture-${Date.now()}.txt`;
-  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await fileActions.getByRole("button", { name: "New text file" }).click();
   await page.getByLabel("File name").fill(name);
   await page.getByRole("button", { name: "Create file" }).click();
   const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.dblclick();
 
-  const iconBounds = await icon.boundingBox();
-  const desktopBounds = await page.locator(".desktop").boundingBox();
-  if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
-  await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(desktopBounds.x + desktopBounds.width / 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
-  await expect(icon).toHaveAttribute("data-dragging", "true");
-  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(1);
-  const preview = page.locator(".file-icon-snap-preview").first();
-  await preview.evaluate((element) => { (element as HTMLElement).dataset.visible = "true"; });
-  await expect(preview).toBeVisible();
+  let app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  let editor = app.frameLocator("iframe");
+  await editor.locator(".cm-content").fill(contents);
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await app.getByRole("button", { name: `Close ${name} - Text Editor` }).click();
 
-  await icon.dispatchEvent("lostpointercapture", { pointerId: 1, clientX: desktopBounds.x + desktopBounds.width / 2, clientY: desktopBounds.y + desktopBounds.height / 2 });
-  await expect(preview).not.toHaveAttribute("data-visible");
-  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
-  await expect(icon).not.toHaveAttribute("data-dragging");
-  await page.mouse.up();
+  await icon.dblclick();
+  app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  editor = app.frameLocator("iframe");
+  await expect(editor.locator(".cm-content")).toHaveText(contents);
+  await editor.locator(".cm-content").focus();
+  await page.keyboard.press("Control+z");
+  await expect(editor.locator(".cm-content")).toHaveText(contents);
+});
+
+test("rapid icon releases cannot accumulate snap previews", async ({ page }) => {
+  await openLocalDesktop(page);
+
+  await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and windows/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  const names = [`capture-race-one-${Date.now()}.txt`, `capture-race-two-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 900, y: 500 } });
+  }
+  for (const name of names) {
+    const icon = page.locator(".file-icon").filter({ hasText: name });
+    await icon.click();
+    await icon.evaluate((element) => {
+      element.releasePointerCapture = () => { throw new DOMException("Pointer capture was already released.", "NotFoundError"); };
+    });
+
+    const iconBounds = await icon.boundingBox();
+    const desktopBounds = await page.locator(".desktop").boundingBox();
+    if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
+    const releasePoint = {
+      x: Math.min(desktopBounds.x + desktopBounds.width - 100, iconBounds.x + iconBounds.width / 2 + 150),
+      y: Math.min(desktopBounds.y + desktopBounds.height - 100, iconBounds.y + iconBounds.height / 2 + 80),
+    };
+    await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(releasePoint.x, releasePoint.y, { steps: 2 });
+    await expect(icon).toHaveAttribute("data-dragging", "true");
+    await expect(page.locator(".file-icon-snap-preview[data-visible]")).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator(".file-icon-snap-preview[data-visible]")).toHaveCount(0);
+    await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
+    await expect(icon).not.toHaveAttribute("data-dragging");
+  }
 });
 
 test("moves selected items between the desktop and folder explorer", async ({ page }) => {
@@ -332,6 +402,36 @@ test("edge dwell guards item and window moves between areas", async ({ page }) =
   await page.waitForTimeout(800);
   await expect(page).toHaveURL(/\/areas\/0\/0(?:\/|$)/);
   await page.mouse.up();
+});
+
+test("desktop wheel gestures switch one area while app scrolling stays native", async ({ page }) => {
+  await openLocalDesktop(page);
+  const desktop = page.locator(".desktop");
+
+  for (let step = 0; step < 4; step += 1) await desktop.dispatchEvent("wheel", { deltaX: 4 });
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await page.waitForTimeout(200);
+
+  await desktop.dispatchEvent("wheel", { deltaY: 20 });
+  await expect(page).toHaveURL(/\/areas\/1\/1$/);
+  await page.waitForTimeout(200);
+  await desktop.dispatchEvent("wheel", { deltaY: -20 });
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await page.waitForTimeout(200);
+  await desktop.dispatchEvent("wheel", { deltaX: -20 });
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await page.waitForTimeout(200);
+
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Settings");
+  await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.dispatchEvent("wheel", { deltaY: 100 });
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
+
+  await desktop.dispatchEvent("wheel", { deltaY: 100, ctrlKey: true });
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
 });
 
 test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {
