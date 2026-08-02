@@ -96,7 +96,12 @@ function remoteStorage() {
       return current;
     },
     bindOutboxCatalog: async () => undefined,
-    readCachedFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number) => cached.get(`${desktopId}:${catalogId}:${id}:${contentRevision}`) ?? null,
+    readCachedFile: async (desktopId: string, catalogId: string, id: string, contentRevision?: number) => {
+      const content = outbox.filter((record) => record.desktopId === desktopId).map((record) => pending.get(record.operationId)?.get(id)).filter((candidate): candidate is Blob => candidate !== undefined).at(-1);
+      const entry = current.entries.find((candidate) => candidate.id === id && candidate.kind === "file");
+      if (content && entry) return new File([content], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
+      return cached.get(`${desktopId}:${catalogId}:${id}:${contentRevision}`) ?? null;
+    },
     cacheRemoteFile: async (desktopId: string, catalogId: string, id: string, contentRevision: number, _sha256: string, content: Blob) => {
       const entry = current.entries.find((candidate) => candidate.id === id && candidate.kind === "file");
       if (!entry || current.sync.catalogId !== catalogId || current.sync.contentRevisions[id] !== contentRevision || content.size !== entry.size) return null;
@@ -305,6 +310,26 @@ describe("canonical synchronization", () => {
     expect(records).toHaveLength(1);
     expect(records[0].operation).toEqual({ schemaVersion: 1, kind: "create", entries });
     expect(await storage.readPendingContent(records[0].operationId, "import-file").then((content) => content.text())).toBe("note");
+    await engine.stop();
+  });
+
+  test("opens a staged import before its upload is acknowledged", async () => {
+    const storage = remoteStorage();
+    const requests: string[] = [];
+    const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      throw new TypeError("offline");
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+
+    const [uploaded] = await engine.importFiles([new File(["local"], "local.txt", { type: "text/plain" })], null, [{ x: 20, y: 20 }]);
+
+    expect(await engine.readFile(uploaded.id).then((file) => file.text())).toBe("local");
+    expect(requests).toEqual(["/api/desktops/desk"]);
+    blocked.release();
+    await blocked.pending;
     await engine.stop();
   });
 

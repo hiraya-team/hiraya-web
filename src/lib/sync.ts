@@ -1316,9 +1316,9 @@ export class SyncEngine {
     const contentRevision = this.current().sync.contentRevisions[id];
     const generation = this.generation;
     const signal = this.syncAbort?.signal;
-    if (!Number.isSafeInteger(contentRevision)) throw new Error("That file has invalid synchronization metadata.");
     const cached = await this.storage.readCachedFile(desktopId, catalogId, id, contentRevision);
     if (cached) return cached;
+    if (!Number.isSafeInteger(contentRevision)) throw new Error("That file has invalid synchronization metadata.");
     if (this.status === "offline") throw new VirtualFileUnavailableError();
 
     const key = `${desktopId}\n${catalogId}\n${id}\n${contentRevision}`;

@@ -840,7 +840,7 @@ async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
   return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
 }
 
-async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<File | null> {
+async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision?: number): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = getFileEntry(manifest.entries, id);
   const pendingContent = (await callDatabase("readOutbox", undefined, null)).filter((record) =>
