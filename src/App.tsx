@@ -142,6 +142,7 @@ import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./
 import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
 import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
+import { createShortLink, deleteShortLink, listShortLinks, updateShortLink } from "./lib/short-links";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
@@ -417,6 +418,7 @@ function App({ session }: { session: AuthSession | null }) {
   const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
+  const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "account-short-links-v1");
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
@@ -4136,7 +4138,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4243,6 +4245,8 @@ function App({ session }: { session: AuthSession | null }) {
                         localPreferencesLoaded={externalEmbeddedPreviews !== null}
                         searchAllDesktops={searchAllDesktops}
                         desktopSearchAvailable={desktopSearchAvailable}
+                        shortLinksAvailable={shortLinksAvailable}
+                        shortLinkBaseUrl={session?.shortLinkBaseUrl ?? ""}
                         installState={installState}
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
@@ -4268,6 +4272,11 @@ function App({ session }: { session: AuthSession | null }) {
                         onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
                         onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
                         onResetFileAssociations={() => void clearAssociations()}
+                        onListShortLinks={listShortLinks}
+                        onCreateShortLink={createShortLink}
+                        onUpdateShortLink={updateShortLink}
+                        onDeleteShortLink={deleteShortLink}
+                        onConfirmShortLinkDelete={(link) => requestConfirmation({ title: `Delete ${link.slug}?`, message: `Delete “${link.url}”? Existing visits will stop redirecting.`, confirmLabel: "Delete link", danger: true })}
                         onListActivity={
                           canViewActivity
                             ? (query) => listActivity({ ...query, ...(activityScope === "desktop" ? { desktopId: activeDesktopId } : {}) })
