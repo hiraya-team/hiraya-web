@@ -370,18 +370,18 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
-  test("embeds package dependencies for an opaque sandbox origin", () => {
+  test("embeds only reachable package dependencies for an opaque sandbox origin", () => {
     const encoder = new TextEncoder();
     const files = new Map([
       ["index.html", encoder.encode("<!doctype html>")],
-      ["assets/app.js", encoder.encode('import "./dependency.js";')],
-      ["assets/dependency.js", encoder.encode("globalThis.loaded = true;")],
-      ["assets/app.css", encoder.encode('@import "./theme.css"; body { background: url("./mark.svg") }')],
+      ["assets/app.js", encoder.encode('import "./nested/dependency.js?cache=1#module"; const fragment = "url(#preview)";')],
+      ["assets/nested/dependency.js", encoder.encode("globalThis.loaded = true;")],
+      ["assets/app.css", encoder.encode('@import "./theme.css?cache=1"; body { mask: url("#preview"); background: url("data:image/svg+xml,x"), url("./mark.svg#mark") }')],
       ["assets/theme.css", encoder.encode("body { color: CanvasText; }")],
       ["assets/mark.svg", encoder.encode("<svg xmlns=\"http://www.w3.org/2000/svg\"/>")],
     ]);
     const resolve = createPackageAssetResolver(files, "index.html");
-    const dependencyURL = resolve("assets/dependency.js")!;
+    const dependencyURL = resolve("assets/nested/dependency.js")!;
     const markURL = resolve("assets/mark.svg")!;
     const themeURL = resolve("assets/theme.css")!;
     const script = atob(resolve("assets/app.js")!.split(",", 2)[1]);
@@ -391,8 +391,22 @@ describe("app runtime", () => {
     expect(dependencyURL).toStartWith("data:text/javascript;base64,");
     expect(markURL).toStartWith("data:image/svg+xml;base64,");
     expect(script).toContain(dependencyURL);
+    expect(script).toContain('"url(#preview)"');
     expect(stylesheet).toContain(markURL);
     expect(stylesheet).toContain(themeURL);
+    expect(stylesheet).toContain('url("#preview")');
+    expect(stylesheet).toContain('url("data:image/svg+xml,x")');
+    expect(resolve("assets/missing.js")).toBeUndefined();
+  });
+
+  test("rejects genuine package dependency cycles", () => {
+    const encoder = new TextEncoder();
+    const resolve = createPackageAssetResolver(new Map([
+      ["index.html", encoder.encode("<!doctype html>")],
+      ["assets/one.js", encoder.encode('import "./two.js";')],
+      ["assets/two.js", encoder.encode('import "./one.js";')],
+    ]), "index.html");
+    expect(() => resolve("assets/one.js")).toThrow("Package asset dependency cycle is not supported: assets/one.js");
   });
 
   test("recognizes only the exact package extension", () => {

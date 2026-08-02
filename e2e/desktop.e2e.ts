@@ -167,6 +167,34 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 });
 
+test("opens an imported RTF document in the document viewer", async ({ page }) => {
+  const pageErrors: string[] = [];
+  const cycleErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => {
+    if (message.type() === "error" && message.text().includes("Package asset dependency cycle")) cycleErrors.push(message.text());
+  });
+  await openLocalDesktop(page);
+  const name = `preview-${Date.now()}.rtf`;
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({
+    name,
+    mimeType: "application/rtf",
+    buffer: Buffer.from(String.raw`{\rtf1\ansi\deff0{\fonttbl{\f0 Calibri;}}\viewkind4\uc1\pard\f0\fs24 Hiraya RTF preview smoke.\par}`),
+  });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await expect(icon).toBeVisible();
+  await icon.dblclick();
+  const viewer = page.getByRole("dialog", { name: "Document & Media Viewer" });
+  await expect(viewer).toBeVisible();
+  await expect(viewer.frameLocator("iframe").getByLabel("Document preview")).toContainText("Hiraya RTF preview smoke.", { timeout: 30_000 });
+  await expect(viewer.frameLocator("iframe").getByText("application/rtf", { exact: false })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+  expect(cycleErrors).toEqual([]);
+});
+
 test("undo after opening a text file preserves its loaded contents", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);

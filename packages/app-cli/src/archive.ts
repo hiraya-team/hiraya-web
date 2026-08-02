@@ -194,15 +194,16 @@ function assertReference(reference: string, fromPath: string, label: string, fil
   return path;
 }
 
-function validateCss(css: string, path: string, files: ReadonlyMap<string, Uint8Array>) {
+function validateCss(css: string, path: string, files: ReadonlyMap<string, Uint8Array>, visit?: (path: string) => void) {
   const references = css.matchAll(/@import\s+(?:url\(\s*)?(?:["']([^"']+)["']|([^"')\s;]+))|url\(\s*(?:["']([^"']+)["']|([^"')\s]+))/gi);
   for (const match of references) {
     const reference = match[1] ?? match[2] ?? match[3] ?? match[4];
-    assertReference(reference, path, `Stylesheet ${path}`, files);
+    const target = assertReference(reference, path, `Stylesheet ${path}`, files);
+    if (target !== null) visit?.(target);
   }
 }
 
-function validateModule(source: string, path: string, files: ReadonlyMap<string, Uint8Array>) {
+function validateModule(source: string, path: string, files: ReadonlyMap<string, Uint8Array>, followDependency?: (path: string) => void) {
   let module: unknown;
   try {
     module = parseModule(source, { ecmaVersion: "latest", sourceType: "module" });
@@ -216,12 +217,26 @@ function validateModule(source: string, path: string, files: ReadonlyMap<string,
     const type = node.type;
     if (type === "ImportDeclaration" || type === "ExportNamedDeclaration" || type === "ExportAllDeclaration" || type === "ImportExpression") {
       const source = node.source as Record<string, unknown> | null;
-      if (source?.type === "Literal" && typeof source.value === "string") assertReference(source.value, path, `Module ${path}`, files);
+      if (source?.type === "Literal" && typeof source.value === "string") {
+        const target = assertReference(source.value, path, `Module ${path}`, files);
+        if (target !== null) followDependency?.(target);
+      }
       else if (type === "ImportExpression") throw new TypeError(`Module ${path} contains a non-literal dynamic import.`);
     }
     Object.values(node).forEach(visit);
   };
   visit(module);
+}
+
+function validateAssetDependencies(path: string, files: ReadonlyMap<string, Uint8Array>, stack: string[] = [], validated = new Set<string>()) {
+  const cycleStart = stack.indexOf(path);
+  if (cycleStart >= 0) throw new TypeError(`Package asset dependency cycle is not supported: ${[...stack.slice(cycleStart), path].join(" -> ")}.`);
+  if (validated.has(path)) return;
+  const nextStack = [...stack, path];
+  const visit = (target: string) => validateAssetDependencies(target, files, nextStack, validated);
+  if (/\.m?js$/i.test(path)) validateModule(decodeText(files.get(path)!, `Module ${path}`), path, files, visit);
+  else if (/\.css$/i.test(path)) validateCss(decodeText(files.get(path)!, `Stylesheet ${path}`), path, files, visit);
+  validated.add(path);
 }
 
 function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap<string, Uint8Array>, depth = 0) {
@@ -246,10 +261,10 @@ function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap
       const src = attribute(node, "src");
       if (src !== undefined) {
         const scriptPath = assertReference(src, entrypoint, "Script", files);
-        if (type === "module" && scriptPath !== null) validateModule(decodeText(files.get(scriptPath)!, `Module ${scriptPath}`), scriptPath, files);
+        if (scriptPath !== null) validateAssetDependencies(scriptPath, files);
       } else if (type === "module") {
         const source = node.childNodes?.map((child) => child.value ?? "").join("") ?? "";
-        validateModule(source, entrypoint, files);
+        validateModule(source, entrypoint, files, (path) => validateAssetDependencies(path, files));
       } else if (type === "importmap") {
         const source = node.childNodes?.map((child) => child.value ?? "").join("") ?? "";
         let importMap: unknown;
@@ -267,13 +282,12 @@ function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap
       const as = (attribute(node, "as") ?? "").toLowerCase();
       if (href !== undefined && (rel.some((item) => item === "stylesheet" || item === "modulepreload") || (rel.includes("preload") && (as === "script" || as === "style")))) {
         const assetPath = assertReference(href, entrypoint, "Linked style or module", files);
-        if (assetPath !== null && (rel.includes("stylesheet") || as === "style")) validateCss(decodeText(files.get(assetPath)!, `Stylesheet ${assetPath}`), assetPath, files);
-        if (assetPath !== null && rel.includes("modulepreload")) validateModule(decodeText(files.get(assetPath)!, `Module ${assetPath}`), assetPath, files);
+        if (assetPath !== null && (rel.includes("stylesheet") || as === "style" || rel.includes("modulepreload"))) validateAssetDependencies(assetPath, files);
       }
     }
-    if (tag === "style") validateCss(node.childNodes?.map((child) => child.value ?? "").join("") ?? "", entrypoint, files);
+    if (tag === "style") validateCss(node.childNodes?.map((child) => child.value ?? "").join("") ?? "", entrypoint, files, (path) => validateAssetDependencies(path, files));
     const inlineStyle = attribute(node, "style");
-    if (inlineStyle !== undefined) validateCss(inlineStyle, entrypoint, files);
+    if (inlineStyle !== undefined) validateCss(inlineStyle, entrypoint, files, (path) => validateAssetDependencies(path, files));
     if (tag === "iframe" || tag === "frame") {
       const src = attribute(node, "src");
       if (src !== undefined) assertReference(src, entrypoint, "Frame", files);

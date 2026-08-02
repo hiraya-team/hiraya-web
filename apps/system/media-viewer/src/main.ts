@@ -1,6 +1,7 @@
 import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
 import { connectSystemApp, describeError, formatBytes, LatestOperation, required } from "@hiraya/system-apps-shared";
 import { DOCX_MIME, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKind, RTF_MIMES } from "./document-types";
+import { renderParsedDocument } from "./document-preview";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
@@ -60,7 +61,6 @@ async function load(handle: FileHandle, generation = operations.begin()) {
   let element: HTMLElement;
   let nextUrl: string | null = null;
   if (documentKind) {
-    const { renderParsedDocument } = await import("./document-preview");
     element = await renderParsedDocument(documentKind, data);
   } else {
     nextUrl = URL.createObjectURL(new Blob([data], { type: mimeType }));
