@@ -1,6 +1,6 @@
 export type EdgeDirection = "left" | "right" | "up" | "down";
 
-export const EDGE_DWELL_MS = 1_250;
+export const EDGE_DWELL_MS = 700;
 
 export type EdgeDwellState = {
   direction: EdgeDirection | null;

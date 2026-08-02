@@ -224,7 +224,7 @@ describe("accessibility regressions", () => {
     expect(resizeEffect).not.toContain("selectedEntry");
   });
 
-  test("only the active desktop icon segment is keyboard and accessibility reachable", async () => {
+  test("only the active or actively dragged desktop icon segment is reachable", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const markup = renderToStaticMarkup(<FileIcon
       entry={{ kind: "folder", id: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }}
@@ -244,8 +244,9 @@ describe("accessibility regressions", () => {
     />);
 
     expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
-    expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive}');
-    expect(app).toContain("interactive={segmentActive}");
+    expect(app).toContain("const segmentInteractive = segmentActive || segmentDragging;");
+    expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive}');
+    expect(app).toContain("interactive={segmentInteractive}");
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain('inert=""');

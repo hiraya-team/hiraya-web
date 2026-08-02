@@ -307,16 +307,17 @@ test("edge dwell guards item and window moves between areas", async ({ page }) =
   await page.mouse.move(desktopBounds.x + 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
   const indicator = page.locator('.desktop-edge-dwell[data-direction="left"]');
   await expect(indicator).toBeVisible();
-  await expect(indicator.locator(".desktop-edge-dwell__rail > span")).toHaveCSS("animation-duration", "1.25s");
-  await page.waitForTimeout(600);
+  await expect(indicator.locator(".desktop-edge-dwell__rail > span")).toHaveCSS("animation-duration", "0.7s");
+  await page.waitForTimeout(300);
   await expect(page).not.toHaveURL(/\/areas\/-1\/0$/);
 
   await page.mouse.move(desktopBounds.x + desktopBounds.width / 2, desktopBounds.y + desktopBounds.height / 2, { steps: 4 });
   await expect(indicator).toHaveCount(0);
   await page.mouse.move(desktopBounds.x + 2, desktopBounds.y + desktopBounds.height / 2, { steps: 4 });
   await expect(indicator).toBeVisible();
-  await page.waitForTimeout(1_350);
+  await page.waitForTimeout(800);
   await expect(page).toHaveURL(/\/areas\/-1\/0$/);
+  await expect(folder).toBeVisible();
   await page.mouse.up();
 
   await folder.dblclick();
@@ -328,7 +329,7 @@ test("edge dwell guards item and window moves between areas", async ({ page }) =
   await page.mouse.down();
   await page.mouse.move(desktopBounds.x + desktopBounds.width - 2, desktopBounds.y + desktopBounds.height / 2, { steps: 12 });
   await expect(page.locator('.desktop-edge-dwell[data-direction="right"]')).toBeVisible();
-  await page.waitForTimeout(1_350);
+  await page.waitForTimeout(800);
   await expect(page).toHaveURL(/\/areas\/0\/0(?:\/|$)/);
   await page.mouse.up();
 });

@@ -3983,8 +3983,10 @@ function App({ session }: { session: AuthSession | null }) {
           {responsive.segments.map((desktopSegment) => {
             const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
             const segmentActive = desktopSegment.key === activeSegmentKey;
-            const segmentVisible = segmentActive || transitionSegmentKeys.has(desktopSegment.key);
-            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentActive || undefined} inert={!segmentActive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
+            const segmentDragging = desktopSegment.entries.some((entry) => entry.id === edgeNavigationRef.current?.draftEntryId);
+            const segmentInteractive = segmentActive || segmentDragging;
+            const segmentVisible = segmentInteractive || transitionSegmentKeys.has(desktopSegment.key);
+            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
             {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
               const renderedEntry = { ...entry, position: projectedPosition };
@@ -3993,7 +3995,7 @@ function App({ session }: { session: AuthSession | null }) {
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
-                  interactive={segmentActive}
+                  interactive={segmentInteractive}
                   offlineAvailability={offlineModel.entries[entry.id]}
                   selected={selectedIdSet.has(entry.id)}
                   onSelect={(event) =>
