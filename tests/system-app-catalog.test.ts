@@ -22,4 +22,17 @@ describe("bundled system app catalog", () => {
     expect(controller).not.toContain("systemAppArchiveUrl");
     expect(launcher).toContain('import("@hiraya/app-cli")');
   });
+
+  test("uses the shared loading surface in every bundled file app", async () => {
+    await Promise.all(SYSTEM_APP_SLUGS.map(async (slug) => {
+      const root = join(import.meta.dir, "..", "apps", "system", slug);
+      const [html, source] = await Promise.all([
+        readFile(join(root, "index.html"), "utf8"),
+        readFile(join(root, "src", "main.ts"), "utf8"),
+      ]);
+      expect(html).toContain("<hiraya-loading-state");
+      expect(html).toContain('aria-busy="true"');
+      expect(source).toContain("setAppLoading");
+    }));
+  });
 });

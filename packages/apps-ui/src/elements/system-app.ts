@@ -1,5 +1,5 @@
 import { HirayaButton } from "./button";
-import { HirayaEmptyState, HirayaStatusBar, HirayaToolbar } from "./layout";
+import { HirayaEmptyState, HirayaLoadingState, HirayaStatusBar, HirayaToolbar } from "./layout";
 import { defineElement } from "./shared";
 
 export function defineHirayaSystemAppElements(): void {
@@ -7,4 +7,5 @@ export function defineHirayaSystemAppElements(): void {
   defineElement("hiraya-toolbar", HirayaToolbar);
   defineElement("hiraya-status-bar", HirayaStatusBar);
   defineElement("hiraya-empty-state", HirayaEmptyState);
+  defineElement("hiraya-loading-state", HirayaLoadingState);
 }

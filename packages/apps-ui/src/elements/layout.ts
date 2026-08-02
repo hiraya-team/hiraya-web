@@ -5,6 +5,9 @@ export class HirayaToolbar extends HTMLElementBase {
   readonly #toolbar: HTMLElement;
   constructor() {
     super();
+    this.setAttribute("role", "status");
+    this.setAttribute("aria-live", "polite");
+    this.setAttribute("aria-atomic", "true");
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${elementStyles}
       :host { display: block; min-inline-size: 0; }
@@ -84,5 +87,23 @@ export class HirayaEmptyState extends HTMLElementBase {
       .title { color: var(--hiraya-text, #f5eedc); font-size: 1.1rem; font-weight: var(--hiraya-font-weight-control, 650); }
       .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--hiraya-space-2, .5rem); margin-block-start: var(--hiraya-space-2, .5rem); }
     </style><section class="content" part="content"><slot name="icon"></slot><div class="title" part="title"><slot name="title"></slot></div><div part="description"><slot></slot></div><div class="actions" part="actions"><slot name="actions"></slot></div></section>`;
+  }
+}
+
+export class HirayaLoadingState extends HTMLElementBase {
+  constructor() {
+    super();
+    const root = this.attachShadow({ mode: "open" });
+    root.innerHTML = `<style>${elementStyles}
+      :host { display: grid; min-block-size: 14rem; padding: 2rem; place-content: center; color: var(--hiraya-text-muted, #aabbb4); text-align: center; }
+      .content { display: grid; justify-items: center; gap: var(--hiraya-space-2, .5rem); max-inline-size: 32rem; }
+      .indicator { display: grid; inline-size: 2.75rem; gap: .3rem; margin-block-end: var(--hiraya-space-2, .5rem); }
+      .indicator span { block-size: .22rem; border-radius: 999px; background: var(--hiraya-accent, #e2aa52); animation: hiraya-loading 1.1s ease-in-out infinite; }
+      .indicator span:nth-child(2) { inline-size: 72%; animation-delay: .14s; }
+      .indicator span:nth-child(3) { inline-size: 86%; animation-delay: .28s; }
+      .title { color: var(--hiraya-text, #f5eedc); font-size: 1.1rem; font-weight: var(--hiraya-font-weight-control, 650); }
+      @keyframes hiraya-loading { 0%, 100% { opacity: .28; transform: scaleX(.72); transform-origin: left; } 50% { opacity: 1; transform: scaleX(1); } }
+      @media (prefers-reduced-motion: reduce) { .indicator span { animation: none; opacity: .72; transform: none; } }
+    </style><section class="content" part="content"><span class="indicator" part="indicator" aria-hidden="true"><span></span><span></span><span></span></span><div class="title" part="title"><slot name="title">Opening file...</slot></div><div part="description"><slot></slot></div></section>`;
   }
 }

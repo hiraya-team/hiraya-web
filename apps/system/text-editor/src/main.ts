@@ -1,5 +1,5 @@
 import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, required } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
@@ -21,6 +21,9 @@ const APP_ID = "app.hiraya.text-editor";
 const SETTINGS_KEY = "editor-settings";
 const status = required<HTMLElement>("#status");
 const title = required<HTMLElement>("#title");
+const content = required<HTMLElement>("#content");
+const editorElement = required<HTMLElement>("#editor");
+const loading = required<HTMLElement>("#loading");
 const documentState = new TextDocumentState();
 const operations = new TextDocumentOperations();
 const languageConfig = new Compartment();
@@ -52,7 +55,7 @@ const editorExtensions: Extension = [
   }),
 ];
 const editor = new EditorView({
-  parent: required<HTMLElement>("#editor"),
+  parent: editorElement,
   extensions: editorExtensions,
 });
 let hiraya: HirayaClient;
@@ -61,6 +64,7 @@ let name = "Untitled.txt";
 let settings = parseTextEditorSettings(undefined);
 let autoSaveTimer = 0;
 let saving = false;
+let opening = false;
 let initialized = false;
 let canWrite = false;
 let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
@@ -74,7 +78,7 @@ for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], [
   required<HTMLInputElement>(`#${id}`).addEventListener("change", (event) => void changeSettings({ ...settings, [key]: (event.target as HTMLInputElement).checked }));
 }
 addEventListener("keydown", (event) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (initialized && canWrite) void save(event.shiftKey); }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (initialized && !opening && canWrite) void save(event.shiftKey); }
 });
 void start();
 
@@ -91,7 +95,7 @@ async function start() {
     applySettings();
     applyCapabilities(await hiraya.app.getCapabilities());
     hiraya.on("capabilities.changed", applyCapabilities);
-    hiraya.on("commands.invoked", ({ id }) => id === "save" ? initialized && !saving && canWrite && void save(false) : id === "open" ? initialized && !saving && void open() : id === "format" ? initialized && !saving && canWrite && applyFormatting() : undefined);
+    hiraya.on("commands.invoked", ({ id }) => id === "save" ? initialized && !saving && !opening && canWrite && void save(false) : id === "open" ? initialized && !saving && !opening && void open() : id === "format" ? initialized && !saving && !opening && canWrite && applyFormatting() : undefined);
     hiraya.on("files.changed", ({ handles }) => { if (handle && handles.includes(handle)) void remoteChanged(); });
     const launchFile = app.launch.files[0];
     if (launchFile) {
@@ -99,12 +103,12 @@ async function start() {
       try { await load(launchFile, generation, true); }
       catch (error) { setStatus(describeError(error, "Could not open the launch file."), true); }
       finally { operations.finishForeground(generation); }
-    }
+    } else setAppLoading(content, editorElement, loading);
     initialized = true;
     renderControlState();
     publishCommands();
     if (!launchFile) setStatus(canWrite ? "Ready. Settings are stored for this browser and account." : writeRestrictionMessage(writeReason, false));
-  } catch (error) { setStatus(describeError(error, "Text Editor could not start."), true); }
+  } catch (error) { opening = false; setAppLoading(content, editorElement, loading); renderControlState(); setStatus(describeError(error, "Text Editor could not start."), true); }
 }
 
 async function confirmDiscard() {
@@ -112,7 +116,7 @@ async function confirmDiscard() {
 }
 
 async function open() {
-  if (!initialized || saving) return;
+  if (!initialized || saving || opening) return;
   const generation = operations.beginForeground();
   try {
     if (!await confirmDiscard()) return;
@@ -136,19 +140,33 @@ async function read(next: FileHandle, entry?: FileMetadata) {
 }
 
 async function load(next: FileHandle, generation: number, identifyBeforeRead = false) {
-  const entry = await statFile(next);
-  if (!operations.isForegroundCurrent(generation)) return;
-  if (identifyBeforeRead) {
-    setName(entry.name);
+  opening = true;
+  clearTimeout(autoSaveTimer);
+  setAppLoading(content, editorElement, loading, "Opening file...");
+  renderControlState();
+  try {
+    const entry = await statFile(next);
+    if (!operations.isForegroundCurrent(generation)) return;
+    setAppLoading(content, editorElement, loading, `Opening ${entry.name}...`);
+    if (identifyBeforeRead) {
+      setName(entry.name);
+      renderDirty();
+    }
+    const loaded = await read(next, entry); if (!operations.isForegroundCurrent(generation)) return;
+    documentState.load(loaded.text, loaded.entry.contentRevision);
+    resetEditorText(loaded.text);
+    handle = next;
+    setName(loaded.entry.name);
     renderDirty();
+    setStatus(canWrite ? `Opened ${name}.` : writeRestrictionMessage(writeReason, false));
+  } finally {
+    if (operations.isForegroundCurrent(generation)) {
+      opening = false;
+      setAppLoading(content, editorElement, loading);
+      renderControlState();
+      scheduleAutoSave();
+    }
   }
-  const loaded = await read(next, entry); if (!operations.isForegroundCurrent(generation)) return;
-  documentState.load(loaded.text, loaded.entry.contentRevision);
-  resetEditorText(loaded.text);
-  handle = next;
-  setName(loaded.entry.name);
-  renderDirty();
-  setStatus(canWrite ? `Opened ${name}.` : writeRestrictionMessage(writeReason, false));
 }
 
 async function remoteChanged() {
@@ -170,7 +188,7 @@ async function remoteChanged() {
 }
 
 async function save(saveAs: boolean) {
-  if (!initialized || saving || !canWrite) return;
+  if (!initialized || saving || opening || !canWrite) return;
   saving = true;
   renderControlState();
   publishCommands();
@@ -204,7 +222,7 @@ async function save(saveAs: boolean) {
 }
 
 function applyFormatting() {
-  if (!initialized || !canWrite) return;
+  if (!initialized || opening || !canWrite) return;
   try {
     replaceEditorText(formatText(name, editorText()));
     setStatus("Document formatted.");
@@ -254,7 +272,7 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
   if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, documentState.dirty), !canWrite && documentState.dirty);
 }
 function renderControlState() {
-  const controls = textEditorControlState(initialized, saving, canWrite);
+  const controls = textEditorControlState(initialized, saving || opening, canWrite);
   required<HirayaButton>("#open").disabled = !controls.open;
   required<HTMLSelectElement>("#font-size").disabled = !controls.settings;
   required<HTMLInputElement>("#line-wrap").disabled = !controls.settings;
@@ -267,7 +285,7 @@ function renderControlState() {
   required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
 }
 function publishCommands() {
-  void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && canWrite }, { id: "format", title: "Format document", enabled: initialized && !saving && canWrite }]);
+  void hiraya.commands.set([{ id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening }, { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite }, { id: "format", title: "Format document", enabled: initialized && !saving && !opening && canWrite }]);
 }
 function setStatus(message: string, error = false) { status.textContent = message; status.classList.toggle("error", error); }
 

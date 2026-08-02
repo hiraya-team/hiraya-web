@@ -54,6 +54,16 @@ export function formatBytes(bytes: number): string {
   return `${value >= 10 ? value.toFixed(0) : value.toFixed(1)} ${unit}`;
 }
 
+export function setAppLoading(surface: HTMLElement, content: HTMLElement, loading: HTMLElement, message?: string): void {
+  const busy = message !== undefined;
+  surface.setAttribute("aria-busy", String(busy));
+  loading.hidden = !busy;
+  content.inert = busy;
+  content.toggleAttribute("aria-hidden", busy);
+  const title = loading.querySelector<HTMLElement>('[slot="title"]');
+  if (title && message) title.textContent = message;
+}
+
 export class LatestOperation {
   #generation = 0;
 

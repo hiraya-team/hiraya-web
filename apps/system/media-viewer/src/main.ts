@@ -1,5 +1,5 @@
 import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
-import { connectSystemApp, describeError, formatBytes, LatestOperation, required } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, formatBytes, LatestOperation, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { DOCX_MIME, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKind, RTF_MIMES } from "./document-types";
 import { renderParsedDocument } from "./document-preview";
 import "./style.css";
@@ -11,6 +11,8 @@ const viewer = required<HTMLElement>("#viewer");
 const status = required<HTMLElement>("#status");
 const openButton = required<HirayaButton>("#open");
 const fullscreenButton = required<HirayaButton>("#fullscreen");
+const content = required<HTMLElement>("#content");
+const loading = required<HTMLElement>("#loading");
 const operations = new LatestOperation();
 let hiraya: HirayaClient;
 let url: string | null = null;
@@ -27,7 +29,7 @@ async function start() {
     openButton.disabled = false;
     fullscreenButton.disabled = false;
     if (app.launch.files[0]) await load(app.launch.files[0]);
-    else status.textContent = "Ready.";
+    else { setAppLoading(content, viewer, loading); status.textContent = "Ready."; }
   } catch (error) {
     showPreviewError(error, "Viewer could not start.");
   }
@@ -44,56 +46,62 @@ async function open() {
 }
 
 async function load(handle: FileHandle, generation = operations.begin()) {
-  const entry = await hiraya.files.stat(handle);
-  if (!operations.isLatest(generation)) return;
-  if (entry.kind !== "file") throw new Error("The selected item is not a file.");
-  const { mimeType: sourceMime, name, size } = entry.metadata;
-  const mimeType = normalizedMime(sourceMime);
-  const documentKind = parsedDocumentKind(name, mimeType);
-  if (!(documentKind || mimeType === "application/pdf" || mimeType.startsWith("audio/") || mimeType.startsWith("video/"))) throw new Error("This viewer supports DOCX, RTF, PDF, audio, and video files.");
-  if (documentKind && size > MAX_PARSED_DOCUMENT_BYTES) throw new Error(`This document is too large to preview safely. The preview limit is ${formatBytes(MAX_PARSED_DOCUMENT_BYTES)}.`);
+  setAppLoading(content, viewer, loading, "Opening file...");
+  try {
+    const entry = await hiraya.files.stat(handle);
+    if (!operations.isLatest(generation)) return;
+    if (entry.kind !== "file") throw new Error("The selected item is not a file.");
+    const { mimeType: sourceMime, name, size } = entry.metadata;
+    setAppLoading(content, viewer, loading, `Opening ${name}...`);
+    const mimeType = normalizedMime(sourceMime);
+    const documentKind = parsedDocumentKind(name, mimeType);
+    if (!(documentKind || mimeType === "application/pdf" || mimeType.startsWith("audio/") || mimeType.startsWith("video/"))) throw new Error("This viewer supports DOCX, RTF, PDF, audio, and video files.");
+    if (documentKind && size > MAX_PARSED_DOCUMENT_BYTES) throw new Error(`This document is too large to preview safely. The preview limit is ${formatBytes(MAX_PARSED_DOCUMENT_BYTES)}.`);
 
-  status.classList.remove("error");
-  status.textContent = `Opening ${name}...`;
-  const { data } = await hiraya.files.readAll(handle);
-  if (!operations.isLatest(generation)) return;
+    status.classList.remove("error");
+    status.textContent = `Opening ${name}...`;
+    const { data } = await hiraya.files.readAll(handle);
+    if (!operations.isLatest(generation)) return;
 
-  let element: HTMLElement;
-  let nextUrl: string | null = null;
-  if (documentKind) {
-    element = await renderParsedDocument(documentKind, data);
-  } else {
-    nextUrl = URL.createObjectURL(new Blob([data], { type: mimeType }));
-    if (mimeType === "application/pdf") {
-      const frame = document.createElement("iframe");
-      frame.src = nextUrl;
-      frame.title = name;
-      frame.setAttribute("sandbox", "");
-      frame.referrerPolicy = "no-referrer";
-      element = frame;
+    let element: HTMLElement;
+    let nextUrl: string | null = null;
+    if (documentKind) {
+      element = await renderParsedDocument(documentKind, data);
     } else {
-      const media = document.createElement(mimeType.startsWith("audio/") ? "audio" : "video");
-      media.controls = true;
-      media.src = nextUrl;
-      media.preload = "metadata";
-      if (media instanceof HTMLVideoElement) media.playsInline = true;
-      const card = document.createElement("div");
-      card.className = mimeType.startsWith("audio/") ? "media-card" : "";
-      card.append(media);
-      element = card;
+      nextUrl = URL.createObjectURL(new Blob([data], { type: mimeType }));
+      if (mimeType === "application/pdf") {
+        const frame = document.createElement("iframe");
+        frame.src = nextUrl;
+        frame.title = name;
+        frame.setAttribute("sandbox", "");
+        frame.referrerPolicy = "no-referrer";
+        element = frame;
+      } else {
+        const media = document.createElement(mimeType.startsWith("audio/") ? "audio" : "video");
+        media.controls = true;
+        media.src = nextUrl;
+        media.preload = "metadata";
+        if (media instanceof HTMLVideoElement) media.playsInline = true;
+        const card = document.createElement("div");
+        card.className = mimeType.startsWith("audio/") ? "media-card" : "";
+        card.append(media);
+        element = card;
+      }
     }
-  }
 
-  if (!operations.isLatest(generation)) {
-    if (nextUrl) URL.revokeObjectURL(nextUrl);
-    return;
+    if (!operations.isLatest(generation)) {
+      if (nextUrl) URL.revokeObjectURL(nextUrl);
+      return;
+    }
+    clear();
+    url = nextUrl;
+    viewer.replaceChildren(element);
+    required("#title").textContent = name;
+    status.textContent = `${mimeType} · ${formatBytes(size)}`;
+    await hiraya.window.setTitle(`${name} - Document & Media Viewer`);
+  } finally {
+    if (operations.isLatest(generation)) setAppLoading(content, viewer, loading);
   }
-  clear();
-  url = nextUrl;
-  viewer.replaceChildren(element);
-  required("#title").textContent = name;
-  status.textContent = `${mimeType} · ${formatBytes(size)}`;
-  await hiraya.window.setTitle(`${name} - Document & Media Viewer`);
 }
 
 async function toggleFullscreen() {
@@ -122,6 +130,7 @@ function setStatusError(error: unknown, fallback: string) {
 }
 
 function showPreviewError(error: unknown, fallback: string) {
+  setAppLoading(content, viewer, loading);
   clear();
   const message = describeError(error, fallback);
   const empty = document.createElement("hiraya-empty-state");
