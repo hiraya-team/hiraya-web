@@ -27,32 +27,33 @@ const languageConfig = new Compartment();
 const fontConfig = new Compartment();
 const lineWrapConfig = new Compartment();
 const editableConfig = new Compartment();
+const editorExtensions: Extension = [
+  minimalSetup,
+  EditorState.tabSize.of(2),
+  EditorView.contentAttributes.of({ "aria-label": "Document text", spellcheck: "true" }),
+  placeholder("Start writing..."),
+  languageConfig.of([]),
+  fontConfig.of(EditorView.theme({ "&": { fontSize: "13px" } })),
+  lineWrapConfig.of(EditorView.lineWrapping),
+  editableConfig.of([EditorState.readOnly.of(true), EditorView.editable.of(false)]),
+  syntaxHighlighting(HighlightStyle.define([
+    { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: "var(--editor-keyword)" },
+    { tag: [tags.string, tags.special(tags.string)], color: "var(--editor-string)" },
+    { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--hiraya-text-muted)", fontStyle: "italic" },
+    { tag: [tags.number, tags.bool, tags.null], color: "var(--editor-keyword)" },
+    { tag: [tags.heading, tags.strong], color: "var(--editor-keyword)", fontWeight: "700" },
+    { tag: [tags.link, tags.url], color: "var(--editor-keyword)", textDecoration: "underline" },
+  ])),
+  EditorView.updateListener.of((update) => {
+    if (!update.docChanged) return;
+    documentState.edit(update.state.doc.toString());
+    renderDirty();
+    scheduleAutoSave();
+  }),
+];
 const editor = new EditorView({
   parent: required<HTMLElement>("#editor"),
-  extensions: [
-    minimalSetup,
-    EditorState.tabSize.of(2),
-    EditorView.contentAttributes.of({ "aria-label": "Document text", spellcheck: "true" }),
-    placeholder("Start writing..."),
-    languageConfig.of([]),
-    fontConfig.of(EditorView.theme({ "&": { fontSize: "13px" } })),
-    lineWrapConfig.of(EditorView.lineWrapping),
-    editableConfig.of([EditorState.readOnly.of(true), EditorView.editable.of(false)]),
-    syntaxHighlighting(HighlightStyle.define([
-      { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: "var(--editor-keyword)" },
-      { tag: [tags.string, tags.special(tags.string)], color: "var(--editor-string)" },
-      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: "var(--hiraya-text-muted)", fontStyle: "italic" },
-      { tag: [tags.number, tags.bool, tags.null], color: "var(--editor-keyword)" },
-      { tag: [tags.heading, tags.strong], color: "var(--editor-keyword)", fontWeight: "700" },
-      { tag: [tags.link, tags.url], color: "var(--editor-keyword)", textDecoration: "underline" },
-    ])),
-    EditorView.updateListener.of((update) => {
-      if (!update.docChanged) return;
-      documentState.edit(update.state.doc.toString());
-      renderDirty();
-      scheduleAutoSave();
-    }),
-  ],
+  extensions: editorExtensions,
 });
 let hiraya: HirayaClient;
 let handle: FileHandle | null = null;
@@ -143,7 +144,7 @@ async function load(next: FileHandle, generation: number, identifyBeforeRead = f
   }
   const loaded = await read(next, entry); if (!operations.isForegroundCurrent(generation)) return;
   documentState.load(loaded.text, loaded.entry.contentRevision);
-  replaceEditorText(loaded.text);
+  resetEditorText(loaded.text);
   handle = next;
   setName(loaded.entry.name);
   renderDirty();
@@ -287,6 +288,11 @@ function languageExtension(language: TextEditorLanguage): Extension {
 }
 
 function editorText() { return editor.state.doc.toString(); }
+function resetEditorText(text: string) {
+  editor.setState(EditorState.create({ doc: text, extensions: editorExtensions }));
+  applySettings();
+  renderControlState();
+}
 function replaceEditorText(text: string) {
   if (editorText() !== text) editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
 }

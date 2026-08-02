@@ -167,6 +167,34 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 });
 
+test("undo after opening a text file preserves its loaded contents", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLocalDesktop(page);
+  const name = `undo-open-${Date.now()}.txt`;
+  const contents = "Loaded text must not be undoable.";
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.dblclick();
+
+  let app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  let editor = app.frameLocator("iframe");
+  await editor.locator(".cm-content").fill(contents);
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await app.getByRole("button", { name: `Close ${name} - Text Editor` }).click();
+
+  await icon.dblclick();
+  app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  editor = app.frameLocator("iframe");
+  await expect(editor.locator(".cm-content")).toHaveText(contents);
+  await editor.locator(".cm-content").focus();
+  await page.keyboard.press("Control+z");
+  await expect(editor.locator(".cm-content")).toHaveText(contents);
+});
+
 test("lost pointer capture clears icon drag feedback", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
