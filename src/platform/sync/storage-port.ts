@@ -32,7 +32,7 @@ export interface SyncStorage {
   updateRootEntryPositions(positions: RootEntryPositionUpdate[]): Promise<DesktopEntry[]>;
 
   readFile(id: FileEntry["id"]): Promise<File>;
-  readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<File | null>;
+  readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision?: number): Promise<File | null>;
   cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob): Promise<File | null>;
   removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number): Promise<unknown>;
   resolveFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string): Promise<FileEntry>;
