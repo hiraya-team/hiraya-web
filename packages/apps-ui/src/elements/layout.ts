@@ -5,9 +5,6 @@ export class HirayaToolbar extends HTMLElementBase {
   readonly #toolbar: HTMLElement;
   constructor() {
     super();
-    this.setAttribute("role", "status");
-    this.setAttribute("aria-live", "polite");
-    this.setAttribute("aria-atomic", "true");
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${elementStyles}
       :host { display: block; min-inline-size: 0; }
@@ -105,5 +102,10 @@ export class HirayaLoadingState extends HTMLElementBase {
       @keyframes hiraya-loading { 0%, 100% { opacity: .28; transform: scaleX(.72); transform-origin: left; } 50% { opacity: 1; transform: scaleX(1); } }
       @media (prefers-reduced-motion: reduce) { .indicator span { animation: none; opacity: .72; transform: none; } }
     </style><section class="content" part="content"><span class="indicator" part="indicator" aria-hidden="true"><span></span><span></span><span></span></span><div class="title" part="title"><slot name="title">Opening file...</slot></div><div part="description"><slot></slot></div></section>`;
+  }
+  connectedCallback(): void {
+    this.setAttribute("role", "status");
+    this.setAttribute("aria-live", "polite");
+    this.setAttribute("aria-atomic", "true");
   }
 }
