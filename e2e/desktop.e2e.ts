@@ -237,6 +237,7 @@ test("a rapid pointer release outside the icon clears drag feedback", async ({ p
   await page.getByLabel("File name").fill(name);
   await page.getByRole("button", { name: "Create file" }).click();
   const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.click();
 
   const iconBounds = await icon.boundingBox();
   const desktopBounds = await page.locator(".desktop").boundingBox();
