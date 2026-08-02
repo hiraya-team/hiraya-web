@@ -136,7 +136,12 @@ describe("Hiraya app archives", () => {
   });
 
   test("ignores module syntax inside JavaScript strings", async () => {
-    const bytes = archive({ ...appFiles(), "assets/app.js": strToU8('const tags = "import export from"; const fragment = "url(#preview)"; const data = "data:image/svg+xml,x";') });
+    const bytes = archive({ ...appFiles(), "assets/app.js": strToU8('const tags = "import export from"; const example = \'import {name} from "${module}"\'; const fragment = "url(#preview)"; const data = "data:image/svg+xml,x";') });
+    await expect(inspectAppArchive(bytes)).resolves.toMatchObject({ manifest: { id: "dev.hiraya.test" } });
+  });
+
+  test("accepts classic scripts without parsing them as modules", async () => {
+    const bytes = archive({ ...appFiles(), "index.html": strToU8('<script src="assets/app.js"></script>'), "assets/app.js": strToU8("with ({ ready: true }) document.body.dataset.ready = String(ready);") });
     await expect(inspectAppArchive(bytes)).resolves.toMatchObject({ manifest: { id: "dev.hiraya.test" } });
   });
 

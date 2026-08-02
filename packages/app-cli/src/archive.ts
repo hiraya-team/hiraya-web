@@ -261,7 +261,7 @@ function validateHtmlSource(html: string, entrypoint: string, files: ReadonlyMap
       const src = attribute(node, "src");
       if (src !== undefined) {
         const scriptPath = assertReference(src, entrypoint, "Script", files);
-        if (scriptPath !== null) validateAssetDependencies(scriptPath, files);
+        if (type === "module" && scriptPath !== null) validateAssetDependencies(scriptPath, files);
       } else if (type === "module") {
         const source = node.childNodes?.map((child) => child.value ?? "").join("") ?? "";
         validateModule(source, entrypoint, files, (path) => validateAssetDependencies(path, files));
