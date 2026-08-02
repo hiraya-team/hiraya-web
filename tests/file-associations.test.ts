@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp } from "../src/apps/file-associations";
+import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "../src/apps/file-associations";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
@@ -50,5 +50,15 @@ describe("file association resolution", () => {
       expect(resolveFileApp(file, apps, [], [{ matcher: file.name.endsWith("app") ? ".app" : ".url", appId: text.appId, createdAt: 1 }])).toBeNull();
       expect(matchingInstalledApps(apps, [], file)).toEqual([]);
     }
+  });
+
+  test("routes DOCX and RTF to the document viewer without claiming legacy DOC", () => {
+    for (const file of [
+      { name: "report.bin", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary" },
+      { name: "report.DOCX", mimeType: "application/octet-stream" },
+      { name: "notes.bin", mimeType: "text/rtf; charset=windows-1252" },
+      { name: "notes.RTF", mimeType: "application/octet-stream" },
+    ]) expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.mediaViewer);
+    expect(systemDefaultAppId({ name: "legacy.doc", mimeType: "application/msword" })).toBe(SYSTEM_APP_IDS.fileViewer);
   });
 });
