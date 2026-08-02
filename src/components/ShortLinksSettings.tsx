@@ -62,7 +62,7 @@ export function ShortLinksSettings({ headingRef, baseUrl, onBack, onList, onCrea
           }).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "The short link could not be created.")).finally(() => setCreating(false));
         }}>
           <label>Destination URL<input ref={destinationRef} name="destinationUrl" type="url" inputMode="url" placeholder="https://example.com/page" required disabled={creating} /></label>
-          <label>Custom slug <span>Optional</span><input name="slug" type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} placeholder="launch-notes" disabled={creating} /></label>
+          <label>Custom slug <span>Optional</span><input name="slug" type="text" autoCapitalize="none" autoCorrect="off" spellCheck={false} maxLength={48} pattern="[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])" title="Use 3 to 48 lowercase letters or numbers, with hyphens only between characters." placeholder="launch-notes" disabled={creating} /></label>
           <button className="button" type="submit" disabled={creating}><Plus size={16} />{creating ? "Creating..." : "Create link"}</button>
         </form>
       </section>
