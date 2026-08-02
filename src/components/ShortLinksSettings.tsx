@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowSquareOut, Check, Copy, LinkSimple, PencilSimple, Plus, Trash, X } from "@phosphor-icons/react";
-import type { ShortLink } from "../lib/short-links";
+import { resolveShortLinkUrl, type ShortLink } from "../lib/short-links";
 
 type Props = {
   headingRef: React.RefObject<HTMLHeadingElement | null>;
@@ -79,15 +79,16 @@ export function ShortLinksSettings({ headingRef, baseUrl, onBack, onList, onCrea
             {links.map((link) => {
               const editing = editingSlug === link.slug;
               const busy = busySlug === link.slug;
+              const publicUrl = resolveShortLinkUrl(link.url, window.location.origin);
               return <article className="short-link-item" data-disabled={!link.enabled || undefined} key={link.slug}>
-                <div className="short-link-item__heading"><div><strong>{link.slug}</strong><a href={link.url} target="_blank" rel="noreferrer">{link.url}<ArrowSquareOut size={13} /></a></div><label className="short-link-toggle"><span>{link.enabled ? "Enabled" : "Disabled"}</span><input type="checkbox" checked={link.enabled} disabled={busy} onChange={(event) => void mutate(link.slug, async () => replace(await onUpdate(link.slug, { enabled: event.target.checked })))} /></label></div>
+                <div className="short-link-item__heading"><div><strong>{link.slug}</strong><a href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}<ArrowSquareOut size={13} /></a></div><label className="short-link-toggle"><span>{link.enabled ? "Enabled" : "Disabled"}</span><input type="checkbox" checked={link.enabled} disabled={busy} onChange={(event) => void mutate(link.slug, async () => replace(await onUpdate(link.slug, { enabled: event.target.checked })))} /></label></div>
                 {editing ? <form className="short-link-edit" onSubmit={(event) => { event.preventDefault(); const destinationUrl = editDestination.trim(); void mutate(link.slug, async () => { replace(await onUpdate(link.slug, { destinationUrl })); setEditingSlug(null); }); }}>
                   <label htmlFor={`short-link-${link.slug}`}>Destination URL</label><input id={`short-link-${link.slug}`} type="url" required autoFocus value={editDestination} disabled={busy} onChange={(event) => setEditDestination(event.target.value)} />
                   <button className="icon-button" type="submit" aria-label={`Save ${link.slug} destination`} disabled={busy}><Check size={16} /></button><button className="icon-button" type="button" aria-label={`Cancel editing ${link.slug}`} disabled={busy} onClick={() => setEditingSlug(null)}><X size={16} /></button>
                 </form> : <p className="short-link-item__destination" title={link.destinationUrl}>{link.destinationUrl}</p>}
                 <div className="short-link-item__actions">
-                  <button className="button button--quiet" type="button" disabled={busy} onClick={() => void (navigator.clipboard?.writeText(link.url) ?? Promise.reject()).then(() => { setCopiedSlug(link.slug); window.setTimeout(() => setCopiedSlug((current) => current === link.slug ? null : current), 1800); }).catch(() => setError("The browser could not copy this short link."))}>{copiedSlug === link.slug ? <Check size={15} /> : <Copy size={15} />}{copiedSlug === link.slug ? "Copied" : "Copy"}</button>
-                  <a className="button button--quiet" href={link.url} target="_blank" rel="noreferrer"><ArrowSquareOut size={15} />Open</a>
+                  <button className="button button--quiet" type="button" disabled={busy} onClick={() => void (navigator.clipboard?.writeText(publicUrl) ?? Promise.reject()).then(() => { setCopiedSlug(link.slug); window.setTimeout(() => setCopiedSlug((current) => current === link.slug ? null : current), 1800); }).catch(() => setError("The browser could not copy this short link."))}>{copiedSlug === link.slug ? <Check size={15} /> : <Copy size={15} />}{copiedSlug === link.slug ? "Copied" : "Copy"}</button>
+                  <a className="button button--quiet" href={publicUrl} target="_blank" rel="noreferrer"><ArrowSquareOut size={15} />Open</a>
                   <button className="button button--quiet" type="button" disabled={busy || editing} onClick={() => { setEditingSlug(link.slug); setEditDestination(link.destinationUrl); }}><PencilSimple size={15} />Edit</button>
                   <button className="button button--quiet short-link-item__delete" type="button" disabled={busy} onClick={() => void onConfirmDelete(link).then((confirmed) => { if (confirmed) return mutate(link.slug, async () => { await onDelete(link.slug); setLinks((current) => current?.filter((candidate) => candidate.slug !== link.slug) ?? current); }); })}><Trash size={15} />Delete</button>
                 </div>

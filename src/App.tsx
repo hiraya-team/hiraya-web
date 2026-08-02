@@ -652,6 +652,16 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }, [canViewActivity, settingsPage]);
   useEffect(() => {
+    if (!shortLinksAvailable && settingsPage === "short-links") {
+      const current = window.history.state;
+      if (historySettingsPage(current) === "short-links") window.history.back();
+      else {
+        settingsPageRef.current = "main";
+        setSettingsPage("main");
+      }
+    }
+  }, [settingsPage, shortLinksAvailable]);
+  useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
   }, [loading, preferencesLoaded]);
   useEffect(() => {

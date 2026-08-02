@@ -1,4 +1,4 @@
-import { requireAuthenticatedResponse } from "./auth";
+import { isSafeRootRelativePath, requireAuthenticatedResponse } from "./auth";
 import { API_ROUTES } from "./api-routes";
 import { isRecord } from "./contracts";
 
@@ -13,19 +13,24 @@ export type ShortLink = {
 
 const SHORT_LINK_KEYS = ["slug", "destinationUrl", "url", "enabled", "createdAt", "updatedAt"] as const;
 
-function httpUrl(value: unknown, label: string) {
-  if (typeof value !== "string") throw new Error(`A short link contains an invalid ${label}.`);
+function absoluteUrl(value: unknown, label: string, httpsOnly = false) {
+  if (typeof value !== "string" || value.trim() !== value || !/^https?:\/\//i.test(value)) throw new Error(`A short link contains an invalid ${label}.`);
   let url: URL;
   try { url = new URL(value); } catch { throw new Error(`A short link contains an invalid ${label}.`); }
-  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) throw new Error(`A short link contains an invalid ${label}.`);
+  if ((httpsOnly ? url.protocol !== "https:" : url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) throw new Error(`A short link contains an invalid ${label}.`);
   return value;
+}
+
+function publicUrl(value: unknown) {
+  if (typeof value === "string" && isSafeRootRelativePath(value)) return value;
+  return absoluteUrl(value, "public URL");
 }
 
 export function parseShortLink(value: unknown): ShortLink {
   if (!isRecord(value) || Object.keys(value).length !== SHORT_LINK_KEYS.length || SHORT_LINK_KEYS.some((key) => !(key in value))) throw new Error("A short link has an unsupported format.");
   if (typeof value.slug !== "string" || !value.slug || typeof value.enabled !== "boolean") throw new Error("A short link has an unsupported format.");
   if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt)) || typeof value.updatedAt !== "string" || !Number.isFinite(Date.parse(value.updatedAt))) throw new Error("A short link contains an invalid timestamp.");
-  return { slug: value.slug, destinationUrl: httpUrl(value.destinationUrl, "destination URL"), url: httpUrl(value.url, "public URL"), enabled: value.enabled, createdAt: value.createdAt, updatedAt: value.updatedAt };
+  return { slug: value.slug, destinationUrl: absoluteUrl(value.destinationUrl, "destination URL", true), url: publicUrl(value.url), enabled: value.enabled, createdAt: value.createdAt, updatedAt: value.updatedAt };
 }
 
 export function parseShortLinks(value: unknown) {
@@ -33,6 +38,10 @@ export function parseShortLinks(value: unknown) {
   const shortLinks = value.shortLinks.map(parseShortLink);
   if (new Set(shortLinks.map(({ slug }) => slug)).size !== shortLinks.length) throw new Error("The short-links response contains duplicate slugs.");
   return shortLinks;
+}
+
+export function resolveShortLinkUrl(value: string, origin: string) {
+  return new URL(value, origin).href;
 }
 
 async function request(input: string, init?: RequestInit, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {

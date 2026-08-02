@@ -35,6 +35,16 @@ function requiredString(value: unknown, label: string) {
   return value;
 }
 
+export function isSafeRootRelativePath(value: string) {
+  if (!value.startsWith("/") || value.startsWith("//")) return false;
+  try {
+    const url = new URL(value, "https://hiraya.invalid");
+    return url.origin === "https://hiraya.invalid" && url.pathname === value && !url.search && !url.hash;
+  } catch {
+    return false;
+  }
+}
+
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
@@ -51,11 +61,7 @@ export function parseAuthSession(value: unknown): AuthSession {
   if (shortLinks !== undefined && shortLinks !== "account-short-links-v1") throw new Error("The session bootstrap contains unsupported short-link capability metadata.");
   const shortLinkBaseUrl = session.shortLinkBaseUrl === undefined ? undefined : requiredString(session.shortLinkBaseUrl, "short-link base URL");
   if ((shortLinks === undefined) !== (shortLinkBaseUrl === undefined)) throw new Error("The session bootstrap contains incomplete short-link capability metadata.");
-  if (shortLinkBaseUrl) {
-    let parsed: URL;
-    try { parsed = new URL(shortLinkBaseUrl); } catch { throw new Error("The session bootstrap contains an invalid short-link base URL."); }
-    if (!["http:", "https:"].includes(parsed.protocol) || parsed.username || parsed.password) throw new Error("The session bootstrap contains an invalid short-link base URL.");
-  }
+  if (shortLinkBaseUrl && !isSafeRootRelativePath(shortLinkBaseUrl)) throw new Error("The session bootstrap contains an invalid short-link base URL.");
   return {
     ...authority,
     storageId: requiredString(session.storageId, "storage ID"),
