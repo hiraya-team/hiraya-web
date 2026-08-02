@@ -50,7 +50,7 @@ export function MobileHeaderMenu({ label, icon, children }: Props) {
         dismiss();
         triggerRef.current?.focus();
       } else if (event.key === "Tab" && open && panelRef.current) {
-        const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])"));
+        const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>("summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])"));
         const first = focusable[0];
         const last = focusable.at(-1);
         if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
@@ -83,7 +83,7 @@ export function MobileHeaderMenu({ label, icon, children }: Props) {
   useEffect(() => {
     if (open) requestAnimationFrame(() => {
       positionPanel();
-      panelRef.current?.querySelector<HTMLElement>("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled)")?.focus();
+      panelRef.current?.querySelector<HTMLElement>("summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled)")?.focus();
     });
   }, [open, positionPanel]);
 

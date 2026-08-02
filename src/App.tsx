@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -3796,31 +3796,16 @@ function App({ session }: { session: AuthSession | null }) {
           {session.user.email && <span>{session.user.email}</span>}
         </div>
       )}
-      <button type="button" onClick={() => { dismiss(); showDesktop(); }}>
-        <Desktop /> Back to Desktop
-      </button>
-      {session && <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}>
-        <Package /> App Store{storeUpdateCount > 0 && <small>{storeUpdateCount} update{storeUpdateCount === 1 ? "" : "s"}</small>}
-      </button>}
-      {focusedAppId && <>
-        <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}>
-          <SquaresFour /> Switch Window
-        </button>
-        <button type="button" onClick={() => {
-          const id = focusedAppId;
-          dismiss();
-          requestCloseApp(id);
-        }}>
-          <X /> Close Window
-        </button>
-      </>}
-      {windowItems.map((window) => (
-        <button type="button" key={window.id} aria-current={window.id === focusedAppId ? "page" : undefined} title={window.title} onClick={() => { dismiss(); focusApp(window.id); }}>
-          <SquaresFour />
-          <span>{window.title}</span>
-          <small>{window.areaLabel}</small>
-        </button>
-      ))}
+      <details className="mobile-start-applications">
+        <summary><Package /><span>Applications</span><CaretRight size={15} aria-hidden="true" /></summary>
+        <div>
+          {installedApps.toSorted((a, b) => a.manifest.name.localeCompare(b.manifest.name)).map((app) => {
+            const available = installedAppIsAvailable(app, entries);
+            return <button type="button" key={app.appId} disabled={!available} title={available ? app.manifest.name : `${app.manifest.name} is unavailable`} onClick={() => launchMobileDestination(dismiss, () => launchApp(app))}><Package /><span>{app.manifest.name}</span>{!available && <small>Unavailable</small>}</button>;
+          })}
+          <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}><Package /><span>App Store</span>{storeUpdateCount > 0 && <small>{storeUpdateCount} update{storeUpdateCount === 1 ? "" : "s"}</small>}</button>
+        </div>
+      </details>
       <span className="mobile-header-menu__separator" />
       <button type="button" onClick={() => launchMobileDestination(dismiss, () => openSettingsWindow())}>
         <GearSix /> Settings
@@ -3861,7 +3846,7 @@ function App({ session }: { session: AuthSession | null }) {
         <nav className="mobile-window-nav" aria-label="Desktop navigation">
             <div className="mobile-window-nav__leading">
               <MobileHeaderMenu
-                label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and windows; ${runningApps.length} open`}
+                label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
                 icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
               >
                 {renderMobileStartMenu}
@@ -3873,11 +3858,6 @@ function App({ session }: { session: AuthSession | null }) {
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
-          {session && <button className="menu-bar__store" type="button" aria-label={`Open App Store${storeUpdateCount ? `, ${storeUpdateCount} updates available` : ""}`} title="App Store" onClick={openStoreWindow}>
-            <Package size={17} />
-            <span className="desktop-action-label">Store</span>
-            {storeUpdateCount > 0 && <span className="menu-bar__badge" aria-hidden="true">{storeUpdateCount}</span>}
-          </button>}
           <button type="button" aria-label="Search apps, files, windows, and commands" title="Search (Ctrl/Command K)" onClick={() => setActivePanel("search")}>
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
@@ -4136,7 +4116,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "Apps") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4251,24 +4231,9 @@ function App({ session }: { session: AuthSession | null }) {
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
                         quarantinedApps={quarantinedApps}
-                        onLaunchApp={launchApp}
-                        onUninstallApp={(installed) => void removeInstalledApp(installed)}
                         onExportQuarantinedApp={exportQuarantinedApp}
                         onRemoveQuarantinedApp={(app) => void discardQuarantinedApp(app)}
                         fileAssociations={fileAssociations}
-                        onResetApp={(installed) =>
-                          void requestConfirmation({
-                            title: `Reset ${installed.manifest.name}?`,
-                            message: "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
-                            confirmLabel: "Reset data",
-                            danger: true,
-                          }).then(async (confirmed) => {
-                            if (confirmed) {
-                              await clearAppData(installed.appId);
-                              setNotice(`${installed.manifest.name} data reset`);
-                            }
-                          })
-                        }
                         onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
                         onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
                         onResetFileAssociations={() => void clearAssociations()}
@@ -4337,7 +4302,19 @@ function App({ session }: { session: AuthSession | null }) {
                         onOpenHelp={openHelp}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} loading={storeLoading} error={storeError || (!session ? "The app store requires a synchronized Hiraya account." : "")} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} />}
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError || (!session ? "The app store requires a synchronized Hiraya account." : "")} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} onReset={(installed) =>
+                      void requestConfirmation({
+                        title: `Reset ${installed.manifest.name}?`,
+                        message: "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
+                        confirmLabel: "Reset data",
+                        danger: true,
+                      }).then(async (confirmed) => {
+                        if (confirmed) {
+                          await clearAppData(installed.appId);
+                          setNotice(`${installed.manifest.name} data reset`);
+                        }
+                      })
+                    } />}
               </>
             );
           }}
@@ -4422,6 +4399,7 @@ function App({ session }: { session: AuthSession | null }) {
           selectAreaFromSwitcher(segment);
         }}
         onFocusApp={focusApp}
+        onShowDesktop={showDesktop}
         onMinimizeApp={minimizeApp}
         onCloseApp={requestCloseApp}
         onShowAllWindows={() => setActivePanel("windows")}

@@ -1,5 +1,5 @@
 import type { MouseEvent, PointerEvent, ReactNode, Ref } from "react";
-import { Minus, X } from "@phosphor-icons/react";
+import { Desktop, Minus, X } from "@phosphor-icons/react";
 import { AppIcon, EntryIcon } from "../../components/VisualPrimitives";
 import type { DesktopEntry } from "../../types";
 import type { DesktopSegment, ResponsiveDesktop, SurfaceSegment } from "../../ui/desktop-geometry";
@@ -37,6 +37,7 @@ type AreaSwitcherProps = {
   onFinishGridSwipe: (event: PointerEvent<HTMLDivElement>, cancelled?: boolean) => void;
   onSelectArea: (segment: SurfaceSegment, event: MouseEvent<HTMLButtonElement>) => void;
   onFocusApp: (id: string) => void;
+  onShowDesktop: () => void;
   onMinimizeApp: (id: string) => void;
   onCloseApp: (id: string) => void;
   onShowAllWindows: () => void;
@@ -72,6 +73,7 @@ export function AreaSwitcher({
   onFinishGridSwipe,
   onSelectArea,
   onFocusApp,
+  onShowDesktop,
   onMinimizeApp,
   onCloseApp,
   onShowAllWindows,
@@ -100,6 +102,7 @@ export function AreaSwitcher({
                 </div>
                 {focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedLabel}`}>
                   <span className="desktop-minimap__window-target" title={focusedLabel}><AppIcon kind={focusedApp.kind} entry={getAppEntry(focusedApp)} size={18} /><span>{focusedLabel}</span></span>
+                  <button type="button" onClick={onShowDesktop} title="Back to desktop" aria-label="Back to desktop"><Desktop size={15} /></button>
                   <button type="button" onClick={() => onMinimizeApp(focusedApp.id)} title={`Minimize ${focusedLabel}`} aria-label={`Minimize ${focusedLabel}`}><Minus size={15} /></button>
                   <button className="desktop-minimap__window-close" type="button" onClick={() => onCloseApp(focusedApp.id)} title={`Close ${focusedLabel}`} aria-label={`Close ${focusedLabel}`}><X size={15} /></button>
                 </div>}
