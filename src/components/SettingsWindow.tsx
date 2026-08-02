@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, Play, Trash, UploadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, Play, ShareNetwork, Trash, UploadSimple } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
@@ -53,13 +53,11 @@ const COLOR_LABELS: Record<keyof ThemeColors, string> = {
 };
 
 const SETTINGS_CATEGORIES = [
-  { id: "desktop", label: "Desktop", scope: "Shared with this desktop" },
-  { id: "files", label: "Files & content", scope: "This desktop and this browser" },
-  { id: "connection", label: "Connection & Offline", scope: "This desktop and browser storage" },
-  { id: "apps", label: "Apps & permissions", scope: "This device" },
-  { id: "device", label: "Device", scope: "This browser or installed app" },
-  { id: "data", label: "Data & admin", scope: "This desktop and server operations" },
-  { id: "help", label: "Help", scope: "Bundled on this device" },
+  { id: "appearance", label: "Appearance" },
+  { id: "desktop", label: "Desktop & sharing" },
+  { id: "files-apps", label: "Files & apps" },
+  { id: "sync-data", label: "Sync & data" },
+  { id: "system-help", label: "System & help" },
 ] as const;
 type SettingsCategory = typeof SETTINGS_CATEGORIES[number]["id"];
 
@@ -91,6 +89,8 @@ type Props = {
   desktopSearchAvailable: boolean;
   shortLinksAvailable: boolean;
   shortLinkBaseUrl: string;
+  sharingAvailable: boolean;
+  sharingDisabled: boolean;
   installState: PwaInstallState;
   serverBuildTimestamp: string | null;
   installedApps: InstalledApp[];
@@ -129,6 +129,8 @@ type Props = {
   onAllowBrowserPinchZoomChange: (enabled: boolean) => void;
   onSearchAllDesktopsChange: (enabled: boolean) => void;
   onOpenGettingStarted: () => void;
+  onOpenKeyboardShortcuts: () => void;
+  onOpenSharing: () => void;
   onInstall: () => void;
   onOpenOfflineStorage: () => void;
   onOpenHelp: (section?: "start-here" | "installation-and-updates" | "apps-and-permissions" | "export-backup-and-recovery") => void;
@@ -206,6 +208,8 @@ export function SettingsWindow({
   desktopSearchAvailable,
   shortLinksAvailable,
   shortLinkBaseUrl,
+  sharingAvailable,
+  sharingDisabled,
   installState,
   serverBuildTimestamp,
   installedApps,
@@ -244,6 +248,8 @@ export function SettingsWindow({
   onAllowBrowserPinchZoomChange,
   onSearchAllDesktopsChange,
   onOpenGettingStarted,
+  onOpenKeyboardShortcuts,
+  onOpenSharing,
   onInstall,
   onOpenOfflineStorage,
   onOpenHelp,
@@ -251,7 +257,7 @@ export function SettingsWindow({
   const [draft, setDraft] = useState<CustomTheme | null>(null);
   const [saving, setSaving] = useState(false);
   const [wallpaperBusy, setWallpaperBusy] = useState(false);
-  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("desktop");
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("appearance");
   const [layoutDraft, setLayoutDraft] = useState(() => ({ desktopId: activeDesktopId, layout }));
   const contentRef = useRef<HTMLDivElement>(null);
   const wallpaperUploadRef = useRef<HTMLInputElement>(null);
@@ -283,7 +289,6 @@ export function SettingsWindow({
   const wallpaperFile = wallpaperFileId ? entries.find((entry): entry is FileEntry => entry.id === wallpaperFileId && entry.kind === "file") : null;
   const wallpaperFiles = entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024);
   const wallpaperName = displayedLayout.wallpaper.source in WALLPAPER_LABELS ? WALLPAPER_LABELS[displayedLayout.wallpaper.source as WallpaperPreset].name : wallpaperTheme ? `${wallpaperTheme.name} included` : wallpaperFile?.name ?? "Custom image";
-  const activeSettingsCategory = SETTINGS_CATEGORIES.find((category) => category.id === settingsCategory)!;
   const formatBuildTimestamp = (timestamp: string | null) => {
     if (!timestamp) return "Unavailable";
     const date = new Date(timestamp);
@@ -462,10 +467,9 @@ export function SettingsWindow({
       <div className={`settings-window__content${page === "main" ? " settings-window__content--main" : ""}`} ref={contentRef}>
          {page === "main" ? (
            <>
-             <header className="settings-ia-header"><span className="status-badge">This desktop + this device</span><p>Shared desktop choices and browser-local preferences are labeled at the point of use.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
-              <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
-              <div className="settings-scope-summary" role="status"><strong>{activeSettingsCategory.label}</strong><span>Scope: {activeSettingsCategory.scope}</span></div>
-              <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "desktop"}>
+              <header className="settings-ia-header"><h2>Settings</h2><p>Personalize this desktop, manage its data, and control this installation of Hiraya.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
+               <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
+               <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "appearance"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainThemesButtonRef} onClick={openThemes}>
                 <span className="settings-row__icon"><PaintBrush size={17} /></span>
                 <span className="settings-row__copy">
@@ -476,7 +480,13 @@ export function SettingsWindow({
               </button>
             </section>
 
-            {canViewActivity && <section className="settings-section" aria-labelledby="activity-link-heading" hidden={settingsCategory !== "data"}>
+             <section className="settings-section" aria-labelledby="offline-storage-link-heading" hidden={settingsCategory !== "sync-data"}>
+               <button className="settings-row settings-row--navigation" type="button" onClick={onOpenOfflineStorage}>
+                 <span className="settings-row__icon"><CloudCheck size={17} /></span><span className="settings-row__copy"><strong id="offline-storage-link-heading">Connection &amp; Offline</strong><small>Review sync, pending work, pins, downloaded bytes, and browser storage.</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+               </button>
+             </section>
+
+             {canViewActivity && <section className="settings-section" aria-labelledby="activity-link-heading" hidden={settingsCategory !== "sync-data"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainActivityButtonRef} onClick={openActivity}>
                 <span className="settings-row__icon"><ClockCounterClockwise size={17} /></span>
                 <span className="settings-row__copy">
@@ -487,7 +497,7 @@ export function SettingsWindow({
               </button>
             </section>}
 
-            {shortLinksAvailable && <section className="settings-section" aria-labelledby="short-links-link-heading" hidden={settingsCategory !== "data"}>
+             {shortLinksAvailable && <section className="settings-section" aria-labelledby="short-links-link-heading" hidden={settingsCategory !== "sync-data"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainShortLinksButtonRef} onClick={openShortLinks}>
                 <span className="settings-row__icon"><LinkSimple size={17} /></span>
                 <span className="settings-row__copy"><strong id="short-links-link-heading">Short Links</strong><small>Create and manage account-wide redirect URLs.</small></span>
@@ -495,19 +505,19 @@ export function SettingsWindow({
               </button>
             </section>}
 
-            <section className="settings-section" aria-labelledby="apps-link-heading" hidden={settingsCategory !== "apps"}>
+             <section className="settings-section" aria-labelledby="apps-link-heading" hidden={settingsCategory !== "files-apps"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainAppsButtonRef} onClick={openApps}>
                 <span className="settings-row__icon"><Package size={17} /></span><span className="settings-row__copy"><strong id="apps-link-heading">Apps</strong><small>{installedApps.length ? `${installedApps.length} installed ${installedApps.length === 1 ? "app" : "apps"}: bundled apps and user-approved packages.` : "Manage user-approved app packages."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
             </section>
 
-            <section className="settings-section" aria-labelledby="offline-storage-link-heading" hidden={settingsCategory !== "connection"}>
-              <button className="settings-row settings-row--navigation" type="button" onClick={onOpenOfflineStorage}>
-                <span className="settings-row__icon"><CloudCheck size={17} /></span><span className="settings-row__copy"><strong id="offline-storage-link-heading">Connection &amp; Offline</strong><small>Review sync, pending work, pins, downloaded bytes, and browser storage.</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
-              </button>
-            </section>
+             {sharingAvailable && <section className="settings-section" aria-labelledby="sharing-link-heading" hidden={settingsCategory !== "desktop"}>
+               <button className="settings-row settings-row--navigation" type="button" disabled={sharingDisabled} title={sharingDisabled ? "Connect to manage sharing." : undefined} onClick={onOpenSharing}>
+                 <span className="settings-row__icon"><ShareNetwork size={17} /></span><span className="settings-row__copy"><strong id="sharing-link-heading">Share desktop</strong><small>{sharingDisabled ? "Connect to review and manage access." : "Invite people and manage access to this desktop."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+               </button>
+             </section>}
 
-            <section className="settings-section" aria-labelledby="desktop-heading" hidden={settingsCategory !== "desktop"}>
+             <section className="settings-section" aria-labelledby="desktop-heading" hidden={settingsCategory !== "desktop"}>
               <div className="settings-section__heading">
                 <ArrowsOut size={18} />
                 <div><h3 id="desktop-heading">Desktop</h3><p>Adjust icon placement and the viewing area.</p></div>
@@ -540,7 +550,7 @@ export function SettingsWindow({
               </div>
             </section>
 
-            <section className="settings-section" aria-labelledby="external-content-heading" hidden={settingsCategory !== "files"}>
+             <section className="settings-section" aria-labelledby="external-content-heading" hidden={settingsCategory !== "files-apps"}>
               <div className="settings-section__heading">
                 <GlobeSimple size={18} />
                 <div><h3 id="external-content-heading">External content</h3><p>Control network content shown inside text files.</p></div>
@@ -554,21 +564,22 @@ export function SettingsWindow({
               </div>
             </section>
 
-            <section className="settings-section" aria-labelledby="search-heading" hidden={settingsCategory !== "files"}>
+             <section className="settings-section" aria-labelledby="search-heading" hidden={settingsCategory !== "files-apps"}>
               <div className="settings-section__heading"><MagnifyingGlass size={18} /><div><h3 id="search-heading">Search</h3><p>Choose how broadly file search runs.</p></div></div>
               <div className="settings-list"><label className="settings-row"><span className="settings-row__icon"><MagnifyingGlass size={17} /></span><span className="settings-row__copy"><strong>All accessible desktops</strong><small>{desktopSearchAvailable ? "Use authoritative server results online and cached browser results offline." : "This server does not advertise accessible-desktop search."}</small></span><input type="checkbox" checked={searchAllDesktops} disabled={!desktopSearchAvailable || !localPreferencesLoaded} onChange={(event) => onSearchAllDesktopsChange(event.target.checked)} /></label></div>
             </section>
 
-            <section className="settings-section" aria-labelledby="getting-started-heading" hidden={settingsCategory !== "help"}>
+             <section className="settings-section" aria-labelledby="getting-started-heading" hidden={settingsCategory !== "system-help"}>
               <div className="settings-section__heading"><Info size={18} /><div><h3 id="getting-started-heading">Help</h3><p>Bundled guidance for using and troubleshooting Hiraya.</p></div></div>
               <div className="settings-list">
-                <div className="settings-row"><span className="settings-row__icon"><BookOpenText size={17} /></span><span className="settings-row__copy"><strong>User Guide</strong><small>Read about files, desktops, areas, sharing, offline use, apps, backup, and troubleshooting.</small></span><button className="button button--quiet" type="button" onClick={() => onOpenHelp("start-here")}>Open</button></div>
-                <div className="settings-row"><span className="settings-row__icon"><Info size={17} /></span><span className="settings-row__copy"><strong>Getting Started</strong><small>Review storage, offline use, export, backup, and desktop areas.</small></span><button className="button button--quiet" type="button" onClick={onOpenGettingStarted}>Open</button></div>
+                 <div className="settings-row"><span className="settings-row__icon"><BookOpenText size={17} /></span><span className="settings-row__copy"><strong>User Guide</strong><small>Read about files, desktops, areas, sharing, offline use, apps, backup, and troubleshooting.</small></span><button className="button button--quiet" type="button" onClick={() => onOpenHelp("start-here")}>Open</button></div>
+                 <div className="settings-row"><span className="settings-row__icon"><Info size={17} /></span><span className="settings-row__copy"><strong>Getting Started</strong><small>Review storage, offline use, export, backup, and desktop areas.</small></span><button className="button button--quiet" type="button" onClick={onOpenGettingStarted}>Open</button></div>
+                 <div className="settings-row"><span className="settings-row__icon"><Keyboard size={17} /></span><span className="settings-row__copy"><strong>Keyboard shortcuts</strong><small>Review commands for files, windows, navigation, and editing.</small></span><button className="button button--quiet" type="button" onClick={onOpenKeyboardShortcuts}>Open</button></div>
               </div>
               <button className="inline-help-link" type="button" onClick={() => onOpenHelp("installation-and-updates")}>Installation requirements and alternatives</button>
             </section>
 
-            <section className="settings-section" aria-labelledby="updates-heading" hidden={settingsCategory !== "device"}>
+             <section className="settings-section" aria-labelledby="updates-heading" hidden={settingsCategory !== "system-help"}>
               <div className="settings-section__heading">
                 <ArrowClockwise size={18} />
                 <div><h3 id="updates-heading">Updates</h3><p>Keep this installed app current.</p></div>
@@ -597,7 +608,7 @@ export function SettingsWindow({
               <button className="inline-help-link" type="button" onClick={() => onOpenHelp("installation-and-updates")}>How Hiraya updates work</button>
             </section>
 
-            <section className="settings-section" aria-labelledby="export-heading" hidden={settingsCategory !== "data"}>
+             <section className="settings-section" aria-labelledby="export-heading" hidden={settingsCategory !== "sync-data"}>
               <div className="settings-section__heading">
                 <ExportIcon size={18} />
                 <div><h3 id="export-heading">Export</h3><p>Create a seeded ZIP for a fresh frontend-only deployment.</p></div>

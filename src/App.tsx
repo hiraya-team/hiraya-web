@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, BookOpenText, ClipboardText, CloudCheck, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, Keyboard, MagnifyingGlass, Package, Plus, ShareNetwork, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -3822,23 +3822,11 @@ function App({ session }: { session: AuthSession | null }) {
         </button>
       ))}
       <span className="mobile-header-menu__separator" />
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("sync"))}>
-        <CloudCheck /> Connection &amp; Offline
-      </button>
       <button type="button" onClick={() => launchMobileDestination(dismiss, () => openSettingsWindow())}>
         <GearSix /> Settings
       </button>
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => openHelp())}>
-        <BookOpenText /> Help
-      </button>
-      <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("shortcuts"))}>
-        <Keyboard /> Keyboard shortcuts
-      </button>
       {canOpenTrash && <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("trash"))}>
         <Trash /> Trash
-      </button>}
-      {session && activeDesktop?.capabilities.manage && <button type="button" disabled={!canManage} title={!canManage ? "Connect to manage sharing." : undefined} onClick={() => launchMobileDestination(dismiss, () => setSharingOpen(true))}>
-        <ShareNetwork /> Share desktop
       </button>}
       {session && <>
         <span className="mobile-header-menu__separator" />
@@ -4257,6 +4245,8 @@ function App({ session }: { session: AuthSession | null }) {
                         desktopSearchAvailable={desktopSearchAvailable}
                         shortLinksAvailable={shortLinksAvailable}
                         shortLinkBaseUrl={session?.shortLinkBaseUrl ?? ""}
+                        sharingAvailable={Boolean(session && activeDesktop?.capabilities.manage)}
+                        sharingDisabled={!canManage}
                         installState={installState}
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
@@ -4340,6 +4330,8 @@ function App({ session }: { session: AuthSession | null }) {
                         onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
                         onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
                         onOpenGettingStarted={() => setShowGettingStarted(true)}
+                        onOpenKeyboardShortcuts={() => setActivePanel("shortcuts")}
+                        onOpenSharing={() => setSharingOpen(true)}
                         onInstall={() => void installPwa()}
                         onOpenOfflineStorage={() => setActivePanel("offline")}
                         onOpenHelp={openHelp}

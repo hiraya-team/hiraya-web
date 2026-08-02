@@ -5182,9 +5182,6 @@ button.app-picker__disclosure { cursor: pointer; }
 
 .settings-ia-categories button { min-height: 38px; padding: 6px 10px; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-text-muted); background: transparent; font-size: 12px; text-align: left; cursor: pointer; }
 .settings-ia-categories button[aria-pressed="true"] { border-color: var(--theme-selection); color: var(--theme-text); background: var(--theme-selected); }
-.settings-scope-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 10px 0 2px; padding: 11px 12px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); background: var(--theme-window-muted); }
-.settings-scope-summary strong { font-size: 14px; }
-.settings-scope-summary span { color: var(--theme-text-muted); font-size: 12px; }
 .settings-section[hidden] { display: none; }
 
 .short-link-create { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(140px, .75fr) auto; align-items: end; gap: 10px; }
@@ -5225,9 +5222,8 @@ button.app-picker__disclosure { cursor: pointer; }
 
 @media (max-width: 620px) {
   .settings-window__content--main { display: block; }
-  .settings-ia-categories { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
-  .settings-ia-categories button { flex: 0 0 auto; scroll-snap-align: start; }
-  .settings-scope-summary { align-items: flex-start; flex-direction: column; }
+  .settings-ia-categories { grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding-bottom: 8px; }
+  .settings-ia-categories button { min-height: 44px; }
   .short-link-create { grid-template-columns: 1fr; }
   .short-link-create .button { min-height: 44px; }
   .short-link-item__heading { align-items: flex-start; flex-direction: column; }
@@ -5751,7 +5747,6 @@ button.app-picker__disclosure { cursor: pointer; }
 .settings-window__content--main { display: block; }
 .settings-ia-categories { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
 .settings-ia-categories button { flex: 0 0 auto; scroll-snap-align: start; }
-.settings-scope-summary { align-items: flex-start; flex-direction: column; }
 .settings-page__header { display: none; }
 
 .help-panel { width: auto; min-height: 0; grid-template-columns: minmax(0, 1fr); }
@@ -5891,9 +5886,8 @@ button.app-picker__disclosure { cursor: pointer; }
 @container settings-window (max-width: 600px) {
   .settings-window__content { padding: calc(3px * var(--theme-density)) calc(13px * var(--theme-density)) calc(14px * var(--theme-density)); }
   .settings-window__content--main { display: block !important; }
-  .settings-ia-categories { display: flex; flex-wrap: nowrap; overflow-x: auto; padding-bottom: 8px; scroll-snap-type: x proximity; }
-  .settings-ia-categories button { flex: 0 0 auto; scroll-snap-align: start; }
-  .settings-scope-summary { align-items: flex-start; flex-direction: column; }
+  .settings-ia-categories { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow: visible; padding-bottom: 8px; scroll-snap-type: none; }
+  .settings-ia-categories button { min-height: 44px; }
   .settings-section { padding-block: calc(16px * var(--theme-density)); }
   .wallpaper-options { grid-template-columns: 1fr; }
   .wallpaper-option { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; }
