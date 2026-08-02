@@ -223,7 +223,7 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   await expect(editor.locator(".cm-content")).toHaveText(contents);
 });
 
-test("a rapid pointer release outside the icon clears drag feedback", async ({ page }) => {
+test("rapid icon releases cannot accumulate snap previews", async ({ page }) => {
   await openLocalDesktop(page);
 
   await page.getByRole("button", { name: /Start; account, system, and windows/ }).click();
@@ -232,36 +232,38 @@ test("a rapid pointer release outside the icon clears drag feedback", async ({ p
   await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
 
-  const name = `lost-capture-${Date.now()}.txt`;
-  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
-  await page.getByLabel("File name").fill(name);
-  await page.getByRole("button", { name: "Create file" }).click();
-  const icon = page.locator(".file-icon").filter({ hasText: name });
-  await icon.click();
+  const names = [`capture-race-one-${Date.now()}.txt`, `capture-race-two-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 900, y: 500 } });
+  }
+  for (const name of names) {
+    const icon = page.locator(".file-icon").filter({ hasText: name });
+    await icon.click();
+    await icon.evaluate((element) => {
+      element.releasePointerCapture = () => { throw new DOMException("Pointer capture was already released.", "NotFoundError"); };
+    });
 
-  const iconBounds = await icon.boundingBox();
-  const desktopBounds = await page.locator(".desktop").boundingBox();
-  if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
-  const releasePoint = {
-    x: Math.min(desktopBounds.x + desktopBounds.width - 100, iconBounds.x + iconBounds.width / 2 + 150),
-    y: Math.min(desktopBounds.y + desktopBounds.height - 100, iconBounds.y + iconBounds.height / 2 + 80),
-  };
-  await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
-  await page.mouse.down();
-  await page.mouse.move(releasePoint.x, releasePoint.y, { steps: 2 });
-  await expect(icon).toHaveAttribute("data-dragging", "true");
-  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(1);
-  const preview = page.locator(".file-icon-snap-preview").first();
-  await expect(preview).toHaveAttribute("data-grid");
-  await expect(preview).toBeVisible();
-
-  await page.evaluate(({ clientX, clientY }) => {
-    window.dispatchEvent(new PointerEvent("pointerup", { pointerId: 1, clientX, clientY }));
-  }, { clientX: releasePoint.x, clientY: releasePoint.y });
-  await expect(preview).not.toHaveAttribute("data-visible");
-  await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
-  await expect(icon).not.toHaveAttribute("data-dragging");
-  await page.mouse.up();
+    const iconBounds = await icon.boundingBox();
+    const desktopBounds = await page.locator(".desktop").boundingBox();
+    if (!iconBounds || !desktopBounds) throw new Error("The desktop item is not visible.");
+    const releasePoint = {
+      x: Math.min(desktopBounds.x + desktopBounds.width - 100, iconBounds.x + iconBounds.width / 2 + 150),
+      y: Math.min(desktopBounds.y + desktopBounds.height - 100, iconBounds.y + iconBounds.height / 2 + 80),
+    };
+    await page.mouse.move(iconBounds.x + iconBounds.width / 2, iconBounds.y + iconBounds.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(releasePoint.x, releasePoint.y, { steps: 2 });
+    await expect(icon).toHaveAttribute("data-dragging", "true");
+    await expect(page.locator(".file-icon-snap-preview[data-visible]")).toHaveCount(1);
+    await page.mouse.up();
+    await expect(page.locator(".file-icon-snap-preview[data-visible]")).toHaveCount(0);
+    await expect(page.locator(".desktop-canvas[data-icon-dragging]")).toHaveCount(0);
+    await expect(icon).not.toHaveAttribute("data-dragging");
+  }
 });
 
 test("moves selected items between the desktop and folder explorer", async ({ page }) => {
