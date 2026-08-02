@@ -87,4 +87,14 @@ describe("Settings apps UI", () => {
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable={false} />)).not.toContain("Create and manage account-wide redirect URLs.");
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable />)).toContain("Create and manage account-wide redirect URLs.");
   });
+
+  test("links to the Hiraya GitHub repository from Help settings", () => {
+    const markup = renderToStaticMarkup(<SettingsWindow {...({
+      page: "main", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined,
+    } as Parameters<typeof SettingsWindow>[0])} />);
+    expect(markup).toContain('href="https://github.com/nmcapule/hiraya"');
+    expect(markup).toContain('target="_blank"');
+    expect(markup).toContain('rel="noopener noreferrer"');
+  });
 });

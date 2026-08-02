@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, Play, Trash, UploadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowSquareOut, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GithubLogo, GlobeSimple, GridFour, ImageSquare, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, Play, Trash, UploadSimple } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
@@ -564,6 +564,7 @@ export function SettingsWindow({
               <div className="settings-list">
                 <div className="settings-row"><span className="settings-row__icon"><BookOpenText size={17} /></span><span className="settings-row__copy"><strong>User Guide</strong><small>Read about files, desktops, areas, sharing, offline use, apps, backup, and troubleshooting.</small></span><button className="button button--quiet" type="button" onClick={() => onOpenHelp("start-here")}>Open</button></div>
                 <div className="settings-row"><span className="settings-row__icon"><Info size={17} /></span><span className="settings-row__copy"><strong>Getting Started</strong><small>Review storage, offline use, export, backup, and desktop areas.</small></span><button className="button button--quiet" type="button" onClick={onOpenGettingStarted}>Open</button></div>
+                <div className="settings-row"><span className="settings-row__icon"><GithubLogo size={17} /></span><span className="settings-row__copy"><strong>GitHub repository</strong><small>View Hiraya's source code and releases.</small></span><a className="button button--quiet" href="https://github.com/nmcapule/hiraya" target="_blank" rel="noopener noreferrer"><ArrowSquareOut size={15} />Open</a></div>
               </div>
               <button className="inline-help-link" type="button" onClick={() => onOpenHelp("installation-and-updates")}>Installation requirements and alternatives</button>
             </section>
