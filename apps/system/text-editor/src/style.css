@@ -8,7 +8,6 @@
 #editor .cm-selectionBackground, #editor .cm-content ::selection { background: color-mix(in srgb, var(--hiraya-focus) 28%, transparent) !important; }
 .compact-control { display: inline-flex; align-items: center; gap: .3rem; color: var(--hiraya-text-muted); font-size: .78rem; white-space: nowrap; }
 .compact-control select { min-width: 3.5rem; }
-.write-state { padding: .15rem .45rem; border: 1px solid var(--hiraya-border); border-radius: 999px; color: var(--hiraya-text-muted); background: var(--hiraya-surface-elevated); font-size: .72rem; font-weight: 650; white-space: nowrap; }
 #editor .cm-editor:not(.cm-focused) .cm-cursor { display: none; }
 @media (max-width: 700px) { .compact-control { display: none; } }
 @media (max-width: 700px) { :is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; } }

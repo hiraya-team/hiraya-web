@@ -84,17 +84,19 @@ function renderExternalContent() {
     if (externalEmbeddedPreviews) { image.src = source; continue; }
     let host = "external site";
     try { host = new URL(source).host; } catch { /* The renderer already accepts only absolute HTTP URLs. */ }
-    const placeholder = document.createElement("span");
+    const placeholder = document.createElement("hiraya-notice");
     placeholder.className = "external-embed";
+    placeholder.setAttribute("tone", "accent");
     placeholder.setAttribute("role", "group");
     placeholder.setAttribute("aria-label", `External image from ${host} blocked`);
-    const copy = document.createElement("span");
+    const copy = document.createElement("strong");
+    copy.slot = "title";
     copy.textContent = `External image blocked from ${host}`;
-    const once = document.createElement("button");
-    once.type = "button"; once.textContent = "Load once";
+    const once = document.createElement("hiraya-button");
+    once.slot = "actions"; once.textContent = "Load once";
     once.addEventListener("click", () => { image.src = source; placeholder.replaceWith(image); });
-    const always = document.createElement("button");
-    always.type = "button"; always.textContent = "Always load";
+    const always = document.createElement("hiraya-button");
+    always.slot = "actions"; always.textContent = "Always load";
     always.addEventListener("click", () => void hiraya.host.setExternalEmbeddedPreviews(true).catch((error) => fail(error, "Could not save the external content preference.")));
     placeholder.append(copy, once, always);
     image.replaceWith(placeholder);

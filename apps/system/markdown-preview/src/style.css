@@ -10,5 +10,5 @@
 .preview blockquote { padding-left: 1rem; border-left: .25rem solid var(--hiraya-accent); color: var(--hiraya-text-muted); }
 .preview img { display: block; max-width: 100%; max-height: 70vh; margin: 1.2rem auto; }
 .preview a { color: var(--hiraya-accent); }
-.external-embed { display: flex; max-width: 100%; margin: 1rem auto; align-items: center; gap: .55rem; padding: .7rem; border: 1px dashed var(--hiraya-border); border-radius: .5rem; color: var(--hiraya-text-muted); background: var(--hiraya-surface); }
-.external-embed > span { min-width: 0; flex: 1; overflow-wrap: anywhere; }
+.external-embed { max-width: 100%; margin: 1rem auto; overflow-wrap: anywhere; }
+.external-embed::part(actions) { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .55rem; }
