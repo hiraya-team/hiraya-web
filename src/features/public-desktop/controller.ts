@@ -32,7 +32,9 @@ export function usePublicDesktop(authority: PublicAuthority) {
     return () => {
       cancelled = true;
     };
-	}, [authority.desktopAlias, authority.itemAlias, loadInitialFile]);
+    // useEffectEvent callbacks are intentionally non-reactive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [authority.desktopAlias, authority.itemAlias]);
 
   useEffect(() => {
     setWallpaperUrl("");
