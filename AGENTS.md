@@ -40,6 +40,14 @@ Prefer small changes in existing modules. Do not introduce global state or a com
 
 Preserve the enforced dependency direction: domain code is browser- and React-independent; storage does not import UI, features, synchronization, or app-host implementations; synchronization depends on `SyncStorage`; shared components do not import features or platform adapters; composition roots wire unrelated capabilities together.
 
+## User Guide Changelog
+
+- Every user-facing feature change must update the Changelog in `docs/USER_GUIDE.md` in the same change before merge.
+- Group entries under `### Month YYYY`, with the newest month and newest entry first.
+- Write each entry as `- **Short feature name.** One or two plain-language sentences explaining the benefit and where to find it.` Use exact interface labels in bold.
+- Combine related commits into one entry. Do not include deployment notes, refactors, commit IDs, issue numbers, implementation details, or developer-oriented prefixes such as `feat:`.
+- Include only user-visible features. Define any unavoidable technical term on first use.
+
 ## UI Skill Requirement
 
 - Before analyzing, designing, or implementing any UI-related change, invoke the `impeccable` skill and follow its complete workflow, including setup, the applicable playbook, the craft floor before editing, and bounded verification. This is mandatory for every UI change, however small.

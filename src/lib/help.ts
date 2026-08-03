@@ -2,6 +2,7 @@ import guideMarkdown from "../../docs/USER_GUIDE.md?raw";
 
 export const HELP_SECTIONS = [
   { id: "start-here", title: "Start here", summary: "Product model and where work lives", keywords: ["local first", "server", "browser local"] },
+  { id: "changelog", title: "Changelog", summary: "Recent user-facing features and where to find them", keywords: ["new", "recent", "features", "updates"] },
   { id: "files-and-folders", title: "Files and folders", summary: "Hierarchy, uploads, and folder import", keywords: ["directory", "empty folders", "drag drop"] },
   { id: "desktops-and-areas", title: "Desktops and areas", summary: "Named desktops and derived spatial regions", keywords: ["coordinates", "navigate", "arrange"] },
   { id: "sharing", title: "Sharing", summary: "Roles, invitations, and public links", keywords: ["owner", "manager", "writer", "reader", "publish"] },
