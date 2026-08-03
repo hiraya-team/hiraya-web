@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FileIcon } from "../src/components/FileIcon";
+import { PanelDialog } from "../src/components/PanelDialog";
 import { SearchCommandPalette } from "../src/components/SearchCommandPalette";
 import { indexSearchBreadcrumbs } from "../src/ui/search-breadcrumbs";
 
@@ -32,6 +33,22 @@ const baseProps = {
 };
 
 describe("accessibility regressions", () => {
+  test("modal panels and search use shared visible title bars", () => {
+    const panel = renderToStaticMarkup(<PanelDialog title="User Guide" onClose={() => undefined}><p>Guide</p></PanelDialog>);
+    const search = renderToStaticMarkup(<SearchCommandPalette {...baseProps} />);
+    const panelTitleId = panel.match(/aria-labelledby="([^"]+)"/)?.[1];
+    const searchTitleId = search.match(/aria-labelledby="([^"]+)"/)?.[1];
+
+    expect(panel).toContain('class="modal-backdrop utility-panel-backdrop"');
+    expect(panel).toContain('class="file-window utility-panel-dialog"');
+    expect(panel).toContain('class="window-header"');
+    expect(panel).toContain(`id="${panelTitleId}">User Guide</h2>`);
+    expect(search).toContain('class="window-header"');
+    expect(search).toContain(`id="${searchTitleId}">Search</h2>`);
+    expect(search).toContain('class="command-palette__search"');
+    expect(search).toContain('Search apps, files, folders, windows, and commands');
+  });
+
   test("search exposes a list-autocomplete combobox and omits an empty active descendant", () => {
     const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} />);
 

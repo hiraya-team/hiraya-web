@@ -24,21 +24,23 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
   const dialogRef = useRef<HTMLElement>(null);
   useModalDialog(backdropRef, dialogRef, onClose);
   return (
-    <div ref={backdropRef} className="sharing-dialog__backdrop large-download-gate__backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section ref={dialogRef} className="large-download-gate" role="dialog" aria-modal="true" aria-labelledby="download-gate-title" tabIndex={-1}>
-        <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
-          <X size={18} />
-        </button>
-        <span className="large-download-gate__icon">
-          <DownloadSimple size={25} />
-        </span>
-        <h2 id="download-gate-title">Sign in for this download</h2>
-        <p>
-          <strong>{gate.fileName}</strong> is large enough to require an authenticated download. The public desktop remains available.
-        </p>
-        <a className="button button--primary" href={new URL(gate.loginUrl, window.location.href).href}>
-          <SignIn size={16} /> Sign in and return
-        </a>
+    <div ref={backdropRef} className="modal-backdrop large-download-gate__backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section ref={dialogRef} className="file-window large-download-gate" role="dialog" aria-modal="true" aria-labelledby="download-gate-title" tabIndex={-1}>
+        <header className="window-header">
+          <div><span className="window-kicker">Download</span><h2 id="download-gate-title">Sign in for this download</h2></div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close download dialog"><X size={18} /></button>
+        </header>
+        <div className="large-download-gate__content">
+          <span className="large-download-gate__icon">
+            <DownloadSimple size={25} />
+          </span>
+          <p>
+            <strong>{gate.fileName}</strong> is large enough to require an authenticated download. The public desktop remains available.
+          </p>
+          <a className="button button--primary" href={new URL(gate.loginUrl, window.location.href).href}>
+            <SignIn size={16} /> Sign in and return
+          </a>
+        </div>
       </section>
     </div>
   );

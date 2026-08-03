@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Recognize dialogs at a glance.** Search, sharing, file choices, guides, and other dialogs now use the same title bar and backdrop while keeping controls tailored to each task.
 - **See download progress while copying files.** Hiraya now shows live progress when a copy needs to download file content, so you can tell that the copy is still moving forward.
 - **Search files and commands separately.** Open Search and choose **Search** or **Commands** to focus the results on what you need.
 - **Open and manage apps in one place.** **Applications** now brings installed apps, administrator-published apps, available updates, launch controls, and app management together.

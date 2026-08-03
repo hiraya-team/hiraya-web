@@ -76,6 +76,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
   const dialogRef = useRef<HTMLElement>(null);
   const queryRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
+  const queryLabelId = useId();
   const listId = useId();
   const scopeStatusId = useId();
   const breadcrumbs = useMemo(() => indexSearchBreadcrumbs(entries), [entries]);
@@ -206,9 +207,15 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
   return (
     <div ref={backdropRef} className="modal-backdrop command-palette-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
       <section ref={dialogRef} className="file-window command-palette" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
-        <header className="command-palette__header">
+        <header className="window-header">
+          <div><span className="window-kicker">Hiraya</span><h2 id={titleId}>Search</h2></div>
+          <button className="icon-button" type="button" aria-label="Close search" onClick={onClose}>
+            <X size={18} />
+          </button>
+        </header>
+        <div className="command-palette__search">
           {commandMode ? <TerminalWindow size={20} aria-hidden="true" /> : <MagnifyingGlass size={20} aria-hidden="true" />}
-          <label className="sr-only" htmlFor={`${titleId}-query`} id={titleId}>
+          <label className="sr-only" htmlFor={`${titleId}-query`} id={queryLabelId}>
             Search apps, files, folders, windows, and commands
           </label>
           <input
@@ -231,10 +238,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
             }}
             onKeyDown={handleKeyDown}
           />
-          <button className="icon-button" type="button" aria-label="Close search" onClick={onClose}>
-            <X size={18} />
-          </button>
-        </header>
+        </div>
         <div className="command-palette__scope">
           <div className="command-palette__segments" role="group" aria-label="Search mode">
             <button type="button" aria-pressed={!commandMode && !searchAllDesktops} onClick={() => selectSearchMode(false)}>

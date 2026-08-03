@@ -15,8 +15,8 @@ export function GettingStartedDialog({ local, installState, onInstall, onClose }
     event.preventDefault();
     dialog.scrollBy({ top: event.deltaY });
   }}>
-    <section ref={dialogRef} className="onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="getting-started-title" tabIndex={-1}>
-      <header><div><span className="window-kicker">Getting started</span><h2 id="getting-started-title">Know where your work lives</h2></div><button className="icon-button" type="button" aria-label="Close Getting Started" onClick={onClose}><X size={18} /></button></header>
+    <section ref={dialogRef} className="file-window onboarding-dialog" role="dialog" aria-modal="true" aria-labelledby="getting-started-title" tabIndex={-1}>
+      <header className="window-header"><div><span className="window-kicker">Getting started</span><h2 id="getting-started-title">Know where your work lives</h2></div><button className="icon-button" type="button" aria-label="Close Getting Started" onClick={onClose}><X size={18} /></button></header>
       <div className="onboarding-dialog__content">
         <div className="onboarding-dialog__grid">
           <article>{local ? <HardDrive size={22} /> : <CloudCheck size={22} />}<div><h3>{local ? "Saved in this browser" : "Synchronized storage"}</h3><p>{local ? "This browser is authoritative. Clearing site data removes Hiraya files, so download important files before clearing storage." : "The server is authoritative. Cached files and queued changes support offline work; shared desktop editing may require a connection."}</p></div></article>

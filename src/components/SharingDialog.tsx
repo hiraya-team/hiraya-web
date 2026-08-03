@@ -83,9 +83,9 @@ export function SharingDialog({ desktop, onClose, onOpenHelp, restoreFocus }: { 
   }
   const publicationUrl = sharing ? publicUrl(sharing.publication) : "";
 
-  return <div ref={backdropRef} className="sharing-dialog__backdrop" role="presentation" onPointerDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}>
-    <section ref={dialogRef} className="sharing-dialog" role="dialog" aria-modal="true" aria-labelledby="sharing-title" tabIndex={-1} aria-busy={busy !== "" || undefined}>
-      <header><div><span className="window-kicker">Access and publication</span><h2 id="sharing-title">Share {desktop.name}</h2></div><button className="icon-button" type="button" disabled={busy !== ""} onClick={onClose} aria-label="Close sharing"><X size={18} /></button></header>
+  return <div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => { if (!busy && event.target === event.currentTarget) onClose(); }}>
+    <section ref={dialogRef} className="file-window sharing-dialog" role="dialog" aria-modal="true" aria-labelledby="sharing-title" tabIndex={-1} aria-busy={busy !== "" || undefined}>
+      <header className="window-header"><div><span className="window-kicker">Access and publication</span><h2 id="sharing-title">Share {desktop.name}</h2></div><button className="icon-button" type="button" disabled={busy !== ""} onClick={onClose} aria-label="Close sharing"><X size={18} /></button></header>
       <div className="sharing-dialog__content">
         <section className="sharing-section"><div className="sharing-section__heading"><UsersThree size={20} /><div><h3>People with access</h3><p>Managers can share and customize. Writers can organize and edit files.</p></div></div>
             <form className="sharing-invite" onSubmit={(event) => { event.preventDefault(); void run("invite", async () => { const result = await inviteMember(desktop.id, { email: email.trim(), role, expiryHours }); if (result && typeof result === "object") setLastInvite(result as { url?: string; invitationUrl?: string; token?: string }); setEmail(""); }); }}>
