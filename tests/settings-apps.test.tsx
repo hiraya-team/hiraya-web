@@ -86,4 +86,17 @@ describe("Settings app data UI", () => {
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable={false} />)).not.toContain("Create and manage account-wide redirect URLs.");
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable />)).toContain("Create and manage account-wide redirect URLs.");
   });
+
+  test("groups appearance with desktop settings and sharing tools together", () => {
+    const markup = renderToStaticMarkup(<SettingsWindow {...({
+      page: "main", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, sharingAvailable: true, shortLinksAvailable: true,
+    } as Parameters<typeof SettingsWindow>[0])} />);
+    expect(markup).toContain('aria-pressed="true">Desktop</button>');
+    expect(markup).toContain('aria-pressed="false">Sharing</button>');
+    expect(markup).not.toContain(">Appearance</button>");
+    expect(markup).not.toContain("Desktop &amp; sharing");
+    expect(markup).toContain("Desktop &amp; item sharing");
+    expect(markup.indexOf("Desktop &amp; item sharing")).toBeLessThan(markup.indexOf("Short Links"));
+  });
 });

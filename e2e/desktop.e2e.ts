@@ -342,7 +342,7 @@ test("rapid icon releases cannot accumulate snap previews", async ({ page }) => 
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Desktop & sharing" }).click();
+  await settings.getByRole("button", { name: "Desktop" }).click();
   await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
 

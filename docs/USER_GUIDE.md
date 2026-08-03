@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Find every sharing tool together.** Open **Settings > Sharing** to manage desktop and item sharing or create account-wide short links. Appearance and icon placement now share the **Desktop** tab.
 - **Open desktops faster.** Hiraya now avoids loading unused wallpaper code and unnecessary file requests when opening synchronized and public desktops.
 - **Recognize dialogs at a glance.** Search, sharing, file choices, guides, and other dialogs now use the same title bar and backdrop while keeping controls tailored to each task.
 - **Paste links as shortcuts.** Copy a complete URL and paste it on the desktop or in an open folder to create a `.url` internet shortcut. The **Paste link** prompt suggests a domain-based file name before saving.
@@ -23,14 +24,14 @@ New user-facing features are listed newest first.
 - **Search files and commands separately.** Open Search and choose **Search** or **Commands** to focus the results on what you need.
 - **Open and manage apps in one place.** **Applications** now brings installed apps, administrator-published apps, available updates, launch controls, and app management together.
 - **Find settings by purpose.** Settings are grouped into clearer categories so related controls are easier to scan and locate.
-- **Create compact links you can share.** When enabled by your administrator, open **Settings > Short Links** to create and manage account-wide redirect links.
+- **Create compact links you can share.** When enabled by your administrator, open **Settings > Sharing > Short Links** to create and manage account-wide redirect links.
 - **Move between areas with a mouse wheel or trackpad.** Scroll across the desktop wallpaper to switch to an adjacent area without opening the area map.
 - **Preview DOCX and RTF documents.** These files now open in the bundled **Document & Media Viewer** without sending their contents to an external service.
 - **Give custom themes more control over Hiraya's appearance.** Imported themes can now coordinate additional interface treatments while retaining accessible defaults.
 - **Switch desktops and areas from one navigation control.** The desktop switcher now keeps each desktop's areas together, making spatial navigation easier to understand.
 - **Keep independent offline changes automatically.** When local and server changes affect different parts of a desktop, Hiraya merges them instead of asking you to resolve an unnecessary conflict.
 - **Drag items between open folders.** Move files and folders directly between folder windows or back onto the desktop.
-- **Choose the icon placement grid.** Open **Settings > Desktop & sharing** to select the grid spacing and turn **Snap to grid** on or off.
+- **Choose the icon placement grid.** Open **Settings > Desktop** to select the grid spacing and turn **Snap to grid** on or off.
 
 ## Files, folders, and hierarchy import {#files-and-folders}
 
@@ -56,7 +57,7 @@ Actions adapt to each invocation rather than the device as a whole. Mouse or tra
 
 ## Sharing, roles, and public links {#sharing}
 
-Desktop owners and managers can open **Share desktop** when sharing is available.
+Desktop owners and managers can open **Settings > Sharing > Desktop & item sharing** when sharing is available.
 
 - **Owner** controls the desktop.
 - **Manager** can organize, edit, customize, and manage sharing.
@@ -65,7 +66,7 @@ Desktop owners and managers can open **Share desktop** when sharing is available
 
 Invitations grant permanent access to a specific person until the invitation is revoked or accepted. A deployment may also grant a default role to all signed-in users.
 
-A public link is different from membership. Under **Share desktop**, owners and managers choose a stable desktop alias and can turn **Share entire desktop** on or off. Right-click one file or folder and choose **Publish...** to expose only that item; a published folder includes its current descendants and files added inside it later. Renaming an alias breaks the old address, while unpublishing keeps the alias available for the same desktop or item. Public browsing does not expose unrelated entries, private Settings, activity, or edit controls.
+A public link is different from membership. Under **Desktop & item sharing**, owners and managers choose a stable desktop alias, turn **Share entire desktop** on or off, and manage published items. Right-click one file or folder and choose **Publish...** to expose only that item; a published folder includes its current descendants and files added inside it later. Renaming an alias breaks the old address, while unpublishing keeps the alias available for the same desktop or item. Public browsing does not expose unrelated entries, private Settings, activity, or edit controls.
 
 ## Offline storage {#offline}
 

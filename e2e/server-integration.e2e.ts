@@ -83,8 +83,8 @@ async function primary(browser: Browser) {
   await first.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await first.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const settings = first.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Desktop & sharing" }).click();
-  await settings.getByRole("button", { name: "Share desktop" }).click();
+  await settings.getByRole("button", { name: "Sharing" }).click();
+  await settings.getByRole("button", { name: "Desktop & item sharing" }).click();
   const sharingDialog = first.getByRole("dialog", { name: /^Share / });
   const aliasInput = sharingDialog.getByLabel("Desktop alias");
   await expect(aliasInput).not.toHaveValue("");

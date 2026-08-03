@@ -53,8 +53,8 @@ const COLOR_LABELS: Record<keyof ThemeColors, string> = {
 };
 
 const SETTINGS_CATEGORIES = [
-  { id: "appearance", label: "Appearance" },
-  { id: "desktop", label: "Desktop & sharing" },
+  { id: "desktop", label: "Desktop" },
+  { id: "sharing", label: "Sharing" },
   { id: "files-apps", label: "Files & apps" },
   { id: "sync-data", label: "Sync & data" },
   { id: "system-help", label: "System & help" },
@@ -251,7 +251,7 @@ export function SettingsWindow({
   const [draft, setDraft] = useState<CustomTheme | null>(null);
   const [saving, setSaving] = useState(false);
   const [wallpaperBusy, setWallpaperBusy] = useState(false);
-  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("appearance");
+  const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("desktop");
   const [layoutDraft, setLayoutDraft] = useState(() => ({ desktopId: activeDesktopId, layout }));
   const contentRef = useRef<HTMLDivElement>(null);
   const wallpaperUploadRef = useRef<HTMLInputElement>(null);
@@ -329,6 +329,10 @@ export function SettingsWindow({
     pendingLayoutRef.current = null;
     if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
   }, [page]);
+
+  useEffect(() => {
+    if (settingsCategory === "sharing" && !sharingAvailable && !shortLinksAvailable) setSettingsCategory("desktop");
+  }, [settingsCategory, sharingAvailable, shortLinksAvailable]);
 
   const previewWallpaper = (wallpaper: DesktopLayout["wallpaper"]) => {
     const next = { ...displayedLayout, wallpaper };
@@ -462,8 +466,8 @@ export function SettingsWindow({
          {page === "main" ? (
            <>
               <header className="settings-ia-header"><h2>Settings</h2><p>Personalize this desktop, manage its data, and control this installation of Hiraya.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
-               <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
-               <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "appearance"}>
+               <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.filter((category) => category.id !== "sharing" || sharingAvailable || shortLinksAvailable).map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
+               <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "desktop"}>
               <button className="settings-row settings-row--navigation" type="button" ref={mainThemesButtonRef} onClick={openThemes}>
                 <span className="settings-row__icon"><PaintBrush size={17} /></span>
                 <span className="settings-row__copy">
@@ -491,8 +495,14 @@ export function SettingsWindow({
               </button>
             </section>}
 
-             {shortLinksAvailable && <section className="settings-section" aria-labelledby="short-links-link-heading" hidden={settingsCategory !== "sync-data"}>
-              <button className="settings-row settings-row--navigation" type="button" ref={mainShortLinksButtonRef} onClick={openShortLinks}>
+             {sharingAvailable && <section className="settings-section" aria-labelledby="sharing-link-heading" hidden={settingsCategory !== "sharing"}>
+               <button className="settings-row settings-row--navigation" type="button" disabled={sharingDisabled} title={sharingDisabled ? "Connect to manage sharing." : undefined} onClick={onOpenSharing}>
+                 <span className="settings-row__icon"><ShareNetwork size={17} /></span><span className="settings-row__copy"><strong id="sharing-link-heading">Desktop &amp; item sharing</strong><small>{sharingDisabled ? "Connect to review and manage sharing." : "Invite people, publish this desktop, and manage published items."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+               </button>
+             </section>}
+
+             {shortLinksAvailable && <section className="settings-section" aria-labelledby="short-links-link-heading" hidden={settingsCategory !== "sharing"}>
+               <button className="settings-row settings-row--navigation" type="button" ref={mainShortLinksButtonRef} onClick={openShortLinks}>
                 <span className="settings-row__icon"><LinkSimple size={17} /></span>
                 <span className="settings-row__copy"><strong id="short-links-link-heading">Short Links</strong><small>Create and manage account-wide redirect URLs.</small></span>
                 <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
@@ -504,12 +514,6 @@ export function SettingsWindow({
                 <span className="settings-row__icon"><Package size={17} /></span><span className="settings-row__copy"><strong id="apps-link-heading">App data &amp; file types</strong><small>Manage recovered app data and preferred file handlers.</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
             </section>
-
-             {sharingAvailable && <section className="settings-section" aria-labelledby="sharing-link-heading" hidden={settingsCategory !== "desktop"}>
-               <button className="settings-row settings-row--navigation" type="button" disabled={sharingDisabled} title={sharingDisabled ? "Connect to manage sharing." : undefined} onClick={onOpenSharing}>
-                 <span className="settings-row__icon"><ShareNetwork size={17} /></span><span className="settings-row__copy"><strong id="sharing-link-heading">Share desktop</strong><small>{sharingDisabled ? "Connect to review and manage access." : "Invite people and manage access to this desktop."}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
-               </button>
-             </section>}
 
              <section className="settings-section" aria-labelledby="desktop-heading" hidden={settingsCategory !== "desktop"}>
               <div className="settings-section__heading">
