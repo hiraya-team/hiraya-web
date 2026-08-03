@@ -14,6 +14,7 @@ describe("bundled user guide", () => {
     expect(guideMarkdown.startsWith("# Hiraya User Guide")).toBe(true);
     expect(HELP_SECTIONS.map((section) => section.id)).toEqual([
       "start-here",
+      "changelog",
       "files-and-folders",
       "desktops-and-areas",
       "sharing",
@@ -24,6 +25,15 @@ describe("bundled user guide", () => {
       "troubleshooting",
     ]);
     for (const section of HELP_SECTIONS) expect(headingIds.has(section.id)).toBe(true);
+  });
+
+  test("keeps changelog entries in the user-facing monthly format", () => {
+    const changelog = guideSectionMarkdown(guideMarkdown, "changelog");
+    expect(changelog).toMatch(/^## Changelog \{#changelog\}/);
+    expect(changelog).toMatch(/^### (?:January|February|March|April|May|June|July|August|September|October|November|December) \d{4}$/m);
+    const entries = changelog.split("\n").filter((line) => line.startsWith("- "));
+    expect(entries.length).toBeGreaterThan(0);
+    for (const entry of entries) expect(entry).toMatch(/^- \*\*[^*\n]+\.\*\* \S.+$/);
   });
 
   test("allows only known internal fragment links", () => {

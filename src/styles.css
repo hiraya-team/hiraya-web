@@ -5297,6 +5297,23 @@ button.app-picker__disclosure { cursor: pointer; }
 
 /* Notifications stay in one menu-bar panel instead of covering desktop work. */
 .notification-center { position: relative; display: flex; align-items: center; }
+.copy-download-progress {
+  position: relative;
+  display: flex;
+  height: 32px;
+  max-width: min(240px, 28vw);
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 3px;
+  border-radius: var(--radius-control);
+  color: #f6d79c;
+  background: rgba(231, 185, 100, 0.14);
+}
+.copy-download-progress > span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.copy-download-progress > progress { position: absolute; right: 8px; bottom: 4px; left: 8px; width: auto; height: 2px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--theme-accent); background: rgba(255, 255, 255, .16); }
+.copy-download-progress > progress::-webkit-progress-bar { border-radius: inherit; background: rgba(255, 255, 255, .16); }
+.copy-download-progress > progress::-webkit-progress-value { border-radius: inherit; background: var(--theme-accent); }
+.copy-download-progress > progress::-moz-progress-bar { border-radius: inherit; background: var(--theme-accent); }
 .notification-center__trigger {
   position: relative;
   display: grid;
@@ -5373,6 +5390,8 @@ button.app-picker__disclosure { cursor: pointer; }
 }
 
 @media (max-width: 620px) {
+  .copy-download-progress { width: 32px; min-width: 32px; padding-inline: 8px; }
+  .copy-download-progress > span { display: none; }
   .notification-center__trigger { width: var(--touch-target); height: var(--touch-target); }
   .notification-center__badge { top: 4px; right: 3px; }
   .notification-center__panel { position: fixed; top: calc(44px + env(safe-area-inset-top) + 6px); right: max(8px, env(safe-area-inset-right)); left: max(8px, env(safe-area-inset-left)); width: auto; max-height: calc(100dvh - 58px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }

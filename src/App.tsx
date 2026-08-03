@@ -121,7 +121,7 @@ import { createTrashNotification, dismissTrashNotification, updateTrashNotificat
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
 import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
-import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
+import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
@@ -269,6 +269,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
   const [activeEntryDownloadIds, setActiveEntryDownloadIds] = useState<ReadonlySet<string>>(new Set());
   const [fileTransfers, setFileTransfers] = useState<readonly FileTransferState[]>([]);
+  const [copyDownload, setCopyDownload] = useState<{ entryIds: ReadonlySet<string>; totalBytes: number } | null>(null);
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [importProgress, setImportProgress] = useState<{ folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" } | null>(null);
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
@@ -3033,9 +3034,12 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function copySelection() {
     if (!selectedIdsRef.current.length) return;
+    const selectedIds = [...selectedIdsRef.current];
+    const uncachedFiles = offlineFilesUnderRoots(entries, selectedIds).filter((entry) => offlineModel.entries[entry.id]?.downloadBytes > 0);
+    setCopyDownload(uncachedFiles.length ? { entryIds: new Set(uncachedFiles.map((entry) => entry.id)), totalBytes: uncachedFiles.reduce((total, entry) => total + offlineModel.entries[entry.id].downloadBytes, 0) } : null);
     setError("");
     try {
-      const snapshot = await captureEntries(selectedIdsRef.current);
+      const snapshot = await captureEntries(selectedIds);
       clipboardRef.current = snapshot;
       setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot), true));
       if (navigator.clipboard?.write && "ClipboardItem" in window) {
@@ -3054,6 +3058,8 @@ function App({ session }: { session: AuthSession | null }) {
       setNotice(`${snapshot.selectedRootIds.length} ${snapshot.selectedRootIds.length === 1 ? "item" : "items"} copied`);
     } catch (copyError) {
       setError(copyError instanceof Error ? copyError.message : "The selected items could not be copied.");
+    } finally {
+      setCopyDownload(null);
     }
   }
   copySelectionRef.current = copySelection;
@@ -3906,6 +3912,7 @@ function App({ session }: { session: AuthSession | null }) {
             appNotifications={appNotifications}
             importProgress={importProgress}
             fileTransfers={fileTransfers}
+            copyDownload={copyDownload}
             showUpdateToast={showUpdateToast}
             updateApplying={updateApplying}
             updateBlocked={updateBlocked}

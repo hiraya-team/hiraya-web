@@ -10,6 +10,25 @@ In a synchronized installation, the server is the authoritative home of desktops
 
 Use the desktop switcher for **named desktops**. Use the area button in the global header to open the [desktop area map](#desktops-and-areas) and move around within one desktop. Open Search to find files, folders, apps, commands, or the command that opens this guide.
 
+## Changelog {#changelog}
+
+New user-facing features are listed newest first.
+
+### August 2026
+
+- **See download progress while copying files.** Hiraya now shows live progress when a copy needs to download file content, so you can tell that the copy is still moving forward.
+- **Search files and commands separately.** Open Search and choose **Search** or **Commands** to focus the results on what you need.
+- **Open and manage apps in one place.** **Applications** now brings installed apps, administrator-published apps, available updates, launch controls, and app management together.
+- **Find settings by purpose.** Settings are grouped into clearer categories so related controls are easier to scan and locate.
+- **Create compact links you can share.** When enabled by your administrator, open **Settings > Short Links** to create and manage account-wide redirect links.
+- **Move between areas with a mouse wheel or trackpad.** Scroll across the desktop wallpaper to switch to an adjacent area without opening the area map.
+- **Preview DOCX and RTF documents.** These files now open in the bundled **Document & Media Viewer** without sending their contents to an external service.
+- **Give custom themes more control over Hiraya's appearance.** Imported themes can now coordinate additional interface treatments while retaining accessible defaults.
+- **Switch desktops and areas from one navigation control.** The desktop switcher now keeps each desktop's areas together, making spatial navigation easier to understand.
+- **Keep independent offline changes automatically.** When local and server changes affect different parts of a desktop, Hiraya merges them instead of asking you to resolve an unnecessary conflict.
+- **Drag items between open folders.** Move files and folders directly between folder windows or back onto the desktop.
+- **Choose the icon placement grid.** Open **Settings > Desktop & sharing** to select the grid spacing and turn **Snap to grid** on or off.
+
 ## Files, folders, and hierarchy import {#files-and-folders}
 
 Files and folders behave as a hierarchy even though root items can be placed anywhere on the desktop. Opening a folder shows its children and breadcrumb. Renaming, moving, or reorganizing an item does not rewrite its file content.
