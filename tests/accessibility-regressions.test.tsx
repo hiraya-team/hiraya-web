@@ -129,7 +129,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain('className="mobile-global-actions"');
     expect(windowLayer).toContain("externalHeaderElements={focusedAppId === app.id");
     expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
-    expect(publicDesktop).toContain("externalHeaderElements={{ leading: null, actions: mobileHeaderActionsElement }}");
+    expect(publicDesktop).toContain("externalHeaderElements={windowed ? undefined : { leading: null, actions: mobileHeaderActionsElement }}");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
     expect(app).toContain("target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)");

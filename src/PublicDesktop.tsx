@@ -1,23 +1,30 @@
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
-import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, WarningCircle, X } from "@phosphor-icons/react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, SquaresFour, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
 import { EntryTypeIcon } from "./components/FileIcon";
 import { FileWindow } from "./components/FileWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
+import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { loginUrl } from "./lib/auth";
-import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeStyle } from "./lib/themes";
+import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
 import type { DesktopEntry, FolderEntry } from "./types";
+import { builtinAppWindow } from "./apps/registry";
 import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
-import { publicFolderBackTarget } from "./ui/public-desktop-layout";
+import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
 import { API_ROUTES } from "./lib/api-routes";
 import type { PublicAuthority } from "./lib/public-desktop";
+import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
+import { iconAreaSize, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
+import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
+import { homeRelativeAreaLabel } from "./ui/shell";
+import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
@@ -48,7 +55,7 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
   );
 }
 
-function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry; selected: boolean; onSelect: () => void; onOpen: () => void }) {
+function PublicIcon({ entry, selected, interactive, onSelect, onOpen }: { entry: DesktopEntry; selected: boolean; interactive: boolean; onSelect: () => void; onOpen: () => void }) {
   const press = useRef<{
     pointerId: number;
     x: number;
@@ -58,8 +65,15 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
   const lastTap = useRef<TouchTap | null>(null);
   return (
     <button
-      className="public-icon"
+      className="file-icon public-icon"
+      style={{ "--file-x": `${entry.position.x}px`, "--file-y": `${entry.position.y}px` } as React.CSSProperties}
+      data-selected={selected || undefined}
+      data-entry-id={entry.id}
       type="button"
+      tabIndex={interactive ? undefined : -1}
+      aria-hidden={interactive ? undefined : true}
+      inert={interactive ? undefined : true}
+      aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}`}
       aria-pressed={selected}
       onClick={onSelect}
       onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
@@ -111,8 +125,8 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
         if (event.key === "Enter") onOpen();
       }}
     >
-      <EntryTypeIcon entry={entry} size={39} />
-      <span>{entry.name}</span>
+      <span className="file-icon__art"><EntryTypeIcon entry={entry} size={43} /></span>
+      <span className="file-icon__name">{entry.name}</span>
     </button>
   );
 }
@@ -122,9 +136,71 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
 	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, resolveLinkedFile } = usePublicDesktop(authority);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
+  const [activeSegment, setActiveSegment] = useState<SurfaceSegment>({ column: 0, row: 0 });
+  const [areaMapOpen, setAreaMapOpen] = useState(false);
+  const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
+  const [windowBounds, setWindowBounds] = useState<WindowBounds>(() => initialWindowBounds({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
+  const desktopRef = useRef<HTMLElement>(null);
+  const areaSwitcherRef = useRef<HTMLElement>(null);
+  const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
   const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
   const appearance = desktop?.appearance ?? DEFAULT_THEME_STATE;
   const theme = resolveTheme(appearance);
+  const iconMetrics = useMemo(() => themeIconMetrics(theme), [theme]);
+  const iconArea = useMemo(() => iconAreaSize(desktopSize, desktop?.layout.gridSize), [desktop?.layout.gridSize, desktopSize]);
+  const responsive = useMemo(() => responsiveDesktop(desktop?.entries ?? [], iconArea, iconMetrics), [desktop?.entries, iconArea, iconMetrics]);
+  const activeSegmentKey = segmentKey(activeSegment);
+  const minimapSegments = useMemo(() => publicAreaMapSegments(responsive.segments, activeSegment), [activeSegment, responsive.segments]);
+  const minColumn = Math.min(...minimapSegments.map((segment) => segment.segment.column));
+  const maxColumn = Math.max(...minimapSegments.map((segment) => segment.segment.column));
+  const minRow = Math.min(...minimapSegments.map((segment) => segment.segment.row));
+  const maxRow = Math.max(...minimapSegments.map((segment) => segment.segment.row));
+  const wholeDesktop = !authority.itemAlias;
+
+  useEffect(() => {
+    const surface = desktopRef.current;
+    if (!surface) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.max(1, Math.round(entry.contentRect.width));
+      const height = Math.max(1, Math.round(entry.contentRect.height));
+      setDesktopSize((current) => current.width === width && current.height === height ? current : { width, height });
+    });
+    observer.observe(surface);
+    return () => observer.disconnect();
+  }, []);
+
+  const openTarget = open?.kind === "folder" ? `folder:${open.folderId ?? "root"}` : open ? `file:${open.file.id}` : "";
+  useEffect(() => {
+    if (!open) return;
+    const options = builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
+    setWindowBounds(initialWindowBounds(desktopSize, options));
+    // Opening a different target starts a fresh ephemeral public window.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openTarget]);
+
+  useEffect(() => {
+    if (!open || !windowed) return;
+    const { minWidth, minHeight } = builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
+    setWindowBounds((current) => clampWindowBounds(current, desktopSize, { minWidth, minHeight }));
+  }, [desktopSize, open, windowed]);
+
+  useEffect(() => {
+    if (!areaMapOpen) return;
+    const focusFrame = window.requestAnimationFrame(() => areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAreaMapOpen(false);
+      window.requestAnimationFrame(() => areaSwitcherTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [areaMapOpen]);
+
   function openEntry(entry: DesktopEntry) {
     setSelectedIds(new Set());
     if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id });
@@ -134,7 +210,6 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
     setSelectedIds(new Set([entry.id]));
   }
   const folder = open?.kind === "folder" && open.folderId ? (index.byId.get(open.folderId) as FolderEntry | undefined) : null;
-  const roots = index.children.get(null) ?? [];
   const owner = desktop?.owner;
   const wallpaper = desktop?.layout.wallpaper;
   const closePublicView = () => {
@@ -156,7 +231,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   return (
     <main className="desktop-shell public-desktop" data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(theme)}>
       <header className="menu-bar public-menu">
-        {open ? (
+        {open && !windowed ? (
           <>
             <button className="public-menu__back" type="button" onClick={backPublicView} aria-label={open.kind === "folder" && open.folderId ? "Back to parent folder" : "Back to public desktop"}>
               <ArrowLeft />
@@ -176,6 +251,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               <span className="public-menu__desktop">{desktop?.name || "Public desktop"}</span>
             </div>
             <div className="public-menu__actions">
+              {desktop && wholeDesktop && minimapSegments.length > 1 && <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${areaMapOpen ? "Close" : "Open"} public desktop area navigator, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-controls="area-switcher" aria-expanded={areaMapOpen} onClick={() => setAreaMapOpen((current) => !current)}><SquaresFour size={20} weight={areaMapOpen ? "fill" : "regular"} /></button>}
               <StatusBadge tone="readonly" surface="chrome">
                 Read only
               </StatusBadge>
@@ -188,6 +264,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
       </header>
       <section
         className="desktop public-desktop__surface"
+        ref={desktopRef}
         data-loading={!desktop || undefined}
         data-wallpaper={wallpaper?.source.startsWith("file:") ? "file" : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
         data-custom-loaded={wallpaperUrl || undefined}
@@ -237,18 +314,24 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             <p>{error}</p>
           </div>
         )}
-        {desktop && roots.length === 0 && (
+        {desktop && desktop.entries.length === 0 && (
           <div className="desktop-state empty-state">
             <Folder size={30} weight="duotone" />
             <h1>This desktop is empty.</h1>
             <p>There are no public files to browse yet.</p>
           </div>
         )}
-        {desktop && (
-          <div className="public-icon-grid">
-            {roots.map((entry) => (
-              <PublicIcon entry={entry} key={entry.id} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />
-            ))}
+        {desktop && wholeDesktop && (
+          <div className="desktop-area-stage desktop-area-stage--icons public-icon-stage">
+            <div className="desktop-canvas desktop-area-track public-icon-grid" style={{ width: iconArea.width, height: iconArea.height, transform: `translate3d(${areaCameraPosition(activeSegment, iconArea).x}px, ${areaCameraPosition(activeSegment, iconArea).y}px, 0)` }}>
+              {responsive.segments.map((desktopSegment) => {
+                const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
+                const interactive = desktopSegment.key === activeSegmentKey;
+                return <div className="desktop-area-segment" key={desktopSegment.key} data-active={interactive || undefined} aria-hidden={!interactive || undefined} inert={!interactive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: interactive ? "visible" : "hidden" }}>
+                  {desktopSegment.entries.map((entry) => <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={interactive} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />)}
+                </div>;
+              })}
+            </div>
           </div>
         )}
         {open && (
@@ -257,16 +340,18 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               id="public-view"
               title={open.kind === "folder" ? (folder?.name ?? desktop?.name ?? "Desktop") : open.file.name}
               titleId="public-view-title"
-              bounds={{ x: 0, y: 0, width: 0, height: 0 }}
+              bounds={windowBounds}
+              minWidth={builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minWidth}
+              minHeight={builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minHeight}
               zIndex={1}
               focused
               minimized={false}
               segmentActive
-              windowed={false}
-              hideFocusedHeader
-              externalHeaderElements={{ leading: null, actions: mobileHeaderActionsElement }}
+              windowed={windowed}
+              hideFocusedHeader={!windowed}
+              externalHeaderElements={windowed ? undefined : { leading: null, actions: mobileHeaderActionsElement }}
               onFocus={() => undefined}
-              onBoundsChange={() => undefined}
+              onBoundsChange={(_id, bounds) => setWindowBounds(bounds)}
               onClose={closePublicView}
               onShowDesktop={backPublicView}
               backLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}
@@ -330,6 +415,42 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
           </div>
         )}
       </section>
+      {desktop && wholeDesktop && areaMapOpen && <AreaSwitcher
+        activeSegment={activeSegment}
+        activeSegmentKey={activeSegmentKey}
+        apps={[]}
+        desktopName={desktop.name}
+        desktopRail={null}
+        navigationLabel={`${desktop.name} public desktop areas`}
+        desktopSize={iconArea}
+        detailed
+        dirtyAppIds={new Set()}
+        focusedApp={undefined}
+        focusedAppId={null}
+        obscured={false}
+        occupiedSegmentKeys={new Set(responsive.segments.map((segment) => segment.key))}
+        positions={responsive.positions}
+        rootRef={areaSwitcherRef}
+        segments={minimapSegments}
+        minColumn={minColumn}
+        minRow={minRow}
+        columnCount={maxColumn - minColumn + 1}
+        rowCount={maxRow - minRow + 1}
+        swipePreview={null}
+        windowLimit={0}
+        getAppEntry={() => null}
+        getAppLabel={() => ""}
+        getAppSegment={() => activeSegment}
+        onBeginGridSwipe={() => undefined}
+        onMoveGridSwipe={() => undefined}
+        onFinishGridSwipe={() => undefined}
+        onSelectArea={(segment) => { setActiveSegment(segment); setAreaMapOpen(false); setSelectedIds(new Set()); }}
+        onFocusApp={() => undefined}
+        onShowDesktop={() => undefined}
+        onMinimizeApp={() => undefined}
+        onCloseApp={() => undefined}
+        onShowAllWindows={() => undefined}
+      />}
       {downloadGate && <LargeDownloadGate gate={downloadGate} onClose={dismissDownloadGate} />}
     </main>
   );
