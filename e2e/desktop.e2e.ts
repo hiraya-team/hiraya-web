@@ -50,6 +50,26 @@ test("keyboard modal traps focus, closes with Escape, and restores its invoker",
   await expect(search).toBeFocused();
 });
 
+test("close-window shortcut closes the focused window without claiming the empty desktop", async ({ page }) => {
+  await openLocalDesktop(page);
+  const emptyDesktopEventWasCanceled = await page.evaluate(() => {
+    const event = new KeyboardEvent("keydown", { key: "x", code: "KeyX", ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  });
+  expect(emptyDesktopEventWasCanceled).toBe(false);
+
+  await page.keyboard.press("Control+k");
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("> Settings");
+  await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await expect(settings).toBeVisible();
+
+  await page.keyboard.press("Control+Shift+x");
+  await expect(settings).toBeHidden();
+});
+
 test("search launches installed apps", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();

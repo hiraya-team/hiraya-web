@@ -1784,7 +1784,7 @@ function App({ session }: { session: AuthSession | null }) {
         setActivePanel("search");
         return;
       }
-      if (((modifier && event.key.toLowerCase() === "w") || (event.altKey && event.key === "F4")) && focusedAppIdRef.current) {
+      if (modifier && event.shiftKey && !event.altKey && event.key.toLowerCase() === "x" && focusedAppIdRef.current) {
         event.preventDefault();
         void closeAppRef.current(focusedAppIdRef.current);
         return;
@@ -3639,7 +3639,7 @@ function App({ session }: { session: AuthSession | null }) {
       { id: "nudge-window", group: "Windows", label: "Move focused window within its area", keys: ["Alt", "Shift", "Arrow key"] },
       { id: "resize-window", group: "Windows", label: "Resize focused window", keys: ["Alt", "Ctrl", "Arrow key"] },
     ] : []),
-    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "W"] },
+    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "Shift", "X"] },
     { id: "dismiss", group: "Windows", label: "Dismiss the current menu or dialog", keys: ["Escape"] },
   ];
 
