@@ -4,6 +4,7 @@ import { devices, expect, test, type Locator, type Page } from "@playwright/test
 async function openLocalDesktop(page: Page) {
   await page.goto("/");
   await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
   const onboarding = page.getByRole("dialog", { name: "Know where your work lives" });
   await expect(onboarding).toBeVisible();
   await onboarding.getByRole("button", { name: "Close Getting Started" }).click();
