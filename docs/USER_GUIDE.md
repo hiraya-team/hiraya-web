@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Recognize bundled app controls consistently.** **Text Editor** now uses Hiraya's shared read-only badge, while **Markdown Preview** uses shared notices and buttons when external images are blocked.
 - **Resolve changed files in the Merge window.** When both this browser and the server changed a file, **Merge** combines matching or separate text edits automatically and clearly separates changes that still need a choice. You can also compare media, review details for binary files, or use **Keep both** to preserve both versions as separate files.
 - **Find every sharing tool together.** Open **Settings > Sharing** to manage desktop and item sharing or create account-wide short links. Appearance and icon placement now share the **Desktop** tab.
 - **Browse public desktops by area.** Whole-desktop public links now preserve published icon positions and provide the same area navigator as the main desktop. Files open in movable, resizable windows with a fine pointer and focused full-surface views on touch devices.

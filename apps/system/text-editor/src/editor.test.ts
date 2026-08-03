@@ -23,6 +23,13 @@ describe("Text Editor document behavior", () => {
     expect(css).toContain(":is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; }");
   });
 
+  test("uses the shared read-only badge without bespoke pill styles", async () => {
+    const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+    const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
+    expect(html).toContain('<hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge>');
+    expect(css).not.toContain(".write-state");
+  });
+
   test("reloads a clean document after a remote change", () => {
     const state = new TextDocumentState();
     state.load("one", 1);

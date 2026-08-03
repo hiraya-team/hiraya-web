@@ -17,3 +17,12 @@ test("allows only HTTP embeds or local relative resources", () => {
   expect(markdownResourceKind("data:image/svg+xml,<svg/>")).toBe("blocked");
   expect(markdownResourceKind("//tracker.example/pixel")).toBe("blocked");
 });
+
+test("uses shared warning actions without bypassing the external embed policy", async () => {
+  const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+  expect(source).toContain('document.createElement("hiraya-notice")');
+  expect(source.match(/document\.createElement\("hiraya-button"\)/g)).toHaveLength(2);
+  expect(source).not.toContain('document.createElement("button")');
+  expect(source).toContain("if (externalEmbeddedPreviews) { image.src = source; continue; }");
+  expect(source).toContain("hiraya.host.setExternalEmbeddedPreviews(true)");
+});
