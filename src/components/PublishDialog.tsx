@@ -57,7 +57,9 @@ export function PublishDialog({
   );
   useEffect(() => {
     void loadSharing();
-  }, [desktop.id, entry.id, loadSharing]);
+    // useEffectEvent callbacks are intentionally non-reactive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop.id, entry.id]);
   const published = sharing?.publication.items.find(
     (item) => item.entryId === entry.id,
   );

@@ -80,6 +80,25 @@ async function primary(browser: Browser) {
   const first = await signIn(firstContext);
   const second = await signIn(secondContext);
 
+  await first.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await first.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = first.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Desktop & sharing" }).click();
+  await settings.getByRole("button", { name: "Share desktop" }).click();
+  const sharingDialog = first.getByRole("dialog", { name: /^Share / });
+  const aliasInput = sharingDialog.getByLabel("Desktop alias");
+  await expect(aliasInput).not.toHaveValue("");
+  let sharingReloads = 0;
+  first.on("request", (request) => {
+    if (request.method() === "GET" && request.url().endsWith("/sharing")) sharingReloads += 1;
+  });
+  await aliasInput.fill("draft-public-alias");
+  await first.waitForTimeout(250);
+  await expect(aliasInput).toHaveValue("draft-public-alias");
+  expect(sharingReloads).toBe(0);
+  await sharingDialog.getByRole("button", { name: "Close sharing" }).click();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
   await createFolder(first, onlineFolder);
   await expect(second.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible({ timeout: 30_000 });
 

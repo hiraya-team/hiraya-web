@@ -95,7 +95,9 @@ export function SharingDialog({
   );
   useEffect(() => {
     void loadSharing();
-  }, [desktop.id, loadSharing]);
+    // useEffectEvent callbacks are intentionally non-reactive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [desktop.id]);
   useEffect(
     () => () => {
       copyGenerationRef.current += 1;
