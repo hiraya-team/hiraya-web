@@ -8,7 +8,7 @@ import "./styles/index.css";
 const frontendOnly = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 
 const root = document.getElementById("root")!;
-root.innerHTML = `<main class="startup-state" role="status"><img class="brand-mark__shape" src="${import.meta.env.BASE_URL}logo.png" alt=""><div><strong>Hiraya</strong><span>Opening your desktop...</span></div></main>`;
+root.innerHTML = `<main class="startup-state" role="status"><img class="brand-mark__shape" src="${import.meta.env.BASE_URL}pwa-192x192.png" alt=""><div><strong>Hiraya</strong><span>Opening your desktop...</span></div></main>`;
 
 async function retireUnscopedServiceWorker() {
   if (!import.meta.env.PROD || frontendOnly || localStorage.getItem("hiraya-auth-pwa-rollout-v1") === "complete") return;

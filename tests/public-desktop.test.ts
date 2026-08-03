@@ -60,6 +60,30 @@ describe("public desktop", () => {
     await expect(fetchPublicFile({ desktopAlias: "team-desk" }, sameSize, 3, fetchImpl)).rejects.toThrow("integrity verification");
   });
 
+  test("uses a direct descriptor returned by the public content route", async () => {
+    const directFile = { ...file, size: 4 };
+    const urls: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      urls.push(String(input));
+      if (urls.length === 1) return Response.json({
+        entryId: directFile.id,
+        contentRevision: 3,
+        size: directFile.size,
+        sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+        access: { url: "https://downloads.example.test/file", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+      });
+      return new Response("test");
+    }) as typeof fetch;
+
+    const result = await fetchPublicFile({ desktopAlias: "team-desk" }, directFile, 3, fetchImpl);
+
+    expect(await result.text()).toBe("test");
+    expect(urls).toEqual([
+      "/api/public/desktops/team-desk/entries/file/content",
+      "https://downloads.example.test/file",
+    ]);
+  });
+
   test("verifies the SHA-256 digest of direct downloads", async () => {
     const directFile = { ...file, size: 4 };
     let calls = 0;
@@ -86,6 +110,15 @@ describe("public desktop", () => {
     expect(source).toContain("const closePublicView = () => {\n    setSelectedIds(new Set());");
     expect(source).toContain("const backPublicView = () => {");
     expect(source).toContain("setSelectedIds(new Set());\n    setOpen({");
+  });
+
+  test("loads packaged wallpaper code only when selected", async () => {
+    const publicSource = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    const appSource = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    for (const source of [publicSource, appSource]) {
+      expect(source).toContain('lazy(() => import("./components/ThemeWallpaper")');
+      expect(source).not.toContain('import { ThemeWallpaper } from "./components/ThemeWallpaper"');
+    }
   });
 
   test("keeps public root icons scrollable, focus-reachable, and pinch-magnifiable", async () => {

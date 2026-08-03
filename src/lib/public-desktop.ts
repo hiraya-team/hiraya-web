@@ -46,11 +46,13 @@ export async function fetchPublicFile(authority: PublicAuthority, file: FileEntr
     return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
   }
 
-  if (!response.ok && response.status !== 404 && response.status !== 405 && response.status !== 409) throw new Error(`The file could not be downloaded (${response.status}).`);
-  response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(authority.desktopAlias, authority.itemAlias, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
-  const descriptorGate = await largeDownloadError(response);
-  if (descriptorGate) throw descriptorGate;
-  if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);
+  if (!response.ok) {
+    if (response.status !== 404 && response.status !== 405 && response.status !== 409) throw new Error(`The file could not be downloaded (${response.status}).`);
+    response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(authority.desktopAlias, authority.itemAlias, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
+    const descriptorGate = await largeDownloadError(response);
+    if (descriptorGate) throw descriptorGate;
+    if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);
+  }
   const descriptor = parseContentAccessDescriptor(await response.json(), file.id, contentRevision, file.size);
   const contentResponse = await fetchImpl(descriptor.access.url, { method: "GET", headers: descriptor.access.headers, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer" });
   const contentGate = await largeDownloadError(contentResponse);

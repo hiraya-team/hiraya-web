@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
@@ -105,7 +105,6 @@ import { createAppCommandService, type AppCommandContext, type CommandId } from 
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
 import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
-import { ThemeWallpaper } from "./components/ThemeWallpaper";
 import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
@@ -152,6 +151,8 @@ import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
 import { inspectStorePackage, loadStorePackages, subscribeToAppStoreChanges, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
+
+const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
@@ -3889,7 +3890,7 @@ function App({ session }: { session: AuthSession | null }) {
             <div className="mobile-window-nav__leading">
               <MobileHeaderMenu
                 label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
-                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" /></span>}
+                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
               >
                 {renderMobileStartMenu}
               </MobileHeaderMenu>
@@ -4008,7 +4009,7 @@ function App({ session }: { session: AuthSession | null }) {
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} cache={themePackageCache} /> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} cache={themePackageCache} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div

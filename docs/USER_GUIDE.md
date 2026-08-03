@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Open desktops faster.** Hiraya now avoids loading unused wallpaper code and unnecessary file requests when opening synchronized and public desktops.
 - **Recognize dialogs at a glance.** Search, sharing, file choices, guides, and other dialogs now use the same title bar and backdrop while keeping controls tailored to each task.
 - **Paste links as shortcuts.** Copy a complete URL and paste it on the desktop or in an open folder to create a `.url` internet shortcut. The **Paste link** prompt suggests a domain-based file name before saving.
 - **See download progress while copying files.** Hiraya now shows live progress when a copy needs to download file content, so you can tell that the copy is still moving forward.

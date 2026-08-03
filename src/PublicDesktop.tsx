@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useMemo, useRef, useState } from "react";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
 import { EntryTypeIcon } from "./components/FileIcon";
@@ -16,9 +16,10 @@ import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
-import { ThemeWallpaper } from "./components/ThemeWallpaper";
 import { API_ROUTES } from "./lib/api-routes";
 import type { PublicAuthority } from "./lib/public-desktop";
+
+const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -170,7 +171,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         ) : (
           <>
             <div className="brand-mark">
-              <img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}logo.png`} alt="" />
+              <img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" />
               <strong>Hiraya</strong>
               <span className="public-menu__desktop">{desktop?.name || "Public desktop"}</span>
             </div>
@@ -203,7 +204,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
       >
         {wallpaper?.source.startsWith("theme:") && (() => {
           const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
-			return selected?.wallpaper ? <ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(authority.desktopAlias, selected.id, selected.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
+          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(authority.desktopAlias, selected.id, selected.wallpaper.revision)} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />
