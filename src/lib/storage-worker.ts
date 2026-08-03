@@ -1,4 +1,4 @@
-export const STORAGE_PROTOCOL_VERSION = 11;
+export const STORAGE_PROTOCOL_VERSION = 12;
 
 export function storageWorkerName(frontendOnly: boolean, namespace: string): string {
   return frontendOnly ? `hiraya-storage-v${STORAGE_PROTOCOL_VERSION}` : `hiraya-storage-v${STORAGE_PROTOCOL_VERSION}-${namespace}`;

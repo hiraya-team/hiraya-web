@@ -23,7 +23,7 @@ import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
 import type { JsonValue } from "@hiraya/apps-contracts";
 import { offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
 import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
-import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, stageOperationContents, writeContent, writeContentCacheMarker } from "../platform/storage/blobs";
+import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readContentConflictBase, readContentConflictServer, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, replaceStagedContent, stageOperationContents, writeContent, writeContentCacheMarker, writeContentConflictBase, writeContentConflictServer } from "../platform/storage/blobs";
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
 import { sha256Blob } from "./blob-transfer";
@@ -429,6 +429,23 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
   await stageOperationContents(reservation.operationId, contents);
   let committed = false;
   try {
+    if (operation.kind === "save-content" && operation.baseContentRevision !== undefined) {
+      const desktopId = getActiveDesktopContext();
+      const manifest = await readManifest();
+      const records = await callDatabase("readOutbox", undefined, null);
+      const prior = records.filter((record) => record.desktopId === desktopId && record.operation.kind === "save-content" && record.operation.entryId === operation.entryId).at(-1);
+      let base = prior ? await readContentConflictBase(prior.operationId) : null;
+      if (!base && manifest.sync.catalogId) {
+        const marker = await readContentCacheMarker(operation.entryId);
+        if (marker?.catalogId === manifest.sync.catalogId && marker.contentRevision === operation.baseContentRevision) {
+          try {
+            const stored = await (await (await getFilesDirectory()).getFileHandle(operation.entryId)).getFile();
+            if (await contentMatchesCacheMarker(stored, marker)) base = stored;
+          } catch (error) { if (!isNotFound(error)) throw error; }
+        }
+      }
+      if (base) await writeContentConflictBase(reservation.operationId, base);
+    }
     const result = await callDatabase("enqueueMutation", {
       operationId: reservation.operationId,
       catalogId: (await readManifest()).sync.catalogId,
@@ -441,6 +458,28 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
       desktop: { entries: manifest.entries, layout: manifestLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync },
       record: result.record,
     };
+  } catch (error) {
+    if (!committed) await removeStagedOperation(reservation.operationId);
+    throw error;
+  }
+}
+
+async function resolveContentConflictKeepBothUnsafe(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) {
+  const selected = (await callDatabase("readOutbox", undefined, null)).find((record) => record.operationId === operationId);
+  if (!selected || selected.operation.kind !== "save-content") throw new Error("That blocked content conflict no longer exists.");
+  const content = await readStagedContent(operationId, selected.operation.entryId);
+  const reservation = await callDatabase("reserveOperation", undefined, null);
+  const operation: OutboxOperation = { schemaVersion: 1, kind: "create", entries: [sibling] };
+  await stageOperationContents(reservation.operationId, new Map([[sibling.id, content]]));
+  let committed = false;
+  try {
+    const state: Manifest = { entries: remote.entries, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
+    const result = await callDatabase("resolveContentConflictKeepBoth", { operationId, replacementOperationId: reservation.operationId, state, operation }, selected.desktopId);
+    committed = true;
+    const projected = parseDesktopState(result.state);
+    if (selected.desktopId === getActiveDesktopContext()) desktopLoad = Promise.resolve(projected);
+    await removeStagedOperation(operationId);
+    return { desktop: { entries: projected.entries, layout: manifestLayout(projected), editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync }, record: result.record };
   } catch (error) {
     if (!committed) await removeStagedOperation(reservation.operationId);
     throw error;
@@ -1157,6 +1196,10 @@ export function rebaseBlockedMutation(operationId: string, operation: OutboxOper
 export function recordMutationAttempt(operationId: string, attemptedAt: number) { return serializeStorage(() => callDatabase("recordMutationAttempt", { operationId, attemptedAt })); }
 export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
 export function readPendingContent(operationId: string, entryId: string) { return serializeStorage(() => readStagedContent(operationId, entryId)); }
+export function readContentConflict(operationId: string, entryId: string) { return serializeStorage(async () => ({ mine: await readStagedContent(operationId, entryId), base: await readContentConflictBase(operationId), server: await readContentConflictServer(operationId) })); }
+export function retainContentConflictServer(operationId: string, content: Blob) { return serializeStorage(() => writeContentConflictServer(operationId, content)); }
+export function replacePendingContent(operationId: string, entryId: string, content: Blob) { return serializeStorage(() => replaceStagedContent(operationId, entryId, content)); }
+export function resolveContentConflictKeepBoth(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) { return serializeStorage(() => resolveContentConflictKeepBothUnsafe(operationId, remote, sibling)); }
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }
 export function listInstalledApps() { return serializeStorage(() => repositories.listInstalledApps()); }
 export function installApp(install: InstalledApp) { return serializeStorage(() => repositories.installApp(install)); }
