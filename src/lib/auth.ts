@@ -11,6 +11,7 @@ export type AuthSession = {
   schemaVersion: 1;
   catalogId: string;
   storageId: string;
+  directBlobOrigin: string;
   user: SessionUser;
   capabilities: {
     blobTransfer: "direct-b2-v1";
@@ -55,14 +56,22 @@ function isSafeAbsoluteHttpUrl(value: string) {
   }
 }
 
+function normalizedHttpOrigin(value: string) {
+  if (!isSafeAbsoluteHttpUrl(value)) return null;
+  const url = new URL(value);
+  return url.pathname === "/" ? url.origin : null;
+}
+
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
-  const session = value as { storageId?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown };
+  const session = value as { storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
   if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
     throw new Error("The session bootstrap requires direct-b2-v1 blob transfer support.");
   }
+  const directBlobOrigin = normalizedHttpOrigin(requiredString(session.directBlobOrigin, "direct blob origin"));
+  if (!directBlobOrigin) throw new Error("The session bootstrap contains an invalid direct blob origin.");
   const user = session.user as { displayName?: unknown; email?: unknown; avatarUrl?: unknown };
   const optionalString = (candidate: unknown, label: string) => candidate === undefined ? undefined : requiredString(candidate, label);
   const desktopSearch = (session.capabilities as { desktopSearch?: unknown }).desktopSearch;
@@ -75,6 +84,7 @@ export function parseAuthSession(value: unknown): AuthSession {
   return {
     ...authority,
     storageId: requiredString(session.storageId, "storage ID"),
+    directBlobOrigin,
     user: {
       displayName: requiredString(user.displayName, "display name"),
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),

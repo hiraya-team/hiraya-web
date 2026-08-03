@@ -18,6 +18,7 @@ function fixture() {
   const replace = (next: DesktopEntry) => { snapshot = { ...snapshot, entries: snapshot.entries.map((entry) => entry.id === next.id ? next : entry) }; return next; };
   const sync: FileSyncFunctions = {
     readFile: async (id) => { calls.push(`read:${id}`); return contents.get(id)!; },
+    previewFile: async (id) => ({ kind: "blob", blob: contents.get(id)! }),
     saveFile: async (id, content, options) => {
       calls.push(`write:${id}`);
       const actual = snapshot.sync.contentRevisions[id] ?? 0;

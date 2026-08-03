@@ -4,6 +4,7 @@ import type {
   DirectoryEntry,
   FileHandle,
   FileMetadata,
+  FilePreviewSource,
   FolderHandle,
   FolderMetadata,
   HirayaErrorCode,
@@ -19,6 +20,7 @@ type Result<M extends keyof ServiceMethods> = ServiceMethods[M]["result"];
 
 export type FileSyncFunctions = {
   readFile(id: string): Promise<Blob>;
+  previewFile(id: string): Promise<FilePreviewSource>;
   saveFile(id: string, content: Blob, options?: SaveFileOptions): Promise<FileEntry>;
   createFile(name: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string): Promise<FileEntry>;
   createFolder(name: string, parentId: string | null, position: EntryPosition): Promise<FolderEntry>;

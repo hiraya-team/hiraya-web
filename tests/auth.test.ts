@@ -8,27 +8,33 @@ function memoryStorage() {
 
 describe("session bootstrap", () => {
   test("validates stable storage identity and display metadata", () => {
-    expect(parseAuthSession({ schemaVersion: 1, catalogId: "catalog-a", storageId: "opaque-account-1", user: { displayName: "Ada", email: "ada@example.test" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toEqual({
+    const directBlobOrigin = "https://objects.test";
+    expect(parseAuthSession({ schemaVersion: 1, catalogId: "catalog-a", storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada", email: "ada@example.test" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toEqual({
       schemaVersion: 1,
       catalogId: "catalog-a",
       storageId: "opaque-account-1",
+      directBlobOrigin,
       user: { displayName: "Ada", email: "ada@example.test" },
       capabilities: { blobTransfer: "direct-b2-v1" },
     });
     const authority = { schemaVersion: 1, catalogId: "catalog-a" };
-    expect(() => parseAuthSession({ ...authority, storageId: "", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("storage ID");
+    expect(() => parseAuthSession({ ...authority, storageId: "", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("storage ID");
     expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "proxy-v1" } })).toThrow("direct-b2-v1");
-    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "accessible-desktops-v1" } }).capabilities.desktopSearch).toBe("accessible-desktops-v1");
-    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "legacy" } })).toThrow("desktop search");
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "accessible-desktops-v1" } }).capabilities.desktopSearch).toBe("accessible-desktops-v1");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", desktopSearch: "legacy" } })).toThrow("desktop search");
     expect(() => parseAuthSession({ ...authority, schemaVersion: 2, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("Update Hiraya");
-    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" })).toMatchObject({ capabilities: { shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" });
-    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "https://go.hiraya.sh" }).shortLinkBaseUrl).toBe("https://go.hiraya.sh");
-    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "http://127.0.0.1:8080/r" }).shortLinkBaseUrl).toBe("http://127.0.0.1:8080/r");
-    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "legacy" }, shortLinkBaseUrl: "/r" })).toThrow("short-link capability");
-    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" } })).toThrow("incomplete short-link");
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" })).toMatchObject({ capabilities: { shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "/r" });
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "https://go.hiraya.sh" }).shortLinkBaseUrl).toBe("https://go.hiraya.sh");
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl: "http://127.0.0.1:8080/r" }).shortLinkBaseUrl).toBe("http://127.0.0.1:8080/r");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "legacy" }, shortLinkBaseUrl: "/r" })).toThrow("short-link capability");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" } })).toThrow("incomplete short-link");
     for (const shortLinkBaseUrl of ["r", "//example.test/r", "/r?from=session", "/r#links", "/\\example.test/r", "https:example.test/r", "https://user:secret@example.test/r", "https://example.test/r?from=session", "https://example.test/r#links", "https://example.test\\@evil.test/r", "ftp://example.test/r"]) {
-      expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl })).toThrow("short-link base URL");
+      expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1", shortLinks: "account-short-links-v1" }, shortLinkBaseUrl })).toThrow("short-link base URL");
     }
+    for (const invalidOrigin of ["https://objects.test/path", "https://user:secret@objects.test", "https://objects.test?query", "data:text/plain,test"]) {
+      expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin: invalidOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("direct blob origin");
+    }
+    expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin: "HTTPS://OBJECTS.TEST:443", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } }).directBlobOrigin).toBe("https://objects.test");
   });
 
   test("keeps login returns root-relative", () => {
@@ -51,7 +57,7 @@ describe("session bootstrap", () => {
 
   test("uses a versioned validated bootstrap only when session fetch rejects", async () => {
     const storage = memoryStorage();
-    const session = { schemaVersion: 1 as const, catalogId: "catalog-a", storageId: "account-a", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
+    const session = { schemaVersion: 1 as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
     expect(await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage)).toEqual(session);
     expect(await bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).toEqual(session);
     await expect(bootstrapSession(false, (async () => new Response(null, { status: 401 })) as typeof fetch, () => undefined, storage)).rejects.toBeInstanceOf(AuthenticationRequiredError);
@@ -65,7 +71,7 @@ describe("session bootstrap", () => {
 
   test("locks cached account bootstrap synchronously on logout", async () => {
     const storage = memoryStorage();
-    const session = { schemaVersion: 1 as const, catalogId: "catalog-a", storageId: "account-a", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
+    const session = { schemaVersion: 1 as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const } };
     await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage);
     lockAuthBootstrap(storage);
     await expect(bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline");

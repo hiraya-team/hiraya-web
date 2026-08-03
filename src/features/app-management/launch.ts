@@ -158,6 +158,10 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           const status = options.getEntryStatus(files.entryForHost(handle).id);
           return { handle, ...status };
         }),
+        getFilePreviewSource: ({ handle }: { handle: FileHandle }) => {
+          if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.mediaViewer) throw new HostServiceError("Only the bundled Media Viewer can request preview sources.", "PERMISSION_DENIED");
+          return options.fileSync.previewFile(files.entryForHost(handle, "read").id);
+        },
         // Keep protocol v1 apps operational while making the retired behavior explicit.
         setOfflinePinned: async () => { throw new HostServiceError("Offline pinning is no longer supported.", "UNAVAILABLE"); },
         setExternalEmbeddedPreviews: async ({ enabled }: { enabled: boolean }) => {

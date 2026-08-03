@@ -33,6 +33,7 @@ import {
   transferEntries,
   pasteEntries,
   readFile,
+  previewFile,
   renameEntry,
   renameDesktop as renameDesktopMutation,
   saveCustomTheme,
@@ -99,7 +100,7 @@ import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
-import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "@hiraya/app-runtime";
+import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
 import type { AppPackageInspection } from "@hiraya/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import { ThemeWallpaper } from "./components/ThemeWallpaper";
@@ -2613,6 +2614,7 @@ function App({ session }: { session: AuthSession | null }) {
         commandService,
         fileSync: {
           readFile,
+          previewFile,
           saveFile: saveAppFile,
           createFile: createAppFile,
           createFolder,
@@ -4139,7 +4141,7 @@ function App({ session }: { session: AuthSession | null }) {
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             return (
               <>
-                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer && session ? trustedMediaCsp(session.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
                         folder={folder}

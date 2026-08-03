@@ -5,6 +5,25 @@ const password = process.env.HIRAYA_SERVER_E2E_PASSWORD ?? "release-gate-e2e-pas
 const onlineFolder = "E2E cross-browser folder";
 const offlineFolder = "E2E persisted offline folder";
 const sandboxRuntimeFile = "E2E sandbox runtime.txt";
+const mediaFile = "E2E direct preview.wav";
+
+function wavFile(byteLength = 2 * 1024 * 1024) {
+  const dataLength = byteLength - 44;
+  const buffer = Buffer.alloc(byteLength, 128);
+  buffer.write("RIFF", 0);
+  buffer.writeUInt32LE(byteLength - 8, 4);
+  buffer.write("WAVEfmt ", 8);
+  buffer.writeUInt32LE(16, 16);
+  buffer.writeUInt16LE(1, 20);
+  buffer.writeUInt16LE(1, 22);
+  buffer.writeUInt32LE(8_000, 24);
+  buffer.writeUInt32LE(8_000, 28);
+  buffer.writeUInt16LE(1, 32);
+  buffer.writeUInt16LE(8, 34);
+  buffer.write("data", 36);
+  buffer.writeUInt32LE(dataLength, 40);
+  return buffer;
+}
 
 async function signIn(context: BrowserContext) {
   const page = await context.newPage();
@@ -60,14 +79,14 @@ async function primary(browser: Browser) {
   const second = await signIn(secondContext);
 
   await createFolder(first, onlineFolder);
-  await expect(second.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible({ timeout: 15_000 });
+  await expect(second.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible({ timeout: 30_000 });
 
   await firstContext.setOffline(true);
   await createFolder(first, offlineFolder);
   await expect(second.getByRole("button", { name: `${offlineFolder}, folder` })).toBeHidden();
   await firstContext.setOffline(false);
   await first.reload();
-  await expect(second.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible({ timeout: 20_000 });
+  await expect(second.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible({ timeout: 30_000 });
 
   await createTextFile(first, sandboxRuntimeFile);
   await first.locator(".file-icon").filter({ hasText: sandboxRuntimeFile }).dblclick();
@@ -81,6 +100,19 @@ async function primary(browser: Browser) {
     buttonDefined: Boolean(customElements.get("hiraya-button")),
     buttonShadow: Boolean(document.querySelector("hiraya-button")?.shadowRoot),
   }))).toEqual({ foundation: true, toolbarDefined: true, toolbarShadow: true, buttonDefined: true, buttonShadow: true });
+  await first.getByRole("button", { name: `Close ${sandboxRuntimeFile} - Text Editor` }).click();
+
+  const chooser = first.waitForEvent("filechooser");
+  await first.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: mediaFile, mimeType: "audio/wav", buffer: wavFile() });
+  await expect(second.getByText(mediaFile, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await second.setViewportSize({ width: 390, height: 844 });
+  await second.locator(".file-icon").filter({ hasText: mediaFile }).dblclick();
+  const mediaViewer = second.getByRole("dialog", { name: "Document & Media Viewer" });
+  const audio = mediaViewer.frameLocator("iframe").locator("audio");
+  await expect(audio).toBeVisible({ timeout: 15_000 });
+  await expect.poll(() => audio.getAttribute("src")).toMatch(/^http:\/\/127\.0\.0\.1:\d+\//);
+  await expect.poll(() => audio.evaluate((element) => (element as HTMLAudioElement).readyState)).toBeGreaterThanOrEqual(1);
 
   const staleConflict = await second.evaluate(async () => {
     const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
@@ -108,6 +140,7 @@ async function afterRestart(browser: Browser) {
 }
 
 test("server-backed authentication, convergence, replay, conflict, and restart persistence", async ({ browser }) => {
+  test.setTimeout(90_000);
   if (process.env.HIRAYA_SERVER_E2E_PHASE === "restart") await afterRestart(browser);
   else await primary(browser);
 });

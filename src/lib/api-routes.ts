@@ -22,6 +22,7 @@ export const API_ROUTES = {
   desktopBlobMutation: (desktopId: string, uploadId: string) => `${desktopBase(desktopId)}/blob-mutations/${encodeURIComponent(uploadId)}`,
   desktopBlobMutationCommit: (desktopId: string, uploadId: string) => `${desktopBase(desktopId)}/blob-mutations/${encodeURIComponent(uploadId)}/commit`,
   desktopContentAccess: (desktopId: string, id: string, revision: number) => `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/content-access?revision=${encodeURIComponent(String(revision))}`,
+  desktopContentPreviewAccess: (desktopId: string, id: string, revision: number) => `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/content-preview-access?revision=${encodeURIComponent(String(revision))}`,
   desktopTheme: (desktopId: string, id: string) => `${desktopBase(desktopId)}/themes/${encodeURIComponent(id)}`,
   desktopThemePackageAccess: (desktopId: string, id: string, revision: number) => `${desktopBase(desktopId)}/themes/${encodeURIComponent(id)}/package-access?revision=${encodeURIComponent(String(revision))}`,
   desktopSharing: (desktopId: string) => `${desktopBase(desktopId)}/sharing`,

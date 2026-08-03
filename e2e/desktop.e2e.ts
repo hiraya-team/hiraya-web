@@ -195,6 +195,27 @@ test("opens an imported RTF document in the document viewer", async ({ page }) =
   expect(cycleErrors).toEqual([]);
 });
 
+test("opens imported audio from a local Blob preview source", async ({ page }) => {
+  await openLocalDesktop(page);
+  const name = `preview-${Date.now()}.wav`;
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({
+    name,
+    mimeType: "audio/wav",
+    buffer: Buffer.from("UklGRiUAAABXQVZFZm10IBAAAAABAAEAgD4AAIA+AAABAAgAZGF0YQEAAACA", "base64"),
+  });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await expect(icon).toBeVisible();
+  await icon.dblclick();
+  const viewer = page.getByRole("dialog", { name: "Document & Media Viewer" });
+  const audio = viewer.frameLocator("iframe").locator("audio");
+  await expect(audio).toBeVisible();
+  await expect.poll(() => audio.evaluate((element: HTMLMediaElement) => element.readyState)).toBeGreaterThan(0);
+  await expect(audio).toHaveAttribute("src", /^blob:/);
+});
+
 test("undo after opening a text file preserves its loaded contents", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);

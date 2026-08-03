@@ -123,6 +123,7 @@ export class HirayaClient {
     importFolder: (parent: FolderHandle | null = null, options?: RequestOptions) => this.request("host.importFolder", { parent }, options),
     showEntryActions: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.showEntryActions", { handles }, options),
     getEntryStatus: (handles: (FileHandle | FolderHandle)[], options?: RequestOptions) => this.request("host.getEntryStatus", { handles }, options),
+    getFilePreviewSource: (handle: FileHandle, options?: RequestOptions) => this.request("host.getFilePreviewSource", { handle }, options),
     setOfflinePinned: (handles: (FileHandle | FolderHandle)[], pinned: boolean, options?: RequestOptions) => this.request("host.setOfflinePinned", { handles, pinned }, options),
     setExternalEmbeddedPreviews: (enabled: boolean, options?: RequestOptions) => this.request("host.setExternalEmbeddedPreviews", { enabled }, options),
   };

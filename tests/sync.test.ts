@@ -80,8 +80,8 @@ async function waitForOutboxDrain(engine: SyncEngine) {
   await waitFor(async () => (await engine.getOutboxStatus()).records.length === 0);
 }
 
-function remoteStorage() {
-  let current = desktopStateSnapshot();
+function remoteStorage(initial = desktopStateSnapshot()) {
+  let current = initial;
   let outbox: OutboxRecord[] = [];
   let sequence = 0;
   const cached = new Map<string, File>();
@@ -96,6 +96,10 @@ function remoteStorage() {
       return current;
     },
     bindOutboxCatalog: async () => undefined,
+    readFile: async (id: string) => {
+      const entry = current.entries.find((candidate) => candidate.id === id && candidate.kind === "file")!;
+      return new File(["note"], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
+    },
     readCachedFile: async (desktopId: string, catalogId: string, id: string, contentRevision?: number) => {
       const content = outbox.filter((record) => record.desktopId === desktopId).map((record) => pending.get(record.operationId)?.get(id)).filter((candidate): candidate is Blob => candidate !== undefined).at(-1);
       const entry = current.entries.find((candidate) => candidate.id === id && candidate.kind === "file");
@@ -996,6 +1000,37 @@ describe("canonical synchronization", () => {
     engine.dismissCompletedTransfer(transferId);
     expect(engine.getTransferSnapshot()).toEqual([]);
     await engine.stop();
+  });
+
+  test("previews local and cached files as Blobs and uncached remote media by URL", async () => {
+    const localState = desktopStateSnapshot();
+    localState.entries = [{ kind: "file", id: "file-1", name: "clip.mp4", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 20 }, mimeType: "video/mp4", size: 4 }];
+    localState.sync.contentRevisions["file-1"] = 1;
+    const local = new SyncEngine({ frontendOnly: true, storage: remoteStorage(localState) });
+    await local.start("desk", { x: 0, y: 0 });
+    expect(await local.previewFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
+    await local.stop();
+
+    const storage = remoteStorage();
+    const requests: string[] = [];
+    const descriptor = { entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } };
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-preview-access?revision=1") return Response.json(descriptor);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json(descriptor);
+      if (String(input) === descriptor.access.url) return new Response("note");
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const remote = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await remote.start("desk", { x: 0, y: 0 });
+    expect(await remote.previewFile("file-1")).toEqual({ kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt });
+    expect(storage.stats.cacheWrites).toBe(0);
+    expect(requests).not.toContain(descriptor.access.url);
+    await remote.readFile("file-1");
+    expect(await remote.previewFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
+    expect(requests.filter((request) => request.includes("content-preview-access"))).toHaveLength(1);
+    await remote.stop();
   });
 
   test("reports, requests, and removes exact validated offline file revisions", async () => {

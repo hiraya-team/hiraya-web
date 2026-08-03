@@ -21,6 +21,7 @@ import { SyncHttpClient, SyncRequestError } from "../platform/sync/http-client";
 import { SyncConnectivity } from "../platform/sync/connectivity";
 import { sendOutboxOperation, type BlobUploadPhase } from "../platform/sync/outbox-transport";
 import { AuthorityValidationError, parseAuthorityIdentity, UpgradeRequiredError } from "./wire-authority";
+import type { FilePreviewSource } from "@hiraya/apps-contracts";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never
@@ -1393,6 +1394,37 @@ export class SyncEngine {
     }
   }
 
+  async previewFile(id: FileEntry["id"]): Promise<FilePreviewSource> {
+    const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
+    if (!entry) throw new Error("That file no longer exists.");
+    const catalogId = this.current().sync.catalogId;
+    if (this.frontendOnly || !catalogId) return { kind: "blob", blob: await this.storage.readFile(id) };
+
+    const desktopId = this.desktopId;
+    const contentRevision = this.current().sync.contentRevisions[id];
+    const generation = this.generation;
+    const signal = this.syncAbort?.signal;
+    const cached = await this.storage.readCachedFile(desktopId, catalogId, id, contentRevision);
+    if (cached) return { kind: "blob", blob: cached };
+    if (!Number.isSafeInteger(contentRevision)) throw new Error("That file has invalid synchronization metadata.");
+    if (this.status === "offline") throw new VirtualFileUnavailableError();
+
+    let response: Response;
+    try {
+      response = await this.fetchImpl(API_ROUTES.desktopContentPreviewAccess(desktopId, id, contentRevision), { cache: "no-store", credentials: "same-origin", signal });
+    } catch {
+      if (signal?.aborted) throw new DOMException("File loading was stopped.", "AbortError");
+      if (this.sessionIsActive(generation, desktopId)) this.setStatus("offline");
+      throw new VirtualFileUnavailableError();
+    }
+    this.assertActiveSession(generation, desktopId);
+    this.requireAuthentication(response);
+    if (!response.ok) throw new Error(response.status === 404 ? "This file no longer exists on the server." : `A preview of “${entry.name}” could not be loaded (${response.status}).`);
+    const descriptor = parseContentAccessDescriptor(await response.json(), id, contentRevision, entry.size);
+    if (descriptor.access.url.startsWith("/") || Object.keys(descriptor.access.headers).length) throw new Error("The server did not provide a browser-compatible media preview.");
+    return { kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt };
+  }
+
   async estimateOfflineOperation(rootIds: readonly string[]) {
     const roots = dedupeOfflineRoots(this.current().entries, rootIds);
     const inventory = await this.storage.loadOfflineInventory(this.desktopId);
@@ -1693,6 +1725,7 @@ export const saveCustomTheme = defaultEngine.saveCustomTheme.bind(defaultEngine)
 export const installThemePackage = defaultEngine.installThemePackage.bind(defaultEngine);
 export const deleteCustomTheme = defaultEngine.deleteCustomTheme.bind(defaultEngine);
 export const readFile = defaultEngine.readFile.bind(defaultEngine);
+export const previewFile = defaultEngine.previewFile.bind(defaultEngine);
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);
 export const subscribeToOfflineStorage = defaultEngine.subscribeOfflineStorage.bind(defaultEngine);
 export const subscribeToEntryDownloads = defaultEngine.subscribeEntryDownloads.bind(defaultEngine);

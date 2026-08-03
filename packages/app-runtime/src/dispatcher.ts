@@ -66,7 +66,7 @@ export function usesLongRunningRpcDeadline(method: ServiceMethod): boolean {
 const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
   "files.stat": "files:read", "files.read": "files:read", "files.readChunk": "files:read", "files.resolve": "files:read", "files.list": "files:read",
   "files.write": "files:write", "files.beginWrite": "files:write", "files.writeChunk": "files:write", "files.commitWrite": "files:write", "files.abortWrite": "files:write", "files.createFile": "files:write", "files.createFolder": "files:write", "files.rename": "files:write", "files.move": "files:write", "files.delete": "files:write", "files.deleteMany": "files:write",
-  "host.openEntry": "files:read", "host.showEntryActions": "files:read", "host.getEntryStatus": "files:read", "host.setOfflinePinned": "files:read",
+  "host.openEntry": "files:read", "host.showEntryActions": "files:read", "host.getEntryStatus": "files:read", "host.getFilePreviewSource": "files:read", "host.setOfflinePinned": "files:read",
   "host.importFiles": "files:write", "host.importFolder": "files:write",
   "dialogs.openFile": "dialogs", "dialogs.openFolder": "dialogs", "dialogs.saveFile": "dialogs", "dialogs.confirm": "dialogs",
   "window.getState": "window", "window.setTitle": "window", "window.setDirty": "window", "window.setSize": "window", "window.setFullscreen": "window", "window.close": "window",
@@ -222,6 +222,6 @@ async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number, side
 function hasSideEffects(method: ServiceMethod): boolean {
   return !new Set<ServiceMethod>([
     "app.getLaunchContext", "app.getCapabilities", "files.stat", "files.read", "files.readChunk", "files.resolve", "files.list",
-    "host.getEntryStatus", "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm", "window.getState", "theme.get", "storage.get",
+    "host.getEntryStatus", "host.getFilePreviewSource", "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm", "window.getState", "theme.get", "storage.get",
   ]).has(method);
 }

@@ -186,6 +186,10 @@ export interface HostEntryStatus {
   directlyPinned: boolean;
 }
 
+export type FilePreviewSource =
+  | { kind: "blob"; blob: Blob }
+  | { kind: "url"; url: string; expiresAt: number };
+
 export interface CommandDefinition {
   id: string;
   title: string;
@@ -217,6 +221,7 @@ export interface ServiceMethods {
   "host.importFolder": { params: { parent: FolderHandle | null }; result: void };
   "host.showEntryActions": { params: { handles: (FileHandle | FolderHandle)[] }; result: void };
   "host.getEntryStatus": { params: { handles: (FileHandle | FolderHandle)[] }; result: HostEntryStatus[] };
+  "host.getFilePreviewSource": { params: { handle: FileHandle }; result: FilePreviewSource };
   "host.setOfflinePinned": { params: { handles: (FileHandle | FolderHandle)[]; pinned: boolean }; result: void };
   "host.setExternalEmbeddedPreviews": { params: { enabled: boolean }; result: void };
   "dialogs.openFile": { params: { multiple?: boolean; mimeTypes?: string[] }; result: FileHandle[] | null };
@@ -258,7 +263,7 @@ const errorCodeSet = new Set<string>(HIRAYA_ERROR_CODES);
 const serviceMethodSet = new Set<string>([
   "app.getLaunchContext", "app.getCapabilities",
   "files.stat", "files.read", "files.readChunk", "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite", "files.resolve", "files.list", "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
-  "host.openEntry", "host.importFiles", "host.importFolder", "host.showEntryActions", "host.getEntryStatus", "host.setOfflinePinned", "host.setExternalEmbeddedPreviews",
+  "host.openEntry", "host.importFiles", "host.importFolder", "host.showEntryActions", "host.getEntryStatus", "host.getFilePreviewSource", "host.setOfflinePinned", "host.setExternalEmbeddedPreviews",
   "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm",
   "window.getState", "window.setTitle", "window.setDirty", "window.setSize", "window.setFullscreen", "window.close",
   "commands.set", "commands.clear", "notifications.show", "notifications.dismiss", "theme.get",
@@ -497,6 +502,7 @@ export function parseServiceParams<M extends ServiceMethod>(method: M, value: un
     case "files.delete": shape(["handle"], ["recursive"]); result = { handle: handle(params.handle), ...(params.recursive === undefined ? {} : { recursive: boolean(params.recursive, "Recursive delete") }) }; break;
     case "files.deleteMany": shape(["handles"], ["recursive"]); result = { handles: handleArray(params.handles, "File handles"), ...(params.recursive === undefined ? {} : { recursive: boolean(params.recursive, "Recursive delete") }) }; break;
     case "host.openEntry": shape(["handle"]); result = { handle: handle(params.handle) }; break;
+    case "host.getFilePreviewSource": shape(["handle"]); result = { handle: parseFileHandle(params.handle) }; break;
     case "host.importFiles": case "host.importFolder": shape(["parent"]); result = { parent: nullableFolder(params.parent) }; break;
     case "host.showEntryActions": case "host.getEntryStatus": shape(["handles"]); result = { handles: handleArray(params.handles, "Host entry handles") }; break;
     case "host.setOfflinePinned": shape(["handles", "pinned"]); result = { handles: handleArray(params.handles, "Host entry handles"), pinned: boolean(params.pinned, "Offline pin state") }; break;
@@ -540,6 +546,7 @@ export function parseServiceResult<M extends ServiceMethod>(method: M, value: un
     case "theme.get": result = parseThemeTokens(value); break;
     case "storage.get": result = value === undefined ? undefined : parseJsonValue(value); break;
     case "host.getEntryStatus": if (!Array.isArray(value) || value.length > 256) throw new TypeError("Host entry statuses are invalid."); result = value.map(parseHostEntryStatus); break;
+    case "host.getFilePreviewSource": { const source = record(value, "File preview source"); if (source.kind === "blob") { exact(source, ["kind", "blob"], [], "File preview source"); if (!(source.blob instanceof Blob) || source.blob.size > MAX_APP_FILE_BYTES) throw new TypeError("File preview Blob is invalid."); result = { kind: "blob", blob: source.blob }; } else if (source.kind === "url") { exact(source, ["kind", "url", "expiresAt"], [], "File preview source"); let url: URL; try { url = new URL(text(source.url, "File preview URL", 8192)); } catch { throw new TypeError("File preview URL is invalid."); } const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]"; if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback) || url.username || url.password || url.hash) throw new TypeError("File preview URL is invalid."); result = { kind: "url", url: url.href, expiresAt: number(source.expiresAt, "File preview expiration", { integer: true, min: 0 }) }; } else throw new TypeError("File preview source kind is invalid."); break; }
     case "files.writeChunk": case "files.abortWrite": case "files.delete": case "files.deleteMany": case "host.openEntry": case "host.importFiles": case "host.importFolder": case "host.showEntryActions": case "host.setOfflinePinned": case "host.setExternalEmbeddedPreviews": case "window.setTitle": case "window.setDirty": case "window.close": case "commands.set": case "commands.clear": case "notifications.dismiss": case "storage.set": case "storage.remove": case "storage.clear": if (value !== undefined) throw new TypeError(`${method} result must be undefined.`); result = undefined; break;
     default: throw new TypeError("RPC method is invalid.");
   }

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_RPC_TIMEOUT_MS, LONG_RUNNING_FILE_MUTATION_METHODS, LONG_RUNNING_RPC_TIMEOUT_MS, RpcDispatcher, usesLongRunningRpcDeadline } from "./dispatcher";
 import type { AppPackageInspection, ServiceMethod } from "@hiraya/apps-contracts";
-import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS } from "./sandbox";
+import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "./sandbox";
 import { terminateSandboxNavigation } from "./navigation";
 
 function host() {
@@ -161,6 +161,21 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
+  test("structured-clones preview Blobs without materializing an ArrayBuffer", async () => {
+    const service = host();
+    const blob = new Blob([new Uint8Array(4 * 1024 * 1024)], { type: "video/mp4" });
+    const runtimeHost = { ...service.value, host: { getFilePreviewSource: async () => ({ kind: "blob", blob }) } };
+    const dispatcher = new RpcDispatcher({ permissions: ["files:read"], host: runtimeHost, files });
+    const channel = new MessageChannel();
+    const response = new Promise<{ result: { blob: Blob } }>((resolve) => { channel.port2.onmessage = ({ data }) => resolve(data); });
+    dispatcher.attach(channel.port1);
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "preview", method: "host.getFilePreviewSource", params: { handle: "file_0123456789abcdef" } });
+    expect((await response).result.blob).toBeInstanceOf(Blob);
+    expect(blob.size).toBe(4 * 1024 * 1024);
+    dispatcher.dispose();
+    channel.port2.close();
+  });
+
   test("revokes every package URL exactly once", () => {
     const revoked: string[] = [];
     let id = 0;
@@ -188,6 +203,8 @@ describe("app runtime", () => {
     expect(TRUSTED_MARKDOWN_CSP).toContain("img-src data: blob: https: http:");
     expect(TRUSTED_MARKDOWN_CSP).toContain("connect-src 'none'");
     expect(TRUSTED_MARKDOWN_FLAGS).toContain("allow-popups-to-escape-sandbox");
+    expect(trustedMediaCsp("https://objects.test")).toContain("media-src data: blob: https://objects.test");
+    expect(trustedMediaCsp("https://objects.test")).toContain("connect-src 'none'");
   });
 
   test("injects CSP, foundation styles, and the UI runtime before package scripts", () => {

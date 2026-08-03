@@ -89,19 +89,21 @@ describe("apps SDK", () => {
       channel.port2.postMessage({ protocolVersion: 1, type: "response", id: data.id, ok: true, result: data.method === "app.getLaunchContext" ? {
         protocolVersion: 1, appId: "dev.hiraya.test", launchId: "launch-1", source: "launcher", files: [], folders: [], arguments: [],
         theme: { mode: "dark", background: "#000", surface: "#111", surfaceElevated: "#222", text: "#fff", textMuted: "#aaa", border: "#333", accent: "#fc0", accentText: "#000", danger: "#f00", focus: "#ff0" },
-      } : data.method === "files.write" ? { handle: data.params.handle, name: "test.txt", mimeType: "text/plain", size: 0, modifiedAt: 1, parent: null, contentRevision: 8 } : undefined });
+      } : data.method === "files.write" ? { handle: data.params.handle, name: "test.txt", mimeType: "text/plain", size: 0, modifiedAt: 1, parent: null, contentRevision: 8 } : data.method === "host.getFilePreviewSource" ? { kind: "blob", blob: new Blob(["media"]) } : undefined });
     };
     const client = await connectHiraya({ port: channel.port1 });
     await client.app.getLaunchContext();
     await client.files.write("file_0123456789abcdef" as FileHandle, new ArrayBuffer(0), { expectedRevision: 7, mimeType: "text/plain" });
     await client.window.setDirty(true);
     await client.host.openEntry("file_0123456789abcdef" as FileHandle);
+    expect((await client.host.getFilePreviewSource("file_0123456789abcdef" as FileHandle)).kind).toBe("blob");
     await client.files.deleteMany(["file_0123456789abcdef" as FileHandle], true);
     expect(requests).toEqual([
       expect.objectContaining({ method: "app.getLaunchContext", params: {} }),
       expect.objectContaining({ method: "files.write", params: expect.objectContaining({ expectedRevision: 7, mimeType: "text/plain" }) }),
       expect.objectContaining({ method: "window.setDirty", params: { dirty: true } }),
       expect.objectContaining({ method: "host.openEntry", params: { handle: "file_0123456789abcdef" } }),
+      expect.objectContaining({ method: "host.getFilePreviewSource", params: { handle: "file_0123456789abcdef" } }),
       expect.objectContaining({ method: "files.deleteMany", params: { handles: ["file_0123456789abcdef"], recursive: true } }),
     ]);
     client.close();

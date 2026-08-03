@@ -15,7 +15,12 @@ const content = required<HTMLElement>("#content");
 const loading = required<HTMLElement>("#loading");
 const operations = new LatestOperation();
 let hiraya: HirayaClient;
-let url: string | null = null;
+let objectUrl: string | null = null;
+let previewHandle: FileHandle | null = null;
+let previewExpiresAt = 0;
+let previewGeneration = 0;
+let refreshingPreview = false;
+let previewRefreshAttempted = false;
 
 openButton.addEventListener("click", () => void open());
 fullscreenButton.addEventListener("click", () => void toggleFullscreen());
@@ -60,16 +65,19 @@ async function load(handle: FileHandle, generation = operations.begin()) {
 
     status.classList.remove("error");
     status.textContent = `Opening ${name}...`;
-    const { data } = await hiraya.files.readAll(handle);
+    const mediaPreview = mimeType.startsWith("audio/") || mimeType.startsWith("video/")
+      ? await hiraya.host.getFilePreviewSource(handle)
+      : null;
+    const data = mediaPreview ? null : (await hiraya.files.readAll(handle)).data;
     if (!operations.isLatest(generation)) return;
 
     let element: HTMLElement;
     let nextUrl: string | null = null;
     if (documentKind) {
-      element = await renderParsedDocument(documentKind, data);
+      element = await renderParsedDocument(documentKind, data!);
     } else {
-      nextUrl = URL.createObjectURL(new Blob([data], { type: mimeType }));
       if (mimeType === "application/pdf") {
+        nextUrl = URL.createObjectURL(new Blob([data!], { type: mimeType }));
         const frame = document.createElement("iframe");
         frame.src = nextUrl;
         frame.title = name;
@@ -79,9 +87,16 @@ async function load(handle: FileHandle, generation = operations.begin()) {
       } else {
         const media = document.createElement(mimeType.startsWith("audio/") ? "audio" : "video");
         media.controls = true;
-        media.src = nextUrl;
+        if (mediaPreview!.kind === "blob") {
+          nextUrl = URL.createObjectURL(mediaPreview!.blob);
+          media.src = nextUrl;
+        } else {
+          media.src = mediaPreview!.url;
+        }
         media.preload = "metadata";
         if (media instanceof HTMLVideoElement) media.playsInline = true;
+        media.addEventListener("canplay", () => { previewRefreshAttempted = false; });
+        media.addEventListener("error", () => void recoverExpiredPreview(media));
         const card = document.createElement("div");
         card.className = mimeType.startsWith("audio/") ? "media-card" : "";
         card.append(media);
@@ -94,7 +109,12 @@ async function load(handle: FileHandle, generation = operations.begin()) {
       return;
     }
     clear();
-    url = nextUrl;
+    objectUrl = nextUrl;
+    if (mediaPreview) {
+      previewHandle = handle;
+      previewExpiresAt = mediaPreview.kind === "url" ? mediaPreview.expiresAt : 0;
+      previewGeneration = generation;
+    }
     viewer.replaceChildren(element);
     required("#title").textContent = name;
     status.textContent = `${mimeType} · ${formatBytes(size)}`;
@@ -114,14 +134,51 @@ async function toggleFullscreen() {
 }
 
 function clear() {
-  if (url) URL.revokeObjectURL(url);
-  url = null;
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
+  objectUrl = null;
+  previewHandle = null;
+  previewExpiresAt = 0;
+  previewGeneration = 0;
+  refreshingPreview = false;
+  previewRefreshAttempted = false;
   viewer.querySelectorAll("audio,video").forEach((item) => {
     const media = item as HTMLMediaElement;
     media.pause();
     media.removeAttribute("src");
     media.load();
   });
+}
+
+async function recoverExpiredPreview(media: HTMLMediaElement) {
+  if (!previewHandle || refreshingPreview || !operations.isLatest(previewGeneration)) return;
+  if (!previewExpiresAt || previewRefreshAttempted) {
+    setStatusError(new Error("The browser could not play this media."), "The browser could not play this media.");
+    return;
+  }
+  previewRefreshAttempted = true;
+  refreshingPreview = true;
+  const handle = previewHandle;
+  const generation = previewGeneration;
+  const currentTime = media.currentTime;
+  const wasPlaying = !media.paused;
+  try {
+    const source = await hiraya.host.getFilePreviewSource(handle);
+    if (!operations.isLatest(generation) || previewHandle !== handle) return;
+    const previousObjectUrl = objectUrl;
+    objectUrl = source.kind === "blob" ? URL.createObjectURL(source.blob) : null;
+    previewExpiresAt = source.kind === "url" ? source.expiresAt : 0;
+    media.addEventListener("loadedmetadata", () => {
+      if (Number.isFinite(currentTime)) media.currentTime = Math.min(currentTime, media.duration || currentTime);
+      if (wasPlaying) void media.play().catch(() => undefined);
+    }, { once: true });
+    media.src = source.kind === "blob" ? objectUrl! : source.url;
+    media.load();
+    if (previousObjectUrl) URL.revokeObjectURL(previousObjectUrl);
+  } catch (error) {
+    if (operations.isLatest(generation)) setStatusError(error, "The media preview could not be refreshed.");
+  } finally {
+    if (previewHandle === handle) refreshingPreview = false;
+  }
 }
 
 function setStatusError(error: unknown, fallback: string) {
