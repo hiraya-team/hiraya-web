@@ -169,7 +169,8 @@ export function ShellNotifications(props: Props) {
             if (item.kind === "sync") {
               const record = item.value;
               const conflict = isRevisionConflictRecord(record);
-              return <NotificationCard badge="Sync issue" tone="danger" icon={<WarningCircle size={18} weight="fill" />} key={item.id} role="alert" actions={<><button className="notification-action notification-action--primary" type="button" onClick={() => props.onRetrySyncIssue(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{conflict ? "Keep my change" : "Retry"}</button><button className="notification-action" type="button" onClick={() => props.onDiscardSyncIssue(record)}><Trash size={16} />{conflict ? "Use server state" : "Discard"}</button></>}>
+              const contentConflict = conflict && record.conflictDetails?.resourceKind === "content" && record.operation.kind === "save-content";
+              return <NotificationCard badge="Sync issue" tone="danger" icon={<WarningCircle size={18} weight="fill" />} key={item.id} role="alert" actions={<><button className="notification-action notification-action--primary" type="button" onClick={() => props.onRetrySyncIssue(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{contentConflict ? "Review versions" : conflict ? "Keep my change" : "Retry"}</button><button className="notification-action" type="button" onClick={() => props.onDiscardSyncIssue(record)}><Trash size={16} />{conflict ? "Use server state" : "Discard"}</button></>}>
                 <strong>{outboxRecordLabel(record)}</strong>
                 {props.syncIssueLabels.length > 0 && <span>{props.syncIssueLabels.join(", ")}</span>}
                 <span>{record.error || "This queued change needs attention before sync can continue."}</span>
