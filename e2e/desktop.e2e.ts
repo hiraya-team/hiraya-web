@@ -238,6 +238,55 @@ test("opens an imported RTF document in the document viewer", async ({ page }) =
   expect(cycleErrors).toEqual([]);
 });
 
+test("pastes clipboard URL text as a named Internet Shortcut", async ({ page, context }) => {
+  await openLocalDesktop(page);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  await page.evaluate(() => navigator.clipboard.writeText("https://example.com/search?q=a=b"));
+  await page.keyboard.press("Control+v");
+  const dialog = page.getByRole("dialog", { name: "Paste link" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("File name")).toHaveValue("example.com.url");
+  await dialog.getByRole("button", { name: "Create shortcut" }).click();
+
+  const icon = page.locator(".file-icon").filter({ hasText: "example.com.url" });
+  await expect(icon).toBeVisible();
+  await expect(icon).toHaveAttribute("aria-pressed", "true");
+
+  await page.evaluate(() => navigator.clipboard.writeText("This is not a URL."));
+  await page.keyboard.press("Control+v");
+  await expect(dialog).toBeHidden();
+  await expect(page.locator(".file-icon")).toHaveCount(1);
+
+  await page.keyboard.press("Control+c");
+  await expect(page.getByText("1 item copied", { exact: true })).toBeVisible();
+  await page.evaluate(() => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData("text/html", "<strong>Not a URL</strong>");
+    window.dispatchEvent(new ClipboardEvent("paste", { clipboardData, bubbles: true, cancelable: true }));
+  });
+  await expect(page.locator("[role=dialog]")).toHaveCount(0);
+
+  await page.evaluate(() => navigator.clipboard.writeText("This is still not a URL."));
+  await page.keyboard.press("Control+v");
+  const conflictDialog = page.getByRole("dialog", { name: "Choose new names" });
+  await expect(conflictDialog).toBeVisible();
+  await conflictDialog.getByRole("button", { name: "Close paste dialog" }).click();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => navigator.clipboard.writeText("https://example.com/another"));
+  await page.keyboard.press("Control+v");
+  await dialog.getByRole("button", { name: "Create shortcut" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("already exists");
+  await dialog.getByLabel("File name").focus();
+  await page.keyboard.press("Control+a");
+  await page.keyboard.type("example.com 2");
+  await dialog.getByRole("button", { name: "Create shortcut" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("must end in .url");
+  await dialog.getByLabel("File name").fill("example.com 2.url");
+  await dialog.getByRole("button", { name: "Create shortcut" }).click();
+  await expect(page.locator(".file-icon").filter({ hasText: "example.com 2.url" })).toBeVisible();
+});
+
 test("opens imported audio from a local Blob preview source", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `preview-${Date.now()}.wav`;

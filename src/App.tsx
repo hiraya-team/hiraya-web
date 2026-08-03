@@ -16,6 +16,7 @@ import { AppPickerDialog } from "./components/AppPickerDialog";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
+  createFile,
   createEntries,
   createDesktop as createDesktopMutation,
   createTextFile,
@@ -82,7 +83,7 @@ import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
-import { parseInternetShortcut } from "./lib/internet-shortcut";
+import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
 import { createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
 import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
@@ -335,6 +336,7 @@ function App({ session }: { session: AuthSession | null }) {
   const suppressMinimapClickRef = useRef(false);
   const suppressClickRef = useRef(false);
   const clipboardRef = useRef<ClipboardEntrySnapshot | null>(null);
+  const keyboardPasteRef = useRef(false);
   const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; additive: boolean; initial: string[] } | null>(null);
   const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
@@ -1157,7 +1159,7 @@ function App({ session }: { session: AuthSession | null }) {
         setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
         setDialog((current) => {
           if (!current) return null;
-          if (current.type === "create-file" || current.type === "create-folder") {
+          if (current.type === "create-file" || current.type === "create-shortcut" || current.type === "create-folder") {
             return current.parentId && !synced.entries.some((entry) => entry.id === current.parentId && entry.kind === "folder") ? null : current;
           }
           return current.type === "rename" ? (syncedIds.has(current.entryId) ? current : null) : current.entryIds.some((id) => syncedIds.has(id)) ? { ...current, entryIds: current.entryIds.filter((id) => syncedIds.has(id)) } : null;
@@ -1741,9 +1743,13 @@ function App({ session }: { session: AuthSession | null }) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
-        event.preventDefault();
+        keyboardPasteRef.current = true;
         const explorer = activeExplorer();
-        void beginPasteRef.current(explorer?.folderId ?? null);
+        window.setTimeout(() => {
+          if (!keyboardPasteRef.current) return;
+          keyboardPasteRef.current = false;
+          void beginPasteRef.current(explorer?.folderId ?? null);
+        });
       } else if (event.key === "Delete" && selectedIdsRef.current.length && canMutate) {
         event.preventDefault();
         openFileDialog({ type: "delete", entryIds: [...selectedIdsRef.current] });
@@ -1751,13 +1757,30 @@ function App({ session }: { session: AuthSession | null }) {
     }
     function onPaste(event: ClipboardEvent) {
       if (editableTarget(event.target) || !canMutate || shortcutsSuspended || transientMenuOpen()) return;
-      const files = Array.from(event.clipboardData?.files ?? []);
-      if (!files.length || !event.clipboardData) return;
+      if (!event.clipboardData) return;
+      const keyboardPaste = keyboardPasteRef.current;
+      keyboardPasteRef.current = false;
+      const files = Array.from(event.clipboardData.files);
       event.preventDefault();
       const explorer = activeExplorer();
-      void snapshotFromClipboardItems(event.clipboardData.items)
-        .then((snapshot) => (snapshot ? beginPasteRef.current(explorer?.folderId ?? null, undefined, snapshot) : handleImportRef.current(files, explorer?.folderId ?? null)))
-        .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
+      const parentId = explorer?.folderId ?? null;
+      if (files.length) {
+        void snapshotFromClipboardItems(event.clipboardData.items)
+          .then((snapshot) => (snapshot ? beginPasteRef.current(parentId, undefined, snapshot) : handleImportRef.current(files, parentId)))
+          .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
+        return;
+      }
+      if (Array.from(event.clipboardData.items).some((item) => isClipboardArchiveType(item.type))) {
+        void beginPasteRef.current(parentId);
+        return;
+      }
+      const clipboardText = event.clipboardData.getData("text/plain");
+      try {
+        const shortcut = createInternetShortcut(clipboardText);
+        openFileDialog({ type: "create-shortcut", parentId, url: shortcut.url, name: shortcut.name });
+      } catch {
+        if (keyboardPaste) void beginPasteRef.current(parentId);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("paste", onPaste);
@@ -2287,9 +2310,15 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function handleDialogSubmit(name: string) {
     if (!dialog || !canMutate) return;
-    if (dialog.type === "create-file" || dialog.type === "create-folder") {
+    if (dialog.type === "create-file" || dialog.type === "create-shortcut" || dialog.type === "create-folder") {
       const parentId = dialog.parentId;
-      const created = dialog.type === "create-file" ? await createTextFile(name, parentId, dialog.position ?? positionFor(parentId)) : await createFolder(name, parentId, dialog.position ?? positionFor(parentId));
+      const position = dialog.position ?? positionFor(parentId);
+      if (dialog.type === "create-shortcut" && !name.toLowerCase().endsWith(".url")) throw new Error("A shortcut file name must end in .url.");
+      const created = dialog.type === "create-file"
+        ? await createTextFile(name, parentId, position)
+        : dialog.type === "create-shortcut"
+          ? await createFile(name, parentId, position, new Blob([createInternetShortcut(dialog.url).content], { type: INTERNET_SHORTCUT_MIME_TYPE }))
+          : await createFolder(name, parentId, position);
       fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);

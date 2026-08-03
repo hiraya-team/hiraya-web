@@ -90,6 +90,7 @@ export type DesktopEntry = FileEntry | FolderEntry;
 
 export type DialogState =
   | { type: "create-file"; parentId: string | null; position?: EntryPosition }
+  | { type: "create-shortcut"; parentId: string | null; position?: EntryPosition; url: string; name: string }
   | { type: "create-folder"; parentId: string | null; position?: EntryPosition }
   | { type: "rename"; entryId: string }
   | { type: "delete"; entryIds: string[] }

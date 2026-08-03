@@ -112,3 +112,9 @@ Try dragging the folder onto Hiraya. If the browser still cannot expose a hierar
 ### Installation unavailable {#installation-unavailable}
 
 Use Hiraya in a regular tab. Browser installation can require a secure deployment, a supported browser, and an installable production build. If no install command appears, use the browser's site menu or ask the operator whether installation is enabled.
+
+## Changelog
+
+### August 2026
+
+- **Paste links as shortcuts.** Copy a complete URL and paste it on the desktop or in an open folder to create a `.url` internet shortcut. The **Paste link** prompt suggests a domain-based file name before saving.
