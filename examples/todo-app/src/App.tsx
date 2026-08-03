@@ -19,6 +19,7 @@ type Session = Readonly<{
 
 const EMPTY = createTodoDocument();
 const MAX_TODO_BYTES = 8 * 1024 * 1024;
+const READ_CHUNK_BYTES = 1024 * 1024;
 
 export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch: LaunchContext }>) {
   const [session, setSession] = useState<Session>({ handle: null, name: `Untitled${TODO_EXTENSION}`, revision: null, persisted: EMPTY, draft: EMPTY });
@@ -36,6 +37,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
   const commandRef = useRef<(id: string) => void>(() => undefined);
   const reconcileRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const pendingReconcile = useRef(false);
+  const formDirtyRef = useRef(false);
   const started = useRef(false);
   sessionRef.current = session;
   busyRef.current = busy;
@@ -44,6 +46,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
 
   const documentDirty = hasTodoChanges(session.draft, session.persisted);
   const formDirty = editingId !== null || title !== "" || dueDate !== "" || priority !== "normal";
+  formDirtyRef.current = formDirty;
   const dirty = session.handle === null || documentDirty || formDirty;
   const saveable = session.handle === null || documentDirty;
   const canWrite = capabilities.files.write && !busy;
@@ -126,9 +129,15 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
     const before = await hiraya.files.stat(handle, { timeoutMs: 120_000 });
     if (before.kind !== "file") throw new Error("The selected item is not a Todo file.");
     if (before.metadata.size > MAX_TODO_BYTES) throw new Error("Todo files must be 8 MiB or smaller.");
-    const { data } = await hiraya.files.readAll(handle, { timeoutMs: 120_000 });
+    const bytes = new Uint8Array(before.metadata.size);
+    for (let offset = 0; offset < bytes.byteLength; offset += READ_CHUNK_BYTES) {
+      const length = Math.min(READ_CHUNK_BYTES, bytes.byteLength - offset);
+      const chunk = await hiraya.files.readChunk(handle, offset, length, { timeoutMs: 120_000 });
+      if (chunk.size !== bytes.byteLength || chunk.contentRevision !== before.metadata.contentRevision || chunk.data.byteLength !== length) throw new HirayaSdkError("The Todo file changed while it was being read.", "CONFLICT");
+      bytes.set(new Uint8Array(chunk.data), offset);
+    }
     let text: string;
-    try { text = new TextDecoder("utf-8", { fatal: true }).decode(data); } catch { throw new Error("This Todo file is not valid UTF-8 text."); }
+    try { text = new TextDecoder("utf-8", { fatal: true }).decode(bytes); } catch { throw new Error("This Todo file is not valid UTF-8 text."); }
     const document = parseTodoText(text);
     const after = await hiraya.files.stat(handle, { timeoutMs: 120_000 });
     if (after.kind !== "file" || before.metadata.contentRevision !== after.metadata.contentRevision || before.metadata.size !== after.metadata.size) throw new HirayaSdkError("The Todo file changed while it was being read.", "CONFLICT");
@@ -220,7 +229,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       const remote = await readSnapshot(current.handle);
       const latest = sessionRef.current;
       if (latest.handle !== current.handle || latest.revision !== null && remote.revision <= latest.revision) return;
-      if (hasTodoChanges(latest.draft, latest.persisted)) {
+      if (formDirtyRef.current || hasTodoChanges(latest.draft, latest.persisted)) {
         setSession({ ...latest, remote });
         setStatus({ message: "The file changed elsewhere. Your draft is preserved.", danger: true });
       } else {
