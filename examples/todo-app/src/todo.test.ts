@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { addTask, clearCompleted, createTodoDocument, deleteTask, editTask, parseTodoText, serializeTodo } from "./todo";
+import { addTask, clearCompleted, createTodoDocument, deleteTask, editTask, hasTodoChanges, parseTodoText, serializeTodo } from "./todo";
 
 test("parses and serializes strict schema version 1 documents", () => {
   const document = parseTodoText('{"schemaVersion":1,"tasks":[{"id":"task-1","title":"Ship Todo","completed":false,"priority":"high","dueDate":"2026-08-07"}]}');
@@ -18,4 +18,6 @@ test("adds, edits, completes, deletes, and clears tasks immutably", () => {
   expect(completed.tasks[0]).toMatchObject({ title: "Write focused tests", completed: true, dueDate: "2026-08-07" });
   expect(clearCompleted(completed).tasks.map(({ id }) => id)).toEqual(["task-2"]);
   expect(deleteTask(second, "task-2").tasks.map(({ id }) => id)).toEqual(["task-1"]);
+  expect(hasTodoChanges(second, added)).toBe(true);
+  expect(hasTodoChanges(second, second)).toBe(false);
 });

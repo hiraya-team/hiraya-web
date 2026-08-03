@@ -105,7 +105,7 @@ canvas[data-tool="fill"] { cursor: cell; }
   .range-label, #opacity-input { grid-column: 2; margin: 0; }
   .stage-toolbar { overflow-x: auto; }
   .canvas-scroll { padding: 1.5rem; }
-  .statusbar { grid-template-columns: minmax(0, 1fr) auto; }
+  .statusbar::part(status) { grid-template-columns: minmax(0, 1fr) auto; }
   #cursor-position { display: none; }
 }
 
@@ -114,6 +114,6 @@ canvas[data-tool="fill"] { cursor: cell; }
   .topbar { gap: 0.5rem; }
   .tools { grid-template-columns: auto minmax(11rem, 1fr); }
   .zoom-control label { display: none; }
-  .stage-toolbar button { padding-inline: 0.5rem; }
-  .statusbar { gap: 0.5rem; }
+  .stage-toolbar hiraya-button::part(button) { padding-inline: 0.5rem; }
+  .statusbar::part(status) { gap: 0.5rem; }
 }

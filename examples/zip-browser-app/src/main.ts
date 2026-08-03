@@ -4,7 +4,7 @@ import "./style.css";
 
 const APP_ID = "dev.hiraya.zip-browser";
 const elements = {
-  archiveName: required("archive-name"), status: required("status"), summary: required("summary"), empty: required("empty-state"), browser: required("browser"), tree: required("tree"),
+  archiveName: required("archive-name"), status: required("status"), statusMessage: required("status-message"), summary: required("summary"), empty: required("empty-state"), browser: required("browser"), tree: required("tree"),
   entryCount: required("entry-count"), archiveSize: required("archive-size"), unpackedSize: required("unpacked-size"), selectedCount: required("selected-count"),
   open: button("open-button"), emptyOpen: button("empty-open-button"), extract: button("extract-button"), selectAll: button("select-all"),
   detailsTitle: required("details-title"), detailsList: required("details-list"), detailsPlaceholder: required("details-placeholder"),
@@ -211,7 +211,7 @@ function fail(error: unknown): void {
 }
 
 function setStatus(message: string, danger = false): void {
-  elements.status.textContent = message;
+  elements.statusMessage.textContent = message;
   elements.status.classList.toggle("error", danger);
 }
 

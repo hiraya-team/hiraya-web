@@ -10,7 +10,7 @@ body { min-height: 100dvh; overflow: hidden; }
 button, input, select { font: inherit; }
 input:focus-visible, select:focus-visible { outline: 3px solid var(--hiraya-focus); outline-offset: 2px; }
 
-.todo-shell { display: grid; height: 100dvh; min-height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--hiraya-background); }
+.todo-shell { display: grid; height: 100dvh; min-height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--hiraya-background); --hiraya-control-height: 2.75rem; }
 .app-title { display: flex; min-width: 0; align-items: center; gap: .6rem; }
 .app-title > svg { width: 1.8rem; height: 1.8rem; flex: none; color: var(--hiraya-accent); }
 .app-title span { display: grid; min-width: 0; }
@@ -34,7 +34,7 @@ input:focus-visible, select:focus-visible { outline: 3px solid var(--hiraya-focu
 .submit-task svg { width: 1.05rem; height: 1.05rem; }
 
 .filters { display: flex; padding: .2rem; border: 1px solid var(--hiraya-border); border-radius: var(--hiraya-radius-control, .45rem); background: var(--hiraya-background); }
-.filters button { min-height: 2.35rem; padding: .25rem .65rem; border: 0; border-radius: .3rem; color: var(--hiraya-text-muted); background: transparent; cursor: pointer; }
+.filters button { min-height: 2.75rem; padding: .25rem .65rem; border: 0; border-radius: .4rem; color: var(--hiraya-text-muted); background: transparent; cursor: pointer; }
 .filters button.filter-active { color: var(--hiraya-accent); background: var(--hiraya-surface-selected); font-weight: 700; }
 
 .task-ledger::part(body) { padding: 0; }
@@ -80,7 +80,7 @@ hiraya-status-bar > svg { width: 1rem; height: 1rem; vertical-align: -.15rem; }
 }
 
 @media (max-width: 28rem) {
-  .app-title small, .file-state { display: none; }
+  .app-title small { display: none; }
   .action-label { display: none; }
 }
 

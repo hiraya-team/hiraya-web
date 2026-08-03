@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CalendarBlank, CheckCircle, FilePlus, FloppyDisk, FolderOpen, ListChecks, PencilSimple, Plus, Trash, WarningCircle, X } from "@phosphor-icons/react";
 import { HirayaSdkError, type AppCapabilities, type FileHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
-import { TODO_EXTENSION, TODO_MIME_TYPE, addTask, clearCompleted, createTodoDocument, deleteTask, editTask, parseTodoText, serializeTodo, type Priority, type TodoDocument } from "./todo";
+import { TODO_EXTENSION, TODO_MIME_TYPE, addTask, clearCompleted, createTodoDocument, deleteTask, editTask, hasTodoChanges, parseTodoText, serializeTodo, type Priority, type TodoDocument } from "./todo";
 
 export const APP_ID = "dev.hiraya.todo";
 
@@ -18,6 +18,7 @@ type Session = Readonly<{
 }>;
 
 const EMPTY = createTodoDocument();
+const MAX_TODO_BYTES = 8 * 1024 * 1024;
 
 export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch: LaunchContext }>) {
   const [session, setSession] = useState<Session>({ handle: null, name: `Untitled${TODO_EXTENSION}`, revision: null, persisted: EMPTY, draft: EMPTY });
@@ -34,13 +35,17 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
   const startRef = useRef<() => Promise<void>>(() => Promise.resolve());
   const commandRef = useRef<(id: string) => void>(() => undefined);
   const reconcileRef = useRef<() => Promise<void>>(() => Promise.resolve());
+  const pendingReconcile = useRef(false);
   const started = useRef(false);
   sessionRef.current = session;
   busyRef.current = busy;
   startRef.current = start;
   reconcileRef.current = reconcile;
 
-  const dirty = session.handle === null || serializeTodo(session.draft) !== serializeTodo(session.persisted);
+  const documentDirty = hasTodoChanges(session.draft, session.persisted);
+  const formDirty = editingId !== null || title !== "" || dueDate !== "" || priority !== "normal";
+  const dirty = session.handle === null || documentDirty || formDirty;
+  const saveable = session.handle === null || documentDirty;
   const canWrite = capabilities.files.write && !busy;
   const activeCount = session.draft.tasks.filter((task) => !task.completed).length;
   const completedCount = session.draft.tasks.length - activeCount;
@@ -59,11 +64,19 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
     });
     const unsubscribeFiles = hiraya.on("files.changed", ({ handles }) => {
       const current = sessionRef.current;
-      if (current.handle && handles.includes(current.handle) && !busyRef.current) void reconcileRef.current();
+      if (!current.handle || !handles.includes(current.handle)) return;
+      if (busyRef.current) pendingReconcile.current = true;
+      else void reconcileRef.current();
     });
     const unsubscribeCommands = hiraya.on("commands.invoked", ({ id }) => commandRef.current(id));
     return () => { unsubscribeCapabilities(); unsubscribeFiles(); unsubscribeCommands(); };
   }, [dirty, hiraya]);
+
+  useEffect(() => {
+    if (busy || !pendingReconcile.current) return;
+    pendingReconcile.current = false;
+    void reconcileRef.current();
+  }, [busy]);
 
   useEffect(() => {
     void hiraya.window.setDirty(dirty);
@@ -74,10 +87,10 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
     void hiraya.commands.set([
       { id: "new", title: "New Todo list", shortcut: "Ctrl+N", enabled: !busy },
       { id: "open", title: "Open Todo list", shortcut: "Ctrl+O", enabled: !busy },
-      { id: "save", title: "Save Todo list", shortcut: "Ctrl+S", enabled: dirty && capabilities.files.write && !busy },
+      { id: "save", title: "Save Todo list", shortcut: "Ctrl+S", enabled: saveable && capabilities.files.write && !busy },
       { id: "save-as", title: "Save Todo list as", shortcut: "Ctrl+Shift+S", enabled: capabilities.files.write && !busy },
     ]).catch(() => undefined);
-  }, [busy, capabilities.files.write, dirty, hiraya]);
+  }, [busy, capabilities.files.write, hiraya, saveable]);
 
   useEffect(() => {
     commandRef.current = (id) => {
@@ -112,6 +125,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
   async function readSnapshot(handle: FileHandle): Promise<Snapshot> {
     const before = await hiraya.files.stat(handle, { timeoutMs: 120_000 });
     if (before.kind !== "file") throw new Error("The selected item is not a Todo file.");
+    if (before.metadata.size > MAX_TODO_BYTES) throw new Error("Todo files must be 8 MiB or smaller.");
     const { data } = await hiraya.files.readAll(handle, { timeoutMs: 120_000 });
     let text: string;
     try { text = new TextDecoder("utf-8", { fatal: true }).decode(data); } catch { throw new Error("This Todo file is not valid UTF-8 text."); }
@@ -153,7 +167,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
   async function openList() {
     if (busyRef.current || !await confirmDiscard("Opening another list")) return;
     try {
-      const handles = await hiraya.dialogs.openFile({ multiple: false, mimeTypes: [TODO_MIME_TYPE] });
+      const handles = await hiraya.dialogs.openFile({ multiple: false, mimeTypes: [TODO_EXTENSION, TODO_MIME_TYPE] });
       if (handles?.[0]) await load(handles[0]);
     } catch (error) {
       report(error, "The Todo list could not be selected.");
@@ -162,7 +176,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
 
   async function save() {
     const current = sessionRef.current;
-    if (!capabilities.files.write || busyRef.current || !dirty) return;
+    if (!capabilities.files.write || busyRef.current || !saveable) return;
     if (!current.handle || current.revision === null) { await saveAs(); return; }
     setBusy(true);
     setStatus({ message: `Saving ${current.name}...` });
@@ -204,12 +218,13 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
     if (!current.handle || busyRef.current) return;
     try {
       const remote = await readSnapshot(current.handle);
-      if (remote.revision === current.revision) return;
-      if (serializeTodo(current.draft) !== serializeTodo(current.persisted)) {
-        setSession({ ...current, remote });
+      const latest = sessionRef.current;
+      if (latest.handle !== current.handle || latest.revision !== null && remote.revision <= latest.revision) return;
+      if (hasTodoChanges(latest.draft, latest.persisted)) {
+        setSession({ ...latest, remote });
         setStatus({ message: "The file changed elsewhere. Your draft is preserved.", danger: true });
       } else {
-        setSession({ handle: current.handle, name: remote.name, revision: remote.revision, persisted: remote.document, draft: remote.document });
+        setSession({ handle: latest.handle, name: remote.name, revision: remote.revision, persisted: remote.document, draft: remote.document });
         setStatus({ message: `Reloaded ${remote.name} after an external change.` });
       }
     } catch (error) {
@@ -334,7 +349,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         <hiraya-button slot="actions" variant="quiet" onClick={() => void newList()} disabled={busy}><FilePlus slot="icon-start" />New</hiraya-button>
         <hiraya-button slot="actions" variant="quiet" onClick={() => void openList()} disabled={busy}><FolderOpen slot="icon-start" />Open</hiraya-button>
         <hiraya-button slot="actions" onClick={() => void saveAs()} disabled={!capabilities.files.write || busy}>Save As</hiraya-button>
-        <hiraya-button slot="actions" variant="primary" onClick={() => void save()} disabled={!capabilities.files.write || !dirty || busy} loading={busy}><FloppyDisk slot="icon-start" />Save</hiraya-button>
+        <hiraya-button slot="actions" variant="primary" onClick={() => void save()} disabled={!capabilities.files.write || !saveable || busy} loading={busy}><FloppyDisk slot="icon-start" />Save</hiraya-button>
       </hiraya-toolbar>
 
       <div className="todo-workspace">

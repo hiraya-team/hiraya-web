@@ -667,7 +667,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
             </hiraya-button>
           </div>
           {activeDocument.conflict && (
-            <hiraya-notice className="conflict" tone="danger">
+            <hiraya-notice className="conflict" tone="danger" live="assertive">
               <WarningCircle slot="icon" weight="fill" aria-hidden="true" />
               <strong slot="title" id="conflict-title">Another version exists</strong>
               <p>Your draft is preserved. Review both versions or choose how to continue.</p>

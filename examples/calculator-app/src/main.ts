@@ -43,7 +43,7 @@ historyList.addEventListener("click", (event) => {
 });
 
 addEventListener("keydown", (event) => {
-  if (event.target instanceof Element && event.target.closest("button, input, select, textarea")) return;
+  if (event.target instanceof Element && event.target.closest("button, hiraya-button, input, select, textarea")) return;
   if (event.ctrlKey || event.metaKey || event.altKey) return;
   if (/^[0-9.+\-*/%()]$/.test(event.key)) append(event.key);
   else if (event.key === "Enter" || event.key === "=") solve();

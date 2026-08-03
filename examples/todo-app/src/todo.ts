@@ -79,6 +79,10 @@ export function serializeTodo(document: TodoDocument): string {
   return `${JSON.stringify(parseTodo(document), null, 2)}\n`;
 }
 
+export function hasTodoChanges(draft: TodoDocument, persisted: TodoDocument): boolean {
+  return serializeTodo(draft) !== serializeTodo(persisted);
+}
+
 function parseTask(value: unknown): TodoTask {
   const object = record(value, "Task");
   exact(object, ["id", "title", "completed", "priority"], "Task", ["dueDate"]);
