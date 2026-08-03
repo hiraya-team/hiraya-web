@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "uiRuntime": 1,
+  "id": "dev.hiraya.todo",
+  "name": "Todo",
+  "version": "0.1.0",
+  "entrypoint": "index.html",
+  "description": "Create and safely edit portable Hiraya task lists.",
+  "permissions": ["files:read", "files:write", "dialogs", "window", "commands", "theme"],
+  "fileTypes": [".hiraya.todo", "application/vnd.hiraya.todo+json"],
+  "window": {
+    "width": 820,
+    "height": 680,
+    "minWidth": 320,
+    "minHeight": 480
+  }
+}
