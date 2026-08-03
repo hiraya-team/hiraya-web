@@ -1,0 +1,94 @@
+:root {
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--hiraya-text);
+  background: var(--hiraya-background);
+}
+
+html, body, #root { min-width: 0; min-height: 100%; margin: 0; }
+body { min-height: 100dvh; overflow: hidden; }
+*, *::before, *::after { box-sizing: border-box; }
+button, input, select { font: inherit; }
+input:focus-visible, select:focus-visible { outline: 3px solid var(--hiraya-focus); outline-offset: 2px; }
+
+.todo-shell { display: grid; height: 100dvh; min-height: 100dvh; grid-template-rows: auto minmax(0, 1fr) auto; background: var(--hiraya-background); }
+.app-title { display: flex; min-width: 0; align-items: center; gap: .6rem; }
+.app-title > svg { width: 1.8rem; height: 1.8rem; flex: none; color: var(--hiraya-accent); }
+.app-title span { display: grid; min-width: 0; }
+.app-title strong, .app-title small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-title small { color: var(--hiraya-text-muted); font-size: .72rem; }
+.file-state { display: flex; align-items: center; gap: .35rem; }
+
+.todo-workspace { width: min(100%, 68rem); min-height: 0; margin-inline: auto; padding: 1rem; overflow: auto; }
+.todo-workspace > * + * { margin-top: 1rem; }
+.panel-heading, .ledger-heading, .ledger-footer { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: .75rem; }
+.panel-heading > div, .ledger-heading > div:first-child { display: grid; min-width: 0; }
+.panel-heading span, .ledger-heading span, .ledger-footer > span { color: var(--hiraya-text-muted); font-size: .78rem; }
+
+.task-form { display: grid; grid-template-columns: minmax(14rem, 1fr) minmax(9rem, .34fr) minmax(7rem, .25fr) auto; align-items: end; gap: .75rem; }
+.task-form label { display: grid; gap: .3rem; color: var(--hiraya-text-muted); font-size: .75rem; font-weight: 700; }
+.task-form input, .task-form select { width: 100%; min-height: 2.75rem; padding: 0 .7rem; border: 1px solid var(--hiraya-border); border-radius: var(--hiraya-radius-control, .45rem); color: var(--hiraya-text); background: var(--hiraya-surface-elevated); }
+.task-form input:disabled, .task-form select:disabled { opacity: .55; }
+.submit-task { display: inline-flex; min-height: 2.75rem; align-items: center; justify-content: center; gap: .45rem; padding: .4rem .85rem; border: 1px solid var(--hiraya-accent); border-radius: var(--hiraya-radius-control, .45rem); color: var(--hiraya-accent-text); background: var(--hiraya-accent); font-weight: 700; cursor: pointer; }
+.submit-task:active:not(:disabled) { transform: translateY(1px); }
+.submit-task:disabled { cursor: not-allowed; opacity: .55; }
+.submit-task svg { width: 1.05rem; height: 1.05rem; }
+
+.filters { display: flex; padding: .2rem; border: 1px solid var(--hiraya-border); border-radius: var(--hiraya-radius-control, .45rem); background: var(--hiraya-background); }
+.filters button { min-height: 2.35rem; padding: .25rem .65rem; border: 0; border-radius: .3rem; color: var(--hiraya-text-muted); background: transparent; cursor: pointer; }
+.filters button.filter-active { color: var(--hiraya-accent); background: var(--hiraya-surface-selected); font-weight: 700; }
+
+.task-ledger::part(body) { padding: 0; }
+.task-list { margin: 0; padding: 0; list-style: none; }
+.task-list li { display: grid; min-height: 4.35rem; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .75rem; padding: .65rem 1rem; border-bottom: 1px solid var(--hiraya-border); background: var(--hiraya-surface); }
+.task-list li:last-child { border-bottom: 0; }
+.task-check { display: grid; width: 2.75rem; height: 2.75rem; place-items: center; cursor: pointer; }
+.task-check input { width: 1.3rem; height: 1.3rem; margin: 0; accent-color: var(--hiraya-accent); }
+.task-copy { min-width: 0; }
+.task-copy > strong { display: block; overflow-wrap: anywhere; line-height: 1.4; }
+.task-completed .task-copy > strong { color: var(--hiraya-text-muted); text-decoration: line-through; text-decoration-thickness: 1px; }
+.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .75rem; margin-top: .25rem; color: var(--hiraya-text-muted); font-size: .76rem; }
+.task-meta span { display: inline-flex; align-items: center; gap: .25rem; }
+.task-meta svg { width: .95rem; height: .95rem; }
+.priority { text-transform: capitalize; }
+.priority-high { color: var(--hiraya-danger); }
+.priority-low { opacity: .82; }
+.overdue { color: var(--hiraya-danger); font-weight: 700; }
+.task-actions { display: flex; align-items: center; }
+.conflict-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: .65rem; }
+.hiraya-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+hiraya-notice p { margin: .2rem 0 0; color: var(--hiraya-text-muted); }
+hiraya-status-bar > span { margin-left: .35rem; }
+hiraya-status-bar > svg { width: 1rem; height: 1rem; vertical-align: -.15rem; }
+.startup-failure { max-width: 36rem; margin: 15vh auto; padding: 2rem; }
+
+@media (max-width: 50rem) {
+  .task-form { grid-template-columns: minmax(0, 1fr) minmax(8rem, .55fr); }
+  .title-field { grid-column: 1 / -1; }
+  .submit-task { align-self: end; }
+}
+
+@media (max-width: 42rem) {
+  .todo-workspace { padding: .65rem; }
+  .task-form { grid-template-columns: minmax(0, 1fr); }
+  .title-field { grid-column: auto; }
+  .submit-task { width: 100%; }
+  .ledger-heading { align-items: stretch; flex-direction: column; }
+  .filters { display: grid; grid-template-columns: repeat(3, 1fr); }
+  .task-list li { grid-template-columns: auto minmax(0, 1fr); padding-inline: .6rem; }
+  .task-actions { grid-column: 2; justify-content: flex-end; }
+  .ledger-footer { align-items: flex-start; flex-direction: column; }
+}
+
+@media (max-width: 28rem) {
+  .app-title small, .file-state { display: none; }
+  .action-label { display: none; }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .filters button:hover { color: var(--hiraya-text); background: var(--hiraya-surface-hover); }
+  .task-list li:hover { background: color-mix(in srgb, var(--hiraya-accent) 4%, var(--hiraya-surface)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}

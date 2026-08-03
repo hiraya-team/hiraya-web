@@ -1,0 +1,24 @@
+{
+  "name": "hiraya-todo-example",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bunx --bun vite",
+    "build": "bunx --bun tsc --noEmit && bunx --bun vite build",
+    "test": "bun test",
+    "package": "bun run build && bun ../../packages/app-cli/src/cli.ts package dist todo.hiraya.app"
+  },
+  "dependencies": {
+    "@hiraya/apps-sdk": "workspace:*",
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}
