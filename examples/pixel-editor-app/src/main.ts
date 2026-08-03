@@ -16,6 +16,8 @@ const PALETTE = ["#171c1a", "#f3ead8", "#e1a854", "#c7553d", "#93485f", "#584b8b
 
 type Tool = "pencil" | "eraser" | "fill";
 type Snapshot = { width: number; height: number; pixels: Uint8ClampedArray };
+type HirayaButtonElement = HTMLElement & { disabled: boolean };
+type HirayaDialogElement = HTMLElement & { open: boolean; showModal(): void; close(): void };
 
 const canvas = required<HTMLCanvasElement>("#editor-canvas");
 const canvasContext = canvas.getContext("2d", { alpha: true, willReadFrequently: true });
@@ -31,17 +33,17 @@ const elements = {
   dimensions: required<HTMLElement>("#dimensions"),
   documentName: required<HTMLElement>("#document-name"),
   grid: required<HTMLInputElement>("#grid-toggle"),
-  newDialog: required<HTMLDialogElement>("#new-dialog"),
+  newDialog: required<HirayaDialogElement>("#new-dialog"),
   newForm: required<HTMLFormElement>("#new-form"),
   newHeight: required<HTMLInputElement>("#new-height"),
   newWidth: required<HTMLInputElement>("#new-width"),
   opacity: required<HTMLInputElement>("#opacity-input"),
   opacityValue: required<HTMLOutputElement>("#opacity-value"),
   palette: required<HTMLElement>("#palette"),
-  redo: required<HTMLButtonElement>("#redo-button"),
-  save: required<HTMLButtonElement>("#save-button"),
+  redo: required<HirayaButtonElement>("#redo-button"),
+  save: required<HirayaButtonElement>("#save-button"),
   status: required<HTMLElement>("#status"),
-  undo: required<HTMLButtonElement>("#undo-button"),
+  undo: required<HirayaButtonElement>("#undo-button"),
   zoomValue: required<HTMLOutputElement>("#zoom-value"),
 };
 
@@ -90,14 +92,14 @@ async function start(): Promise<void> {
 }
 
 function bindUi(): void {
-  required<HTMLButtonElement>("#new-button").addEventListener("click", () => void requestNew());
-  required<HTMLButtonElement>("#open-button").addEventListener("click", () => void openFile());
+  required<HirayaButtonElement>("#new-button").addEventListener("click", () => void requestNew());
+  required<HirayaButtonElement>("#open-button").addEventListener("click", () => void openFile());
   elements.save.addEventListener("click", () => void save(false));
-  required<HTMLButtonElement>("#save-as-button").addEventListener("click", () => void save(true));
+  required<HirayaButtonElement>("#save-as-button").addEventListener("click", () => void save(true));
   elements.undo.addEventListener("click", undo);
   elements.redo.addEventListener("click", redo);
-  required<HTMLButtonElement>("#zoom-out").addEventListener("click", () => changeZoom(-1));
-  required<HTMLButtonElement>("#zoom-in").addEventListener("click", () => changeZoom(1));
+  required<HirayaButtonElement>("#zoom-out").addEventListener("click", () => changeZoom(-1));
+  required<HirayaButtonElement>("#zoom-in").addEventListener("click", () => changeZoom(1));
   elements.grid.addEventListener("change", renderScale);
   elements.color.addEventListener("input", () => {
     setColor(elements.color.value);
@@ -119,7 +121,7 @@ function bindUi(): void {
   });
   addEventListener("keydown", handleShortcut);
   elements.newForm.addEventListener("submit", createNewFromDialog);
-  required<HTMLButtonElement>("#new-cancel").addEventListener("click", () => elements.newDialog.close());
+  required<HirayaButtonElement>("#new-cancel").addEventListener("click", () => elements.newDialog.close());
 }
 
 async function requestNew(): Promise<void> {
@@ -507,8 +509,8 @@ function setDirty(next: boolean): void {
 
 function setBusy(next: boolean, message?: string): void {
   busy = next;
-  document.querySelectorAll<HTMLButtonElement>("button").forEach((button) => {
-    if (!button.closest("dialog")) button.disabled = next;
+  document.querySelectorAll<HTMLButtonElement | HirayaButtonElement>("button, hiraya-button").forEach((button) => {
+    if (!button.closest("dialog, hiraya-dialog")) button.disabled = next;
   });
   renderHistory();
   if (message) setStatus(message);

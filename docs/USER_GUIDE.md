@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Keep portable task lists in Todo.** Install the experimental **Todo** app to add, edit, prioritize, date, filter, complete, and safely save `.hiraya.todo` task lists. Its **New**, **Open**, **Save**, **Save As**, and conflict controls preserve unsaved drafts when files change elsewhere.
+- **Keep portable task lists in Todo.** Install the experimental **Todo** app to add, prioritize, date, filter, complete, and safely save `.hiraya.todo` task lists. Todo and the other installable apps now share familiar Hiraya controls while keeping their specialized tools and workflows.
 - **Resolve changed files in the Merge window.** When both this browser and the server changed a file, **Merge** combines matching or separate text edits automatically and clearly separates changes that still need a choice. You can also compare media, review details for binary files, or use **Keep both** to preserve both versions as separate files.
 - **Find every sharing tool together.** Open **Settings > Sharing** to manage desktop and item sharing or create account-wide short links. Appearance and icon placement now share the **Desktop** tab.
 - **Browse public desktops by area.** Whole-desktop public links now preserve published icon positions and provide the same area navigator as the main desktop. Files open in movable, resizable windows with a fine pointer and focused full-surface views on touch devices.

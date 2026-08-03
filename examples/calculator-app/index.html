@@ -15,8 +15,8 @@
             <h1>Calculator</h1>
           </div>
           <div class="status-group">
-            <span id="memory-indicator" class="memory-indicator" aria-label="Memory is empty">M</span>
-            <span id="host-status" class="host-status" role="status">Connecting</span>
+            <hiraya-badge id="memory-indicator" class="memory-indicator" aria-label="Memory is empty">M</hiraya-badge>
+            <hiraya-badge id="host-status" role="status" tone="progress">Connecting</hiraya-badge>
           </div>
         </header>
 
@@ -61,17 +61,17 @@
         <p class="keyboard-hint">Keyboard ready <span aria-hidden="true">/</span> Enter to solve <span aria-hidden="true">/</span> Esc to clear</p>
       </section>
 
-      <aside class="history-panel" aria-labelledby="history-title">
-        <div class="history-heading">
+      <hiraya-panel class="history-panel" aria-labelledby="history-title">
+        <div class="history-heading" slot="header">
           <div>
             <p class="eyebrow">RECENT WORK</p>
             <h2 id="history-title">History</h2>
           </div>
-          <button id="clear-history" class="text-button" type="button">Clear</button>
+          <hiraya-button id="clear-history" variant="quiet">Clear</hiraya-button>
         </div>
         <ol id="history-list" class="history-list"></ol>
-        <p id="empty-history" class="empty-history">Completed calculations will appear here.</p>
-      </aside>
+        <hiraya-empty-state id="empty-history" class="empty-history"><strong slot="title">No calculations yet</strong><span>Completed calculations will appear here.</span></hiraya-empty-state>
+      </hiraya-panel>
     </main>
     <script type="module" src="/src/main.ts"></script>
   </body>
