@@ -3,11 +3,12 @@ import { createWindowSession, parseWindowSession, parseWindowTargets, restoreWin
 import type { DesktopEntry } from "../src/types";
 
 describe("window and browser sessions", () => {
-  test("omits ephemeral sandbox apps from strict v1 sessions", () => {
+  test("omits ephemeral sandbox and merge apps from strict v1 sessions", () => {
     const bounds = { x: 0, y: 0, width: 500, height: 400 };
     expect(createWindowSession([
       { kind: "settings", bounds, minimized: false, zIndex: 1 },
       { kind: "sandbox", packageId: "dev.hiraya.test", bounds, minimized: false, zIndex: 2 },
+      { kind: "merge", operationId: "operation-id", bounds, minimized: false, zIndex: 3 },
     ])).toEqual({ schemaVersion: 1, apps: [{ kind: "settings", bounds, minimized: false, zIndex: 1 }] });
   });
   test("requires window session schema version 1", () => {

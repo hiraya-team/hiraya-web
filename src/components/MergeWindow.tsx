@@ -29,6 +29,7 @@ type MergeWindowCommonProps = {
   onKeepMine: () => void;
   onKeepServer: () => void;
   onKeepBoth: () => void;
+  active?: boolean;
 };
 
 export type MergeWindowProps = MergeWindowCommonProps & (
@@ -165,7 +166,7 @@ function TextMerge(props: Extract<MergeWindowProps, { mode: "text" }>) {
           <button className="button button--quiet" type="button" disabled={props.state === "resolving"} onClick={() => props.onResolveConflict(activeConflict.id, "both")}>Use both</button>
         </div>
       </section> : <div className="merge-window__all-resolved"><Check size={28} weight="duotone" aria-hidden="true" /><strong>No overlapping edits</strong><span>Review the merged result before saving.</span></div>}
-      <label className="merge-window__result" htmlFor={resultId}><span><strong>Merged result</strong><small>Edit the final text before saving.</small></span><textarea id={resultId} value={props.mergedText} spellCheck={false} onChange={(event) => props.onMergedTextChange(event.target.value)} /></label>
+      <label className="merge-window__result" htmlFor={resultId}><span><strong>Merged result</strong><small>{unresolved.length ? "Resolve each overlapping edit before adjusting the final text." : "Review and edit the final text before saving."}</small></span><textarea id={resultId} value={props.mergedText} spellCheck={false} disabled={unresolved.length > 0 || props.state === "resolving"} onChange={(event) => props.onMergedTextChange(event.target.value)} /></label>
     </div>
   </div>;
 }
@@ -176,7 +177,7 @@ export function MergeWindow(props: MergeWindowProps) {
   const unresolvedCount = props.mode === "text" ? props.conflicts.filter((conflict) => conflict.resolution === null).length : 0;
 
   useEffect(() => {
-    if (props.mode !== "text") return;
+    if (props.mode !== "text" || props.active === false) return;
     const handleKeyDown = (event: globalThis.KeyboardEvent) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
         event.preventDefault();
@@ -191,6 +192,7 @@ export function MergeWindow(props: MergeWindowProps) {
     <header className="merge-window__heading"><div><GitMerge size={24} weight="duotone" aria-hidden="true" /><span><h1>Review versions</h1><p>{props.mine.name}</p></span></div>{props.mode === "text" && <strong className="merge-window__unresolved" data-resolved={!unresolvedCount || undefined}>{unresolvedCount ? `${unresolvedCount} unresolved` : "Ready to save"}</strong>}</header>
     {props.state === "error" ? <div className="merge-window__state" role="alert"><WarningCircle size={30} weight="duotone" /><strong>Versions could not be loaded</strong><span>{props.error || "Try loading the conflict again."}</span>{props.onRetry && <button className="button button--primary" type="button" onClick={props.onRetry}>Try again</button>}</div> : props.state === "loading" ? <div className="merge-window__state" role="status"><SpinnerGap className="merge-window__spinner" size={30} /><strong>Loading both versions...</strong><span>Your local change remains safe.</span></div> : <>
       {resolving && <div className="merge-window__resolving" role="status"><SpinnerGap className="merge-window__spinner" size={17} /> Applying your choice...</div>}
+      {props.error && <div className="window-error" role="alert">{props.error}{props.onRetry && <button className="button button--quiet" type="button" onClick={props.onRetry}>Reload versions</button>}</div>}
       {props.mode === "text" ? <TextMerge {...props} /> : <div className="merge-window__compare">
         <SourceTabs tabs={["mine", "server"] as const} selected={versionSource} onSelect={setVersionSource} label="File versions" />
         <div className="merge-window__versions">

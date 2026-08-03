@@ -23,7 +23,7 @@ import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
 import type { JsonValue } from "@hiraya/apps-contracts";
 import { offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
 import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
-import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readContentConflictBase, readContentConflictServer, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, replaceStagedContent, stageOperationContents, writeContent, writeContentCacheMarker, writeContentConflictBase, writeContentConflictServer } from "../platform/storage/blobs";
+import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readContentConflictBase, readContentConflictServer, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, stageOperationContents, stageStagedContentVariant, writeContent, writeContentCacheMarker, writeContentConflictBase, writeContentConflictServer } from "../platform/storage/blobs";
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
 import { sha256Blob } from "./blob-transfer";
@@ -387,7 +387,7 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
     if (!changedContent) continue;
     let content = contents.get(entry.id);
     if (!content && acknowledgedRecord && operationContentIds(acknowledgedRecord.operation).includes(entry.id)) {
-      content = await readStagedContent(acknowledgedRecord.operationId, entry.id);
+      content = await readStagedContent(acknowledgedRecord.operationId, entry.id, acknowledgedRecord.operation.kind === "save-content" ? acknowledgedRecord.operation.stagedContentKey : undefined);
     }
     await removeContentCacheMarker(entry.id);
     if (!content) continue;
@@ -434,7 +434,7 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
       const manifest = await readManifest();
       const records = await callDatabase("readOutbox", undefined, null);
       const prior = records.filter((record) => record.desktopId === desktopId && record.operation.kind === "save-content" && record.operation.entryId === operation.entryId).at(-1);
-      let base = prior ? await readContentConflictBase(prior.operationId) : null;
+      let base = prior?.operation.kind === "save-content" && prior.operation.baseContentRevision !== undefined ? await readContentConflictBase(prior.operationId, prior.operation.baseContentRevision) : null;
       if (!base && manifest.sync.catalogId) {
         const marker = await readContentCacheMarker(operation.entryId);
         if (marker?.catalogId === manifest.sync.catalogId && marker.contentRevision === operation.baseContentRevision) {
@@ -444,7 +444,7 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
           } catch (error) { if (!isNotFound(error)) throw error; }
         }
       }
-      if (base) await writeContentConflictBase(reservation.operationId, base);
+      if (base) await writeContentConflictBase(reservation.operationId, operation.baseContentRevision, base);
     }
     const result = await callDatabase("enqueueMutation", {
       operationId: reservation.operationId,
@@ -467,7 +467,7 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
 async function resolveContentConflictKeepBothUnsafe(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) {
   const selected = (await callDatabase("readOutbox", undefined, null)).find((record) => record.operationId === operationId);
   if (!selected || selected.operation.kind !== "save-content") throw new Error("That blocked content conflict no longer exists.");
-  const content = await readStagedContent(operationId, selected.operation.entryId);
+  const content = await readStagedContent(operationId, selected.operation.entryId, selected.operation.stagedContentKey);
   const reservation = await callDatabase("reserveOperation", undefined, null);
   const operation: OutboxOperation = { schemaVersion: 1, kind: "create", entries: [sibling] };
   await stageOperationContents(reservation.operationId, new Map([[sibling.id, content]]));
@@ -870,7 +870,7 @@ async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
   const entry = getFileEntry(manifest.entries, id);
   const pending = (await callDatabase("readOutbox", undefined, null)).filter((record) => operationContentIds(record.operation).includes(id)).at(-1);
   if (pending) {
-    const stored = await readStagedContent(pending.operationId, id);
+    const stored = await readStagedContent(pending.operationId, id, pending.operation.kind === "save-content" ? pending.operation.stagedContentKey : undefined);
     return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
   }
   const directory = await getFilesDirectory();
@@ -891,7 +891,7 @@ async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: Fi
     if (!marker || marker.catalogId !== catalogId || marker.contentRevision !== contentRevision || marker.size !== entry.size) return null;
   }
   try {
-    const stored = pendingContent ? await readStagedContent(pendingContent.operationId, id) : await (await (await getFilesDirectory()).getFileHandle(id)).getFile();
+    const stored = pendingContent ? await readStagedContent(pendingContent.operationId, id, pendingContent.operation.kind === "save-content" ? pendingContent.operation.stagedContentKey : undefined) : await (await (await getFilesDirectory()).getFileHandle(id)).getFile();
     if (stored.size !== entry.size) {
       if (!hasPendingContent) await removeContentCacheMarker(id);
       return null;
@@ -1195,10 +1195,11 @@ export function blockMutation(operationId: string, error: string, errorCode: str
 export function rebaseBlockedMutation(operationId: string, operation: OutboxOperation) { return serializeStorage(() => callDatabase("rebaseBlockedMutation", { operationId, operation })); }
 export function recordMutationAttempt(operationId: string, attemptedAt: number) { return serializeStorage(() => callDatabase("recordMutationAttempt", { operationId, attemptedAt })); }
 export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
-export function readPendingContent(operationId: string, entryId: string) { return serializeStorage(() => readStagedContent(operationId, entryId)); }
-export function readContentConflict(operationId: string, entryId: string) { return serializeStorage(async () => ({ mine: await readStagedContent(operationId, entryId), base: await readContentConflictBase(operationId), server: await readContentConflictServer(operationId) })); }
+export function readPendingContent(operationId: string, entryId: string, stagedContentKey?: string) { return serializeStorage(() => readStagedContent(operationId, entryId, stagedContentKey)); }
+export function readContentConflict(operationId: string, entryId: string, baseRevision: number, stagedContentKey?: string) { return serializeStorage(async () => ({ mine: await readStagedContent(operationId, entryId, stagedContentKey), base: await readContentConflictBase(operationId, baseRevision), server: await readContentConflictServer(operationId) })); }
+export function retainContentConflictBase(operationId: string, revision: number, content: Blob) { return serializeStorage(() => writeContentConflictBase(operationId, revision, content)); }
 export function retainContentConflictServer(operationId: string, content: Blob) { return serializeStorage(() => writeContentConflictServer(operationId, content)); }
-export function replacePendingContent(operationId: string, entryId: string, content: Blob) { return serializeStorage(() => replaceStagedContent(operationId, entryId, content)); }
+export function stagePendingContentVariant(operationId: string, content: Blob) { return serializeStorage(() => stageStagedContentVariant(operationId, content)); }
 export function resolveContentConflictKeepBoth(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) { return serializeStorage(() => resolveContentConflictKeepBothUnsafe(operationId, remote, sibling)); }
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }
 export function listInstalledApps() { return serializeStorage(() => repositories.listInstalledApps()); }

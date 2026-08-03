@@ -4,6 +4,7 @@ import type { FileService } from "../../apps/host";
 import type { InstalledApp } from "../../apps/installed-apps";
 import { extractBuiltinAppTarget } from "../../apps/registry";
 import type { SystemAppTarget } from "../../apps/types";
+import type { BuiltinAppWindow } from "../../apps/types";
 import type { FileEntry } from "../../types";
 import { projectLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";
 import type { WindowBounds } from "../../ui/window-manager";
@@ -15,8 +16,11 @@ export type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string 
 export type SettingsApp = BaseRunningApp & { kind: "settings" };
 export type StoreApp = BaseRunningApp & { kind: "store" };
 export type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
+export type MergeApp = BaseRunningApp & { kind: "merge"; operationId: string };
 export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
-export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | SandboxApp;
+export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | MergeApp | SandboxApp;
+
+export const MERGE_APP_WINDOW: BuiltinAppWindow = { width: 960, height: 700, minWidth: 420, minHeight: 360 };
 
 export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
   return apps.flatMap((app): WindowTarget[] => {

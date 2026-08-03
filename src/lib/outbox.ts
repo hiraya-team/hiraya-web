@@ -14,7 +14,7 @@ export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "delete-entries"; entryIds: string[]; baseRevisions?: Record<string, number> }
   | { kind: "move-entries"; entryIds: string[]; baseRevisions?: Record<string, number>; conflictBases?: Record<string, EntryConflictBase>; parentId: string | null; modifiedAt?: number }
   | { kind: "entry-transfer"; entryIds: string[]; destinationDesktopId: string; parentId: string | null }
-  | { kind: "save-content"; entryId: string; mimeType: string; size: number; modifiedAt: number; baseContentRevision?: number }
+  | { kind: "save-content"; entryId: string; mimeType: string; size: number; modifiedAt: number; baseContentRevision?: number; stagedContentKey?: string }
   | { kind: "root-entry-positions"; positions: RootEntryPositionUpdate[]; baseRevisions?: Record<string, number>; conflictBases?: Record<string, EntryConflictBase> }
   | { kind: "layout"; layout: DesktopLayout; baseRevision?: number; conflictBase?: DesktopLayout }
   | { kind: "editor-settings"; settings: EditorSettings; baseRevision?: number; conflictBase?: EditorSettings }
@@ -208,7 +208,7 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
     return { ...operation, entries: operation.entries.map(parseLocalEntry) };
   }
   if (operation.kind === "save-content") {
-    if (!isValidId(operation.entryId) || typeof operation.mimeType !== "string" || !Number.isSafeInteger(operation.size) || operation.size < 0 || !Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0 || !validOptionalBaseRevision(operation.baseContentRevision)) throw new Error("Saved content has unsupported metadata.");
+    if (!isValidId(operation.entryId) || typeof operation.mimeType !== "string" || !Number.isSafeInteger(operation.size) || operation.size < 0 || !Number.isSafeInteger(operation.modifiedAt) || operation.modifiedAt < 0 || !validOptionalBaseRevision(operation.baseContentRevision) || operation.stagedContentKey !== undefined && !/^\.mine-[0-9a-f-]{36}$/.test(operation.stagedContentKey)) throw new Error("Saved content has unsupported metadata.");
     return operation;
   }
   switch (operation.kind) {

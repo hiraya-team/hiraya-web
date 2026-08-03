@@ -5,6 +5,7 @@ const password = process.env.HIRAYA_SERVER_E2E_PASSWORD ?? "release-gate-e2e-pas
 const onlineFolder = "E2E cross-browser folder";
 const offlineFolder = "E2E persisted offline folder";
 const sandboxRuntimeFile = "E2E sandbox runtime.txt";
+const mergeFile = "E2E merge conflict.txt";
 const mediaFile = "E2E direct preview.wav";
 const publicDesktopAlias = "e2e-public-desk";
 const publicItemAlias = "public-folder";
@@ -55,6 +56,16 @@ async function createTextFile(page: Page, name: string) {
   await page.getByLabel("File name").fill(name);
   await page.getByRole("button", { name: "Create file" }).click();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+}
+
+async function replaceEditorText(page: Page, text: string) {
+  const frame = page.frameLocator("iframe.sandbox-app-frame");
+  const editor = frame.locator(".cm-content");
+  await editor.click();
+  await page.keyboard.press("Control+A");
+  await page.keyboard.insertText(text);
+  await frame.locator("#save").click();
+  await expect(frame.locator("#status")).toContainText("Saved", { timeout: 10_000 });
 }
 
 async function verifyDirectDesktopLogin(browser: Browser) {
@@ -122,6 +133,56 @@ async function primary(browser: Browser) {
     buttonShadow: Boolean(document.querySelector("hiraya-button")?.shadowRoot),
   }))).toEqual({ foundation: true, toolbarDefined: true, toolbarShadow: true, buttonDefined: true, buttonShadow: true });
   await first.getByRole("button", { name: `Close ${sandboxRuntimeFile} - Text Editor` }).click();
+
+  await createTextFile(first, mergeFile);
+  await expect(second.getByText(mergeFile, { exact: true })).toBeVisible({ timeout: 20_000 });
+  await first.locator(".file-icon").filter({ hasText: mergeFile }).dblclick();
+  await second.locator(".file-icon").filter({ hasText: mergeFile }).dblclick();
+  await expect(first.getByRole("dialog", { name: `${mergeFile} - Text Editor` })).toBeVisible();
+  await expect(second.getByRole("dialog", { name: `${mergeFile} - Text Editor` })).toBeVisible();
+  await expect(first.frameLocator("iframe.sandbox-app-frame").locator("#status")).toContainText("Opened");
+  await expect(second.frameLocator("iframe.sandbox-app-frame").locator("#status")).toContainText("Opened");
+  await first.waitForTimeout(1_000);
+
+  await firstContext.setOffline(true);
+  await replaceEditorText(first, "Mine from the offline browser\n");
+  await replaceEditorText(second, "Server from the online browser\n");
+  await firstContext.setOffline(false);
+  await first.reload();
+  await expect(first.locator(".desktop-shell")).toBeVisible();
+
+  await first.getByRole("button", { name: /^Notifications/ }).click();
+  const reviewVersions = first.getByRole("button", { name: "Review versions" }).first();
+  await expect(reviewVersions).toBeVisible({ timeout: 30_000 });
+  await reviewVersions.click();
+  const merge = first.getByRole("dialog", { name: `Merge · ${mergeFile}` });
+  await expect(merge.getByText("Review versions", { exact: true })).toBeVisible();
+  await expect(merge.getByRole("heading", { name: "Base" })).toBeVisible();
+  await expect(merge.getByRole("heading", { name: "Mine" })).toBeVisible();
+  await expect(merge.getByRole("heading", { name: "Server" })).toBeVisible();
+  await first.setViewportSize({ width: 390, height: 844 });
+  await expect(merge.getByRole("tab", { name: "Mine" })).toBeVisible();
+  await merge.getByRole("tab", { name: "Server" }).click();
+  await expect(merge.getByRole("heading", { name: "Server" })).toBeVisible();
+  expect(await first.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await merge.getByRole("button", { name: "Use mine" }).click();
+  await merge.locator("textarea").fill("Resolved by Merge\n");
+  await merge.getByRole("button", { name: "Save merged" }).click();
+  await expect(merge).toBeHidden({ timeout: 30_000 });
+  await first.setViewportSize({ width: 1280, height: 720 });
+  const restoredEditor = first.getByRole("dialog", { name: "Text Editor" });
+  if (await restoredEditor.isVisible()) await first.getByRole("button", { name: "Close Text Editor" }).click();
+
+  await expect.poll(() => second.evaluate(async (name) => {
+    const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const desktopId = catalog.desktops[0].id;
+    const desktop = await fetch(`/api/desktops/${desktopId}`, { cache: "no-store" }).then((response) => response.json()) as { entries: Array<{ id: string; name: string; contentRevision: number }> };
+    const entry = desktop.entries.find((candidate) => candidate.name === name);
+    if (!entry) return "";
+    const descriptor = await fetch(`/api/desktops/${desktopId}/entries/${entry.id}/content-access?revision=${entry.contentRevision}`, { cache: "no-store" }).then((response) => response.json()) as { access: { url: string; method: string; headers: Record<string, string> } };
+    return fetch(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers }).then((response) => response.text());
+  }, mergeFile), { timeout: 30_000 }).toBe("Resolved by Merge\n");
+  await second.getByRole("button", { name: `Close ${mergeFile} - Text Editor` }).click();
 
   const chooser = first.waitForEvent("filechooser");
   await first.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "Upload files" }).click();
@@ -201,7 +262,7 @@ async function afterRestart(browser: Browser) {
 }
 
 test("server-backed authentication, convergence, replay, conflict, and restart persistence", async ({ browser }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(150_000);
   if (process.env.HIRAYA_SERVER_E2E_PHASE === "restart") await afterRestart(browser);
   else await primary(browser);
 });

@@ -4,8 +4,12 @@ import { APPROVED_PACKAGE_ARCHIVES_DIRECTORY, CONTENT_CACHE_DIRECTORY, FILES_DIR
 
 export type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number; sha256: string };
 const SHA256_HEX = /^[a-f0-9]{64}$/;
-const CONFLICT_BASE = ".content-conflict-base";
 const CONFLICT_SERVER = ".content-conflict-server";
+
+function conflictBaseName(revision: number) {
+  if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("The content conflict base revision is invalid.");
+  return `.content-conflict-base-${revision}`;
+}
 
 export async function contentMatchesCacheMarker(content: Blob, marker: ContentCacheMarker) {
   return content.size === marker.size && await sha256Blob(content) === marker.sha256;
@@ -237,9 +241,13 @@ export async function stageOperationContents(operationId: string, contents: Map<
   await stageOperationContentsInDirectory(await getPendingDirectory(), operationId, contents);
 }
 
-export async function readStagedContent(operationId: string, id: string) {
+export async function readStagedContent(operationId: string, id: string, selectedKey?: string) {
   const pending = await getPendingDirectory();
   const directory = await pending.getDirectoryHandle(operationId);
+  if (selectedKey !== undefined) {
+    if (!/^\.mine-[0-9a-f-]{36}$/.test(selectedKey)) throw new Error("Pending file content has an invalid storage key.");
+    return (await directory.getFileHandle(selectedKey)).getFile();
+  }
   const manifest = JSON.parse(await (await directory.getFileHandle(".complete")).getFile().then((file) => file.text())) as unknown;
   if (!Array.isArray(manifest)) throw new Error("Pending file content was not completely staged.");
   const item = manifest.find((candidate): candidate is [string, number, string?] => Array.isArray(candidate) && candidate[0] === id && Number.isSafeInteger(candidate[1]) && candidate[1] >= 0 && (candidate[2] === undefined || typeof candidate[2] === "string" && candidate[2].startsWith(".mine-")));
@@ -249,6 +257,16 @@ export async function readStagedContent(operationId: string, id: string) {
   const content = await (await directory.getFileHandle(storedName)).getFile();
   if (content.size !== expected) throw new Error("Pending file content was not completely staged.");
   return content;
+}
+
+export async function stageStagedContentVariant(operationId: string, content: Blob) {
+  return stageStagedContentVariantInDirectory(await (await getPendingDirectory()).getDirectoryHandle(operationId), content);
+}
+
+export async function stageStagedContentVariantInDirectory(directory: FileSystemDirectoryHandle, content: Blob, key = `.mine-${crypto.randomUUID()}`, write: (directory: FileSystemDirectoryHandle, name: string, content: Blob) => Promise<void> = writeHandleContent) {
+  if (!/^\.mine-[0-9a-f-]{36}$/.test(key)) throw new Error("Pending file content has an invalid storage key.");
+  await write(directory, key, content);
+  return key;
 }
 
 async function readOptionalStagedFile(operationId: string, name: string) {
@@ -261,35 +279,20 @@ async function readOptionalStagedFile(operationId: string, name: string) {
   }
 }
 
-export function readContentConflictBase(operationId: string) {
-  return readOptionalStagedFile(operationId, CONFLICT_BASE);
+export function readContentConflictBase(operationId: string, revision: number) {
+  return readOptionalStagedFile(operationId, conflictBaseName(revision));
 }
 
 export function readContentConflictServer(operationId: string) {
   return readOptionalStagedFile(operationId, CONFLICT_SERVER);
 }
 
-export async function writeContentConflictBase(operationId: string, content: Blob) {
-  await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), CONFLICT_BASE, content);
+export async function writeContentConflictBase(operationId: string, revision: number, content: Blob) {
+  await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), conflictBaseName(revision), content);
 }
 
 export async function writeContentConflictServer(operationId: string, content: Blob) {
   await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), CONFLICT_SERVER, content);
-}
-
-export async function replaceStagedContent(operationId: string, id: string, content: Blob) {
-  const directory = await (await getPendingDirectory()).getDirectoryHandle(operationId);
-  await replaceStagedContentInDirectory(directory, id, content);
-}
-
-export async function replaceStagedContentInDirectory(directory: FileSystemDirectoryHandle, id: string, content: Blob, storedName = `.mine-${crypto.randomUUID()}`, write: (directory: FileSystemDirectoryHandle, name: string, content: Blob | string) => Promise<void> = writeHandleContent) {
-  const manifest = JSON.parse(await (await directory.getFileHandle(".complete")).getFile().then((file) => file.text())) as unknown;
-  if (!Array.isArray(manifest)) throw new Error("Pending file content was not completely staged.");
-  const index = manifest.findIndex((item) => Array.isArray(item) && item[0] === id);
-  if (index < 0) throw new Error("Pending file content was not completely staged.");
-  await write(directory, storedName, content);
-  manifest[index] = [id, content.size, storedName];
-  await write(directory, ".complete", JSON.stringify(manifest));
 }
 
 export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = false) {
@@ -304,7 +307,7 @@ export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = 
   }
   for (const record of records) {
     for (const id of operationMaterializationContentIds(record.operation)) {
-      const content = await readStagedContent(record.operationId, id);
+      const content = await readStagedContent(record.operationId, id, record.operation.kind === "save-content" ? record.operation.stagedContentKey : undefined);
       await writeContent(id, content);
     }
   }

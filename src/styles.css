@@ -6255,8 +6255,8 @@ button.app-picker__disclosure { cursor: pointer; }
   .merge-window__navigator > div { padding-bottom: 5px; }
   .merge-window__navigator ol { display: flex; overflow-x: auto; scroll-snap-type: x proximity; }
   .merge-window__navigator li { min-width: min(190px, 70vw); scroll-snap-align: start; }
-  .merge-window__text-workspace { display: flex; overflow: visible; flex-direction: column; }
-  .merge-window__conflict { overflow: visible; padding: 12px 10px; }
+  .merge-window__text-workspace { display: flex; flex: 0 0 auto; overflow: visible; flex-direction: column; }
+  .merge-window__conflict { overflow: visible; flex: 0 0 auto; padding: 12px 10px; }
   .merge-window__conflict > header { align-items: stretch; flex-direction: column; gap: 7px; }
   .merge-window__conflict > header > span { align-self: flex-start; }
   .merge-window__source-tabs { display: grid; grid-auto-columns: 1fr; grid-auto-flow: column; gap: 3px; margin-bottom: 8px; padding: 3px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); background: var(--theme-window-muted); }
@@ -6267,7 +6267,7 @@ button.app-picker__disclosure { cursor: pointer; }
   .merge-window__snippets pre { max-height: none; min-height: 116px; }
   .merge-window__conflict-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .merge-window__conflict-actions .button { min-width: 0; min-height: 44px; padding-inline: 5px; }
-  .merge-window__result { min-height: 240px; padding-inline: 10px; }
+  .merge-window__result { min-height: 240px; flex: 0 0 300px; padding-inline: 10px; }
   .merge-window__result > span { align-items: flex-start; flex-direction: column; gap: 1px; }
   .merge-window__compare { overflow: auto; padding: 9px; }
   .merge-window__versions { display: block; }

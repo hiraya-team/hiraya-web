@@ -114,6 +114,12 @@ describe("strict outbox", () => {
     expect(projected.entries[0]).toEqual({ ...file, mimeType: "text/markdown", size: 4, modifiedAt: 10 });
   });
 
+  test("accepts only generated immutable staged-content keys", () => {
+    const operation = { schemaVersion: 1 as const, kind: "save-content" as const, entryId: "file", mimeType: "text/plain", size: 4, modifiedAt: 10, baseContentRevision: 2, stagedContentKey: ".mine-00000000-0000-4000-8000-000000000000" };
+    expect(normalizeOutboxOperation(operation)).toEqual(operation);
+    expect(() => normalizeOutboxOperation({ ...operation, stagedContentKey: "../file" })).toThrow("unsupported metadata");
+  });
+
   test("rebases only causally acknowledged resource revisions", () => {
     const snapshot = { ...state(), sync: { ...state().sync, catalogRevision: 5, entryRevisions: { "own-change": 5, concurrent: 6 } } };
     const own = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "own-change", baseRevision: 2, changes: { name: "next" } }, 5);

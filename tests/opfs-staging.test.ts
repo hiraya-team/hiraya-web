@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, replaceStagedContentInDirectory, rollbackSafeReplacement, saveApprovedPackageArchive, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, rollbackSafeReplacement, saveApprovedPackageArchive, stageOperationContentsInDirectory, stageStagedContentVariantInDirectory } from "../src/platform/storage/blobs";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
@@ -40,13 +40,12 @@ describe("pending content staging", () => {
     expect(writes).toEqual(["first", "second", ".complete"]);
   });
 
-  test("atomically selects merged Mine only after its replacement is durable", async () => {
-    const writes: Array<[string, Blob | string]> = [];
-    const complete = new File([JSON.stringify([["file", 4]])], ".complete");
-    const directory = { getFileHandle: async () => ({ getFile: async () => complete }) } as unknown as FileSystemDirectoryHandle;
-    await replaceStagedContentInDirectory(directory, "file", new Blob(["merged"]), ".mine-next", async (_directory, name, content) => { writes.push([name, content]); });
-    expect(writes.map(([name]) => name)).toEqual([".mine-next", ".complete"]);
-    expect(JSON.parse(String(writes[1][1]))).toEqual([["file", 6, ".mine-next"]]);
+  test("stages merged Mine under an immutable key before the outbox selects it", async () => {
+    const writes: string[] = [];
+    const directory = {} as FileSystemDirectoryHandle;
+    const key = ".mine-00000000-0000-4000-8000-000000000000";
+    expect(await stageStagedContentVariantInDirectory(directory, new Blob(["merged"]), key, async (_directory, name) => { writes.push(name); })).toBe(key);
+    expect(writes).toEqual([key]);
   });
 
   test("stages the hidden asset owned by a theme-package install", () => {

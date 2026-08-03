@@ -49,6 +49,11 @@ import {
   listOutboxRecords,
   retryBlockedOutboxRecord,
   discardBlockedOutboxRecord,
+  loadContentConflict,
+  resolveContentConflictKeepLocal,
+  resolveContentConflictKeepServer,
+  resolveContentConflictMerged,
+  resolveContentConflictKeepBoth,
   loadOfflineInventory,
   subscribeToOfflineStorage,
   subscribeToEntryDownloads,
@@ -65,6 +70,7 @@ import {
   type SyncStatus,
   type OfflineOperationProgress,
   type FileTransferState,
+  type ContentConflictBundle,
 } from "./lib/sync";
 import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
@@ -96,7 +102,7 @@ import { ConfirmationDialog, type ConfirmationRequest } from "./components/Confi
 import { SharingDialog } from "./components/SharingDialog";
 import { PublishDialog } from "./components/PublishDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
-import { outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
+import { isRevisionConflictRecord, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
@@ -134,7 +140,7 @@ import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sh
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
-import { runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
+import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
@@ -151,12 +157,26 @@ import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
 import { inspectStorePackage, loadStorePackages, subscribeToAppStoreChanges, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
+import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
+import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
+type MergeReview = {
+  state: "loading" | "ready" | "resolving" | "error";
+  error?: string;
+  mine: MergeFileVersion;
+  server: MergeFileVersion;
+  mode: "text" | "media" | "binary";
+  mediaKind?: "image" | "audio" | "video" | "pdf";
+  regions: ThreeWayTextMergeRegion[];
+  resolutions: Record<string, MergeTextResolution>;
+  mergedText: string;
+  serverRevision: number;
+};
 const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const WHEEL_SWIPE_END_MS = 160;
@@ -176,6 +196,29 @@ function formatImportBytes(value: number) {
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
   if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function mergeAppId(operationId: string) {
+  return `merge:${operationId}`;
+}
+
+function mergeTextForRegions(regions: readonly ThreeWayTextMergeRegion[], resolutions: Record<string, MergeTextResolution>) {
+  return regions.map((region, index) => {
+    if (region.kind === "resolved") return region.text;
+    const resolution = resolutions[String(index)];
+    return resolution === "mine" ? region.mine : resolution === "server" ? region.server : resolution === "both" ? `${region.mine}${region.server}` : "";
+  }).join("");
+}
+
+async function decodeLegacyConflictText(content: Blob) {
+  if (content.size > THREE_WAY_TEXT_MERGE_MAX_BYTES) return null;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await content.arrayBuffer());
+    const lineCount = text ? text.split(/\r\n|\r|\n/).length : 0;
+    return lineCount <= THREE_WAY_TEXT_MERGE_MAX_LINES ? text : null;
+  } catch {
+    return null;
+  }
 }
 
 function transientMenuOpen() {
@@ -264,6 +307,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [searchInitialQuery, setSearchInitialQuery] = useState("");
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
   const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
+  const [mergeReviews, setMergeReviews] = useState<Record<string, MergeReview>>({});
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [storagePersistence, setStoragePersistence] = useState<StoragePersistenceStatus>("checking");
   const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
@@ -374,6 +418,8 @@ function App({ session }: { session: AuthSession | null }) {
   const closeAppRef = useRef<(id: string, consultLifecycle?: boolean, syncRoute?: boolean) => Promise<boolean>>(async () => false);
   const settingsPageRef = useRef<AppHistorySettingsPage>("main");
   const fileLoadGenerationsRef = useRef<Record<string, number>>({});
+  const mergeLoadGenerationsRef = useRef<Record<string, number>>({});
+  const mergeLoadSequenceRef = useRef(0);
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const contentRevisionsRef = useRef<Record<string, number>>({});
@@ -853,6 +899,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function closeApp(id: string, syncRoute = true) {
+    const closing = runningAppsRef.current.find((app) => app.id === id);
     if (id === builtinAppTargetId({ kind: "settings" })) {
       settingsPageRef.current = "main";
       setSettingsPage("main");
@@ -865,8 +912,13 @@ function App({ session }: { session: AuthSession | null }) {
       return next;
     });
     delete fileLoadGenerationsRef.current[id];
+    if (closing?.kind === "merge") delete mergeLoadGenerationsRef.current[closing.operationId];
     sandboxFullscreenBoundsRef.current.delete(id);
-    const closing = runningAppsRef.current.find((app) => app.id === id);
+    if (closing?.kind === "merge") setMergeReviews((current) => {
+      const next = { ...current };
+      delete next[closing.operationId];
+      return next;
+    });
     if (closing?.kind === "sandbox") {
       closing.dispatcher.dispose();
       closing.files.close();
@@ -891,7 +943,7 @@ function App({ session }: { session: AuthSession | null }) {
     const dirty = target.kind === "sandbox" ? dirtyAppIds.has(id) || appLifecycle.snapshot({ appId: target.package.manifest.id, instanceId: target.id }).dirty : Boolean(fileDirtyRef.current[id]);
     return closeWithDirtyCheck({
       dirty,
-      confirmDiscard: () => requestConfirmation({ title: "Discard unsaved changes?", message: target.kind === "sandbox" ? "Close this app and discard its unsaved changes?" : "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }),
+      confirmDiscard: () => requestConfirmation({ title: "Discard unsaved changes?", message: target.kind === "sandbox" ? "Close this app and discard its unsaved changes?" : target.kind === "merge" ? "Close Merge and discard edits to the merged result? The original queued versions remain safe." : "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }),
       close: () => closeApp(id, syncRoute),
     });
   }
@@ -917,7 +969,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function createAppBase(id: string, kind: RunningApp["kind"], index?: number, segment = activeSegment): BaseRunningApp {
     const staggerIndex = index ?? runningAppsRef.current.filter((app) => appIsInSegment(app, segment)).length;
-    const { width, height, minWidth, minHeight } = kind === "sandbox" ? { width: 820, height: 620, minWidth: 360, minHeight: 260 } : builtinAppWindow(kind);
+    const { width, height, minWidth, minHeight } = kind === "sandbox" ? { width: 820, height: 620, minWidth: 360, minHeight: 260 } : kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(kind);
     const localBounds = initialWindowBounds(desktopSize, { width, height, minWidth, minHeight, index: staggerIndex });
     return {
       id,
@@ -1174,6 +1226,7 @@ function App({ session }: { session: AuthSession | null }) {
             if (app.systemTarget?.entryId) return syncedIds.has(app.systemTarget.entryId);
             return app.install.source === "system" || syncedIds.has(app.packageEntryId!);
           }
+          if (app.kind === "merge") return true;
           const dependency = builtinAppEntryDependency(app);
           return !dependency || syncedIds.has(dependency.entryId);
         });
@@ -1199,7 +1252,25 @@ function App({ session }: { session: AuthSession | null }) {
       },
     );
     const unsubscribeOutbox = subscribeToOutbox((records) => {
-      if (active) setOutboxRecords([...records]);
+      if (!active) return;
+      setOutboxRecords([...records]);
+      const retained = new Set(records.filter(isContentConflict).map((record) => record.operationId));
+      const staleApps = runningAppsRef.current.filter((app): app is Extract<RunningApp, { kind: "merge" }> => app.kind === "merge" && !retained.has(app.operationId));
+      const stale = new Set(staleApps.map((app) => app.id));
+      if (stale.size) {
+        const remaining = runningAppsRef.current.filter((app) => !stale.has(app.id));
+        for (const app of staleApps) {
+          delete fileDirtyRef.current[app.id];
+          delete mergeLoadGenerationsRef.current[app.operationId];
+        }
+        updateRunningApps(remaining);
+        setDirtyAppIds((current) => new Set([...current].filter((id) => !stale.has(id))));
+        setMergeReviews((current) => Object.fromEntries(Object.entries(current).filter(([operationId]) => retained.has(operationId))));
+        if (focusedAppIdRef.current && stale.has(focusedAppIdRef.current)) {
+          const segment = routeRef.current ?? { column: 0, row: 0 };
+          setFocusedApp(topRunningAppInSegment(remaining, segment, desktopSizeRef.current)?.id ?? null);
+        }
+      }
     });
     const unsubscribeOffline = subscribeToOfflineStorage(
       (inventory) => {
@@ -1620,7 +1691,7 @@ function App({ session }: { session: AuthSession | null }) {
     updateRunningApps((currentApps) =>
       currentApps.map((app) => {
         const projection = projectLogicalPosition(app.bounds, previous);
-        const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+        const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
         const localBounds = clampWindowBounds({ ...app.bounds, ...projection.local }, desktopSize, { minWidth, minHeight });
         return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
       }),
@@ -1635,6 +1706,7 @@ function App({ session }: { session: AuthSession | null }) {
         const dependencyId = app.systemTarget?.entryId ?? app.packageEntryId;
         return dependencyId === null || entryIndex.byId.has(dependencyId) ? [app] : [];
       }
+      if (app.kind === "merge") return [app];
       const dependency = builtinAppEntryDependency(app);
       if (!dependency) return [app];
       const entry = entryIndex.byId.get(dependency.entryId);
@@ -2225,7 +2297,7 @@ function App({ session }: { session: AuthSession | null }) {
   async function performDesktopActivation(desktopId: string, token: number) {
     activationGenerationRef.current = token;
     if (desktopId === activeDesktopIdRef.current) return true;
-    if (Object.values(fileDirtyRef.current).some(Boolean) && !(await requestConfirmation({ title: "Switch desktops?", message: "Switching desktops will discard unsaved editor changes in open files.", confirmLabel: "Discard and switch", danger: true }))) return false;
+    if (Object.values(fileDirtyRef.current).some(Boolean) && !(await requestConfirmation({ title: "Switch desktops?", message: "Switching desktops will discard unsaved changes in open files and merge drafts.", confirmLabel: "Discard and switch", danger: true }))) return false;
     const previousDesktopId = activeDesktopIdRef.current;
     let syncStopped = false;
     setLoading(true);
@@ -3260,7 +3332,7 @@ function App({ session }: { session: AuthSession | null }) {
     const segment = projectLogicalPosition(app.bounds, size).segment;
     const restored = restoredWindowBoundsRef.current.get(id);
     const maximized = appIsMaximized(app);
-    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ?? { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ?? { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
     const fallback = initialWindowBounds(size, fallbackOptions);
     const bounds = maximized ? (restored ?? { ...fallback, ...restoreLogicalPosition(fallback, segment, size) }) : { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, size), width: size.width, height: size.height };
     if (!maximized) restoredWindowBoundsRef.current.set(id, app.bounds);
@@ -3292,7 +3364,7 @@ function App({ session }: { session: AuthSession | null }) {
     const size = desktopSizeRef.current;
     const projection = projectLogicalPosition(app.bounds, size);
     const currentBounds = { ...app.bounds, ...projection.local };
-    const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+    const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
     const step = 20;
     const draft = operation === "move"
       ? {
@@ -3642,7 +3714,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function runningAppLabel(app: RunningApp) {
     const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
-    return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
+    return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
   }
 
   const windowItems: WindowListItem[] = runningApps.map((app) => {
@@ -3810,7 +3882,132 @@ function App({ session }: { session: AuthSession | null }) {
     return [`Desktop: ${desktopName}`, ...entryNames];
   }
 
+  function isContentConflict(record: OutboxRecord) {
+    return isRevisionConflictRecord(record) && record.operation.kind === "save-content" && record.conflictDetails?.resourceKind === "content";
+  }
+
+  function loadingMergeReview(record: OutboxRecord): MergeReview {
+    const operation = record.operation.kind === "save-content" ? record.operation : null;
+    const file = operation ? entriesRef.current.find((entry): entry is FileEntry => entry.id === operation.entryId && entry.kind === "file") : null;
+    const name = file?.name ?? "Changed file";
+    const mimeType = operation?.mimeType ?? file?.mimeType ?? "application/octet-stream";
+    const size = operation?.size ?? file?.size ?? 0;
+    const modifiedAt = operation?.modifiedAt ?? file?.modifiedAt ?? Date.now();
+    return {
+      state: "loading",
+      mine: { name, mimeType, size, modifiedAt },
+      server: { name, mimeType: file?.mimeType ?? mimeType, size: file?.size ?? size, modifiedAt: file?.modifiedAt ?? modifiedAt },
+      mode: "binary",
+      regions: [],
+      resolutions: {},
+      mergedText: "",
+      serverRevision: record.conflictDetails?.actualRevision ?? 0,
+    };
+  }
+
+  async function buildMergeReview(bundle: ContentConflictBundle): Promise<MergeReview> {
+    const mine = { ...bundle.mineMetadata, content: bundle.mine };
+    const server = { ...bundle.serverMetadata, content: bundle.server };
+    const file = entriesRef.current.find((entry): entry is FileEntry => entry.id === bundle.entryId && entry.kind === "file");
+    const preview = file ? fileCapabilities({ ...file, name: bundle.serverMetadata.name, mimeType: bundle.serverMetadata.mimeType, size: bundle.serverMetadata.size, modifiedAt: bundle.serverMetadata.modifiedAt }) : null;
+    if (preview?.editable) {
+      let regions: ThreeWayTextMergeRegion[];
+      if (bundle.base) {
+        const result = mergeThreeWayText(
+          new Uint8Array(await bundle.base.arrayBuffer()),
+          new Uint8Array(await bundle.mine.arrayBuffer()),
+          new Uint8Array(await bundle.server.arrayBuffer()),
+        );
+        if (result.status === "unavailable") return { state: "ready", mine, server, mode: "binary", regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+        regions = result.regions;
+      } else {
+        const [mineText, serverText] = await Promise.all([decodeLegacyConflictText(bundle.mine), decodeLegacyConflictText(bundle.server)]);
+        if (mineText === null || serverText === null) return { state: "ready", mine, server, mode: "binary", regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+        regions = mineText === serverText ? [{ kind: "resolved", text: mineText }] : [{ kind: "unresolved", base: "The common base is unavailable for this older queued change.", mine: mineText, server: serverText }];
+      }
+      return { state: "ready", mine, server, mode: "text", regions, resolutions: {}, mergedText: mergeTextForRegions(regions, {}), serverRevision: bundle.serverRevision };
+    }
+    const mediaKind = preview && ["image", "audio", "video", "pdf"].includes(preview.preview) ? preview.preview as "image" | "audio" | "video" | "pdf" : undefined;
+    return { state: "ready", mine, server, mode: mediaKind ? "media" : "binary", mediaKind, regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+  }
+
+  async function loadMergeReview(record: OutboxRecord) {
+    const appId = mergeAppId(record.operationId);
+    const generation = ++mergeLoadSequenceRef.current;
+    mergeLoadGenerationsRef.current[record.operationId] = generation;
+    setMergeReviews((current) => ({ ...current, [record.operationId]: { ...(current[record.operationId] ?? loadingMergeReview(record)), state: "loading", error: undefined } }));
+    try {
+      const review = await buildMergeReview(await loadContentConflict(record.operationId));
+      if (mergeLoadGenerationsRef.current[record.operationId] === generation && runningAppsRef.current.some((app) => app.id === appId)) {
+        fileDirtyRef.current[appId] = false;
+        setDirtyAppIds((current) => {
+          if (!current.has(appId)) return current;
+          const next = new Set(current);
+          next.delete(appId);
+          return next;
+        });
+        setMergeReviews((current) => ({ ...current, [record.operationId]: review }));
+      }
+    } catch (reason) {
+      if (mergeLoadGenerationsRef.current[record.operationId] === generation && runningAppsRef.current.some((app) => app.id === appId)) setMergeReviews((current) => ({ ...current, [record.operationId]: { ...(current[record.operationId] ?? loadingMergeReview(record)), state: "error", error: reason instanceof Error ? reason.message : "The conflicting versions could not be loaded." } }));
+    }
+  }
+
+  async function openMergeReview(record: OutboxRecord) {
+    if (!isContentConflict(record)) return;
+    if (record.desktopId !== activeDesktopIdRef.current && !(await activateDesktop(record.desktopId))) return;
+    const currentRecord = (await listOutboxRecords()).find((candidate) => candidate.operationId === record.operationId);
+    if (!currentRecord || !isContentConflict(currentRecord)) throw new Error("That content conflict no longer exists.");
+    const id = mergeAppId(currentRecord.operationId);
+    const existing = runningAppsRef.current.find((app) => app.id === id);
+    if (existing) {
+      focusApp(id);
+      if (mergeReviews[currentRecord.operationId]?.state === "error") await loadMergeReview(currentRecord);
+      return;
+    }
+    const app: RunningApp = { ...createAppBase(id, "merge"), kind: "merge", operationId: currentRecord.operationId };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setMergeReviews((current) => ({ ...current, [currentRecord.operationId]: loadingMergeReview(currentRecord) }));
+    setActivePanel(null);
+    setFocusedApp(id);
+    goToSegment(segmentForApp(app), "replace", app);
+    await loadMergeReview(currentRecord);
+  }
+
+  function resolveMergeTextConflict(operationId: string, conflictId: string, resolution: MergeTextResolution) {
+    const appId = mergeAppId(operationId);
+    fileDirtyRef.current[appId] = true;
+    setDirtyAppIds((current) => new Set(current).add(appId));
+    setMergeReviews((current) => {
+      const review = current[operationId];
+      if (!review || review.mode !== "text" || review.state !== "ready") return current;
+      const resolutions = { ...review.resolutions, [conflictId]: resolution };
+      return { ...current, [operationId]: { ...review, resolutions, mergedText: mergeTextForRegions(review.regions, resolutions) } };
+    });
+  }
+
+  async function applyMergeResolution(operationId: string, resolution: "mine" | "server" | "both" | "merged") {
+    const review = mergeReviews[operationId];
+    if (!review || review.state !== "ready") return;
+    if (resolution === "server" && !(await requestConfirmation({ title: "Use the server version?", message: "Discard this browser's queued version and keep the current server file? This cannot be undone.", confirmLabel: "Use server version", danger: true }))) return;
+    setMergeReviews((current) => current[operationId] ? { ...current, [operationId]: { ...current[operationId], state: "resolving", error: undefined } } : current);
+    try {
+      if (resolution === "mine") await resolveContentConflictKeepLocal(operationId, review.serverRevision);
+      else if (resolution === "server") await resolveContentConflictKeepServer(operationId);
+      else if (resolution === "both") await resolveContentConflictKeepBoth(operationId);
+      else await resolveContentConflictMerged(operationId, new Blob([review.mergedText], { type: review.mine.mimeType }), review.serverRevision);
+      closeApp(mergeAppId(operationId));
+      setNotice(resolution === "both" ? "Both file versions were kept." : resolution === "merged" ? "The merged file was queued for synchronization." : resolution === "mine" ? "Your version was queued for synchronization." : "The server version was restored.");
+    } catch (reason) {
+      setMergeReviews((current) => current[operationId] ? { ...current, [operationId]: { ...current[operationId], state: "ready", error: reason instanceof Error ? reason.message : "The conflict could not be resolved." } } : current);
+    }
+  }
+
   function retrySyncIssue(record: OutboxRecord) {
+    if (isContentConflict(record)) {
+      void openMergeReview(record).catch((reason) => setError(reason instanceof Error ? reason.message : "The conflicting versions could not be opened."));
+      return;
+    }
     void retryBlockedOutboxRecord(record.operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The queued change could not be retried."));
   }
 
@@ -4163,7 +4360,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4184,6 +4381,8 @@ function App({ session }: { session: AuthSession | null }) {
             const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
+            const mergeReview = app.kind === "merge" ? mergeReviews[app.operationId] : null;
+            const mergeConflicts: MergeTextConflict[] = mergeReview?.mode === "text" ? mergeReview.regions.flatMap((region, index) => region.kind === "unresolved" && !mergeReview.resolutions[String(index)] ? [{ id: String(index), label: `Overlapping edit ${index + 1}`, base: region.base, mine: region.mine, server: region.server, resolution: null }] : []) : [];
             return (
               <>
                     {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer && session ? trustedMediaCsp(session.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
@@ -4243,6 +4442,59 @@ function App({ session }: { session: AuthSession | null }) {
                       />
                     )}
                     {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
+                    {app.kind === "merge" && mergeReview && (mergeReview.mode === "text" ? <MergeWindow
+                      mode="text"
+                      active={focusedAppId === app.id}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      conflicts={mergeConflicts}
+                      mergedText={mergeReview.mergedText}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onMergedTextChange={(mergedText) => {
+                        fileDirtyRef.current[app.id] = true;
+                        setDirtyAppIds((current) => new Set(current).add(app.id));
+                        setMergeReviews((current) => current[app.operationId] ? { ...current, [app.operationId]: { ...current[app.operationId], mergedText, error: undefined } } : current);
+                      }}
+                      onResolveConflict={(conflictId, resolution) => resolveMergeTextConflict(app.operationId, conflictId, resolution)}
+                      onSaveMerged={() => void applyMergeResolution(app.operationId, "merged")}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    /> : mergeReview.mode === "media" && mergeReview.mediaKind ? <MergeWindow
+                      mode="media"
+                      active={focusedAppId === app.id}
+                      mediaKind={mergeReview.mediaKind}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    /> : <MergeWindow
+                      mode="binary"
+                      active={focusedAppId === app.id}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    />)}
                     {app.kind === "settings" && (
                       <SettingsWindow
                         page={settingsPage}

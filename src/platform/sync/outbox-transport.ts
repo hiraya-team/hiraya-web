@@ -12,7 +12,7 @@ type OutboxTransportDependencies = {
   signal?: AbortSignal;
   requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown>;
   requireAuthentication(response: Response): Response;
-  readPendingContent(operationId: string, entryId: string): Promise<Blob>;
+  readPendingContent(operationId: string, entryId: string, stagedContentKey?: string): Promise<Blob>;
   createXMLHttpRequest?: () => XMLHttpRequest;
   onBlobUploadProgress?(entryId: string, phase: BlobUploadPhase, transferredBytes: number, totalBytes: number): void;
 };
@@ -58,7 +58,7 @@ async function sendBlobMutation(record: OutboxRecord & { operation: Extract<Outb
   const contents = new Map<string, Blob>();
   const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
     dependencies.onBlobUploadProgress?.(entry.id, "hashing", 0, entry.size);
-    const content = await dependencies.readPendingContent(record.operationId, entry.id);
+    const content = await dependencies.readPendingContent(record.operationId, entry.id, operation.kind === "save-content" ? operation.stagedContentKey : undefined);
     if (content.size !== entry.size) throw new Error(`The staged contents of “${entry.name}” have an unexpected size.`);
     contents.set(entry.id, content);
     const digest = await uploadBlobDigests(content, (bytes) => dependencies.onBlobUploadProgress?.(entry.id, "hashing", bytes, entry.size), dependencies.signal);

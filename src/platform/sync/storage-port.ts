@@ -64,10 +64,11 @@ export interface SyncStorage {
   rebaseBlockedMutation(operationId: string, operation: OutboxOperation): Promise<OutboxRecord>;
   recordMutationAttempt?(operationId: string, attemptedAt: number): Promise<unknown>;
   discardDesktopProjection(desktopId: string, operationId: string): Promise<{ affectedDesktopIds: string[] }>;
-  readPendingContent(operationId: string, entryId: string): Promise<Blob>;
-  readContentConflict(operationId: string, entryId: string): Promise<{ mine: Blob; base: Blob | null; server: Blob | null }>;
+  readPendingContent(operationId: string, entryId: string, stagedContentKey?: string): Promise<Blob>;
+  readContentConflict(operationId: string, entryId: string, baseRevision: number, stagedContentKey?: string): Promise<{ mine: Blob; base: Blob | null; server: Blob | null }>;
+  retainContentConflictBase(operationId: string, revision: number, content: Blob): Promise<unknown>;
   retainContentConflictServer(operationId: string, content: Blob): Promise<unknown>;
-  replacePendingContent(operationId: string, entryId: string, content: Blob): Promise<unknown>;
+  stagePendingContentVariant(operationId: string, content: Blob): Promise<string>;
   resolveContentConflictKeepBoth(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry): Promise<QueuedMutation>;
 
   loadOfflineInventory(desktopId: string): Promise<OfflineStorageInventory>;

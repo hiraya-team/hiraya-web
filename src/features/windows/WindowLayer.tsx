@@ -3,7 +3,7 @@ import { builtinAppWindow } from "../../apps/registry";
 import { AppWindow, type AppWindowHeaderElements, type AppWindowProps } from "../../components/AppWindow";
 import { areaWorldOrigin } from "../../ui/area-camera";
 import { projectLogicalPosition, segmentKey, type SurfaceSegment } from "../../ui/desktop-geometry";
-import type { RunningApp } from "./model";
+import { MERGE_APP_WINDOW, type RunningApp } from "./model";
 
 type DesktopSize = { width: number; height: number };
 type WindowCallbacks = Pick<AppWindowProps, "onFocus" | "onBoundsChange" | "dragEdgeAt" | "onDragAtEdge" | "onEdgeDwellChange" | "onDragEnd" | "onMinimize" | "onClose" | "onToggleMaximize" | "onMoveArea" | "onAdjustBounds" | "onShowDesktop">;
@@ -41,7 +41,7 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
         const origin = areaWorldOrigin(projection.segment, desktopSize);
         const titleId = `running-app-title-${index}`;
         const title = titleForApp(app);
-        const appWindow = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : builtinAppWindow(app.kind);
+        const appWindow = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
         return <div className="desktop-window-segment" key={app.id} style={windowed ? { left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height } : undefined}>
           <AppWindow
             {...windowCallbacks}

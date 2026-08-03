@@ -7,6 +7,7 @@ const apps: RunningApp[] = [
   { id: "settings", kind: "settings", bounds: { x: 20, y: 20, width: 500, height: 400 }, minimized: false, zIndex: 2 },
   { id: "folder", kind: "explorer", folderId: "folder-id", bounds: { x: 1020, y: 20, width: 500, height: 400 }, minimized: false, zIndex: 4 },
   { id: "file", kind: "file", fileId: "file-id", bounds: { x: 40, y: 40, width: 500, height: 400 }, minimized: true, zIndex: 5, editMode: false, contentRevision: 1, remoteChanged: false },
+  { id: "merge:operation-id", kind: "merge", operationId: "operation-id", bounds: { x: 60, y: 60, width: 700, height: 500 }, minimized: false, zIndex: 6 },
 ];
 
 describe("running window projections", () => {
@@ -17,12 +18,12 @@ describe("running window projections", () => {
   });
 
   test("selects the top visible non-excluded window in an area", () => {
-    expect(topRunningAppInSegment(apps, { column: 0, row: 0 }, size)?.id).toBe("settings");
-    expect(topRunningAppInSegment(apps, { column: 0, row: 0 }, size, "settings")).toBeNull();
+    expect(topRunningAppInSegment(apps, { column: 0, row: 0 }, size)?.id).toBe("merge:operation-id");
+    expect(topRunningAppInSegment(apps, { column: 0, row: 0 }, size, "merge:operation-id")?.id).toBe("settings");
   });
 
   test("derives stable persistence targets and instance IDs", () => {
-    expect(runningAppIds(apps)).toEqual(["settings", "folder", "file"]);
+    expect(runningAppIds(apps)).toEqual(["settings", "folder", "file", "merge:operation-id"]);
     expect(runningAppTargets(apps)).toEqual([
       { kind: "settings" },
       { kind: "explorer", folderId: "folder-id" },
@@ -37,5 +38,6 @@ describe("running window projections", () => {
     expect(parseRunningAppHistory(state)).toEqual(targets);
     expect(parseRunningAppHistory({ ...state, schemaVersion: 2 })).toBeNull();
     expect(routeForRunningApp(apps[1], { desktopId: "desktop", column: 1, row: 0 }, "desktop")).toEqual({ desktopId: "desktop", column: 1, row: 0, explorerFolderId: "folder-id" });
+    expect(routeForRunningApp(apps[3], { desktopId: "desktop", column: 0, row: 0 }, "desktop")).toEqual({ desktopId: "desktop", column: 0, row: 0 });
   });
 });
