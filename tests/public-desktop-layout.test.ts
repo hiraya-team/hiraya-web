@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { publicFolderBackTarget } from "../src/ui/public-desktop-layout";
+import { publicAreaMapSegments, publicFolderBackTarget } from "../src/ui/public-desktop-layout";
 
 describe("public desktop navigation", () => {
   test("resolves public back navigation without inventing controls", () => {
@@ -10,5 +10,12 @@ describe("public desktop navigation", () => {
     expect(publicFolderBackTarget(entries, "child")).toBe("parent");
     expect(publicFolderBackTarget(entries, "parent")).toBeNull();
     expect(publicFolderBackTarget(entries, "missing")).toBeUndefined();
+  });
+
+  test("keeps Home reachable when every published root entry is in another area", () => {
+    const right = { column: 1, row: 0 };
+    const occupied = [{ entries: [], key: "0:1", segment: right }];
+    expect(publicAreaMapSegments(occupied, { column: 0, row: 0 }).map((segment) => segment.key)).toEqual(["0:0", "0:1"]);
+    expect(publicAreaMapSegments(occupied, { column: 2, row: 0 }).map((segment) => segment.key)).toEqual(["0:0", "0:1", "0:2"]);
   });
 });

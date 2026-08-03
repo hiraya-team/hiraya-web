@@ -13,7 +13,7 @@ import { builtinAppWindow } from "./apps/registry";
 import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
-import { publicFolderBackTarget } from "./ui/public-desktop-layout";
+import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { StatusBadge } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
@@ -21,11 +21,10 @@ import { usePublicDesktop } from "./features/public-desktop/controller";
 import { API_ROUTES } from "./lib/api-routes";
 import type { PublicAuthority } from "./lib/public-desktop";
 import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
-import { areaMapSegments } from "./ui/desktop-areas";
-import { iconAreaSize, responsiveDesktop, segmentKey, type DesktopSegment, type SurfaceSegment } from "./ui/desktop-geometry";
+import { iconAreaSize, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { homeRelativeAreaLabel } from "./ui/shell";
-import { initialWindowBounds, type WindowBounds } from "./ui/window-manager";
+import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
@@ -143,6 +142,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const [windowBounds, setWindowBounds] = useState<WindowBounds>(() => initialWindowBounds({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const desktopRef = useRef<HTMLElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
+  const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
   const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
   const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
   const appearance = desktop?.appearance ?? DEFAULT_THEME_STATE;
@@ -151,10 +151,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const iconArea = useMemo(() => iconAreaSize(desktopSize, desktop?.layout.gridSize), [desktop?.layout.gridSize, desktopSize]);
   const responsive = useMemo(() => responsiveDesktop(desktop?.entries ?? [], iconArea, iconMetrics), [desktop?.entries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
-  const minimapSegments = useMemo(() => {
-    const occupied = new Map(responsive.segments.map((segment) => [segment.key, segment]));
-    return areaMapSegments(responsive.segments.map((segment) => segment.segment), activeSegment, false).map((segment): DesktopSegment => occupied.get(segmentKey(segment)) ?? { entries: [], key: segmentKey(segment), segment });
-  }, [activeSegment, responsive.segments]);
+  const minimapSegments = useMemo(() => publicAreaMapSegments(responsive.segments, activeSegment), [activeSegment, responsive.segments]);
   const minColumn = Math.min(...minimapSegments.map((segment) => segment.segment.column));
   const maxColumn = Math.max(...minimapSegments.map((segment) => segment.segment.column));
   const minRow = Math.min(...minimapSegments.map((segment) => segment.segment.row));
@@ -181,6 +178,28 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
     // Opening a different target starts a fresh ephemeral public window.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTarget]);
+
+  useEffect(() => {
+    if (!open || !windowed) return;
+    const { minWidth, minHeight } = builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
+    setWindowBounds((current) => clampWindowBounds(current, desktopSize, { minWidth, minHeight }));
+  }, [desktopSize, open, windowed]);
+
+  useEffect(() => {
+    if (!areaMapOpen) return;
+    const focusFrame = window.requestAnimationFrame(() => areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus());
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      setAreaMapOpen(false);
+      window.requestAnimationFrame(() => areaSwitcherTriggerRef.current?.focus());
+    };
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [areaMapOpen]);
 
   function openEntry(entry: DesktopEntry) {
     setSelectedIds(new Set());
@@ -232,7 +251,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               <span className="public-menu__desktop">{desktop?.name || "Public desktop"}</span>
             </div>
             <div className="public-menu__actions">
-              {desktop && wholeDesktop && minimapSegments.length > 1 && <button className="mobile-area-switcher-trigger" type="button" aria-label={`${areaMapOpen ? "Close" : "Open"} public desktop area navigator, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-controls="area-switcher" aria-expanded={areaMapOpen} onClick={() => setAreaMapOpen((current) => !current)}><SquaresFour size={20} weight={areaMapOpen ? "fill" : "regular"} /></button>}
+              {desktop && wholeDesktop && minimapSegments.length > 1 && <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${areaMapOpen ? "Close" : "Open"} public desktop area navigator, current area ${homeRelativeAreaLabel(activeSegment)}`} aria-controls="area-switcher" aria-expanded={areaMapOpen} onClick={() => setAreaMapOpen((current) => !current)}><SquaresFour size={20} weight={areaMapOpen ? "fill" : "regular"} /></button>}
               <StatusBadge tone="readonly" surface="chrome">
                 Read only
               </StatusBadge>

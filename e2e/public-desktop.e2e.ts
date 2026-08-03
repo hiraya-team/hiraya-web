@@ -60,6 +60,10 @@ test("public desktop preserves positions and navigates to a non-Home area", asyn
   await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
   const navigator = page.getByRole("navigation", { name: "Published work public desktop areas" });
   await expect(navigator).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(navigator).toBeHidden();
+  await expect(page.getByRole("button", { name: /Open public desktop area navigator/ })).toBeFocused();
+  await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
   await navigator.getByRole("button", { name: /1 right of Home/ }).click();
   await expect(page.getByRole("button", { name: "Public document 2.txt, text/plain" })).toBeVisible();
 });
@@ -76,6 +80,11 @@ test("fine pointers open draggable and resizable public windows", async ({ page 
   await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);
   await expect(page.locator(".public-menu").getByRole("link", { name: "Sign in" })).toBeVisible();
   await expect(appWindow).toBeFocused();
+  await page.setViewportSize({ width: 700, height: 520 });
+  await expect.poll(async () => {
+    const [windowBox, desktopBox] = await Promise.all([appWindow.boundingBox(), page.getByLabel("Published work public desktop").boundingBox()]);
+    return Boolean(windowBox && desktopBox && windowBox.x >= desktopBox.x && windowBox.y >= desktopBox.y && windowBox.x + windowBox.width <= desktopBox.x + desktopBox.width && windowBox.y + windowBox.height <= desktopBox.y + desktopBox.height);
+  }).toBe(true);
 });
 
 test("coarse-only public windows use the focused full-surface header", async ({ page }) => {
