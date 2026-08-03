@@ -35,3 +35,25 @@ test("explains durable conflict choices and causal waiting", () => {
   expect(markup).toContain("remains saved locally");
   expect(markup).toContain("Waiting for Update item to be resolved.");
 });
+
+test("opens version review for blocked file-content conflicts", () => {
+  const blocked: OutboxRecord = {
+    operationId: "content-conflict",
+    sequence: 1,
+    clientId: "client",
+    catalogId: "catalog",
+    desktopId: "desk",
+    operation: { schemaVersion: 1, kind: "save-content", entryId: "file", mimeType: "text/plain", size: 12, modifiedAt: 1, baseContentRevision: 1 },
+    status: "blocked",
+    error: "The file changed on the server.",
+    errorCode: "revision_conflict",
+    conflictDetails: { resourceKind: "content", resourceId: "file", expectedRevision: 1, actualRevision: 2 },
+    attemptCount: 1,
+    lastAttemptAt: null,
+  };
+
+  const markup = renderToStaticMarkup(<SyncIssuesPanel status="blocked" records={[blocked]} onRetry={() => undefined} onDiscard={() => undefined} />);
+  expect(markup).toContain("Review versions");
+  expect(markup).not.toContain("Keep my change</button>");
+  expect(markup).toContain("Use server state");
+});
