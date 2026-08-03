@@ -257,6 +257,6 @@ function required(id: string): HTMLElement {
   const value = document.getElementById(id); if (!value) throw new Error(`Missing UI element: ${id}`); return value;
 }
 
-function button(id: string): HTMLButtonElement {
-  const value = required(id); if (!(value instanceof HTMLButtonElement)) throw new Error(`UI element is not a button: ${id}`); return value;
+function button(id: string): HTMLElement & { disabled: boolean } {
+  return required(id) as HTMLElement & { disabled: boolean };
 }

@@ -48,6 +48,7 @@ type Status = Readonly<{ message: string; danger?: boolean }>;
 type Session = Readonly<{ handle: FileHandle; revision: number; document: StoreDocument }>;
 type ProductDraft = Readonly<{ id?: string; sku: string; name: string; price: string; openingStock: string; reorderLevel: string }>;
 type StockDraft = Readonly<{ productId: string; direction: "receive" | "remove"; quantity: string; note: string }>;
+type HirayaDialogElement = HTMLElement & { close(): void };
 
 const EMPTY_PRODUCT: ProductDraft = { sku: "", name: "", price: "", openingStock: "0", reorderLevel: "0" };
 
@@ -392,9 +393,9 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
           <span><strong>{document.store.name}</strong><small>Hiraya POS</small></span>
         </button>
         <div className="topbar-actions">
-          {!capabilities.files.write && <span className="state-badge state-badge--danger">Read only</span>}
-          <button className="icon-button" type="button" onClick={() => void reloadStore()} disabled={busy} aria-label="Refresh store"><ArrowClockwise className={busy ? "spin" : ""} /></button>
-          <button className="secondary-button open-store-button" type="button" onClick={() => void openStore()} disabled={busy} aria-label="Open store"><FolderOpen /><span>Open store</span></button>
+          {!capabilities.files.write && <hiraya-badge tone="readonly">Read only</hiraya-badge>}
+          <hiraya-button className="icon-action" variant="quiet" onClick={() => void reloadStore()} disabled={busy} aria-label="Refresh store"><ArrowClockwise className={busy ? "spin" : ""} /></hiraya-button>
+          <hiraya-button className="open-store-button" onClick={() => void openStore()} disabled={busy} aria-label="Open store"><FolderOpen slot="icon-start" /><span>Open store</span></hiraya-button>
         </div>
       </header>
 
@@ -467,13 +468,13 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         )}
 
         {view === "products" && (
-          <ManagementSurface title="Products" description={`${document.products.filter((product) => product.active).length} active catalog products`} action={<button className="primary-button" type="button" onClick={() => { setFormError(""); setProductDraft(EMPTY_PRODUCT); }} disabled={!canWrite}><Plus /> Add product</button>}>
+          <ManagementSurface title="Products" description={`${document.products.filter((product) => product.active).length} active catalog products`} action={<hiraya-button variant="primary" onClick={() => { setFormError(""); setProductDraft(EMPTY_PRODUCT); }} disabled={!canWrite}><Plus slot="icon-start" /> Add product</hiraya-button>}>
             <div className="table-list product-table" role="table" aria-label="Products">
               <div className="table-header" role="row"><span role="columnheader">Name</span><span role="columnheader">SKU</span><span role="columnheader">Price</span><span role="columnheader">Stock</span><span role="columnheader">Actions</span></div>
               {document.products.map((product) => <div className={`table-row${product.active ? "" : " table-row--muted"}`} role="row" key={product.id}>
                 <span role="cell"><button className="row-title" type="button" onClick={() => { setFormError(""); setProductDraft(productToDraft(product, document.store.currency)); }}><strong>{product.name}</strong><small>{product.active ? "Active" : "Archived"}</small></button></span>
                 <span role="cell">{product.sku}</span><strong role="cell">{formatMoney(product.priceMinor, document.store.currency)}</strong><span role="cell">{product.stock}</span>
-                <span role="cell"><button className="quiet-button" type="button" onClick={() => void toggleProduct(product)} disabled={!canWrite}>{product.active ? "Archive" : "Restore"}</button></span>
+                <span role="cell"><hiraya-button variant="quiet" onClick={() => void toggleProduct(product)} disabled={!canWrite}>{product.active ? "Archive" : "Restore"}</hiraya-button></span>
               </div>)}
               {document.products.length === 0 && <Empty icon={<Package />} title="No products yet" message="Add a product with its SKU, price, and opening stock." />}
             </div>
@@ -488,7 +489,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
                 {document.products.filter((product) => product.active).map((product) => <div className="table-row" role="row" key={product.id}>
                   <span className="row-title" role="cell"><strong>{product.name}</strong><small>{product.sku}</small></span>
                   <strong role="cell" className={product.stock <= product.reorderLevel ? "danger-text" : ""}>{product.stock}</strong><span role="cell">{product.reorderLevel}</span>
-                  <span role="cell"><button className="secondary-button" type="button" onClick={() => { setFormError(""); setStockDraft({ productId: product.id, direction: "receive", quantity: "1", note: "" }); }} disabled={!canWrite}>Adjust</button></span>
+                  <span role="cell"><hiraya-button onClick={() => { setFormError(""); setStockDraft({ productId: product.id, direction: "receive", quantity: "1", note: "" }); }} disabled={!canWrite}>Adjust</hiraya-button></span>
                 </div>)}
               </div>
               <section className="movement-ledger" aria-labelledby="movement-title"><div className="section-heading"><h2 id="movement-title">Recent movement</h2><ClockCounterClockwise /></div>
@@ -511,7 +512,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         )}
       </section>
 
-      <div className={status.danger ? "statusbar statusbar--danger" : "statusbar"} role="status" aria-live="polite">{status.danger ? <WarningCircle /> : <Check />}<span>{status.message}</span><span className="status-file">.hpos · rev {session?.revision ?? 0}</span></div>
+      <hiraya-status-bar className="statusbar" tone={status.danger ? "danger" : "neutral"} live="polite">{status.danger ? <WarningCircle /> : <Check />}<span>{status.message}</span><span className="status-file">.hpos · rev {session?.revision ?? 0}</span></hiraya-status-bar>
 
       <nav className="mobile-nav" aria-label="Hiraya POS">
         <NavButton active={view === "sell"} onClick={() => setView("sell")} icon={<Basket />} label="Sell" />
@@ -520,40 +521,41 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         <NavButton active={view === "sales"} onClick={() => setView("sales")} icon={<Receipt />} label="Sales" />
       </nav>
 
-      {productDraft && <Modal labelledBy="product-form-title" onClose={() => setProductDraft(null)}><form onSubmit={submitProduct}>
-        <div className="sheet-heading"><div><h2 id="product-form-title">{productDraft.id ? "Edit product" : "Add product"}</h2><p className={formError ? "sheet-error" : undefined} role={formError ? "alert" : undefined}>{formError || "Catalog details are shared with checkout and inventory."}</p></div><button className="icon-button" type="button" onClick={() => setProductDraft(null)} aria-label="Close product form"><X /></button></div>
+      {productDraft && <Modal title={productDraft.id ? "Edit product" : "Add product"} closeLabel="Close product form" onClose={() => setProductDraft(null)}><form onSubmit={submitProduct}>
+        {formError ? <hiraya-notice className="form-notice" tone="danger" live="assertive">{formError}</hiraya-notice> : <p className="sheet-description">Catalog details are shared with checkout and inventory.</p>}
         <label className="field"><span>Product name</span><input value={productDraft.name} onChange={(event) => setProductDraft({ ...productDraft, name: event.target.value })} maxLength={120} required autoFocus /></label>
         <label className="field"><span>SKU</span><input value={productDraft.sku} onChange={(event) => setProductDraft({ ...productDraft, sku: event.target.value })} maxLength={48} required /></label>
         <label className="field"><span>Final price ({document.store.currency})</span><input inputMode="decimal" value={productDraft.price} onChange={(event) => setProductDraft({ ...productDraft, price: event.target.value })} placeholder={moneyPlaceholder(document.store.currency)} required /></label>
         {!productDraft.id && <label className="field"><span>Opening stock</span><input type="number" min="0" step="1" value={productDraft.openingStock} onChange={(event) => setProductDraft({ ...productDraft, openingStock: event.target.value })} required /></label>}
         <label className="field"><span>Low-stock threshold</span><input type="number" min="0" step="1" value={productDraft.reorderLevel} onChange={(event) => setProductDraft({ ...productDraft, reorderLevel: event.target.value })} required /></label>
-        <div className="sheet-actions"><button className="secondary-button" type="button" onClick={() => setProductDraft(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!canWrite}>{busy ? "Saving..." : "Save product"}</button></div>
+        <div className="sheet-actions"><hiraya-button onClick={() => setProductDraft(null)}>Cancel</hiraya-button><button className="primary-button" type="submit" disabled={!canWrite}>{busy ? "Saving..." : "Save product"}</button></div>
       </form></Modal>}
 
-      {stockDraft && <Modal labelledBy="stock-form-title" onClose={() => setStockDraft(null)}><form onSubmit={submitStock}>
-        <div className="sheet-heading"><div><h2 id="stock-form-title">Adjust inventory</h2><p className={formError ? "sheet-error" : undefined} role={formError ? "alert" : undefined}>{formError || document.products.find((product) => product.id === stockDraft.productId)?.name}</p></div><button className="icon-button" type="button" onClick={() => setStockDraft(null)} aria-label="Close inventory form"><X /></button></div>
+      {stockDraft && <Modal title="Adjust inventory" closeLabel="Close inventory form" onClose={() => setStockDraft(null)}><form onSubmit={submitStock}>
+        {formError ? <hiraya-notice className="form-notice" tone="danger" live="assertive">{formError}</hiraya-notice> : <p className="sheet-description">{document.products.find((product) => product.id === stockDraft.productId)?.name}</p>}
         <fieldset className="tender-methods"><legend>Change</legend><label><input type="radio" name="direction" checked={stockDraft.direction === "receive"} onChange={() => setStockDraft({ ...stockDraft, direction: "receive" })} /><span>Receive</span></label><label><input type="radio" name="direction" checked={stockDraft.direction === "remove"} onChange={() => setStockDraft({ ...stockDraft, direction: "remove" })} /><span>Remove</span></label></fieldset>
         <label className="field"><span>Quantity</span><input type="number" min="1" step="1" value={stockDraft.quantity} onChange={(event) => setStockDraft({ ...stockDraft, quantity: event.target.value })} required autoFocus /></label>
         <label className="field"><span>Reason</span><input value={stockDraft.note} onChange={(event) => setStockDraft({ ...stockDraft, note: event.target.value })} maxLength={200} placeholder={stockDraft.direction === "receive" ? "Supplier delivery" : "Damage, expiry, or correction"} required /></label>
-        <div className="sheet-actions"><button className="secondary-button" type="button" onClick={() => setStockDraft(null)}>Cancel</button><button className="primary-button" type="submit" disabled={!canWrite}>{busy ? "Saving..." : "Update stock"}</button></div>
+        <div className="sheet-actions"><hiraya-button onClick={() => setStockDraft(null)}>Cancel</hiraya-button><button className="primary-button" type="submit" disabled={!canWrite}>{busy ? "Saving..." : "Update stock"}</button></div>
       </form></Modal>}
     </main>
   );
 }
 
 function Welcome({ busy, status, name, currency, onName, onCurrency, onCreate, onOpen }: Readonly<{ busy: boolean; status: Status; name: string; currency: string; onName(value: string): void; onCurrency(value: string): void; onCreate(event: FormEvent): void; onOpen(): void }>) {
-  return <main className="welcome-shell"><section className="welcome-copy"><span className="welcome-mark" aria-hidden="true"><CashRegister weight="duotone" /></span><h1>One file.<br />One clear register.</h1><p>Sell products and keep stock reconciled in the same portable Hiraya store file. No payment processor, hidden database, or network service required.</p><button className="secondary-button" type="button" onClick={onOpen} disabled={busy}><FolderOpen /> Open an existing .hpos store</button></section><section className="create-store-panel"><div><Storefront /><h2>Create a store</h2><p>Choose the name and currency that every receipt will use.</p></div><form onSubmit={onCreate}><label className="field"><span>Store name</span><input value={name} onChange={(event) => onName(event.target.value)} maxLength={80} required /></label><label className="field"><span>ISO currency</span><input value={currency} onChange={(event) => onCurrency(event.target.value.toUpperCase())} minLength={3} maxLength={3} pattern="[A-Z]{3}" required /></label><button className="primary-button create-button" type="submit" disabled={busy}>{busy ? "Creating..." : "Create store file"}</button></form><p className={status.danger ? "welcome-status welcome-status--danger" : "welcome-status"} role="status">{status.message}</p></section></main>;
+  return <main className="welcome-shell"><section className="welcome-copy"><span className="welcome-mark" aria-hidden="true"><CashRegister weight="duotone" /></span><h1>One file.<br />One clear register.</h1><p>Sell products and keep stock reconciled in the same portable Hiraya store file. No payment processor, hidden database, or network service required.</p><hiraya-button onClick={onOpen} disabled={busy}><FolderOpen slot="icon-start" /> Open an existing .hpos store</hiraya-button></section><section className="create-store-panel"><div><Storefront /><h2>Create a store</h2><p>Choose the name and currency that every receipt will use.</p></div><form onSubmit={onCreate}><label className="field"><span>Store name</span><input value={name} onChange={(event) => onName(event.target.value)} maxLength={80} required /></label><label className="field"><span>ISO currency</span><input value={currency} onChange={(event) => onCurrency(event.target.value.toUpperCase())} minLength={3} maxLength={3} pattern="[A-Z]{3}" required /></label><button className="primary-button create-button" type="submit" disabled={busy}>{busy ? "Creating..." : "Create store file"}</button></form><p className={status.danger ? "welcome-status welcome-status--danger" : "welcome-status"} role="status">{status.message}</p></section></main>;
 }
 
-function Modal({ labelledBy, onClose, children }: Readonly<{ labelledBy: string; onClose(): void; children: ReactNode }>) {
-  const ref = useRef<HTMLDialogElement>(null);
+function Modal({ title, closeLabel, onClose, children }: Readonly<{ title: string; closeLabel: string; onClose(): void; children: ReactNode }>) {
+  const ref = useRef<HirayaDialogElement>(null);
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    dialog.showModal();
-    return () => { if (dialog.open) dialog.close(); };
-  }, []);
-  return <dialog ref={ref} className="edit-sheet" aria-labelledby={labelledBy} onCancel={(event) => { event.preventDefault(); onClose(); }}>{children}</dialog>;
+    const requestClose = () => onClose();
+    dialog.addEventListener("hiraya-request-close", requestClose);
+    return () => dialog.removeEventListener("hiraya-request-close", requestClose);
+  }, [onClose]);
+  return <hiraya-dialog ref={ref} className="edit-sheet" open close-label={closeLabel}><span slot="title">{title}</span>{children}</hiraya-dialog>;
 }
 
 function NavButton({ active, onClick, icon, label }: Readonly<{ active: boolean; onClick(): void; icon: ReactNode; label: string }>) {
@@ -565,7 +567,7 @@ function ManagementSurface({ title, description, action, children }: Readonly<{ 
 }
 
 function Empty({ icon, title, message, compact = false }: Readonly<{ icon: ReactNode; title: string; message: string; compact?: boolean }>) {
-  return <div className={compact ? "empty-state empty-state--compact" : "empty-state"}><span aria-hidden="true">{icon}</span><h2>{title}</h2><p>{message}</p></div>;
+  return <hiraya-empty-state className={compact ? "empty-state empty-state--compact" : "empty-state"}><span slot="icon" aria-hidden="true">{icon}</span><strong slot="title">{title}</strong><span>{message}</span></hiraya-empty-state>;
 }
 
 function ReceiptView({ sale, currency, onNew }: Readonly<{ sale: Sale; currency: string; onNew?: () => void }>) {

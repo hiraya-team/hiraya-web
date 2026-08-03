@@ -8,18 +8,16 @@
   </head>
   <body class="hiraya-app">
     <main class="app-shell">
-      <header class="topbar">
+      <hiraya-toolbar class="topbar" label="Pixel Editor">
         <div class="brand" aria-label="Pixel Editor">
           <span class="brand-mark" aria-hidden="true"></span>
           <div><strong>PIXEL EDITOR</strong><span id="document-name">Untitled.png</span></div>
         </div>
-        <nav class="file-actions" aria-label="File actions">
-          <button id="new-button" type="button">New</button>
-          <button id="open-button" type="button">Open</button>
-          <button id="save-button" class="primary" type="button">Save</button>
-          <button id="save-as-button" type="button">Save As</button>
-        </nav>
-      </header>
+        <hiraya-button id="new-button" slot="actions">New</hiraya-button>
+        <hiraya-button id="open-button" slot="actions">Open</hiraya-button>
+        <hiraya-button id="save-button" slot="actions" variant="primary">Save</hiraya-button>
+        <hiraya-button id="save-as-button" slot="actions">Save As</hiraya-button>
+      </hiraya-toolbar>
 
       <section class="workspace">
         <aside class="tools" aria-label="Drawing tools">
@@ -41,18 +39,16 @@
         </aside>
 
         <section class="stage" aria-label="Canvas workspace">
-          <div class="stage-toolbar">
-            <div role="group" aria-label="History">
-              <button id="undo-button" type="button" title="Undo (Ctrl+Z)" disabled>Undo</button>
-              <button id="redo-button" type="button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</button>
-            </div>
-            <div class="zoom-control">
-              <button id="zoom-out" type="button" aria-label="Zoom out">-</button>
+          <hiraya-toolbar class="stage-toolbar" label="Canvas history and zoom">
+              <hiraya-button id="undo-button" title="Undo (Ctrl+Z)" disabled>Undo</hiraya-button>
+              <hiraya-button id="redo-button" title="Redo (Ctrl+Shift+Z)" disabled>Redo</hiraya-button>
+            <div class="zoom-control" slot="actions">
+              <hiraya-button id="zoom-out" aria-label="Zoom out">-</hiraya-button>
               <output id="zoom-value" aria-live="polite">1200%</output>
-              <button id="zoom-in" type="button" aria-label="Zoom in">+</button>
+              <hiraya-button id="zoom-in" aria-label="Zoom in">+</hiraya-button>
               <label><input id="grid-toggle" type="checkbox" checked /> Grid</label>
             </div>
-          </div>
+          </hiraya-toolbar>
           <div id="canvas-scroll" class="canvas-scroll">
             <div id="canvas-frame" class="canvas-frame grid-visible">
               <canvas id="editor-canvas" width="32" height="32" aria-label="Editable pixel canvas" tabindex="0"></canvas>
@@ -61,17 +57,16 @@
         </section>
       </section>
 
-      <footer class="statusbar">
-        <span id="status" role="status" aria-live="polite">Connecting to Hiraya...</span>
+      <hiraya-status-bar class="statusbar" live="polite">
+        <span id="status">Connecting to Hiraya...</span>
         <span id="cursor-position">--, --</span>
         <span id="dimensions">32 x 32 px</span>
-      </footer>
+      </hiraya-status-bar>
     </main>
 
-    <dialog id="new-dialog" aria-labelledby="new-title">
+    <hiraya-dialog id="new-dialog" close-label="Cancel new document">
+      <span slot="title">Set the canvas size</span>
       <form id="new-form" method="dialog">
-        <p class="section-label">NEW DOCUMENT</p>
-        <h1 id="new-title">Set the canvas size</h1>
         <p>Transparent canvas, from 1 to 512 pixels per side.</p>
         <div class="dimension-fields">
           <label>Width<input id="new-width" name="width" type="number" min="1" max="512" value="32" required /></label>
@@ -79,11 +74,11 @@
           <label>Height<input id="new-height" name="height" type="number" min="1" max="512" value="32" required /></label>
         </div>
         <div class="dialog-actions">
-          <button id="new-cancel" type="button">Cancel</button>
+          <hiraya-button id="new-cancel">Cancel</hiraya-button>
           <button class="primary" type="submit">Create canvas</button>
         </div>
       </form>
-    </dialog>
+    </hiraya-dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

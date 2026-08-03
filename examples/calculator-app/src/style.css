@@ -18,8 +18,7 @@ body {
   padding: clamp(1rem, 4vw, 3rem);
 }
 
-.calculator,
-.history-panel {
+.calculator {
   border: 1px solid var(--hiraya-border, #385148);
   background: color-mix(in srgb, var(--hiraya-surface, #172a24) 94%, transparent);
   box-shadow: 0 24px 70px rgb(0 0 0 / 25%);
@@ -68,41 +67,11 @@ h2 {
   gap: 0.5rem;
 }
 
-.host-status,
 .memory-indicator {
-  border: 1px solid var(--hiraya-border, #385148);
-  color: var(--hiraya-text-muted, #aebdb7);
-  font-size: 0.68rem;
-  font-weight: 700;
-}
-
-.host-status {
-  padding: 0.35rem 0.55rem;
-  border-radius: 999px;
-}
-
-.host-status[data-connected="true"]::before {
-  display: inline-block;
-  width: 0.4rem;
-  height: 0.4rem;
-  margin-right: 0.35rem;
-  border-radius: 50%;
-  background: #75c69b;
-  content: "";
-}
-
-.memory-indicator {
-  display: grid;
-  width: 1.7rem;
-  height: 1.7rem;
-  place-items: center;
-  border-radius: 50%;
   opacity: 0.4;
 }
 
 .memory-indicator[data-active="true"] {
-  border-color: var(--hiraya-accent, #daa85e);
-  color: var(--hiraya-accent, #daa85e);
   opacity: 1;
 }
 
@@ -149,8 +118,7 @@ h2 {
   margin-bottom: 0.65rem;
 }
 
-.memory-row button,
-.text-button {
+.memory-row button {
   border: 0;
   background: transparent;
   color: var(--hiraya-accent, #daa85e);
@@ -165,8 +133,7 @@ h2 {
   border-radius: 0.55rem;
 }
 
-.memory-row button:hover,
-.text-button:hover {
+.memory-row button:hover {
   background: color-mix(in srgb, var(--hiraya-accent, #daa85e) 10%, transparent);
 }
 
@@ -221,19 +188,7 @@ h2 {
 .history-panel {
   align-self: center;
   height: min(38rem, calc(100vh - 6rem));
-  padding: 1.5rem;
   overflow-y: auto;
-  border-radius: 1.25rem;
-}
-
-.text-button {
-  padding: 0.5rem;
-  border-radius: 0.4rem;
-}
-
-.text-button:disabled {
-  cursor: default;
-  opacity: 0.35;
 }
 
 .history-list {
@@ -274,12 +229,7 @@ h2 {
 }
 
 .empty-history {
-  margin: 3rem auto;
-  max-width: 12rem;
-  color: var(--hiraya-text-muted, #aebdb7);
-  font-size: 0.8rem;
-  line-height: 1.6;
-  text-align: center;
+  min-height: 15rem;
 }
 
 @media (max-width: 720px) {
@@ -288,8 +238,7 @@ h2 {
     padding: 0;
   }
 
-  .calculator,
-  .history-panel {
+  .calculator {
     border-right: 0;
     border-left: 0;
     border-radius: 0;
@@ -309,11 +258,12 @@ h2 {
     height: auto;
     min-height: 14rem;
     border-bottom: 0;
+    border-radius: 0;
   }
 }
 
 @media (max-width: 360px) {
-  .host-status {
+  #host-status {
     display: none;
   }
 

@@ -601,25 +601,25 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
     <aside className={`project-pane surface surface--files ${surface === "files" ? "surface--active" : ""}`} aria-label="Project files">
       <div className="pane-heading">
         <div><strong>{project.name}</strong><span>{project.entries.filter(({ kind }) => kind === "file").length} files</span></div>
-        <button className="icon-button" type="button" onClick={() => void refreshEntries(true)} aria-label="Refresh project" disabled={busy}><ArrowsClockwise /></button>
+        <hiraya-button className="icon-action" variant="quiet" onClick={() => void refreshEntries(true)} aria-label="Refresh project" disabled={busy}><ArrowsClockwise /></hiraya-button>
       </div>
       {!project.definition ? (
         <div className="initialize-callout">
           <BookOpenText size={30} aria-hidden="true" />
           <h2>Make this a publication</h2>
           <p>Add a safe starter manifest and first page without changing existing files.</p>
-          <button className="primary-button" type="button" onClick={() => void initializeProject()} disabled={!canWrite || busy}>Initialize project</button>
+          <hiraya-button variant="primary" onClick={() => void initializeProject()} disabled={!canWrite || busy}>Initialize project</hiraya-button>
         </div>
       ) : (
         <>
           <div className="file-actions">
-            <button type="button" onClick={() => setNewPageOpen((open) => !open)} disabled={!canWrite || busy}><Plus /> New page</button>
+            <hiraya-button onClick={() => setNewPageOpen((open) => !open)} disabled={!canWrite || busy}><Plus slot="icon-start" /> New page</hiraya-button>
           </div>
           {newPageOpen && (
             <form className="new-page-form" onSubmit={(event) => void createPage(event)}>
               <label>File name<input value={newPageName} onChange={(event) => setNewPageName(event.target.value)} placeholder="field-notes" autoComplete="off" /></label>
               <label>Page title<input value={newPageTitle} onChange={(event) => setNewPageTitle(event.target.value)} placeholder="Field notes" autoComplete="off" /></label>
-              <div><button type="button" onClick={() => setNewPageOpen(false)}>Cancel</button><button className="primary-button" type="submit">Create page</button></div>
+              <div><hiraya-button onClick={() => setNewPageOpen(false)}>Cancel</hiraya-button><button className="primary-button" type="submit">Create page</button></div>
             </form>
           )}
           <div className="file-tree" role="list">
@@ -662,21 +662,22 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
         <>
           <div className="editor-toolbar">
             <div><strong>{activeDocument.name}</strong><span>{activeDocument.path}</span></div>
-            <button className="save-button" type="button" onClick={() => void saveDocument(activeDocument.handle)} disabled={!canWrite || !isDirty(activeDocument) || activeDocument.saving}>
-              <FloppyDisk /> {activeDocument.saving ? "Saving" : "Save"}
-            </button>
+            <hiraya-button className="save-button" variant="primary" onClick={() => void saveDocument(activeDocument.handle)} disabled={!canWrite || !isDirty(activeDocument) || activeDocument.saving} loading={activeDocument.saving}>
+              <FloppyDisk slot="icon-start" /> {activeDocument.saving ? "Saving" : "Save"}
+            </hiraya-button>
           </div>
           {activeDocument.conflict && (
-            <section className="conflict" aria-labelledby="conflict-title">
-              <WarningCircle weight="fill" aria-hidden="true" />
-              <div><strong id="conflict-title">Another version exists</strong><p>Your draft is preserved. Review both versions or choose how to continue.</p></div>
-              <div className="conflict-actions">
-                <button type="button" onClick={() => void reloadRemote(activeDocument.handle)}>Use remote</button>
-                <button type="button" onClick={() => void saveCopy(activeDocument.handle)}>Save copy</button>
-                <button className="danger-button" type="button" onClick={() => void overwriteRemote(activeDocument.handle)}>Replace remote</button>
+            <hiraya-notice className="conflict" tone="danger">
+              <WarningCircle slot="icon" weight="fill" aria-hidden="true" />
+              <strong slot="title" id="conflict-title">Another version exists</strong>
+              <p>Your draft is preserved. Review both versions or choose how to continue.</p>
+              <div slot="actions" className="conflict-actions">
+                <hiraya-button onClick={() => void reloadRemote(activeDocument.handle)}>Use remote</hiraya-button>
+                <hiraya-button onClick={() => void saveCopy(activeDocument.handle)}>Save copy</hiraya-button>
+                <hiraya-button variant="danger" onClick={() => void overwriteRemote(activeDocument.handle)}>Replace remote</hiraya-button>
               </div>
               {activeDocument.remote !== undefined && <details><summary>Compare text</summary><div className="conflict-review"><section><h3>Your draft</h3><pre>{activeDocument.draft}</pre></section><section><h3>Remote</h3><pre>{activeDocument.remote}</pre></section></div></details>}
-            </section>
+            </hiraya-notice>
           )}
           <div className="editor-stage">
             <Editor path={activeDocument.path} value={activeDocument.draft} readOnly={!canWrite} fontSize={preferences.fontSize} lineWrap={preferences.lineWrap} onChange={(value) => editDocument(activeDocument.handle, value)} onSave={() => void saveDocument(activeDocument.handle)} />
@@ -697,7 +698,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       {surface !== "publish" ? (
         <div className="preview-surface">
           {previewUrl ? <iframe src={previewUrl} title="Publication preview" sandbox="allow-scripts" referrerPolicy="no-referrer" /> : <EmptyTask icon={<Eye />} title="Preview current drafts" body="Materialize every listed page, local image, and project style inside an isolated publication frame." action={() => void refreshPreview()} actionLabel="Build preview" />}
-          {previewUrl && <button className="preview-refresh" type="button" onClick={() => void refreshPreview()} disabled={busy}><ArrowsClockwise /> Refresh preview</button>}
+          {previewUrl && <hiraya-button className="preview-refresh" onClick={() => void refreshPreview()} disabled={busy}><ArrowsClockwise slot="icon-start" /> Refresh preview</hiraya-button>}
         </div>
       ) : (
         <div className="publish-surface">
@@ -705,7 +706,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
           <h2>One file, ready to travel</h2>
           <p>Project Studio validates the current drafts, embeds local raster images and styles, then atomically writes the finished publication.</p>
           <dl><div><dt>Destination</dt><dd>{OUTPUT_PATH}</dd></div><div><dt>Pages</dt><dd>{project?.definition?.pages.length ?? 0}</dd></div><div><dt>Last preview</dt><dd>{previewSize ? formatBytes(previewSize) : "Not built"}</dd></div><div><dt>Write access</dt><dd>{canWrite ? "Available" : writeRestriction(capabilities.files.writeReason, false)}</dd></div></dl>
-          <button className="publish-button" type="button" onClick={() => void publish()} disabled={!project?.definition || !canWrite || busy}><RocketLaunch weight="fill" /> {busy ? "Publishing..." : "Publish site"}</button>
+          <hiraya-button className="publish-button" variant="primary" onClick={() => void publish()} disabled={!project?.definition || !canWrite || busy} loading={busy}><RocketLaunch slot="icon-start" weight="fill" /> {busy ? "Publishing..." : "Publish site"}</hiraya-button>
           <p className="publish-footnote">Completion means the output is committed locally to Hiraya. Server synchronization may continue afterward.</p>
           <fieldset>
             <legend>Writing preferences</legend>
@@ -722,8 +723,8 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       <header className="studio-header">
         <button className="brand" type="button" onClick={() => setSurface("files")} aria-label="Project Studio files"><BookOpenText weight="duotone" /><span><strong>Project Studio</strong><small>{project?.definition?.title ?? project?.name ?? "Portable publishing"}</small></span></button>
         <div className="header-actions">
-          <button type="button" aria-label="Open project folder" onClick={() => void chooseProject()} disabled={busy}><FolderOpen /><span>Open</span></button>
-          <button className="primary-button" type="button" aria-label="Save active file" onClick={() => activeHandle ? void saveDocument(activeHandle) : undefined} disabled={!activeDocument || !isDirty(activeDocument) || !canWrite || busy}><FloppyDisk /><span>Save</span></button>
+          <hiraya-button aria-label="Open project folder" onClick={() => void chooseProject()} disabled={busy}><FolderOpen slot="icon-start" /><span>Open</span></hiraya-button>
+          <hiraya-button variant="primary" aria-label="Save active file" onClick={() => activeHandle ? void saveDocument(activeHandle) : undefined} disabled={!activeDocument || !isDirty(activeDocument) || !canWrite || busy}><FloppyDisk slot="icon-start" /><span>Save</span></hiraya-button>
         </div>
       </header>
       {!project ? (
@@ -734,11 +735,11 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
       ) : (
         <div className="workspace">{filePane}{editorPane}{publicationPane}</div>
       )}
-      <div className={`studio-status ${status.danger ? "studio-status--danger" : ""}`} role="status" aria-live={status.danger ? "assertive" : "polite"}>
+      <hiraya-status-bar className="studio-status" tone={status.danger ? "danger" : "neutral"} live={status.danger ? "assertive" : "polite"}>
         {status.danger ? <WarningCircle weight="fill" /> : busy ? <ArrowsClockwise className="spin" /> : <CheckCircle weight="fill" />}
         <span>{status.message}</span>
-        {!canWrite && project && <span className="status-badge">Read only</span>}
-      </div>
+        {!canWrite && project && <hiraya-badge className="status-badge" tone="readonly">Read only</hiraya-badge>}
+      </hiraya-status-bar>
       {project && (
         <nav className="mobile-nav" aria-label="Project Studio modes">
           <ModeButton mode="files" current={surface} label="Files" icon={<Folder />} onSelect={setSurface} />
@@ -752,7 +753,7 @@ export function App({ hiraya, launch }: Readonly<{ hiraya: HirayaClient; launch:
 }
 
 function EmptyTask({ icon, title, body, action, actionLabel }: Readonly<{ icon: React.ReactNode; title: string; body: string; action(): void; actionLabel: string }>) {
-  return <div className="empty-task"><div>{icon}</div><h2>{title}</h2><p>{body}</p><button className="primary-button" type="button" onClick={action}>{actionLabel}</button></div>;
+  return <hiraya-empty-state className="empty-task"><span slot="icon">{icon}</span><strong slot="title">{title}</strong><span>{body}</span><hiraya-button slot="actions" variant="primary" onClick={action}>{actionLabel}</hiraya-button></hiraya-empty-state>;
 }
 
 function ModeButton({ mode, current, label, icon, onSelect }: Readonly<{ mode: Surface; current: Surface; label: string; icon: React.ReactNode; onSelect(mode: Surface): void }>) {

@@ -12,7 +12,7 @@ const historyList = required<HTMLOListElement>("#history-list");
 const emptyHistory = required<HTMLElement>("#empty-history");
 const memoryIndicator = required<HTMLElement>("#memory-indicator");
 const hostStatus = required<HTMLElement>("#host-status");
-const clearHistoryButton = required<HTMLButtonElement>("#clear-history");
+const clearHistoryButton = required<HTMLElement & { disabled: boolean }>("#clear-history");
 
 let expression = "";
 let preview = "0";
@@ -80,10 +80,11 @@ async function initializeHost(): Promise<void> {
       hiraya?.close();
     }, { once: true });
     hostStatus.textContent = "Synced";
-    hostStatus.dataset.connected = "true";
+    hostStatus.setAttribute("tone", "accent");
     render();
   } catch (error) {
     hostStatus.textContent = "Local session";
+    hostStatus.setAttribute("tone", "neutral");
     hostStatus.title = describeError(error);
   }
 }
@@ -253,6 +254,7 @@ async function persist(key: string, value: JsonValue): Promise<void> {
     await hiraya.storage.set(key, value);
   } catch (error) {
     hostStatus.textContent = "Sync paused";
+    hostStatus.setAttribute("tone", "danger");
     hostStatus.title = describeError(error);
   }
 }
