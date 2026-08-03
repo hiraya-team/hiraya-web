@@ -23,6 +23,7 @@ export type SearchPaletteApp = {
 };
 
 export type SearchCommandPaletteProps<Id extends CommandId> = {
+  initialQuery?: string;
   entries: readonly DesktopEntry[];
   activeDesktopId: string;
   activeDesktopName: string;
@@ -61,8 +62,8 @@ function ResultIcon({ category }: { category: SearchCategory }) {
   return <TerminalWindow size={18} weight="duotone" aria-hidden="true" />;
 }
 
-export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
-  const [query, setQuery] = useState("");
+export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
+  const [query, setQuery] = useState(initialQuery);
   const commandMode = query.startsWith("> ");
   const searchQuery = commandMode ? query.slice(2) : query;
   const deferredQuery = useDeferredValue(searchQuery);
@@ -73,6 +74,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   const searchGenerationRef = useRef(0);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const queryRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const listId = useId();
   const scopeStatusId = useId();
@@ -166,6 +168,19 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
     item.action();
   }
 
+  function selectSearchMode(allDesktops: boolean) {
+    setQuery((value) => value.startsWith("> ") ? value.slice(2) : value);
+    setActiveIndex(0);
+    onSearchAllDesktopsChange(allDesktops);
+    queryRef.current?.focus();
+  }
+
+  function selectCommandMode() {
+    setQuery((value) => value.startsWith("> ") ? value : `> ${value}`);
+    setActiveIndex(0);
+    queryRef.current?.focus();
+  }
+
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
     if (results.length === 0) return;
     if (event.key === "ArrowDown") {
@@ -197,6 +212,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
             Search apps, files, folders, windows, and commands
           </label>
           <input
+            ref={queryRef}
             id={`${titleId}-query`}
             type="search"
             role="combobox"
@@ -219,21 +235,22 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
             <X size={18} />
           </button>
         </header>
-        {!commandMode && (
-          <div className="command-palette__scope">
-            <div className="command-palette__segments" role="group" aria-label="Search scope">
-              <button type="button" aria-pressed={!searchAllDesktops} onClick={() => onSearchAllDesktopsChange(false)}>
-                Current
-              </button>
-              <button type="button" aria-pressed={searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide search across desktops." : undefined} onClick={() => onSearchAllDesktopsChange(true)}>
-                All desktops
-              </button>
-            </div>
-            <span id={scopeStatusId} role="status">
-              {!allDesktopsAvailable ? "Search across desktops is unavailable on this server." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}
-            </span>
+        <div className="command-palette__scope">
+          <div className="command-palette__segments" role="group" aria-label="Search mode">
+            <button type="button" aria-pressed={!commandMode && !searchAllDesktops} onClick={() => selectSearchMode(false)}>
+              Current
+            </button>
+            <button type="button" aria-pressed={!commandMode && searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide search across desktops." : undefined} onClick={() => selectSearchMode(true)}>
+              All desktops
+            </button>
+            <button type="button" aria-pressed={commandMode} aria-describedby={scopeStatusId} onClick={selectCommandMode}>
+              Commands
+            </button>
           </div>
-        )}
+          <span id={scopeStatusId} role="status">
+            {commandMode ? "Commands use the current desktop state." : !allDesktopsAvailable ? "Search across desktops is unavailable on this server." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}
+          </span>
+        </div>
         {!commandMode && searchError && (
           <p className="command-palette__warning" role="alert">
             {searchError} Showing cached results, which may be stale.

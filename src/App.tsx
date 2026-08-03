@@ -258,6 +258,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [edgeDwell, setEdgeDwell] = useState<{ direction: EdgeDirection; id: number } | null>(null);
   const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "windows" | "help" | "shortcuts" | "trash" | null>(null);
+  const [searchInitialQuery, setSearchInitialQuery] = useState("");
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
   const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
@@ -1779,6 +1780,7 @@ function App({ session }: { session: AuthSession | null }) {
       }
       if (modifier && event.key.toLowerCase() === "k") {
         event.preventDefault();
+        setSearchInitialQuery("> ");
         setActivePanel("search");
         return;
       }
@@ -3623,7 +3625,7 @@ function App({ session }: { session: AuthSession | null }) {
   };
   const searchCommands = commandService.list(commandContext);
   const keyboardShortcuts: KeyboardShortcut[] = [
-    { id: "search", group: "Navigation", label: "Search apps, files, windows, and commands", keys: ["Ctrl/⌘", "K"] },
+    { id: "search", group: "Navigation", label: "Open commands", keys: ["Ctrl/⌘", "K"] },
     { id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] },
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
@@ -3860,7 +3862,10 @@ function App({ session }: { session: AuthSession | null }) {
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
-          <button type="button" aria-label="Search apps, files, windows, and commands" title="Search (Ctrl/Command K)" onClick={() => setActivePanel("search")}>
+          <button type="button" aria-label="Search apps, files, windows, and commands" title="Search" onClick={() => {
+            setSearchInitialQuery("");
+            setActivePanel("search");
+          }}>
             <MagnifyingGlass size={17} />
             <span className="desktop-action-label">Search</span>
           </button>
@@ -4739,6 +4744,7 @@ function App({ session }: { session: AuthSession | null }) {
       {pendingPaste && <PasteConflictDialog roots={pendingPaste.snapshot.selectedRootIds.map((id) => pendingPaste.snapshot.entries.find((entry) => entry.id === id)!)} existingNames={entries.filter((entry) => entry.parentId === pendingPaste.parentId).map((entry) => entry.name)} onClose={() => setPendingPaste(null)} onPaste={(names) => commitPaste(pendingPaste.snapshot, pendingPaste.parentId, pendingPaste.position, names)} />}
       {activePanel === "search" && (
         <SearchCommandPalette
+          initialQuery={searchInitialQuery}
           entries={entries}
           activeDesktopId={activeDesktopId}
           activeDesktopName={activeDesktopName}

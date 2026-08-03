@@ -50,9 +50,9 @@ test("keyboard modal traps focus, closes with Escape, and restores its invoker",
   await expect(search).toBeFocused();
 });
 
-test("search launches installed apps from the keyboard", async ({ page }) => {
+test("search launches installed apps", async ({ page }) => {
   await openLocalDesktop(page);
-  await page.keyboard.press("Control+k");
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Text Editor");
   await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
@@ -62,15 +62,23 @@ test("search launches installed apps from the keyboard", async ({ page }) => {
 });
 
 test("search separates commands behind the command prefix", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
   await page.keyboard.press("Control+k");
   const palette = page.getByRole("dialog", { name: /Search/ });
   const input = palette.locator("input");
+  const modes = palette.getByRole("group", { name: "Search mode" });
+  const commands = modes.getByRole("button", { name: "Commands" });
 
-  await input.fill("Settings");
-  await expect(palette.getByRole("group", { name: "Commands" })).toHaveCount(0);
+  await expect(input).toHaveValue("> ");
+  await expect(commands).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await commands.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await input.fill("> Settings");
-  await expect(palette.getByRole("group", { name: "Search scope" })).toHaveCount(0);
+  await modes.getByRole("button", { name: "Current" }).click();
+  await expect(input).toHaveValue("Settings");
+  await expect(palette.getByRole("group", { name: "Commands" })).toHaveCount(0);
+  await commands.click();
+  await expect(input).toHaveValue("> Settings");
   await expect(palette.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
@@ -78,7 +86,7 @@ test("search separates commands behind the command prefix", async ({ page }) => 
 
 test("clicking inside a sandbox app focuses and raises its window", async ({ page }) => {
   await openLocalDesktop(page);
-  await page.keyboard.press("Control+k");
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   let search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Text Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ }).click();

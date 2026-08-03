@@ -5004,6 +5004,8 @@ button.app-picker__disclosure { cursor: pointer; }
   .command-palette__header input { font-size: 16px; }
   .command-palette__results { max-height: min(60dvh, 580px); }
   .command-palette__scope { align-items: flex-start; flex-direction: column; }
+  .command-palette__segments { width: 100%; }
+  .command-palette__segments button { min-height: var(--touch-target); flex: 1; justify-content: center; padding-inline: 8px; }
   .onboarding-dialog { width: 100%; max-height: calc(100dvh - var(--overlay-top)); border-radius: var(--theme-radius) var(--theme-radius) 0 0; }
   .onboarding-dialog__grid { grid-template-columns: 1fr; padding: 12px; }
   .onboarding-dialog__grid article { min-height: 0; }
