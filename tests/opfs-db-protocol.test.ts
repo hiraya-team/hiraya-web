@@ -3,6 +3,7 @@ import { Database } from "bun:sqlite";
 import { createStorageDbRequest, parseStorageProtocol } from "../src/lib/opfs-db-protocol";
 import { STORAGE_PROTOCOL_VERSION } from "../src/lib/storage-worker";
 import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, GRID_SIZE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema12To13Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "../src/lib/opfs-schema";
+import { desktopStateSnapshot } from "./fixtures";
 
 describe("storage worker request context", () => {
   test("keeps concurrent tab requests explicitly scoped to their desktops", () => {
@@ -334,9 +335,18 @@ describe("local schema 13", () => {
     expect(request.params).toEqual({ appId: "test.editor", key: "theme" });
   });
 
+  test("scopes atomic keep-both replacement to its desktop", () => {
+    const snapshot = desktopStateSnapshot();
+    const file = snapshot.entries[0];
+    const operation = { schemaVersion: 1 as const, kind: "create" as const, entries: [{ ...file, id: "conflict-copy", name: "note (local conflict).txt" }] };
+    const request = createStorageDbRequest(4, "desk", "resolveContentConflictKeepBoth", { operationId: "blocked", replacementOperationId: "replacement", state: { entries: snapshot.entries, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync }, operation });
+    expect(request.desktopId).toBe("desk");
+    expect(request.params).toMatchObject({ operationId: "blocked", replacementOperationId: "replacement", operation: { kind: "create" } });
+  });
+
   test("handshakes the named worker protocol", () => {
-    expect(STORAGE_PROTOCOL_VERSION).toBe(11);
-    expect(parseStorageProtocol({ version: 11 })).toBe(11);
-    expect(() => parseStorageProtocol({ version: 10 })).toThrow("outdated");
+    expect(STORAGE_PROTOCOL_VERSION).toBe(12);
+    expect(parseStorageProtocol({ version: 12 })).toBe(12);
+    expect(() => parseStorageProtocol({ version: 11 })).toThrow("outdated");
   });
 });

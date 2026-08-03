@@ -12,7 +12,7 @@ import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
 import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";
 import { AuthenticationRequiredError, redirectToLogin } from "./auth";
-import { mapWithConcurrency, responseBlobWithProgress } from "./blob-transfer";
+import { mapWithConcurrency, responseBlobWithProgress, sha256Blob } from "./blob-transfer";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, type OfflineStorageInventory } from "./offline-availability";
 import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import { ContentRevisionConflictError, type SaveFileOptions } from "../domain/files";
@@ -39,6 +39,16 @@ export type FileTransferState = {
   error: string | null;
 };
 export type DesktopRegistry = { schemaVersion: 1; catalogId: string | null; catalogRevision: number; desktops: DesktopIdentity[]; activeDesktopId: string | null; quota: CatalogQuota | null };
+export type ContentConflictBundle = {
+  operationId: string;
+  desktopId: string;
+  entryId: string;
+  expectedRevision: number;
+  serverRevision: number;
+  mine: Blob;
+  base: Blob | null;
+  server: Blob;
+};
 const HEALTH_TIMEOUT_MS = 10_000;
 
 export async function fetchServerBuildTimestamp(fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
@@ -635,6 +645,34 @@ export class SyncEngine {
     }
   }
 
+  private async fetchVerifiedRemoteContent(desktopId: string, remote: RemoteDesktopState, entryId: string) {
+    const entry = remote.entries.find((candidate): candidate is Extract<RemoteEntry, { kind: "file" }> => candidate.id === entryId && candidate.kind === "file");
+    if (!entry) throw new Error("That file no longer exists on the server.");
+    const descriptorResponse = this.requireAuthentication(await this.fetchImpl(API_ROUTES.desktopContentAccess(desktopId, entryId, entry.contentRevision), { cache: "no-store", credentials: "same-origin", signal: this.syncAbort?.signal }));
+    if (!descriptorResponse.ok) throw new Error(`The server content could not be loaded (${descriptorResponse.status}).`);
+    const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entryId, entry.contentRevision, entry.size);
+    const response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
+    if (!response.ok) throw new Error(`The server content could not be downloaded (${response.status}).`);
+    const downloaded = await responseBlobWithProgress(response, descriptor.size, () => undefined);
+    if (downloaded.blob.size !== descriptor.size || downloaded.sha256 !== descriptor.sha256) throw new Error("The server content failed integrity verification.");
+    return downloaded.blob.slice(0, downloaded.blob.size, entry.mimeType);
+  }
+
+  private async fetchCurrentVerifiedContent(desktopId: string, entryId: string, initial?: RemoteDesktopState) {
+    let remote = initial ?? await this.fetchDesktop(desktopId);
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      this.assertAuthority(remote, "The server desktop");
+      const content = await this.fetchVerifiedRemoteContent(desktopId, remote, entryId);
+      const revision = remote.entries.find((entry) => entry.id === entryId && entry.kind === "file")?.contentRevision;
+      const latest = await this.fetchDesktop(desktopId);
+      this.assertAuthority(latest, "The server desktop");
+      const latestRevision = latest.entries.find((entry) => entry.id === entryId && entry.kind === "file")?.contentRevision;
+      if (revision === latestRevision) return { remote: latest, content, revision: revision! };
+      remote = latest;
+    }
+    throw new VirtualFileChangedError();
+  }
+
   private healthRoute() {
     return API_ROUTES.syncHealth;
   }
@@ -732,7 +770,13 @@ export class SyncEngine {
       if (error instanceof SyncRequestError && error.permanent) {
         const conflict = error.code === "revision_conflict" ? error.details as RevisionConflictDetails | null : null;
         if (autoResolveConflict && conflict) {
-          const remote = toSnapshot(await this.fetchDesktop(record.desktopId));
+          let remoteState = await this.fetchDesktop(record.desktopId);
+          if (record.operation.kind === "save-content" && conflict.resourceKind === "content" && conflict.resourceId === record.operation.entryId) {
+            const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId, remoteState);
+            remoteState = retained.remote;
+            await this.storage.retainContentConflictServer(record.operationId, retained.content);
+          }
+          const remote = toSnapshot(remoteState);
           this.assertActive(generation);
           const latestConflict = currentConflict(conflict, remote);
           const resolution = resolveOutboxRevisionConflict(record.operation, latestConflict, remote);
@@ -1526,6 +1570,105 @@ export class SyncEngine {
     return this.storage.readOutbox().then((records) => [...records]);
   }
 
+  async loadContentConflict(operationId: string): Promise<ContentConflictBundle> {
+    const record = (await this.storage.readOutbox()).find((candidate) => candidate.operationId === operationId);
+    if (!record || !isRevisionConflictRecord(record) || record.operation.kind !== "save-content" || record.conflictDetails?.resourceKind !== "content") throw new Error("That content conflict no longer exists.");
+    let contents = await this.storage.readContentConflict(operationId, record.operation.entryId);
+    let serverRevision = record.conflictDetails.actualRevision;
+    if (!contents.server) {
+      const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId);
+      await this.storage.retainContentConflictServer(operationId, retained.content);
+      contents = { ...contents, server: retained.content };
+      serverRevision = retained.revision;
+    }
+    return { operationId, desktopId: record.desktopId, entryId: record.operation.entryId, expectedRevision: record.conflictDetails.expectedRevision, serverRevision, mine: contents.mine, base: contents.base, server: contents.server! };
+  }
+
+  private async replayContentResolution(record: OutboxRecord, operation: Extract<OutboxOperation, { kind: "save-content" }>, generation: number) {
+    const records = await this.storage.readOutbox();
+    const index = records.findIndex((candidate) => candidate.operationId === record.operationId);
+    if (index < 0) throw new Error("That content conflict no longer exists.");
+    for (const queued of records.slice(0, index + 1)) {
+      if (queued.operationId !== record.operationId && queued.status === "blocked") throw new Error("Resolve the earlier blocked change first.");
+      const next = queued.operationId === record.operationId ? await this.storage.rebaseBlockedMutation(record.operationId, operation) : queued;
+      await this.replayRecord(next, generation, queued.operationId === record.operationId, false);
+    }
+    await this.updateStatusFromOutbox();
+    return this.storage.readOutbox();
+  }
+
+  private contentConflictRecord(records: readonly OutboxRecord[], operationId: string) {
+    const record = records.find((candidate) => candidate.operationId === operationId);
+    if (!record || !isRevisionConflictRecord(record) || record.operation.kind !== "save-content" || record.conflictDetails?.resourceKind !== "content") throw new Error("That content conflict no longer exists.");
+    return record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "save-content" }>; conflictDetails: RevisionConflictDetails };
+  }
+
+  resolveContentConflictKeepLocal(operationId: string) {
+    const generation = this.generation;
+    return this.queueSync(async () => {
+      const record = this.contentConflictRecord(await this.storage.readOutbox(), operationId);
+      const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId);
+      await this.storage.retainContentConflictServer(operationId, retained.content);
+      return this.replayContentResolution(record, { ...record.operation, baseContentRevision: retained.revision }, generation);
+    });
+  }
+
+  resolveContentConflictMerged(operationId: string, content: Blob) {
+    const generation = this.generation;
+    return this.queueSync(async () => {
+      const record = this.contentConflictRecord(await this.storage.readOutbox(), operationId);
+      const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId);
+      const mimeType = content.type || record.operation.mimeType;
+      const merged = content.slice(0, content.size, mimeType);
+      await this.storage.retainContentConflictServer(operationId, retained.content);
+      await this.storage.replacePendingContent(operationId, record.operation.entryId, merged);
+      return this.replayContentResolution(record, { ...record.operation, mimeType, size: merged.size, modifiedAt: Date.now(), baseContentRevision: retained.revision }, generation);
+    });
+  }
+
+  resolveContentConflictKeepServer(operationId: string) {
+    const generation = this.generation;
+    return this.queueSync(async () => {
+      const record = this.contentConflictRecord(await this.storage.readOutbox(), operationId);
+      const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId);
+      await this.storage.retainContentConflictServer(operationId, retained.content);
+      const applied = await this.applyRemoteState(retained.remote, generation, operationId, record.desktopId, true, false);
+      await this.storage.acknowledgeMutation(operationId);
+      const entry = applied.entries.find((candidate): candidate is FileEntry => candidate.id === record.operation.entryId && candidate.kind === "file");
+      if (entry && applied.sync.catalogId) await this.storage.cacheRemoteFile(record.desktopId, applied.sync.catalogId, entry.id, retained.revision, await sha256Blob(retained.content), retained.content);
+      await this.publishOutbox();
+      await this.updateStatusFromOutbox();
+      return this.storage.readOutbox();
+    });
+  }
+
+  resolveContentConflictKeepBoth(operationId: string) {
+    const generation = this.generation;
+    return this.queueSync(async () => {
+      const record = this.contentConflictRecord(await this.storage.readOutbox(), operationId);
+      const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId);
+      await this.storage.retainContentConflictServer(operationId, retained.content);
+      const remote = toSnapshot(retained.remote);
+      const original = remote.entries.find((candidate): candidate is FileEntry => candidate.id === record.operation.entryId && candidate.kind === "file");
+      if (!original) throw new Error("That file no longer exists on the server.");
+      const dot = original.name.lastIndexOf(".");
+      const stem = dot > 0 ? original.name.slice(0, dot) : original.name;
+      const extension = dot > 0 ? original.name.slice(dot) : "";
+      const entries = [...retained.remote.entries, ...this.current().entries];
+      let copyName = `${stem} (local conflict)${extension}`;
+      for (let suffix = 2; entries.some((entry) => entry.id !== original.id && entry.parentId === original.parentId && namesMatch(entry.name, copyName)); suffix += 1) copyName = `${stem} (local conflict ${suffix})${extension}`;
+      const sibling: FileEntry = { ...original, id: crypto.randomUUID(), name: copyName, mimeType: record.operation.mimeType, size: record.operation.size, createdAt: Date.now(), modifiedAt: record.operation.modifiedAt };
+      const queued = await this.storage.resolveContentConflictKeepBoth(operationId, remote, sibling);
+      this.publish(queued.desktop);
+      if (remote.sync.catalogId) await this.storage.cacheRemoteFile(record.desktopId, remote.sync.catalogId, original.id, retained.revision, await sha256Blob(retained.content), retained.content);
+      await this.publishOutbox();
+      await this.updateStatusFromOutbox();
+      this.requestReplay();
+      this.assertActive(generation);
+      return sibling;
+    });
+  }
+
   retryBlockedOutboxRecord(operationId: string) {
     if (this.frontendOnly) throw new Error("Local-only desktops do not have a synchronization queue.");
     const generation = this.generation;
@@ -1739,6 +1882,11 @@ export const getOutboxStatus = defaultEngine.getOutboxStatus.bind(defaultEngine)
 export const listOutboxRecords = defaultEngine.listOutboxRecords.bind(defaultEngine);
 export const retryBlockedOutboxRecord = defaultEngine.retryBlockedOutboxRecord.bind(defaultEngine);
 export const discardBlockedOutboxRecord = defaultEngine.discardBlockedOutboxRecord.bind(defaultEngine);
+export const loadContentConflict = defaultEngine.loadContentConflict.bind(defaultEngine);
+export const resolveContentConflictKeepLocal = defaultEngine.resolveContentConflictKeepLocal.bind(defaultEngine);
+export const resolveContentConflictKeepServer = defaultEngine.resolveContentConflictKeepServer.bind(defaultEngine);
+export const resolveContentConflictMerged = defaultEngine.resolveContentConflictMerged.bind(defaultEngine);
+export const resolveContentConflictKeepBoth = defaultEngine.resolveContentConflictKeepBoth.bind(defaultEngine);
 export const subscribeToOutbox = defaultEngine.subscribeOutbox.bind(defaultEngine);
 export const listActivity = defaultEngine.listActivity.bind(defaultEngine);
 export const subscribeToActivityChanges = defaultEngine.subscribeActivityChanges.bind(defaultEngine);

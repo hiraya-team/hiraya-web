@@ -39,6 +39,7 @@ export type StorageDbRequests = {
   acknowledgeMutation: { operationId: string };
   blockMutation: { operationId: string; error: string; errorCode: string | null; conflictDetails: RevisionConflictDetails | null };
   rebaseBlockedMutation: { operationId: string; operation: OutboxOperation };
+  resolveContentConflictKeepBoth: { operationId: string; replacementOperationId: string; state: PersistedDesktopState; operation: OutboxOperation };
   recordMutationAttempt: { operationId: string; attemptedAt: number };
   discardDesktopProjection: { desktopId: string; operationId: string };
   listActivity: ActivityQuery;
@@ -87,6 +88,7 @@ export type StorageDbResponses = {
   acknowledgeMutation: undefined;
   blockMutation: undefined;
   rebaseBlockedMutation: OutboxRecord;
+  resolveContentConflictKeepBoth: { state: PersistedDesktopState; record: OutboxRecord };
   recordMutationAttempt: undefined;
   discardDesktopProjection: { operationIds: string[]; fileIds: string[]; affectedDesktopIds: string[] };
   listActivity: ActivityPage;

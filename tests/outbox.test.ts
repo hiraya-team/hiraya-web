@@ -141,6 +141,13 @@ describe("strict outbox", () => {
     expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, entries: [{ ...base, name: "remote.txt" }] })).toEqual({ kind: "blocked", fields: ["name"] });
   });
 
+  test("leaves content conflicts for durable blob resolution", () => {
+    const snapshot = desktopStateSnapshot();
+    const operation = { schemaVersion: 1 as const, kind: "save-content" as const, entryId: "file", mimeType: "text/plain", size: 5, modifiedAt: 2, baseContentRevision: 1 };
+    const conflict = { resourceKind: "content" as const, resourceId: operation.entryId, expectedRevision: 1, actualRevision: 2 };
+    expect(resolveOutboxRevisionConflict(operation, conflict, { ...snapshot, sync: { ...snapshot.sync, contentRevisions: { [operation.entryId]: 2 } } })).toEqual({ kind: "blocked", fields: ["content"] });
+  });
+
   test("three-way merges disjoint layout fields without overwriting remote state", () => {
     const snapshot = desktopStateSnapshot();
     const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { ...snapshot.layout, snapToGrid: true }, baseRevision: 1, conflictBase: snapshot.layout };

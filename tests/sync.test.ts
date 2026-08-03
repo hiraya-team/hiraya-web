@@ -86,6 +86,7 @@ function remoteStorage(initial = desktopStateSnapshot()) {
   let sequence = 0;
   const cached = new Map<string, File>();
   const pending = new Map<string, Map<string, Blob>>();
+  const conflictContents = new Map<string, { base: Blob | null; server: Blob | null }>();
   const stats = { cacheWrites: 0, blockWrites: 0, attemptWrites: 0, remoteApplications: [] as Array<{ acknowledgedOperationId?: string; force: boolean; useAcknowledgedContent: boolean }> };
   const storage = {
     loadDesktop: async () => current,
@@ -153,6 +154,22 @@ function remoteStorage(initial = desktopStateSnapshot()) {
     },
     acknowledgeMutation: async (operationId: string) => { outbox = outbox.filter((record) => record.operationId !== operationId); pending.delete(operationId); },
     readPendingContent: async (operationId: string, entryId: string) => pending.get(operationId)?.get(entryId) ?? (() => { throw new Error("missing pending content"); })(),
+    readContentConflict: async (operationId: string, entryId: string) => ({ mine: pending.get(operationId)?.get(entryId) ?? (() => { throw new Error("missing pending content"); })(), ...(conflictContents.get(operationId) ?? { base: null, server: null }) }),
+    retainContentConflictServer: async (operationId: string, content: Blob) => { conflictContents.set(operationId, { base: conflictContents.get(operationId)?.base ?? null, server: content }); },
+    replacePendingContent: async (operationId: string, entryId: string, content: Blob) => { pending.get(operationId)?.set(entryId, content); },
+    resolveContentConflictKeepBoth: async (operationId: string, remote: typeof current, sibling: typeof current.entries[number]) => {
+      const selected = outbox.find((record) => record.operationId === operationId)!;
+      const mine = pending.get(operationId)!.get((selected.operation as Extract<OutboxOperation, { kind: "save-content" }>).entryId)!;
+      outbox = outbox.filter((record) => record.operationId !== operationId);
+      pending.delete(operationId);
+      const operation: OutboxOperation = { schemaVersion: 1, kind: "create", entries: [sibling] };
+      const record: OutboxRecord = { ...selected, operationId: String(++sequence), sequence, operation, status: "pending", error: null, errorCode: null, conflictDetails: null };
+      outbox.push(record);
+      pending.set(record.operationId, new Map([[sibling.id, mine]]));
+      const projected = applyOutboxOperation({ entries: remote.entries, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, operation);
+      current = { entries: projected.entries, layout: { snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
+      return { desktop: current, record };
+    },
     blockMutation: async (operationId: string, error: string, errorCode: string | null = null, conflictDetails: OutboxRecord["conflictDetails"] = null) => {
       stats.blockWrites += 1;
       outbox = outbox.map((record) => record.operationId === operationId ? { ...record, status: "blocked" as const, error, errorCode, conflictDetails } : record);
@@ -171,7 +188,7 @@ function remoteStorage(initial = desktopStateSnapshot()) {
       return { operationIds: discarded.map((record) => record.operationId), fileIds: [], affectedDesktopIds: [desktopId] };
     },
   } as unknown as NonNullable<SyncEngineOptions["storage"]>;
-  return Object.assign(storage, { stats, seedOutbox: (records: OutboxRecord[]) => { outbox = records; } });
+  return Object.assign(storage, { stats, seedOutbox: (records: OutboxRecord[], contents = new Map<string, Map<string, Blob>>()) => { outbox = records; for (const [id, value] of contents) pending.set(id, value); }, seedConflictBase: (operationId: string, base: Blob) => { conflictContents.set(operationId, { base, server: null }); } });
 }
 
 describe("canonical synchronization", () => {
@@ -1223,6 +1240,69 @@ describe("canonical synchronization", () => {
     await restarted.stop();
   });
 
+  test("loads a checksum-verified legacy content conflict and keeps the current server version", async () => {
+    const storage = remoteStorage();
+    const remote = { ...remoteDesktopState(), catalogRevision: 2, entries: [{ ...remoteDesktopState().entries[0], revision: 2, contentRevision: 2 }] };
+    const operation: OutboxOperation = { schemaVersion: 1, kind: "save-content", entryId: "file-1", mimeType: "text/plain", size: 4, modifiedAt: 2, baseContentRevision: 1 };
+    const blocked: OutboxRecord = { operationId: "conflict", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation, status: "blocked", error: "content conflict", errorCode: "revision_conflict", conflictDetails: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 }, attemptCount: 1, lastAttemptAt: 1 };
+    storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "https://downloads.example.test/server") return new Response("note");
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+
+    const bundle = await engine.loadContentConflict(blocked.operationId);
+    expect(await bundle.mine.text()).toBe("mine");
+    expect(bundle.base).toBeNull();
+    expect(await bundle.server.text()).toBe("note");
+    expect(bundle.serverRevision).toBe(2);
+
+    expect(await engine.resolveContentConflictKeepServer(blocked.operationId)).toEqual([]);
+    expect(await engine.listOutboxRecords()).toEqual([]);
+    expect(await (await engine.readFile("file-1")).text()).toBe("note");
+    await engine.stop();
+  });
+
+  test("queues Mine as a conflict-safe sibling while preserving the current server file", async () => {
+    const storage = remoteStorage();
+    let remote = { ...remoteDesktopState(), catalogRevision: 2, entries: [{ ...remoteDesktopState().entries[0], revision: 2, contentRevision: 2 }] };
+    const operation: OutboxOperation = { schemaVersion: 1, kind: "save-content", entryId: "file-1", mimeType: "text/plain", size: 4, modifiedAt: 2, baseContentRevision: 1 };
+    const blocked: OutboxRecord = { operationId: "conflict", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation, status: "blocked", error: "content conflict", errorCode: "revision_conflict", conflictDetails: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 }, attemptCount: 1, lastAttemptAt: 1 };
+    storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
+    let replacementOperationId = "";
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/keep-both", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "https://downloads.example.test/keep-both") return new Response("note");
+      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { items: Array<{ entry: typeof remote.entries[number] }> };
+        const entry = body.items[0].entry;
+        replacementOperationId = new Headers(init.headers).get("X-Hiraya-Operation-ID") ?? "";
+        remote = { ...remote, catalogRevision: 3, entries: [...remote.entries, { ...entry, revision: 3, contentRevision: 3 }] };
+        return Response.json({ state: "committed", catalogRevision: 3 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    let latest = desktopStateSnapshot();
+    engine.subscribe((desktop) => { latest = desktop; }, () => undefined);
+    await engine.start("desk", { x: 0, y: 0 });
+    const sibling = await engine.resolveContentConflictKeepBoth(blocked.operationId);
+    const [replacement] = await engine.listOutboxRecords();
+
+    expect(sibling).toMatchObject({ parentId: null, name: "notes (local conflict).txt", size: 4 });
+    expect(replacement).toMatchObject({ operationId: "1", status: "pending", operation: { kind: "create", entries: [{ id: sibling.id, name: sibling.name }] } });
+    expect(replacement.operationId).not.toBe(blocked.operationId);
+    expect(replacementOperationId === "" || replacementOperationId === replacement.operationId).toBe(true);
+    expect(latest.entries.find((entry) => entry.id === "file-1")?.name).toBe("notes.txt");
+    expect(latest.entries.find((entry) => entry.id === sibling.id)?.name).toBe(sibling.name);
+    await engine.stop();
+  });
+
   test("discards only the first blocked record and force-reprojects authoritative state", async () => {
     const storage = remoteStorage();
     const remote = remoteDesktopState();
@@ -1616,6 +1696,33 @@ describe("canonical synchronization", () => {
     else await waitFor(async () => (await engine.getOutboxStatus()).pending === 1);
     expect(await engine.getOutboxStatus()).toMatchObject(commitError.blocked ? { pending: 0, blocked: 1 } : { pending: 1, blocked: 0 });
     expect(storage.stats.blockWrites).toBe(commitError.blocked ? 1 : 0);
+    await engine.stop();
+  });
+
+  test("retains verified current server bytes before blocking a content revision conflict", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") return Response.json({ state: "prepared", uploadId: "content-conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/content-conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+      if (String(input) === "https://uploads.example.test/content-conflict") return new Response(null, { status: 200 });
+      if (String(input) === "/api/desktops/desk/blob-mutations/content-conflict/commit") {
+        remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], revision: 2, contentRevision: 2 }] };
+        return Response.json({ error: "The file content changed.", code: "revision_conflict", conflict: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
+      }
+      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/conflict-server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "https://downloads.example.test/conflict-server") return new Response("note");
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
+    await engine.start("desk", { x: 0, y: 0 });
+    await engine.saveTextFile("file-1", "mine");
+    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
+    const [blocked] = await engine.listOutboxRecords();
+    const retained = await engine.loadContentConflict(blocked.operationId);
+    expect(await retained.mine.text()).toBe("mine");
+    expect(await retained.server.text()).toBe("note");
+    expect(retained.serverRevision).toBe(2);
     await engine.stop();
   });
 

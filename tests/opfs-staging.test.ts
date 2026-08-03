@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, rollbackSafeReplacement, saveApprovedPackageArchive, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
+import { contentMatchesCacheMarker, operationContentIds, operationMaterializationContentIds, parseContentCacheMarker, removeUnretainedCachedContent, replaceStagedContentInDirectory, rollbackSafeReplacement, saveApprovedPackageArchive, stageOperationContentsInDirectory } from "../src/platform/storage/blobs";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
@@ -38,6 +38,15 @@ describe("pending content staging", () => {
     const pending = { getDirectoryHandle: async () => operationDirectory } as unknown as FileSystemDirectoryHandle;
     await stageOperationContentsInDirectory(pending, "operation-1", new Map([["first", new Blob(["a"])], ["second", new Blob(["bb"])]]), async (_directory, name) => { writes.push(name); });
     expect(writes).toEqual(["first", "second", ".complete"]);
+  });
+
+  test("atomically selects merged Mine only after its replacement is durable", async () => {
+    const writes: Array<[string, Blob | string]> = [];
+    const complete = new File([JSON.stringify([["file", 4]])], ".complete");
+    const directory = { getFileHandle: async () => ({ getFile: async () => complete }) } as unknown as FileSystemDirectoryHandle;
+    await replaceStagedContentInDirectory(directory, "file", new Blob(["merged"]), ".mine-next", async (_directory, name, content) => { writes.push([name, content]); });
+    expect(writes.map(([name]) => name)).toEqual([".mine-next", ".complete"]);
+    expect(JSON.parse(String(writes[1][1]))).toEqual([["file", 6, ".mine-next"]]);
   });
 
   test("stages the hidden asset owned by a theme-package install", () => {

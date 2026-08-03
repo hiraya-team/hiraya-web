@@ -485,6 +485,22 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
       if (db.changes() !== 1) throw new Error("That blocked change no longer exists.");
       return readOutbox(db).find((record) => record.operationId === input.operationId)! as StorageDbResponses[M];
     }
+    case "resolveContentConflictKeepBoth": {
+      if (!desktopId) throw new Error("No desktop is active for this request.");
+      const input = params as StorageDbRequests["resolveContentConflictKeepBoth"];
+      const operation = normalizeOutboxOperation(input.operation);
+      if (operation.kind !== "create" || operation.entries.length !== 1 || operation.entries[0].kind !== "file") throw new Error("A keep-both resolution requires one file copy.");
+      return db.transaction("IMMEDIATE", () => {
+        const selected = readOutbox(db).find((record) => record.operationId === input.operationId);
+        if (!selected || selected.desktopId !== desktopId || selected.status !== "blocked" || selected.operation.kind !== "save-content") throw new Error("That blocked content conflict no longer exists.");
+        db.exec({ sql: "DELETE FROM outbox WHERE operation_id=?", bind: [input.operationId] });
+        insertOutbox(db, input.replacementOperationId, selected.catalogId, desktopId, operation);
+        let state = parseDesktopState(input.state);
+        for (const record of readOutbox(db, desktopId)) state = parseDesktopState(applyOutboxOperation(state, record.operation));
+        replaceDesktopStateRows(db, desktopId, state);
+        return { state, record: readOutbox(db).find((record) => record.operationId === input.replacementOperationId)! };
+      }) as StorageDbResponses[M];
+    }
     case "recordMutationAttempt": { const input = params as StorageDbRequests["recordMutationAttempt"]; db.exec({ sql: "UPDATE outbox SET attempt_count=attempt_count+1,last_attempt_at=? WHERE operation_id=?", bind: [input.attemptedAt, input.operationId] }); return undefined as StorageDbResponses[M]; }
     case "discardDesktopProjection": {
       const input = params as StorageDbRequests["discardDesktopProjection"];

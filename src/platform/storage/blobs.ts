@@ -4,6 +4,8 @@ import { APPROVED_PACKAGE_ARCHIVES_DIRECTORY, CONTENT_CACHE_DIRECTORY, FILES_DIR
 
 export type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number; sha256: string };
 const SHA256_HEX = /^[a-f0-9]{64}$/;
+const CONFLICT_BASE = ".content-conflict-base";
+const CONFLICT_SERVER = ".content-conflict-server";
 
 export async function contentMatchesCacheMarker(content: Blob, marker: ContentCacheMarker) {
   return content.size === marker.size && await sha256Blob(content) === marker.sha256;
@@ -240,11 +242,54 @@ export async function readStagedContent(operationId: string, id: string) {
   const directory = await pending.getDirectoryHandle(operationId);
   const manifest = JSON.parse(await (await directory.getFileHandle(".complete")).getFile().then((file) => file.text())) as unknown;
   if (!Array.isArray(manifest)) throw new Error("Pending file content was not completely staged.");
-  const expected = manifest.find((item): item is [string, number] => Array.isArray(item) && item[0] === id && Number.isSafeInteger(item[1]) && item[1] >= 0)?.[1];
-  if (expected === undefined) throw new Error("Pending file content was not completely staged.");
-  const content = await (await directory.getFileHandle(id)).getFile();
+  const item = manifest.find((candidate): candidate is [string, number, string?] => Array.isArray(candidate) && candidate[0] === id && Number.isSafeInteger(candidate[1]) && candidate[1] >= 0 && (candidate[2] === undefined || typeof candidate[2] === "string" && candidate[2].startsWith(".mine-")));
+  if (!item) throw new Error("Pending file content was not completely staged.");
+  const expected = item[1];
+  const storedName = item[2] ?? id;
+  const content = await (await directory.getFileHandle(storedName)).getFile();
   if (content.size !== expected) throw new Error("Pending file content was not completely staged.");
   return content;
+}
+
+async function readOptionalStagedFile(operationId: string, name: string) {
+  try {
+    const directory = await (await getPendingDirectory()).getDirectoryHandle(operationId);
+    return await (await directory.getFileHandle(name)).getFile();
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}
+
+export function readContentConflictBase(operationId: string) {
+  return readOptionalStagedFile(operationId, CONFLICT_BASE);
+}
+
+export function readContentConflictServer(operationId: string) {
+  return readOptionalStagedFile(operationId, CONFLICT_SERVER);
+}
+
+export async function writeContentConflictBase(operationId: string, content: Blob) {
+  await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), CONFLICT_BASE, content);
+}
+
+export async function writeContentConflictServer(operationId: string, content: Blob) {
+  await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), CONFLICT_SERVER, content);
+}
+
+export async function replaceStagedContent(operationId: string, id: string, content: Blob) {
+  const directory = await (await getPendingDirectory()).getDirectoryHandle(operationId);
+  await replaceStagedContentInDirectory(directory, id, content);
+}
+
+export async function replaceStagedContentInDirectory(directory: FileSystemDirectoryHandle, id: string, content: Blob, storedName = `.mine-${crypto.randomUUID()}`, write: (directory: FileSystemDirectoryHandle, name: string, content: Blob | string) => Promise<void> = writeHandleContent) {
+  const manifest = JSON.parse(await (await directory.getFileHandle(".complete")).getFile().then((file) => file.text())) as unknown;
+  if (!Array.isArray(manifest)) throw new Error("Pending file content was not completely staged.");
+  const index = manifest.findIndex((item) => Array.isArray(item) && item[0] === id);
+  if (index < 0) throw new Error("Pending file content was not completely staged.");
+  await write(directory, storedName, content);
+  manifest[index] = [id, content.size, storedName];
+  await write(directory, ".complete", JSON.stringify(manifest));
 }
 
 export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = false) {
