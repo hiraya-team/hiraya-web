@@ -13,7 +13,7 @@ const publicDesktop = {
     parentId: null,
     createdAt: 1,
     modifiedAt: 1,
-    position: { x: 0, y: index * 100 },
+    position: index === 0 ? { x: 120, y: 84 } : index === 1 ? { x: 1400, y: 84 } : { x: 120, y: 84 + index * 100 },
     mimeType: "text/plain",
     size: 4,
     revision: 0,
@@ -28,6 +28,7 @@ const publicDesktop = {
 
 async function mockPublicDesktop(page: Page) {
 	await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: publicDesktop }));
+	await page.route("**/api/public/desktops/e2e-desk/entries/*/content", (route) => route.fulfill({ body: "test", headers: { "content-type": "text/plain" } }));
 }
 
 async function overflow(page: Page) {
@@ -35,12 +36,62 @@ async function overflow(page: Page) {
 }
 
 test("public desktop reflows without page overflow at 390px", async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => query === "(any-hover: hover) and (any-pointer: fine)" ? { ...nativeMatchMedia(query), matches: false, addEventListener() {}, removeEventListener() {} } : nativeMatchMedia(query);
+  });
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPublicDesktop(page);
 	await page.goto("/published/e2e-desk");
   await expect(page.getByLabel("Published work public desktop")).toBeVisible();
   const size = await overflow(page);
   expect(size.scrollWidth).toBeLessThanOrEqual(size.width);
+  const results = await new AxeBuilder({ page }).analyze();
+  expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+});
+
+test("public desktop preserves positions and navigates to a non-Home area", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockPublicDesktop(page);
+  await page.goto("/published/e2e-desk");
+  const homeIcon = page.getByRole("button", { name: "Public document 1.txt, text/plain" });
+  await expect(homeIcon).toHaveCSS("left", "120px");
+  await expect(homeIcon).toHaveCSS("top", "84px");
+  await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
+  const navigator = page.getByRole("navigation", { name: "Published work public desktop areas" });
+  await expect(navigator).toBeVisible();
+  await navigator.getByRole("button", { name: /1 right of Home/ }).click();
+  await expect(page.getByRole("button", { name: "Public document 2.txt, text/plain" })).toBeVisible();
+});
+
+test("fine pointers open draggable and resizable public windows", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await mockPublicDesktop(page);
+  await page.goto("/published/e2e-desk");
+  await page.getByRole("button", { name: "Public document 1.txt, text/plain" }).dblclick();
+  const appWindow = page.locator('[data-app-window="public-view"]');
+  await expect(appWindow).toBeVisible();
+  await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
+  await expect(appWindow.locator("[data-window-drag-handle]")).toBeVisible();
+  await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);
+  await expect(page.locator(".public-menu").getByRole("link", { name: "Sign in" })).toBeVisible();
+  await expect(appWindow).toBeFocused();
+});
+
+test("coarse-only public windows use the focused full-surface header", async ({ page }) => {
+  await page.addInitScript(() => {
+    const nativeMatchMedia = window.matchMedia.bind(window);
+    window.matchMedia = (query) => query === "(any-hover: hover) and (any-pointer: fine)" ? { ...nativeMatchMedia(query), matches: false, addEventListener() {}, removeEventListener() {} } : nativeMatchMedia(query);
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockPublicDesktop(page);
+  await page.goto("/published/e2e-desk");
+  await page.getByRole("button", { name: "Public document 1.txt, text/plain" }).dblclick();
+  const appWindow = page.locator('[data-app-window="public-view"]');
+  await expect(appWindow).toHaveAttribute("data-full-surface", "true");
+  await expect(page.getByRole("button", { name: "Back to public desktop" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Close public window" })).toBeVisible();
+  await expect(appWindow).toBeFocused();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 });

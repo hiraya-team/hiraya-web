@@ -126,8 +126,22 @@ describe("public desktop", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
     expect(source).toContain('scrollIntoView({ block: "nearest", inline: "nearest" })');
     expect(source).not.toContain("event.currentTarget.setPointerCapture(event.pointerId);");
-    expect(css).toContain(".public-icon-grid {\n  overflow: auto;");
+    expect(source).toContain('className="file-icon public-icon"');
+    expect(source).toContain('className="file-icon__art"');
+    expect(source).toContain('className="file-icon__name"');
     expect(css).toContain("touch-action: pan-x pan-y pinch-zoom;");
+  });
+
+  test("uses shared desktop geometry, area navigation, and adaptive public windows", async () => {
+    const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    expect(source).toContain("themeIconMetrics(theme)");
+    expect(source).toContain("iconAreaSize(desktopSize, desktop?.layout.gridSize)");
+    expect(source).toContain("responsiveDesktop(desktop?.entries ?? [], iconArea, iconMetrics)");
+    expect(source).toContain("<AreaSwitcher");
+    expect(source).toContain("useMediaQuery(WINDOWED_DESKTOP_QUERY)");
+    expect(source).toContain("initialWindowBounds(desktopSize, options)");
+    expect(source).toContain("windowed={windowed}");
+    expect(source).toContain("const wholeDesktop = !authority.itemAlias;");
   });
 
   test("guards public preview completion against a newer open request", async () => {

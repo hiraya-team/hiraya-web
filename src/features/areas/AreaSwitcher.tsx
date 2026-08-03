@@ -13,6 +13,7 @@ type AreaSwitcherProps = {
   apps: readonly RunningApp[];
   desktopName: string;
   desktopRail: ReactNode;
+  navigationLabel?: string;
   desktopSize: { width: number; height: number };
   detailed: boolean;
   dirtyAppIds: ReadonlySet<string>;
@@ -49,6 +50,7 @@ export function AreaSwitcher({
   apps,
   desktopName,
   desktopRail,
+  navigationLabel,
   desktopSize,
   detailed,
   dirtyAppIds,
@@ -86,7 +88,7 @@ export function AreaSwitcher({
   const focusedLabel = focusedApp ? getAppLabel(focusedApp) : "";
 
   return (
-    <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={`${desktopName} desktops, areas, and open apps`}>
+    <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} data-rail-free={!desktopRail || undefined} aria-label={navigationLabel ?? `${desktopName} desktops, areas, and open apps`}>
       <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}>
         <div className="desktop-minimap__content">
           {desktopRail}
