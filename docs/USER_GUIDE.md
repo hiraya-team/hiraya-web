@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Resolve changed files in the Merge window.** When both this browser and the server changed a file, **Merge** combines matching or separate text edits automatically and clearly separates changes that still need a choice. You can also compare media, review details for binary files, or use **Keep both** to preserve both versions as separate files.
 - **Find every sharing tool together.** Open **Settings > Sharing** to manage desktop and item sharing or create account-wide short links. Appearance and icon placement now share the **Desktop** tab.
 - **Browse public desktops by area.** Whole-desktop public links now preserve published icon positions and provide the same area navigator as the main desktop. Files open in movable, resizable windows with a fine pointer and focused full-surface views on touch devices.
 - **Open desktops faster.** Hiraya now avoids loading unused wallpaper code and unnecessary file requests when opening synchronized and public desktops.
@@ -115,7 +116,11 @@ Full synchronized recovery requires a server operator to use Hiraya's supported 
 
 ### Sync blocked {#sync-blocked}
 
-Open **Connection & Offline** from the summarized status button. A blocked queued change needs a decision before replay can continue. Read the affected item names and error, then retry after fixing the cause or discard only if you accept restoring the server version. Do not clear site data to fix sync; that can erase the queued change.
+Open **Connection & Offline** from the summarized status button. A blocked queued change needs a decision before replay can continue. Read the affected item names and error, then open **Merge** for a file changed in both places.
+
+For text files, the **Merge** window compares **Base** (the last synchronized text), **Mine** (this browser's change), and **Server**. It performs a true three-way merge: matching edits and edits to separate lines are combined automatically, while overlapping edits remain clearly separated for you to resolve. Line endings and the final newline are preserved. Text merge is unavailable for invalid text or files over its safety limit; choose a complete version instead.
+
+For images, audio, and video, use the media comparison to inspect **Mine** and **Server**. Other binary files show details such as type and size rather than pretending their bytes can be merged. **Keep both** preserves both versions as separate files; use it when neither should replace the other. Discard a queued change only if you accept restoring the server version. Do not clear site data to fix sync; that can erase the queued change.
 
 ### Offline file unavailable {#offline-unavailable}
 
