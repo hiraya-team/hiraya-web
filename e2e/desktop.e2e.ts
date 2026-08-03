@@ -61,6 +61,21 @@ test("search launches installed apps from the keyboard", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
 });
 
+test("search separates commands behind the command prefix", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: /Search/ });
+  const input = palette.locator("input");
+
+  await input.fill("Settings");
+  await expect(palette.getByRole("group", { name: "Commands" })).toHaveCount(0);
+  await input.fill("> Settings");
+  await expect(palette.getByRole("group", { name: "Search scope" })).toHaveCount(0);
+  await expect(palette.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" })).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
+});
+
 test("clicking inside a sandbox app focuses and raises its window", async ({ page }) => {
   await openLocalDesktop(page);
   await page.keyboard.press("Control+k");
@@ -74,7 +89,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
 
   await page.keyboard.press("Control+k");
   search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Settings");
+  await search.locator("input").fill("> Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toHaveAttribute("data-focused", "true");
@@ -446,7 +461,7 @@ test("desktop wheel gestures switch one area while app scrolling stays native", 
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Settings");
+  await search.locator("input").fill("> Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.dispatchEvent("wheel", { deltaY: 100 });
