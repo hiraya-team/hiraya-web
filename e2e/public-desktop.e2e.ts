@@ -27,7 +27,7 @@ const publicDesktop = {
 };
 
 async function mockPublicDesktop(page: Page) {
-  await page.route("**/api/public/desktops/e2e-token", (route) => route.fulfill({ json: publicDesktop }));
+	await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: publicDesktop }));
 }
 
 async function overflow(page: Page) {
@@ -37,7 +37,7 @@ async function overflow(page: Page) {
 test("public desktop reflows without page overflow at 390px", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockPublicDesktop(page);
-  await page.goto("/shared/e2e-token");
+	await page.goto("/published/e2e-desk");
   await expect(page.getByLabel("Published work public desktop")).toBeVisible();
   const size = await overflow(page);
   expect(size.scrollWidth).toBeLessThanOrEqual(size.width);
@@ -48,7 +48,7 @@ test("public desktop reflows without page overflow at 390px", async ({ page }) =
 test("public desktop reflows at 200 percent zoom", async ({ page }) => {
   await page.setViewportSize({ width: 640, height: 720 });
   await mockPublicDesktop(page);
-  await page.goto("/shared/e2e-token");
+	await page.goto("/published/e2e-desk");
   await page.context().newCDPSession(page).then((session) => session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 }));
   const size = await overflow(page);
   expect(size.scrollWidth).toBeLessThanOrEqual(size.width);

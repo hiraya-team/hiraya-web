@@ -41,9 +41,9 @@ Desktop owners and managers can open **Share desktop** when sharing is available
 - **Writer** can organize and edit files.
 - **Reader** can browse and download without changing the desktop.
 
-Invitations grant access to a specific person and can expire. A deployment may also grant a default role to all signed-in users.
+Invitations grant permanent access to a specific person until the invitation is revoked or accepted. A deployment may also grant a default role to all signed-in users.
 
-A public link is different from membership: anyone who has its opaque URL can browse and download a read-only publication without signing in. Treat it as a secret. Rotate it to invalidate the previous URL, or unpublish to turn public access off. Public browsing does not expose private Settings, activity, or edit controls.
+A public link is different from membership. Under **Share desktop**, owners and managers choose a stable desktop alias and can turn **Share entire desktop** on or off. Right-click one file or folder and choose **Publish...** to expose only that item; a published folder includes its current descendants and files added inside it later. Renaming an alias breaks the old address, while unpublishing keeps the alias available for the same desktop or item. Public browsing does not expose unrelated entries, private Settings, activity, or edit controls.
 
 ## Offline storage {#offline}
 
@@ -112,3 +112,9 @@ Try dragging the folder onto Hiraya. If the browser still cannot expose a hierar
 ### Installation unavailable {#installation-unavailable}
 
 Use Hiraya in a regular tab. Browser installation can require a secure deployment, a supported browser, and an installable production build. If no install command appears, use the browser's site menu or ask the operator whether installation is enabled.
+
+## Changelog
+
+### August 2026
+
+- **Stable public addresses.** Owners and managers can set a desktop alias under **Share desktop**, enable **Share entire desktop**, or use **Publish...** on one file or folder without exposing the rest of the desktop. Desktop invitation links no longer expire.

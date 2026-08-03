@@ -18,6 +18,7 @@ import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
 import { ThemeWallpaper } from "./components/ThemeWallpaper";
 import { API_ROUTES } from "./lib/api-routes";
+import type { PublicAuthority } from "./lib/public-desktop";
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -113,9 +114,9 @@ function PublicIcon({ entry, selected, onSelect, onOpen }: { entry: DesktopEntry
   );
 }
 
-export default function PublicDesktop({ token }: { token: string }) {
+export default function PublicDesktop({ authority }: { authority: PublicAuthority }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
-  const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, resolveLinkedFile } = usePublicDesktop(token);
+	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, resolveLinkedFile } = usePublicDesktop(authority);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
@@ -200,7 +201,7 @@ export default function PublicDesktop({ token }: { token: string }) {
       >
         {wallpaper?.source.startsWith("theme:") && (() => {
           const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
-          return selected?.wallpaper ? <ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(token, selected.id, selected.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
+			return selected?.wallpaper ? <ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(authority.desktopAlias, selected.id, selected.wallpaper.revision)} /> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />

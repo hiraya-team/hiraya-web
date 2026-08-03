@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ArrowsLeftRight, Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, GearSix, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
+import { ArrowsLeftRight, Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, GearSix, Globe, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { useModalDialog } from "../ui/modal-dialog";
@@ -126,7 +126,8 @@ type Props = {
   onMove: () => void;
   onProperties: () => void;
   onDelete: () => void;
-  onCopyLink?: () => void;
+	onCopyLink?: () => void;
+	onPublish?: () => void;
   onMakeAvailableOffline?: () => void;
   onRemoveOfflineCopy?: () => void;
   onOpenOfflineStorage?: () => void;
@@ -138,7 +139,7 @@ type Props = {
   onClose: () => void;
 };
 
-export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
+export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onMove, onProperties, onDelete, onCopyLink, onPublish, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
   const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
   const onFocus = useRovingMenu(position.ref);
   const offlineItems: SubmenuItem[] = [
@@ -165,7 +166,8 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
         </button>
       )}
       <button type="button" role="menuitem" onClick={onCopy}><Copy size={17} /> Copy {selectionCount > 1 ? `${selectionCount} items` : ""}<kbd>Ctrl/⌘ C</kbd></button>
-      {selectionCount === 1 && onCopyLink && <button type="button" role="menuitem" onClick={onCopyLink}><LinkSimple size={17} /> Copy link</button>}
+		{selectionCount === 1 && onCopyLink && <button type="button" role="menuitem" onClick={onCopyLink}><LinkSimple size={17} /> Copy link</button>}
+		{selectionCount === 1 && onPublish && <button type="button" role="menuitem" onClick={onPublish}><Globe size={17} /> Publish...</button>}
       {offlineItems.length > 0 && <MenuSubmenu icon={<CloudArrowDown size={17} />} label="Offline" items={offlineItems} />}
       {onPasteInto && <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onPasteInto}><ClipboardText size={17} /> Paste into</button>}
       {selectionCount === 1 && entry.kind === "folder" && onUploadInto && <button type="button" role="menuitem" disabled={readOnly} onClick={onUploadInto}><UploadSimple size={17} /> Upload files into</button>}

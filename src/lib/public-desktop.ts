@@ -2,6 +2,7 @@ import type { FileEntry } from "../types";
 import { API_ROUTES } from "./api-routes";
 import { sha256Blob } from "./blob-transfer";
 import { isRecord, parseContentAccessDescriptor, parsePublicDesktopState, type RemoteDesktopState } from "./contracts";
+import { isValidPublicationAlias } from "./sharing";
 
 export class LargeDownloadAuthRequiredError extends Error {
   constructor(readonly loginUrl: string) {
@@ -10,10 +11,11 @@ export class LargeDownloadAuthRequiredError extends Error {
   }
 }
 
-export function publicTokenFromPath(pathname: string) {
-  const match = /^\/shared\/([^/]+)\/?$/.exec(pathname);
-  if (!match) return null;
-  try { return decodeURIComponent(match[1]); } catch { return null; }
+export type PublicAuthority = { desktopAlias: string; itemAlias?: string };
+
+export function publicAuthorityFromPath(pathname: string): PublicAuthority | null {
+  const match = /^\/published\/([^/]+)(?:\/([^/]+))?\/?$/.exec(pathname);
+  return match && isValidPublicationAlias(match[1]) && (!match[2] || isValidPublicationAlias(match[2])) ? { desktopAlias: match[1], ...(match[2] ? { itemAlias: match[2] } : {}) } : null;
 }
 
 async function largeDownloadError(response: Response) {
@@ -23,14 +25,16 @@ async function largeDownloadError(response: Response) {
   return new Error("This public link is no longer available.");
 }
 
-export async function fetchPublicDesktop(token: string, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<RemoteDesktopState> {
-  const response = await fetchImpl(API_ROUTES.publicDesktop(token), { cache: "no-store", credentials: "omit" });
+export async function fetchPublicDesktop(authority: PublicAuthority, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<RemoteDesktopState & { publishedRootId?: string }> {
+  const response = await fetchImpl(API_ROUTES.publicDesktop(authority.desktopAlias, authority.itemAlias), { cache: "no-store", credentials: "omit" });
   if (!response.ok) throw new Error(response.status === 404 ? "This public desktop link is unavailable." : `The public desktop could not be loaded (${response.status}).`);
-  return parsePublicDesktopState(await response.json());
+  const value = await response.json() as unknown;
+  const parsed = parsePublicDesktopState(value);
+  return isRecord(value) && typeof value.publishedRootId === "string" ? { ...parsed, publishedRootId: value.publishedRootId } : parsed;
 }
 
-export async function fetchPublicFile(token: string, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  let response = await fetchImpl(API_ROUTES.publicDesktopContent(token, file.id), { cache: "no-store", credentials: "same-origin" });
+export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  let response = await fetchImpl(API_ROUTES.publicDesktopContent(authority.desktopAlias, authority.itemAlias, file.id), { cache: "no-store", credentials: "same-origin" });
   const gate = await largeDownloadError(response);
   if (gate) throw gate;
   if (response.ok && !response.headers.get("content-type")?.includes("application/json")) {
@@ -43,7 +47,7 @@ export async function fetchPublicFile(token: string, file: FileEntry, contentRev
   }
 
   if (!response.ok && response.status !== 404 && response.status !== 405 && response.status !== 409) throw new Error(`The file could not be downloaded (${response.status}).`);
-  response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(token, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
+  response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(authority.desktopAlias, authority.itemAlias, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
   const descriptorGate = await largeDownloadError(response);
   if (descriptorGate) throw descriptorGate;
   if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);

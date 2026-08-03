@@ -1,24 +1,30 @@
-import { useEffect, useRef, useState } from "react";
-import { fetchPublicDesktop, fetchPublicFile, LargeDownloadAuthRequiredError } from "../../lib/public-desktop";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { fetchPublicDesktop, fetchPublicFile, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
 import { fileCapabilities } from "../../ui/file-capabilities";
 import type { DesktopEntry, FileEntry } from "../../types";
 
 export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
 
-export function usePublicDesktop(token: string) {
+export function usePublicDesktop(authority: PublicAuthority) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
   const [error, setError] = useState("");
   const [open, setOpenState] = useState<PublicOpenView | null>(null);
   const fileLoadGenerationRef = useRef(0);
   const [downloadGate, setDownloadGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
-  const [wallpaperFailed, setWallpaperFailed] = useState(false);
+	const [wallpaperFailed, setWallpaperFailed] = useState(false);
+	const loadInitialFile = useEffectEvent((file: FileEntry, next: Awaited<ReturnType<typeof fetchPublicDesktop>>) => loadFile(file, false, next));
 
-  useEffect(() => {
-    let cancelled = false;
-    void fetchPublicDesktop(token)
-      .then((next) => {
-        if (!cancelled) setDesktop(next);
+	useEffect(() => {
+		let cancelled = false;
+		const currentAuthority = { desktopAlias: authority.desktopAlias, ...(authority.itemAlias ? { itemAlias: authority.itemAlias } : {}) };
+		void fetchPublicDesktop(currentAuthority)
+		.then((next) => {
+			if (cancelled) return;
+			setDesktop(next);
+			const root = next.publishedRootId ? next.entries.find((entry) => entry.id === next.publishedRootId) : undefined;
+			if (root?.kind === "folder") setOpenState({ kind: "folder", folderId: root.id });
+			else if (root?.kind === "file") void loadInitialFile(root, next);
       })
       .catch((reason) => {
         if (!cancelled) setError(reason instanceof Error ? reason.message : "The public desktop could not be loaded.");
@@ -26,7 +32,7 @@ export function usePublicDesktop(token: string) {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+	}, [authority.desktopAlias, authority.itemAlias, loadInitialFile]);
 
   useEffect(() => {
     setWallpaperUrl("");
@@ -38,7 +44,8 @@ export function usePublicDesktop(token: string) {
     let disposed = false;
     let objectUrl = "";
     const contentRevision = desktop.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-    void fetchPublicFile(token, file, contentRevision)
+	const currentAuthority = { desktopAlias: authority.desktopAlias, ...(authority.itemAlias ? { itemAlias: authority.itemAlias } : {}) };
+	void fetchPublicFile(currentAuthority, file, contentRevision)
       .then((blob) => {
         if (disposed) return;
         objectUrl = URL.createObjectURL(blob);
@@ -49,9 +56,9 @@ export function usePublicDesktop(token: string) {
       disposed = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [desktop, token]);
+	}, [authority.desktopAlias, authority.itemAlias, desktop]);
 
-  async function loadFile(file: FileEntry, downloadOnly = false) {
+	async function loadFile(file: FileEntry, downloadOnly = false, desktopOverride = desktop) {
     const generation = downloadOnly ? null : ++fileLoadGenerationRef.current;
     if (!downloadOnly && fileCapabilities(file).preview === "none") {
       setOpenState({ kind: "file", file });
@@ -59,8 +66,8 @@ export function usePublicDesktop(token: string) {
     }
     if (!downloadOnly) setOpenState({ kind: "file", file });
     try {
-      const contentRevision = desktop?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-      const blob = await fetchPublicFile(token, file, contentRevision);
+		const contentRevision = desktopOverride?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
+		const blob = await fetchPublicFile(authority, file, contentRevision);
       if (downloadOnly) {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
@@ -86,7 +93,7 @@ export function usePublicDesktop(token: string) {
     if (!desktop) throw new Error("The public desktop is unavailable.");
     const resolved = resolvePublicLinkedEntry(desktop.entries, from, relativePath);
     const contentRevision = desktop.entries.find((entry) => entry.id === resolved.id)?.contentRevision ?? 0;
-    return { file: resolved, blob: await fetchPublicFile(token, resolved, contentRevision) };
+	return { file: resolved, blob: await fetchPublicFile(authority, resolved, contentRevision) };
   }
 
   return {

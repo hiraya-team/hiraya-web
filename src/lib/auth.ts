@@ -16,9 +16,11 @@ export type AuthSession = {
   capabilities: {
     blobTransfer: "direct-b2-v1";
     desktopSearch?: "accessible-desktops-v1";
-    shortLinks?: "account-short-links-v1";
-  };
-  shortLinkBaseUrl?: string;
+		shortLinks?: "account-short-links-v1";
+		publications?: "alias-publications-v1";
+	};
+	shortLinkBaseUrl?: string;
+	publicationBaseUrl?: string;
 };
 
 const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-v1";
@@ -65,7 +67,7 @@ function normalizedHttpOrigin(value: string) {
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
-  const session = value as { storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown };
+	const session = value as { storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown; publicationBaseUrl?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
   if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
     throw new Error("The session bootstrap requires direct-b2-v1 blob transfer support.");
@@ -78,9 +80,14 @@ export function parseAuthSession(value: unknown): AuthSession {
   if (desktopSearch !== undefined && desktopSearch !== "accessible-desktops-v1") throw new Error("The session bootstrap contains unsupported desktop search capability metadata.");
   const shortLinks = (session.capabilities as { shortLinks?: unknown }).shortLinks;
   if (shortLinks !== undefined && shortLinks !== "account-short-links-v1") throw new Error("The session bootstrap contains unsupported short-link capability metadata.");
-  const shortLinkBaseUrl = session.shortLinkBaseUrl === undefined ? undefined : requiredString(session.shortLinkBaseUrl, "short-link base URL");
+	const shortLinkBaseUrl = session.shortLinkBaseUrl === undefined ? undefined : requiredString(session.shortLinkBaseUrl, "short-link base URL");
   if ((shortLinks === undefined) !== (shortLinkBaseUrl === undefined)) throw new Error("The session bootstrap contains incomplete short-link capability metadata.");
-  if (shortLinkBaseUrl && !isSafeRootRelativePath(shortLinkBaseUrl) && !isSafeAbsoluteHttpUrl(shortLinkBaseUrl)) throw new Error("The session bootstrap contains an invalid short-link base URL.");
+	if (shortLinkBaseUrl && !isSafeRootRelativePath(shortLinkBaseUrl) && !isSafeAbsoluteHttpUrl(shortLinkBaseUrl)) throw new Error("The session bootstrap contains an invalid short-link base URL.");
+	const publications = (session.capabilities as { publications?: unknown }).publications;
+	if (publications !== undefined && publications !== "alias-publications-v1") throw new Error("The session bootstrap contains unsupported publication capability metadata.");
+	const publicationBaseUrl = session.publicationBaseUrl === undefined ? undefined : requiredString(session.publicationBaseUrl, "publication base URL");
+	if ((publications === undefined) !== (publicationBaseUrl === undefined)) throw new Error("The session bootstrap contains incomplete publication capability metadata.");
+	if (publicationBaseUrl && !isSafeRootRelativePath(publicationBaseUrl) && !isSafeAbsoluteHttpUrl(publicationBaseUrl)) throw new Error("The session bootstrap contains an invalid publication base URL.");
   return {
     ...authority,
     storageId: requiredString(session.storageId, "storage ID"),
@@ -90,8 +97,9 @@ export function parseAuthSession(value: unknown): AuthSession {
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),
       ...(user.avatarUrl === undefined ? {} : { avatarUrl: optionalString(user.avatarUrl, "avatar URL") }),
     },
-    capabilities: { blobTransfer: "direct-b2-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}) },
-    ...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
+		capabilities: { blobTransfer: "direct-b2-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
+		...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
+		...(publicationBaseUrl ? { publicationBaseUrl } : {}),
   };
 }
 

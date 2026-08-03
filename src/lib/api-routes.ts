@@ -1,4 +1,5 @@
 const desktopBase = (desktopId: string) => `/api/desktops/${encodeURIComponent(desktopId)}`;
+const publicDesktopBase = (desktopAlias: string, itemAlias?: string) => `/api/public/desktops/${encodeURIComponent(desktopAlias)}${itemAlias ? `/${encodeURIComponent(itemAlias)}` : ""}`;
 
 export const API_ROUTES = {
   authSession: "/api/auth/session",
@@ -30,11 +31,11 @@ export const API_ROUTES = {
   desktopMember: (desktopId: string, userId: string) => `${desktopBase(desktopId)}/members/${encodeURIComponent(userId)}`,
   desktopInvitation: (desktopId: string, email: string) => `${desktopBase(desktopId)}/invitations/${encodeURIComponent(email)}`,
   desktopPublication: (desktopId: string) => `${desktopBase(desktopId)}/publication`,
-  desktopPublicationRotate: (desktopId: string) => `${desktopBase(desktopId)}/publication/rotate`,
-  publicDesktop: (token: string) => `/api/public/desktops/${encodeURIComponent(token)}`,
-  publicDesktopContent: (token: string, id: string) => `/api/public/desktops/${encodeURIComponent(token)}/entries/${encodeURIComponent(id)}/content`,
-  publicDesktopContentAccess: (token: string, id: string, revision: number) => `/api/public/desktops/${encodeURIComponent(token)}/entries/${encodeURIComponent(id)}/content-access?revision=${encodeURIComponent(String(revision))}`,
-  publicThemePackageAccess: (token: string, id: string, revision: number) => `/api/public/desktops/${encodeURIComponent(token)}/themes/${encodeURIComponent(id)}/package-access?revision=${encodeURIComponent(String(revision))}`,
+  desktopItemPublication: (desktopId: string, entryId: string) => `${desktopBase(desktopId)}/publication/items/${encodeURIComponent(entryId)}`,
+  publicDesktop: (desktopAlias: string, itemAlias?: string) => publicDesktopBase(desktopAlias, itemAlias),
+  publicDesktopContent: (desktopAlias: string, itemAlias: string | undefined, id: string) => `${publicDesktopBase(desktopAlias, itemAlias)}/entries/${encodeURIComponent(id)}/content`,
+  publicDesktopContentAccess: (desktopAlias: string, itemAlias: string | undefined, id: string, revision: number) => `${publicDesktopBase(desktopAlias, itemAlias)}/entries/${encodeURIComponent(id)}/content-access?revision=${encodeURIComponent(String(revision))}`,
+  publicThemePackageAccess: (desktopAlias: string, id: string, revision: number) => `${publicDesktopBase(desktopAlias)}/themes/${encodeURIComponent(id)}/package-access?revision=${encodeURIComponent(String(revision))}`,
   entryTransfers: "/api/entry-transfers",
   events: "/api/events",
   health: "/api/health",

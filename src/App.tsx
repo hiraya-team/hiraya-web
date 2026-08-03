@@ -93,6 +93,7 @@ import { TrashWindow } from "./components/TrashWindow";
 import { PanelDialog } from "./components/PanelDialog";
 import { ConfirmationDialog, type ConfirmationRequest } from "./components/ConfirmationDialog";
 import { SharingDialog } from "./components/SharingDialog";
+import { PublishDialog } from "./components/PublishDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
 import { outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { TrashItem } from "./lib/contracts";
@@ -280,6 +281,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(false);
   const [sharingOpen, setSharingOpen] = useState(false);
+  const [publishEntryId, setPublishEntryId] = useState<string | null>(null);
   const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
   const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
   const [storeLoading, setStoreLoading] = useState(false);
@@ -421,6 +423,7 @@ function App({ session }: { session: AuthSession | null }) {
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
   const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
   const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "account-short-links-v1");
+  const publicationsAvailable = Boolean(session?.capabilities.publications === "alias-publications-v1");
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
   const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
@@ -504,7 +507,7 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
-  const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || confirmation || contextMenu || appDialogRequests.length);
+  const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
 
   const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -4556,6 +4559,7 @@ function App({ session }: { session: AuthSession | null }) {
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
+          onPublish={contextMenuEntries.length === 1 && canManage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}
           onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => ["partial", "online-only"].includes(offlineModel.entries[entry.id]?.status)) ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
           onRemoveOfflineCopy={
             syncStatus !== "local" &&
@@ -4857,6 +4861,7 @@ function App({ session }: { session: AuthSession | null }) {
           }}
         />
       )}
+      {publishEntryId && activeDesktop?.capabilities.manage && entries.find((entry) => entry.id === publishEntryId) && <PublishDialog desktop={activeDesktop} entry={entries.find((entry) => entry.id === publishEntryId)!} onClose={() => setPublishEntryId(null)} />}
       {confirmation && <ConfirmationDialog {...confirmation} onClose={resolveConfirmation} />}
       {showGettingStarted && <GettingStartedDialog local={syncStatus === "local"} installState={installState} onInstall={() => void installPwa()} onClose={() => void closeGettingStarted()} />}
     </main>

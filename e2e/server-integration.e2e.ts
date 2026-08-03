@@ -6,6 +6,8 @@ const onlineFolder = "E2E cross-browser folder";
 const offlineFolder = "E2E persisted offline folder";
 const sandboxRuntimeFile = "E2E sandbox runtime.txt";
 const mediaFile = "E2E direct preview.wav";
+const publicDesktopAlias = "e2e-public-desk";
+const publicItemAlias = "public-folder";
 
 function wavFile(byteLength = 2 * 1024 * 1024) {
   const dataLength = byteLength - 44;
@@ -128,6 +130,38 @@ async function primary(browser: Browser) {
   });
   expect(staleConflict).toMatchObject({ first: 200, stale: 409, body: { code: "revision_conflict", conflict: { resourceKind: "layout" } } });
 
+  const publication = await first.evaluate(async ({ folderName, desktopAlias, itemAlias }) => {
+    const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}`, { cache: "no-store" }).then((response) => response.json()) as { id: string; entries: Array<{ id: string; name: string }> };
+    const folder = desktop.entries.find((entry) => entry.name === folderName);
+    if (!folder) throw new Error("public folder was not found");
+    const mutate = (path: string, body: unknown) => fetch(path, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Hiraya-Client-ID": "server-e2e-publication", "X-Hiraya-Operation-ID": crypto.randomUUID() },
+      body: JSON.stringify(body),
+    });
+    const desktopResponse = await mutate(`/api/desktops/${desktop.id}/publication`, { alias: desktopAlias, shareEntire: false });
+    const itemResponse = await mutate(`/api/desktops/${desktop.id}/publication/items/${folder.id}`, { alias: itemAlias });
+    return { desktop: desktopResponse.status, item: itemResponse.status };
+  }, { folderName: onlineFolder, desktopAlias: publicDesktopAlias, itemAlias: publicItemAlias });
+  expect(publication).toEqual({ desktop: 200, item: 200 });
+
+  const anonymousContext = await browser.newContext();
+  const anonymous = await anonymousContext.newPage();
+  const retired = await anonymous.goto("/shared/old-public-token");
+  expect(retired?.status()).toBe(404);
+  expect(await retired?.text()).not.toContain("<!doctype html>");
+  await anonymous.goto(`/r/${publicDesktopAlias}/${publicItemAlias}`);
+  await expect(anonymous).toHaveURL(`/published/${publicDesktopAlias}/${publicItemAlias}`);
+  await expect(anonymous.getByRole("dialog", { name: onlineFolder })).toBeVisible();
+  await expect(anonymous.getByText(sandboxRuntimeFile, { exact: true })).toBeHidden();
+  await expect.poll(() => anonymous.evaluate(async ({ desktopAlias, itemAlias }) => {
+    const response = await fetch(`/api/public/desktops/${desktopAlias}/${itemAlias}`, { cache: "no-store", credentials: "omit" });
+    const body = await response.json() as { entries: Array<{ name: string }> };
+    return body.entries.map((entry) => entry.name);
+  }, { desktopAlias: publicDesktopAlias, itemAlias: publicItemAlias })).toEqual([onlineFolder]);
+  await anonymousContext.close();
+
   await Promise.all([firstContext.close(), secondContext.close()]);
 }
 
@@ -137,6 +171,14 @@ async function afterRestart(browser: Browser) {
   await expect(page.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible();
   await expect(page.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible();
   await context.close();
+
+  const anonymousContext = await browser.newContext();
+  const anonymous = await anonymousContext.newPage();
+  await anonymous.goto(`/r/${publicDesktopAlias}/${publicItemAlias}`);
+  await expect(anonymous).toHaveURL(`/published/${publicDesktopAlias}/${publicItemAlias}`);
+  await expect(anonymous.getByRole("dialog", { name: onlineFolder })).toBeVisible();
+  await expect(anonymous.getByText(sandboxRuntimeFile, { exact: true })).toBeHidden();
+  await anonymousContext.close();
 }
 
 test("server-backed authentication, convergence, replay, conflict, and restart persistence", async ({ browser }) => {
