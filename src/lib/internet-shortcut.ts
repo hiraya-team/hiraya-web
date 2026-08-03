@@ -6,9 +6,15 @@ export type InternetShortcut = {
   scheme: string;
 };
 
+export const INTERNET_SHORTCUT_MIME_TYPE = "application/internet-shortcut";
+
 export function parseShortcutUrl(value: string): InternetShortcut {
   const url = value.trim();
   if (!url || !ABSOLUTE_URL.test(url)) throw new Error("Enter a complete URL including its scheme, such as https://.");
+  if ([...url].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint < 32 || codePoint === 127;
+  })) throw new Error("Enter a URL without control characters.");
   try {
     new URL(url);
   } catch {
@@ -17,6 +23,17 @@ export function parseShortcutUrl(value: string): InternetShortcut {
   const scheme = url.slice(0, url.indexOf(":")).toLowerCase();
   if (BLOCKED_SCHEMES.has(scheme)) throw new Error(`The ${scheme}: scheme cannot be opened by Hiraya.`);
   return { url, scheme };
+}
+
+export function createInternetShortcut(value: string) {
+  const shortcut = parseShortcutUrl(value);
+  const hostname = new URL(shortcut.url).hostname;
+  const stem = [...(hostname || shortcut.scheme)].slice(0, 176).join("");
+  return {
+    ...shortcut,
+    name: `${stem}.url`,
+    content: `[InternetShortcut]\r\nURL=${shortcut.url}\r\n`,
+  };
 }
 
 export function parseInternetShortcut(content: string): InternetShortcut {

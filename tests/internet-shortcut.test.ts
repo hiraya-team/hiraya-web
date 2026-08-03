@@ -1,11 +1,23 @@
 import { describe, expect, test } from "bun:test";
 import {
+  createInternetShortcut,
   parseInternetShortcut,
   parseShortcutUrl,
 } from "../src/lib/internet-shortcut";
 import { fileCapabilities } from "../src/ui/file-capabilities";
 
 describe("internet shortcuts", () => {
+  test("creates a domain-named Windows Internet Shortcut", () => {
+    const shortcut = createInternetShortcut("  https://example.com/search?q=a=b  ");
+    expect(shortcut.name).toBe("example.com.url");
+    expect(shortcut.content).toBe("[InternetShortcut]\r\nURL=https://example.com/search?q=a=b\r\n");
+    expect(parseInternetShortcut(shortcut.content).url).toBe(shortcut.url);
+  });
+
+  test("uses the scheme when a custom URL has no hostname", () => {
+    expect(createInternetShortcut("mailto:user@example.com").name).toBe("mailto.url");
+  });
+
   test("parses BOM, case-insensitive sections, CRLF, and equals signs", () => {
     const shortcut = parseInternetShortcut("\uFEFF[internetshortcut]\r\nurl=https://example.com/search?q=a=b\r\n");
     expect(shortcut).toEqual({ url: "https://example.com/search?q=a=b", scheme: "https" });
@@ -27,6 +39,7 @@ describe("internet shortcuts", () => {
     expect(() => parseInternetShortcut("[InternetShortcut]\nURL=\n")).toThrow("complete URL");
     expect(() => parseShortcutUrl("example.com")).toThrow("complete URL");
     expect(() => parseShortcutUrl("https://exa mple.com")).toThrow("valid URL");
+    expect(() => parseShortcutUrl("https://example.com\nIconFile=unsafe")).toThrow("control characters");
   });
 
   test("recognizes URL shortcuts without relying on their MIME type", () => {

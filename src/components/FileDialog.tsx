@@ -15,8 +15,9 @@ type Props = {
 
 export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, trashSupported = true, restoreFocus }: Props) {
   const creatingFile = dialog.type === "create-file";
+  const creatingShortcut = dialog.type === "create-shortcut";
   const creatingFolder = dialog.type === "create-folder";
-  const [name, setName] = useState(creatingFile ? "untitled.txt" : creatingFolder ? "New folder" : entry?.name ?? "");
+  const [name, setName] = useState(creatingFile ? "untitled.txt" : creatingShortcut ? dialog.name : creatingFolder ? "New folder" : entry?.name ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -39,7 +40,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
 
   const noun = entry?.kind === "folder" || creatingFolder ? "folder" : "file";
   const deleteLabel = trashSupported ? "Move to Trash" : "Delete permanently";
-  const title = creatingFile ? "New text file" : creatingFolder ? "New folder" : dialog.type === "rename" ? `Rename ${noun}` : entryCount > 1 ? `${deleteLabel} (${entryCount} items)` : `${deleteLabel}: ${noun}`;
+  const title = creatingFile ? "New text file" : creatingShortcut ? "Paste link" : creatingFolder ? "New folder" : dialog.type === "rename" ? `Rename ${noun}` : entryCount > 1 ? `${deleteLabel} (${entryCount} items)` : `${deleteLabel}: ${noun}`;
 
   return (
     <div ref={backdropRef} className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
@@ -84,7 +85,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
           <div className="dialog-actions">
             <button className="button button--quiet" type="button" onClick={onClose} disabled={submitting} autoFocus={dialog.type === "delete"}>Cancel</button>
             <button className={`button ${dialog.type === "delete" ? "button--danger" : "button--primary"}`} type="submit" disabled={submitting}>
-              {submitting ? (dialog.type === "delete" ? trashSupported ? "Moving..." : "Deleting..." : "Saving...") : creatingFile ? "Create file" : creatingFolder ? "Create folder" : dialog.type === "rename" ? "Rename" : deleteLabel}
+              {submitting ? (dialog.type === "delete" ? trashSupported ? "Moving..." : "Deleting..." : creatingShortcut ? "Pasting..." : "Saving...") : creatingFile ? "Create file" : creatingShortcut ? "Create shortcut" : creatingFolder ? "Create folder" : dialog.type === "rename" ? "Rename" : deleteLabel}
             </button>
           </div>
         </form>
