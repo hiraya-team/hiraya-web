@@ -157,7 +157,7 @@ export function SharingDialog({
   return (
     <div
       ref={backdropRef}
-      className="sharing-dialog__backdrop"
+      className="modal-backdrop"
       role="presentation"
       onPointerDown={(event) => {
         if (!busy && event.target === event.currentTarget) onClose();
@@ -165,14 +165,14 @@ export function SharingDialog({
     >
       <section
         ref={dialogRef}
-        className="sharing-dialog"
+        className="file-window sharing-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="sharing-title"
         tabIndex={-1}
         aria-busy={busy !== "" || undefined}
       >
-        <header>
+        <header className="window-header">
           <div>
             <span className="window-kicker">Access and publication</span>
             <h2 id="sharing-title">Share {desktop.name}</h2>

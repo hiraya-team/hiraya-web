@@ -100,7 +100,7 @@ export function PublishDialog({
   return (
     <div
       ref={backdropRef}
-      className="sharing-dialog__backdrop"
+      className="modal-backdrop"
       role="presentation"
       onPointerDown={(event) => {
         if (!busy && event.target === event.currentTarget) onClose();
@@ -108,14 +108,14 @@ export function PublishDialog({
     >
       <section
         ref={dialogRef}
-        className="sharing-dialog publish-dialog"
+        className="file-window sharing-dialog publish-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="publish-title"
         tabIndex={-1}
         aria-busy={busy || undefined}
       >
-        <header>
+        <header className="window-header">
           <div>
             <h2 id="publish-title">Publish {entry.name}</h2>
             <span className="window-kicker">Public · Read only</span>

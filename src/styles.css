@@ -162,11 +162,8 @@
   color: rgba(255, 255, 255, 0.76);
 }
 
-.sharing-dialog__backdrop { position: fixed; z-index: var(--layer-modal); inset: 0; display: grid; padding: 18px; place-items: center; background: rgb(4 10 12 / 62%); backdrop-filter: blur(8px); }
-.sharing-dialog { display: flex; width: min(760px, 100%); max-height: min(820px, calc(100dvh - 36px)); flex-direction: column; overflow: hidden; border: 1px solid var(--theme-border, rgb(255 255 255 / 14%)); border-radius: 18px; color: var(--theme-text, #17211f); background: var(--theme-window, #f2f1eb); box-shadow: 0 28px 90px rgb(0 0 0 / 45%); }
-.sharing-dialog > header { display: flex; min-height: 70px; align-items: center; justify-content: space-between; padding: 12px 16px 12px 22px; border-bottom: 1px solid var(--theme-border, rgb(0 0 0 / 10%)); background: var(--theme-chrome, #e8e8e1); }
-.sharing-dialog h2, .sharing-dialog h3 { margin: 0; }
-.sharing-dialog h2 { font-size: 17px; }
+.sharing-dialog { display: flex; width: min(760px, 100%); max-height: min(820px, calc(100dvh - 36px)); flex-direction: column; }
+.sharing-dialog h3 { margin: 0; }
 .sharing-dialog__content { display: grid; gap: 22px; overflow-y: auto; padding: 22px; }
 .sharing-section { display: grid; gap: 14px; }
 .sharing-section + .sharing-section { padding-top: 20px; border-top: 1px solid var(--theme-border, rgb(0 0 0 / 10%)); }
@@ -222,17 +219,14 @@
 .public-icon:hover, .public-icon[aria-pressed="true"] { border-color: rgb(255 255 255 / 16%); background: rgb(255 255 255 / 12%); }
 .public-icon span { width: 100%; overflow: hidden; font-size: 10px; line-height: 1.25; text-align: center; text-overflow: ellipsis; }
 .public-error { color: white; }
-.large-download-gate { position: relative; display: grid; width: min(420px, 100%); gap: 14px; padding: 28px; border: 1px solid var(--theme-border, rgb(255 255 255 / 14%)); border-radius: 18px; color: var(--theme-text, #17211f); background: var(--theme-window, #f2f1eb); box-shadow: 0 24px 80px rgb(0 0 0 / 45%); text-align: center; }
-.large-download-gate > .icon-button { position: absolute; top: 10px; right: 10px; }
+.large-download-gate { width: min(420px, 100%); }
+.large-download-gate__content { display: grid; gap: 14px; padding: 28px; text-align: center; }
 .large-download-gate__icon { display: grid; width: 50px; height: 50px; margin: 0 auto; place-items: center; border-radius: 15px; color: var(--theme-accent-text, #17211f); background: var(--theme-accent, #dca846); }
-.large-download-gate h2, .large-download-gate p { margin: 0; }
-.large-download-gate h2 { font-size: 18px; }
+.large-download-gate p { margin: 0; }
 .large-download-gate p { color: var(--theme-text-muted, #6f7674); font-size: 12px; line-height: 1.55; }
 .large-download-gate a { display: inline-flex; gap: 7px; align-items: center; justify-content: center; text-decoration: none; }
 
 @media (max-width: 620px) {
-  .sharing-dialog__backdrop { padding: 0; align-items: end; }
-  .sharing-dialog { width: 100%; max-height: calc(100dvh - 28px); border-radius: 18px 18px 0 0; }
   .sharing-dialog__content { padding: 16px; }
   .sharing-invite { grid-template-columns: minmax(0, 1fr) 110px; }
   .sharing-invite label:first-child { grid-column: 1 / -1; }
@@ -1400,7 +1394,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--layer-modal);
   display: grid;
   padding: 20px;
   place-items: center;
@@ -3995,10 +3989,6 @@ button.app-picker__disclosure { cursor: pointer; }
 .file-window:not(.file-window--embedded),
 .settings-window:not(.settings-window--embedded) { box-shadow: var(--theme-elevation-3), inset 0 var(--theme-border-width) 0 color-mix(in srgb, var(--theme-window) 75%, transparent); }
 .app-window[data-focused] { box-shadow: var(--theme-elevation-3), 0 0 0 var(--theme-border-width) var(--theme-focus-window), inset 0 var(--theme-border-width) 0 color-mix(in srgb, var(--theme-window) 75%, transparent); }
-.utility-panel-dialog,
-.command-palette,
-.onboarding-dialog { box-shadow: var(--theme-elevation-3); }
-
 .settings-row__icon,
 .settings-section__heading,
 .folder-explorer__row svg,
@@ -4084,11 +4074,9 @@ button.app-picker__disclosure { cursor: pointer; }
 .command-palette,
 .onboarding-dialog {
   overflow-x: hidden;
-  color: var(--theme-text);
-  background: var(--theme-elevated);
 }
 .utility-panel-dialog { scrollbar-gutter: stable; }
-.utility-panel-dialog > :not(.utility-panel-dialog__close) { min-width: 0; }
+.utility-panel-dialog > * { min-width: 0; }
 .offline-storage-panel,
 .help-panel { background: var(--theme-elevated); }
 .offline-storage-panel { padding: 22px; }
@@ -4103,7 +4091,7 @@ button.app-picker__disclosure { cursor: pointer; }
 
 .help-panel { min-height: min(620px, calc(100dvh - 96px)); }
 .utility-panel-dialog:has(.help-panel) { width: min(980px, calc(100vw - 28px)); height: min(720px, calc(100dvh - 48px)); overflow: hidden; }
-.utility-panel-dialog:has(.help-panel) .help-panel { height: 100%; min-height: 0; }
+.utility-panel-dialog:has(.help-panel) .help-panel { height: auto; min-height: 0; flex: 1; }
 .help-panel__navigation { height: 100%; overflow-y: auto; background: var(--theme-window-muted); }
 .help-panel__navigation header p,
 .help-panel__navigation nav small,
@@ -4142,11 +4130,10 @@ button.app-picker__disclosure { cursor: pointer; }
 .public-icon:hover,
 .public-icon[aria-pressed="true"] { border-color: color-mix(in srgb, var(--theme-desktop-text) 28%, transparent); background: color-mix(in srgb, var(--theme-selection) 28%, transparent); }
 .public-error { color: var(--theme-chrome-text); background: var(--theme-chrome); }
-.large-download-gate { color: var(--theme-text); background: var(--theme-elevated); box-shadow: var(--theme-elevation-3); }
 
 .notification-summary { color: var(--theme-text-muted); font-size: 12px; }
 
-.desktop-shell:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu) .desktop-minimap { opacity: 0; pointer-events: none; }
+.desktop-shell:has(.modal-backdrop, .context-menu) .desktop-minimap { opacity: 0; pointer-events: none; }
 
 @media (max-width: 620px) {
   .public-menu__desktop { display: none; }
@@ -4767,13 +4754,8 @@ button.app-picker__disclosure { cursor: pointer; }
   min-height: 0;
   max-height: min(720px, calc(100dvh - 48px));
   overflow: auto;
-  border: var(--theme-border-width) solid var(--theme-border);
-  border-radius: var(--theme-radius);
-  color: var(--theme-text);
-  background: var(--theme-window);
-  box-shadow: var(--theme-shadow);
 }
-.utility-panel-dialog__close { position: absolute; z-index: 2; top: 12px; right: 12px; }
+.utility-panel-dialog > .window-header { position: sticky; z-index: 3; top: 0; flex: 0 0 auto; }
 
 .sync-issues-panel,
 .all-windows-panel,
@@ -4822,8 +4804,8 @@ button.app-picker__disclosure { cursor: pointer; }
 
 .command-palette-backdrop { z-index: var(--layer-command); }
 .command-palette { width: min(680px, calc(100vw - 28px)); }
-.command-palette__header { display: flex; align-items: center; gap: 9px; padding: 12px; border-bottom: var(--theme-border-width) solid var(--theme-border); }
-.command-palette__header input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--theme-text); background: transparent; font: inherit; font-size: 15px; }
+.command-palette__search { display: flex; align-items: center; gap: 9px; padding: 12px; border-bottom: var(--theme-border-width) solid var(--theme-border); }
+.command-palette__search input { min-width: 0; flex: 1; border: 0; outline: 0; color: var(--theme-text); background: transparent; font: inherit; font-size: 15px; }
 .command-palette__scope { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 14px; border-bottom: var(--theme-border-width) solid var(--theme-border); color: var(--theme-text-muted); font-size: 11px; }
 .command-palette__scope label { display: flex; align-items: center; gap: 7px; color: var(--theme-text); }
 .command-palette__warning { margin: 0; padding: 8px 14px; color: var(--theme-danger); background: var(--theme-danger-surface); font-size: 11px; }
@@ -4836,12 +4818,11 @@ button.app-picker__disclosure { cursor: pointer; }
 .command-palette__result[data-active] small { color: var(--theme-text); }
 
 .onboarding-backdrop { z-index: var(--layer-onboarding); }
-.onboarding-dialog { display: block; width: min(760px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius); color: var(--theme-text); background: var(--theme-window); box-shadow: var(--theme-shadow); }
+.onboarding-dialog { display: block; width: min(760px, calc(100vw - 28px)); max-height: calc(100dvh - 40px); overflow-y: auto; overscroll-behavior: contain; touch-action: pan-y; }
 .onboarding-dialog__content { min-height: 0; }
-.onboarding-dialog > header, .onboarding-dialog__content > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
-.onboarding-dialog > header { position: sticky; z-index: 1; top: 0; border-bottom: var(--theme-border-width) solid var(--theme-border); background: var(--theme-window); }
-.onboarding-dialog h2, .onboarding-dialog h3, .onboarding-dialog p { margin: 0; }
-.onboarding-dialog h2 { margin-top: 3px; font-size: 21px; }
+.onboarding-dialog__content > footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 20px; }
+.onboarding-dialog > header { position: sticky; z-index: 1; top: 0; }
+.onboarding-dialog h3, .onboarding-dialog p { margin: 0; }
 .onboarding-dialog__grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 16px 20px; }
 .onboarding-dialog__grid article { display: flex; align-items: flex-start; gap: 11px; min-height: 150px; padding: 15px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); background: var(--theme-window-muted); }
 .onboarding-dialog__grid article > svg { flex: 0 0 auto; color: var(--theme-accent); }
@@ -4865,10 +4846,7 @@ button.app-picker__disclosure { cursor: pointer; }
 
 /* Final responsive consistency layer. This intentionally owns only shared
    chrome, overlays, and controls that previously diverged between breakpoints. */
-.sharing-dialog__backdrop {
-  z-index: var(--layer-modal, 6300);
-  padding: var(--overlay-top, 18px) max(18px, env(safe-area-inset-right)) var(--overlay-bottom, 18px) max(18px, env(safe-area-inset-left));
-}
+.large-download-gate__backdrop { z-index: var(--layer-modal, 6300); }
 
 .utility-panel-backdrop { z-index: var(--layer-panel, 6000); }
 .command-palette-backdrop { z-index: var(--layer-command, 6100); }
@@ -4991,9 +4969,7 @@ button.app-picker__disclosure { cursor: pointer; }
   .desktop-shell[data-mobile-selection-toolbar="true"] .area-empty-state {
     max-height: calc(100% - 80px - max(12px, env(safe-area-inset-bottom)));
   }
-  .sharing-dialog__backdrop,
-  .utility-panel-backdrop,
-  .command-palette-backdrop {
+  .modal-backdrop {
     align-items: end;
     padding: var(--overlay-top) max(8px, env(safe-area-inset-right)) var(--overlay-bottom) max(8px, env(safe-area-inset-left));
   }
@@ -5001,7 +4977,6 @@ button.app-picker__disclosure { cursor: pointer; }
     max-height: calc(100dvh - var(--overlay-top));
     border-radius: var(--theme-radius) var(--theme-radius) max(var(--theme-radius-small), env(safe-area-inset-bottom)) max(var(--theme-radius-small), env(safe-area-inset-bottom));
   }
-  .sharing-dialog > header { min-height: 60px; padding: var(--space-2) var(--space-3) var(--space-2) var(--space-4); }
   .sharing-dialog__content { gap: var(--space-4); padding: var(--space-4) var(--space-3) max(var(--space-4), env(safe-area-inset-bottom)); }
   .sharing-invite input,
   .sharing-invite select,
@@ -5011,14 +4986,14 @@ button.app-picker__disclosure { cursor: pointer; }
   .large-download-gate .icon-button { min-height: var(--touch-target); }
   .sharing-dialog .icon-button,
   .large-download-gate .icon-button { min-width: var(--touch-target); }
-  .large-download-gate { padding: 28px max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
+  .large-download-gate__content { padding: 28px max(18px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom)) max(18px, env(safe-area-inset-left)); }
   .utility-panel-dialog,
   .command-palette {
     width: 100%;
     max-height: min(82dvh, calc(100dvh - var(--overlay-top) - var(--overlay-bottom)));
     border-radius: var(--theme-radius) var(--theme-radius) var(--theme-radius-small) var(--theme-radius-small);
   }
-  .command-palette__header input { font-size: 16px; }
+  .command-palette__search input { font-size: 16px; }
   .command-palette__results { max-height: min(60dvh, 580px); }
   .command-palette__scope { align-items: flex-start; flex-direction: column; }
   .command-palette__segments { width: 100%; }
@@ -5070,11 +5045,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .area-empty-state { background: color-mix(in srgb, var(--theme-chrome) 88%, transparent); }
 .app-window,
 .file-dialog,
-.utility-panel-dialog,
-.command-palette,
-.onboarding-dialog,
-.sharing-dialog,
-.large-download-gate,
+.file-window:not(.file-window--embedded),
 .desktop-switcher__panel,
 .mobile-header-menu__panel { background: var(--theme-elevated); backdrop-filter: none; }
 
@@ -5268,7 +5239,7 @@ button.app-picker__disclosure { cursor: pointer; }
   .public-menu__back span { display: none; }
 }
 
-.desktop-shell:not(:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu)) .desktop-minimap {
+.desktop-shell:not(:has(.modal-backdrop, .context-menu)) .desktop-minimap {
   opacity: 1;
 }
 
@@ -5314,6 +5285,23 @@ button.app-picker__disclosure { cursor: pointer; }
 
 /* Notifications stay in one menu-bar panel instead of covering desktop work. */
 .notification-center { position: relative; display: flex; align-items: center; }
+.copy-download-progress {
+  position: relative;
+  display: flex;
+  height: 32px;
+  max-width: min(240px, 28vw);
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px 3px;
+  border-radius: var(--radius-control);
+  color: #f6d79c;
+  background: rgba(231, 185, 100, 0.14);
+}
+.copy-download-progress > span { overflow: hidden; font-size: 11px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.copy-download-progress > progress { position: absolute; right: 8px; bottom: 4px; left: 8px; width: auto; height: 2px; overflow: hidden; border: 0; border-radius: 999px; accent-color: var(--theme-accent); background: rgba(255, 255, 255, .16); }
+.copy-download-progress > progress::-webkit-progress-bar { border-radius: inherit; background: rgba(255, 255, 255, .16); }
+.copy-download-progress > progress::-webkit-progress-value { border-radius: inherit; background: var(--theme-accent); }
+.copy-download-progress > progress::-moz-progress-bar { border-radius: inherit; background: var(--theme-accent); }
 .notification-center__trigger {
   position: relative;
   display: grid;
@@ -5390,6 +5378,8 @@ button.app-picker__disclosure { cursor: pointer; }
 }
 
 @media (max-width: 620px) {
+  .copy-download-progress { width: 32px; min-width: 32px; padding-inline: 8px; }
+  .copy-download-progress > span { display: none; }
   .notification-center__trigger { width: var(--touch-target); height: var(--touch-target); }
   .notification-center__badge { top: 4px; right: 3px; }
   .notification-center__panel { position: fixed; top: calc(44px + env(safe-area-inset-top) + 6px); right: max(8px, env(safe-area-inset-right)); left: max(8px, env(safe-area-inset-left)); width: auto; max-height: calc(100dvh - 58px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); }
@@ -5585,7 +5575,7 @@ button.app-picker__disclosure { cursor: pointer; }
   -webkit-backdrop-filter: blur(var(--theme-blur)) saturate(110%);
   pointer-events: auto;
 }
-.desktop-shell:has(.modal-backdrop, .sharing-dialog__backdrop, .context-menu) .desktop-minimap__body { pointer-events: none; }
+.desktop-shell:has(.modal-backdrop, .context-menu) .desktop-minimap__body { pointer-events: none; }
 .desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }
 .desktop-minimap__header {
   display: flex;

@@ -136,7 +136,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
 
   return <><div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
     <section ref={dialogRef} className="file-dialog app-picker" role="dialog" aria-modal="true" aria-labelledby="app-picker-title" tabIndex={-1}>
-      <header className="window-header"><h2 id="app-picker-title">{title}</h2><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
+      <header className="window-header"><div><span className="window-kicker">Hiraya</span><h2 id="app-picker-title">{title}</h2></div><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
       <div className="app-picker__content">
         {request.kind === "saveFile" && <label>File name<input autoFocus value={name} maxLength={180} onChange={(event) => setName(event.target.value)} /></label>}
         <div className="app-picker__tree" role="group" aria-label={request.kind === "openFile" ? "Files" : "Folders"}>

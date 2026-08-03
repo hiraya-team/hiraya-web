@@ -16,6 +16,7 @@ import { AppPickerDialog } from "./components/AppPickerDialog";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
+  createFile,
   createEntries,
   createDesktop as createDesktopMutation,
   createTextFile,
@@ -82,7 +83,7 @@ import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
-import { parseInternetShortcut } from "./lib/internet-shortcut";
+import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
 import { createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
 import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
@@ -121,7 +122,7 @@ import { createTrashNotification, dismissTrashNotification, updateTrashNotificat
 import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
 import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
-import { buildOfflineAvailability, type OfflineStorageInventory } from "./lib/offline-availability";
+import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
 import { AllWindowsPanel } from "./components/AllWindowsPanel";
@@ -269,6 +270,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
   const [activeEntryDownloadIds, setActiveEntryDownloadIds] = useState<ReadonlySet<string>>(new Set());
   const [fileTransfers, setFileTransfers] = useState<readonly FileTransferState[]>([]);
+  const [copyDownload, setCopyDownload] = useState<{ entryIds: ReadonlySet<string>; totalBytes: number } | null>(null);
   const [offlineBusy, setOfflineBusy] = useState(false);
   const [importProgress, setImportProgress] = useState<{ folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" } | null>(null);
   const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
@@ -337,6 +339,7 @@ function App({ session }: { session: AuthSession | null }) {
   const suppressMinimapClickRef = useRef(false);
   const suppressClickRef = useRef(false);
   const clipboardRef = useRef<ClipboardEntrySnapshot | null>(null);
+  const keyboardPasteRef = useRef(false);
   const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; additive: boolean; initial: string[] } | null>(null);
   const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
   const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
@@ -1160,7 +1163,7 @@ function App({ session }: { session: AuthSession | null }) {
         setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
         setDialog((current) => {
           if (!current) return null;
-          if (current.type === "create-file" || current.type === "create-folder") {
+          if (current.type === "create-file" || current.type === "create-shortcut" || current.type === "create-folder") {
             return current.parentId && !synced.entries.some((entry) => entry.id === current.parentId && entry.kind === "folder") ? null : current;
           }
           return current.type === "rename" ? (syncedIds.has(current.entryId) ? current : null) : current.entryIds.some((id) => syncedIds.has(id)) ? { ...current, entryIds: current.entryIds.filter((id) => syncedIds.has(id)) } : null;
@@ -1744,9 +1747,13 @@ function App({ session }: { session: AuthSession | null }) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
-        event.preventDefault();
+        keyboardPasteRef.current = true;
         const explorer = activeExplorer();
-        void beginPasteRef.current(explorer?.folderId ?? null);
+        window.setTimeout(() => {
+          if (!keyboardPasteRef.current) return;
+          keyboardPasteRef.current = false;
+          void beginPasteRef.current(explorer?.folderId ?? null);
+        });
       } else if (event.key === "Delete" && selectedIdsRef.current.length && canMutate) {
         event.preventDefault();
         openFileDialog({ type: "delete", entryIds: [...selectedIdsRef.current] });
@@ -1754,13 +1761,30 @@ function App({ session }: { session: AuthSession | null }) {
     }
     function onPaste(event: ClipboardEvent) {
       if (editableTarget(event.target) || !canMutate || shortcutsSuspended || transientMenuOpen()) return;
-      const files = Array.from(event.clipboardData?.files ?? []);
-      if (!files.length || !event.clipboardData) return;
+      if (!event.clipboardData) return;
+      const keyboardPaste = keyboardPasteRef.current;
+      keyboardPasteRef.current = false;
+      const files = Array.from(event.clipboardData.files);
       event.preventDefault();
       const explorer = activeExplorer();
-      void snapshotFromClipboardItems(event.clipboardData.items)
-        .then((snapshot) => (snapshot ? beginPasteRef.current(explorer?.folderId ?? null, undefined, snapshot) : handleImportRef.current(files, explorer?.folderId ?? null)))
-        .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
+      const parentId = explorer?.folderId ?? null;
+      if (files.length) {
+        void snapshotFromClipboardItems(event.clipboardData.items)
+          .then((snapshot) => (snapshot ? beginPasteRef.current(parentId, undefined, snapshot) : handleImportRef.current(files, parentId)))
+          .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
+        return;
+      }
+      if (Array.from(event.clipboardData.items).some((item) => isClipboardArchiveType(item.type))) {
+        void beginPasteRef.current(parentId);
+        return;
+      }
+      const clipboardText = event.clipboardData.getData("text/plain");
+      try {
+        const shortcut = createInternetShortcut(clipboardText);
+        openFileDialog({ type: "create-shortcut", parentId, url: shortcut.url, name: shortcut.name });
+      } catch {
+        if (keyboardPaste) void beginPasteRef.current(parentId);
+      }
     }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("paste", onPaste);
@@ -1787,7 +1811,7 @@ function App({ session }: { session: AuthSession | null }) {
         setActivePanel("search");
         return;
       }
-      if (((modifier && event.key.toLowerCase() === "w") || (event.altKey && event.key === "F4")) && focusedAppIdRef.current) {
+      if (modifier && event.shiftKey && !event.altKey && event.key.toLowerCase() === "x" && focusedAppIdRef.current) {
         event.preventDefault();
         void closeAppRef.current(focusedAppIdRef.current);
         return;
@@ -2290,9 +2314,15 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function handleDialogSubmit(name: string) {
     if (!dialog || !canMutate) return;
-    if (dialog.type === "create-file" || dialog.type === "create-folder") {
+    if (dialog.type === "create-file" || dialog.type === "create-shortcut" || dialog.type === "create-folder") {
       const parentId = dialog.parentId;
-      const created = dialog.type === "create-file" ? await createTextFile(name, parentId, dialog.position ?? positionFor(parentId)) : await createFolder(name, parentId, dialog.position ?? positionFor(parentId));
+      const position = dialog.position ?? positionFor(parentId);
+      if (dialog.type === "create-shortcut" && !name.toLowerCase().endsWith(".url")) throw new Error("A shortcut file name must end in .url.");
+      const created = dialog.type === "create-file"
+        ? await createTextFile(name, parentId, position)
+        : dialog.type === "create-shortcut"
+          ? await createFile(name, parentId, position, new Blob([createInternetShortcut(dialog.url).content], { type: INTERNET_SHORTCUT_MIME_TYPE }))
+          : await createFolder(name, parentId, position);
       fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);
@@ -3007,9 +3037,12 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function copySelection() {
     if (!selectedIdsRef.current.length) return;
+    const selectedIds = [...selectedIdsRef.current];
+    const uncachedFiles = offlineFilesUnderRoots(entries, selectedIds).filter((entry) => offlineModel.entries[entry.id]?.downloadBytes > 0);
+    setCopyDownload(uncachedFiles.length ? { entryIds: new Set(uncachedFiles.map((entry) => entry.id)), totalBytes: uncachedFiles.reduce((total, entry) => total + offlineModel.entries[entry.id].downloadBytes, 0) } : null);
     setError("");
     try {
-      const snapshot = await captureEntries(selectedIdsRef.current);
+      const snapshot = await captureEntries(selectedIds);
       clipboardRef.current = snapshot;
       setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot), true));
       if (navigator.clipboard?.write && "ClipboardItem" in window) {
@@ -3028,6 +3061,8 @@ function App({ session }: { session: AuthSession | null }) {
       setNotice(`${snapshot.selectedRootIds.length} ${snapshot.selectedRootIds.length === 1 ? "item" : "items"} copied`);
     } catch (copyError) {
       setError(copyError instanceof Error ? copyError.message : "The selected items could not be copied.");
+    } finally {
+      setCopyDownload(null);
     }
   }
   copySelectionRef.current = copySelection;
@@ -3642,7 +3677,7 @@ function App({ session }: { session: AuthSession | null }) {
       { id: "nudge-window", group: "Windows", label: "Move focused window within its area", keys: ["Alt", "Shift", "Arrow key"] },
       { id: "resize-window", group: "Windows", label: "Resize focused window", keys: ["Alt", "Ctrl", "Arrow key"] },
     ] : []),
-    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "W"] },
+    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "Shift", "X"] },
     { id: "dismiss", group: "Windows", label: "Dismiss the current menu or dialog", keys: ["Escape"] },
   ];
 
@@ -3880,6 +3915,7 @@ function App({ session }: { session: AuthSession | null }) {
             appNotifications={appNotifications}
             importProgress={importProgress}
             fileTransfers={fileTransfers}
+            copyDownload={copyDownload}
             showUpdateToast={showUpdateToast}
             updateApplying={updateApplying}
             updateBlocked={updateBlocked}
