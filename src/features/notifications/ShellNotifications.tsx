@@ -35,6 +35,7 @@ type Props = {
   appNotifications: readonly AppNotification[];
   importProgress: ImportProgress | null;
   fileTransfers: readonly FileTransferState[];
+  copyDownload: { entryIds: ReadonlySet<string>; totalBytes: number } | null;
   showUpdateToast: boolean;
   updateApplying: boolean;
   updateBlocked: boolean;
@@ -93,6 +94,14 @@ export function ShellNotifications(props: Props) {
   const itemById = new Map(items.map((item) => [item.id, item]));
   const orderedItems = itemOrderRef.current.map((id) => itemById.get(id)).filter((item): item is NotificationItem => item !== undefined);
   const total = itemIds.length;
+  const copyDownload = props.copyDownload;
+  const copyTransfers = copyDownload ? props.fileTransfers.filter((transfer) => transfer.direction === "download" && copyDownload.entryIds.has(transfer.entryId)) : [];
+  const copyAccessPending = copyTransfers.some((transfer) => transfer.phase === "access");
+  const copyDownloading = copyTransfers.some((transfer) => transfer.phase === "downloading");
+  const copyLabel = copyDownloading
+    ? `Downloading ${copyDownload?.entryIds.size === 1 ? "file" : `${copyDownload?.entryIds.size} files`} before copy`
+    : copyAccessPending ? "Preparing download before copy" : "Preparing copy";
+  const copyTransferredBytes = copyTransfers.reduce((total, transfer) => total + Math.min(transfer.transferredBytes, transfer.totalBytes), 0);
 
   useEffect(() => {
     const nextItems = new Set(itemIds);
@@ -131,6 +140,11 @@ export function ShellNotifications(props: Props) {
 
   return <>
     <div className="notification-center" ref={rootRef}>
+      {copyTransfers.length > 0 && <div className="copy-download-progress" role="status" aria-label={copyLabel}>
+        <SpinnerGap className="notification-card__spinner" size={16} aria-hidden="true" />
+        <span>{copyLabel}</span>
+        <progress max={Math.max(1, copyDownload?.totalBytes ?? 0)} value={copyAccessPending ? undefined : copyTransferredBytes} aria-label="Copy download progress" />
+      </div>}
       <button
         ref={triggerRef}
         className="notification-center__trigger"
