@@ -84,6 +84,37 @@ test("search launches installed apps", async ({ page }) => {
   await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
 
+test("action pill toggles installed app pins and adapts them for mobile", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  const appPins = page.getByRole("toolbar", { name: "Installed apps" });
+  const hide = page.getByRole("button", { name: "Hide actions and apps" });
+
+  await expect(fileActions).toBeVisible();
+  await expect(appPins.getByRole("button", { name: "Launch Text Editor" })).toBeVisible();
+  await hide.click();
+  const show = page.getByRole("button", { name: "Show actions and apps" });
+  await expect(show).toBeFocused();
+  await expect(fileActions).toBeHidden();
+  await expect(appPins).toBeHidden();
+  await show.click();
+  await appPins.getByRole("button", { name: "Launch Text Editor" }).click();
+  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+
+  const context = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });
+  const mobile = await context.newPage();
+  await openLocalDesktop(mobile);
+  const mobilePins = mobile.getByRole("toolbar", { name: "Installed apps" });
+  const mobileActions = mobile.getByRole("toolbar", { name: "File actions" });
+  await expect(mobilePins).toHaveCSS("flex-direction", "column");
+  const [pinsBounds, actionsBounds] = await Promise.all([mobilePins.boundingBox(), mobileActions.boundingBox()]);
+  expect(pinsBounds).not.toBeNull();
+  expect(actionsBounds).not.toBeNull();
+  expect(pinsBounds!.x).toBeGreaterThan(actionsBounds!.x + actionsBounds!.width / 2);
+  expect(Math.round(pinsBounds!.x + pinsBounds!.width)).toBe(382);
+  await context.close();
+});
+
 test("search combines commands with other results", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
