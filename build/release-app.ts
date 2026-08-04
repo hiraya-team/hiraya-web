@@ -18,9 +18,9 @@ export function catalogWithRelease(catalog: AppCatalog, kind: "store" | "system"
 }
 
 async function requireCompatibleRuntime(server: string) {
-  const response = await fetch(new URL("hiraya-app-runtime.json", server.endsWith("/") ? server : `${server}/`), { redirect: "error" });
+  const response = await fetch(new URL("api/health", server.endsWith("/") ? server : `${server}/`), { redirect: "error" });
   if (!response.ok) throw new Error(`Hiraya runtime compatibility could not be read (${response.status}).`);
-  const value = await response.json() as Record<string, unknown>;
+  const value = (await response.json() as { appRuntime?: Record<string, unknown> }).appRuntime ?? {};
   if (value.catalogSchema !== APP_CATALOG_SCHEMA_VERSION || value.manifestSchema !== 2 || value.uiRuntime !== 1 || value.protocolVersion !== APPS_PROTOCOL_VERSION) throw new Error("The target Hiraya runtime does not support this app release contract.");
 }
 
