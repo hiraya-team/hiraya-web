@@ -37,7 +37,7 @@ function formatBytes(value: number) {
 }
 
 function installedSource(app: InstalledApp) {
-  return app.source === "system" ? "Bundled system app" : app.source === "store" && app.sourceCatalogId === BUNDLED_STORE_CATALOG_ID ? "Hiraya App Store" : app.source === "store" ? "Administrator App Store" : "Desktop package";
+  return app.source === "system" ? "Trusted system app" : app.source === "store" && app.sourceCatalogId === BUNDLED_STORE_CATALOG_ID ? "Hiraya App Store" : app.source === "store" ? "Administrator App Store" : "Desktop package";
 }
 
 function installedTrust(app: InstalledApp) {

@@ -34,6 +34,7 @@ class MemoryDirectory {
   async removeEntry(name: string) {
     if (!this.files.delete(name) && !this.directories.delete(name)) throw new DOMException("Not found", "NotFoundError");
   }
+
 }
 
 describe("approved package archives", () => {

@@ -39,9 +39,11 @@ const base = {
 
 const todoPackage: StorePackage = {
   source: "bundled",
+  kind: "store",
   archivePath: "app-store/todo.hiraya.app",
   digest: "b".repeat(64),
   catalogId: "hiraya-app-store",
+  catalogRevision: 0,
   desktopId: "bundled-app-store",
   contentRevision: 1,
   entry: { id: "bundled:todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
@@ -54,7 +56,7 @@ describe("App Store", () => {
     const markup = renderToStaticMarkup(<AppStoreWindow {...base} />);
 
     expect(markup).toContain("Text Editor");
-    expect(markup).toContain("Bundled system app");
+    expect(markup).toContain("Trusted system app");
     expect(markup).toContain("Trusted by Hiraya");
     expect(markup).toContain("Reset data");
     expect(markup).toContain("Administrator store unavailable");

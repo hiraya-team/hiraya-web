@@ -1,4 +1,5 @@
 export const APPS_PROTOCOL_VERSION = 1 as const;
+export const APP_CATALOG_SCHEMA_VERSION = 1 as const;
 export const MAX_FILE_CHUNK_BYTES = 1024 * 1024;
 export const MAX_APP_FILE_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -43,6 +44,20 @@ export interface AppPackageInspection {
   compressedBytes: number;
   expandedBytes: number;
   files: ReadonlyMap<string, Uint8Array>;
+}
+
+export interface AppCatalogRelease {
+  kind: "store" | "system";
+  slug: string;
+  fileName: string;
+  digest: string;
+  size: number;
+  manifest: HirayaAppManifestV2;
+}
+
+export interface AppCatalog {
+  schemaVersion: 1;
+  releases: AppCatalogRelease[];
 }
 
 export interface AppManifestWindow {
@@ -387,6 +402,25 @@ export function parseManifestV2(value: unknown): HirayaAppManifestV2 {
     if (result.window.width < result.window.minWidth || result.window.height < result.window.minHeight) throw new TypeError("App window defaults must not be smaller than its minimums.");
   }
   return result;
+}
+
+export function parseAppCatalog(value: unknown): AppCatalog {
+  const catalog = record(value, "App catalog");
+  exact(catalog, ["schemaVersion", "releases"], [], "App catalog");
+  if (catalog.schemaVersion !== APP_CATALOG_SCHEMA_VERSION || !Array.isArray(catalog.releases)) throw new TypeError("App catalog schema is unsupported.");
+  const releases = catalog.releases.map((value) => {
+    const release = record(value, "App catalog release");
+    exact(release, ["kind", "slug", "fileName", "digest", "size", "manifest"], [], "App catalog release");
+    if (release.kind !== "store" && release.kind !== "system") throw new TypeError("App catalog release kind is invalid.");
+    if (typeof release.slug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(release.slug)) throw new TypeError("App catalog release slug is invalid.");
+    if (typeof release.fileName !== "string" || !/^[a-z0-9][a-z0-9.-]*\.hiraya\.app$/.test(release.fileName)) throw new TypeError("App catalog release file name is invalid.");
+    if (typeof release.digest !== "string" || !/^[a-f0-9]{64}$/.test(release.digest)) throw new TypeError("App catalog release digest is invalid.");
+    if (!Number.isSafeInteger(release.size) || Number(release.size) <= 0) throw new TypeError("App catalog release size is invalid.");
+    const kind: AppCatalogRelease["kind"] = release.kind;
+    return { kind, slug: release.slug, fileName: release.fileName, digest: release.digest, size: Number(release.size), manifest: parseManifestV2(release.manifest) };
+  });
+  if (new Set(releases.map(({ slug }) => slug)).size !== releases.length || new Set(releases.map(({ fileName }) => fileName)).size !== releases.length || new Set(releases.map(({ manifest }) => manifest.id)).size !== releases.length) throw new TypeError("App catalog releases must have unique slugs, file names, and app IDs.");
+  return { schemaVersion: APP_CATALOG_SCHEMA_VERSION, releases };
 }
 
 const themeKeys = ["mode", "background", "surface", "surfaceElevated", "text", "textMuted", "border", "accent", "accentText", "danger", "focus"] as const;

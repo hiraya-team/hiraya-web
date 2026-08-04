@@ -31,9 +31,9 @@ The frontend accepts only remote schema version 1. In synchronized mode it first
 
 A fresh synchronized browser discovers the server-created first empty desktop through the catalog and projects that desktop into its local cache. If the first catalog request is unavailable, it atomically creates a usable offline desktop and an unbound `create-desktop` record; the first successful catalog fetch binds and replays that record. The active desktop ID is tab-local `sessionStorage` state.
 
-## System Apps And Offline Storage
+## Runtime Apps And Offline Storage
 
-The build validates, packages, catalogs, and Workbox-precaches six trusted apps under `system-apps/`. They are available independently of desktop entries and provide default handlers for folders, text, Markdown, images, PDF, audio, video, and generic files. User-selected file associations and app-local data are browser/account-local rather than desktop-synchronized.
+The build includes five trusted system app fallbacks under `system-apps/`. A synchronized deployment can publish a strict schema-1 `hiraya.apps.json` and immutable `.hiraya.app` releases through its administrator App Store desktop. Runtime catalog releases replace the fallbacks after size, SHA-256, manifest, and runtime compatibility checks. Trusted system releases update automatically and are retained in OPFS for offline launch; ordinary App Store releases retain explicit per-browser approval. User-selected file associations and app-local data are browser/account-local rather than desktop-synchronized.
 
 The browser hashes the session `storageId` into a safe account namespace before loading the desktop or starting workers. The OPFS directory tree, SQLite pool and database, file and pending directories, content markers, workers, locks, preferences, and active desktop session key are all scoped by that namespace. OPFS schema version 5 migrates older versions in place, persists desktop roles so cached shared desktops remain read-only after an offline restart, stores source-aware app installs and normalized file associations, and preserves app storage across bundled app updates. Frontend-only mode makes no auth request and preserves its existing unscoped local storage contract. Logout preserves every account namespace. Synchronized builds remove the old unscoped server-cache layout once rather than migrating it.
 
@@ -59,4 +59,10 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
-The production build packages Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo into `dist/app-store`. Hiraya lists these first-party packages in **Applications** alongside any packages published through the deployment administrator's store desktop.
+The production build retains Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo as transition fallbacks in `dist/app-store`. Runtime releases with the same app IDs take precedence. To publish an app without rebuilding Hiraya, initialize a CLI synchronization root for the designated App Store desktop, then run:
+
+```sh
+bun run apps:release -- --server https://hiraya.example --store-root /path/to/app-store --kind store --slug calculator calculator.hiraya.app
+```
+
+The release command checks the target runtime contract, uploads the immutable package first, then activates it by updating `hiraya.apps.json`. Use `--kind system` for trusted system releases.

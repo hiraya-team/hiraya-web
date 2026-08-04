@@ -65,10 +65,10 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
   let pendingHost: { close(): void } | null = null;
   try {
     const blob = install.source === "system"
-      ? await fetch(systemAppArchiveUrl({ archivePath: install.archivePath })).then((response) => {
+      ? await readApprovedPackageArchive(install.digest).catch(() => fetch(systemAppArchiveUrl({ archivePath: install.archivePath })).then((response) => {
           if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
           return response.blob();
-        })
+        }))
       : install.source === "store"
         ? await readApprovedPackageArchive(install.digest)
       : await options.fileSync.readFile(install.packageEntryId);

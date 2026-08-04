@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
+  parseAppCatalog,
   parseFileHandle,
   parseLaunchContext,
   parseManifestV2,
@@ -46,6 +47,15 @@ describe("apps contracts", () => {
     expect(() => parseManifestV2({ ...manifest, window: { width: 900, height: 700, minWidth: 400, minHeight: 300, extra: 1 } })).toThrow("unsupported shape");
     expect(() => parseManifestV2({ ...manifest, window: { width: 900.5, height: 700, minWidth: 400, minHeight: 300 } })).toThrow("width");
     expect(() => parseManifestV2({ ...manifest, window: { width: 900, height: 700, minWidth: 400 } })).toThrow("unsupported shape");
+  });
+
+  test("strictly parses runtime app catalogs", () => {
+    const manifest = parseManifestV2({ schemaVersion: 2, uiRuntime: 1, id: "dev.hiraya.notes", name: "Notes", version: "1.2.0", entrypoint: "index.html", permissions: [] });
+    const release = { kind: "store", slug: "notes", fileName: "dev.hiraya.notes-1.2.0-aabbcc.hiraya.app", digest: "a".repeat(64), size: 123, manifest };
+    expect(parseAppCatalog({ schemaVersion: 1, releases: [release] })).toEqual({ schemaVersion: 1, releases: [release] });
+    expect(() => parseAppCatalog({ schemaVersion: 2, releases: [] })).toThrow("schema");
+    expect(() => parseAppCatalog({ schemaVersion: 1, releases: [release, { ...release, digest: "b".repeat(64) }] })).toThrow("unique");
+    expect(() => parseAppCatalog({ schemaVersion: 1, releases: [{ ...release, fileName: "../notes.hiraya.app" }] })).toThrow("file name");
   });
 
   test("brands only opaque typed handles", () => {
