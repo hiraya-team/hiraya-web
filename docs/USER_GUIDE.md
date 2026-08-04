@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
 - **Search everything together.** Open **Search** or press **Ctrl/⌘ K** to find apps, files, folders, open windows, and commands in one results list.
 - **Focus more clearly on dialogs.** Dialogs now blur the desktop or app behind them more strongly, making the active task easier to distinguish.
 - **Receive apps without a Hiraya update.** Administrators can now publish new applications and compatible updates independently. Ordinary app updates still wait for your approval in **Applications**, while trusted system apps update automatically and remain available offline.

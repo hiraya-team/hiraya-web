@@ -147,6 +147,7 @@ import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { systemInstallFromCatalog, systemInstallMatchesCatalog, useAppPlatform } from "./features/app-management/controller";
 import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
+import { sandboxWindowOptions } from "./ui/app-window-sizing";
 import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
 import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
@@ -3421,7 +3422,7 @@ function App({ session }: { session: AuthSession | null }) {
     const segment = projectLogicalPosition(app.bounds, size).segment;
     const restored = restoredWindowBoundsRef.current.get(id);
     const maximized = appIsMaximized(app);
-    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ?? { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
+    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ? sandboxWindowOptions(app.package.manifest.window, activeTheme) : { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
     const fallback = initialWindowBounds(size, fallbackOptions);
     const bounds = maximized ? (restored ?? { ...fallback, ...restoreLogicalPosition(fallback, segment, size) }) : { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, size), width: size.width, height: size.height };
     if (!maximized) restoredWindowBoundsRef.current.set(id, app.bounds);

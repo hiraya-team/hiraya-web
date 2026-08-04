@@ -79,7 +79,9 @@ test("search launches installed apps", async ({ page }) => {
   await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  await expect(editor).toBeVisible();
+  await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
 
 test("search combines commands with other results", async ({ page }) => {
