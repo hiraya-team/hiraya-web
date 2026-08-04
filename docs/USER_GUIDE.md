@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
 - **Receive apps without a Hiraya update.** Administrators can now publish new applications and compatible updates independently. Ordinary app updates still wait for your approval in **Applications**, while trusted system apps update automatically and remain available offline.
 - **Keep portable task lists in Todo.** In a synchronized installation, open **Applications** and install **Todo** from the App Store to add, prioritize, date, filter, complete, and safely save `.hiraya.todo` task lists. Todo and the other App Store apps share familiar Hiraya controls while keeping their specialized workflows.
 - **Resolve changed files in the Merge window.** When both this browser and the server changed a file, **Merge** combines matching or separate text edits automatically and clearly separates changes that still need a choice. You can also compare media, review details for binary files, or use **Keep both** to preserve both versions as separate files.
