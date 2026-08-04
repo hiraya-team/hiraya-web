@@ -31,6 +31,8 @@ async function dragPointerTo(page: Page, source: Locator, clientX: number, clien
   await page.mouse.up();
 }
 
+const pngFile = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
   await openLocalDesktop(page);
   const search = page.getByRole("button", { name: "Search apps, files, windows, and commands" });
@@ -209,6 +211,35 @@ test("local mutation persists through reload", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+});
+
+test("shows image thumbnails on the desktop and in folders", async ({ page }) => {
+  await openLocalDesktop(page);
+  const actions = page.getByRole("toolbar", { name: "File actions" });
+  const desktopName = `desktop-${Date.now()}.png`;
+  let chooser = page.waitForEvent("filechooser");
+  await actions.getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: desktopName, mimeType: "image/png", buffer: pngFile });
+
+  const desktopIcon = page.locator(".file-icon").filter({ hasText: desktopName });
+  await expect(desktopIcon.locator(".entry-thumbnail")).toHaveAttribute("src", /^blob:/);
+  await expect(desktopIcon.locator(".entry-thumbnail")).toHaveAttribute("data-loaded", "true");
+
+  await page.getByRole("region", { name: "Desktop desktop" }).click({ position: { x: 600, y: 300 } });
+  await expect(actions).toBeVisible();
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill("Pictures");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: "Pictures" }).dblclick();
+  const folder = page.getByRole("dialog", { name: "Pictures" });
+  const folderName = `folder-${Date.now()}.png`;
+  chooser = page.waitForEvent("filechooser");
+  await folder.getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: folderName, mimeType: "image/png", buffer: pngFile });
+
+  const folderRow = folder.locator(".folder-explorer__row").filter({ hasText: folderName });
+  await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("src", /^blob:/);
+  await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("data-loaded", "true");
 });
 
 test("opens an imported RTF document in the document viewer", async ({ page }) => {

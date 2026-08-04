@@ -4027,6 +4027,17 @@ button.app-picker__disclosure { cursor: pointer; }
 .sharing-member > .role-badge { color: var(--theme-accent-on-window); font-size: 12px; }
 
 .file-icon__art { position: relative; }
+.entry-thumbnail-trigger { position: absolute; inset: 0; pointer-events: none; }
+.entry-thumbnail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: max(4px, calc(var(--theme-radius-small) * .8));
+  object-fit: cover;
+  opacity: 0;
+}
+.entry-thumbnail[data-loaded] { opacity: 1; }
 .availability-badge {
   position: absolute;
   right: 1px;

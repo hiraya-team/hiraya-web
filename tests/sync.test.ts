@@ -1026,9 +1026,9 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
-  test("previews local and cached files as Blobs and uncached remote media by URL", async () => {
+  test("previews local and cached files as Blobs and uncached remote images by URL", async () => {
     const localState = desktopStateSnapshot();
-    localState.entries = [{ kind: "file", id: "file-1", name: "clip.mp4", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 20 }, mimeType: "video/mp4", size: 4 }];
+    localState.entries = [{ kind: "file", id: "file-1", name: "photo.png", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 20 }, mimeType: "image/png", size: 4 }];
     localState.sync.contentRevisions["file-1"] = 1;
     const local = new SyncEngine({ frontendOnly: true, storage: remoteStorage(localState) });
     await local.start("desk", { x: 0, y: 0 });
@@ -1037,10 +1037,12 @@ describe("canonical synchronization", () => {
 
     const storage = remoteStorage();
     const requests: string[] = [];
+    const remoteState = remoteDesktopState();
+    remoteState.entries[0] = { ...remoteState.entries[0], name: "photo.png", mimeType: "image/png" };
     const descriptor = { entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } };
     const fetchImpl = (async (input: RequestInfo | URL) => {
       requests.push(String(input));
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk") return Response.json(remoteState);
       if (String(input) === "/api/desktops/desk/entries/file-1/content-preview-access?revision=1") return Response.json(descriptor);
       if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json(descriptor);
       if (String(input) === descriptor.access.url) return new Response("note");

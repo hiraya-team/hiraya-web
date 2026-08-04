@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
+import { AvailabilityBadge, EntryArtwork, EntryIcon, type EntryPreviewSource } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
@@ -33,6 +33,7 @@ type Props = {
   offlineAvailability?: OfflineEntryAvailability;
   allowBrowserPinchZoom?: boolean;
   interactive?: boolean;
+  loadPreview?: (id: string) => Promise<EntryPreviewSource>;
 };
 
 type DragState = {
@@ -68,7 +69,7 @@ type DragState = {
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -399,7 +400,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onLostPointerCapture={(event) => { void finishDrag(event, true); }}
       >
         <span className="file-icon__art">
-          <EntryIcon entry={entry} size={43} />
+          <EntryArtwork entry={entry} size={43} loadPreview={loadPreview} />
           {offlineAvailability && <AvailabilityBadge availability={offlineAvailability} />}
         </span>
         <span className="file-icon__name">{entry.name}</span>

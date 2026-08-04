@@ -4339,6 +4339,7 @@ function App({ session }: { session: AuthSession | null }) {
                   key={entry.id}
                   entry={renderedEntry}
                   interactive={segmentInteractive}
+                  loadPreview={segmentInteractive ? previewFile : undefined}
                   offlineAvailability={offlineModel.entries[entry.id]}
                   selected={selectedIdSet.has(entry.id)}
                   onSelect={(event) =>
@@ -4504,6 +4505,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onImportFolder={chooseFolderImport}
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
                         offlineAvailability={offlineModel.entries}
+                        loadPreview={previewFile}
                         onMove={(entry, destination, point) => {
                           const items = selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
                           void (destination.desktop
