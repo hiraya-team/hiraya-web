@@ -38,15 +38,13 @@ const base = {
 };
 
 const todoPackage: StorePackage = {
-  source: "bundled",
+  source: "remote",
   kind: "store",
-  archivePath: "app-store/todo.hiraya.app",
-  digest: "b".repeat(64),
-  catalogId: "hiraya-app-store",
-  catalogRevision: 0,
-  desktopId: "bundled-app-store",
+  catalogId: "admin-catalog",
+  catalogRevision: 1,
+  desktopId: "admin-store",
   contentRevision: 1,
-  entry: { id: "bundled:todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
+  entry: { id: "admin-todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
 };
 
 const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", loading: false, error: "" };
@@ -70,9 +68,10 @@ describe("App Store", () => {
     expect(markup).toContain("Unavailable");
     expect(markup).toContain("Uninstall");
     expect(markup).toContain("disabled");
+    expect(markup).toContain("No apps published yet");
   });
 
-  test("offers first-party packages without an administrator store", () => {
+  test("offers administrator-published packages", () => {
     const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" packages={[todoView]} />);
 
     expect(markup).toContain("Todo");
@@ -81,8 +80,16 @@ describe("App Store", () => {
     expect(markup).not.toContain("No apps published yet");
   });
 
+  test("retains provenance for apps installed from the former bundled catalog", () => {
+    const installed: InstalledApp = { ...systemApp, source: "store", packageEntryId: "todo", archivePath: null, sourceCatalogId: "hiraya-app-store", sourceDesktopId: "bundled-app-store", sourceContentRevision: 1 };
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} />);
+
+    expect(markup).toContain("Hiraya App Store");
+    expect(markup).toContain("Published by Hiraya; approved in this browser");
+  });
+
   test("prefers an installed app's exact catalog when matching updates", () => {
-    const adminPackage: StorePackage = { ...todoPackage, source: "remote", catalogId: "admin-catalog", desktopId: "admin-store", contentRevision: 2, entry: { ...todoPackage.entry, id: "admin-todo" } };
+    const adminPackage: StorePackage = { ...todoPackage, contentRevision: 2 };
     const adminView: StorePackageView = { ...todoView, item: adminPackage };
     const installed: InstalledApp = {
       ...systemApp,
@@ -95,7 +102,7 @@ describe("App Store", () => {
       sourceContentRevision: adminPackage.contentRevision,
       manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo" },
     };
-    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[todoView, adminView]} />);
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[adminView]} />);
 
     expect(markup).toContain("Administrator App Store");
     expect(markup).not.toContain("Update available");

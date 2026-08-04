@@ -59,7 +59,7 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
-The production build retains Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo as transition fallbacks in `dist/app-store`. Runtime releases with the same app IDs take precedence. To publish an app without rebuilding Hiraya, initialize a CLI synchronization root for the designated App Store desktop, then run:
+Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo are released from `hiraya-team/hiraya-apps` and installed through the runtime App Store catalog. To publish an app without rebuilding Hiraya, initialize a CLI synchronization root for the designated App Store desktop, then run:
 
 ```sh
 bun run apps:release -- --server https://hiraya.example --store-root /path/to/app-store --kind store --slug calculator calculator.hiraya.app

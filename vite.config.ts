@@ -3,7 +3,6 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { seededDesktopPlugin } from "./build/seeded";
 import { systemAppsPlugin } from "./build/system-apps";
-import { storeAppsPlugin } from "./build/store-apps";
 import { navigationFallbackDenylist } from "./build/navigation";
 import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
 
@@ -23,7 +22,6 @@ export default defineConfig(({ mode }) => {
       appsUiRuntimePlugin(process.cwd()),
       seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
       systemAppsPlugin(process.cwd()),
-      storeAppsPlugin(process.cwd()),
       react(),
       VitePWA({
         useCredentials: true,
@@ -43,8 +41,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}", "app-store/*.hiraya.app"],
-          navigateFallbackDenylist: navigationFallbackDenylist(base),
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
+          navigateFallbackDenylist: navigationFallbackDenylist(),
         },
       }),
     ],

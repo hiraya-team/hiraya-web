@@ -155,7 +155,7 @@ import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
-import { appStoreDescriptorIsCurrent, bundledStorePackages, inspectStorePackage, loadStorePackages, storePackageKey, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
+import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
@@ -783,10 +783,10 @@ function App({ session }: { session: AuthSession | null }) {
       const generation = ++storeRefreshGenerationRef.current;
       if (active) {
         setStoreLoading(Boolean(store));
-        setStoreError("");
+        setStoreError(store ? "" : session ? "No administrator App Store is configured." : "The App Store requires a synchronized Hiraya account.");
       }
       try {
-        const packages = bundledStorePackages();
+        const packages: StorePackage[] = [];
         let managed = false;
         let storeDescriptor: AppStoreDescriptor | null = null;
         if (store) {
@@ -2901,9 +2901,9 @@ function App({ session }: { session: AuthSession | null }) {
         confirmLabel: approved ? "Approve update" : "Install",
       });
       if (!confirmed) return;
-      const remoteStore = item.source === "remote" ? desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store") : undefined;
-      const published = item.source === "bundled" ? bundledStorePackages() : remoteStore ? (await loadStorePackages(remoteStore)).packages : [];
-      if (!published.some((candidate) => storePackageKey(candidate) === key && (candidate.source !== "bundled" || item.source === "bundled" && candidate.digest === item.digest))) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
+      const remoteStore = desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store");
+      const published = remoteStore ? (await loadStorePackages(remoteStore)).packages : [];
+      if (!published.some((candidate) => storePackageKey(candidate) === key)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
       await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
       const install: InstalledApp = {
         appId: appPackage.manifest.id,
@@ -4162,16 +4162,12 @@ function App({ session }: { session: AuthSession | null }) {
     return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId) || storePackages.some((item) => item.kind === "system" && storeInspections.get(storePackageKey(item))?.status === "ready" && storeInspectionCacheRef.current.get(storePackageKey(item))?.inspection.manifest.id === appId);
   }
 
-  const remoteStoreAppIds = new Set(storePackages.flatMap((item) => {
-    const inspection = storeInspections.get(storePackageKey(item));
-    return item.source === "remote" && item.kind === "store" && inspection?.status === "ready" ? [inspection.value.inspection.manifest.id] : [];
-  }));
-  const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store" && (item.source === "remote" || !remoteStoreAppIds.has(storeInspections.get(storePackageKey(item))?.status === "ready" ? storeInspectionCacheRef.current.get(storePackageKey(item))!.inspection.manifest.id : ""))).map((item) => {
+  const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store").map((item) => {
     const inspection = storeInspections.get(storePackageKey(item));
     const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
     return inspection?.status === "ready"
       ? { item, name: inspection.value.inspection.manifest.name, description: inspection.value.inspection.manifest.description ?? "No description provided.", version: inspection.value.inspection.manifest.version, appId: inspection.value.inspection.manifest.id, loading: false, error: "" }
-      : { item, name: fallbackName, description: item.source === "bundled" ? "Published by Hiraya." : "Administrator-published Hiraya app.", version: null, appId: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
+      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
   });
   const storeUpdateCount = storePackages.filter((item) => item.kind === "store" && installedApps.some((app) => app.source === "store" && app.sourceCatalogId === item.catalogId && app.sourceDesktopId === item.desktopId && app.packageEntryId === item.entry.id && app.sourceContentRevision !== item.contentRevision)).length;
   const desktopChoices = desktops.filter(isDesktopSurface);

@@ -29,13 +29,12 @@ describe("canonical routes", () => {
   });
 
   test("leaves server-owned navigations to the server and handles desktop paths", () => {
-    const denied = (pathname: string) => navigationFallbackDenylist("/").some((pattern) => pattern.test(pathname));
-    for (const pathname of ["/api/health", "/assets/app.js", "/app-store/todo.hiraya.app", "/login", "/login?returnTo=%2Fdesktops%2Fdesk%2Fareas%2F0%2F0", "/register?token=invite", "/profile", "/logout", "/admin/accounts", "/shared/token", "/published/team-desk/roadmap", "/r/launch-notes"]) {
+    const denied = (pathname: string) => navigationFallbackDenylist().some((pattern) => pattern.test(pathname));
+    for (const pathname of ["/api/health", "/assets/app.js", "/login", "/login?returnTo=%2Fdesktops%2Fdesk%2Fareas%2F0%2F0", "/register?token=invite", "/profile", "/logout", "/admin/accounts", "/shared/token", "/published/team-desk/roadmap", "/r/launch-notes"]) {
       expect(denied(pathname)).toBeTrue();
     }
     expect(denied("/desktops/desk/areas/0/0/file/note")).toBeFalse();
     expect(denied("/desktops/app-store/areas/0/0")).toBeFalse();
-    expect(navigationFallbackDenylist("/hiraya/").some((pattern) => pattern.test("/hiraya/app-store/todo.hiraya.app"))).toBeTrue();
   });
 
   test("round-trips explorer, properties, settings, and signed area coordinates", () => {

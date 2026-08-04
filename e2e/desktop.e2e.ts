@@ -714,13 +714,8 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(appStore.getByRole("heading", { name: "Applications" })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Installed" })).toBeVisible();
   await expect(appStore.getByText("Text Editor", { exact: true })).toBeVisible();
-  const todoRelease = appStore.getByRole("listitem").filter({ hasText: "Todo" });
-  await expect(todoRelease).toBeVisible();
-  await todoRelease.getByRole("button", { name: "Install" }).click();
-  const approval = page.getByRole("alertdialog", { name: "Install Todo?" });
-  await expect(approval).toBeVisible();
-  await approval.getByRole("button", { name: "Install" }).click();
-  await expect(appStore.getByRole("listitem").filter({ hasText: "Todo" }).getByRole("button", { name: "Open" })).toBeVisible();
+  await expect(appStore.getByRole("heading", { name: "Administrator store unavailable" })).toBeVisible();
+  await expect(appStore.getByText("The App Store requires a synchronized Hiraya account.")).toBeVisible();
   await trigger.click();
   await expect(switcher.getByRole("button", { name: "Back to desktop" })).toBeVisible();
   await switcher.getByRole("button", { name: "Back to desktop" }).click();
