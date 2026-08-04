@@ -7,5 +7,11 @@
   "entrypoint": "index.html",
   "description": "A revision-safe plain text and source file editor.",
   "permissions": ["files:read", "files:write", "dialogs", "window", "commands", "theme", "storage"],
-  "fileTypes": ["text/*", ".txt", ".log", ".csv", ".css", ".html", ".js", ".json", ".ts", ".xml", ".yaml", ".yml"]
+  "fileTypes": ["text/*", ".txt", ".log", ".csv", ".css", ".html", ".js", ".json", ".ts", ".xml", ".yaml", ".yml"],
+  "window": {
+    "renderWidth": 818,
+    "renderHeight": 572,
+    "minWidth": 360,
+    "minHeight": 260
+  }
 }

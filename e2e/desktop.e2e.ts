@@ -62,7 +62,7 @@ test("close-window shortcut closes the focused window without claiming the empty
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toBeVisible();
@@ -79,27 +79,25 @@ test("search launches installed apps", async ({ page }) => {
   await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  await expect(editor).toBeVisible();
+  await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
 
-test("search separates commands behind the command prefix", async ({ page }) => {
+test("search combines commands with other results", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
   await page.keyboard.press("Control+k");
   const palette = page.getByRole("dialog", { name: /Search/ });
   const input = palette.locator("input");
-  const modes = palette.getByRole("group", { name: "Search mode" });
-  const commands = modes.getByRole("button", { name: "Commands" });
+  const scope = palette.getByRole("group", { name: "Search scope" });
+  const current = scope.getByRole("button", { name: "Current" });
 
-  await expect(input).toHaveValue("> ");
-  await expect(commands).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(async () => (await commands.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
-  await input.fill("> Settings");
-  await modes.getByRole("button", { name: "Current" }).click();
-  await expect(input).toHaveValue("Settings");
-  await expect(palette.getByRole("group", { name: "Commands" })).toHaveCount(0);
-  await commands.click();
-  await expect(input).toHaveValue("> Settings");
+  await expect(input).toHaveValue("");
+  await expect(current).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await current.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect(palette.getByRole("group", { name: "Commands" })).toBeVisible();
+  await input.fill("Settings");
   await expect(palette.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
@@ -118,7 +116,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
 
   await page.keyboard.press("Control+k");
   search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toHaveAttribute("data-focused", "true");
@@ -539,7 +537,7 @@ test("desktop wheel gestures switch one area while app scrolling stays native", 
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.dispatchEvent("wheel", { deltaY: 100 });

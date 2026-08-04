@@ -17,6 +17,9 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Find applications faster.** Search **Applications** by name, description, app ID, source, or version. Clear result counts, sorted listings, and improved empty and offline messages make the App Store easier to scan.
+- **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
+- **Search everything together.** Open **Search** or press **Ctrl/⌘ K** to find apps, files, folders, open windows, and commands in one results list.
+- **Focus more clearly on dialogs.** Dialogs now blur the desktop or app behind them more strongly, making the active task easier to distinguish.
 - **Receive apps without a Hiraya update.** Administrators can now publish new applications and compatible updates independently. Ordinary app updates still wait for your approval in **Applications**, while trusted system apps update automatically and remain available offline.
 - **Keep portable task lists in Todo.** In a synchronized installation, open **Applications** and install **Todo** from the App Store to add, prioritize, date, filter, complete, and safely save `.hiraya.todo` task lists. Todo and the other App Store apps share familiar Hiraya controls while keeping their specialized workflows.
 - **Resolve changed files in the Merge window.** When both this browser and the server changed a file, **Merge** combines matching or separate text edits automatically and clearly separates changes that still need a choice. You can also compare media, review details for binary files, or use **Keep both** to preserve both versions as separate files.
@@ -26,7 +29,6 @@ New user-facing features are listed newest first.
 - **Recognize dialogs at a glance.** Search, sharing, file choices, guides, and other dialogs now use the same title bar and backdrop while keeping controls tailored to each task.
 - **Paste links as shortcuts.** Copy a complete URL and paste it on the desktop or in an open folder to create a `.url` internet shortcut. The **Paste link** prompt suggests a domain-based file name before saving.
 - **See download progress while copying files.** Hiraya now shows live progress when a copy needs to download file content, so you can tell that the copy is still moving forward.
-- **Search files and commands separately.** Open Search and choose **Search** or **Commands** to focus the results on what you need.
 - **Open and manage apps in one place.** **Applications** now brings installed apps, administrator-published apps, available updates, launch controls, and app management together.
 - **Find settings by purpose.** Settings are grouped into clearer categories so related controls are easier to scan and locate.
 - **Create compact links you can share.** When enabled by your administrator, open **Settings > Sharing > Short Links** to create and manage account-wide redirect links.

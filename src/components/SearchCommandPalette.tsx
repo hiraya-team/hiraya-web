@@ -23,7 +23,6 @@ export type SearchPaletteApp = {
 };
 
 export type SearchCommandPaletteProps<Id extends CommandId> = {
-  initialQuery?: string;
   entries: readonly DesktopEntry[];
   activeDesktopId: string;
   activeDesktopName: string;
@@ -62,11 +61,9 @@ function ResultIcon({ category }: { category: SearchCategory }) {
   return <TerminalWindow size={18} weight="duotone" aria-hidden="true" />;
 }
 
-export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
-  const [query, setQuery] = useState(initialQuery);
-  const commandMode = query.startsWith("> ");
-  const searchQuery = commandMode ? query.slice(2) : query;
-  const deferredQuery = useDeferredValue(searchQuery);
+export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
+  const [query, setQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
   const [activeIndex, setActiveIndex] = useState(0);
   const [remoteResponse, setRemoteResponse] = useState<DesktopSearchResponse | null>(null);
   const [searching, setSearching] = useState(false);
@@ -87,7 +84,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
     setRemoteResponse(null);
     setSearchError("");
     setSearching(false);
-    if (commandMode || !searchAllDesktops || !allDesktopsAvailable || !online || query.trim().length < 2) return;
+    if (!searchAllDesktops || !allDesktopsAvailable || !online || query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       setSearching(true);
@@ -106,7 +103,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [allDesktopsAvailable, commandMode, online, onSearchAllDesktops, query, searchAllDesktops]);
+  }, [allDesktopsAvailable, online, onSearchAllDesktops, query, searchAllDesktops]);
 
   const activeResults: DesktopSearchResult[] = entries.map((entry) => ({
     authorityCatalogId: activeAuthorityCatalogId,
@@ -156,8 +153,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
       action: () => onRunCommand(command.id),
     })),
   ];
-  const modeItems = items.filter((item) => commandMode ? item.category === "commands" : item.category !== "commands");
-  const suggestedItems = deferredQuery || commandMode ? modeItems : [...modeItems.filter((item) => item.category === "apps").slice(0, 5), ...modeItems.filter((item) => item.category === "windows"), ...modeItems.filter((item) => item.category === "files" || item.category === "folders").slice(0, 5)];
+  const suggestedItems = deferredQuery ? items : [...items.filter((item) => item.category === "apps").slice(0, 5), ...items.filter((item) => item.category === "windows"), ...items.filter((item) => item.category === "files" || item.category === "folders").slice(0, 5), ...items.filter((item) => item.category === "commands")];
   const groups = filterAndGroupSearchItems(suggestedItems, deferredQuery);
   const results = groups.flatMap((group) => group.items);
   const selectedIndex = results.length === 0 ? -1 : Math.min(activeIndex, results.length - 1);
@@ -170,15 +166,8 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
   }
 
   function selectSearchMode(allDesktops: boolean) {
-    setQuery((value) => value.startsWith("> ") ? value.slice(2) : value);
     setActiveIndex(0);
     onSearchAllDesktopsChange(allDesktops);
-    queryRef.current?.focus();
-  }
-
-  function selectCommandMode() {
-    setQuery((value) => value.startsWith("> ") ? value : `> ${value}`);
-    setActiveIndex(0);
     queryRef.current?.focus();
   }
 
@@ -214,7 +203,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
           </button>
         </header>
         <div className="command-palette__search">
-          {commandMode ? <TerminalWindow size={20} aria-hidden="true" /> : <MagnifyingGlass size={20} aria-hidden="true" />}
+          <MagnifyingGlass size={20} aria-hidden="true" />
           <label className="sr-only" htmlFor={`${titleId}-query`} id={queryLabelId}>
             Search apps, files, folders, windows, and commands
           </label>
@@ -224,7 +213,7 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
             type="search"
             role="combobox"
             value={query}
-            placeholder={'Search Hiraya or enter "> " for commands'}
+            placeholder="Search Hiraya"
             autoComplete="off"
             autoFocus
             aria-autocomplete="list"
@@ -240,32 +229,29 @@ export function SearchCommandPalette<Id extends CommandId>({ initialQuery = "", 
           />
         </div>
         <div className="command-palette__scope">
-          <div className="command-palette__segments" role="group" aria-label="Search mode">
-            <button type="button" aria-pressed={!commandMode && !searchAllDesktops} onClick={() => selectSearchMode(false)}>
+          <div className="command-palette__segments" role="group" aria-label="Search scope">
+            <button type="button" aria-pressed={!searchAllDesktops} onClick={() => selectSearchMode(false)}>
               Current
             </button>
-            <button type="button" aria-pressed={!commandMode && searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide search across desktops." : undefined} onClick={() => selectSearchMode(true)}>
+            <button type="button" aria-pressed={searchAllDesktops} disabled={!allDesktopsAvailable} aria-describedby={scopeStatusId} title={!allDesktopsAvailable ? "This server does not provide search across desktops." : undefined} onClick={() => selectSearchMode(true)}>
               All desktops
-            </button>
-            <button type="button" aria-pressed={commandMode} aria-describedby={scopeStatusId} onClick={selectCommandMode}>
-              Commands
             </button>
           </div>
           <span id={scopeStatusId} role="status">
-            {commandMode ? "Commands use the current desktop state." : !allDesktopsAvailable ? "Search across desktops is unavailable on this server." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}
+            {!allDesktopsAvailable ? "Search across desktops is unavailable on this server." : searching ? "Searching server..." : searchAllDesktops && !online ? "Offline: cached results may be stale." : searchAllDesktops && remoteResponse?.truncated ? `Showing the first ${remoteResponse.limit} server results, merged with this live desktop.` : searchAllDesktops && remoteResponse ? "Server results, merged with this live desktop." : "This desktop is searched live."}
           </span>
         </div>
-        {!commandMode && searchError && (
+        {searchError && (
           <p className="command-palette__warning" role="alert">
             {searchError} Showing cached results, which may be stale.
           </p>
         )}
-        <div id={listId} className="command-palette__results" role="listbox" aria-label={commandMode ? "Command results" : "Search results"}>
+        <div id={listId} className="command-palette__results" role="listbox" aria-label="Search results">
           {groups.length === 0 ? (
             <div className="command-palette__empty" role="option" aria-disabled="true" aria-selected="false">
               <MagnifyingGlass size={28} weight="duotone" aria-hidden="true" />
-              <strong>{commandMode ? "No commands found" : query ? "No results found" : "Nothing to suggest yet"}</strong>
-              <span>{commandMode ? "Try another command name." : query ? 'Try an app, file name, or window. Enter "> " to search commands.' : 'Apps, current windows, and recent files appear here. Enter "> " to search commands.'}</span>
+              <strong>{query ? "No results found" : "Nothing to suggest yet"}</strong>
+              <span>{query ? "Try an app, file, window, or command." : "Apps, current windows, recent files, and commands appear here."}</span>
             </div>
           ) : (
             groups.map((group) => (
