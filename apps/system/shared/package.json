@@ -8,6 +8,6 @@
     "./styles.css": "./src/styles.css"
   },
   "dependencies": {
-    "@hiraya-team/apps-sdk": "1.0.0"
+    "@hiraya-team/apps-sdk": "1.0.2"
   }
 }

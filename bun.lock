@@ -15,9 +15,9 @@
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.1",
         "@codemirror/view": "^6.43.6",
-        "@hiraya-team/app-cli": "1.0.0",
-        "@hiraya-team/apps-contracts": "1.0.0",
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/app-cli": "1.0.2",
+        "@hiraya-team/apps-contracts": "1.0.2",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/app-runtime": "workspace:*",
         "@lezer/highlight": "^1.2.3",
         "@noble/hashes": "^2.2.0",
@@ -55,7 +55,7 @@
       "name": "@hiraya/system-file-viewer",
       "version": "1.0.0",
       "dependencies": {
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -67,7 +67,7 @@
       "name": "@hiraya/system-image-viewer",
       "version": "1.0.0",
       "dependencies": {
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -79,7 +79,7 @@
       "name": "@hiraya/system-markdown-preview",
       "version": "1.0.0",
       "dependencies": {
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/system-apps-shared": "workspace:*",
       },
       "devDependencies": {
@@ -91,7 +91,7 @@
       "name": "@hiraya/system-media-viewer",
       "version": "1.0.0",
       "dependencies": {
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/system-apps-shared": "workspace:*",
         "dompurify": "^3.4.12",
         "mammoth": "^1.12.0",
@@ -106,7 +106,7 @@
       "name": "@hiraya/system-apps-shared",
       "version": "0.1.0",
       "dependencies": {
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
       },
     },
     "apps/system/text-editor": {
@@ -123,7 +123,7 @@
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.1",
         "@codemirror/view": "^6.43.6",
-        "@hiraya-team/apps-sdk": "1.0.0",
+        "@hiraya-team/apps-sdk": "1.0.2",
         "@hiraya/system-apps-shared": "workspace:*",
         "@lezer/highlight": "^1.2.3",
         "codemirror": "^6.0.2",
@@ -137,7 +137,7 @@
       "name": "@hiraya/app-runtime",
       "version": "0.1.0",
       "dependencies": {
-        "@hiraya-team/apps-contracts": "1.0.0",
+        "@hiraya-team/apps-contracts": "1.0.2",
         "react": "^19.1.0",
       },
     },
@@ -145,7 +145,7 @@
       "name": "@hiraya/apps-ui",
       "version": "0.1.0",
       "dependencies": {
-        "@hiraya-team/apps-contracts": "1.0.0",
+        "@hiraya-team/apps-contracts": "1.0.2",
       },
     },
   },
@@ -438,11 +438,11 @@
 
     "@eslint/plugin-kit": ["@eslint/plugin-kit@0.4.1", "", { "dependencies": { "@eslint/core": "^0.17.0", "levn": "^0.4.1" } }, "sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA=="],
 
-    "@hiraya-team/app-cli": ["@hiraya-team/app-cli@1.0.0", "", { "dependencies": { "@hiraya-team/apps-contracts": "1.0.0", "acorn": "8.17.0", "fflate": "0.8.3", "parse5": "8.0.0" }, "bin": { "hiraya-app": "dist/cli.js" } }, "sha512-MYRS5MXsN4bvQwKifrUXWutu8jtk+j8sdhdJprQtymEWM0Qgnx/os6LvJIUEpNQ75gFP8eeM1c3eg0QU7eiMBg=="],
+    "@hiraya-team/app-cli": ["@hiraya-team/app-cli@1.0.2", "", { "dependencies": { "@hiraya-team/apps-contracts": "1.0.2", "acorn": "8.17.0", "fflate": "0.8.3", "parse5": "8.0.0" }, "bin": { "hiraya-app": "dist/cli.js" } }, "sha512-l4kcIBC00oyZmf9Dw2Pid21TG2Owdgn1o8bd9GVUyr5lwKOHdHODGOM7a/ClNYcPA9SiOs+xzKVZ7LqJoyQYPQ=="],
 
-    "@hiraya-team/apps-contracts": ["@hiraya-team/apps-contracts@1.0.0", "", {}, "sha512-kmYEdI5xY9wMNQ/lOQWGtIz1WDivYD3V0aDuUFPiT2aFk3hmAMED2CclatJKE3i5mtKNLlYGGI5P48NtpYhYIQ=="],
+    "@hiraya-team/apps-contracts": ["@hiraya-team/apps-contracts@1.0.2", "", {}, "sha512-OEts8LDsjLg6ki+2/LeYzzkQIz4d5IGRO9Oo+ItMC088lpRXVgWgt8orQGxatsxjishuTq62npMVvOe3xL5t5g=="],
 
-    "@hiraya-team/apps-sdk": ["@hiraya-team/apps-sdk@1.0.0", "", { "dependencies": { "@hiraya-team/apps-contracts": "1.0.0" } }, "sha512-SB2Z9vNwnazNIMHWRd4HBIaZAw7uqqVxG/Dtj0rkq+oMiOmfXQ+1U3bgdfNQoOS07ZSAGywNlxD8vxDoRYJ3/g=="],
+    "@hiraya-team/apps-sdk": ["@hiraya-team/apps-sdk@1.0.2", "", { "dependencies": { "@hiraya-team/apps-contracts": "1.0.2" } }, "sha512-FmCHtiiDp++Uyv2NDLt19Nvjq382ycL6rz+NX9dqM+dowKveBJxAYaQUgKNRyGU0WTj11+LXAC9+XjoyNCmFOQ=="],
 
     "@hiraya/app-runtime": ["@hiraya/app-runtime@workspace:packages/app-runtime"],
 

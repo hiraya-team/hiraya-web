@@ -23,9 +23,9 @@
     "preview": "bunx --bun vite preview"
   },
   "dependencies": {
-    "@hiraya-team/apps-contracts": "1.0.0",
-    "@hiraya-team/apps-sdk": "1.0.0",
-    "@hiraya-team/app-cli": "1.0.0",
+    "@hiraya-team/apps-contracts": "1.0.2",
+    "@hiraya-team/apps-sdk": "1.0.2",
+    "@hiraya-team/app-cli": "1.0.2",
     "@hiraya/app-runtime": "workspace:*",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
