@@ -14,7 +14,7 @@ export class HirayaDialog extends HTMLElementBase {
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${elementStyles}
       dialog { inline-size: min(30rem, calc(100vw - 2rem)); max-block-size: calc(100dvh - 2rem); padding: 0; overflow: auto; border: 1px solid var(--hiraya-border, #526a60); border-radius: var(--hiraya-radius-panel, .75rem); color: var(--hiraya-text, #f5eedc); background: var(--hiraya-surface-elevated, #20352d); box-shadow: var(--hiraya-shadow-panel, 0 1rem 3rem rgb(0 0 0 / .3)); }
-      dialog::backdrop { background: rgb(0 0 0 / .55); }
+      dialog::backdrop { background: rgb(0 0 0 / .55); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
       header { display: flex; align-items: center; gap: var(--hiraya-space-3, .75rem); padding: var(--hiraya-space-3, .75rem) var(--hiraya-space-4, 1rem); border-block-end: 1px solid var(--hiraya-border, #526a60); }
       h2 { min-inline-size: 0; flex: 1; margin: 0; font-size: 1.05rem; }
       .body { padding: var(--hiraya-space-4, 1rem); }
