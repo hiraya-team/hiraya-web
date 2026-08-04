@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Keep actions and apps close at hand.** The floating action bar now includes installed app launchers and can collapse into a small bottom-right button. On mobile, installed apps appear in a vertical launcher along the right edge.
+- **Find applications faster.** Search **Applications** by name, description, app ID, source, or version. Clear result counts, sorted listings, and improved empty and offline messages make the App Store easier to scan.
 - **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
 - **Search everything together.** Open **Search** or press **Ctrl/⌘ K** to find apps, files, folders, open windows, and commands in one results list.
 - **Focus more clearly on dialogs.** Dialogs now blur the desktop or app behind them more strongly, making the active task easier to distinguish.
