@@ -34,7 +34,7 @@ The app runs in Hiraya's opaque-origin sandbox, receives folder access through a
 - App-local storage is limited to small preferences; source documents and published output remain ordinary Hiraya files.
 - Publishing produces one self-contained HTML artifact within the host's 32 MiB staged-write limit.
 - Multiple pages default to hash-routed navigation inside the single artifact. This remains changeable because the user did not select among the proposed routing models.
-- Project Studio ships as an experimental app package, not a privileged system app.
+- Project Studio ships through the Hiraya App Store, not as a privileged system app.
 
 ## Evidence on Hand
 

@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 import { seededDesktopPlugin } from "./build/seeded";
 import { systemAppsPlugin } from "./build/system-apps";
+import { storeAppsPlugin } from "./build/store-apps";
 import { navigationFallbackDenylist } from "./build/navigation";
 import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
 
@@ -10,8 +11,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "HIRAYA_");
   const historyLimit = env.HIRAYA_HISTORY_LIMIT ? Number(env.HIRAYA_HISTORY_LIMIT) : 1000;
   if (!Number.isSafeInteger(historyLimit) || historyLimit <= 0) throw new Error("HIRAYA_HISTORY_LIMIT must be a positive integer.");
+  const base = env.HIRAYA_BASE_PATH || "/";
   return {
-    base: env.HIRAYA_BASE_PATH || "/",
+    base,
     define: {
       "import.meta.env.HIRAYA_BUILD_TIMESTAMP": JSON.stringify(new Date().toISOString()),
       "import.meta.env.HIRAYA_FRONTEND_ONLY": JSON.stringify(env.HIRAYA_FRONTEND_ONLY === "true" ? "true" : "false"),
@@ -21,6 +23,7 @@ export default defineConfig(({ mode }) => {
       appsUiRuntimePlugin(process.cwd()),
       seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
       systemAppsPlugin(process.cwd()),
+      storeAppsPlugin(process.cwd()),
       react(),
       VitePWA({
         useCredentials: true,
@@ -40,8 +43,8 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
-          navigateFallbackDenylist: navigationFallbackDenylist,
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}", "app-store/*.hiraya.app"],
+          navigateFallbackDenylist: navigationFallbackDenylist(base),
         },
       }),
     ],

@@ -21,6 +21,13 @@ declare module "virtual:hiraya-system-apps" {
   export default catalog;
 }
 
+declare module "virtual:hiraya-store-apps" {
+  import type { HirayaAppManifestV2 } from "@hiraya/apps-contracts";
+
+  const catalog: readonly { slug: string; archivePath: string; digest: string; size: number; contentRevision: number; manifest: HirayaAppManifestV2 }[];
+  export default catalog;
+}
+
 declare module "virtual:hiraya-apps-ui-runtime" {
   import type { SandboxUiRuntime } from "@hiraya/app-runtime";
 

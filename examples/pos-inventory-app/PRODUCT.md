@@ -35,7 +35,7 @@ The app runs in Hiraya's opaque-origin sandbox as a resizable desktop window or 
 - Inventory includes opening stock, receiving, manual removal, reorder levels, and sale deductions.
 - The SDK provides revision-safe files but no database or multi-file transactions, so one schema-versioned file is the atomic unit.
 - Online payments, receipt printing, barcode capture, suppliers, purchase orders, refunds, multiple registers, and multiple locations are out of scope.
-- Hiraya POS ships as an experimental app package, not a privileged system app.
+- Hiraya POS ships through the Hiraya App Store, not as a privileged system app.
 
 ## Product Principles
 

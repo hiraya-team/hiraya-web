@@ -59,4 +59,4 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
-The production build also packages the Calculator, ZIP Browser, Pixel Editor, Project Studio, and Hiraya POS examples into `dist/experimental-apps`. These archives are publication artifacts for deployment administrators; the server does not create or seed an app desktop automatically.
+The production build packages Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo into `dist/app-store`. Hiraya lists these first-party packages in **Applications** alongside any packages published through the deployment administrator's store desktop.

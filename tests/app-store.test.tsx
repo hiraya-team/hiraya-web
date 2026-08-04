@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { InstalledApp } from "../src/apps/installed-apps";
-import { AppStoreWindow } from "../src/components/AppStoreWindow";
+import type { StorePackage } from "../src/lib/app-store";
+import { AppStoreWindow, type StorePackageView } from "../src/components/AppStoreWindow";
 
 const systemApp: InstalledApp = {
   appId: "app.hiraya.text-editor",
@@ -36,6 +37,18 @@ const base = {
   onUninstall: () => undefined,
 };
 
+const todoPackage: StorePackage = {
+  source: "bundled",
+  archivePath: "app-store/todo.hiraya.app",
+  digest: "b".repeat(64),
+  catalogId: "hiraya-app-store",
+  desktopId: "bundled-app-store",
+  contentRevision: 1,
+  entry: { id: "bundled:todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
+};
+
+const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", loading: false, error: "" };
+
 describe("App Store", () => {
   test("keeps installed app details and management available when the catalog is unavailable", () => {
     const markup = renderToStaticMarkup(<AppStoreWindow {...base} />);
@@ -44,7 +57,7 @@ describe("App Store", () => {
     expect(markup).toContain("Bundled system app");
     expect(markup).toContain("Trusted by Hiraya");
     expect(markup).toContain("Reset data");
-    expect(markup).toContain("Store unavailable");
+    expect(markup).toContain("Administrator store unavailable");
     expect(markup).not.toContain("Uninstall");
   });
 
@@ -55,5 +68,34 @@ describe("App Store", () => {
     expect(markup).toContain("Unavailable");
     expect(markup).toContain("Uninstall");
     expect(markup).toContain("disabled");
+  });
+
+  test("offers first-party packages without an administrator store", () => {
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" packages={[todoView]} />);
+
+    expect(markup).toContain("Todo");
+    expect(markup).toContain("Keep portable task lists.");
+    expect(markup).toContain("Install");
+    expect(markup).not.toContain("No apps published yet");
+  });
+
+  test("prefers an installed app's exact catalog when matching updates", () => {
+    const adminPackage: StorePackage = { ...todoPackage, source: "remote", catalogId: "admin-catalog", desktopId: "admin-store", contentRevision: 2, entry: { ...todoPackage.entry, id: "admin-todo" } };
+    const adminView: StorePackageView = { ...todoView, item: adminPackage };
+    const installed: InstalledApp = {
+      ...systemApp,
+      appId: "dev.hiraya.todo",
+      source: "store",
+      packageEntryId: adminPackage.entry.id,
+      archivePath: null,
+      sourceCatalogId: adminPackage.catalogId,
+      sourceDesktopId: adminPackage.desktopId,
+      sourceContentRevision: adminPackage.contentRevision,
+      manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo" },
+    };
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[todoView, adminView]} />);
+
+    expect(markup).toContain("Administrator App Store");
+    expect(markup).not.toContain("Update available");
   });
 });

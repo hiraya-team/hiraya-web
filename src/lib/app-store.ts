@@ -1,4 +1,5 @@
 import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import { STORE_APP_CATALOG, storeAppArchiveUrl } from "../apps/store-apps";
 import type { DesktopIdentity, FileEntry } from "../types";
 import { API_ROUTES } from "./api-routes";
 import { requireAuthenticatedResponse } from "./auth";
@@ -6,14 +7,51 @@ import { sha256Blob } from "./blob-transfer";
 import { parseContentAccessDescriptor, parseRemoteDesktopState, type RemoteEntry } from "./contracts";
 
 export type AppStoreDescriptor = Readonly<{ schemaVersion: 1; catalogId: string; catalogRevision: number; desktopId: string }>;
-export type StorePackage = Readonly<{ entry: FileEntry; contentRevision: number; catalogId: string; desktopId: string }>;
+export type StorePackage = Readonly<{
+  entry: FileEntry;
+  contentRevision: number;
+  catalogId: string;
+  desktopId: string;
+} & (
+  | { source: "bundled"; archivePath: string; digest: string }
+  | { source: "remote" }
+)>;
 export type InspectedStorePackage = Readonly<{ archive: Blob; inspection: AppPackageInspection }>;
+
+export const BUNDLED_STORE_CATALOG_ID = "hiraya-app-store";
+const BUNDLED_STORE_DESKTOP_ID = "bundled-app-store";
 
 function parseDescriptor(value: unknown): AppStoreDescriptor | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
   if (item.schemaVersion !== 1 || typeof item.catalogId !== "string" || typeof item.desktopId !== "string" || !Number.isSafeInteger(item.catalogRevision) || Number(item.catalogRevision) < 0) return null;
   return { schemaVersion: 1, catalogId: item.catalogId, catalogRevision: Number(item.catalogRevision), desktopId: item.desktopId };
+}
+
+export function bundledStorePackages(): StorePackage[] {
+  return STORE_APP_CATALOG.map((item) => ({
+    source: "bundled",
+    archivePath: item.archivePath,
+    digest: item.digest,
+    contentRevision: item.contentRevision,
+    catalogId: BUNDLED_STORE_CATALOG_ID,
+    desktopId: BUNDLED_STORE_DESKTOP_ID,
+    entry: {
+      id: `bundled:${item.slug}`,
+      kind: "file",
+      name: `${item.slug}.hiraya.app`,
+      parentId: null,
+      createdAt: null,
+      modifiedAt: 0,
+      position: { x: 0, y: 0 },
+      mimeType: "application/zip",
+      size: item.size,
+    },
+  }));
+}
+
+export function storePackageKey(item: StorePackage): string {
+  return `${item.catalogId}:${item.desktopId}:${item.entry.id}:${item.contentRevision}`;
 }
 
 export async function loadStorePackages(desktop: DesktopIdentity): Promise<StorePackage[]> {
@@ -24,10 +62,20 @@ export async function loadStorePackages(desktop: DesktopIdentity): Promise<Store
   if (state.id !== desktop.id || state.catalogId !== desktop.authorityCatalogId) throw new Error("The app store authority changed unexpectedly.");
   return state.entries
     .filter((entry): entry is RemoteEntry & FileEntry => entry.kind === "file" && entry.name.toLowerCase().endsWith(".hiraya.app"))
-    .map((entry) => ({ entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, desktopId: state.id }));
+    .map((entry) => ({ source: "remote", entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, desktopId: state.id }));
 }
 
 export async function inspectStorePackage(item: StorePackage): Promise<InspectedStorePackage> {
+  if (item.source === "bundled") {
+    const response = await fetch(storeAppArchiveUrl(item), { cache: "no-store", credentials: "same-origin", redirect: "error" });
+    if (!response.ok) throw new Error(`The app release could not be loaded (${response.status}).`);
+    const archive = await response.blob();
+    if (archive.size !== item.entry.size || await sha256Blob(archive) !== item.digest) throw new Error("The app release failed integrity verification.");
+    const { inspectAppArchive } = await import("@hiraya/app-cli");
+    const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
+    if (inspection.digest !== item.digest) throw new Error("The app release identity changed unexpectedly.");
+    return { archive, inspection };
+  }
   const descriptorResponse = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopContentAccess(item.desktopId, item.entry.id, item.contentRevision), { cache: "no-store", credentials: "same-origin" }));
   if (!descriptorResponse.ok) throw new Error(descriptorResponse.status === 404 ? "This app release is no longer available." : `The app release could not be loaded (${descriptorResponse.status}).`);
   const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), item.entry.id, item.contentRevision, item.entry.size);

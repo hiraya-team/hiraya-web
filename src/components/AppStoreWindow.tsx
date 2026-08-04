@@ -4,6 +4,8 @@ import type { StorePackage } from "../lib/app-store";
 import type { DesktopEntry } from "../types";
 import { StatusBadge } from "./VisualPrimitives";
 
+const BUNDLED_STORE_CATALOG_ID = "hiraya-app-store";
+
 export type StorePackageView = Readonly<{
   item: StorePackage;
   name: string;
@@ -35,11 +37,11 @@ function formatBytes(value: number) {
 }
 
 function installedSource(app: InstalledApp) {
-  return app.source === "system" ? "Bundled system app" : app.source === "store" ? "App Store" : "Desktop package";
+  return app.source === "system" ? "Bundled system app" : app.source === "store" && app.sourceCatalogId === BUNDLED_STORE_CATALOG_ID ? "Hiraya App Store" : app.source === "store" ? "Administrator App Store" : "Desktop package";
 }
 
 function installedTrust(app: InstalledApp) {
-  return app.source === "system" ? "Trusted by Hiraya" : "Approved in this browser";
+  return app.source === "system" ? "Trusted by Hiraya" : app.source === "store" && app.sourceCatalogId === BUNDLED_STORE_CATALOG_ID ? "Published by Hiraya; approved in this browser" : "Approved in this browser";
 }
 
 export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, onRetry, onInstall, onLaunch, onReset, onUninstall }: Props) {
@@ -50,7 +52,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
 
   return <section className="app-store" aria-labelledby="app-store-heading">
     <header className="app-store__header">
-      <div><h2 id="app-store-heading">Applications</h2><p>Open and manage installed applications, or install administrator-published apps. Updates wait for your approval.</p></div>
+      <div><h2 id="app-store-heading">Applications</h2><p>Open and manage installed applications, or install apps published by Hiraya and your administrator. Updates wait for your approval.</p></div>
       <span className="app-store__trust"><ShieldCheck size={17} weight="duotone" /> Sandboxed packages</span>
     </header>
     <section className="app-store__section" aria-labelledby="installed-apps-heading">
@@ -58,9 +60,10 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
       {installedApps.length > 0 ? <div className="app-store__list" role="list">
         {installedApps.toSorted((a, b) => a.manifest.name.localeCompare(b.manifest.name)).map((app) => {
           const available = installedAppIsAvailable(app, entries);
-          const view = packages.find((candidate) => installedForView(candidate)?.appId === app.appId);
+          const view = packages.find((candidate) => app.source === "store" && candidate.item.catalogId === app.sourceCatalogId && candidate.item.desktopId === app.sourceDesktopId && candidate.item.entry.id === app.packageEntryId)
+            ?? packages.find((candidate) => candidate.appId === app.appId);
           const current = view && app.source === "store" && app.sourceCatalogId === view.item.catalogId && app.sourceDesktopId === view.item.desktopId && app.packageEntryId === view.item.entry.id && app.sourceContentRevision === view.item.contentRevision;
-          const canUpdate = Boolean(view && !current && !view.loading && !view.error && !offline);
+          const canUpdate = Boolean(view && !current && !view.loading && !view.error && (!offline || view.item.source === "bundled"));
           return <article className="app-store__row app-store__row--installed" role="listitem" key={app.appId}>
             <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
             <div className="app-store__copy">
@@ -77,9 +80,9 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
     <section className="app-store__section" aria-labelledby="available-apps-heading">
       <h3 id="available-apps-heading">Available from App Store</h3>
       {loading && <div className="app-store__loading" role="status"><span /><span /><span /><span className="visually-hidden">Loading the app store...</span></div>}
-      {!loading && error && <div className="app-store__state app-store__state--compact" role="alert"><WarningCircle size={28} weight="duotone" /><h4>Store unavailable</h4><p>{error}</p><button className="button button--quiet" type="button" onClick={onRetry}><ArrowClockwise size={16} /> Try again</button></div>}
-      {!loading && !error && availablePackages.length === 0 && <div className="app-store__state app-store__state--compact"><Package size={30} weight="duotone" /><h4>{packages.length ? "All published apps are installed" : "No apps published yet"}</h4><p>{packages.length ? "Installed applications and available updates appear above." : "The deployment administrator can add .hiraya.app packages to the store desktop."}</p></div>}
-      {!loading && !error && availablePackages.length > 0 && <div className="app-store__list" role="list">
+      {!loading && error && <div className="app-store__state app-store__state--compact" role="alert"><WarningCircle size={28} weight="duotone" /><h4>Administrator store unavailable</h4><p>{error}</p><button className="button button--quiet" type="button" onClick={onRetry}><ArrowClockwise size={16} /> Try again</button></div>}
+      {!loading && !error && availablePackages.length === 0 && <div className="app-store__state app-store__state--compact"><Package size={30} weight="duotone" /><h4>All published apps are installed</h4><p>Installed applications and available updates appear above.</p></div>}
+      {availablePackages.length > 0 && <div className="app-store__list" role="list">
       {availablePackages.map((view) => {
         const installed = installedForView(view);
         const current = installed?.source === "store" && installed.sourceCatalogId === view.item.catalogId && installed.sourceDesktopId === view.item.desktopId && installed.packageEntryId === view.item.entry.id && installed.sourceContentRevision === view.item.contentRevision;
@@ -93,7 +96,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
             <p role={view.error ? "alert" : undefined}>{view.loading ? "Inspecting package..." : view.error || view.description}</p>
             <small>{formatBytes(view.item.entry.size)}{installed && !current ? " · Update available" : current ? " · Installed on this device" : ""}</small>
           </div>
-          <button className={`button ${launchApproved || retry ? "button--quiet" : "button--primary"}`} type="button" disabled={!launchApproved && !retry && (view.loading || offline)} onClick={() => launchApproved && installed ? onLaunch(installed) : retry ? onRetry() : onInstall(view.item)}>
+          <button className={`button ${launchApproved || retry ? "button--quiet" : "button--primary"}`} type="button" disabled={!launchApproved && !retry && (view.loading || offline && view.item.source === "remote")} onClick={() => launchApproved && installed ? onLaunch(installed) : retry ? onRetry() : onInstall(view.item)}>
             {launchApproved ? <Play size={16} weight="fill" /> : retry ? <ArrowClockwise size={16} /> : <DownloadSimple size={16} />}{action}
           </button>
         </article>;
