@@ -91,6 +91,16 @@ describe("accessibility regressions", () => {
     expect(markup).toContain("Package unavailable");
   });
 
+  test("search includes commands without a separate mode", () => {
+    const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} commands={[
+      { id: "desktop.settings", label: "Open Settings", enabled: true },
+    ]} />);
+
+    expect(markup).toContain('role="group" aria-label="Commands"');
+    expect(markup).toContain("Open Settings");
+    expect(markup).not.toContain("> ");
+  });
+
   test("indexes search breadcrumbs once for the complete entry tree", () => {
     const entries = [
       { kind: "folder" as const, id: "plans", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
