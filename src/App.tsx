@@ -325,6 +325,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
   const [minimapExpanded, setMinimapExpanded] = useState(false);
+  const [actionPillCollapsed, setActionPillCollapsed] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
@@ -4845,8 +4846,14 @@ function App({ session }: { session: AuthSession | null }) {
         <MobileSelectionToolbar
           count={mobileFileSelection.length}
           contentKey={mobileFileSelection.length > 0 ? (mobileSelectionMode ? "selection-mode" : "selection-actions") : (canMutate && clipboardOffer && !clipboardOffer.dismissed ? "paste-actions" : "file-actions")}
+          collapsed={actionPillCollapsed}
+          apps={installedApps.length > 0 ? installedApps.toSorted((a, b) => a.manifest.name.localeCompare(b.manifest.name)).map((app) => {
+            const available = installedAppIsAvailable(app, entries);
+            return <button type="button" key={app.appId} disabled={!available} title={available ? app.manifest.name : `${app.manifest.name} is unavailable`} aria-label={available ? `Launch ${app.manifest.name}` : `${app.manifest.name} is unavailable`} onClick={() => launchApp(app)}><Package size={20} /></button>;
+          }) : undefined}
           selectionMode={mobileSelectionMode}
           onBeginSelectionMode={() => beginMobileMultiSelect(mobileFileSurface)}
+          onToggle={() => setActionPillCollapsed((current) => !current)}
         >
           {mobileFileSelection.length > 0 ? <>
           <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}>
