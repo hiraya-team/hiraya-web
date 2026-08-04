@@ -5,6 +5,7 @@ import type { ThemeDefinition } from "../../domain/theme";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";
 import { projectLogicalPosition, restoreLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";
 import { initialWindowBounds } from "../../ui/window-manager";
+import { sandboxWindowOptions } from "../../ui/app-window-sizing";
 import { builtinAppTargetId } from "../../apps/registry";
 import { RuntimeCommandContributions, type createAppCommandService } from "../../apps/commands";
 import type { InstalledApp } from "../../apps/installed-apps";
@@ -99,7 +100,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
         const segment = projectLogicalPosition(app.bounds, options.desktopSize).segment;
         return segment.column === options.activeSegment.column && segment.row === options.activeSegment.row;
       }).length;
-      const local = initialWindowBounds(options.desktopSize, { ...window, index });
+      const local = initialWindowBounds(options.desktopSize, { ...sandboxWindowOptions(window, options.activeTheme), index });
       base = { ...base, bounds: { ...local, ...restoreLogicalPosition(local, options.activeSegment, options.desktopSize) } };
     }
 
