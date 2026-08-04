@@ -11,6 +11,7 @@ describe("file association resolution", () => {
   const markdown = app(SYSTEM_APP_IDS.markdownPreview, [".md", "text/markdown"]);
   const text = app(SYSTEM_APP_IDS.textEditor, ["text/*"]);
   const generic = app(SYSTEM_APP_IDS.fileViewer, ["application/*", "text/*"]);
+  const terminal = app(SYSTEM_APP_IDS.terminal, [".hsh", "text/x-hiraya-shell"]);
 
   test("orders longest compound extension before exact and wildcard MIME", () => {
     expect(associationCandidates({ name: "notes.test.md", mimeType: "text/markdown; charset=utf-8" })).toEqual([".test.md", ".md", "text/markdown", "text/*"]);
@@ -60,5 +61,13 @@ describe("file association resolution", () => {
       { name: "notes.RTF", mimeType: "application/octet-stream" },
     ]) expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.mediaViewer);
     expect(systemDefaultAppId({ name: "legacy.doc", mimeType: "application/msword" })).toBe(SYSTEM_APP_IDS.fileViewer);
+  });
+
+  test("opens shell scripts in Terminal without reserving the file type", () => {
+    for (const file of [{ name: "build.HSH", mimeType: "text/plain" }, { name: "build.txt", mimeType: "text/x-hiraya-shell" }]) {
+      expect(reservedFileHandler(file)).toBeNull();
+      expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.terminal);
+      expect(resolveFileApp(file, [terminal, text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.terminal);
+    }
   });
 });

@@ -114,7 +114,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
     const launchCapabilities = grantLaunchCapabilities(options.capabilities, id, appPackage.manifest.permissions, {
       files: target && target !== "root" && target.kind === "file" ? [target] : [],
       folders: target && target !== "root" && target.kind === "folder" ? [target] : relativeFolder ? [relativeFolder] : [],
-      root: target === "root" || (install.source === "system" && !target) || Boolean(markdownAtRoot),
+      root: target === "root" || (install.source === "system" && !target) || Boolean(markdownAtRoot) || install.source === "system" && install.appId === SYSTEM_APP_IDS.terminal,
     });
     const host = options.hostServices.openInstance({
       instanceId: id,

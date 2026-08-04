@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Automate desktop work in Terminal.** Open **Terminal** to navigate and manage Hiraya files with familiar commands, pipelines, redirects, aliases, history, background jobs, and reusable `.hsh` shell scripts. Commands remain inside Hiraya's sandbox and cannot access the server operating system or network.
 - **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
 - **Search everything together.** Open **Search** or press **Ctrl/⌘ K** to find apps, files, folders, open windows, and commands in one results list.
 - **Focus more clearly on dialogs.** Dialogs now blur the desktop or app behind them more strongly, making the active task easier to distinguish.
@@ -90,7 +91,7 @@ Production installations can check for updates in Settings. Automatic updates ch
 
 ## `.hiraya.app` apps, themes, and permissions {#apps-and-permissions}
 
-A new or empty desktop includes five trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, and File Viewer. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files. Folder browsing is built into the desktop shell so it shares the desktop's selection, context menus, imports, offline state, and window behavior.
+A new or empty desktop includes six trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, File Viewer, and Terminal. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files. Folder browsing is built into the desktop shell so it shares the desktop's selection, context menus, imports, offline state, and window behavior.
 
 Text Editor reloads an open clean document when it changes elsewhere and preserves unsaved text with a conflict warning when the document is dirty. Its auto-save, format-on-save, font-size, and wrapping preferences start from the desktop editor settings on first launch, then remain app-local to this browser and signed-in account.
 

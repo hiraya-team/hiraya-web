@@ -89,7 +89,7 @@ describe("app file authority", () => {
     const grants = grantLaunchCapabilities(h.capabilities, "app-1", ["files:read", "files:write"], { files: [h.nested], folders: [h.folder], root: true });
     expect(grants.files).toHaveLength(1);
     expect(grants.folders).toHaveLength(2);
-    expect((await h.service().stat({ handle: grants.files[0] })).metadata.name).toBe("nested.bin");
+    expect((await h.service().stat({ handle: grants.files[0] })).metadata).toMatchObject({ name: "nested.bin", parent: expect.any(String) });
     expect(await h.service().list({ folder: grants.folders[1] })).toHaveLength(2);
     expect(grantLaunchCapabilities(h.capabilities, "no-files", [], { files: [h.nested], root: true })).toEqual({ files: [], folders: [] });
   });

@@ -4,4 +4,5 @@ export const SYSTEM_APP_IDS = {
   imageViewer: "app.hiraya.image-viewer",
   mediaViewer: "app.hiraya.media-viewer",
   fileViewer: "app.hiraya.file-viewer",
+  terminal: "app.hiraya.terminal",
 } as const;
