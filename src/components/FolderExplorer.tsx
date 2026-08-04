@@ -7,7 +7,7 @@ import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary, ty
 import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { AvailabilityBadge, EntryIcon } from "./VisualPrimitives";
+import { AvailabilityBadge, EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
 import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
@@ -40,6 +40,7 @@ export interface FolderExplorerProps {
   view: ExplorerView;
   onViewChange: (view: ExplorerView) => void;
   viewChangeDisabled?: boolean;
+  loadPreview?: (id: string) => Promise<EntryPreviewSource>;
 }
 
 type DragState = {
@@ -59,7 +60,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
@@ -472,7 +473,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                 onLostPointerCapture={(event) => finishPointer(event, true)}
               >
                 <span className="folder-explorer__entry-icon">
-                  <EntryIcon entry={entry} size={24} />
+                  <EntryArtwork entry={entry} size={24} loadPreview={loadPreview} />
                   {offlineAvailability[entry.id] && <AvailabilityBadge availability={offlineAvailability[entry.id]} />}
                 </span>
                 <span className="folder-explorer__name">{entry.name}</span>

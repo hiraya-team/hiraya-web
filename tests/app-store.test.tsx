@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { InstalledApp } from "../src/apps/installed-apps";
-import type { StorePackage } from "../src/lib/app-store";
+import { storeSearchMatches, type StorePackage } from "../src/lib/app-store";
 import { AppStoreWindow, type StorePackageView } from "../src/components/AppStoreWindow";
 
 const systemApp: InstalledApp = {
@@ -50,9 +50,16 @@ const todoPackage: StorePackage = {
 const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", loading: false, error: "" };
 
 describe("App Store", () => {
+  test("matches every search term across app metadata", () => {
+    expect(storeSearchMatches("todo task", "Todo", "Keep portable task lists.", "dev.hiraya.todo", "0.1.0")).toBe(true);
+    expect(storeSearchMatches("HIRAYA 0.1", "Todo", "dev.hiraya.todo", "0.1.0")).toBe(true);
+    expect(storeSearchMatches("todo calendar", "Todo", "Keep portable task lists.")).toBe(false);
+  });
+
   test("keeps installed app details and management available when the catalog is unavailable", () => {
     const markup = renderToStaticMarkup(<AppStoreWindow {...base} />);
 
+    expect(markup).toContain("Search apps, descriptions, or IDs");
     expect(markup).toContain("Text Editor");
     expect(markup).toContain("Trusted system app");
     expect(markup).toContain("Trusted by Hiraya");
@@ -77,6 +84,31 @@ describe("App Store", () => {
     expect(markup).toContain("Todo");
     expect(markup).toContain("Keep portable task lists.");
     expect(markup).toContain("Install");
+    expect(markup).not.toContain("No apps published yet");
+  });
+
+  test("explains offline actions", () => {
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" packages={[todoView]} offline />);
+
+    expect(markup).toContain("App Store offline");
+    expect(markup).toContain("Reconnect to install this app");
+  });
+
+  test("distinguishes an empty catalog from one whose apps are installed", () => {
+    const installed: InstalledApp = {
+      ...systemApp,
+      appId: "dev.hiraya.todo",
+      source: "store",
+      packageEntryId: todoPackage.entry.id,
+      archivePath: null,
+      sourceCatalogId: todoPackage.catalogId,
+      sourceDesktopId: todoPackage.desktopId,
+      sourceContentRevision: todoPackage.contentRevision,
+      manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo" },
+    };
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[todoView]} />);
+
+    expect(markup).toContain("All published apps are installed");
     expect(markup).not.toContain("No apps published yet");
   });
 
