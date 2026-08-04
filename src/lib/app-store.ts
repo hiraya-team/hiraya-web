@@ -17,6 +17,11 @@ export type StorePackage = Readonly<{
   kind: "store" | "system";
   release?: AppCatalogRelease;
 }>;
+
+export function storeSearchMatches(query: string, ...values: Array<string | null | undefined>) {
+  const searchable = values.filter(Boolean).join(" ").toLocaleLowerCase();
+  return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).every((term) => searchable.includes(term));
+}
 export type InspectedStorePackage = Readonly<{ archive: Blob; inspection: AppPackageInspection }>;
 export type LoadedStorePackages = Readonly<{ packages: StorePackage[]; managed: boolean; descriptor: AppStoreDescriptor | null }>;
 

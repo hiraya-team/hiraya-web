@@ -64,7 +64,7 @@ test("close-window shortcut closes the focused window without claiming the empty
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toBeVisible();
@@ -81,27 +81,56 @@ test("search launches installed apps", async ({ page }) => {
   await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
-  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  await expect(editor).toBeVisible();
+  await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
 
-test("search separates commands behind the command prefix", async ({ page }) => {
+test("action pill toggles installed app pins and adapts them for mobile", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  const appPins = page.getByRole("toolbar", { name: "Installed apps" });
+  const hide = page.getByRole("button", { name: "Hide actions and apps" });
+
+  await expect(fileActions).toBeVisible();
+  await expect(appPins.getByRole("button", { name: "Launch Text Editor" })).toBeVisible();
+  await hide.click();
+  const show = page.getByRole("button", { name: "Show actions and apps" });
+  await expect(show).toBeFocused();
+  await expect(fileActions).toBeHidden();
+  await expect(appPins).toBeHidden();
+  await show.click();
+  await appPins.getByRole("button", { name: "Launch Text Editor" }).click();
+  await expect(page.getByRole("dialog", { name: "Text Editor" })).toBeVisible();
+
+  const context = await browser.newContext({ ...devices["Pixel 7"], viewport: { width: 390, height: 844 } });
+  const mobile = await context.newPage();
+  await openLocalDesktop(mobile);
+  const mobilePins = mobile.getByRole("toolbar", { name: "Installed apps" });
+  const mobileActions = mobile.getByRole("toolbar", { name: "File actions" });
+  await expect(mobilePins).toHaveCSS("flex-direction", "column");
+  const [pinsBounds, actionsBounds] = await Promise.all([mobilePins.boundingBox(), mobileActions.boundingBox()]);
+  expect(pinsBounds).not.toBeNull();
+  expect(actionsBounds).not.toBeNull();
+  expect(pinsBounds!.x).toBeGreaterThan(actionsBounds!.x + actionsBounds!.width / 2);
+  expect(Math.round(pinsBounds!.x + pinsBounds!.width)).toBe(382);
+  await context.close();
+});
+
+test("search combines commands with other results", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
   await page.keyboard.press("Control+k");
   const palette = page.getByRole("dialog", { name: /Search/ });
   const input = palette.locator("input");
-  const modes = palette.getByRole("group", { name: "Search mode" });
-  const commands = modes.getByRole("button", { name: "Commands" });
+  const scope = palette.getByRole("group", { name: "Search scope" });
+  const current = scope.getByRole("button", { name: "Current" });
 
-  await expect(input).toHaveValue("> ");
-  await expect(commands).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(async () => (await commands.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
-  await input.fill("> Settings");
-  await modes.getByRole("button", { name: "Current" }).click();
-  await expect(input).toHaveValue("Settings");
-  await expect(palette.getByRole("group", { name: "Commands" })).toHaveCount(0);
-  await commands.click();
-  await expect(input).toHaveValue("> Settings");
+  await expect(input).toHaveValue("");
+  await expect(current).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(async () => (await current.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect(palette.getByRole("group", { name: "Commands" })).toBeVisible();
+  await input.fill("Settings");
   await expect(palette.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
@@ -120,7 +149,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
 
   await page.keyboard.press("Control+k");
   search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await expect(settings).toHaveAttribute("data-focused", "true");
@@ -570,7 +599,7 @@ test("desktop wheel gestures switch one area while app scrolling stays native", 
 
   await page.keyboard.press("Control+k");
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("> Settings");
+  await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.dispatchEvent("wheel", { deltaY: 100 });
