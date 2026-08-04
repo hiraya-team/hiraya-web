@@ -1,12 +1,12 @@
 import AxeBuilder from "@axe-core/playwright";
 import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
-async function openLocalDesktop(page: Page) {
+async function openLocalDesktop(page: Page, timeout = 5_000) {
   await page.goto("/");
-  await expect(page.locator(".desktop-shell")).toBeVisible();
-  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await expect(page.locator(".desktop-shell")).toBeVisible({ timeout });
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden({ timeout });
   const onboarding = page.getByRole("dialog", { name: "Know where your work lives" });
-  await expect(onboarding).toBeVisible();
+  await expect(onboarding).toBeVisible({ timeout });
   await onboarding.getByRole("button", { name: "Close Getting Started" }).click();
   await expect(onboarding).toBeHidden();
 }
@@ -84,6 +84,33 @@ test("search launches installed apps", async ({ page }) => {
   const editor = page.getByRole("dialog", { name: "Text Editor" });
   await expect(editor).toBeVisible();
   await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
+});
+
+test("terminal runs pipelines against Hiraya files and stops foreground work", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLocalDesktop(page, 30_000);
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  const search = page.getByRole("dialog", { name: /Search/ });
+  await search.locator("input").fill("Terminal");
+  await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Terminal/ }).click();
+
+  const terminal = page.getByRole("dialog", { name: "Terminal" });
+  const frame = terminal.frameLocator("iframe");
+  const command = frame.locator("#command");
+  await expect(frame.getByText("Hiraya Terminal 1.0")).toBeVisible();
+  await expect(command).toHaveAccessibleName("Command");
+  await expect.poll(async () => (await frame.getByRole("button", { name: "Help" }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await command.fill("mkdir work; echo beta > work/list.txt; echo alpha >> work/list.txt; cat work/list.txt | sort | uniq");
+  await command.press("Enter");
+  await expect(frame.getByRole("log")).toContainText("alpha\nbeta");
+  await expect(frame.locator("#status")).toHaveText("Ready.");
+
+  await command.fill("sleep 30");
+  await command.press("Enter");
+  await frame.getByRole("button", { name: "Stop" }).click();
+  await expect(frame.getByRole("log")).toContainText("^C");
+  await expect(frame.locator("#status")).toContainText("status 130");
+  await expect.poll(async () => (await frame.getByRole("button", { name: "Run command" }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
 
 test("action pill toggles installed app pins and adapts them for mobile", async ({ page, browser }) => {

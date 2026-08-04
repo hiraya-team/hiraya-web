@@ -9,6 +9,7 @@ export type AssociationResolution = Readonly<{ app: InstalledApp; preferredUnava
 export type ReservedFileHandler = "app-package" | "internet-shortcut";
 
 export const SYSTEM_FILE_DEFAULTS = [
+  { label: "Shell scripts", matcher: ".hsh, text/x-hiraya-shell", appId: SYSTEM_APP_IDS.terminal },
   { label: "Markdown", matcher: ".md, .markdown, text/markdown", appId: SYSTEM_APP_IDS.markdownPreview },
   { label: "Documents and media", matcher: ".docx, .rtf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/rtf, text/rtf, application/pdf, audio/*, video/*", appId: SYSTEM_APP_IDS.mediaViewer },
   { label: "Text and source files", matcher: "text/*", appId: SYSTEM_APP_IDS.textEditor },
@@ -47,6 +48,7 @@ export function matchingInstalledApps(apps: readonly InstalledApp[], entries: re
 export function systemDefaultAppId(file: Pick<FileEntry, "name" | "mimeType">): string {
   const mime = file.mimeType.split(";", 1)[0].trim().toLowerCase();
   const name = file.name.toLowerCase();
+  if (name.endsWith(".hsh") || mime === "text/x-hiraya-shell") return SYSTEM_APP_IDS.terminal;
   if (name.endsWith(".md") || name.endsWith(".markdown") || mime === "text/markdown") return SYSTEM_APP_IDS.markdownPreview;
   if (name.endsWith(".docx") || name.endsWith(".rtf") || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mime === "application/rtf" || mime === "text/rtf") return SYSTEM_APP_IDS.mediaViewer;
   if (mime.startsWith("text/")) return SYSTEM_APP_IDS.textEditor;

@@ -109,6 +109,18 @@
         "@hiraya-team/apps-sdk": "1.0.3",
       },
     },
+    "apps/system/terminal": {
+      "name": "@hiraya/system-terminal",
+      "version": "1.0.0",
+      "dependencies": {
+        "@hiraya-team/apps-sdk": "1.0.3",
+        "@hiraya/system-apps-shared": "workspace:*",
+      },
+      "devDependencies": {
+        "typescript": "~5.8.3",
+        "vite": "^7.0.4",
+      },
+    },
     "apps/system/text-editor": {
       "name": "@hiraya/system-text-editor",
       "version": "1.0.0",
@@ -457,6 +469,8 @@
     "@hiraya/system-markdown-preview": ["@hiraya/system-markdown-preview@workspace:apps/system/markdown-preview"],
 
     "@hiraya/system-media-viewer": ["@hiraya/system-media-viewer@workspace:apps/system/media-viewer"],
+
+    "@hiraya/system-terminal": ["@hiraya/system-terminal@workspace:apps/system/terminal"],
 
     "@hiraya/system-text-editor": ["@hiraya/system-text-editor@workspace:apps/system/text-editor"],
 
