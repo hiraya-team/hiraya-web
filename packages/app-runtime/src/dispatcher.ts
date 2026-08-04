@@ -9,7 +9,7 @@ import {
   type ServiceMethods,
   type ServiceEvent,
   type ServiceEvents,
-} from "@hiraya/apps-contracts";
+} from "@hiraya-team/apps-contracts";
 
 export type RuntimeHostContext = { close(): void; [group: string]: unknown };
 export type RuntimeFileService = {

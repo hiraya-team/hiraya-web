@@ -1,4 +1,4 @@
-import type { ThemeTokens } from "@hiraya/apps-contracts";
+import type { ThemeTokens } from "@hiraya-team/apps-contracts";
 
 export type ThemeTarget = {
   dataset: { theme?: string };

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 import { initializeSandboxFrame, materializeAppPackage, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime } from "./sandbox";
 

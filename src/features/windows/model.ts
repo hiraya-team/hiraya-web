@@ -1,4 +1,4 @@
-import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { RpcDispatcher } from "@hiraya/app-runtime";
 import type { FileService } from "../../apps/host";
 import type { InstalledApp } from "../../apps/installed-apps";

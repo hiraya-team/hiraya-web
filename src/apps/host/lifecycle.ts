@@ -1,4 +1,4 @@
-import type { WindowState } from "@hiraya/apps-contracts";
+import type { WindowState } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, unavailable, type AppInstanceOwner } from "./types";
 
 export const MAX_APP_WINDOW_TITLE_LENGTH = 120;

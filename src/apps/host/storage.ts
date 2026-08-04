@@ -1,4 +1,4 @@
-import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
+import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, type AppInstanceOwner } from "./types";
 
 export const MAX_APP_STORAGE_BYTES = 64 * 1024;

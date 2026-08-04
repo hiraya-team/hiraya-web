@@ -20,7 +20,7 @@ import { activityRecord, type ActivityQuery, type NewActivityRecord } from "./ac
 import { resolveDesktopContext } from "./desktop-catalog";
 import { localDesktopIdentity } from "./permissions";
 import type { FileAssociation, InstalledApp } from "../apps/installed-apps";
-import type { JsonValue } from "@hiraya/apps-contracts";
+import type { JsonValue } from "@hiraya-team/apps-contracts";
 import { offlineFilesUnderRoots, outboxProtectedFileIds, type OfflineStorageInventory } from "./offline-availability";
 import { callDatabase, initializeDatabase } from "../platform/storage/database-client";
 import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operationContentIds, prepareLocalContentReplacement, publishLocalContentReplacement, readContentCacheMarker, readContentConflictBase, readContentConflictServer, readStagedContent, recoverLocalContentReplacements, removeContentCacheMarker, removeStagedOperation, removeUnretainedCachedContent, stageOperationContents, stageStagedContentVariant, writeContent, writeContentCacheMarker, writeContentConflictBase, writeContentConflictServer } from "../platform/storage/blobs";

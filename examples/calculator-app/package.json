@@ -8,7 +8,7 @@
     "test": "bun test"
   },
   "dependencies": {
-    "@hiraya/apps-sdk": "workspace:*"
+    "@hiraya-team/apps-sdk": "1.0.0"
   },
   "devDependencies": {
     "typescript": "~5.8.3",

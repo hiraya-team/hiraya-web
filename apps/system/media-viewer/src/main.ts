@@ -1,4 +1,4 @@
-import type { FileHandle, HirayaClient } from "@hiraya/apps-sdk";
+import type { FileHandle, HirayaClient } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, formatBytes, LatestOperation, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { DOCX_MIME, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKind, RTF_MIMES } from "./document-types";
 import { renderParsedDocument } from "./document-preview";

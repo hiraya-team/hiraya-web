@@ -4,7 +4,7 @@ import type { WindowSession } from "./window-session";
 import type { ActivityPage, ActivityQuery, NewActivityRecord } from "./activity";
 import type { DesktopIdentity } from "../types";
 import type { FileAssociation, InstalledApp, QuarantinedApp } from "../apps/installed-apps";
-import type { JsonValue } from "@hiraya/apps-contracts";
+import type { JsonValue } from "@hiraya-team/apps-contracts";
 import { STORAGE_PROTOCOL_VERSION } from "./storage-worker";
 import type { LocalPreferences } from "../domain/preferences";
 

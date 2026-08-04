@@ -1,4 +1,4 @@
-import { parseAppCatalog, type AppCatalogRelease, type AppPackageInspection } from "@hiraya/apps-contracts";
+import { parseAppCatalog, type AppCatalogRelease, type AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { STORE_APP_CATALOG, storeAppArchiveUrl } from "../apps/store-apps";
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import type { DesktopIdentity, FileEntry } from "../types";
@@ -113,13 +113,13 @@ export async function inspectStorePackage(item: StorePackage): Promise<Inspected
     if (!response.ok) throw new Error(`The app release could not be loaded (${response.status}).`);
     const archive = await response.blob();
     if (archive.size !== item.entry.size || await sha256Blob(archive) !== item.digest) throw new Error("The app release failed integrity verification.");
-    const { inspectAppArchive } = await import("@hiraya/app-cli");
+    const { inspectAppArchive } = await import("@hiraya-team/app-cli");
     const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
     if (inspection.digest !== item.digest) throw new Error("The app release identity changed unexpectedly.");
     return { archive, inspection };
   }
   const archive = await downloadRemoteEntry(item.desktopId, item.entry as RemoteEntry & FileEntry);
-  const { inspectAppArchive } = await import("@hiraya/app-cli");
+  const { inspectAppArchive } = await import("@hiraya-team/app-cli");
   const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
   if (item.release && (inspection.digest !== item.release.digest || JSON.stringify(inspection.manifest) !== JSON.stringify(item.release.manifest))) throw new Error("The app release does not match the runtime catalog.");
   return { archive, inspection };

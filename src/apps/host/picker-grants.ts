@@ -1,4 +1,4 @@
-import type { AppPermission, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { AppPermission, FileHandle, FolderHandle } from "@hiraya-team/apps-contracts";
 import type { DesktopEntry } from "../../types";
 import { CapabilityStore, type FileCapabilityOperation } from "./capability-store";
 

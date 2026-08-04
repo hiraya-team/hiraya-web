@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseManifestV2 } from "@hiraya/apps-contracts";
+import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 import { STORE_APPS } from "../build/store-apps";
 
 describe("Hiraya App Store catalog", () => {

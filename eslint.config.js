@@ -23,12 +23,6 @@ export default tseslint.config(
     },
   },
   {
-    files: ["packages/app-cli/**/*.ts"],
-    languageOptions: {
-      globals: globals.node,
-    },
-  },
-  {
     files: ["src/PublicDesktop.tsx", "src/features/public-desktop/**/*.{ts,tsx}", "src/lib/public-desktop.ts", "src/ui/public-desktop-layout.ts"],
     rules: {
       "no-restricted-imports": [
@@ -76,7 +70,7 @@ export default tseslint.config(
               message: "App-host services must depend on neutral domain ports rather than the OPFS implementation.",
             },
             {
-              group: ["@hiraya/app-cli"],
+              group: ["@hiraya-team/app-cli"],
               message: "The app runtime must depend on package contracts rather than CLI implementation types.",
             },
           ],

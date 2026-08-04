@@ -1,5 +1,5 @@
-import { APPS_PROTOCOL_VERSION, parseAppConnect, parseAppReady } from "@hiraya/apps-contracts";
-import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import { APPS_PROTOCOL_VERSION, parseAppConnect, parseAppReady } from "@hiraya-team/apps-contracts";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 import { terminateSandboxNavigation } from "./navigation";
 

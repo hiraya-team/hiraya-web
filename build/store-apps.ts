@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { parseManifestV2 } from "../packages/apps-contracts/src/index";
+import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 
 const PUBLIC_ID = "virtual:hiraya-store-apps";
 const RESOLVED_ID = `\0${PUBLIC_ID}`;

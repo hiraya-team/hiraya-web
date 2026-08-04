@@ -1,8 +1,8 @@
 import { execFileSync } from "node:child_process";
 import { lstat, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { APP_CATALOG_SCHEMA_VERSION, APPS_PROTOCOL_VERSION, parseAppCatalog, type AppCatalog, type AppCatalogRelease, type HirayaAppManifestV2 } from "@hiraya/apps-contracts";
-import { inspectAppArchive } from "../packages/app-cli/src/archive";
+import { inspectAppArchive } from "@hiraya-team/app-cli";
+import { APP_CATALOG_SCHEMA_VERSION, APPS_PROTOCOL_VERSION, parseAppCatalog, type AppCatalog, type AppCatalogRelease, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
 const CATALOG_FILE = "hiraya.apps.json";

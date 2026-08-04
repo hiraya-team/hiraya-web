@@ -1,4 +1,4 @@
-import type { AppCapabilities, LaunchContext, WindowState } from "@hiraya/apps-contracts";
+import type { AppCapabilities, LaunchContext, WindowState } from "@hiraya-team/apps-contracts";
 import { AppDialogService, type AppDialogApi } from "./dialogs";
 import { AppLifecycleService, type AppWindowApi } from "./lifecycle";
 import { AppNotificationService, type AppNotificationApi } from "./notifications";

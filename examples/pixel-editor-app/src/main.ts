@@ -3,7 +3,7 @@ import {
   HirayaSdkError,
   type FileHandle,
   type HirayaClient,
-} from "@hiraya/apps-sdk";
+} from "@hiraya-team/apps-sdk";
 import "./style.css";
 
 const APP_ID = "dev.hiraya.pixel-editor";

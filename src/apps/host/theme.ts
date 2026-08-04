@@ -1,4 +1,4 @@
-import type { ThemeTokens } from "@hiraya/apps-contracts";
+import type { ThemeTokens } from "@hiraya-team/apps-contracts";
 import type { ThemeDefinition } from "../../domain/theme";
 
 export function mapThemeTokens(theme: ThemeDefinition): ThemeTokens {

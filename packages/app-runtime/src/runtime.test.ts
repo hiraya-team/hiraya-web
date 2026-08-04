@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_RPC_TIMEOUT_MS, LONG_RUNNING_FILE_MUTATION_METHODS, LONG_RUNNING_RPC_TIMEOUT_MS, RpcDispatcher, usesLongRunningRpcDeadline } from "./dispatcher";
-import type { AppPackageInspection, ServiceMethod } from "@hiraya/apps-contracts";
+import type { AppPackageInspection, ServiceMethod } from "@hiraya-team/apps-contracts";
 import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "./sandbox";
 import { terminateSandboxNavigation } from "./navigation";
 

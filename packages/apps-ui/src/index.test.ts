@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { ThemeTokens } from "@hiraya/apps-contracts";
+import type { ThemeTokens } from "@hiraya-team/apps-contracts";
 import { applyThemeTokens, bindTheme, type ThemeTarget } from "./index";
 
 const darkTheme: ThemeTokens = {

@@ -1,4 +1,4 @@
-import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya/apps-sdk";
+import { HirayaSdkError, type FileHandle, type FileMetadata, type HirayaClient } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";

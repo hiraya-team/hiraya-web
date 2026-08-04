@@ -109,7 +109,7 @@ import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settings
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
-import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
@@ -2865,7 +2865,7 @@ function App({ session }: { session: AuthSession | null }) {
     setError("");
     try {
       const blob = inspected ? null : await readFile(file.id);
-      const { inspectAppArchive } = await import("@hiraya/app-cli");
+      const { inspectAppArchive } = await import("@hiraya-team/app-cli");
       const appPackage = inspected ?? await inspectAppArchive(new Uint8Array(await blob!.arrayBuffer()));
       if (isReservedSystemAppId(appPackage.manifest.id)) throw new Error("That app ID is reserved for a trusted system app.");
       const approved = installedApps.find((item) => item.appId === appPackage.manifest.id);
@@ -2931,7 +2931,7 @@ function App({ session }: { session: AuthSession | null }) {
     setError("");
     try {
       const blob = await readFile(file.id);
-      const { inspectHirayaArchive } = await import("@hiraya/app-cli");
+      const { inspectHirayaArchive } = await import("@hiraya-team/app-cli");
       const inspection = await inspectHirayaArchive(new Uint8Array(await blob.arrayBuffer()));
       if (inspection.kind === "app") {
         const { kind: _kind, ...appPackage } = inspection;

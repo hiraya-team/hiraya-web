@@ -1,4 +1,4 @@
-import type { ServiceMethods } from "@hiraya/apps-contracts";
+import type { ServiceMethods } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, type AppInstanceOwner } from "./types";
 
 export const MAX_NOTIFICATIONS_PER_INSTANCE = 16;

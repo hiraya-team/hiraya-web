@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseManifestV2 } from "@hiraya/apps-contracts";
+import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 import { catalogWithRelease } from "../build/release-app";
 
 const manifest = parseManifestV2({ schemaVersion: 2, uiRuntime: 1, id: "dev.hiraya.notes", name: "Notes", version: "1.2.0", entrypoint: "index.html", permissions: [] });

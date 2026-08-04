@@ -22,7 +22,7 @@ import {
   type FolderHandle,
   type HirayaClient,
   type LaunchContext,
-} from "@hiraya/apps-sdk";
+} from "@hiraya-team/apps-sdk";
 import { Editor } from "./Editor";
 import {
   MAX_PUBLICATION_BYTES,

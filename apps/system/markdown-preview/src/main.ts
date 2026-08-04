@@ -1,4 +1,4 @@
-import type { FileHandle, FolderHandle, HirayaClient } from "@hiraya/apps-sdk";
+import type { FileHandle, FolderHandle, HirayaClient } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, LatestOperation, relativeReader, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { renderMarkdown } from "./markdown";
 import "./style.css";

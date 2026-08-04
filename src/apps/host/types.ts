@@ -1,4 +1,4 @@
-import type { HirayaErrorCode } from "@hiraya/apps-contracts";
+import type { HirayaErrorCode } from "@hiraya-team/apps-contracts";
 
 export type AppInstanceOwner = Readonly<{
   appId: string;

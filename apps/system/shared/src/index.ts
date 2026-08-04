@@ -1,4 +1,4 @@
-import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient, type LaunchContext } from "@hiraya-team/apps-sdk";
 
 export interface ConnectedApp {
   hiraya: HirayaClient;

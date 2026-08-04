@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { AppPermission, FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { AppPermission, FileHandle, FolderHandle } from "@hiraya-team/apps-contracts";
 import { CapabilityStore, type FileCapabilityOperation } from "../src/apps/host/capability-store";
 import { FileService, FileServiceError, MAX_STAGED_WRITE_BYTES, MAX_STAGED_WRITE_SESSIONS, STAGED_WRITE_EXPIRY_MS, type FileSyncFunctions } from "../src/apps/host/file-service";
 import type { DesktopStateSnapshot } from "../src/domain/desktop-state";

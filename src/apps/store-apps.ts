@@ -1,5 +1,5 @@
 import storeAppCatalog from "virtual:hiraya-store-apps";
-import type { HirayaAppManifestV2 } from "@hiraya/apps-contracts";
+import type { HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 
 export type StoreAppCatalogItem = Readonly<{
   slug: string;

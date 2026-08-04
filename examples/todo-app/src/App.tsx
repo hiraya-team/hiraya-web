@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { CalendarBlank, CheckCircle, FilePlus, FloppyDisk, FolderOpen, ListChecks, PencilSimple, Plus, Trash, WarningCircle, X } from "@phosphor-icons/react";
-import { HirayaSdkError, type AppCapabilities, type FileHandle, type HirayaClient, type LaunchContext } from "@hiraya/apps-sdk";
+import { HirayaSdkError, type AppCapabilities, type FileHandle, type HirayaClient, type LaunchContext } from "@hiraya-team/apps-sdk";
 import { TODO_EXTENSION, TODO_MIME_TYPE, addTask, clearCompleted, createTodoDocument, deleteTask, editTask, hasTodoChanges, parseTodoText, serializeTodo, type Priority, type TodoDocument } from "./todo";
 
 export const APP_ID = "dev.hiraya.todo";

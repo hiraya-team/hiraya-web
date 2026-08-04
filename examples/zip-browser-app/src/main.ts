@@ -1,4 +1,4 @@
-import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type FileHandle, type FolderHandle, type HirayaClient } from "@hiraya-team/apps-sdk";
 import { extractFiles, inspectArchive, type Archive, type ArchiveEntry } from "./archive";
 import "./style.css";
 

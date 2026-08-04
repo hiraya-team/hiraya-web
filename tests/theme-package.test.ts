@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { sha256, THEME_MANIFEST_PATH } from "@hiraya/app-cli";
+import { sha256, THEME_MANIFEST_PATH } from "@hiraya-team/app-cli";
 import { strToU8, zipSync } from "fflate";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { fetchThemePackage, parseThemePackageAccess } from "../src/lib/theme-package";

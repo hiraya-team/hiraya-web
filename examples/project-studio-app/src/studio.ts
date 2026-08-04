@@ -1,4 +1,4 @@
-import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FileMetadata, type FolderHandle, type HirayaClient } from "@hiraya/apps-sdk";
+import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FileMetadata, type FolderHandle, type HirayaClient } from "@hiraya-team/apps-sdk";
 
 export const MAX_EDITABLE_BYTES = 2 * 1024 * 1024;
 

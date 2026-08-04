@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { connectHiraya, HirayaSdkError } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError } from "@hiraya-team/apps-sdk";
 import { App, APP_ID } from "./App";
 import "./style.css";
 

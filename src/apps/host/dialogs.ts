@@ -1,4 +1,4 @@
-import type { FileHandle, FolderHandle, ServiceMethods } from "@hiraya/apps-contracts";
+import type { FileHandle, FolderHandle, ServiceMethods } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, unavailable, type AppInstanceOwner } from "./types";
 
 export const MAX_QUEUED_DIALOGS_PER_INSTANCE = 8;

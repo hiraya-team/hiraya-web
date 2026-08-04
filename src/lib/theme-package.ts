@@ -1,6 +1,6 @@
-import { inspectHirayaArchive, sha256, type ThemePackageInspection } from "@hiraya/app-cli";
+import { inspectHirayaArchive, sha256, type ThemePackageInspection } from "@hiraya-team/app-cli";
 import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
-import type { AppPackageInspection } from "@hiraya/apps-contracts";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { ThemeWallpaperPackage } from "../domain/theme";
 import { parseDirectBlobAccess, type DirectBlobAccess } from "./contracts";
 

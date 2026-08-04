@@ -8,7 +8,7 @@
     "build": "bunx --bun tsc --noEmit && bunx --bun vite build"
   },
   "dependencies": {
-    "@hiraya/apps-sdk": "workspace:*",
+    "@hiraya-team/apps-sdk": "1.0.0",
     "fflate": "^0.8.3"
   },
   "devDependencies": {

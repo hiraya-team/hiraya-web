@@ -1,4 +1,4 @@
-import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus } from "@hiraya/apps-contracts";
+import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import type { ThemeDefinition } from "../../domain/theme";
@@ -72,7 +72,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
       : install.source === "store"
         ? await readApprovedPackageArchive(install.digest)
       : await options.fileSync.readFile(install.packageEntryId);
-    const { inspectAppArchive } = await import("@hiraya/app-cli");
+    const { inspectAppArchive } = await import("@hiraya-team/app-cli");
     const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
     if (appPackage.digest !== install.digest || appPackage.manifest.id !== install.appId) throw new Error(`${install.manifest.name} failed package verification.`);
 

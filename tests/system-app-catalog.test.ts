@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { parseManifestV2 } from "@hiraya/apps-contracts";
+import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 import { SYSTEM_APP_SLUGS } from "../build/system-apps";
 
 describe("bundled system app catalog", () => {
@@ -18,9 +18,9 @@ describe("bundled system app catalog", () => {
     const launcher = await Bun.file(new URL("../src/features/app-management/launch.ts", import.meta.url)).text();
 
     expect(plugin).toContain('createHash("sha256")');
-    expect(controller).not.toContain('import("@hiraya/app-cli")');
+    expect(controller).not.toContain('import("@hiraya-team/app-cli")');
     expect(controller).not.toContain("systemAppArchiveUrl");
-    expect(launcher).toContain('import("@hiraya/app-cli")');
+    expect(launcher).toContain('import("@hiraya-team/app-cli")');
   });
 
   test("uses the shared loading surface in every bundled file app", async () => {

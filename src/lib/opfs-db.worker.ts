@@ -10,7 +10,7 @@ import type { CustomTheme } from "../domain/theme";
 import { EMPTY_WINDOW_SESSION, parseWindowSession } from "./window-session";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type NewActivityRecord } from "./activity";
 import { type StorageDbMethod, type StorageDbRequest, type StorageDbRequests, type StorageDbResponses, type StoredPreferences } from "./opfs-db-protocol";
-import { parseJsonValue } from "@hiraya/apps-contracts";
+import { parseJsonValue } from "@hiraya-team/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
 import { APP_ASSOCIATIONS_SCHEMA_SQL, APP_RUNTIME_RESET_SCHEMA_SQL, APP_STORAGE_SCHEMA_SQL, DATABASE_SCHEMA_VERSION, EXPLORER_VIEW_PREFERENCE_SCHEMA_SQL, migrateSchema10To11Sql, migrateSchema11To12Sql, migrateSchema12To13Sql, migrateSchema2To3Sql, migrateSchema3To4Sql, migrateSchema4To5Sql, migrateSchema5To6Sql, migrateSchema6To7Sql, migrateSchema7To8Sql, migrateSchema8To9Sql, migrateSchema9To10Sql, MINIMAP_PREFERENCE_SCHEMA_SQL, OFFLINE_PINS_REMOVAL_SCHEMA_SQL, PREFERENCES_SCHEMA_SQL, PRIVACY_AND_ZOOM_PREFERENCES_SCHEMA_SQL, STORE_APP_SCHEMA_SQL } from "./opfs-schema";
 import { storageOwnerLockName } from "./storage-worker";

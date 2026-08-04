@@ -1,5 +1,5 @@
 import systemAppCatalog from "virtual:hiraya-system-apps";
-import type { HirayaAppManifestV2 } from "@hiraya/apps-contracts";
+import type { HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 
 export type SystemAppCatalogItem = Readonly<{
   slug: string;

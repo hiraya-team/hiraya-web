@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { LaunchContext, WindowState } from "../packages/apps-contracts/src/index";
+import type { LaunchContext, WindowState } from "@hiraya-team/apps-contracts";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import {
   AppHostServices,

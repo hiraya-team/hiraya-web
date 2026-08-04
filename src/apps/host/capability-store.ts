@@ -1,4 +1,4 @@
-import type { FileHandle, FolderHandle } from "@hiraya/apps-contracts";
+import type { FileHandle, FolderHandle } from "@hiraya-team/apps-contracts";
 
 export type FileCapabilityOperation = "stat" | "read" | "write" | "list" | "create" | "rename" | "move" | "delete";
 export type FileCapabilityHandle = FileHandle | FolderHandle;

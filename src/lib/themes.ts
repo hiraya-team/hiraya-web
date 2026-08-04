@@ -1,5 +1,8 @@
 import type { CSSProperties } from "react";
+import { parseCustomTheme as parsePortableCustomTheme, parseThemeDefinition } from "@hiraya-team/apps-contracts/theme";
 import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeState, ThemeTreatment, ThemeWallpaperPackage } from "../domain/theme";
+
+export { parseThemeDefinition };
 
 export const BUILTIN_THEME_IDS = ["hiraya-dusk", "warm-paper", "midnight-glass", "high-contrast"] as const;
 export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
@@ -7,14 +10,7 @@ export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
 export const DEFAULT_THEME_ID: BuiltinThemeId = "hiraya-dusk";
 export const DEFAULT_THEME_STATE: ThemeState = { selectedThemeId: DEFAULT_THEME_ID, customThemes: [] };
 export const MAX_CUSTOM_THEMES = 24;
-const COLOR_KEYS: Array<keyof ThemeColors> = [
-  "shell", "chrome", "chromeText", "window", "windowMuted", "text", "textMuted", "accent", "accentText", "border",
-  "danger", "dangerSurface", "desktopText", "selection", "editorBackground", "editorText", "editorGutter", "editorKeyword",
-  "editorString", "editorComment",
-];
-const HEX_COLOR = /^#[\da-f]{6}$/i;
 export const DEFAULT_THEME_TREATMENT: ThemeTreatment = { gradientStrength: 0, gradientAngle: 135, texture: "none", textureStrength: 0, textureScale: 6, pixelated: false };
-const GRADIENT_ANGLES = new Set([0, 45, 90, 135, 180, 225, 270, 315]);
 
 const duskColors: ThemeColors = {
   shell: "#25383d", chrome: "#141c1f", chromeText: "#f4f6f1", window: "#f2f1eb", windowMuted: "#e4e4dd",
@@ -95,10 +91,6 @@ function containsControl(value: string) {
     const codePoint = character.codePointAt(0) ?? 0;
     return codePoint < 32 || codePoint === 127;
   });
-}
-
-function containsUnicodeControl(value: string) {
-  return /\p{Cc}/u.test(value);
 }
 
 function relativeLuminance(color: string) {
@@ -259,74 +251,9 @@ export function themeContrastIssues(definition: ThemeDefinition) {
   return themeContrastChecks(definition).filter((check) => check.ratio < check.minimum).map((check) => check.label);
 }
 
-function boundedNumber(value: unknown, min: number, max: number, integer = false) {
-  if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max || integer && !Number.isInteger(value)) {
-    throw new Error("The theme has an unsupported value.");
-  }
-  return value;
-}
-
-export function parseThemeDefinition(value: unknown): ThemeDefinition {
-  const candidate = record(value);
-  const colorValues = record(candidate.colors);
-  const colors = Object.fromEntries(COLOR_KEYS.map((key) => {
-    const color = colorValues[key];
-    if (typeof color !== "string" || !HEX_COLOR.test(color)) throw new Error("The theme contains an invalid color.");
-    return [key, color.toLowerCase()];
-  })) as ThemeColors;
-  const shape = record(candidate.shape);
-  const effects = record(candidate.effects);
-  const typography = record(candidate.typography);
-  if (typography.family !== "humanist" && typography.family !== "system" && typography.family !== "mono") {
-    throw new Error("The theme contains an invalid font family.");
-  }
-  let treatment: ThemeTreatment | undefined;
-  if (candidate.treatment !== undefined) {
-    const value = record(candidate.treatment);
-    const keys = ["gradientStrength", "gradientAngle", "texture", "textureStrength", "textureScale", "pixelated"];
-    if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))
-      || !GRADIENT_ANGLES.has(value.gradientAngle as number)
-      || value.texture !== "none" && value.texture !== "halftone" && value.texture !== "dither"
-      || typeof value.pixelated !== "boolean") throw new Error("The theme contains an invalid surface treatment.");
-    treatment = {
-      gradientStrength: boundedNumber(value.gradientStrength, 0, 1),
-      gradientAngle: boundedNumber(value.gradientAngle, 0, 315, true),
-      texture: value.texture,
-      textureStrength: boundedNumber(value.textureStrength, 0, 1),
-      textureScale: boundedNumber(value.textureScale, 2, 12, true),
-      pixelated: value.pixelated,
-    };
-  }
-  return {
-    colors,
-    shape: { radius: boundedNumber(shape.radius, 0, 24), borderWidth: boundedNumber(shape.borderWidth, 0, 2) },
-    effects: {
-      blur: boundedNumber(effects.blur, 0, 30),
-      opacity: boundedNumber(effects.opacity, 0.65, 1),
-      shadow: boundedNumber(effects.shadow, 0, 1),
-    },
-    ...(treatment ? { treatment } : {}),
-    typography: {
-      family: typography.family,
-      scale: boundedNumber(typography.scale, 0.85, 1.2),
-      weight: boundedNumber(typography.weight, 400, 700, true),
-    },
-    density: boundedNumber(candidate.density, 0.8, 1.2),
-    motion: boundedNumber(candidate.motion, 0, 1.5),
-    iconSize: boundedNumber(candidate.iconSize, 48, 72, true),
-  };
-}
-
 export function parseCustomTheme(value: unknown): CustomTheme {
   const candidate = record(value);
-  if (typeof candidate.id !== "string" || !candidate.id || candidate.id === "." || candidate.id === ".." || new TextEncoder().encode(candidate.id).byteLength > 180 || isBuiltinThemeId(candidate.id) || candidate.id.includes("/") || candidate.id.includes("\\") || containsControl(candidate.id)) {
-    throw new Error("The custom theme has an invalid ID.");
-  }
-  if (typeof candidate.name !== "string" || candidate.name.trim() !== candidate.name || !candidate.name || [...candidate.name].length > 60 || containsUnicodeControl(candidate.name)) {
-    throw new Error("The custom theme has an invalid name.");
-  }
-  const definition = parseThemeDefinition(candidate.definition);
-  if (themeContrastIssues(definition).length) throw new Error("The custom theme does not provide sufficient text contrast.");
+  const theme = parsePortableCustomTheme(value);
   let wallpaper: ThemeWallpaperPackage | undefined;
   if (candidate.wallpaper !== undefined) {
     const packaged = record(candidate.wallpaper);
@@ -339,7 +266,7 @@ export function parseCustomTheme(value: unknown): CustomTheme {
     }
     wallpaper = packaged as ThemeWallpaperPackage;
   }
-  return { id: candidate.id, name: candidate.name, definition, ...(wallpaper ? { wallpaper } : {}) };
+  return { ...theme, ...(wallpaper ? { wallpaper } : {}) };
 }
 
 export function parseThemeState(value: unknown): ThemeState {

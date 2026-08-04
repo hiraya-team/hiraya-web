@@ -21,7 +21,7 @@ import { SyncHttpClient, SyncRequestError } from "../platform/sync/http-client";
 import { SyncConnectivity } from "../platform/sync/connectivity";
 import { sendOutboxOperation, type BlobUploadPhase } from "../platform/sync/outbox-transport";
 import { AuthorityValidationError, parseAuthorityIdentity, UpgradeRequiredError } from "./wire-authority";
-import type { FilePreviewSource } from "@hiraya/apps-contracts";
+import type { FilePreviewSource } from "@hiraya-team/apps-contracts";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never

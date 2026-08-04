@@ -7,10 +7,10 @@
     "dev": "bunx --bun vite",
     "build": "bunx --bun tsc --noEmit && bunx --bun vite build",
     "test": "bun test",
-    "package": "bun run build && bun ../../packages/app-cli/src/cli.ts package dist project-studio.hiraya.app"
+    "package": "bun run build && hiraya-app package dist project-studio.hiraya.app"
   },
   "dependencies": {
-    "@hiraya/apps-sdk": "workspace:*",
+    "@hiraya-team/apps-sdk": "1.0.0",
     "@phosphor-icons/react": "^2.1.10",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
@@ -18,6 +18,7 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@hiraya-team/app-cli": "1.0.0",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "typescript": "~5.8.3",

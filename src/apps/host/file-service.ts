@@ -1,4 +1,4 @@
-import { MAX_FILE_CHUNK_BYTES } from "@hiraya/apps-contracts";
+import { MAX_FILE_CHUNK_BYTES } from "@hiraya-team/apps-contracts";
 import type {
   AppPermission,
   DirectoryEntry,
@@ -9,7 +9,7 @@ import type {
   FolderMetadata,
   HirayaErrorCode,
   ServiceMethods,
-} from "@hiraya/apps-contracts";
+} from "@hiraya-team/apps-contracts";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import { ContentRevisionConflictError, type SaveFileOptions } from "../../domain/files";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";

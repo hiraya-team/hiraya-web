@@ -22,7 +22,7 @@ import {
   type FileHandle,
   type HirayaClient,
   type LaunchContext,
-} from "@hiraya/apps-sdk";
+} from "@hiraya-team/apps-sdk";
 import {
   STORE_MIME_TYPE,
   adjustStock,

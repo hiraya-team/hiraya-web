@@ -1,4 +1,4 @@
-import { connectHiraya, HirayaSdkError, type HirayaClient, type JsonValue } from "@hiraya/apps-sdk";
+import { connectHiraya, HirayaSdkError, type HirayaClient, type JsonValue } from "@hiraya-team/apps-sdk";
 import { calculate, formatNumber } from "./calculator";
 import "./style.css";
 

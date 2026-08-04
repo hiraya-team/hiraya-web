@@ -8,7 +8,7 @@
     "apps/system/*"
   ],
   "scripts": {
-    "app": "bun packages/app-cli/src/cli.ts",
+    "app": "hiraya-app",
     "dev": "bunx --bun vite",
     "build": "bunx --bun tsc --noEmit && bunx --bun vite build && bun run bundle:check",
     "bundle:check": "bun build/bundle-budget.ts",
@@ -21,13 +21,12 @@
     "test": "bun test",
     "test:e2e": "HIRAYA_FRONTEND_ONLY=true bun run build && playwright test",
     "test:e2e:apps-ui": "playwright test --config playwright.apps-ui.config.ts",
-    "test:e2e:server": "../../scripts/server-browser-e2e.sh",
     "preview": "bunx --bun vite preview"
   },
   "dependencies": {
-    "@hiraya/apps-contracts": "workspace:*",
-    "@hiraya/apps-sdk": "workspace:*",
-    "@hiraya/app-cli": "workspace:*",
+    "@hiraya-team/apps-contracts": "1.0.0",
+    "@hiraya-team/apps-sdk": "1.0.0",
+    "@hiraya-team/app-cli": "1.0.0",
     "@hiraya/app-runtime": "workspace:*",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",

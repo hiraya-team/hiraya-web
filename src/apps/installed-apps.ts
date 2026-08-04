@@ -1,5 +1,5 @@
-import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya/apps-contracts";
-import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
+import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
+import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { SystemAppTarget } from "./types";
 
 type InstalledAppBase = Readonly<{

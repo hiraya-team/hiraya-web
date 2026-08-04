@@ -1,4 +1,4 @@
-import { parseJsonValue, type JsonValue } from "@hiraya/apps-contracts";
+import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { LocalPreferences } from "../../domain/preferences";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
 import { parseWindowSession, type WindowSession } from "../../lib/window-session";

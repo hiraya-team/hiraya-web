@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This repository is the public Hiraya frontend. It is a React, TypeScript, and Vite progressive web app that can run browser-local or synchronize with the private Hiraya server through same-origin `/api` routes. The server repository pins this repository as its `frontend` submodule.
+This repository is the public Hiraya frontend. It is a React, TypeScript, and Vite progressive web app that can run browser-local or synchronize with the private Hiraya server through same-origin `/api` routes. The private Hiraya platform repository pins this repository as its `web` submodule.
 
 Use Bun for package and script operations:
 

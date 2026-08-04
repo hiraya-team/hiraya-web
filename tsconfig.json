@@ -16,6 +16,6 @@
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },
-  "include": ["src", "build/**/*.ts", "vite.config.ts", "packages/*/src"],
-  "exclude": ["packages/*/src/**/*.test.ts"]
+  "include": ["src", "build/**/*.ts", "vite.config.ts", "packages/app-runtime/src", "packages/apps-ui/src"],
+  "exclude": ["packages/app-runtime/src/**/*.test.ts", "packages/apps-ui/src/**/*.test.ts"]
 }
