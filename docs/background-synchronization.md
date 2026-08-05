@@ -32,6 +32,7 @@ Operations that inherently require remote information, such as downloading uncac
 - A visible synchronized mutation is locally durable but may not yet exist on the server.
 - Reconciliation must reapply all remaining outbox operations over each authoritative snapshot.
 - Idempotency headers, outbox ordering, content-before-metadata, complete import validation, and revision-qualified content checks remain mandatory.
+- Remote file bytes always use validated direct-access descriptors and credential-free presigned transfers; API content responses never carry file bytes.
 - Browser storage loss can still remove changes that have not reached the server, so synchronization status must remain visible and truthful.
 - Background delivery is guaranteed while Hiraya is running and resumes from the durable outbox when it reopens. The application does not promise closed-browser delivery through service-worker background sync.
 

@@ -38,7 +38,7 @@ export function storePackageKey(item: StorePackage): string {
   return `${item.catalogId}:${item.catalogRevision}:${item.desktopId}:${item.entry.id}:${item.contentRevision}`;
 }
 
-export async function loadStorePackages(desktop: DesktopIdentity): Promise<LoadedStorePackages> {
+export async function loadStorePackages(desktop: DesktopIdentity, directBlobOrigin: string): Promise<LoadedStorePackages> {
   if (desktop.purpose !== "app-store" || !desktop.authorityCatalogId) return { packages: [], managed: false, descriptor: null };
   const response = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopProjection(desktop.id), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
   if (!response.ok) throw new Error(`The app store could not be loaded (${response.status}).`);
@@ -50,7 +50,7 @@ export async function loadStorePackages(desktop: DesktopIdentity): Promise<Loade
   if (!catalogEntry) return { managed: false, descriptor, packages: files
     .filter((entry) => entry.name.toLowerCase().endsWith(".hiraya.app"))
     .map((entry) => ({ source: "remote", kind: "store", entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id })) };
-  const catalog = parseAppCatalog(JSON.parse(await (await downloadRemoteEntry(state.id, catalogEntry)).text()));
+  const catalog = parseAppCatalog(JSON.parse(await (await downloadRemoteEntry(state.id, catalogEntry, directBlobOrigin)).text()));
   if (catalog.releases.some((release) => release.kind === "system" && !SYSTEM_APP_ID_SET.has(release.manifest.id))) throw new Error("The app catalog contains an unsupported trusted system app.");
   return { managed: true, descriptor, packages: catalog.releases.map((release) => {
     const entry = files.find((entry) => entry.parentId === null && entry.name === release.fileName);
@@ -66,21 +66,15 @@ export async function appStoreDescriptorIsCurrent(expected: AppStoreDescriptor) 
   return current?.catalogId === expected.catalogId && current.catalogRevision === expected.catalogRevision && current.desktopId === expected.desktopId;
 }
 
-async function downloadRemoteEntry(desktopId: string, entry: RemoteEntry & FileEntry) {
+async function downloadRemoteEntry(desktopId: string, entry: RemoteEntry & FileEntry, directBlobOrigin: string) {
   const descriptorResponse = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopContent(desktopId, entry.id, entry.contentRevision), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
   if (!descriptorResponse.ok) throw new Error(descriptorResponse.status === 404 ? "This app release is no longer available." : `The app release could not be loaded (${descriptorResponse.status}).`);
-  const rawSha256 = descriptorResponse.headers.get("X-Hiraya-Content-SHA256");
-  if (rawSha256 !== null) {
-    const archive = await descriptorResponse.blob();
-    if (archive.size !== entry.size || await sha256Blob(archive) !== rawSha256) throw new Error("The app release failed integrity verification.");
-    return archive;
-  }
-  const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entry.id, entry.contentRevision, entry.size);
+  const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entry.id, entry.contentRevision, entry.size, directBlobOrigin);
   const response = await fetch(descriptor.access.url, {
     method: descriptor.access.method,
-    headers: descriptor.access.url.startsWith("/") ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers,
+    headers: descriptor.access.headers,
     cache: "no-store",
-    credentials: descriptor.access.url.startsWith("/") ? "same-origin" : "omit",
+    credentials: "omit",
     redirect: "error",
     referrerPolicy: "no-referrer",
   });
@@ -90,8 +84,8 @@ async function downloadRemoteEntry(desktopId: string, entry: RemoteEntry & FileE
   return archive;
 }
 
-export async function inspectStorePackage(item: StorePackage): Promise<InspectedStorePackage> {
-  const archive = await downloadRemoteEntry(item.desktopId, item.entry as RemoteEntry & FileEntry);
+export async function inspectStorePackage(item: StorePackage, directBlobOrigin: string): Promise<InspectedStorePackage> {
+  const archive = await downloadRemoteEntry(item.desktopId, item.entry as RemoteEntry & FileEntry, directBlobOrigin);
   const { inspectAppArchive } = await import("@hiraya-team/app-cli");
   const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
   if (item.release && (inspection.digest !== item.release.digest || JSON.stringify(inspection.manifest) !== JSON.stringify(item.release.manifest))) throw new Error("The app release does not match the runtime catalog.");

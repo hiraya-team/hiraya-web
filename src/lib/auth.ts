@@ -15,7 +15,6 @@ export type AuthSession = {
   directBlobOrigin: string;
   user: SessionUser;
   capabilities: {
-    blobTransfer: "direct-b2-v1";
     entryTransactions: "prepare-commit-cancel-v1";
     desktopSearch?: "accessible-desktops-v1";
 		shortLinks?: "account-short-links-v1";
@@ -63,7 +62,8 @@ function isSafeAbsoluteHttpUrl(value: string) {
 function normalizedHttpOrigin(value: string) {
   if (!isSafeAbsoluteHttpUrl(value)) return null;
   const url = new URL(value);
-  return url.pathname === "/" ? url.origin : null;
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  return url.pathname === "/" && (url.protocol === "https:" || loopback) ? url.origin : null;
 }
 
 export function parseAuthSession(value: unknown): AuthSession {
@@ -71,10 +71,7 @@ export function parseAuthSession(value: unknown): AuthSession {
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
 	const session = value as { apiProtocol?: unknown; storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown; publicationBaseUrl?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
-  if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
-    throw new Error("The session bootstrap requires direct-b2-v1 blob transfer support.");
-  }
-  if (session.apiProtocol !== HIRAYA_API_PROTOCOL || (session.capabilities as { entryTransactions?: unknown }).entryTransactions !== "prepare-commit-cancel-v1") {
+  if (!session.capabilities || typeof session.capabilities !== "object" || session.apiProtocol !== HIRAYA_API_PROTOCOL || (session.capabilities as { entryTransactions?: unknown }).entryTransactions !== "prepare-commit-cancel-v1") {
     throw new Error("The session bootstrap requires entry transaction protocol support.");
   }
   const directBlobOrigin = normalizedHttpOrigin(requiredString(session.directBlobOrigin, "direct blob origin"));
@@ -103,7 +100,7 @@ export function parseAuthSession(value: unknown): AuthSession {
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),
       ...(user.avatarUrl === undefined ? {} : { avatarUrl: optionalString(user.avatarUrl, "avatar URL") }),
     },
-		capabilities: { blobTransfer: "direct-b2-v1", entryTransactions: "prepare-commit-cancel-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
+		capabilities: { entryTransactions: "prepare-commit-cancel-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
 		...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
 		...(publicationBaseUrl ? { publicationBaseUrl } : {}),
   };

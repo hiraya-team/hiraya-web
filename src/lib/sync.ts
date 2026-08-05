@@ -90,6 +90,7 @@ export type SyncEngineOptions = {
   storage?: SyncStorage;
   onUnauthorized?: () => void;
   expectedCatalogId?: string | null;
+  directBlobOrigin?: string;
   createXMLHttpRequest?: () => XMLHttpRequest;
 };
 
@@ -175,6 +176,7 @@ export class SyncEngine {
   private readonly storage: SyncStorage;
   private readonly onUnauthorized: () => void;
   private expectedCatalogId: string | null;
+  private directBlobOrigin?: string;
   private readonly http: SyncHttpClient;
   private readonly connectivity: SyncConnectivity;
   private readonly setTimeoutImpl: typeof globalThis.setTimeout;
@@ -223,6 +225,7 @@ export class SyncEngine {
     this.storage = options.storage ?? browserSyncStorage;
     this.onUnauthorized = options.onUnauthorized ?? redirectToLogin;
     this.expectedCatalogId = options.expectedCatalogId ?? null;
+    this.directBlobOrigin = options.directBlobOrigin;
     this.setTimeoutImpl = options.setTimeout ?? globalThis.setTimeout.bind(globalThis);
     this.clearTimeoutImpl = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
     this.createXMLHttpRequest = options.createXMLHttpRequest;
@@ -493,9 +496,10 @@ export class SyncEngine {
     for (const listener of this.statusListeners) listener(next);
   }
 
-  setExpectedCatalogId(catalogId: string | null) {
+  setExpectedAuthority(catalogId: string | null, directBlobOrigin?: string) {
     if (this.running) throw new Error("The synchronization authority cannot change while running.");
     this.expectedCatalogId = catalogId;
+    this.directBlobOrigin = directBlobOrigin;
   }
 
   private failAuthority(error: unknown) {
@@ -652,15 +656,8 @@ export class SyncEngine {
     if (!entry) throw new Error("That file no longer exists on the server.");
     const descriptorResponse = this.requireAuthentication(await this.fetchImpl(API_ROUTES.desktopContent(desktopId, entryId, entry.contentRevision), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal: this.syncAbort?.signal }));
     if (!descriptorResponse.ok) throw new Error(`The server content could not be loaded (${descriptorResponse.status}).`);
-    if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) {
-      const blob = await descriptorResponse.blob();
-      const sha256 = descriptorResponse.headers.get("X-Hiraya-Content-SHA256");
-      if (blob.size !== entry.size || !sha256 || await sha256Blob(blob) !== sha256) throw new Error("The server content failed integrity verification.");
-      return blob.slice(0, blob.size, entry.mimeType);
-    }
-    const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entryId, entry.contentRevision, entry.size);
-    const localAccess = descriptor.access.url.startsWith("/");
-    const response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: localAccess ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers, cache: "no-store", credentials: localAccess ? "same-origin" : "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
+    const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entryId, entry.contentRevision, entry.size, this.directBlobOrigin);
+    const response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
     if (!response.ok) throw new Error(`The server content could not be downloaded (${response.status}).`);
     const downloaded = await responseBlobWithProgress(response, descriptor.size, () => undefined);
     if (downloaded.blob.size !== descriptor.size || downloaded.sha256 !== descriptor.sha256) throw new Error("The server content failed integrity verification.");
@@ -726,6 +723,7 @@ export class SyncEngine {
   private async sendOutboxOperation(record: OutboxRecord, generation: number) {
     return sendOutboxOperation(record, {
       fetch: this.fetchImpl,
+      directBlobOrigin: this.directBlobOrigin,
       signal: this.syncAbort?.signal,
       requestJson: (input, init) => this.requestJson(input, init),
       requireAuthentication: (response) => this.requireAuthentication(response),
@@ -1394,18 +1392,9 @@ export class SyncEngine {
       this.assertActiveSession(generation, desktopId);
       this.requireAuthentication(descriptorResponse);
       if (!descriptorResponse.ok) throw new Error(descriptorResponse.status === 404 ? "This file no longer exists on the server." : `Access to the server contents of “${entry.name}” could not be loaded (${descriptorResponse.status}).`);
-      if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) {
-        const content = await descriptorResponse.blob();
-        if (content.size !== entry.size) throw new Error(`The server contents of “${entry.name}” have an unexpected size.`);
-        const digest = await sha256Blob(content);
-        if (descriptorResponse.headers.get("X-Hiraya-Content-SHA256") !== digest) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
-        const stored = await this.storage.cacheRemoteFile(desktopId, catalogId, id, contentRevision, digest, content);
-        if (!stored) throw new VirtualFileChangedError();
-        return stored;
-      }
       let descriptor;
       try {
-        descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), id, contentRevision, entry.size);
+        descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), id, contentRevision, entry.size, this.directBlobOrigin);
       } catch (error) {
         if (error instanceof Error && error.message.includes("different revision")) throw new VirtualFileChangedError();
         throw error;
@@ -1414,9 +1403,9 @@ export class SyncEngine {
       try {
         response = await this.fetchImpl(descriptor.access.url, {
           method: descriptor.access.method,
-          headers: descriptor.access.url.startsWith("/") ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers,
+          headers: descriptor.access.headers,
           cache: "no-store",
-          credentials: descriptor.access.url.startsWith("/") ? "same-origin" : "omit",
+          credentials: "omit",
           referrerPolicy: "no-referrer",
           redirect: "error",
           signal,
@@ -1482,13 +1471,8 @@ export class SyncEngine {
     this.assertActiveSession(generation, desktopId);
     this.requireAuthentication(response);
     if (!response.ok) throw new Error(response.status === 404 ? "This file no longer exists on the server." : `A preview of “${entry.name}” could not be loaded (${response.status}).`);
-    if (!response.headers.get("content-type")?.includes("application/json")) {
-      const blob = await response.blob();
-      if (blob.size !== entry.size || response.headers.get("X-Hiraya-Content-SHA256") !== await sha256Blob(blob)) throw new Error(`The preview of “${entry.name}” failed integrity verification.`);
-      return { kind: "blob", blob };
-    }
-    const descriptor = parseContentAccessDescriptor(await response.json(), id, contentRevision, entry.size);
-    if (descriptor.access.url.startsWith("/") || Object.keys(descriptor.access.headers).length) throw new Error("The server did not provide a browser-compatible media preview.");
+    const descriptor = parseContentAccessDescriptor(await response.json(), id, contentRevision, entry.size, this.directBlobOrigin);
+    if (Object.keys(descriptor.access.headers).length) throw new Error("The server did not provide a browser-compatible media preview.");
     return { kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt };
   }
 
@@ -1926,7 +1910,7 @@ export class SyncEngine {
 
 const defaultEngine = new SyncEngine({ frontendOnly: import.meta.env.HIRAYA_FRONTEND_ONLY === "true" });
 
-export function configureSyncAuthority(catalogId: string | null) { defaultEngine.setExpectedCatalogId(catalogId); }
+export function configureSyncAuthority(catalogId: string | null, directBlobOrigin?: string) { defaultEngine.setExpectedAuthority(catalogId, directBlobOrigin); }
 
 export const initializeDesktop = defaultEngine.start.bind(defaultEngine);
 export const stopDesktopSync = defaultEngine.stop.bind(defaultEngine);

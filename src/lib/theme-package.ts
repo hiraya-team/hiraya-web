@@ -12,28 +12,25 @@ export type ThemePackageCache = {
   write(themeId: string, expected: ThemeWallpaperPackage, content: Blob): Promise<unknown>;
 };
 
-export function parseThemePackageAccess(value: unknown, expected: ThemeWallpaperPackage): DirectBlobAccess {
-  const descriptor = parseContentAccessDescriptor(value, expected.assetId, expected.revision, expected.size);
+export function parseThemePackageAccess(value: unknown, expected: ThemeWallpaperPackage, directBlobOrigin?: string): DirectBlobAccess {
+  const descriptor = parseContentAccessDescriptor(value, expected.assetId, expected.revision, expected.size, directBlobOrigin);
   if (descriptor.sha256 !== expected.sha256) throw new Error("The theme package content does not match the selected theme.");
   return descriptor.access;
 }
 
-export async function fetchThemePackage(accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, signal?: AbortSignal, cache?: ThemePackageCache): Promise<ThemePackageInspection> {
+export async function fetchThemePackage(accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, signal?: AbortSignal, cache?: ThemePackageCache, directBlobOrigin?: string): Promise<ThemePackageInspection> {
   let content: Blob | null = null;
   try { content = await cache?.readVerified(expectedThemeId, expected) ?? null; }
   catch (error) { console.warn("Hiraya could not read the cached theme package.", error); }
   const cached = content !== null;
   if (!content) {
     const publicContent = accessUrl.startsWith("/api/public/");
-    const descriptorResponse = await fetch(accessUrl, { credentials: "same-origin", cache: "no-store", headers: publicContent ? undefined : authenticatedHeaders(), signal });
+    const descriptorResponse = await fetch(accessUrl, { credentials: publicContent ? "omit" : "same-origin", cache: "no-store", headers: publicContent ? undefined : authenticatedHeaders(), signal });
     if (!descriptorResponse.ok) throw new Error("The theme package is unavailable.");
-    if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) content = await descriptorResponse.blob();
-    else {
-      const access = parseThemePackageAccess(await descriptorResponse.json(), expected);
-      const response = await fetch(access.url, { method: access.method, headers: access.url.startsWith("/") ? authenticatedHeaders(access.headers) : access.headers, credentials: access.url.startsWith("/") ? "same-origin" : "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
-      if (!response.ok) throw new Error("The theme package could not be downloaded.");
-      content = await response.blob();
-    }
+    const access = parseThemePackageAccess(await descriptorResponse.json(), expected, directBlobOrigin);
+    const response = await fetch(access.url, { method: access.method, headers: access.headers, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
+    if (!response.ok) throw new Error("The theme package could not be downloaded.");
+    content = await response.blob();
   }
   const bytes = new Uint8Array(await content.arrayBuffer());
   if (bytes.byteLength !== expected.size || !cached && await sha256(bytes) !== expected.sha256) throw new Error("The downloaded theme package failed integrity verification.");

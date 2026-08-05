@@ -9,6 +9,7 @@ export type BlobUploadPhase = "hashing" | "access" | "uploading" | "finalizing";
 
 type OutboxTransportDependencies = {
   fetch: typeof fetch;
+  directBlobOrigin?: string;
   signal?: AbortSignal;
   requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown>;
   requireAuthentication(response: Response): Response;
@@ -18,7 +19,7 @@ type OutboxTransportDependencies = {
 };
 
 type Upload = { id: string; name: string; size: number; content: Blob; sha256: string; md5: string };
-type PreparedTransaction = { state: "committed"; catalogRevision?: number } | { state: "prepared"; transactionId: string; items: Array<{ entryId: string; access: ReturnType<typeof parseDirectBlobAccess> }> };
+type PreparedTransaction = { state: "committed"; catalogRevision: number } | { state: "prepared"; transactionId: string; items: Array<{ entryId: string; access: ReturnType<typeof parseDirectBlobAccess> }> };
 
 function headers(record: OutboxRecord, value?: HeadersInit) {
   const result = authenticatedHeaders(value);
@@ -78,18 +79,18 @@ function transactionOperations(record: OutboxRecord, uploads: readonly Upload[])
   }
 }
 
-function parsePreparation(value: unknown, expectedIds: readonly string[]): PreparedTransaction {
+function parsePreparation(value: unknown, expectedIds: readonly string[], directBlobOrigin?: string): PreparedTransaction {
   if (!isRecord(value) || value.state !== "prepared" && value.state !== "committed") throw new Error("The entry transaction response is invalid.");
   if (value.state === "committed") {
-    if (value.catalogRevision !== undefined && (!Number.isSafeInteger(value.catalogRevision) || Number(value.catalogRevision) < 0)) throw new Error("The committed entry transaction has an invalid revision.");
-    return { state: "committed", ...(value.catalogRevision === undefined ? {} : { catalogRevision: Number(value.catalogRevision) }) };
+    if (!Number.isSafeInteger(value.catalogRevision) || Number(value.catalogRevision) <= 0) throw new Error("The committed entry transaction has an invalid revision.");
+    return { state: "committed", catalogRevision: Number(value.catalogRevision) };
   }
   if (typeof value.transactionId !== "string" || !value.transactionId || value.transactionId.length > 1024 || [...value.transactionId].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !Number.isSafeInteger(value.expiresAt) || Number(value.expiresAt) < 0 || !Array.isArray(value.items)) throw new Error("The entry transaction response is invalid.");
   const expected = new Set(expectedIds);
   if (expected.size !== expectedIds.length || value.items.length !== expected.size) throw new Error("The entry transaction returned unexpected upload targets.");
   const items = value.items.map((candidate) => {
     if (!isRecord(candidate) || !isValidId(candidate.entryId) || !expected.delete(candidate.entryId)) throw new Error("The entry transaction returned unexpected upload targets.");
-    return { entryId: candidate.entryId, access: parseDirectBlobAccess(candidate.access, "PUT") };
+    return { entryId: candidate.entryId, access: parseDirectBlobAccess(candidate.access, "PUT", directBlobOrigin) };
   });
   if (expected.size) throw new Error("The entry transaction did not return every upload target.");
   return { state: "prepared", transactionId: value.transactionId, items };
@@ -123,7 +124,7 @@ async function sendTransaction(record: OutboxRecord, dependencies: OutboxTranspo
     method: "POST",
     headers: headers(record, { "Content-Type": "application/json" }),
     body: JSON.stringify({ operations: transactionOperations(record, uploads) }),
-  }), uploads.map(({ id }) => id));
+  }), uploads.map(({ id }) => id), dependencies.directBlobOrigin);
   if (prepared.state === "committed") return { response: prepared, verifiedUploads: new Map(uploads.map(({ id, sha256 }) => [id, sha256])) };
   let commitStarted = false;
   try {

@@ -235,7 +235,7 @@ describe("canonical synchronization", () => {
           await positionGate;
           remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: operation.changes.position, revision: 2 }] };
         }
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${request}`);
     }) as typeof fetch;
@@ -277,7 +277,7 @@ describe("canonical synchronization", () => {
           markReplayStarted();
           return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => setTimeout(() => reject(new TypeError("stale transport failed")), 0), { once: true }));
         }
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -757,7 +757,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk?projection=web") return Response.json({ ...remote, catalogRevision: ++reads });
       if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/file-1") return new Response("note");
-      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed" });
+      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed", catalogRevision: 1 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
@@ -976,7 +976,7 @@ describe("canonical synchronization", () => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
       if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
       if (String(input) === "/api/desktops/shared/entries/transactions") return Response.json({ error: "forbidden" }, { status: 403 });
-      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed" });
+      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed", catalogRevision: 1 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch });
 
@@ -1002,7 +1002,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "https://downloads.example.test/file-1") { directInit = init; return new Response("note"); }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
-    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, directBlobOrigin: "https://downloads.example.test" });
     const transferPhases: string[] = [];
     engine.subscribeTransfers((transfers) => {
       const transfer = transfers.find(({ entryId }) => entryId === "file-1");
@@ -1154,7 +1154,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk/entries/transactions") {
         if (rejectMutation) return Response.json({ error: "position conflict" }, { status: 409 });
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: { x: 5, y: 6 }, revision: 2 }] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1248,7 +1248,7 @@ describe("canonical synchronization", () => {
     await restarted.stop();
   });
 
-  test("loads a checksum-verified legacy content conflict and keeps the current server version", async () => {
+  test("loads a descriptor-backed content conflict and keeps the current server version", async () => {
     const storage = remoteStorage();
     const remote = { ...remoteDesktopState(), catalogRevision: 2, entries: [{ ...remoteDesktopState().entries[0], revision: 2, contentRevision: 2 }] };
     const operation: OutboxOperation = { schemaVersion: 1, kind: "save-content", entryId: "file-1", mimeType: "text/plain", size: 4, modifiedAt: 2, baseContentRevision: 1 };
@@ -1533,7 +1533,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk/entries/transactions/upload-1/commit" && init?.method === "POST") {
         await commitGate;
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 12, revision: 2, contentRevision: 2 }] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1589,7 +1589,7 @@ describe("canonical synchronization", () => {
       }
       if (String(input) === "/api/desktops/desk/entries/transactions/tree-upload/commit" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, ...preparedItems.map(({ entry }) => ({ ...entry, revision: 2, contentRevision: entry.kind === "file" ? 2 : 0 }))] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1651,7 +1651,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
       if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 9, revision: 2, contentRevision: 2 }] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1683,7 +1683,7 @@ describe("canonical synchronization", () => {
       if (String(input) === "https://uploads.example.test/file-1?attempt=2") return new Response(null, { status: 200 });
       if (String(input) === "/api/desktops/desk/entries/transactions/upload-2/commit" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 5, revision: 2, contentRevision: 2 }] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1731,7 +1731,7 @@ describe("canonical synchronization", () => {
         commits += 1;
         if (commits === 1) return Response.json({ error: "upload reservation expired" }, { status: 410 });
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 5, revision: 2, contentRevision: 2 }] };
-        return Response.json({ state: "committed" });
+        return Response.json({ state: "committed", catalogRevision: 1 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1809,7 +1809,7 @@ describe("canonical synchronization", () => {
     let body: unknown;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/entries/transactions") { body = JSON.parse(String(init?.body)); return Response.json({ state: "committed" }); }
+      if (String(input) === "/api/desktops/desk/entries/transactions") { body = JSON.parse(String(init?.body)); return Response.json({ state: "committed", catalogRevision: 1 }); }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });

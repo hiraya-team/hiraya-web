@@ -34,23 +34,12 @@ export async function fetchPublicDesktop(authority: PublicAuthority, fetchImpl: 
 }
 
 export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis), purpose?: "preview") {
-  const response = await fetchImpl(API_ROUTES.publicDesktopContent(authority.desktopAlias, authority.itemAlias, file.id, contentRevision, purpose), { cache: "no-store", credentials: "same-origin" });
+  const response = await fetchImpl(API_ROUTES.publicDesktopContent(authority.desktopAlias, authority.itemAlias, file.id, contentRevision, purpose), { cache: "no-store", credentials: "omit" });
   const gate = await largeDownloadError(response);
   if (gate) throw gate;
-  if (response.ok && !response.headers.get("content-type")?.includes("application/json")) {
-    const blob = await response.blob();
-    if (blob.size !== file.size) throw new Error("The downloaded file has an unexpected size.");
-    const digest = response.headers.get("X-Hiraya-Content-SHA256");
-    if (!digest || !/^[a-f0-9]{64}$/.test(digest)) throw new Error("The download did not include valid integrity metadata.");
-    if (await sha256Blob(blob) !== digest) throw new Error("The downloaded file failed integrity verification.");
-    return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
-  }
-
   if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);
   const descriptor = parseContentAccessDescriptor(await response.json(), file.id, contentRevision, file.size);
   const contentResponse = await fetchImpl(descriptor.access.url, { method: "GET", headers: descriptor.access.headers, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer" });
-  const contentGate = await largeDownloadError(contentResponse);
-  if (contentGate) throw contentGate;
   if (!contentResponse.ok) throw new Error(`The file could not be downloaded (${contentResponse.status}).`);
   const blob = await contentResponse.blob();
   if (blob.size !== descriptor.size) throw new Error("The downloaded file has an unexpected size.");
