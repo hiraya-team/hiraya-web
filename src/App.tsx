@@ -4790,11 +4790,11 @@ function App({ session }: { session: AuthSession | null }) {
           }
           selectAreaFromSwitcher(segment);
         }}
-        onFocusApp={focusApp}
-        onShowDesktop={showDesktop}
-        onMinimizeApp={minimizeApp}
-        onCloseApp={requestCloseApp}
-        onShowAllWindows={() => setActivePanel("windows")}
+        onFocusApp={(id) => { collapseAreaMap(false); focusApp(id); }}
+        onShowDesktop={() => { collapseAreaMap(false); showDesktop(); }}
+        onMinimizeApp={(id) => { collapseAreaMap(false); minimizeApp(id); }}
+        onCloseApp={(id) => { collapseAreaMap(false); void requestCloseApp(id); }}
+        onShowAllWindows={() => { collapseAreaMap(false); setActivePanel("windows"); }}
       />}
       <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {areaAnnouncement}

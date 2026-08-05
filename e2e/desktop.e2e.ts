@@ -775,9 +775,24 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await trigger.click();
   await expect(switcher.getByRole("button", { name: "Back to desktop" })).toBeVisible();
   await switcher.getByRole("button", { name: "Back to desktop" }).click();
-  await expect(switcher.getByRole("button", { name: "Back to desktop" })).toHaveCount(0);
-  await trigger.click();
   await expect(switcher).toHaveCount(0);
+
+  await trigger.click();
+  await switcher.getByRole("button", { name: "Switch to App Store" }).click();
+  await expect(switcher).toHaveCount(0);
+
+  await trigger.click();
+  await switcher.getByRole("button", { name: "Minimize App Store" }).click();
+  await expect(switcher).toHaveCount(0);
+
+  await trigger.click();
+  await switcher.getByRole("button", { name: "Switch to App Store" }).click();
+  await expect(switcher).toHaveCount(0);
+
+  await trigger.click();
+  await switcher.getByRole("button", { name: "Close App Store" }).click();
+  await expect(switcher).toHaveCount(0);
+  await expect(appStore).toHaveCount(0);
   await expect(page.locator(".desktop-minimap__handle")).toHaveCount(0);
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
