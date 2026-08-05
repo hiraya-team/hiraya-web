@@ -18,7 +18,6 @@ New user-facing features are listed newest first.
 
 - **Automate desktop work in Terminal.** Open **Terminal** to navigate and manage Hiraya files with familiar commands, pipelines, redirects, aliases, history, background jobs, and reusable `.hsh` shell scripts. Commands remain inside Hiraya's sandbox and cannot access the server operating system or network.
 - **Recognize images before opening them.** Image files now show content thumbnails on the desktop and in open folders while retaining familiar file icons whenever a preview is unavailable.
-- **Keep actions and apps close at hand.** The floating action bar now includes installed app launchers and can collapse into a small bottom-right button. On mobile, installed apps appear in a vertical launcher along the right edge.
 - **Find applications faster.** Search **Applications** by name, description, app ID, source, or version. Clear result counts, sorted listings, and improved empty and offline messages make the App Store easier to scan.
 - **Open apps at their intended size.** Apps can now size their initial window by the usable content area, so theme-specific title bars and borders no longer make their interface unexpectedly smaller.
 - **Search everything together.** Open **Search** or press **Ctrl/⌘ K** to find apps, files, folders, open windows, and commands in one results list.
