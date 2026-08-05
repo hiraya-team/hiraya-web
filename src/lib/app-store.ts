@@ -38,6 +38,14 @@ export function storePackageKey(item: StorePackage): string {
   return `${item.catalogId}:${item.catalogRevision}:${item.desktopId}:${item.entry.id}:${item.contentRevision}`;
 }
 
+export function storePackageManifest(item: StorePackage, inspection?: AppPackageInspection) {
+  return item.release?.manifest ?? inspection?.manifest ?? null;
+}
+
+export function storePackageNeedsRefreshInspection(item: StorePackage, currentSystemRelease: boolean) {
+  return !item.release || item.kind === "system" && !currentSystemRelease;
+}
+
 export async function loadStorePackages(desktop: DesktopIdentity, directBlobOrigin: string): Promise<LoadedStorePackages> {
   if (desktop.purpose !== "app-store" || !desktop.authorityCatalogId) return { packages: [], managed: false, descriptor: null };
   const response = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopProjection(desktop.id), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));

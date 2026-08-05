@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { InstalledApp } from "../src/apps/installed-apps";
-import { storeSearchMatches, type StorePackage } from "../src/lib/app-store";
+import { storePackageManifest, storePackageNeedsRefreshInspection, storeSearchMatches, type StorePackage } from "../src/lib/app-store";
 import { AppStoreWindow, type StorePackageView } from "../src/components/AppStoreWindow";
 
 const systemApp: InstalledApp = {
@@ -46,6 +46,11 @@ const todoPackage: StorePackage = {
   contentRevision: 1,
   entry: { id: "admin-todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
 };
+const managedTodoPackage: StorePackage = {
+  ...todoPackage,
+  release: { kind: "store", slug: "todo", fileName: todoPackage.entry.name, digest: "b".repeat(64), size: todoPackage.entry.size, manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo", description: "Keep portable task lists." } },
+};
+const managedTodoRelease = managedTodoPackage.release;
 
 const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", loading: false, error: "" };
 
@@ -54,6 +59,17 @@ describe("App Store", () => {
     expect(storeSearchMatches("todo task", "Todo", "Keep portable task lists.", "dev.hiraya.todo", "0.1.0")).toBe(true);
     expect(storeSearchMatches("HIRAYA 0.1", "Todo", "dev.hiraya.todo", "0.1.0")).toBe(true);
     expect(storeSearchMatches("todo calendar", "Todo", "Keep portable task lists.")).toBe(false);
+  });
+
+  test("uses managed catalog metadata without inspecting package bytes on refresh", () => {
+    expect(storePackageManifest(managedTodoPackage)?.name).toBe("Todo");
+    expect(storePackageNeedsRefreshInspection(managedTodoPackage, false)).toBe(false);
+    expect(storePackageNeedsRefreshInspection(todoPackage, false)).toBe(true);
+
+    if (!managedTodoRelease) throw new Error("Managed package release is missing.");
+    const systemPackage = { ...managedTodoPackage, kind: "system", release: { ...managedTodoRelease, kind: "system" } } as const;
+    expect(storePackageNeedsRefreshInspection(systemPackage, true)).toBe(false);
+    expect(storePackageNeedsRefreshInspection(systemPackage, false)).toBe(true);
   });
 
   test("keeps installed app details and management available when the catalog is unavailable", () => {

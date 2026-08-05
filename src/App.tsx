@@ -156,7 +156,7 @@ import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
-import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
+import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
@@ -167,6 +167,10 @@ const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((mo
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
+function publishedSystemApp(item: StorePackage) {
+  if (item.kind !== "system" || !item.release) return null;
+  return { slug: item.release.slug, archivePath: `system-apps/${item.release.slug}.hiraya.app`, digest: item.release.digest, manifest: item.release.manifest };
+}
 type MergeReview = {
   state: "loading" | "ready" | "resolving" | "error";
   error?: string;
@@ -735,9 +739,9 @@ function App({ session }: { session: AuthSession | null }) {
   }
   const reconcileSystemPackage = useEffectEvent((item: StorePackage, value: InspectedStorePackage) => enqueueSystemReconciliation(async () => {
     if (item.source !== "remote" || item.kind !== "system" || !activeSystemDigestsRef.current.has(value.inspection.digest) || systemPackageReconciliationRef.current.has(value.inspection.digest)) return;
-    if (!item.release) throw new Error("Trusted system apps require a runtime catalog release.");
-    const catalogItem = { slug: item.release.slug, archivePath: `system-apps/${item.release.slug}.hiraya.app`, digest: value.inspection.digest, manifest: value.inspection.manifest };
-    const current = installedApps.find((app) => app.appId === value.inspection.manifest.id);
+    const catalogItem = publishedSystemApp(item);
+    if (!catalogItem) throw new Error("Trusted system apps require a runtime catalog release.");
+    const current = installedApps.find((app) => app.appId === catalogItem.manifest.id);
     if (current && systemInstallMatchesCatalog(current, catalogItem)) return;
     const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === value.inspection.manifest.id).map((app) => app.id);
     systemPackageReconciliationRef.current.add(value.inspection.digest);
@@ -816,6 +820,9 @@ function App({ session }: { session: AuthSession | null }) {
             void reconcileSystemPackage(item, cached);
           }
           else {
+            const systemApp = publishedSystemApp(item);
+            const current = systemApp && installedApps.find((app) => app.appId === systemApp.manifest.id);
+            if (!storePackageNeedsRefreshInspection(item, Boolean(current && systemInstallMatchesCatalog(current, systemApp)))) continue;
             next.set(key, { status: "loading" });
             void inspectStorePackage(item, session!.directBlobOrigin).then(async (value) => {
               if (!active || generation !== storeRefreshGenerationRef.current) return;
@@ -2888,7 +2895,18 @@ function App({ session }: { session: AuthSession | null }) {
     setError("");
     try {
       const key = storePackageKey(item);
-      const inspected = storeInspectionCacheRef.current.get(key) ?? await inspectStorePackage(item, session!.directBlobOrigin);
+      let inspected = storeInspectionCacheRef.current.get(key);
+      if (!inspected) {
+        setStoreInspections((current) => new Map(current).set(key, { status: "loading" }));
+        try {
+          const value = await inspectStorePackage(item, session!.directBlobOrigin);
+          inspected = value;
+          setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
+        } catch (reason) {
+          setStoreInspections((current) => { const next = new Map(current); next.delete(key); return next; });
+          throw reason;
+        }
+      }
       storeInspectionCacheRef.current.set(key, inspected);
       const appPackage = inspected.inspection;
       if (isReservedSystemAppId(appPackage.manifest.id)) throw new Error("That app ID is reserved for a trusted system app.");
@@ -4163,14 +4181,15 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function isReservedSystemAppId(appId: string) {
-    return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId) || storePackages.some((item) => item.kind === "system" && storeInspections.get(storePackageKey(item))?.status === "ready" && storeInspectionCacheRef.current.get(storePackageKey(item))?.inspection.manifest.id === appId);
+    return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId) || storePackages.some((item) => item.kind === "system" && storePackageManifest(item, storeInspectionCacheRef.current.get(storePackageKey(item))?.inspection)?.id === appId);
   }
 
   const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store").map((item) => {
     const inspection = storeInspections.get(storePackageKey(item));
+    const manifest = storePackageManifest(item, inspection?.status === "ready" ? inspection.value.inspection : undefined);
     const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
-    return inspection?.status === "ready"
-      ? { item, name: inspection.value.inspection.manifest.name, description: inspection.value.inspection.manifest.description ?? "No description provided.", version: inspection.value.inspection.manifest.version, appId: inspection.value.inspection.manifest.id, loading: false, error: "" }
+    return manifest
+      ? { item, name: manifest.name, description: manifest.description ?? "No description provided.", version: manifest.version, appId: manifest.id, loading: inspection?.status === "loading", error: inspection?.status === "error" ? inspection.message : "" }
       : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
   });
   const storeUpdateCount = storePackages.filter((item) => item.kind === "store" && installedApps.some((app) => app.source === "store" && app.sourceCatalogId === item.catalogId && app.sourceDesktopId === item.desktopId && app.packageEntryId === item.entry.id && app.sourceContentRevision !== item.contentRevision)).length;
