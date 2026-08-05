@@ -59,7 +59,18 @@ function ImageThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEn
       observer.disconnect();
     }, { rootMargin: "120px" });
     observer.observe(target);
-    return () => observer.disconnect();
+    // Chromium can miss the initial intersection for a newly inserted folder row until its first layout.
+    const frame = requestAnimationFrame(() => {
+      const bounds = target.getBoundingClientRect();
+      if (bounds.bottom >= -120 && bounds.right >= -120 && bounds.top <= innerHeight + 120 && bounds.left <= innerWidth + 120) {
+        setShouldLoad(true);
+        observer.disconnect();
+      }
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
   }, []);
 
   useEffect(() => {

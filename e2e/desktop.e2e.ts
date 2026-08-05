@@ -263,7 +263,8 @@ test("shows image thumbnails on the desktop and in folders", async ({ page }) =>
   await (await chooser).setFiles({ name: folderName, mimeType: "image/png", buffer: pngFile });
 
   const folderRow = folder.locator(".folder-explorer__row").filter({ hasText: folderName });
-  await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("src", /^blob:/);
+  await expect(folderRow).toBeVisible();
+  await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("src", /^blob:/, { timeout: 15_000 });
   await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("data-loaded", "true");
 });
 
