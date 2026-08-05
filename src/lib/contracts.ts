@@ -67,17 +67,10 @@ export type ContentAccessDescriptor = { entryId: string; contentRevision: number
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~\w-]+$/;
-const FORBIDDEN_DIRECT_HEADERS = new Set(["connection", "content-length", "cookie", "cookie2", "host", "origin", "referer", "transfer-encoding", "upgrade"]);
+const FORBIDDEN_DIRECT_HEADERS = new Set(["authorization", "connection", "content-length", "cookie", "cookie2", "host", "origin", "referer", "transfer-encoding", "upgrade"]);
 
-function parseDirectUrl(value: unknown) {
+function parseDirectUrl(value: unknown, expectedOrigin?: string) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A direct blob target has an invalid URL.");
-  if (value.startsWith("/") && !value.startsWith("//")) {
-    const base = "https://hiraya.invalid";
-    let local: URL;
-    try { local = new URL(value, base); } catch { throw new Error("A direct blob target has an invalid URL."); }
-    if (local.origin !== base || local.hash) throw new Error("A direct blob target has an invalid URL.");
-    return `${local.pathname}${local.search}`;
-  }
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("A direct blob target has an invalid URL."); }
   const loopback = (hostname: string) => hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]";
@@ -86,6 +79,7 @@ function parseDirectUrl(value: unknown) {
   if (url.protocol !== "https:" && !(url.protocol === "http:" && localDevelopment) || url.username || url.password || url.hash) {
     throw new Error("A direct blob target must use a safe HTTPS URL.");
   }
+  if (expectedOrigin && url.origin !== expectedOrigin) throw new Error("A direct blob target has an unexpected origin.");
   return url.href;
 }
 
@@ -109,19 +103,19 @@ function parseSha256(value: unknown) {
   return value;
 }
 
-export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT"): DirectBlobAccess {
+export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT", expectedOrigin?: string): DirectBlobAccess {
   if (!isRecord(value) || value.method !== method) throw new Error(`A direct blob target must use ${method}.`);
   const expiresAt = readNonNegativeInteger(value.expiresAt, "A direct blob target has an invalid expiration.");
-  return { url: parseDirectUrl(value.url), method, headers: parseDirectHeaders(value.headers), expiresAt };
+  return { url: parseDirectUrl(value.url, expectedOrigin), method, headers: parseDirectHeaders(value.headers), expiresAt };
 }
 
-export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number): ContentAccessDescriptor {
+export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number, expectedOrigin?: string): ContentAccessDescriptor {
   if (!isRecord(value) || value.entryId !== expectedEntryId) throw new Error("The content access response is for a different entry.");
   const contentRevision = readRevision(value.contentRevision, "The content access response has an invalid revision.");
   const size = readNonNegativeInteger(value.size, "The content access response has an invalid size.");
   if (contentRevision !== expectedRevision) throw new Error("The content access response is for a different revision.");
   if (size !== expectedSize) throw new Error("The content access response has an unexpected size.");
-  return { entryId: expectedEntryId, contentRevision, size, sha256: parseSha256(value.sha256), access: parseDirectBlobAccess(value.access, "GET") };
+  return { entryId: expectedEntryId, contentRevision, size, sha256: parseSha256(value.sha256), access: parseDirectBlobAccess(value.access, "GET", expectedOrigin) };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

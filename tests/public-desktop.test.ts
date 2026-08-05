@@ -49,17 +49,6 @@ describe("public desktop", () => {
     expect(calls).toBe(0);
   });
 
-  test("validates the size of legacy same-origin downloads", async () => {
-    const fetchImpl = (async () => new Response("short", { headers: { "content-type": "application/zip" } })) as typeof fetch;
-    await expect(fetchPublicFile({ desktopAlias: "team-desk" }, file, 3, fetchImpl)).rejects.toThrow("unexpected size");
-  });
-
-  test("rejects same-size corruption in same-origin downloads", async () => {
-    const sameSize = { ...file, size: 4 };
-    const fetchImpl = (async () => new Response("evil", { headers: { "content-type": "application/zip", "X-Hiraya-Content-SHA256": "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8" } })) as typeof fetch;
-    await expect(fetchPublicFile({ desktopAlias: "team-desk" }, sameSize, 3, fetchImpl)).rejects.toThrow("integrity verification");
-  });
-
   test("uses a direct descriptor returned by the public content route", async () => {
     const directFile = { ...file, size: 4 };
     const urls: string[] = [];

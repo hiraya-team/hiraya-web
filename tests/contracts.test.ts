@@ -71,11 +71,14 @@ describe("contracts", () => {
     const uploadAccess = { url: "https://uploads.example.test/object?signature=secret", method: "PUT", headers: { "X-Bz-Info": "value" }, expiresAt: 2_000_000_000_000 };
     const downloadAccess = { url: "https://downloads.example.test/object", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 };
     expect(parseDirectBlobAccess(uploadAccess, "PUT")).toEqual(uploadAccess);
+    expect(parseDirectBlobAccess(uploadAccess, "PUT", "https://uploads.example.test")).toEqual(uploadAccess);
     expect(parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: downloadAccess }, "file-1", 4, 4)).toMatchObject({ contentRevision: 4, size: 4, sha256 });
-    expect(parseDirectBlobAccess({ ...downloadAccess, url: "/api/desktops/desk/entries/theme-asset/content?revision=4" }, "GET").url).toBe("/api/desktops/desk/entries/theme-asset/content?revision=4");
+    expect(() => parseDirectBlobAccess({ ...downloadAccess, url: "/api/desktops/desk/entries/theme-asset/content?revision=4" }, "GET")).toThrow("invalid URL");
     expect(() => parseDirectBlobAccess({ ...uploadAccess, url: "https://user:secret@uploads.example.test/object" }, "PUT")).toThrow("safe HTTPS");
     expect(() => parseDirectBlobAccess({ ...uploadAccess, headers: { Cookie: "secret" } }, "PUT")).toThrow("unsafe header");
+    expect(() => parseDirectBlobAccess({ ...uploadAccess, headers: { Authorization: "Bearer secret" } }, "PUT")).toThrow("unsafe header");
     expect(() => parseDirectBlobAccess({ ...uploadAccess, headers: { "X-Test": "one", "x-test": "two" } }, "PUT")).toThrow("unsafe header");
+    expect(() => parseDirectBlobAccess(uploadAccess, "PUT", "https://objects.example.test")).toThrow("unexpected origin");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256: sha256.toUpperCase(), access: downloadAccess }, "file-1", 4, 4)).toThrow("SHA-256");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: { ...downloadAccess, method: "PUT" } }, "file-1", 4, 4)).toThrow("must use GET");
     expect(() => parseDirectBlobAccess({ ...downloadAccess, url: "//evil.example/object" }, "GET")).toThrow();

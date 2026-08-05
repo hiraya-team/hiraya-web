@@ -9,21 +9,20 @@ function memoryStorage() {
 describe("session bootstrap", () => {
   test("validates stable storage identity and display metadata", () => {
     const directBlobOrigin = "https://objects.test";
-    expect(parseAuthSession({ schemaVersion: 2, apiProtocol: "entry-transactions-v1", catalogId: "catalog-a", storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada", email: "ada@example.test" }, capabilities: { blobTransfer: "direct-b2-v1", entryTransactions: "prepare-commit-cancel-v1" } })).toEqual({
+    expect(parseAuthSession({ schemaVersion: 2, apiProtocol: "entry-transactions-v2", catalogId: "catalog-a", storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada", email: "ada@example.test" }, capabilities: { entryTransactions: "prepare-commit-cancel-v1" } })).toEqual({
       schemaVersion: 2,
-      apiProtocol: "entry-transactions-v1",
+      apiProtocol: "entry-transactions-v2",
       catalogId: "catalog-a",
       storageId: "opaque-account-1",
       directBlobOrigin,
       user: { displayName: "Ada", email: "ada@example.test" },
-      capabilities: { blobTransfer: "direct-b2-v1", entryTransactions: "prepare-commit-cancel-v1" },
+      capabilities: { entryTransactions: "prepare-commit-cancel-v1" },
     });
-    const authority = { schemaVersion: 2, apiProtocol: "entry-transactions-v1", catalogId: "catalog-a" };
-    const supported = { blobTransfer: "direct-b2-v1", entryTransactions: "prepare-commit-cancel-v1" };
+    const authority = { schemaVersion: 2, apiProtocol: "entry-transactions-v2", catalogId: "catalog-a" };
+    const supported = { entryTransactions: "prepare-commit-cancel-v1" };
     expect(() => parseAuthSession({ ...authority, apiProtocol: "legacy", storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: supported })).toThrow("entry transaction protocol");
-    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } })).toThrow("entry transaction protocol");
+    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: {} })).toThrow("entry transaction protocol");
     expect(() => parseAuthSession({ ...authority, storageId: "", directBlobOrigin, user: { displayName: "Ada" }, capabilities: supported })).toThrow("storage ID");
-    expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: { blobTransfer: "proxy-v1" } })).toThrow("direct-b2-v1");
     expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { ...supported, desktopSearch: "accessible-desktops-v1" } }).capabilities.desktopSearch).toBe("accessible-desktops-v1");
     expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { ...supported, desktopSearch: "legacy" } })).toThrow("desktop search");
     expect(() => parseAuthSession({ ...authority, schemaVersion: 1, storageId: "opaque-account-1", user: { displayName: "Ada" }, capabilities: supported })).toThrow("Update Hiraya");
@@ -39,10 +38,13 @@ describe("session bootstrap", () => {
     for (const shortLinkBaseUrl of ["r", "//example.test/r", "/r?from=session", "/r#links", "/\\example.test/r", "https:example.test/r", "https://user:secret@example.test/r", "https://example.test/r?from=session", "https://example.test/r#links", "https://example.test\\@evil.test/r", "ftp://example.test/r"]) {
       expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin, user: { displayName: "Ada" }, capabilities: { ...supported, shortLinks: "account-short-links-v1" }, shortLinkBaseUrl })).toThrow("short-link base URL");
     }
-    for (const invalidOrigin of ["https://objects.test/path", "https://user:secret@objects.test", "https://objects.test?query", "data:text/plain,test"]) {
+    for (const invalidOrigin of ["http://objects.test", "https://objects.test/path", "https://user:secret@objects.test", "https://objects.test?query", "data:text/plain,test"]) {
       expect(() => parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin: invalidOrigin, user: { displayName: "Ada" }, capabilities: supported })).toThrow("direct blob origin");
     }
     expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin: "HTTPS://OBJECTS.TEST:443", user: { displayName: "Ada" }, capabilities: supported }).directBlobOrigin).toBe("https://objects.test");
+    for (const loopbackOrigin of ["http://localhost:9000", "http://127.0.0.1:9000", "http://[::1]:9000"]) {
+      expect(parseAuthSession({ ...authority, storageId: "opaque-account-1", directBlobOrigin: loopbackOrigin, user: { displayName: "Ada" }, capabilities: supported }).directBlobOrigin).toBe(loopbackOrigin);
+    }
   });
 
   test("keeps login returns root-relative", () => {
@@ -65,10 +67,10 @@ describe("session bootstrap", () => {
 
   test("uses a versioned validated bootstrap only when session fetch rejects", async () => {
     const storage = memoryStorage();
-    const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v1" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const, entryTransactions: "prepare-commit-cancel-v1" as const } };
+    const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v2" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { entryTransactions: "prepare-commit-cancel-v1" as const } };
     let bootstrapRequest: RequestInit | undefined;
     expect(await bootstrapSession(false, (async (_input, init) => { bootstrapRequest = init; return Response.json(session); }) as typeof fetch, () => undefined, storage)).toEqual(session);
-    expect(new Headers(bootstrapRequest?.headers).get("X-Hiraya-Protocol")).toBe("entry-transactions-v1");
+    expect(new Headers(bootstrapRequest?.headers).get("X-Hiraya-Protocol")).toBe("entry-transactions-v2");
     expect(await bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).toEqual(session);
     await expect(bootstrapSession(false, (async () => new Response(null, { status: 401 })) as typeof fetch, () => undefined, storage)).rejects.toBeInstanceOf(AuthenticationRequiredError);
     await expect(bootstrapSession(false, (async () => { throw new TypeError("offline after logout"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline after logout");
@@ -81,7 +83,7 @@ describe("session bootstrap", () => {
 
   test("locks cached account bootstrap synchronously on logout", async () => {
     const storage = memoryStorage();
-    const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v1" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" as const, entryTransactions: "prepare-commit-cancel-v1" as const } };
+    const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v2" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { entryTransactions: "prepare-commit-cancel-v1" as const } };
     await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage);
     lockAuthBootstrap(storage);
     await expect(bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline");
@@ -89,7 +91,7 @@ describe("session bootstrap", () => {
 
   test("an old cached shell cannot use bootstrap metadata without wire authority", async () => {
     const storage = memoryStorage();
-    storage.setItem("hiraya-auth-bootstrap-v1", JSON.stringify({ version: 1, locked: false, session: { storageId: "account-a", user: { displayName: "Ada" }, capabilities: { blobTransfer: "direct-b2-v1" } } }));
+    storage.setItem("hiraya-auth-bootstrap-v1", JSON.stringify({ version: 1, locked: false, session: { storageId: "account-a", user: { displayName: "Ada" }, capabilities: {} } }));
     await expect(bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline");
   });
 });
