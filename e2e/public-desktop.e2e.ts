@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 
 const publicDesktop = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "public-desk",
   name: "Published work",
   owner: { id: "owner-1", displayName: "Hiraya Owner", avatar: null },
