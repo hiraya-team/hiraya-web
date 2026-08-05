@@ -70,18 +70,19 @@ async function replaceEditorText(page: Page, text: string) {
 
 async function remoteText(page: Page, name: string) {
   return page.evaluate(async (fileName) => {
-    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
-    const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v2" };
+    const requireOk = async (response: Response, label: string) => {
+      if (response.ok) return response;
+      throw new Error(`${label} failed (${response.status}): ${await response.text()}`);
+    };
+    const catalog = await (await requireOk(await fetch("/api/desktops", { cache: "no-store", headers: protocol }), "Catalog request")).json() as { desktops: Array<{ id: string }> };
     const desktopId = catalog.desktops[0].id;
-    const desktop = await fetch(`/api/desktops/${desktopId}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { entries: Array<{ id: string; name: string; contentRevision: number }> };
+    const desktop = await (await requireOk(await fetch(`/api/desktops/${desktopId}?projection=web`, { cache: "no-store", headers: protocol }), "Desktop request")).json() as { entries: Array<{ id: string; name: string; contentRevision: number }> };
     const entry = desktop.entries.find((candidate) => candidate.name === fileName);
     if (!entry) return "";
-    const content = await fetch(`/api/desktops/${desktopId}/entries/${entry.id}/content?revision=${entry.contentRevision}`, { cache: "no-store", headers: protocol });
-    if (!content.headers.get("content-type")?.includes("application/json")) return content.text();
+    const content = await requireOk(await fetch(`/api/desktops/${desktopId}/entries/${entry.id}/content?revision=${entry.contentRevision}`, { cache: "no-store", headers: protocol }), "Content descriptor request");
     const descriptor = await content.json() as { access: { url: string; method: string; headers: Record<string, string> } };
-    const headers = new Headers(descriptor.access.headers);
-    if (descriptor.access.url.startsWith("/")) headers.set("X-Hiraya-Protocol", "entry-transactions-v1");
-    return fetch(descriptor.access.url, { method: descriptor.access.method, headers }).then((response) => response.text());
+    return (await requireOk(await fetch(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers, credentials: "omit" }), "Direct content request")).text();
   }, name);
 }
 
@@ -207,7 +208,7 @@ async function primary(browser: Browser) {
   await expect.poll(() => audio.evaluate((element) => (element as HTMLAudioElement).readyState)).toBeGreaterThanOrEqual(1);
 
   const staleConflict = await second.evaluate(async () => {
-    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v2" };
     const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
     const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { id: string; layout: unknown; layoutRevision: number };
     const mutate = (operationId: string) => fetch(`/api/desktops/${desktop.id}/entries/transactions`, {
@@ -222,7 +223,7 @@ async function primary(browser: Browser) {
   expect(staleConflict).toMatchObject({ first: 200, stale: 409, body: { code: "revision_conflict", conflict: { resourceKind: "layout" } } });
 
   const publication = await first.evaluate(async ({ folderName, desktopAlias, itemAlias }) => {
-    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v2" };
     const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
     const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { id: string; entries: Array<{ id: string; name: string }> };
     const folder = desktop.entries.find((entry) => entry.name === folderName);

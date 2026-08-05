@@ -4,6 +4,29 @@ import type { OutboxOperation, OutboxRecord } from "../src/lib/outbox";
 import { remoteDesktopIdentity, remoteDesktopState } from "./fixtures";
 
 describe("legacy schema-8 outbox replay", () => {
+  test("requires a positive catalog revision in committed transaction receipts", async () => {
+    const record: OutboxRecord = { operationId: "receipt", sequence: 1, clientId: "client", catalogId: "catalog-1", desktopId: "desk", operation: { schemaVersion: 1, kind: "layout", layout: remoteDesktopState().layout }, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
+    for (const catalogRevision of [undefined, 0, -1, 1.5, "1"]) {
+      await expect(sendOutboxOperation(record, {
+        fetch: (async () => new Response(null, { status: 204 })) as typeof fetch,
+        requireAuthentication: (response) => response,
+        readPendingContent: async () => new Blob(),
+        requestJson: async () => ({ state: "committed", ...(catalogRevision === undefined ? {} : { catalogRevision }) }),
+      })).rejects.toThrow("invalid revision");
+    }
+  });
+
+  test("rejects upload targets outside the authenticated direct blob origin", async () => {
+    const record: OutboxRecord = { operationId: "upload", sequence: 1, clientId: "client", catalogId: "catalog-1", desktopId: "desk", operation: { schemaVersion: 1, kind: "save-content", entryId: "file-1", mimeType: "text/plain", size: 4, modifiedAt: 2 }, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
+    await expect(sendOutboxOperation(record, {
+      fetch: (async () => new Response(null, { status: 204 })) as typeof fetch,
+      directBlobOrigin: "https://objects.example.test",
+      requireAuthentication: (response) => response,
+      readPendingContent: async () => new Blob(["note"]),
+      requestJson: async () => ({ state: "prepared", transactionId: "transaction", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://evil.example.test/file", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] }),
+    })).rejects.toThrow("unexpected origin");
+  });
+
   test("omits absent revision preconditions across representative operations", async () => {
     const remote = remoteDesktopState();
     const desktop = remoteDesktopIdentity("desk", "Renamed");
@@ -40,7 +63,7 @@ describe("legacy schema-8 outbox replay", () => {
     ]);
 
     for (const { init } of requests) {
-      expect(new Headers(init?.headers).get("X-Hiraya-Protocol")).toBe("entry-transactions-v1");
+      expect(new Headers(init?.headers).get("X-Hiraya-Protocol")).toBe("entry-transactions-v2");
       expect(new Headers(init?.headers).has("X-Hiraya-Base-Revision")).toBe(false);
       if (typeof init?.body === "string") {
         const body = JSON.parse(init.body);

@@ -1,7 +1,7 @@
 const desktopBase = (desktopId: string) => `/api/desktops/${encodeURIComponent(desktopId)}`;
 const publicDesktopBase = (desktopAlias: string, itemAlias?: string) => `/api/public/desktops/${encodeURIComponent(desktopAlias)}${itemAlias ? `/${encodeURIComponent(itemAlias)}` : ""}`;
 
-export const HIRAYA_API_PROTOCOL = "entry-transactions-v1";
+export const HIRAYA_API_PROTOCOL = "entry-transactions-v2";
 
 export function authenticatedHeaders(headers?: HeadersInit) {
   const result = new Headers(headers);

@@ -795,7 +795,7 @@ function App({ session }: { session: AuthSession | null }) {
         let storeDescriptor: AppStoreDescriptor | null = null;
         if (store) {
           try {
-            const loaded = await loadStorePackages(store);
+            const loaded = await loadStorePackages(store, session!.directBlobOrigin);
             packages.push(...loaded.packages);
             managed = loaded.managed;
             storeDescriptor = loaded.descriptor;
@@ -824,7 +824,7 @@ function App({ session }: { session: AuthSession | null }) {
             const current = systemApp && installedApps.find((app) => app.appId === systemApp.manifest.id);
             if (!storePackageNeedsRefreshInspection(item, Boolean(current && systemInstallMatchesCatalog(current, systemApp)))) continue;
             next.set(key, { status: "loading" });
-            void inspectStorePackage(item).then(async (value) => {
+            void inspectStorePackage(item, session!.directBlobOrigin).then(async (value) => {
               if (!active || generation !== storeRefreshGenerationRef.current) return;
               storeInspectionCacheRef.current.set(key, value);
               setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
@@ -2899,7 +2899,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (!inspected) {
         setStoreInspections((current) => new Map(current).set(key, { status: "loading" }));
         try {
-          const value = await inspectStorePackage(item);
+          const value = await inspectStorePackage(item, session!.directBlobOrigin);
           inspected = value;
           setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
         } catch (reason) {
@@ -2919,7 +2919,7 @@ function App({ session }: { session: AuthSession | null }) {
       });
       if (!confirmed) return;
       const remoteStore = desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store");
-      const published = remoteStore ? (await loadStorePackages(remoteStore)).packages : [];
+      const published = remoteStore ? (await loadStorePackages(remoteStore, session!.directBlobOrigin)).packages : [];
       if (!published.some((candidate) => storePackageKey(candidate) === key)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
       await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
       const install: InstalledApp = {
@@ -4321,7 +4321,7 @@ function App({ session }: { session: AuthSession | null }) {
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div
