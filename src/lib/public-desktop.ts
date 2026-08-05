@@ -33,8 +33,8 @@ export async function fetchPublicDesktop(authority: PublicAuthority, fetchImpl: 
   return isRecord(value) && typeof value.publishedRootId === "string" ? { ...parsed, publishedRootId: value.publishedRootId } : parsed;
 }
 
-export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  let response = await fetchImpl(API_ROUTES.publicDesktopContent(authority.desktopAlias, authority.itemAlias, file.id), { cache: "no-store", credentials: "same-origin" });
+export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis), purpose?: "preview") {
+  const response = await fetchImpl(API_ROUTES.publicDesktopContent(authority.desktopAlias, authority.itemAlias, file.id, contentRevision, purpose), { cache: "no-store", credentials: "same-origin" });
   const gate = await largeDownloadError(response);
   if (gate) throw gate;
   if (response.ok && !response.headers.get("content-type")?.includes("application/json")) {
@@ -46,13 +46,7 @@ export async function fetchPublicFile(authority: PublicAuthority, file: FileEntr
     return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
   }
 
-  if (!response.ok) {
-    if (response.status !== 404 && response.status !== 405 && response.status !== 409) throw new Error(`The file could not be downloaded (${response.status}).`);
-    response = await fetchImpl(API_ROUTES.publicDesktopContentAccess(authority.desktopAlias, authority.itemAlias, file.id, contentRevision), { cache: "no-store", credentials: "same-origin" });
-    const descriptorGate = await largeDownloadError(response);
-    if (descriptorGate) throw descriptorGate;
-    if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);
-  }
+  if (!response.ok) throw new Error(`The file could not be downloaded (${response.status}).`);
   const descriptor = parseContentAccessDescriptor(await response.json(), file.id, contentRevision, file.size);
   const contentResponse = await fetchImpl(descriptor.access.url, { method: "GET", headers: descriptor.access.headers, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer" });
   const contentGate = await largeDownloadError(contentResponse);

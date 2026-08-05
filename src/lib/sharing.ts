@@ -1,4 +1,4 @@
-import { API_ROUTES } from "./api-routes";
+import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { assertValidId, isRecord } from "./contracts";
 
 export type SharingRole = "manager" | "writer" | "reader";
@@ -160,6 +160,7 @@ async function request(input: string, init?: RequestInit) {
     credentials: "same-origin",
     cache: "no-store",
     ...init,
+    headers: authenticatedHeaders(init?.headers),
   });
   if (!response.ok) {
     const body = (await response.json().catch(() => null)) as {

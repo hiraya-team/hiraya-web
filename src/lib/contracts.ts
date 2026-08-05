@@ -31,7 +31,7 @@ export type RemoteEntry = DesktopEntry & { revision: number; contentRevision: nu
 export type RemoteCustomTheme = CustomTheme & { revision: number };
 export type RemoteAppearance = Omit<ThemeState, "customThemes"> & { selectionRevision: number; customThemes: RemoteCustomTheme[] };
 type RemoteDesktopIdentity = DesktopIdentity & {
-  schemaVersion: 1;
+  schemaVersion: 2;
   catalogId: string;
   catalogRevision: number;
 };
@@ -52,7 +52,7 @@ export type TrashItem = {
 };
 
 export type TrashDocument = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   catalogId: string;
   catalogRevision: number;
   desktopId: string;
@@ -63,8 +63,6 @@ export type TrashRestoreResult = { catalogRevision: number; entries: RemoteEntry
 export type TrashDeleteResult = { catalogRevision: number; deletedIds: string[] };
 
 export type DirectBlobAccess = { url: string; method: "GET" | "PUT"; headers: Record<string, string>; expiresAt: number };
-export type DirectBlobTarget = { entryId: string; access: DirectBlobAccess };
-export type BlobMutationPreparation = { state: "prepared"; uploadId: string; expiresAt: number; items: DirectBlobTarget[] } | { state: "committed"; catalogRevision?: number };
 export type ContentAccessDescriptor = { entryId: string; contentRevision: number; size: number; sha256: string; access: DirectBlobAccess };
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
@@ -115,28 +113,6 @@ export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT"): Di
   if (!isRecord(value) || value.method !== method) throw new Error(`A direct blob target must use ${method}.`);
   const expiresAt = readNonNegativeInteger(value.expiresAt, "A direct blob target has an invalid expiration.");
   return { url: parseDirectUrl(value.url), method, headers: parseDirectHeaders(value.headers), expiresAt };
-}
-
-export function parseBlobMutationPreparation(value: unknown, expectedEntryIds: readonly string[]): BlobMutationPreparation {
-  if (!isRecord(value) || (value.state !== "prepared" && value.state !== "committed")) {
-    throw new Error("The blob mutation preparation response is invalid.");
-  }
-  if (value.state === "committed") return { state: "committed", ...(value.catalogRevision === undefined ? {} : { catalogRevision: readRevision(value.catalogRevision, "The committed blob mutation has an invalid revision.") }) };
-  if (typeof value.uploadId !== "string" || !value.uploadId || value.uploadId.length > 1024 || [...value.uploadId].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !Array.isArray(value.items)) {
-    throw new Error("The blob mutation preparation response is invalid.");
-  }
-  const expiresAt = readNonNegativeInteger(value.expiresAt, "The blob mutation preparation response has an invalid expiration.");
-  const expected = new Set(expectedEntryIds);
-  if (expected.size !== expectedEntryIds.length || value.items.length !== expected.size) throw new Error("The blob mutation preparation response has unexpected targets.");
-  const seen = new Set<string>();
-  const items = value.items.map((candidate): DirectBlobTarget => {
-    if (!isRecord(candidate) || !isValidId(candidate.entryId) || !expected.has(candidate.entryId) || seen.has(candidate.entryId)) {
-      throw new Error("The blob mutation preparation response has unexpected targets.");
-    }
-    seen.add(candidate.entryId);
-    return { entryId: candidate.entryId, access: parseDirectBlobAccess(candidate.access, "PUT") };
-  });
-  return { state: "prepared", uploadId: value.uploadId, expiresAt, items };
 }
 
 export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number): ContentAccessDescriptor {
@@ -363,6 +339,7 @@ type ParsedEntry = DesktopEntry & { revision?: number; contentRevision?: number 
 
 function parseEntry(value: unknown, remote: boolean): ParsedEntry {
   if (!isRecord(value) || (value.kind !== "file" && value.kind !== "folder")) throw new Error("An entry has an unsupported format.");
+  if (remote && (value.systemRole !== undefined || value.systemKey !== undefined)) throw new Error("A visible entry contains protected system metadata.");
   assertValidId(value.id);
   assertCanonicalEntryName(value.name);
   if (value.parentId !== null && !isValidId(value.parentId)) throw new Error("An entry has an invalid parent ID.");
@@ -432,7 +409,7 @@ export function parseEntries(value: unknown, remote = false): ParsedEntry[] {
 
 export function parseTrashDocument(value: unknown, expectedDesktopId?: string): TrashDocument {
   if (!isRecord(value)) throw new Error("The server Trash response has an unsupported format.");
-  if (readRevision(value.schemaVersion, "The server Trash response has an unsupported schema version.") !== 1) {
+  if (readRevision(value.schemaVersion, "The server Trash response has an unsupported schema version.") !== 2) {
     throw new Error("The server Trash response uses an unsupported schema version.");
   }
   assertValidId(value.catalogId, "The server Trash response has an invalid catalog identity.");
@@ -461,7 +438,7 @@ export function parseTrashDocument(value: unknown, expectedDesktopId?: string): 
     }
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     catalogId: value.catalogId,
     catalogRevision,
     desktopId: value.desktopId,

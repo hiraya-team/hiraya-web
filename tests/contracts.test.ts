@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseBlobMutationPreparation, parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
+import { parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
 import { remoteDesktopState } from "./fixtures";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import { BUILTIN_THEMES } from "../src/lib/themes";
@@ -13,13 +13,15 @@ describe("contracts", () => {
     expect(() => parseEntries([missing])).toThrow("creation date");
   });
 
-  test("parses strict remote desktop schema version 1", () => {
+  test("parses strict remote desktop schema version 2", () => {
     const remote = remoteDesktopState();
     expect(parseRemoteDesktopState(remote)).toEqual(remote);
     expect(() => parseRemoteDesktopState({ ...remote, schemaVersion: 5 })).toThrow("schema version");
     expect(() => parseRemoteDesktopState({ ...remote, catalogId: undefined })).toThrow("catalog identity");
     expect(() => parseRemoteDesktopState({ ...remote, capabilities: undefined })).toThrow("capabilities");
     expect(() => parseRemoteDesktopState({ ...remote, role: "editor" })).toThrow("role");
+    expect(() => parseRemoteDesktopState({ ...remote, entries: [{ ...remote.entries[0], systemRole: "theme-package" }] })).toThrow("system metadata");
+    expect(() => parseRemoteDesktopState({ ...remote, entries: [{ ...remote.entries[0], systemKey: "theme-1" }] })).toThrow("system metadata");
   });
 
   test("validates structured wallpaper and legacy persisted presets", () => {
@@ -68,15 +70,12 @@ describe("contracts", () => {
     const sha256 = "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8";
     const uploadAccess = { url: "https://uploads.example.test/object?signature=secret", method: "PUT", headers: { "X-Bz-Info": "value" }, expiresAt: 2_000_000_000_000 };
     const downloadAccess = { url: "https://downloads.example.test/object", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 };
-    const prepared = parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: uploadAccess }] }, ["file-1"]);
-    expect(prepared.state === "prepared" && prepared.items[0].entryId).toBe("file-1");
-    expect(parseBlobMutationPreparation({ state: "committed" }, ["file-1"])).toEqual({ state: "committed" });
+    expect(parseDirectBlobAccess(uploadAccess, "PUT")).toEqual(uploadAccess);
     expect(parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: downloadAccess }, "file-1", 4, 4)).toMatchObject({ contentRevision: 4, size: 4, sha256 });
-    expect(parseDirectBlobAccess({ ...downloadAccess, url: "/api/desktops/desk/themes/aurora/package?revision=4" }, "GET").url).toBe("/api/desktops/desk/themes/aurora/package?revision=4");
-    expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "other", access: uploadAccess }] }, ["file-1"])).toThrow("unexpected targets");
-    expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, url: "https://user:secret@uploads.example.test/object" } }] }, ["file-1"])).toThrow("safe HTTPS");
-    expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, headers: { Cookie: "secret" } } }] }, ["file-1"])).toThrow("unsafe header");
-    expect(() => parseBlobMutationPreparation({ state: "prepared", uploadId: "upload-1", expiresAt: 1, items: [{ entryId: "file-1", access: { ...uploadAccess, headers: { "X-Test": "one", "x-test": "two" } } }] }, ["file-1"])).toThrow("unsafe header");
+    expect(parseDirectBlobAccess({ ...downloadAccess, url: "/api/desktops/desk/entries/theme-asset/content?revision=4" }, "GET").url).toBe("/api/desktops/desk/entries/theme-asset/content?revision=4");
+    expect(() => parseDirectBlobAccess({ ...uploadAccess, url: "https://user:secret@uploads.example.test/object" }, "PUT")).toThrow("safe HTTPS");
+    expect(() => parseDirectBlobAccess({ ...uploadAccess, headers: { Cookie: "secret" } }, "PUT")).toThrow("unsafe header");
+    expect(() => parseDirectBlobAccess({ ...uploadAccess, headers: { "X-Test": "one", "x-test": "two" } }, "PUT")).toThrow("unsafe header");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256: sha256.toUpperCase(), access: downloadAccess }, "file-1", 4, 4)).toThrow("SHA-256");
     expect(() => parseContentAccessDescriptor({ entryId: "file-1", contentRevision: 4, size: 4, sha256, access: { ...downloadAccess, method: "PUT" } }, "file-1", 4, 4)).toThrow("must use GET");
     expect(() => parseDirectBlobAccess({ ...downloadAccess, url: "//evil.example/object" }, "GET")).toThrow();

@@ -1,6 +1,6 @@
 import type { DesktopEntry, DesktopIdentity } from "../types";
 import { assertValidId, isRecord, normalizeDesktopName, normalizeEntryName, parseRemoteEntry } from "./contracts";
-import { API_ROUTES } from "./api-routes";
+import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { requireAuthenticatedResponse } from "./auth";
 
 export type DesktopSearchResult = {
@@ -108,7 +108,7 @@ export function localSearchResults(desktop: DesktopIdentity, entries: readonly D
 }
 
 export async function searchAccessibleDesktops(query: string, signal: AbortSignal, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  const response = requireAuthenticatedResponse(await fetchImpl(API_ROUTES.search(query), { cache: "no-store", credentials: "same-origin", signal }));
+  const response = requireAuthenticatedResponse(await fetchImpl(API_ROUTES.search(query), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal }));
   if (!response.ok) throw new Error(`Hiraya search is unavailable (${response.status}).`);
   return parseSearchResponse(await response.json(), query);
 }

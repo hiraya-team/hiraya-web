@@ -38,13 +38,13 @@ const file = {
 };
 
 describe("Trash contracts", () => {
-  test("validates schema version 1, ordering, entries, and counts", () => {
-    const document = { schemaVersion: 1, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [
+  test("validates schema version 2, ordering, entries, and counts", () => {
+    const document = { schemaVersion: 2, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [
       { entry: folder, deletedAt: 20, descendantCount: 1 },
       { entry: { ...file, id: "file-2", parentId: null }, deletedAt: 10, descendantCount: 0 },
     ] };
     expect(parseTrashDocument(document, "desk")).toEqual(document);
-    expect(() => parseTrashDocument({ ...document, schemaVersion: 2 })).toThrow("schema version");
+    expect(() => parseTrashDocument({ ...document, schemaVersion: 1 })).toThrow("schema version");
     expect(() => parseTrashDocument({ ...document, desktopId: "other" }, "desk")).toThrow("different desktop");
     expect(() => parseTrashDocument({ ...document, items: [...document.items].reverse() })).toThrow("newest-first");
     expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], descendantCount: -1 }] })).toThrow("descendant count");
@@ -61,9 +61,8 @@ describe("Trash contracts", () => {
     expect(() => parseTrashDeleteResult({ catalogRevision: 6, deletedIds: [folder.id, folder.id] })).toThrow("duplicate");
   });
 
-  test("builds encoded Trash routes", () => {
+  test("builds the encoded Trash listing route", () => {
     expect(API_ROUTES.desktopTrash("desk one")).toBe("/api/desktops/desk%20one/trash");
-    expect(API_ROUTES.desktopTrashRestore("desk", "entry/one")).toBe("/api/desktops/desk/trash/entry%2Fone/restore");
   });
 });
 
@@ -72,8 +71,8 @@ describe("Trash API wrappers", () => {
     let fetched = false;
     const engine = new SyncEngine({ frontendOnly: true, fetch: (async () => { fetched = true; throw new Error("unexpected"); }) as typeof fetch });
     await expect(engine.listTrash("desk")).rejects.toBeInstanceOf(TrashUnavailableError);
-    await expect(engine.restoreTrash("desk", folder.id, "root")).rejects.toBeInstanceOf(TrashUnavailableError);
-    await expect(engine.permanentlyDeleteTrash("desk", folder.id)).rejects.toBeInstanceOf(TrashUnavailableError);
+    await expect(engine.restoreTrash("desk", folder.id, "root", folder.revision)).rejects.toBeInstanceOf(TrashUnavailableError);
+    await expect(engine.permanentlyDeleteTrash("desk", folder.id, folder.revision)).rejects.toBeInstanceOf(TrashUnavailableError);
     expect(fetched).toBe(false);
   });
 
@@ -81,22 +80,22 @@ describe("Trash API wrappers", () => {
     const requests: Array<{ url: string; init?: RequestInit }> = [];
     const engine = new SyncEngine({ fetch: (async (input, init) => {
       requests.push({ url: String(input), init });
-      if (String(input).endsWith("/restore")) return Response.json({ catalogRevision: 5, entries: [{ ...folder, parentId: null, revision: 5 }, { ...file, revision: 5 }] });
-      if (init?.method === "DELETE") return Response.json({ catalogRevision: 6, deletedIds: [folder.id, file.id] });
-      return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [{ entry: folder, deletedAt: 20, descendantCount: 1 }] });
+       if (String(input).endsWith("/entries/transactions")) return Response.json({ state: "committed", catalogRevision: init?.body?.toString().includes("entry.restore") ? 5 : 6 });
+       return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [{ entry: folder, deletedAt: 20, descendantCount: 1 }] });
     }) as typeof fetch });
 
     await engine.listTrash("desk");
-    await engine.restoreTrash("desk", folder.id, "root");
-    await engine.permanentlyDeleteTrash("desk", folder.id);
+    await expect(engine.restoreTrash("desk", folder.id, "root", folder.revision)).resolves.toEqual({ catalogRevision: 5, entries: [] });
+    await engine.permanentlyDeleteTrash("desk", folder.id, folder.revision);
 
     expect(requests.map(({ url, init }) => [url, init?.method ?? "GET"])).toEqual([
       ["/api/desktops/desk/trash", "GET"],
-      ["/api/desktops/desk/trash/folder-1/restore", "POST"],
-      ["/api/desktops/desk/trash/folder-1", "DELETE"],
+      ["/api/desktops/desk/entries/transactions", "POST"],
+      ["/api/desktops/desk/entries/transactions", "POST"],
     ]);
     expect(requests.every(({ init }) => init?.credentials === "same-origin" && init.cache === "no-store")).toBe(true);
-    expect(requests[1].init?.body).toBe(JSON.stringify({ destination: "root" }));
+    expect(requests[1].init?.body).toBe(JSON.stringify({ operations: [{ type: "entry.restore", entryId: folder.id, baseRevision: folder.revision, parentId: null }] }));
+    expect(requests[2].init?.body).toBe(JSON.stringify({ operations: [{ type: "entry.purge", entryId: folder.id, baseRevision: folder.revision }] }));
     const restoreHeaders = new Headers(requests[1].init?.headers);
     const deleteHeaders = new Headers(requests[2].init?.headers);
     expect(restoreHeaders.get("X-Hiraya-Client-ID")).toBeTruthy();
@@ -120,15 +119,15 @@ describe("Trash API wrappers", () => {
       readOutbox: async () => [],
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/restore") && init?.method === "POST") return Response.json({ catalogRevision: 2, entries: [{ ...folder, parentId: null, revision: 2 }] });
-      if (String(input) === "/api/desktops/desk") return Response.json({ ...remoteDesktopState(), catalogRevision: applications === 0 ? 1 : 2 });
+      if (String(input).endsWith("/entries/transactions") && init?.method === "POST") return Response.json({ state: "committed", catalogRevision: 2 });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json({ ...remoteDesktopState(), catalogRevision: applications === 0 ? 1 : 2 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
 
     const revisionBeforeRestore = Reflect.get(engine, "catalogRevision");
-    await expect(engine.restoreTrash("desk", folder.id, "root")).rejects.toThrow("projection failed");
+    await expect(engine.restoreTrash("desk", folder.id, "root", folder.revision)).rejects.toThrow("projection failed");
     expect(Reflect.get(engine, "catalogRevision")).toBe(revisionBeforeRestore);
     await engine.stop();
   });

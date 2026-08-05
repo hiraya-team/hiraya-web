@@ -281,7 +281,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
       >
         {wallpaper?.source.startsWith("theme:") && (() => {
           const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
-          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicThemePackageAccess(authority.desktopAlias, selected.id, selected.wallpaper.revision)} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicDesktopContent(authority.desktopAlias, undefined, selected.wallpaper.assetId, selected.wallpaper.revision)} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />

@@ -10,7 +10,7 @@ export type CatalogQuota = {
   entries: QuotaMeasure;
 };
 export type RemoteDesktopCatalog = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   catalogId: string;
   catalogRevision: number;
   desktops: RemoteDesktopIdentity[];

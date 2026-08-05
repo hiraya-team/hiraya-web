@@ -1,5 +1,6 @@
 import { AuthenticationRequiredError, requireAuthenticatedResponse } from "../../lib/auth";
 import { parseRevisionConflictDetails } from "../../lib/outbox";
+import { authenticatedHeaders } from "../../lib/api-routes";
 
 export class SyncRequestError extends Error {
   constructor(message: string, readonly status: number | null, readonly permanent: boolean, readonly code: string | null = null, readonly details: unknown = null) {
@@ -27,7 +28,7 @@ export class SyncHttpClient {
     if (this.options.authenticationPaused()) throw new AuthenticationRequiredError();
     let response: Response;
     try {
-      response = await this.options.fetch(input, { credentials: "same-origin", ...init });
+      response = await this.options.fetch(input, { credentials: "same-origin", ...init, headers: authenticatedHeaders(init?.headers) });
     } catch (error) {
       if (init?.signal?.aborted || error instanceof DOMException && error.name === "AbortError") throw new DOMException("Synchronization was stopped.", "AbortError");
       this.options.onUnavailable();

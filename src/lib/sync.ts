@@ -1,7 +1,7 @@
 import type { SeededManifest } from "./seeded-manifest";
 import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validation";
-import { API_ROUTES } from "./api-routes";
-import { assertValidId, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
+import { API_ROUTES, authenticatedHeaders } from "./api-routes";
+import { assertValidId, isRecord, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import { DEFAULT_WALLPAPER } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
@@ -38,7 +38,7 @@ export type FileTransferState = {
   totalBytes: number;
   error: string | null;
 };
-export type DesktopRegistry = { schemaVersion: 1; catalogId: string | null; catalogRevision: number; desktops: DesktopIdentity[]; activeDesktopId: string | null; quota: CatalogQuota | null };
+export type DesktopRegistry = { schemaVersion: 2; catalogId: string | null; catalogRevision: number; desktops: DesktopIdentity[]; activeDesktopId: string | null; quota: CatalogQuota | null };
 export type ContentConflictBundle = {
   operationId: string;
   desktopId: string;
@@ -640,7 +640,7 @@ export class SyncEngine {
 
   private async fetchDesktop(desktopId = this.desktopId) {
     try {
-      return await this.requestDesktop(API_ROUTES.desktop(desktopId), { cache: "no-store" });
+      return await this.requestDesktop(API_ROUTES.desktopProjection(desktopId), { cache: "no-store" });
     } catch (error) {
       if (error instanceof SyncRequestError && error.status === 404 && desktopId === this.desktopId) await this.refreshCatalog();
       throw error;
@@ -650,10 +650,17 @@ export class SyncEngine {
   private async fetchVerifiedRemoteContent(desktopId: string, remote: RemoteDesktopState, entryId: string) {
     const entry = remote.entries.find((candidate): candidate is Extract<RemoteEntry, { kind: "file" }> => candidate.id === entryId && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists on the server.");
-    const descriptorResponse = this.requireAuthentication(await this.fetchImpl(API_ROUTES.desktopContentAccess(desktopId, entryId, entry.contentRevision), { cache: "no-store", credentials: "same-origin", signal: this.syncAbort?.signal }));
+    const descriptorResponse = this.requireAuthentication(await this.fetchImpl(API_ROUTES.desktopContent(desktopId, entryId, entry.contentRevision), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal: this.syncAbort?.signal }));
     if (!descriptorResponse.ok) throw new Error(`The server content could not be loaded (${descriptorResponse.status}).`);
+    if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) {
+      const blob = await descriptorResponse.blob();
+      const sha256 = descriptorResponse.headers.get("X-Hiraya-Content-SHA256");
+      if (blob.size !== entry.size || !sha256 || await sha256Blob(blob) !== sha256) throw new Error("The server content failed integrity verification.");
+      return blob.slice(0, blob.size, entry.mimeType);
+    }
     const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entryId, entry.contentRevision, entry.size);
-    const response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
+    const localAccess = descriptor.access.url.startsWith("/");
+    const response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: localAccess ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers, cache: "no-store", credentials: localAccess ? "same-origin" : "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
     if (!response.ok) throw new Error(`The server content could not be downloaded (${response.status}).`);
     const downloaded = await responseBlobWithProgress(response, descriptor.size, () => undefined);
     if (downloaded.blob.size !== descriptor.size || downloaded.sha256 !== descriptor.sha256) throw new Error("The server content failed integrity verification.");
@@ -710,7 +717,7 @@ export class SyncEngine {
   }
 
   private async bindOutboxCatalog(catalogId: string) {
-    this.assertAuthority({ schemaVersion: 1, catalogId }, "The server catalog");
+    this.assertAuthority({ schemaVersion: 2, catalogId }, "The server catalog");
     await this.storage.bindOutboxCatalog(catalogId);
     this.catalogId = catalogId;
     await this.publishOutbox();
@@ -831,7 +838,7 @@ export class SyncEngine {
     if (this.status === "upgrade-required" || this.status === "error") return;
     if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
     if (!this.catalogId) {
-      const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.catalog, { cache: "no-store" }));
+      const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.desktops, { cache: "no-store" }));
       if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
       this.catalogRevision = catalog.catalogRevision;
       await this.bindOutboxCatalog(catalog.catalogId);
@@ -927,7 +934,7 @@ export class SyncEngine {
     this.healthAbort = controller;
     const deadline = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
     try {
-      const response = this.requireAuthentication(await this.fetchImpl(this.healthRoute(), { cache: "no-store", credentials: "same-origin", signal: controller.signal }));
+      const response = this.requireAuthentication(await this.fetchImpl(this.healthRoute(), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal: controller.signal }));
       this.assertActiveSession(generation, desktopId);
       if (!response.ok) throw new Error("unhealthy");
       const health = await response.json() as unknown;
@@ -1131,10 +1138,10 @@ export class SyncEngine {
           if (local.desktops.length === 0) throw error;
         }
       }
-      return { schemaVersion: 1 as const, catalogId: null, catalogRevision: 0, quota: null, ...local };
+      return { schemaVersion: 2 as const, catalogId: null, catalogRevision: 0, quota: null, ...local };
     }
     try {
-      const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.catalog, { cache: "no-store" }));
+      const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.desktops, { cache: "no-store" }));
       this.catalogRevision = catalog.catalogRevision;
       await this.bindOutboxCatalog(catalog.catalogId);
       const remoteIds = new Set(catalog.desktops.map((desktop) => desktop.id));
@@ -1148,7 +1155,7 @@ export class SyncEngine {
         .filter((desktop) => !pendingDeletes.has(desktop.id))
         .map((desktop) => pendingRenames.has(desktop.id) ? { ...desktop, name: pendingRenames.get(desktop.id)! } : desktop);
       const registry = {
-        schemaVersion: 1 as const,
+        schemaVersion: 2 as const,
         catalogId: catalog.catalogId,
         catalogRevision: catalog.catalogRevision,
         quota: catalog.quota,
@@ -1172,7 +1179,7 @@ export class SyncEngine {
         }
       }
       const quota = this.lastQuota?.catalogId === this.catalogId ? this.lastQuota.quota : null;
-      return { schemaVersion: 1 as const, catalogId: null, catalogRevision: 0, quota, ...local };
+      return { schemaVersion: 2 as const, catalogId: null, catalogRevision: 0, quota, ...local };
     }
   }
 
@@ -1378,7 +1385,7 @@ export class SyncEngine {
     const loading = (async () => {
       let descriptorResponse: Response;
       try {
-        descriptorResponse = await this.fetchImpl(API_ROUTES.desktopContentAccess(desktopId, id, contentRevision), { cache: "no-store", credentials: "same-origin", signal });
+        descriptorResponse = await this.fetchImpl(API_ROUTES.desktopContent(desktopId, id, contentRevision), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal });
       } catch {
         if (signal?.aborted) throw new DOMException("File loading was stopped.", "AbortError");
         if (this.sessionIsActive(generation, desktopId)) this.setStatus("offline");
@@ -1387,6 +1394,15 @@ export class SyncEngine {
       this.assertActiveSession(generation, desktopId);
       this.requireAuthentication(descriptorResponse);
       if (!descriptorResponse.ok) throw new Error(descriptorResponse.status === 404 ? "This file no longer exists on the server." : `Access to the server contents of “${entry.name}” could not be loaded (${descriptorResponse.status}).`);
+      if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) {
+        const content = await descriptorResponse.blob();
+        if (content.size !== entry.size) throw new Error(`The server contents of “${entry.name}” have an unexpected size.`);
+        const digest = await sha256Blob(content);
+        if (descriptorResponse.headers.get("X-Hiraya-Content-SHA256") !== digest) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
+        const stored = await this.storage.cacheRemoteFile(desktopId, catalogId, id, contentRevision, digest, content);
+        if (!stored) throw new VirtualFileChangedError();
+        return stored;
+      }
       let descriptor;
       try {
         descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), id, contentRevision, entry.size);
@@ -1398,9 +1414,9 @@ export class SyncEngine {
       try {
         response = await this.fetchImpl(descriptor.access.url, {
           method: descriptor.access.method,
-          headers: descriptor.access.headers,
+          headers: descriptor.access.url.startsWith("/") ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers,
           cache: "no-store",
-          credentials: "omit",
+          credentials: descriptor.access.url.startsWith("/") ? "same-origin" : "omit",
           referrerPolicy: "no-referrer",
           redirect: "error",
           signal,
@@ -1457,7 +1473,7 @@ export class SyncEngine {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(API_ROUTES.desktopContentPreviewAccess(desktopId, id, contentRevision), { cache: "no-store", credentials: "same-origin", signal });
+      response = await this.fetchImpl(API_ROUTES.desktopContent(desktopId, id, contentRevision, "preview"), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal });
     } catch {
       if (signal?.aborted) throw new DOMException("File loading was stopped.", "AbortError");
       if (this.sessionIsActive(generation, desktopId)) this.setStatus("offline");
@@ -1466,6 +1482,11 @@ export class SyncEngine {
     this.assertActiveSession(generation, desktopId);
     this.requireAuthentication(response);
     if (!response.ok) throw new Error(response.status === 404 ? "This file no longer exists on the server." : `A preview of “${entry.name}” could not be loaded (${response.status}).`);
+    if (!response.headers.get("content-type")?.includes("application/json")) {
+      const blob = await response.blob();
+      if (blob.size !== entry.size || response.headers.get("X-Hiraya-Content-SHA256") !== await sha256Blob(blob)) throw new Error(`The preview of “${entry.name}” failed integrity verification.`);
+      return { kind: "blob", blob };
+    }
     const descriptor = parseContentAccessDescriptor(await response.json(), id, contentRevision, entry.size);
     if (descriptor.access.url.startsWith("/") || Object.keys(descriptor.access.headers).length) throw new Error("The server did not provide a browser-compatible media preview.");
     return { kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt };
@@ -1810,7 +1831,7 @@ export class SyncEngine {
     if (this.frontendOnly) return parseActivityPage(await this.storage.listActivity(parsed));
     let response: Response;
     try {
-      response = await this.fetchImpl(API_ROUTES.activity(parsed), { cache: "no-store", credentials: "same-origin" });
+      response = await this.fetchImpl(API_ROUTES.activity(parsed), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() });
     } catch {
       this.setStatus("offline");
       throw new Error("Activity is unavailable while the Hiraya server is offline.");
@@ -1827,7 +1848,7 @@ export class SyncEngine {
     if (this.frontendOnly) throw new TrashUnavailableError();
     let response: Response;
     try {
-      response = await this.fetchImpl(input, { cache: "no-store", credentials: "same-origin", ...init });
+      response = await this.fetchImpl(input, { cache: "no-store", credentials: "same-origin", ...init, headers: authenticatedHeaders(init?.headers) });
     } catch {
       this.setStatus("offline");
       throw new TrashUnavailableError("Trash is unavailable while the Hiraya server is offline.");
@@ -1845,34 +1866,59 @@ export class SyncEngine {
     return parseTrashDocument(await this.trashRequest(API_ROUTES.desktopTrash(desktopId)), desktopId);
   }
 
-  async restoreTrash(desktopId: string, entryId: string, destination: "original" | "root"): Promise<TrashRestoreResult> {
+  async restoreTrash(desktopId: string, entryId: string, destination: "original" | "root", baseRevision: number): Promise<TrashRestoreResult> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
     assertValidId(entryId, "Trash restore requires a valid entry ID.");
     if (destination !== "original" && destination !== "root") throw new Error("Trash restore requires an original or root destination.");
-    const result = parseTrashRestoreResult(await this.trashRequest(API_ROUTES.desktopTrashRestore(desktopId, entryId), {
+    if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) throw new Error("Trash restore requires a valid base revision.");
+    const response = await this.trashRequest(API_ROUTES.desktopEntryTransactions(desktopId), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-Hiraya-Client-ID": this.directMutationClientId,
         "X-Hiraya-Operation-ID": crypto.randomUUID(),
       },
-      body: JSON.stringify({ destination }),
-    }), entryId, destination);
-    if (this.running) await this.reconcile(undefined, desktopId);
-    this.catalogRevision = Math.max(this.catalogRevision, result.catalogRevision);
+      body: JSON.stringify({ operations: [{ type: "entry.restore", entryId, baseRevision, ...(destination === "root" ? { parentId: null } : {}) }] }),
+    });
+    const catalogRevision = isRecord(response) && Number.isSafeInteger(response.catalogRevision) ? Number(response.catalogRevision) : this.catalogRevision;
+    if (!this.running) {
+      this.catalogRevision = Math.max(this.catalogRevision, catalogRevision);
+      return { catalogRevision, entries: [] };
+    }
+    let reconciled: DesktopStateSnapshot;
+    try {
+      reconciled = await this.reconcile(undefined, desktopId);
+    } catch (error) {
+      if (this.running || !(error instanceof DOMException) || error.name !== "AbortError") throw error;
+      this.catalogRevision = Math.max(this.catalogRevision, catalogRevision);
+      return { catalogRevision, entries: [] };
+    }
+    const root = reconciled?.entries.find((entry) => entry.id === entryId);
+    if (!root) throw new Error("The restored item is missing from the desktop projection.");
+    const restoredIds = new Set([entryId]);
+    for (let changed = true; changed;) {
+      changed = false;
+      for (const entry of reconciled.entries) if (entry.parentId && restoredIds.has(entry.parentId) && !restoredIds.has(entry.id)) { restoredIds.add(entry.id); changed = true; }
+    }
+    const result = parseTrashRestoreResult({ catalogRevision, entries: reconciled.entries.filter((entry) => restoredIds.has(entry.id)).map((entry) => ({ ...entry, revision: reconciled.sync.entryRevisions[entry.id], contentRevision: reconciled.sync.contentRevisions[entry.id] ?? 0 })) }, entryId, destination);
+    this.catalogRevision = Math.max(this.catalogRevision, catalogRevision);
     return result;
   }
 
-  async permanentlyDeleteTrash(desktopId: string, entryId: string): Promise<TrashDeleteResult> {
+  async permanentlyDeleteTrash(desktopId: string, entryId: string, baseRevision: number): Promise<TrashDeleteResult> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
     assertValidId(entryId, "Permanent deletion requires a valid entry ID.");
-    const result = parseTrashDeleteResult(await this.trashRequest(API_ROUTES.desktopTrashEntry(desktopId, entryId), {
-      method: "DELETE",
+    if (!Number.isSafeInteger(baseRevision) || baseRevision < 0) throw new Error("Permanent deletion requires a valid base revision.");
+    const response = await this.trashRequest(API_ROUTES.desktopEntryTransactions(desktopId), {
+      method: "POST",
       headers: {
+        "Content-Type": "application/json",
         "X-Hiraya-Client-ID": this.directMutationClientId,
         "X-Hiraya-Operation-ID": crypto.randomUUID(),
       },
-    }));
+      body: JSON.stringify({ operations: [{ type: "entry.purge", entryId, baseRevision }] }),
+    });
+    const result = parseTrashDeleteResult({ catalogRevision: isRecord(response) && Number.isSafeInteger(response.catalogRevision) ? Number(response.catalogRevision) : this.catalogRevision, deletedIds: [entryId] });
     this.catalogRevision = Math.max(this.catalogRevision, result.catalogRevision);
     return result;
   }

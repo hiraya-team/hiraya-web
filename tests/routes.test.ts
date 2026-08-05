@@ -13,17 +13,14 @@ describe("canonical routes", () => {
   });
 
   test("constructs only canonical scoped API paths", () => {
-    expect(API_ROUTES.catalog).toBe("/api/catalog");
-    expect(API_ROUTES.desktopEntries("a/b")).toBe("/api/desktops/a%2Fb/entries");
-    expect(API_ROUTES.desktopMoveEntries("d")).toBe("/api/desktops/d/entries/move");
-    expect(API_ROUTES.desktopDeleteEntries("d")).toBe("/api/desktops/d/entries/delete");
+    expect(API_ROUTES.desktops).toBe("/api/desktops");
+    expect(API_ROUTES.desktopProjection("a/b")).toBe("/api/desktops/a%2Fb?projection=web");
     expect(API_ROUTES.desktopContent("d", "a/b")).toBe("/api/desktops/d/entries/a%2Fb/content");
-    expect(API_ROUTES.desktopBlobMutations("d")).toBe("/api/desktops/d/blob-mutations");
-    expect(API_ROUTES.desktopBlobMutationCommit("d", "upload/id")).toBe("/api/desktops/d/blob-mutations/upload%2Fid/commit");
-    expect(API_ROUTES.desktopContentAccess("d", "a/b", 7)).toBe("/api/desktops/d/entries/a%2Fb/content-access?revision=7");
-    expect(API_ROUTES.desktopContentPreviewAccess("d", "a/b", 7)).toBe("/api/desktops/d/entries/a%2Fb/content-preview-access?revision=7");
-    expect(API_ROUTES.desktopRootEntryPositions("d")).toBe("/api/desktops/d/root-entry-positions");
-    expect(API_ROUTES.entryTransfers).toBe("/api/entry-transfers");
+    expect(API_ROUTES.desktopEntryTransactions("d")).toBe("/api/desktops/d/entries/transactions");
+    expect(API_ROUTES.desktopEntryTransactionCommit("d", "transaction/id")).toBe("/api/desktops/d/entries/transactions/transaction%2Fid/commit");
+    expect(API_ROUTES.desktopContent("d", "a/b", 7)).toBe("/api/desktops/d/entries/a%2Fb/content?revision=7");
+    expect(API_ROUTES.desktopContent("d", "a/b", 7, "preview")).toBe("/api/desktops/d/entries/a%2Fb/content?revision=7&purpose=preview");
+    expect(API_ROUTES.events).toBe("/api/events?protocol=entry-transactions-v1");
     expect(API_ROUTES.shortLinks).toBe("/api/short-links");
     expect(API_ROUTES.shortLink("launch/notes")).toBe("/api/short-links/launch%2Fnotes");
   });

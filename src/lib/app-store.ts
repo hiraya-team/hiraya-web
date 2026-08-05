@@ -1,12 +1,12 @@
 import { parseAppCatalog, type AppCatalogRelease, type AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import type { DesktopIdentity, FileEntry } from "../types";
-import { API_ROUTES } from "./api-routes";
+import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { requireAuthenticatedResponse } from "./auth";
 import { sha256Blob } from "./blob-transfer";
 import { parseContentAccessDescriptor, parseRemoteDesktopState, type RemoteEntry } from "./contracts";
 
-export type AppStoreDescriptor = Readonly<{ schemaVersion: 1; catalogId: string; catalogRevision: number; desktopId: string }>;
+export type AppStoreDescriptor = Readonly<{ schemaVersion: 2; catalogId: string; catalogRevision: number; desktopId: string }>;
 export type StorePackage = Readonly<{
   source: "remote";
   entry: FileEntry;
@@ -30,8 +30,8 @@ const SYSTEM_APP_ID_SET = new Set<string>(Object.values(SYSTEM_APP_IDS));
 function parseDescriptor(value: unknown): AppStoreDescriptor | null {
   if (!value || typeof value !== "object") return null;
   const item = value as Record<string, unknown>;
-  if (item.schemaVersion !== 1 || typeof item.catalogId !== "string" || typeof item.desktopId !== "string" || !Number.isSafeInteger(item.catalogRevision) || Number(item.catalogRevision) < 0) return null;
-  return { schemaVersion: 1, catalogId: item.catalogId, catalogRevision: Number(item.catalogRevision), desktopId: item.desktopId };
+  if (item.schemaVersion !== 2 || typeof item.catalogId !== "string" || typeof item.desktopId !== "string" || !Number.isSafeInteger(item.catalogRevision) || Number(item.catalogRevision) < 0) return null;
+  return { schemaVersion: 2, catalogId: item.catalogId, catalogRevision: Number(item.catalogRevision), desktopId: item.desktopId };
 }
 
 export function storePackageKey(item: StorePackage): string {
@@ -40,11 +40,11 @@ export function storePackageKey(item: StorePackage): string {
 
 export async function loadStorePackages(desktop: DesktopIdentity): Promise<LoadedStorePackages> {
   if (desktop.purpose !== "app-store" || !desktop.authorityCatalogId) return { packages: [], managed: false, descriptor: null };
-  const response = requireAuthenticatedResponse(await fetch(API_ROUTES.desktop(desktop.id), { cache: "no-store", credentials: "same-origin" }));
+  const response = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopProjection(desktop.id), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
   if (!response.ok) throw new Error(`The app store could not be loaded (${response.status}).`);
   const state = parseRemoteDesktopState(await response.json());
   if (state.id !== desktop.id || state.catalogId !== desktop.authorityCatalogId) throw new Error("The app store authority changed unexpectedly.");
-  const descriptor = { schemaVersion: 1 as const, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id };
+  const descriptor = { schemaVersion: 2 as const, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id };
   const files = state.entries.filter((entry): entry is RemoteEntry & FileEntry => entry.kind === "file");
   const catalogEntry = files.find((entry) => entry.parentId === null && entry.name === "hiraya.apps.json");
   if (!catalogEntry) return { managed: false, descriptor, packages: files
@@ -60,19 +60,25 @@ export async function loadStorePackages(desktop: DesktopIdentity): Promise<Loade
 }
 
 export async function appStoreDescriptorIsCurrent(expected: AppStoreDescriptor) {
-  const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin" }));
+  const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
   if (!response.ok) throw new Error(`The app store could not be verified (${response.status}).`);
   const current = parseDescriptor((await response.json() as { appStore?: unknown }).appStore);
   return current?.catalogId === expected.catalogId && current.catalogRevision === expected.catalogRevision && current.desktopId === expected.desktopId;
 }
 
 async function downloadRemoteEntry(desktopId: string, entry: RemoteEntry & FileEntry) {
-  const descriptorResponse = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopContentAccess(desktopId, entry.id, entry.contentRevision), { cache: "no-store", credentials: "same-origin" }));
+  const descriptorResponse = requireAuthenticatedResponse(await fetch(API_ROUTES.desktopContent(desktopId, entry.id, entry.contentRevision), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
   if (!descriptorResponse.ok) throw new Error(descriptorResponse.status === 404 ? "This app release is no longer available." : `The app release could not be loaded (${descriptorResponse.status}).`);
+  const rawSha256 = descriptorResponse.headers.get("X-Hiraya-Content-SHA256");
+  if (rawSha256 !== null) {
+    const archive = await descriptorResponse.blob();
+    if (archive.size !== entry.size || await sha256Blob(archive) !== rawSha256) throw new Error("The app release failed integrity verification.");
+    return archive;
+  }
   const descriptor = parseContentAccessDescriptor(await descriptorResponse.json(), entry.id, entry.contentRevision, entry.size);
   const response = await fetch(descriptor.access.url, {
     method: descriptor.access.method,
-    headers: descriptor.access.headers,
+    headers: descriptor.access.url.startsWith("/") ? authenticatedHeaders(descriptor.access.headers) : descriptor.access.headers,
     cache: "no-store",
     credentials: descriptor.access.url.startsWith("/") ? "same-origin" : "omit",
     redirect: "error",
@@ -118,7 +124,7 @@ export function subscribeToAppStoreChanges(onChange: (descriptor: AppStoreDescri
     if (healthCheck) return healthCheck;
     const check = (async () => {
       try {
-        const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin" }));
+        const response = requireAuthenticatedResponse(await fetch(API_ROUTES.syncHealth, { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() }));
         if (response.ok) publish((await response.json() as { appStore?: unknown }).appStore);
       } catch { /* The main connection UI reports connectivity failures. */ }
     })().finally(() => {

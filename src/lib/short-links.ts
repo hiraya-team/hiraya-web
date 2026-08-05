@@ -1,5 +1,5 @@
 import { isSafeRootRelativePath, requireAuthenticatedResponse } from "./auth";
-import { API_ROUTES } from "./api-routes";
+import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { isRecord } from "./contracts";
 
 export type ShortLink = {
@@ -45,7 +45,7 @@ export function resolveShortLinkUrl(value: string, origin: string) {
 }
 
 async function request(input: string, init?: RequestInit, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  const response = requireAuthenticatedResponse(await fetchImpl(input, { credentials: "same-origin", cache: "no-store", ...init }));
+  const response = requireAuthenticatedResponse(await fetchImpl(input, { credentials: "same-origin", cache: "no-store", ...init, headers: authenticatedHeaders(init?.headers) }));
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: unknown } | null;
     throw new Error(typeof body?.error === "string" && body.error ? body.error : `The short-link request failed (${response.status}).`);

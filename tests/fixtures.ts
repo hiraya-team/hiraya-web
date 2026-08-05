@@ -19,7 +19,7 @@ export function desktopStateSnapshot(): DesktopStateSnapshot {
 
 export function remoteDesktopState() {
   return {
-    schemaVersion: 1 as const,
+    schemaVersion: 2 as const,
     catalogId: "catalog-1",
     catalogRevision: 1,
     ...remoteDesktopIdentity(),

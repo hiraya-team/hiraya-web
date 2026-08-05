@@ -1,4 +1,4 @@
-export const WIRE_SCHEMA_VERSION = 1;
+export const WIRE_SCHEMA_VERSION = 2;
 
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
 function isValidCatalogId(value: unknown): value is string {

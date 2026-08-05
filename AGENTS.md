@@ -24,7 +24,7 @@ bun run dev
 - `src/platform/sync/`: synchronization storage port, authenticated HTTP policy, connectivity, and outbox transport adapters.
 - `src/lib/opfs.ts`: serialized local desktop mutation facade preserving content-before-metadata and atomic outbox publication.
 - `src/platform/storage/`: storage namespace, OPFS blobs, SQLite worker client, and device/app repositories. Keep browser storage implementations inside this platform boundary.
-- `src/lib/contracts.ts`: runtime validation for strict catalog/desktop schema version 1.
+- `src/lib/contracts.ts`: runtime validation for strict remote catalog/desktop schema version 2.
 - `src/lib/api-routes.ts`: same-origin API route construction.
 - `src/lib/seeded-manifest.ts`: seeded manifest validation shared by the build loader and exporter.
 - `src/lib/seeded.ts`: seeded ZIP export.

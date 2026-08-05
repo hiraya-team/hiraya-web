@@ -47,7 +47,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
     let objectUrl = "";
     const contentRevision = desktop.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
 	const currentAuthority = { desktopAlias: authority.desktopAlias, ...(authority.itemAlias ? { itemAlias: authority.itemAlias } : {}) };
-	void fetchPublicFile(currentAuthority, file, contentRevision)
+	void fetchPublicFile(currentAuthority, file, contentRevision, undefined, "preview")
       .then((blob) => {
         if (disposed) return;
         objectUrl = URL.createObjectURL(blob);
@@ -69,7 +69,8 @@ export function usePublicDesktop(authority: PublicAuthority) {
     if (!downloadOnly) setOpenState({ kind: "file", file });
     try {
 		const contentRevision = desktopOverride?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-		const blob = await fetchPublicFile(authority, file, contentRevision);
+		const mediaPreview = !downloadOnly && /^(?:image|audio|video)\//i.test(file.mimeType);
+		const blob = await fetchPublicFile(authority, file, contentRevision, undefined, mediaPreview ? "preview" : undefined);
       if (downloadOnly) {
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
