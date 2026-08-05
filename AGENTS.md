@@ -23,7 +23,7 @@ bun run dev
 - `src/lib/sync.ts`: synchronization engine coordinating mutation ordering, durable replay, and reconciliation.
 - `src/platform/sync/`: synchronization storage port, authenticated HTTP policy, connectivity, and outbox transport adapters.
 - `src/lib/opfs.ts`: serialized local desktop mutation facade preserving content-before-metadata and atomic outbox publication.
-- `src/platform/storage/`: storage namespace, OPFS blobs, SQLite worker client, and device/app repositories. Keep browser storage implementations inside this platform boundary.
+- `src/platform/storage/`: storage namespace, native IndexedDB metadata, OPFS blobs, and device/app repositories. Keep browser storage implementations inside this platform boundary.
 - `src/lib/contracts.ts`: runtime validation for strict remote catalog/desktop schema version 2.
 - `src/lib/api-routes.ts`: same-origin API route construction.
 - `src/lib/seeded-manifest.ts`: seeded manifest validation shared by the build loader and exporter.
@@ -55,11 +55,11 @@ Preserve the enforced dependency direction: domain code is browser- and React-in
 
 ## Storage And Sync Invariants
 
-- OPFS is authoritative only in frontend-only mode. In synchronized mode it is a cache and projected offline desktop.
+- IndexedDB metadata and OPFS file bytes are authoritative only in frontend-only mode. In synchronized mode they are a cache and projected offline desktop.
 - Browser storage implementations belong in `src/platform/storage/`. Local desktop mutations go through `src/lib/opfs.ts`; namespace, repository, and blob consumers may use the narrower platform modules directly when their capability boundary requires it.
 - Physical browser files use stable UUIDs; user-facing names and folders are metadata.
-- The OPFS SQLite schema is version 10, normalized by desktop, and migrates older versions in place. It stores namespaced device preferences, including the folder explorer view and browser pinch-zoom choice, and durable outbox diagnostics. Schema 10 removes retired offline-pin records without deleting downloaded bytes.
-- Offline mutations update the projected SQLite desktop and append an outbox operation atomically.
+- IndexedDB stores each desktop as one complete validated aggregate. Separate stores hold the ordered outbox, client state, preferences, sessions, activity, installed and quarantined apps, app storage, and file associations.
+- Offline mutations update the projected desktop aggregate and append an outbox operation in one native multi-store transaction.
 - Replay uses stable idempotency headers and preserves blocked operations for user resolution.
 - Desktop rename and delete use the stable desktop ID plus existence and authorization as their identity precondition; do not use the catalog-wide revision, because unrelated catalog mutations must not conflict.
 - During reconciliation, publish validated metadata without requiring file bytes. Fetch virtual file content on demand, validate its revision and size, and cache it before use.
@@ -69,7 +69,8 @@ Preserve the enforced dependency direction: domain code is browser- and React-in
 - Preserve unsaved editor text when remote content changes.
 - Keep API responses and SSE outside service-worker precaching.
 - OPFS is origin-scoped and is removed when browser site data is cleared.
-- Select the session `storageId` namespace before importing desktop code or starting storage workers. Scope OPFS directories, SQLite, workers, locks, cache markers, and active desktop session state; logout must not delete account storage.
+- Select the session `storageId` namespace before importing desktop code or opening IndexedDB. Scope IndexedDB, OPFS directories, OPFS serialization locks, cache markers, and active desktop session state; logout must not delete account storage.
+- The pre-release IndexedDB cutover destructively resets each namespace once. Coordinate cleanup with the retired SQLite owner lock and fail with a close-old-tabs message rather than deleting storage used by an older tab.
 
 ## API Compatibility
 

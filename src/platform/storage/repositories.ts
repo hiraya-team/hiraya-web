@@ -5,29 +5,25 @@ import { parseWindowSession, type WindowSession } from "../../lib/window-session
 import { callDatabase, initializeDatabase } from "./database-client";
 
 export async function readPreferences(): Promise<LocalPreferences> {
-  await callDatabase("status", undefined);
   return callDatabase("readPreferences", undefined);
 }
 
 export async function savePreferences(preferences: LocalPreferences) {
-  await callDatabase("status", undefined);
   await callDatabase("writePreferences", { preferences });
 }
 
 export async function readWindowSession(desktopId: string) {
-  await callDatabase("status", undefined);
   return parseWindowSession(await callDatabase("readWindowSession", { desktopId }));
 }
 
 export async function saveWindowSession(desktopId: string, session: WindowSession) {
-  await callDatabase("status", undefined);
   await callDatabase("writeWindowSession", { desktopId, session: parseWindowSession(session) });
 }
 
 export async function listInstalledApps() {
   await initializeDatabase();
   const apps = await callDatabase("listInstalledApps", undefined, null);
-  if (!Array.isArray(apps)) throw new Error("The local storage worker uses an outdated app protocol. Reload Hiraya and close any older Hiraya tabs.");
+  if (!Array.isArray(apps)) throw new Error("The local app database has an unsupported format.");
   return apps.map(parseInstalledApp);
 }
 

@@ -236,6 +236,37 @@ test("local mutation persists through reload", async ({ page }) => {
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+  const stored = await page.evaluate(async () => {
+    const databaseName = (await indexedDB.databases()).find((database) => database.name?.startsWith("hiraya-indexeddb-v1-"))?.name;
+    if (!databaseName) throw new Error("The Hiraya IndexedDB database is unavailable.");
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(databaseName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const transaction = database.transaction("desktops", "readonly");
+    const desktops = await new Promise<Array<{ state: { entries: Array<{ name: string }> } }>>((resolve, reject) => {
+      const request = transaction.objectStore("desktops").getAll();
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const stores = [...database.objectStoreNames].sort();
+    database.close();
+    return { stores, names: desktops.flatMap((desktop) => desktop.state.entries.map((entry) => entry.name)) };
+  });
+  expect(stored.stores).toEqual(["activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "quarantined-apps", "sessions"]);
+  expect(stored.names).toContain(name);
+});
+
+test("concurrent tabs serialize the first IndexedDB reset", async ({ browser }) => {
+  const context = await browser.newContext();
+  const first = await context.newPage();
+  const second = await context.newPage();
+  await Promise.all([first.goto("/"), second.goto("/")]);
+  await expect(first.locator(".desktop-shell")).toBeVisible();
+  await expect(second.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(() => first.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("hiraya-indexeddb-reset-v1-")).length)).toBe(1);
+  await context.close();
 });
 
 test("shows image thumbnails on the desktop and in folders", async ({ page }) => {

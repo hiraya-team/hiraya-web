@@ -40,7 +40,6 @@
     "@lezer/highlight": "^1.2.3",
     "@noble/hashes": "^2.2.0",
     "@phosphor-icons/react": "^2.1.10",
-    "@sqlite.org/sqlite-wasm": "3.53.0-build1",
     "codemirror": "^6.0.2",
     "fflate": "^0.8.3",
     "node-diff3": "3.2.1",

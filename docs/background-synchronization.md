@@ -8,7 +8,7 @@ Date: 2026-07-27
 
 Hiraya is a desktop environment backed by a server-authoritative catalog. Waiting for server mutation, upload, or reconciliation responses on the interaction path makes routine desktop work depend on network latency and allows one slow operation to delay later actions.
 
-The browser already maintains a projected desktop in OPFS SQLite and a durable ordered outbox. File bytes are staged before projected metadata refers to them, and replay requests have stable idempotency identities.
+The browser maintains complete projected desktop records and a durable ordered outbox in IndexedDB. File bytes are staged in OPFS before projected metadata refers to them, and replay requests have stable idempotency identities.
 
 ## Decision
 
