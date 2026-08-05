@@ -1,4 +1,4 @@
-import { API_ROUTES, SERVER_ROUTES } from "./api-routes";
+import { API_ROUTES, HIRAYA_API_PROTOCOL, SERVER_ROUTES, authenticatedHeaders } from "./api-routes";
 import { parseAuthorityIdentity } from "./wire-authority";
 
 export type SessionUser = {
@@ -8,13 +8,15 @@ export type SessionUser = {
 };
 
 export type AuthSession = {
-  schemaVersion: 1;
+  schemaVersion: 2;
+  apiProtocol: typeof HIRAYA_API_PROTOCOL;
   catalogId: string;
   storageId: string;
   directBlobOrigin: string;
   user: SessionUser;
   capabilities: {
     blobTransfer: "direct-b2-v1";
+    entryTransactions: "prepare-commit-cancel-v1";
     desktopSearch?: "accessible-desktops-v1";
 		shortLinks?: "account-short-links-v1";
 		publications?: "alias-publications-v1";
@@ -23,7 +25,7 @@ export type AuthSession = {
 	publicationBaseUrl?: string;
 };
 
-const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-v1";
+const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-v2";
 type BootstrapStorage = Pick<Storage, "getItem" | "setItem">;
 
 export class AuthenticationRequiredError extends Error {
@@ -67,10 +69,13 @@ function normalizedHttpOrigin(value: string) {
 export function parseAuthSession(value: unknown): AuthSession {
   if (!value || typeof value !== "object") throw new Error("The session bootstrap is invalid.");
   const authority = parseAuthorityIdentity(value, "The session bootstrap");
-	const session = value as { storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown; publicationBaseUrl?: unknown };
+	const session = value as { apiProtocol?: unknown; storageId?: unknown; directBlobOrigin?: unknown; user?: unknown; capabilities?: unknown; shortLinkBaseUrl?: unknown; publicationBaseUrl?: unknown };
   if (!session.user || typeof session.user !== "object") throw new Error("The session bootstrap contains invalid user metadata.");
   if (!session.capabilities || typeof session.capabilities !== "object" || (session.capabilities as { blobTransfer?: unknown }).blobTransfer !== "direct-b2-v1") {
     throw new Error("The session bootstrap requires direct-b2-v1 blob transfer support.");
+  }
+  if (session.apiProtocol !== HIRAYA_API_PROTOCOL || (session.capabilities as { entryTransactions?: unknown }).entryTransactions !== "prepare-commit-cancel-v1") {
+    throw new Error("The session bootstrap requires entry transaction protocol support.");
   }
   const directBlobOrigin = normalizedHttpOrigin(requiredString(session.directBlobOrigin, "direct blob origin"));
   if (!directBlobOrigin) throw new Error("The session bootstrap contains an invalid direct blob origin.");
@@ -90,6 +95,7 @@ export function parseAuthSession(value: unknown): AuthSession {
 	if (publicationBaseUrl && !isSafeRootRelativePath(publicationBaseUrl) && !isSafeAbsoluteHttpUrl(publicationBaseUrl)) throw new Error("The session bootstrap contains an invalid publication base URL.");
   return {
     ...authority,
+    apiProtocol: HIRAYA_API_PROTOCOL,
     storageId: requiredString(session.storageId, "storage ID"),
     directBlobOrigin,
     user: {
@@ -97,7 +103,7 @@ export function parseAuthSession(value: unknown): AuthSession {
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),
       ...(user.avatarUrl === undefined ? {} : { avatarUrl: optionalString(user.avatarUrl, "avatar URL") }),
     },
-		capabilities: { blobTransfer: "direct-b2-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
+		capabilities: { blobTransfer: "direct-b2-v1", entryTransactions: "prepare-commit-cancel-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
 		...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
 		...(publicationBaseUrl ? { publicationBaseUrl } : {}),
   };
@@ -130,7 +136,7 @@ function cachedSession(storage: BootstrapStorage): AuthSession | null {
     const value = JSON.parse(storage.getItem(AUTH_BOOTSTRAP_CACHE_KEY) ?? "null") as unknown;
     if (!value || typeof value !== "object") return null;
     const cache = value as { version?: unknown; locked?: unknown; session?: unknown };
-    if (cache.version !== 1 || cache.locked !== false) return null;
+    if (cache.version !== 2 || cache.locked !== false) return null;
     return parseAuthSession(cache.session);
   } catch {
     return null;
@@ -139,7 +145,7 @@ function cachedSession(storage: BootstrapStorage): AuthSession | null {
 
 export function lockAuthBootstrap(storage: BootstrapStorage = localStorage) {
   try {
-    storage.setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 1, locked: true }));
+    storage.setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 2, locked: true }));
   } catch { /* Logout must continue when browser storage is unavailable. */ }
 }
 
@@ -152,7 +158,7 @@ export async function bootstrapSession(
   if (frontendOnly) return null;
   let response: Response;
   try {
-    response = await fetchImpl(API_ROUTES.authSession, { cache: "no-store", credentials: "same-origin" });
+    response = await fetchImpl(API_ROUTES.authSession, { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() });
   } catch (error) {
     const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
     const cached = bootstrapStorage ? cachedSession(bootstrapStorage) : null;
@@ -163,7 +169,7 @@ export async function bootstrapSession(
   if (!response.ok) throw new Error(`Hiraya could not load your session (${response.status}).`);
   const session = parseAuthSession(await response.json());
   try {
-    (storage ?? localStorage).setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 1, locked: false, session }));
+    (storage ?? localStorage).setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 2, locked: false, session }));
   } catch { /* A cache write failure must not block an authenticated startup. */ }
   return session;
 }

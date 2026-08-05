@@ -26,7 +26,7 @@ class CapturingEventSource extends FakeEventSource {
   override addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
     if (type === "catalog") this.catalogListener = listener as (event: MessageEvent<string>) => void;
   }
-  emitCatalog(catalogId: string, catalogRevision: number, schemaVersion = 1) {
+  emitCatalog(catalogId: string, catalogRevision: number, schemaVersion = 2) {
     this.catalogListener?.({ data: JSON.stringify({ schemaVersion, catalogId, catalogRevision }) } as MessageEvent<string>);
   }
 }
@@ -202,7 +202,7 @@ describe("canonical synchronization", () => {
   test("does not invent a content revision when saving a pending new file", async () => {
     const storage = remoteStorage();
     const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
@@ -226,16 +226,16 @@ describe("canonical synchronization", () => {
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = `${init?.method ?? "GET"} ${String(input)}`;
       requests.push(request);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/root-entry-positions") {
-        markPositionStarted();
-        await positionGate;
-        remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: { x: 20, y: 30 }, revision: 2 }] };
-        return Response.json({});
-      }
-      if (String(input) === "/api/desktops/desk/layout") {
-        remote = { ...remote, catalogRevision: 3, layout: { ...remote.layout, snapToGrid: true, gridSize: 48 }, layoutRevision: 3 };
-        return Response.json({});
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
+        const operation = JSON.parse(String(init?.body)).operations[0];
+        if (operation.systemRole === "layout") remote = { ...remote, catalogRevision: 3, layout: operation.content, layoutRevision: 3 };
+        else {
+          markPositionStarted();
+          await positionGate;
+          remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: operation.changes.position, revision: 2 }] };
+        }
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${request}`);
     }) as typeof fetch;
@@ -252,11 +252,11 @@ describe("canonical synchronization", () => {
     expect(latest.layout.snapToGrid).toBe(true);
     expect(latest.layout.gridSize).toBe(48);
     expect(await engine.getOutboxStatus()).toMatchObject({ pending: 2, blocked: 0 });
-    expect(requests).not.toContain("PUT /api/desktops/desk/layout");
+    expect(requests.filter((request) => request === "POST /api/desktops/desk/entries/transactions")).toHaveLength(1);
 
     releasePosition();
     await waitForOutboxDrain(engine);
-    expect(requests.indexOf("PUT /api/desktops/desk/root-entry-positions")).toBeLessThan(requests.indexOf("PUT /api/desktops/desk/layout"));
+    expect(requests.filter((request) => request === "POST /api/desktops/desk/entries/transactions")).toHaveLength(2);
     await engine.stop();
   });
 
@@ -269,15 +269,15 @@ describe("canonical synchronization", () => {
     let markReplayStarted!: () => void;
     const replayStarted = new Promise<void>((resolve) => { markReplayStarted = resolve; });
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/root-entry-positions") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
         replayCalls += 1;
         if (replayCalls === 1) {
           staleSignal = init?.signal ?? undefined;
           markReplayStarted();
           return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => setTimeout(() => reject(new TypeError("stale transport failed")), 0), { once: true }));
         }
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -304,8 +304,8 @@ describe("canonical synchronization", () => {
     let markDescriptorStarted!: () => void;
     const descriptorStarted = new Promise<void>((resolve) => { markDescriptorStarted = resolve; });
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") {
         descriptorSignal = init?.signal ?? undefined;
         markDescriptorStarted();
         return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new TypeError("stale descriptor failed")), { once: true }));
@@ -346,7 +346,7 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
       requests.push(String(input));
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
       throw new TypeError("offline");
     }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
@@ -355,7 +355,7 @@ describe("canonical synchronization", () => {
     const [uploaded] = await engine.importFiles([new File(["local"], "local.txt", { type: "text/plain" })], null, [{ x: 20, y: 20 }]);
 
     expect(await engine.readFile(uploaded.id).then((file) => file.text())).toBe("local");
-    expect(requests).toEqual(["/api/desktops/desk"]);
+    expect(requests).toEqual(["/api/desktops/desk?projection=web"]);
     blocked.release();
     await blocked.pending;
     await engine.stop();
@@ -365,10 +365,10 @@ describe("canonical synchronization", () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
-        remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, { ...body.items[0].entry, revision: 2, contentRevision: 2 }] };
+        remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, { ...body.operations[0].entry, revision: 2, contentRevision: 2 }] };
         return Response.json({ state: "committed", catalogRevision: 2 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
@@ -389,17 +389,16 @@ describe("canonical synchronization", () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         const body = JSON.parse(String(init.body));
-        const item = body.items[0];
-        const packaged = item.themePackage;
+        const [definition, item, selection, layout] = body.operations;
         remote = {
           ...remote,
           catalogRevision: 2,
-          layout: { ...packaged.layout, wallpaper: { ...packaged.layout.wallpaper, source: `theme:${packaged.theme.id}` } },
+          layout: layout.content,
           layoutRevision: 2,
-          appearance: { selectedThemeId: packaged.theme.id, selectionRevision: 2, customThemes: [{ ...packaged.theme, wallpaper: { assetId: item.entry.id, kind: packaged.kind, size: item.entry.size, sha256: item.sha256, revision: 2 }, revision: 2 }] },
+          appearance: { selectedThemeId: selection.content.themeId, selectionRevision: 2, customThemes: [{ ...definition.content, wallpaper: { assetId: item.entry.id, kind: item.packageKind, size: item.entry.size, sha256: item.sha256, revision: 2 }, revision: 2 }] },
         };
         return Response.json({ state: "committed", catalogRevision: 2 });
       }
@@ -428,7 +427,7 @@ describe("canonical synchronization", () => {
     const existing = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper, revision: 2 };
     const remote = { ...remoteDesktopState(), catalogRevision: 2, appearance: { selectedThemeId: existing.id, selectionRevision: 2, customThemes: [existing] } };
     const engine = new SyncEngine({ storage, fetch: (async (input) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
       throw new TypeError("offline");
     }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
@@ -447,7 +446,7 @@ describe("canonical synchronization", () => {
     const theme = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper, revision: 2 };
     const remote = { ...remoteDesktopState(), catalogRevision: 2, layout: { ...remoteDesktopState().layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const } }, layoutRevision: 2, appearance: { selectedThemeId: theme.id, selectionRevision: 2, customThemes: [theme] } };
     const engine = new SyncEngine({ storage, fetch: (async (input) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
       throw new TypeError("offline");
     }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
@@ -498,11 +497,11 @@ describe("canonical synchronization", () => {
       readOutbox: async () => [],
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     const engine = new SyncEngine({ storage, fetch: (async (input) => {
-      expect(String(input)).toBe("/api/catalog");
-      return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 1, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      expect(String(input)).toBe("/api/desktops");
+      return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
     }) as typeof fetch });
 
-    expect(await engine.listDesktops()).toEqual({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 1, activeDesktopId: "desk", desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+    expect(await engine.listDesktops()).toEqual({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, activeDesktopId: "desk", desktops: [remoteDesktopIdentity()], quota: catalogQuota });
   });
 
   test("recovers when concurrent first-run initialization creates the local desktop", async () => {
@@ -529,7 +528,7 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: (async () => {
       catalogRead += 1;
       const desktops = (catalogRead === 1 ? local : [local[1]]).map((desktop) => remoteDesktopIdentity(desktop.id, desktop.name));
-      return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: catalogRead, desktops, quota: { ...catalogQuota, desktops: { used: desktops.length, limit: 10 } } });
+      return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: catalogRead, desktops, quota: { ...catalogQuota, desktops: { used: desktops.length, limit: 10 } } });
     }) as typeof fetch });
 
     expect((await engine.listDesktops()).activeDesktopId).toBe("one");
@@ -547,7 +546,7 @@ describe("canonical synchronization", () => {
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     const engine = new SyncEngine({ storage, fetch: (async () => {
       if (!online) throw new TypeError("offline");
-      return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 1, desktops: local.map((desktop) => remoteDesktopIdentity(desktop.id, desktop.name)), quota: catalogQuota });
+      return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, desktops: local.map((desktop) => remoteDesktopIdentity(desktop.id, desktop.name)), quota: catalogQuota });
     }) as typeof fetch });
 
     expect((await engine.listDesktops()).quota).toEqual(catalogQuota);
@@ -564,7 +563,7 @@ describe("canonical synchronization", () => {
       bindOutboxCatalog: async () => undefined,
       readOutbox: async () => [],
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
-    const engine = new SyncEngine({ storage, fetch: (async () => Response.json({ schemaVersion: 1, catalogId, catalogRevision: 1, desktops: local.map((desktop) => remoteDesktopIdentity(desktop.id, desktop.name)), quota: catalogQuota })) as typeof fetch });
+    const engine = new SyncEngine({ storage, fetch: (async () => Response.json({ schemaVersion: 2, catalogId, catalogRevision: 1, desktops: local.map((desktop) => remoteDesktopIdentity(desktop.id, desktop.name)), quota: catalogQuota })) as typeof fetch });
 
     expect((await engine.listDesktops()).quota).toEqual(catalogQuota);
     catalogId = "new-catalog";
@@ -677,8 +676,8 @@ describe("canonical synchronization", () => {
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const request = `${init?.method ?? "GET"} ${String(input)}`;
       requests.push(request);
-      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "new-catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
+      if (String(input) === "/api/desktops") return Response.json({ schemaVersion: 2, catalogId: "new-catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
       throw new Error(`A stale operation was sent: ${request}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -724,10 +723,10 @@ describe("canonical synchronization", () => {
       const request = `${init?.method ?? "GET"} ${String(input)}`;
       requests.push(request);
       if (!online) throw new TypeError("offline");
-      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 1, desktops: [remoteDesktopIdentity("server-desk", "Desktop")], quota: catalogQuota });
-      if (String(input) === "/api/desktops/offline-desk" && !remoteExists) return Response.json({ error: "desktop not found" }, { status: 404 });
+      if (String(input) === "/api/desktops" && !init?.method) return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, desktops: [remoteDesktopIdentity("server-desk", "Desktop")], quota: catalogQuota });
+      if (String(input) === "/api/desktops/offline-desk?projection=web" && !remoteExists) return Response.json({ error: "desktop not found" }, { status: 404 });
       if (String(input) === "/api/desktops" && init?.method === "POST") { createBody = JSON.parse(String(init.body)); remoteExists = true; return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop" }, { status: 201 }); }
-      if (String(input) === "/api/desktops/offline-desk") return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop", catalogRevision: 2 });
+      if (String(input) === "/api/desktops/offline-desk?projection=web") return Response.json({ ...remoteDesktopState(), catalogId: "catalog", id: "offline-desk", name: "Offline desktop", catalogRevision: 2 });
       throw new Error(`Unexpected request: ${request}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -755,18 +754,18 @@ describe("canonical synchronization", () => {
     let reads = 0;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk") return Response.json({ ...remote, catalogRevision: ++reads });
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json({ ...remote, catalogRevision: ++reads });
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/file-1") return new Response("note");
-      if (String(input) === "/api/desktops/desk/root-entry-positions") return Response.json({});
+      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed" });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
     await engine.start("desk", { x: 100, y: 100 });
     await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
-    await waitFor(() => requests.includes("PUT /api/desktops/desk/root-entry-positions"));
-    expect(requests).toContain("GET /api/desktops/desk");
-    expect(requests).toContain("PUT /api/desktops/desk/root-entry-positions");
+    await waitFor(() => requests.includes("POST /api/desktops/desk/entries/transactions"));
+    expect(requests).toContain("GET /api/desktops/desk?projection=web");
+    expect(requests).toContain("POST /api/desktops/desk/entries/transactions");
     await engine.stop();
   });
 
@@ -775,8 +774,8 @@ describe("canonical synchronization", () => {
     const storage = remoteStorage();
     let unauthorized = 0;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/root-entry-positions") return new Response(null, { status: 401 });
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") return new Response(null, { status: 401 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, onUnauthorized: () => { unauthorized += 1; } });
@@ -796,10 +795,10 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const engine = new SyncEngine({ storage, expectedCatalogId: "catalog", eventSource: FakeEventSource as unknown as typeof EventSource, fetch: (async (input, init) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      return Response.json({ ...remoteDesktopState(), schemaVersion: 2 });
+      return Response.json({ ...remoteDesktopState(), schemaVersion: 1 });
     }) as typeof fetch });
     expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("upgrade-required");
-    expect(requests).toEqual(["GET /api/desktops/desk"]);
+    expect(requests).toEqual(["GET /api/desktops/desk?projection=web"]);
     expect((await engine.getOutboxStatus()).records).toHaveLength(1);
     await engine.stop();
   });
@@ -808,8 +807,8 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       requests.push(String(input));
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 1 });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 1 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage: remoteStorage(), fetch: fetchImpl, eventSource: CapturingEventSource as unknown as typeof EventSource, setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never });
@@ -829,17 +828,17 @@ describe("canonical synchronization", () => {
         setTimeout: (() => 1) as never, clearTimeout: (() => undefined) as never,
         fetch: (async (input) => {
           requests.push(String(input));
-          if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 2 });
+          if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: source === "health" ? 1 : 2, catalogId: "catalog-1", catalogRevision: 2 });
           throw new Error(`Unexpected request: ${String(input)}`);
         }) as typeof fetch });
       await engine.start("desk", { x: 0, y: 0 });
       storage.seedOutbox([record]);
-      if (source === "sse") CapturingEventSource.latest?.emitCatalog("catalog-1", 2, 2);
+      if (source === "sse") CapturingEventSource.latest?.emitCatalog("catalog-1", 2, 1);
       else CapturingEventSource.latest?.onerror?.();
       await waitFor(() => (engine as unknown as { status: string }).status === "upgrade-required");
       expect((await engine.getOutboxStatus()).records).toHaveLength(1);
-      expect(requests.filter((request) => request !== "/api/desktops/desk" && request !== "/api/sync/health")).toEqual([]);
+      expect(requests.filter((request) => request !== "/api/desktops/desk?projection=web" && request !== "/api/sync/health")).toEqual([]);
       await engine.stop();
     }
   });
@@ -849,7 +848,7 @@ describe("canonical synchronization", () => {
     let finishHealth!: (response: Response) => void;
     let healthRequests = 0;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
       if (String(input) === "/api/sync/health") {
         healthRequests += 1;
         healthSignal = init?.signal as AbortSignal;
@@ -869,7 +868,7 @@ describe("canonical synchronization", () => {
     expect(healthSignal?.aborted).toBe(true);
 
     await engine.start("desk", { x: 0, y: 0 });
-    finishHealth(Response.json({ schemaVersion: 1, catalogId: "stale", catalogRevision: 99 }));
+    finishHealth(Response.json({ schemaVersion: 2, catalogId: "stale", catalogRevision: 99 }));
     await Promise.resolve();
     await Promise.resolve();
     expect(statuses.at(-1)).toBe("online");
@@ -886,7 +885,7 @@ describe("canonical synchronization", () => {
       clearTimeout: (() => undefined) as never,
       fetch: (async (input) => {
         requests.push(String(input));
-        if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
+        if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
         throw new Error(`Unexpected request: ${String(input)}`);
       }) as typeof fetch,
     });
@@ -905,7 +904,7 @@ describe("canonical synchronization", () => {
     await Promise.resolve();
 
     expect(requests).toHaveLength(requestsBeforeRelease);
-    expect(requests).not.toContain("/api/catalog");
+    expect(requests).not.toContain("/api/desktops");
     expect(statuses.at(-1)).toBe("online");
     await engine.stop();
   });
@@ -919,8 +918,8 @@ describe("canonical synchronization", () => {
       clearTimeout: (() => undefined) as never,
       fetch: (async (input) => {
         requests.push(String(input));
-        if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-        if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+        if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+        if (String(input) === "/api/desktops") return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
         throw new Error(`Unexpected request: ${String(input)}`);
       }) as typeof fetch,
     });
@@ -936,7 +935,7 @@ describe("canonical synchronization", () => {
     blocked.release();
     await Promise.all([blocked.pending, stopping]);
 
-    expect(requests).not.toContain("/api/catalog");
+    expect(requests).not.toContain("/api/desktops");
     expect((engine as unknown as { catalogRevision: number }).catalogRevision).toBe(revisionAfterRestart);
     await engine.stop();
   });
@@ -950,8 +949,8 @@ describe("canonical synchronization", () => {
         storage: remoteStorage(),
         fetch: (async (input) => {
           requests.push(String(input));
-          if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 1 });
+          if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+          if (String(input) === "/api/sync/health") return Response.json({ schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 1 });
           throw new Error(`Unexpected request: ${String(input)}`);
         }) as typeof fetch,
         eventSource: eventSource as typeof EventSource | undefined,
@@ -975,15 +974,15 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const engine = new SyncEngine({ storage, eventSource: FakeEventSource as unknown as typeof EventSource, fetch: (async (input, init) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/shared/layout") return Response.json({ error: "forbidden" }, { status: 403 });
-      if (String(input) === "/api/desktops/desk/editor-settings") return Response.json({});
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/shared/entries/transactions") return Response.json({ error: "forbidden" }, { status: 403 });
+      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ state: "committed" });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch });
 
     expect((await engine.start("desk", { x: 0, y: 0 })).status).toBe("online");
     expect(await engine.listOutboxRecords()).toEqual([expect.objectContaining({ operationId: "revoked", status: "blocked", error: "Access to this desktop was revoked. Local changes have not been uploaded." })]);
-    expect(requests).toContain("PUT /api/desktops/desk/editor-settings");
+    expect(requests).toContain("POST /api/desktops/desk/entries/transactions");
     await engine.createFolder("Still writable", null, { x: 0, y: 0 });
     expect((await engine.listOutboxRecords()).some((record) => record.desktopId === "desk" && record.status === "pending")).toBe(true);
     await engine.stop();
@@ -995,8 +994,8 @@ describe("canonical synchronization", () => {
     let contentRequests = 0;
     let directInit: RequestInit | undefined;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") {
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") {
         contentRequests += 1;
         return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: { "X-Test-Download": "yes" }, expiresAt: 2_000_000_000_000 } });
       }
@@ -1042,9 +1041,9 @@ describe("canonical synchronization", () => {
     const descriptor = { entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } };
     const fetchImpl = (async (input: RequestInfo | URL) => {
       requests.push(String(input));
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteState);
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-preview-access?revision=1") return Response.json(descriptor);
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json(descriptor);
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteState);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json(descriptor);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1&purpose=preview") return Response.json(descriptor);
       if (String(input) === descriptor.access.url) return new Response("note");
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1055,15 +1054,15 @@ describe("canonical synchronization", () => {
     expect(requests).not.toContain(descriptor.access.url);
     await remote.readFile("file-1");
     expect(await remote.previewFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
-    expect(requests.filter((request) => request.includes("content-preview-access"))).toHaveLength(1);
+    expect(requests.filter((request) => request.includes("purpose=preview"))).toHaveLength(1);
     await remote.stop();
   });
 
   test("reports, requests, and removes exact validated offline file revisions", async () => {
     const storage = remoteStorage();
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/file-1") return new Response("note");
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1087,8 +1086,8 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
       requests.push(String(input));
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/file-1") return new Response("note");
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1098,7 +1097,7 @@ describe("canonical synchronization", () => {
     void engine.downloadOfflineCopies(["file-1"]);
     await waitFor(() => engine.isFileAvailableOffline("file-1"));
     expect(await engine.isFileAvailableOffline("file-1")).toBe(true);
-    expect(requests).toContain("/api/desktops/desk/entries/file-1/content-access?revision=1");
+    expect(requests).toContain("/api/desktops/desk/entries/file-1/content?revision=1");
     expect(await engine.releaseOfflineCopies()).toMatchObject({ releasedFiles: 1, releasedBytes: 4 });
     await engine.stop();
   });
@@ -1126,8 +1125,8 @@ describe("canonical synchronization", () => {
     const downloadGate = new Promise<void>((resolve) => { releaseDownload = resolve; });
     const progress: Array<{ phase: string; desktopId: string; generation: number; operationId: string }> = [];
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 1, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/file-1") { await downloadGate; return new Response("note"); }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1151,11 +1150,11 @@ describe("canonical synchronization", () => {
     let rejectMutation = true;
     const queueSizes: number[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/root-entry-positions") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
         if (rejectMutation) return Response.json({ error: "position conflict" }, { status: 409 });
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: { x: 5, y: 6 }, revision: 2 }] };
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1181,16 +1180,16 @@ describe("canonical synchronization", () => {
     let remote = remoteDesktopState();
     const requests: Array<{ baseRevision?: number; layout: typeof remote.layout }> = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/layout") {
-        const body = JSON.parse(String(init?.body)) as { baseRevision?: number; layout: typeof remote.layout };
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
+        const body = JSON.parse(String(init?.body)).operations[0] as { baseRevision?: number; content: typeof remote.layout };
         requests.push(body);
         if (requests.length === 1) {
           remote = { ...remote, catalogRevision: 2, layoutRevision: 2, layout: { ...remote.layout, wallpaper: { ...remote.layout.wallpaper, dim: 0.8 } } };
           return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
         }
-        remote = { ...remote, catalogRevision: 3, layoutRevision: 3, layout: body.layout };
-        return Response.json({ catalogRevision: 3 });
+        remote = { ...remote, catalogRevision: 3, layoutRevision: 3, layout: body.content };
+        return Response.json({ state: "committed", catalogRevision: 3 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1201,7 +1200,7 @@ describe("canonical synchronization", () => {
     await waitFor(async () => (await engine.listOutboxRecords()).length === 0);
 
     expect(requests).toHaveLength(2);
-    expect(requests[1]).toMatchObject({ baseRevision: 2, layout: { snapToGrid: true, wallpaper: { dim: 0.8 } } });
+    expect(requests[1]).toMatchObject({ baseRevision: 2, content: { snapToGrid: true, wallpaper: { dim: 0.8 } } });
     await engine.stop();
   });
 
@@ -1211,20 +1210,20 @@ describe("canonical synchronization", () => {
     let conflict = true;
     const seenBases: Array<number | undefined> = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/layout") {
-        const body = JSON.parse(String(init?.body)) as { baseRevision?: number };
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
+        const body = JSON.parse(String(init?.body)).operations[0] as { baseRevision?: number; systemRole: string };
+        if (body.systemRole === "editor-settings") {
+          remote = { ...remote, catalogRevision: 2, editorSettings: { ...remote.editorSettings, fontSize: 15 }, settingsRevision: 2 };
+          return Response.json({ state: "committed", catalogRevision: 2 });
+        }
         seenBases.push(body.baseRevision);
         if (conflict) {
           remote = { ...remote, catalogRevision: 5, layout: { ...remote.layout, gridSize: 12 }, layoutRevision: 5 };
           return Response.json({ error: "The layout changed.", code: "revision_conflict", conflict: { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 5 } }, { status: 409 });
         }
         remote = { ...remote, catalogRevision: 6, layout: { ...remote.layout, snapToGrid: true }, layoutRevision: 6 };
-        return Response.json({ catalogRevision: 6 });
-      }
-      if (String(input) === "/api/desktops/desk/editor-settings") {
-        remote = { ...remote, catalogRevision: 2, editorSettings: { ...remote.editorSettings, fontSize: 15 }, settingsRevision: 2 };
-        return Response.json({ catalogRevision: 2 });
+        return Response.json({ state: "committed", catalogRevision: 6 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1256,8 +1255,8 @@ describe("canonical synchronization", () => {
     const blocked: OutboxRecord = { operationId: "conflict", sequence: 1, clientId: "client", catalogId: remote.catalogId, desktopId: "desk", operation, status: "blocked", error: "content conflict", errorCode: "revision_conflict", conflictDetails: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 }, attemptCount: 1, lastAttemptAt: 1 };
     storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/server") return new Response("note");
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1285,7 +1284,7 @@ describe("canonical synchronization", () => {
     storage.seedConflictServer(blocked.operationId, new Blob(["note"]));
     let offline = false;
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk" && !offline) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk?projection=web" && !offline) return Response.json(remote);
       throw new TypeError("offline");
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -1305,8 +1304,8 @@ describe("canonical synchronization", () => {
     storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
     const fetchImpl = (async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url === "/api/desktops/desk") return Response.json(remote);
-      if (url.startsWith("/api/desktops/desk/entries/file-1/content-access?revision=")) return Response.json({ entryId: "file-1", contentRevision: remote.entries[0].contentRevision, size: serverContent.size, sha256: await sha256Blob(serverContent), access: { url: "https://downloads.example.test/reviewed", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (url === "/api/desktops/desk?projection=web") return Response.json(remote);
+      if (url.startsWith("/api/desktops/desk/entries/file-1/content?revision=")) return Response.json({ entryId: "file-1", contentRevision: remote.entries[0].contentRevision, size: serverContent.size, sha256: await sha256Blob(serverContent), access: { url: "https://downloads.example.test/reviewed", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (url === "https://downloads.example.test/reviewed") return new Response(serverContent);
       throw new Error(`Unexpected request: ${url}`);
     }) as typeof fetch;
@@ -1331,10 +1330,10 @@ describe("canonical synchronization", () => {
     storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
-      if (url === "/api/desktops/desk") return Response.json(remote);
-      if (url === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: await sha256Blob(serverContent), access: { url: "https://downloads.example.test/transient", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (url === "/api/desktops/desk?projection=web") return Response.json(remote);
+      if (url === "/api/desktops/desk/entries/file-1/content?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: await sha256Blob(serverContent), access: { url: "https://downloads.example.test/transient", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (url === "https://downloads.example.test/transient") return new Response(serverContent);
-      if (url === "/api/desktops/desk/blob-mutations" && init?.method === "POST") throw new TypeError("offline");
+      if (url === "/api/desktops/desk/entries/transactions" && init?.method === "POST") throw new TypeError("offline");
       throw new Error(`Unexpected request: ${url}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -1357,10 +1356,10 @@ describe("canonical synchronization", () => {
     storage.seedOutbox([blocked], new Map([[blocked.operationId, new Map([["file-1", new Blob(["mine"]) ]])]]));
     let replacementOperationId = "";
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/keep-both", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/keep-both", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/keep-both") return new Response("note");
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         const body = JSON.parse(String(init.body)) as { items: Array<{ entry: typeof remote.entries[number] }> };
         const entry = body.items[0].entry;
         replacementOperationId = new Headers(init.headers).get("X-Hiraya-Operation-ID") ?? "";
@@ -1390,8 +1389,8 @@ describe("canonical synchronization", () => {
     const remote = remoteDesktopState();
     let latest = desktopStateSnapshot();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/layout") return Response.json({ error: "layout conflict" }, { status: 409 });
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") return Response.json({ error: "layout conflict" }, { status: 409 });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -1427,13 +1426,13 @@ describe("canonical synchronization", () => {
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     const engine = new SyncEngine({ storage, fetch: (async (input) => {
       requests.push(String(input));
-      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      if (String(input) === "/api/desktops") return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
       throw new Error(`The projected desktop was fetched: ${String(input)}`);
     }) as typeof fetch });
 
     expect(await engine.discardBlockedOutboxRecord("create")).toEqual([]);
     expect(discarded).toEqual([{ desktopId: "projected", operationId: "create" }]);
-    expect(requests).toEqual(["/api/catalog"]);
+    expect(requests).toEqual(["/api/desktops"]);
   });
 
   test("resolves revoked desktop dependencies without fetching the revoked desktop", async () => {
@@ -1453,13 +1452,13 @@ describe("canonical synchronization", () => {
     } as unknown as NonNullable<SyncEngineOptions["storage"]>;
     const engine = new SyncEngine({ storage, fetch: (async (input) => {
       requests.push(String(input));
-      if (String(input) === "/api/catalog") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
+      if (String(input) === "/api/desktops") return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 2, desktops: [remoteDesktopIdentity()], quota: catalogQuota });
       throw new Error(`The revoked desktop was fetched: ${String(input)}`);
     }) as typeof fetch });
 
     expect(await engine.discardBlockedOutboxRecord("revoked")).toEqual([]);
     expect(discarded).toEqual(["shared"]);
-    expect(requests).toEqual(["/api/catalog"]);
+    expect(requests).toEqual(["/api/desktops"]);
   });
 
   test("rejects discard unless the caller selects the blocked head record", async () => {
@@ -1500,8 +1499,8 @@ describe("canonical synchronization", () => {
   test("does not cache content returned for a different revision", async () => {
     const storage = remoteStorage();
     const fetchImpl = (async (input: RequestInfo | URL) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=1") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=1") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/file-1", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
@@ -1521,20 +1520,20 @@ describe("canonical synchronization", () => {
     const commitGate = new Promise<void>((resolve) => { releaseCommit = resolve; });
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         prepareBody = JSON.parse(String(init.body));
-        return Response.json({ state: "prepared", uploadId: "upload-1", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/file-1?signature=secret", method: "PUT", headers: { "X-Test-Upload": "yes" }, expiresAt: 2_000_000_000_000 } }] });
+        return Response.json({ state: "prepared", transactionId: "upload-1", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/file-1?signature=secret", method: "PUT", headers: { "X-Test-Upload": "yes" }, expiresAt: 2_000_000_000_000 } }] });
       }
       if (String(input).startsWith("https://uploads.example.test/")) {
         directInit = init;
         expect(await new Response(init?.body).text()).toBe("updated note");
         return new Response(null, { status: 200 });
       }
-      if (String(input) === "/api/desktops/desk/blob-mutations/upload-1/commit" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk/entries/transactions/upload-1/commit" && init?.method === "POST") {
         await commitGate;
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 12, revision: 2, contentRevision: 2 }] };
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1557,12 +1556,11 @@ describe("canonical synchronization", () => {
     await waitForOutboxDrain(engine);
 
     expect(prepareBody).toMatchObject({
-      kind: "save-content",
-      items: [{ entryId: "file-1", size: 12, baseContentRevision: 1, sha256: "977eefe2ccc906a187bc83d1815feaa068bbc1268f3d38f368a9bb2197f1a807", md5: "e2a4459894e14f0f93cc1c007eae90f8" }],
+      operations: [{ type: "entry.content.write", entryId: "file-1", size: 12, baseRevision: 1, sha256: "977eefe2ccc906a187bc83d1815feaa068bbc1268f3d38f368a9bb2197f1a807", md5: "e2a4459894e14f0f93cc1c007eae90f8" }],
     });
     expect(directInit).toMatchObject({ method: "PUT", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error" });
     expect(new Headers(directInit?.headers).get("X-Test-Upload")).toBe("yes");
-    expect(requests.indexOf("PUT https://uploads.example.test/file-1?signature=secret")).toBeLessThan(requests.indexOf("POST /api/desktops/desk/blob-mutations/upload-1/commit"));
+    expect(requests.indexOf("PUT https://uploads.example.test/file-1?signature=secret")).toBeLessThan(requests.indexOf("POST /api/desktops/desk/entries/transactions/upload-1/commit"));
     expect((await engine.getOutboxStatus()).pending).toBe(0);
     expect(inventoryUpdates).toEqual(["desk"]);
     expect(transferPhases).toEqual(["hashing", "access", "uploading", "finalizing", "complete"]);
@@ -1577,21 +1575,21 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
-        const body = JSON.parse(String(init.body)) as { kind: string; items: typeof preparedItems };
-        expect(body.kind).toBe("create");
-        preparedItems = body.items;
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
+        const body = JSON.parse(String(init.body)) as { operations: typeof preparedItems & Array<{ type: string }> };
+        expect(body.operations.every(({ type }) => type === "entry.create")).toBeTrue();
+        preparedItems = body.operations;
         const file = preparedItems.find((item) => item.entry.kind === "file")!;
-        return Response.json({ state: "prepared", uploadId: "tree-upload", expiresAt: 2_000_000_000_000, items: [{ entryId: file.entry.id, access: { url: "https://uploads.example.test/tree-file", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+        return Response.json({ state: "prepared", transactionId: "tree-upload", expiresAt: 2_000_000_000_000, items: [{ entryId: file.entry.id, access: { url: "https://uploads.example.test/tree-file", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
       }
       if (String(input) === "https://uploads.example.test/tree-file") {
         expect(await new Response(init?.body).text()).toBe("leaf");
         return new Response(null, { status: 200 });
       }
-      if (String(input) === "/api/desktops/desk/blob-mutations/tree-upload/commit" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk/entries/transactions/tree-upload/commit" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, ...preparedItems.map(({ entry }) => ({ ...entry, revision: 2, contentRevision: entry.kind === "file" ? 2 : 0 }))] };
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1619,19 +1617,16 @@ describe("canonical synchronization", () => {
   test("prepares and commits folder-only creates without upload targets", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
-    let prepareBody: { kind: string; items: Array<{ entry: { id: string; kind: string }; sha256: string; md5: string }> } | undefined;
+    let prepareBody: { operations: Array<{ entry: { id: string; kind: string }; sha256: string; md5: string }> } | undefined;
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         prepareBody = JSON.parse(String(init.body));
-        return Response.json({ state: "prepared", uploadId: "folder-upload", expiresAt: 2_000_000_000_000, items: [] });
-      }
-      if (String(input) === "/api/desktops/desk/blob-mutations/folder-upload/commit" && init?.method === "POST") {
-        const folder = prepareBody!.items[0].entry;
+        const folder = prepareBody.operations[0].entry;
         remote = { ...remote, catalogRevision: 2, entries: [...remote.entries, { ...folder, name: "Empty", parentId: null, createdAt: 1, modifiedAt: 2, position: { x: 4, y: 5 }, revision: 2, contentRevision: 0 }] };
-        return Response.json({});
+        return Response.json({ state: "committed", catalogRevision: 2 });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1640,9 +1635,9 @@ describe("canonical synchronization", () => {
     await engine.createFolder("Empty", null, { x: 4, y: 5 });
     await waitForOutboxDrain(engine);
 
-    expect(prepareBody).toMatchObject({ kind: "create", items: [{ entry: { kind: "folder" }, sha256: "", md5: "" }] });
+    expect(prepareBody).toMatchObject({ operations: [{ type: "entry.create", entry: { kind: "folder" }, sha256: "", md5: "" }] });
     expect(requests.some((request) => request.startsWith("PUT "))).toBe(false);
-    expect(requests).toContain("POST /api/desktops/desk/blob-mutations/folder-upload/commit");
+    expect(requests).not.toContain("POST /api/desktops/desk/entries/transactions/folder-upload/commit");
     expect((await engine.getOutboxStatus()).pending).toBe(0);
     await engine.stop();
   });
@@ -1653,8 +1648,8 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 9, revision: 2, contentRevision: 2 }] };
         return Response.json({ state: "committed" });
       }
@@ -1678,17 +1673,17 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         prepares += 1;
-        return Response.json({ state: "prepared", uploadId: `upload-${prepares}`, expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: `https://uploads.example.test/file-1?attempt=${prepares}`, method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+        return Response.json({ state: "prepared", transactionId: `upload-${prepares}`, expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: `https://uploads.example.test/file-1?attempt=${prepares}`, method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
       }
       if (String(input) === "https://uploads.example.test/file-1?attempt=1") return new Response(null, { status: 503 });
-      if (String(input) === "/api/desktops/desk/blob-mutations/upload-1" && init?.method === "DELETE") return new Response(null, { status: 204 });
+      if (String(input) === "/api/desktops/desk/entries/transactions/upload-1" && init?.method === "DELETE") return new Response(null, { status: 204 });
       if (String(input) === "https://uploads.example.test/file-1?attempt=2") return new Response(null, { status: 200 });
-      if (String(input) === "/api/desktops/desk/blob-mutations/upload-2/commit" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk/entries/transactions/upload-2/commit" && init?.method === "POST") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 5, revision: 2, contentRevision: 2 }] };
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1710,7 +1705,7 @@ describe("canonical synchronization", () => {
     });
     expect((await second.start("desk", { x: 0, y: 0 })).status).toBe("online");
     expect(prepares).toBe(2);
-    expect(requests).toContain("DELETE /api/desktops/desk/blob-mutations/upload-1");
+    expect(requests).toContain("DELETE /api/desktops/desk/entries/transactions/upload-1");
     expect(requests).toContain("PUT https://uploads.example.test/file-1?attempt=2");
     expect(second.getTransferSnapshot()).toEqual([expect.objectContaining({ id: failedTransfer.id, phase: "complete", error: null })]);
     expect(retryStates).toContainEqual({ phase: "hashing", transferredBytes: 0 });
@@ -1726,17 +1721,17 @@ describe("canonical synchronization", () => {
     const requests: string[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       requests.push(`${init?.method ?? "GET"} ${String(input)}`);
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
         prepares += 1;
-        return Response.json({ state: "prepared", uploadId: `expired-${prepares}`, expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: `https://uploads.example.test/expired-${prepares}`, method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+        return Response.json({ state: "prepared", transactionId: `expired-${prepares}`, expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: `https://uploads.example.test/expired-${prepares}`, method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
       }
       if (String(input).startsWith("https://uploads.example.test/expired-")) return new Response(null, { status: 200 });
-      if (String(input).includes("/blob-mutations/expired-") && String(input).endsWith("/commit")) {
+      if (String(input).includes("/entries/transactions/expired-") && String(input).endsWith("/commit")) {
         commits += 1;
         if (commits === 1) return Response.json({ error: "upload reservation expired" }, { status: 410 });
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], size: 5, revision: 2, contentRevision: 2 }] };
-        return Response.json({});
+        return Response.json({ state: "committed" });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1765,10 +1760,10 @@ describe("canonical synchronization", () => {
   ]) test(`${commitError.blocked ? "blocks" : "retries"} commit ${commitError.status}: ${commitError.message}`, async () => {
     const storage = remoteStorage();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remoteDesktopState());
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") return Response.json({ state: "prepared", uploadId: "conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remoteDesktopState());
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") return Response.json({ state: "prepared", transactionId: "conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
       if (String(input) === "https://uploads.example.test/conflict") return new Response(null, { status: 200 });
-      if (String(input) === "/api/desktops/desk/blob-mutations/conflict/commit") return Response.json({ error: commitError.message }, { status: commitError.status });
+      if (String(input) === "/api/desktops/desk/entries/transactions/conflict/commit") return Response.json({ error: commitError.message }, { status: commitError.status });
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
@@ -1785,14 +1780,14 @@ describe("canonical synchronization", () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/blob-mutations" && init?.method === "POST") return Response.json({ state: "prepared", uploadId: "content-conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/content-conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") return Response.json({ state: "prepared", transactionId: "content-conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/content-conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
       if (String(input) === "https://uploads.example.test/content-conflict") return new Response(null, { status: 200 });
-      if (String(input) === "/api/desktops/desk/blob-mutations/content-conflict/commit") {
+      if (String(input) === "/api/desktops/desk/entries/transactions/content-conflict/commit") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], revision: 2, contentRevision: 2 }] };
         return Response.json({ error: "The file content changed.", code: "revision_conflict", conflict: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
       }
-      if (String(input) === "/api/desktops/desk/entries/file-1/content-access?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/conflict-server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
+      if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/conflict-server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/conflict-server") return new Response("note");
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1813,15 +1808,15 @@ describe("canonical synchronization", () => {
     const storage = remoteStorage();
     let body: unknown;
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input) === "/api/desktops/desk") return Response.json(remote);
-      if (String(input) === "/api/entry-transfers") { body = JSON.parse(String(init?.body)); return Response.json({}); }
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") { body = JSON.parse(String(init?.body)); return Response.json({ state: "committed" }); }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.transferEntries("other", ["file-1"], null);
     await waitFor(() => body !== undefined);
-    expect(body).toEqual({ sourceDesktopId: "desk", destinationDesktopId: "other", entryIds: ["file-1"], parentId: null });
+    expect(body).toEqual({ operations: [{ type: "entry.transfer", desktopId: "desk", destinationDesktopId: "other", entryIds: ["file-1"], parentId: null }] });
     await engine.stop();
   });
 
@@ -1862,9 +1857,9 @@ describe("canonical synchronization", () => {
       const request = `${init?.method ?? "GET"} ${String(input)}`;
       requests.push(request);
       if (!online) throw new TypeError("offline");
-      if (String(input) === "/api/desktops/destination") return Response.json({ ...remoteDesktopState(), id: "destination", catalogId: "catalog", catalogRevision: 6 });
-      if (String(input) === "/api/entry-transfers") return Response.json({ schemaVersion: 1, catalogId: "catalog", catalogRevision: 6 });
-      if (String(input) === "/api/desktops/source") return Response.json({ ...remoteDesktopState(), id: "source", catalogId: "catalog", catalogRevision: 6, entries: [] });
+      if (String(input) === "/api/desktops/destination?projection=web") return Response.json({ ...remoteDesktopState(), id: "destination", catalogId: "catalog", catalogRevision: 6 });
+      if (String(input) === "/api/desktops/source/entries/transactions") return Response.json({ state: "committed", schemaVersion: 2, catalogId: "catalog", catalogRevision: 6 });
+      if (String(input) === "/api/desktops/source?projection=web") return Response.json({ ...remoteDesktopState(), id: "source", catalogId: "catalog", catalogRevision: 6, entries: [] });
       throw new Error(`Unexpected request: ${request}`);
     }) as typeof fetch;
 
@@ -1884,8 +1879,8 @@ describe("canonical synchronization", () => {
     const destinationOnline = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     const started = await destinationOnline.start("destination", { x: 0, y: 0 });
     expect(started.status).toBe("online");
-    expect(requests).toContain("POST /api/entry-transfers");
-    expect(requests).toContain("GET /api/desktops/source");
+    expect(requests).toContain("POST /api/desktops/source/entries/transactions");
+    expect(requests).toContain("GET /api/desktops/source?projection=web");
     expect(records).toEqual([]);
     await destinationOnline.stop();
   });

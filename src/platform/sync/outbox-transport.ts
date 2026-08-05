@@ -1,7 +1,7 @@
-import { parseBlobMutationPreparation } from "../../lib/contracts";
-import { API_ROUTES } from "../../lib/api-routes";
+import { API_ROUTES, authenticatedHeaders } from "../../lib/api-routes";
+import { isRecord, isValidId, parseDirectBlobAccess } from "../../lib/contracts";
 import { mapWithConcurrency, uploadBlobDigests } from "../../lib/blob-transfer";
-import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
+import type { OutboxRecord } from "../../lib/outbox";
 import { SyncRequestError } from "./http-client";
 import { uploadDirectBlob } from "./direct-upload";
 
@@ -17,151 +17,149 @@ type OutboxTransportDependencies = {
   onBlobUploadProgress?(entryId: string, phase: BlobUploadPhase, transferredBytes: number, totalBytes: number): void;
 };
 
-function retryableBlobCommitError(error: unknown): error is SyncRequestError {
-  return error instanceof SyncRequestError && (error.status === 410 || error.status === 404 && error.message === "upload reservation not found" || error.status === 409 && (
-    error.message === "a reserved upload is missing" ||
-    error.message === "a reserved upload failed size or checksum verification"
-  ));
-}
+type Upload = { id: string; name: string; size: number; content: Blob; sha256: string; md5: string };
+type PreparedTransaction = { state: "committed"; catalogRevision?: number } | { state: "prepared"; transactionId: string; items: Array<{ entryId: string; access: ReturnType<typeof parseDirectBlobAccess> }> };
 
-function idempotencyHeaders(record: OutboxRecord, headers?: HeadersInit) {
-  const result = new Headers(headers);
+function headers(record: OutboxRecord, value?: HeadersInit) {
+  const result = authenticatedHeaders(value);
   result.set("X-Hiraya-Client-ID", record.clientId);
   result.set("X-Hiraya-Operation-ID", record.operationId);
   return result;
 }
 
-function revisionHeaders(revision?: number) {
-  return revision === undefined ? undefined : { "X-Hiraya-Base-Revision": String(revision) };
+function systemEntryId(desktopId: string, role: "layout" | "editor-settings" | "theme-selection" | "theme-definition", key?: string) {
+  return `${desktopId}:system:${role}${key ? `:${key}` : ""}`;
 }
 
-async function abortBlobMutation(record: OutboxRecord, uploadId: string, dependencies: OutboxTransportDependencies) {
-  try {
-    const response = await dependencies.fetch(API_ROUTES.desktopBlobMutation(record.desktopId, uploadId), {
-      method: "DELETE",
-      headers: idempotencyHeaders(record),
-      credentials: "same-origin",
-      cache: "no-store",
-      signal: dependencies.signal,
-    });
-    dependencies.requireAuthentication(response);
-  } catch {
-    // A later replay starts with a fresh prepare, so abort cleanup is best effort.
-  }
-}
-
-async function sendBlobMutation(record: OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" | "install-theme-package" }> }, dependencies: OutboxTransportDependencies) {
+function base(value: number | undefined) { return value === undefined ? {} : { baseRevision: value }; }
+function transactionOperations(record: OutboxRecord, uploads: readonly Upload[]) {
   const operation = record.operation;
-  const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file") : operation.kind === "save-content"
-    ? [{ id: operation.entryId, name: operation.entryId, size: operation.size }]
-    : operation.wallpaperKind === null ? [] : [{ id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, size: operation.size }];
-  const contents = new Map<string, Blob>();
-  const hashes = new Map(await mapWithConcurrency(files, 3, async (entry) => {
-    dependencies.onBlobUploadProgress?.(entry.id, "hashing", 0, entry.size);
-    const content = await dependencies.readPendingContent(record.operationId, entry.id, operation.kind === "save-content" ? operation.stagedContentKey : undefined);
-    if (content.size !== entry.size) throw new Error(`The staged contents of “${entry.name}” have an unexpected size.`);
-    contents.set(entry.id, content);
-    const digest = await uploadBlobDigests(content, (bytes) => dependencies.onBlobUploadProgress?.(entry.id, "hashing", bytes, entry.size), dependencies.signal);
-    dependencies.onBlobUploadProgress?.(entry.id, "access", 0, entry.size);
-    return [entry.id, digest] as const;
-  }));
-  const prepared = parseBlobMutationPreparation(await dependencies.requestJson(API_ROUTES.desktopBlobMutations(record.desktopId), {
-    method: "POST",
-    headers: idempotencyHeaders(record, { "Content-Type": "application/json" }),
-    body: JSON.stringify({ kind: operation.kind === "install-theme-package" ? "create" : operation.kind, items: operation.kind === "create"
-      ? operation.entries.map((entry) => ({ entry, ...(entry.kind === "file" ? hashes.get(entry.id)! : { sha256: "", md5: "" }) }))
-      : operation.kind === "save-content"
-        ? [{ entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, baseContentRevision: operation.baseContentRevision, ...hashes.get(operation.entryId)! }]
-        : [{
-          entry: operation.wallpaperKind === null
-            ? { kind: "folder", id: operation.assetId, name: operation.theme.name, parentId: null, createdAt: null, modifiedAt: Date.now(), position: { x: 0, y: 0 }, revision: 0 }
-            : { kind: "file", id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, parentId: null, createdAt: null, modifiedAt: Date.now(), position: { x: 0, y: 0 }, mimeType: "application/vnd.hiraya.theme+zip", size: operation.size, revision: 0, contentRevision: 0 },
-          ...(operation.wallpaperKind === null ? { sha256: "", md5: "" } : hashes.get(operation.assetId)!),
-          themePackage: { theme: { id: operation.theme.id, name: operation.theme.name, definition: operation.theme.definition }, kind: operation.wallpaperKind, layout: operation.layout, baseThemeRevision: operation.baseThemeRevision, baseSelectionRevision: operation.baseSelectionRevision, baseLayoutRevision: operation.baseLayoutRevision },
-        }] }),
-  }), files.map((entry) => entry.id));
-  if (prepared.state === "committed") {
-    for (const entry of files) dependencies.onBlobUploadProgress?.(entry.id, "finalizing", entry.size, entry.size);
-    return { response: prepared, verifiedUploads: new Map([...hashes].map(([id, digest]) => [id, digest.sha256])) };
+  const desktopId = record.desktopId;
+  const digest = (id: string) => {
+    const upload = uploads.find((item) => item.id === id);
+    return upload ? { sha256: upload.sha256, md5: upload.md5 } : { sha256: "", md5: "" };
+  };
+  switch (operation.kind) {
+    case "create":
+      return operation.entries.map((entry) => ({ type: "entry.create", entry, ...digest(entry.id) }));
+    case "patch-entry":
+      return [{ type: "entry.patch", entryId: operation.entryId, ...base(operation.baseRevision), changes: { name: operation.changes.name, parentId: operation.changes.parentId, position: operation.changes.position } }];
+    case "save-content":
+      return [{ type: "entry.content.write", entryId: operation.entryId, mimeType: operation.mimeType, size: operation.size, ...base(operation.baseContentRevision), ...digest(operation.entryId) }];
+    case "delete":
+      return [{ type: "entry.trash", entryId: operation.entryId, ...base(operation.baseRevision) }];
+    case "delete-entries":
+      return operation.entryIds.map((entryId) => ({ type: "entry.trash", entryId, ...base(operation.baseRevisions?.[entryId]) }));
+    case "move-entries":
+      return operation.entryIds.map((entryId) => ({ type: "entry.patch", entryId, ...base(operation.baseRevisions?.[entryId]), changes: { parentId: operation.parentId } }));
+    case "root-entry-positions":
+      return operation.positions.map(({ entryId, position }) => ({ type: "entry.patch", entryId, ...base(operation.baseRevisions?.[entryId]), changes: { parentId: null, position } }));
+    case "entry-transfer":
+      return [{ type: "entry.transfer", desktopId, destinationDesktopId: operation.destinationDesktopId, entryIds: operation.entryIds, parentId: operation.parentId }];
+    case "layout":
+      return [{ type: "entry.content.write", entryId: systemEntryId(desktopId, "layout"), systemRole: "layout", ...base(operation.baseRevision), content: operation.layout }];
+    case "editor-settings":
+      return [{ type: "entry.content.write", entryId: systemEntryId(desktopId, "editor-settings"), systemRole: "editor-settings", ...base(operation.baseRevision), content: operation.settings }];
+    case "select-theme":
+      return [{ type: "entry.content.write", entryId: systemEntryId(desktopId, "theme-selection"), systemRole: "theme-selection", ...base(operation.baseRevision), content: { themeId: operation.themeId } }];
+    case "upsert-theme":
+      return [{ type: "entry.content.write", entryId: systemEntryId(desktopId, "theme-definition", operation.theme.id), systemRole: "theme-definition", systemKey: operation.theme.id, ...base(operation.baseRevision), content: { id: operation.theme.id, name: operation.theme.name, definition: operation.theme.definition } }];
+    case "delete-theme":
+      return [{ type: "entry.purge", entryId: systemEntryId(desktopId, "theme-definition", operation.themeId), systemRole: "theme-definition", systemKey: operation.themeId, ...base(operation.baseRevision) }];
+    case "install-theme-package": {
+      const definition = { type: "entry.content.write", entryId: systemEntryId(desktopId, "theme-definition", operation.theme.id), systemRole: "theme-definition", systemKey: operation.theme.id, ...base(operation.baseThemeRevision), content: { id: operation.theme.id, name: operation.theme.name, definition: operation.theme.definition } };
+      const selection = { type: "entry.content.write", entryId: systemEntryId(desktopId, "theme-selection"), systemRole: "theme-selection", ...base(operation.baseSelectionRevision), content: { themeId: operation.theme.id } };
+      const layout = { type: "entry.content.write", entryId: systemEntryId(desktopId, "layout"), systemRole: "layout", ...base(operation.baseLayoutRevision), content: operation.layout };
+      if (operation.wallpaperKind === null) return [definition, selection, layout];
+      return [definition, { type: "entry.create", entry: { kind: "file", id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/vnd.hiraya.theme+zip", size: operation.size }, systemRole: "theme-package", systemKey: operation.theme.id, packageKind: operation.wallpaperKind, ...digest(operation.assetId) }, selection, layout];
+    }
+    default:
+      return [];
   }
+}
+
+function parsePreparation(value: unknown, expectedIds: readonly string[]): PreparedTransaction {
+  if (!isRecord(value) || value.state !== "prepared" && value.state !== "committed") throw new Error("The entry transaction response is invalid.");
+  if (value.state === "committed") {
+    if (value.catalogRevision !== undefined && (!Number.isSafeInteger(value.catalogRevision) || Number(value.catalogRevision) < 0)) throw new Error("The committed entry transaction has an invalid revision.");
+    return { state: "committed", ...(value.catalogRevision === undefined ? {} : { catalogRevision: Number(value.catalogRevision) }) };
+  }
+  if (typeof value.transactionId !== "string" || !value.transactionId || value.transactionId.length > 1024 || [...value.transactionId].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) || !Number.isSafeInteger(value.expiresAt) || Number(value.expiresAt) < 0 || !Array.isArray(value.items)) throw new Error("The entry transaction response is invalid.");
+  const expected = new Set(expectedIds);
+  if (expected.size !== expectedIds.length || value.items.length !== expected.size) throw new Error("The entry transaction returned unexpected upload targets.");
+  const items = value.items.map((candidate) => {
+    if (!isRecord(candidate) || !isValidId(candidate.entryId) || !expected.delete(candidate.entryId)) throw new Error("The entry transaction returned unexpected upload targets.");
+    return { entryId: candidate.entryId, access: parseDirectBlobAccess(candidate.access, "PUT") };
+  });
+  if (expected.size) throw new Error("The entry transaction did not return every upload target.");
+  return { state: "prepared", transactionId: value.transactionId, items };
+}
+
+async function cancel(record: OutboxRecord, transactionId: string, dependencies: OutboxTransportDependencies) {
+  try {
+    const response = await dependencies.fetch(API_ROUTES.desktopEntryTransaction(record.desktopId, transactionId), { method: "DELETE", headers: headers(record), credentials: "same-origin", cache: "no-store", signal: dependencies.signal });
+    dependencies.requireAuthentication(response);
+  } catch { /* A later replay starts with a fresh prepare; cancellation is best effort. */ }
+}
+
+async function pendingUploads(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
+  const operation = record.operation;
+  const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file").map(({ id, name, size }) => ({ id, name, size, key: undefined }))
+    : operation.kind === "save-content" ? [{ id: operation.entryId, name: operation.entryId, size: operation.size, key: operation.stagedContentKey }]
+      : operation.kind === "install-theme-package" && operation.wallpaperKind !== null ? [{ id: operation.assetId, name: `${operation.theme.name}.hiraya.app`, size: operation.size, key: undefined }] : [];
+  return mapWithConcurrency(files, 3, async (file): Promise<Upload> => {
+    dependencies.onBlobUploadProgress?.(file.id, "hashing", 0, file.size);
+    const content = await dependencies.readPendingContent(record.operationId, file.id, file.key);
+    if (content.size !== file.size) throw new Error(`The staged contents of “${file.name}” have an unexpected size.`);
+    const digests = await uploadBlobDigests(content, (bytes) => dependencies.onBlobUploadProgress?.(file.id, "hashing", bytes, file.size), dependencies.signal);
+    dependencies.onBlobUploadProgress?.(file.id, "access", 0, file.size);
+    return { ...file, content, ...digests };
+  });
+}
+
+async function sendTransaction(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
+  const uploads = await pendingUploads(record, dependencies);
+  const prepared = parsePreparation(await dependencies.requestJson(API_ROUTES.desktopEntryTransactions(record.desktopId), {
+    method: "POST",
+    headers: headers(record, { "Content-Type": "application/json" }),
+    body: JSON.stringify({ operations: transactionOperations(record, uploads) }),
+  }), uploads.map(({ id }) => id));
+  if (prepared.state === "committed") return { response: prepared, verifiedUploads: new Map(uploads.map(({ id, sha256 }) => [id, sha256])) };
   let commitStarted = false;
-  const uploadAbort = new AbortController();
-  const abortUploads = () => uploadAbort.abort(dependencies.signal?.reason);
-  if (dependencies.signal?.aborted) abortUploads();
-  else dependencies.signal?.addEventListener("abort", abortUploads, { once: true });
   try {
     await mapWithConcurrency(prepared.items, 3, async (target) => {
+      const upload = uploads.find(({ id }) => id === target.entryId)!;
+      dependencies.onBlobUploadProgress?.(upload.id, "uploading", 0, upload.size);
       try {
-        const content = contents.get(target.entryId)!;
-        dependencies.onBlobUploadProgress?.(target.entryId, "uploading", 0, content.size);
-        await uploadDirectBlob(target.access, content, {
-          signal: uploadAbort.signal,
-          createRequest: dependencies.createXMLHttpRequest,
-          onProgress: (bytes) => dependencies.onBlobUploadProgress?.(target.entryId, "uploading", bytes, content.size),
-        });
+        await uploadDirectBlob(target.access, upload.content, { signal: dependencies.signal, createRequest: dependencies.createXMLHttpRequest, onProgress: (bytes) => dependencies.onBlobUploadProgress?.(upload.id, "uploading", bytes, upload.size) });
       } catch (error) {
-        uploadAbort.abort(error);
         if (dependencies.signal?.aborted) throw error;
         throw new SyncRequestError("Direct file upload failed. The change remains queued.", null, false);
       }
-      dependencies.onBlobUploadProgress?.(target.entryId, "finalizing", contents.get(target.entryId)!.size, contents.get(target.entryId)!.size);
+      dependencies.onBlobUploadProgress?.(upload.id, "finalizing", upload.size, upload.size);
     });
     commitStarted = true;
+    let response: unknown;
     try {
-      const response = await dependencies.requestJson(API_ROUTES.desktopBlobMutationCommit(record.desktopId, prepared.uploadId), {
-        method: "POST",
-        headers: idempotencyHeaders(record),
-      });
-      return { response, verifiedUploads: new Map([...hashes].map(([id, digest]) => [id, digest.sha256])) };
+      response = await dependencies.requestJson(API_ROUTES.desktopEntryTransactionCommit(record.desktopId, prepared.transactionId), { method: "POST", headers: headers(record) });
     } catch (error) {
-      if (retryableBlobCommitError(error)) throw new SyncRequestError(error.message, error.status, false);
+      if (error instanceof SyncRequestError && (error.status === 410 || error.status === 404 && error.message === "upload reservation not found" || error.status === 409 && (error.message === "a reserved upload is missing" || error.message === "a reserved upload failed size or checksum verification"))) {
+        throw new SyncRequestError(error.message, error.status, false);
+      }
       throw error;
     }
+    return { response, verifiedUploads: new Map(uploads.map(({ id, sha256 }) => [id, sha256])) };
   } catch (error) {
-    if (!commitStarted) await abortBlobMutation(record, prepared.uploadId, dependencies);
+    if (!commitStarted) await cancel(record, prepared.transactionId, dependencies);
     throw error;
-  } finally {
-    dependencies.signal?.removeEventListener("abort", abortUploads);
   }
 }
 
 export async function sendOutboxOperation(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
   const operation = record.operation;
-  const desktopId = record.desktopId;
-  const headers = (value?: HeadersInit) => idempotencyHeaders(record, value);
   const result = async (response: Promise<unknown>) => ({ response: await response, verifiedUploads: new Map<string, string>() });
-  switch (operation.kind) {
-    case "create-desktop":
-      return result(dependencies.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) }));
-    case "rename-desktop":
-      return result(dependencies.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name, baseRevision: operation.baseRevision }) }));
-    case "delete-desktop":
-      return result(dependencies.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) }));
-    case "create":
-    case "save-content":
-    case "install-theme-package":
-      return sendBlobMutation(record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "create" | "save-content" | "install-theme-package" }> }, dependencies);
-    case "patch-entry":
-      return result(dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "PATCH", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ baseRevision: operation.baseRevision, changes: operation.changes }) }));
-    case "delete":
-      return result(dependencies.requestJson(API_ROUTES.desktopEntry(desktopId, operation.entryId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) }));
-    case "delete-entries":
-      return result(dependencies.requestJson(API_ROUTES.desktopDeleteEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, baseRevisions: operation.baseRevisions }) }));
-    case "move-entries":
-      return result(dependencies.requestJson(API_ROUTES.desktopMoveEntries(desktopId), { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ entryIds: operation.entryIds, baseRevisions: operation.baseRevisions, parentId: operation.parentId }) }));
-    case "entry-transfer":
-      return result(dependencies.requestJson(API_ROUTES.entryTransfers, { method: "POST", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ sourceDesktopId: desktopId, destinationDesktopId: operation.destinationDesktopId, entryIds: operation.entryIds, parentId: operation.parentId }) }));
-    case "root-entry-positions":
-      return result(dependencies.requestJson(API_ROUTES.desktopRootEntryPositions(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ positions: operation.positions, baseRevisions: operation.baseRevisions }) }));
-    case "layout":
-      return result(dependencies.requestJson(API_ROUTES.desktopLayout(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ layout: operation.layout, baseRevision: operation.baseRevision }) }));
-    case "editor-settings":
-      return result(dependencies.requestJson(API_ROUTES.desktopEditorSettings(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ ...operation.settings, baseRevision: operation.baseRevision }) }));
-    case "select-theme":
-      return result(dependencies.requestJson(API_ROUTES.desktopThemeSelection(desktopId), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ themeId: operation.themeId, baseRevision: operation.baseRevision }) }));
-    case "upsert-theme":
-      return result(dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.theme.id), { method: "PUT", headers: headers({ "Content-Type": "application/json" }), body: JSON.stringify({ ...operation.theme, baseRevision: operation.baseRevision }) }));
-    case "delete-theme":
-      return result(dependencies.requestJson(API_ROUTES.desktopTheme(desktopId, operation.themeId), { method: "DELETE", headers: headers(revisionHeaders(operation.baseRevision)) }));
-  }
+  if (operation.kind === "create-desktop") return result(dependencies.requestJson(API_ROUTES.desktops, { method: "POST", headers: headers(record, { "Content-Type": "application/json" }), body: JSON.stringify({ id: operation.desktop.id, name: operation.desktop.name }) }));
+  if (operation.kind === "rename-desktop") return result(dependencies.requestJson(API_ROUTES.desktop(operation.desktop.id), { method: "PATCH", headers: headers(record, { "Content-Type": "application/json" }), body: JSON.stringify({ name: operation.desktop.name, baseRevision: operation.baseRevision }) }));
+  if (operation.kind === "delete-desktop") return result(dependencies.requestJson(API_ROUTES.desktop(operation.desktopId), { method: "DELETE", headers: headers(record, operation.baseRevision === undefined ? undefined : { "X-Hiraya-Base-Revision": String(operation.baseRevision) }) }));
+  return sendTransaction(record, dependencies);
 }

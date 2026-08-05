@@ -68,6 +68,23 @@ async function replaceEditorText(page: Page, text: string) {
   await expect(frame.locator("#status")).toContainText("Saved", { timeout: 10_000 });
 }
 
+async function remoteText(page: Page, name: string) {
+  return page.evaluate(async (fileName) => {
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
+    const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const desktopId = catalog.desktops[0].id;
+    const desktop = await fetch(`/api/desktops/${desktopId}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { entries: Array<{ id: string; name: string; contentRevision: number }> };
+    const entry = desktop.entries.find((candidate) => candidate.name === fileName);
+    if (!entry) return "";
+    const content = await fetch(`/api/desktops/${desktopId}/entries/${entry.id}/content?revision=${entry.contentRevision}`, { cache: "no-store", headers: protocol });
+    if (!content.headers.get("content-type")?.includes("application/json")) return content.text();
+    const descriptor = await content.json() as { access: { url: string; method: string; headers: Record<string, string> } };
+    const headers = new Headers(descriptor.access.headers);
+    if (descriptor.access.url.startsWith("/")) headers.set("X-Hiraya-Protocol", "entry-transactions-v1");
+    return fetch(descriptor.access.url, { method: descriptor.access.method, headers }).then((response) => response.text());
+  }, name);
+}
+
 async function verifyDirectDesktopLogin(browser: Browser) {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -147,6 +164,7 @@ async function primary(browser: Browser) {
   await firstContext.setOffline(true);
   await replaceEditorText(first, "Mine from the offline browser\n");
   await replaceEditorText(second, "Server from the online browser\n");
+  await expect.poll(() => remoteText(second, mergeFile), { timeout: 30_000 }).toBe("Server from the online browser\n");
   await firstContext.setOffline(false);
   await first.reload();
   await expect(first.locator(".desktop-shell")).toBeVisible();
@@ -173,15 +191,7 @@ async function primary(browser: Browser) {
   const restoredEditor = first.getByRole("dialog", { name: "Text Editor" });
   if (await restoredEditor.isVisible()) await first.getByRole("button", { name: "Close Text Editor" }).click();
 
-  await expect.poll(() => second.evaluate(async (name) => {
-    const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
-    const desktopId = catalog.desktops[0].id;
-    const desktop = await fetch(`/api/desktops/${desktopId}`, { cache: "no-store" }).then((response) => response.json()) as { entries: Array<{ id: string; name: string; contentRevision: number }> };
-    const entry = desktop.entries.find((candidate) => candidate.name === name);
-    if (!entry) return "";
-    const descriptor = await fetch(`/api/desktops/${desktopId}/entries/${entry.id}/content-access?revision=${entry.contentRevision}`, { cache: "no-store" }).then((response) => response.json()) as { access: { url: string; method: string; headers: Record<string, string> } };
-    return fetch(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers }).then((response) => response.text());
-  }, mergeFile), { timeout: 30_000 }).toBe("Resolved by Merge\n");
+  await expect.poll(() => remoteText(second, mergeFile), { timeout: 30_000 }).toBe("Resolved by Merge\n");
   await second.getByRole("button", { name: `Close ${mergeFile} - Text Editor` }).click();
 
   const chooser = first.waitForEvent("filechooser");
@@ -197,12 +207,13 @@ async function primary(browser: Browser) {
   await expect.poll(() => audio.evaluate((element) => (element as HTMLAudioElement).readyState)).toBeGreaterThanOrEqual(1);
 
   const staleConflict = await second.evaluate(async () => {
-    const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
-    const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}`, { cache: "no-store" }).then((response) => response.json()) as { id: string; layout: unknown; layoutRevision: number };
-    const mutate = (operationId: string) => fetch(`/api/desktops/${desktop.id}/layout`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Hiraya-Client-ID": "server-e2e", "X-Hiraya-Operation-ID": operationId },
-      body: JSON.stringify({ layout: desktop.layout, baseRevision: desktop.layoutRevision }),
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
+    const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { id: string; layout: unknown; layoutRevision: number };
+    const mutate = (operationId: string) => fetch(`/api/desktops/${desktop.id}/entries/transactions`, {
+      method: "POST",
+      headers: { ...protocol, "Content-Type": "application/json", "X-Hiraya-Client-ID": "server-e2e", "X-Hiraya-Operation-ID": operationId },
+      body: JSON.stringify({ operations: [{ type: "entry.content.write", entryId: `${desktop.id}:system:layout`, systemRole: "layout", content: desktop.layout, baseRevision: desktop.layoutRevision }] }),
     });
     const firstResponse = await mutate("layout-first");
     const staleResponse = await mutate("layout-stale");
@@ -211,13 +222,14 @@ async function primary(browser: Browser) {
   expect(staleConflict).toMatchObject({ first: 200, stale: 409, body: { code: "revision_conflict", conflict: { resourceKind: "layout" } } });
 
   const publication = await first.evaluate(async ({ folderName, desktopAlias, itemAlias }) => {
-    const catalog = await fetch("/api/desktops", { cache: "no-store" }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
-    const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}`, { cache: "no-store" }).then((response) => response.json()) as { id: string; entries: Array<{ id: string; name: string }> };
+    const protocol = { "X-Hiraya-Protocol": "entry-transactions-v1" };
+    const catalog = await fetch("/api/desktops", { cache: "no-store", headers: protocol }).then((response) => response.json()) as { desktops: Array<{ id: string }> };
+    const desktop = await fetch(`/api/desktops/${catalog.desktops[0].id}?projection=web`, { cache: "no-store", headers: protocol }).then((response) => response.json()) as { id: string; entries: Array<{ id: string; name: string }> };
     const folder = desktop.entries.find((entry) => entry.name === folderName);
     if (!folder) throw new Error("public folder was not found");
     const mutate = (path: string, body: unknown) => fetch(path, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", "X-Hiraya-Client-ID": "server-e2e-publication", "X-Hiraya-Operation-ID": crypto.randomUUID() },
+      headers: { ...protocol, "Content-Type": "application/json", "X-Hiraya-Client-ID": "server-e2e-publication", "X-Hiraya-Operation-ID": crypto.randomUUID() },
       body: JSON.stringify(body),
     });
     const desktopResponse = await mutate(`/api/desktops/${desktop.id}/publication`, { alias: desktopAlias, shareEntire: false });

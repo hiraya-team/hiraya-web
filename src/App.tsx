@@ -744,7 +744,7 @@ function App({ session }: { session: AuthSession | null }) {
     try {
       if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Update ${value.inspection.manifest.name}?`, message: "This trusted system app has unsaved changes. Close it and apply the administrator's update?", confirmLabel: "Close and update" })) return;
       if (!activeSystemDigestsRef.current.has(value.inspection.digest)) return;
-      const expected = { schemaVersion: 1 as const, catalogId: item.catalogId, catalogRevision: item.catalogRevision, desktopId: item.desktopId };
+      const expected = { schemaVersion: 2 as const, catalogId: item.catalogId, catalogRevision: item.catalogRevision, desktopId: item.desktopId };
       await serializeStorage(async () => {
         if (!await appStoreDescriptorIsCurrent(expected)) return;
         await saveApprovedPackageArchive(value.inspection.digest, value.archive);
@@ -3165,7 +3165,12 @@ function App({ session }: { session: AuthSession | null }) {
     try {
       if (!desktopsRef.current.some((desktop) => desktop.id === pending.desktopId)) throw new Error("That desktop is no longer accessible. Open Trash after access is restored.");
       if (activeDesktopIdRef.current !== pending.desktopId && !(await activateDesktop(pending.desktopId))) throw new Error("The desktop could not be opened.");
-      for (const id of pending.rootIds) await restoreTrash(pending.desktopId, id, "original");
+      const revisions = new Map((await listTrash(pending.desktopId)).items.map((item) => [item.entry.id, item.entry.revision]));
+      for (const id of pending.rootIds) {
+        const revision = revisions.get(id);
+        if (revision === undefined) throw new Error("That item is no longer in Trash.");
+        await restoreTrash(pending.desktopId, id, "original", revision);
+      }
       setTrashNotifications((current) => dismissTrashNotification(current, pending.id));
     } catch (restoreError) {
       const message = restoreError instanceof Error ? restoreError.message : "The Trash move could not be undone.";
@@ -4297,7 +4302,7 @@ function App({ session }: { session: AuthSession | null }) {
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopThemePackageAccess(activeDesktopId, theme.id, theme.wallpaper.revision)} cache={themePackageCache} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div
@@ -5216,8 +5221,8 @@ function App({ session }: { session: AuthSession | null }) {
           <TrashWindow
             readOnly={!canMutate}
             onListTrash={() => listTrash(activeDesktopId)}
-            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination); }}
-            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id); }}
+            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination, item.entry.revision); }}
+            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id, item.entry.revision); }}
             onRequestPermanentDelete={(item: TrashItem, confirmedDelete) => {
               void requestConfirmation({
                 title: `Delete ${item.entry.name} permanently?`,

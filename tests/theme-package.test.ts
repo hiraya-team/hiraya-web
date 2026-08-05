@@ -20,7 +20,7 @@ describe("theme package downloads", () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input: String(input), init });
       return calls.length === 1
-        ? Response.json({ assetId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access })
+        ? Response.json({ entryId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access })
         : new Response(bytes);
     }) as typeof fetch;
 
@@ -31,7 +31,7 @@ describe("theme package downloads", () => {
     expect(calls[1]).toMatchObject({ input: access.url, init: { method: "GET", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" } });
     expect(new Headers(calls[1].init?.headers).get("X-Test")).toBe("yes");
     expect(cached?.size).toBe(bytes.byteLength);
-    expect(() => parseThemePackageAccess({ assetId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { ...access, url: "https://user:secret@downloads.example.test/theme" } }, expected)).toThrow("safe HTTPS");
+    expect(() => parseThemePackageAccess({ entryId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { ...access, url: "https://user:secret@downloads.example.test/theme" } }, expected)).toThrow("safe HTTPS");
   });
 
   test("loads a verified local package without requesting access again", async () => {
@@ -59,7 +59,7 @@ describe("theme package downloads", () => {
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
       calls.push({ input: String(input), init });
       return calls.length === 1
-        ? Response.json({ assetId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { url: "/api/theme-package", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } })
+        ? Response.json({ entryId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { url: "/api/theme-package", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } })
         : new Response(bytes);
     }) as typeof fetch;
 
@@ -74,7 +74,7 @@ describe("theme package downloads", () => {
     });
     const expected = { assetId: "theme-asset", kind: "static" as const, size: bytes.byteLength, sha256: await sha256(bytes), revision: 2 };
     globalThis.fetch = (async (input: RequestInfo | URL) => String(input).startsWith("/api/")
-      ? Response.json({ assetId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { url: "https://downloads.example.test/theme", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } })
+      ? Response.json({ entryId: expected.assetId, contentRevision: expected.revision, size: expected.size, sha256: expected.sha256, access: { url: "https://downloads.example.test/theme", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } })
       : new Response(bytes)) as typeof fetch;
     await expect(fetchThemePackage("/api/theme-access", "aurora", expected)).rejects.toThrow("does not match");
   });

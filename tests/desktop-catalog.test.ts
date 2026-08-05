@@ -3,17 +3,17 @@ import { desktopCreateProtection, desktopDeleteProtection, parseDesktopCatalog, 
 import { remoteDesktopIdentity } from "./fixtures";
 
 describe("desktop catalog", () => {
-  test("parses strict schema version 1", () => {
-    const value = { schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 7, desktops: [remoteDesktopIdentity()], quota: { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } } };
+  test("parses strict schema version 2", () => {
+    const value = { schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 7, desktops: [remoteDesktopIdentity()], quota: { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } } };
     expect(parseDesktopCatalog(value)).toEqual(value);
-    expect(() => parseDesktopCatalog({ ...value, schemaVersion: 2 })).toThrow("schema version");
+    expect(() => parseDesktopCatalog({ ...value, schemaVersion: 1 })).toThrow("schema version");
     expect(() => parseDesktopCatalog({ ...value, catalogRevision: -1 })).toThrow("revision");
     expect(() => parseDesktopCatalog({ ...value, quota: { ...value.quota, entries: { used: 2, limit: 0 } } })).toThrow("entry quota");
   });
 
   test("identifies the deployment app store without accepting arbitrary purposes", () => {
     const store = { ...remoteDesktopIdentity(), purpose: "app-store" };
-    const value = { schemaVersion: 1, catalogId: "catalog-1", catalogRevision: 7, desktops: [store], quota: { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } } };
+    const value = { schemaVersion: 2, catalogId: "catalog-1", catalogRevision: 7, desktops: [store], quota: { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } } };
     expect(parseDesktopCatalog(value).desktops[0].purpose).toBe("app-store");
     expect(() => parseDesktopCatalog({ ...value, desktops: [{ ...store, purpose: "marketplace" }] })).toThrow("purpose");
   });

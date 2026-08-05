@@ -79,7 +79,7 @@ describe("public desktop", () => {
 
     expect(await result.text()).toBe("test");
     expect(urls).toEqual([
-      "/api/public/desktops/team-desk/entries/file/content",
+      "/api/public/desktops/team-desk/entries/file/content?revision=3",
       "https://downloads.example.test/file",
     ]);
   });
@@ -89,8 +89,7 @@ describe("public desktop", () => {
     let calls = 0;
     const fetchImpl = (async () => {
       calls += 1;
-      if (calls === 1) return new Response(null, { status: 404 });
-      if (calls === 2) return Response.json({
+      if (calls === 1) return Response.json({
         entryId: directFile.id,
         contentRevision: 3,
         size: directFile.size,

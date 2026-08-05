@@ -2,7 +2,8 @@ import { inspectHirayaArchive, sha256, type ThemePackageInspection } from "@hira
 import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { ThemeWallpaperPackage } from "../domain/theme";
-import { parseDirectBlobAccess, type DirectBlobAccess } from "./contracts";
+import { parseContentAccessDescriptor, type DirectBlobAccess } from "./contracts";
+import { authenticatedHeaders } from "./api-routes";
 
 export const THEME_SCENE_CSP = SANDBOX_CSP.replace("frame-src data: blob:;", "frame-src 'none';").replace("allow-downloads", "");
 
@@ -12,11 +13,9 @@ export type ThemePackageCache = {
 };
 
 export function parseThemePackageAccess(value: unknown, expected: ThemeWallpaperPackage): DirectBlobAccess {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The theme package access response is invalid.");
-  const item = value as Record<string, unknown>;
-  if (item.assetId !== expected.assetId || item.contentRevision !== expected.revision || item.size !== expected.size || item.sha256 !== expected.sha256
-    || !item.access) throw new Error("The theme package access response does not match the selected theme.");
-  return parseDirectBlobAccess(item.access, "GET");
+  const descriptor = parseContentAccessDescriptor(value, expected.assetId, expected.revision, expected.size);
+  if (descriptor.sha256 !== expected.sha256) throw new Error("The theme package content does not match the selected theme.");
+  return descriptor.access;
 }
 
 export async function fetchThemePackage(accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, signal?: AbortSignal, cache?: ThemePackageCache): Promise<ThemePackageInspection> {
@@ -25,12 +24,16 @@ export async function fetchThemePackage(accessUrl: string, expectedThemeId: stri
   catch (error) { console.warn("Hiraya could not read the cached theme package.", error); }
   const cached = content !== null;
   if (!content) {
-    const descriptorResponse = await fetch(accessUrl, { credentials: "same-origin", cache: "no-store", signal });
+    const publicContent = accessUrl.startsWith("/api/public/");
+    const descriptorResponse = await fetch(accessUrl, { credentials: "same-origin", cache: "no-store", headers: publicContent ? undefined : authenticatedHeaders(), signal });
     if (!descriptorResponse.ok) throw new Error("The theme package is unavailable.");
-    const access = parseThemePackageAccess(await descriptorResponse.json(), expected);
-    const response = await fetch(access.url, { method: access.method, headers: access.headers, credentials: access.url.startsWith("/") ? "same-origin" : "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
-    if (!response.ok) throw new Error("The theme package could not be downloaded.");
-    content = await response.blob();
+    if (!descriptorResponse.headers.get("content-type")?.includes("application/json")) content = await descriptorResponse.blob();
+    else {
+      const access = parseThemePackageAccess(await descriptorResponse.json(), expected);
+      const response = await fetch(access.url, { method: access.method, headers: access.url.startsWith("/") ? authenticatedHeaders(access.headers) : access.headers, credentials: access.url.startsWith("/") ? "same-origin" : "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
+      if (!response.ok) throw new Error("The theme package could not be downloaded.");
+      content = await response.blob();
+    }
   }
   const bytes = new Uint8Array(await content.arrayBuffer());
   if (bytes.byteLength !== expected.size || !cached && await sha256(bytes) !== expected.sha256) throw new Error("The downloaded theme package failed integrity verification.");
