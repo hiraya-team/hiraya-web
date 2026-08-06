@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Sign in with Google.** On configured synchronized installations, choose **Continue with Google** to access an existing Hiraya account with the same verified email. Password sign-in remains available.
+- **Browser storage reset.** This pre-release update replaces the browser's local storage engine and starts each local or synchronized account cache empty once. Close older Hiraya tabs when prompted; synchronized desktops return from the server, while browser-local content from earlier builds is intentionally removed.
 - **Open Hiraya with less downloading.** Published applications now use verified catalog details until you install or update them, avoiding repeated package downloads during startup.
 - **Finish app actions in one step.** Switching an app or using its controls in the desktop and area switcher now closes the switcher automatically.
 - **Automate desktop work in Terminal.** Open **Terminal** to navigate and manage Hiraya files with familiar commands, pipelines, redirects, aliases, history, background jobs, and reusable `.hsh` shell scripts. Commands remain inside Hiraya's sandbox and cannot access the server operating system or network.

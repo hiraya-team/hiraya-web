@@ -42,8 +42,8 @@ describe("approved package archives", () => {
     const root = new MemoryDirectory();
     const values = new Map<string, string>();
     Object.defineProperties(globalThis, {
-      navigator: { configurable: true, value: { storage: { getDirectory: async () => root } } },
-      localStorage: { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } },
+      navigator: { configurable: true, value: { storage: { getDirectory: async () => root }, locks: {} } },
+      localStorage: { configurable: true, value: { getItem: (key: string) => key.startsWith("hiraya-indexeddb-reset-") ? "complete" : values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } },
       sessionStorage: { configurable: true, value: { getItem: () => null } },
     });
     await configureStorageNamespace("archive-test");
