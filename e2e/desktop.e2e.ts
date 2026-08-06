@@ -254,7 +254,7 @@ test("local mutation persists through reload", async ({ page }) => {
     database.close();
     return { stores, names: desktops.flatMap((desktop) => desktop.state.entries.map((entry) => entry.name)) };
   });
-  expect(stored.stores).toEqual(["activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "quarantined-apps", "sessions"]);
+  expect(stored.stores).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "quarantined-apps", "sessions"]);
   expect(stored.names).toContain(name);
 });
 
