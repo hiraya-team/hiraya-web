@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **See thumbnails and hidden files safely.** Images and videos use verified generated thumbnails on synchronized and public desktops, with familiar file icons when a thumbnail is unavailable. Turn on **Show hidden files** under **Settings > Files & apps** to reveal ordinary dot-prefixed entries and the read-only `.hiraya` system thumbnail hierarchy on the signed-in desktop.
 - **Sign in with Google.** On configured synchronized installations, choose **Continue with Google** to access an existing Hiraya account with the same verified email. Password sign-in remains available.
 - **Browser storage reset.** This pre-release update replaces the browser's local storage engine and starts each local or synchronized account cache empty once. Close older Hiraya tabs when prompted; synchronized desktops return from the server, while browser-local content from earlier builds is intentionally removed.
 - **Open Hiraya with less downloading.** Published applications now use verified catalog details until you install or update them, avoiding repeated package downloads during startup.
@@ -53,6 +54,8 @@ Files and folders behave as a hierarchy even though root items can be placed any
 Use **Upload files** for individual files. Use **Import folder** to preserve a selected directory tree, including supported empty folders. Hiraya validates the complete import before making any part visible. Dragging a directory onto Hiraya also preserves its hierarchy in browsers that expose directory entries.
 
 Some browsers do not provide directory picking or directory-drop details. When **Import folder** is unavailable, import files in supported batches and create the missing folders in Hiraya. A browser may expose files but omit empty directories; Hiraya reports this instead of pretending the tree was complete.
+
+Dot-prefixed files and folders are hidden from the desktop shell by default. Turn on **Settings > Files & apps > Show hidden files** to show them. On a synchronized signed-in desktop, this also exposes a protected `.hiraya/thumbnails` hierarchy for generated thumbnail files; if a real root item is already named `.hiraya`, the protected folder appears as `.hiraya (System)`. System thumbnail folders are read-only and never become part of search, public links, sharing, Trash, offline selection, Terminal, or app file access.
 
 ## Named desktops and derived areas {#desktops-and-areas}
 

@@ -5,6 +5,7 @@ import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
 import { FolderExplorer } from "./components/FolderExplorer";
+import { FileWindow } from "./components/FileWindow";
 import { MoveDialog } from "./components/MoveDialog";
 import { DesktopSwitcher } from "./components/DesktopSwitcher";
 import type { CatalogQuota } from "./lib/desktop-catalog";
@@ -35,6 +36,7 @@ import {
   pasteEntries,
   readFile,
   previewFile,
+  thumbnailFile,
   renameEntry,
   renameDesktop as renameDesktopMutation,
   saveCustomTheme,
@@ -74,6 +76,7 @@ import {
 } from "./lib/sync";
 import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
+import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
 import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
@@ -87,6 +90,7 @@ import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
+import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isVirtualThumbnailEntry, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "./ui/shell-entries";
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
@@ -140,7 +144,7 @@ import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sh
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
-import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
+import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, windowsForHiddenFilePreference, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
@@ -328,6 +332,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [cachedSearchResults, setCachedSearchResults] = useState<DesktopSearchResult[]>([]);
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
   const [minimapExpanded, setMinimapExpanded] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -463,7 +468,7 @@ function App({ session }: { session: AuthSession | null }) {
     adjust: (id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") => void;
   }>({ maximize: () => {}, move: () => {}, adjust: () => {} });
   const autoUpdateRef = useRef(true);
-  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" });
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
@@ -514,8 +519,17 @@ function App({ session }: { session: AuthSession | null }) {
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
   const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
-  const rootEntries = entryIndex.roots;
-  const responsive = useMemo(() => responsiveDesktop(entries, iconArea, iconMetrics), [entries, iconArea, iconMetrics]);
+  const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
+  const shellEntryList = useMemo(() => {
+    const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable);
+    if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
+    const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
+    const position = nextAvailableDesktopSlot(iconArea, occupied, false, occupied.length, iconMetrics);
+    return projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry);
+  }, [entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
+  const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
+  const rootEntries = shellEntryIndex.roots;
+  const responsive = useMemo(() => responsiveDesktop(shellEntryList, iconArea, iconMetrics), [shellEntryList, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const actualActiveSegment = responsive.segments.find((candidate) => candidate.key === activeSegmentKey);
   const occupiedSegments = useMemo(() => {
@@ -560,12 +574,13 @@ function App({ session }: { session: AuthSession | null }) {
       return position.x + iconMetrics.width > iconArea.width - minimapWidth && position.y + iconMetrics.height > iconArea.height - minimapHeight;
     });
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const hasVirtualSelection = selectedIds.some(isVirtualThumbnailEntry);
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
   const mobileSelectionMode = mobileMultiSelectScope === mobileFileSurface && selectionScope === mobileFileSurface;
-  const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !contextMenu && Boolean(activeDesktopId);
+  const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !focusedExplorer?.transient && !hasVirtualSelection && !contextMenu && Boolean(activeDesktopId);
   const dialogEntry = dialog?.type === "rename" ? (entryIndex.byId.get(dialog.entryId) ?? null) : dialog?.type === "delete" ? (entryIndex.byId.get(dialog.entryIds[0]) ?? null) : null;
   const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
@@ -573,6 +588,9 @@ function App({ session }: { session: AuthSession | null }) {
   const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
 
   const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
+    if (("parentId" in next && next.parentId !== null && !entriesRef.current.some((entry) => entry.id === next.parentId && entry.kind === "folder"))
+      || (next.type === "rename" && !entriesRef.current.some((entry) => entry.id === next.entryId))
+      || (next.type === "delete" && (!next.entryIds.length || next.entryIds.some((id) => !entriesRef.current.some((entry) => entry.id === id))))) return;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     fileDialogInvokerRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger")
       ?? (active?.closest(".context-menu") ? selectedIdsRef.current.map(fileDialogEntryElement).find(Boolean) ?? null : active);
@@ -1320,6 +1338,7 @@ function App({ session }: { session: AuthSession | null }) {
           return current.type === "rename" ? (syncedIds.has(current.entryId) ? current : null) : current.entryIds.some((id) => syncedIds.has(id)) ? { ...current, entryIds: current.entryIds.filter((id) => syncedIds.has(id)) } : null;
         });
         const availableApps = runningAppsRef.current.filter((app) => {
+          if (app.transient) return true;
           if (app.kind === "sandbox") {
             if (app.systemTarget?.entryId) return syncedIds.has(app.systemTarget.entryId);
             return app.install.source === "system" || syncedIds.has(app.packageEntryId!);
@@ -1665,6 +1684,7 @@ function App({ session }: { session: AuthSession | null }) {
         setAllowBrowserPinchZoom(preferences.allowBrowserPinchZoom);
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
         setExplorerView(preferences.explorerView);
+        setShowHiddenFiles(preferences.showHiddenFiles);
         setPreferencesLoaded(true);
         checkAutomatically();
       })
@@ -1800,6 +1820,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (loading) return;
     const currentApps = runningAppsRef.current;
     const reconciledApps = currentApps.flatMap((app): RunningApp[] => {
+      if (app.transient) return [app];
       if (app.kind === "sandbox") {
         const dependencyId = app.systemTarget?.entryId ?? app.packageEntryId;
         return dependencyId === null || entryIndex.byId.has(dependencyId) ? [app] : [];
@@ -1824,7 +1845,7 @@ function App({ session }: { session: AuthSession | null }) {
     }
 
     for (const app of currentApps) {
-      if (app.kind !== "file" || fileDirtyRef.current[app.id]) continue;
+      if (app.kind !== "file" || app.transient || fileDirtyRef.current[app.id]) continue;
       const entry = entryIndex.byId.get(app.fileId);
       const expectedRevision = contentRevisionsRef.current[app.fileId] ?? 0;
       if (entry?.kind !== "file" || app.contentRevision === expectedRevision) continue;
@@ -1911,13 +1932,14 @@ function App({ session }: { session: AuthSession | null }) {
       if (modifier && key === "a") {
         const explorer = activeExplorer();
         const surface = explorer?.id ?? "desktop";
-        const ids = explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id);
+        const ids = (explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id)).filter((id) => !isVirtualThumbnailEntry(id));
         event.preventDefault();
         replaceSelection(surface, ids);
       } else if (modifier && key === "c" && selectedIdsRef.current.length) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
+        if (activeExplorer()?.transient) return;
         keyboardPasteRef.current = true;
         const explorer = activeExplorer();
         window.setTimeout(() => {
@@ -1926,8 +1948,10 @@ function App({ session }: { session: AuthSession | null }) {
           void beginPasteRef.current(explorer?.folderId ?? null);
         });
       } else if (event.key === "Delete" && selectedIdsRef.current.length && canMutate) {
+        const entryIds = canonicalSelectionIds(entriesRef.current, selectedIdsRef.current);
+        if (!entryIds.length) return;
         event.preventDefault();
-        openFileDialog({ type: "delete", entryIds: [...selectedIdsRef.current] });
+        openFileDialog({ type: "delete", entryIds });
       }
     }
     function onPaste(event: ClipboardEvent) {
@@ -1938,6 +1962,7 @@ function App({ session }: { session: AuthSession | null }) {
       const files = Array.from(event.clipboardData.files);
       event.preventDefault();
       const explorer = activeExplorer();
+      if (explorer?.transient) return;
       const parentId = explorer?.folderId ?? null;
       if (files.length) {
         void snapshotFromClipboardItems(event.clipboardData.items)
@@ -2152,7 +2177,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function chooseUpload(parentId: string | null, position?: EntryPosition) {
-    if (!canMutate) return;
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
     importOperationRef.current = captureImportOperation(parentId, position);
     uploadParentRef.current = parentId;
     uploadPositionRef.current = position;
@@ -2160,7 +2185,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function chooseFolderImport(parentId: string | null, position?: EntryPosition) {
-    if (!canMutate) return;
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
     if (!supportsDirectoryPicker()) {
       reportFolderImportError("Folder import is not supported by this browser. Use Upload files to add files without a folder hierarchy.");
       return;
@@ -2349,6 +2374,26 @@ function App({ session }: { session: AuthSession | null }) {
       localPreferencesRef.current = previous;
       setExplorerView(previous.explorerView);
       setError("The folder view preference could not be saved.");
+    }
+  }
+
+  async function changeShowHiddenFiles(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, showHiddenFiles: enabled };
+    localPreferencesRef.current = next;
+    if (!enabled) {
+      const remaining = windowsForHiddenFilePreference(runningAppsRef.current, false);
+      updateRunningApps(remaining);
+      if (focusedAppIdRef.current && !remaining.some((app) => app.id === focusedAppIdRef.current)) setFocusedApp(null);
+      if (selectedIdsRef.current.some(isVirtualThumbnailEntry)) replaceSelection(selectionScope, []);
+    }
+    setShowHiddenFiles(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setShowHiddenFiles(previous.showHiddenFiles);
+      setError("The hidden files preference could not be saved.");
     }
   }
 
@@ -2728,7 +2773,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (focus) focusApp(id, syncRoute);
       return false;
     }
-    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId };
+    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId, ...(isVirtualThumbnailEntry(folderId) ? { transient: true } : {}) };
     updateRunningApps([...runningAppsRef.current, app]);
     if (focus) setFocusedApp(id);
     return true;
@@ -2743,9 +2788,10 @@ function App({ session }: { session: AuthSession | null }) {
     if (existing) {
       updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => (app.id === nextId ? { ...app, minimized: false, zIndex } : app)));
     } else {
-      updateRunningApps(runningAppsRef.current.map((app) => (app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex } : app)));
+      updateRunningApps(runningAppsRef.current.map((app) => (app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex, transient: isVirtualThumbnailEntry(folderId) || undefined } : app)));
     }
     setFocusedApp(nextId);
+    if (isVirtualThumbnailEntry(folderId)) return;
     const currentRoute = routeRef.current;
     if (currentRoute && existing) {
       const segment = segmentForApp(existing);
@@ -3061,8 +3107,41 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  function openVirtualThumbnail(file: FileEntry) {
+    const source = virtualThumbnailSource(file);
+    const original = source && entriesRef.current.find((entry): entry is FileEntry => entry.id === source.entryId && entry.kind === "file");
+    if (!source || !original || contentRevisionsRef.current[original.id] !== source.contentRevision) {
+      setError("That generated thumbnail is no longer available.");
+      return;
+    }
+    const id = `virtual-thumbnail-window:${file.id}`;
+    const existing = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (existing && (existing.kind !== "file" || !existing.loadError)) {
+      focusApp(id, false);
+      return;
+    }
+    if (existing) updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: undefined } : candidate));
+    else {
+      const app: FileApp = { ...createAppBase(id, "file"), transient: true, kind: "file", fileId: file.id, file, editMode: false, contentRevision: source.contentRevision, remoteChanged: false };
+      updateRunningApps([...runningAppsRef.current, app]);
+    }
+    setFocusedApp(id);
+    void thumbnailFile(original.id).then((thumbnail) => {
+      if (thumbnail.kind !== "blob") throw new Error("The thumbnail response was not browser-safe.");
+      const blob = thumbnail.blob;
+      const downloaded = downloadedThumbnailEntry(file, blob);
+      const opened = new File([blob], downloaded.name, { type: downloaded.mimeType, lastModified: downloaded.modifiedAt });
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, file: downloaded, blob: opened, editable: false, loadError: undefined } : candidate));
+    }).catch((openError) => updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The thumbnail could not be opened." } : candidate)));
+  }
+
   function handleOpen(entry: DesktopEntry) {
     setContextMenu(null);
+    if (isVirtualThumbnailEntry(entry)) {
+      if (entry.kind === "folder") openExplorerWindow(entry.id, false);
+      else openVirtualThumbnail(entry);
+      return;
+    }
     if (entry.kind === "file" && isAppPackageName(entry.name)) {
       void openHirayaPackage(entry);
       return;
@@ -3222,8 +3301,8 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function copySelection() {
-    if (!selectedIdsRef.current.length) return;
-    const selectedIds = [...selectedIdsRef.current];
+    const selectedIds = canonicalSelectionIds(entriesRef.current, selectedIdsRef.current);
+    if (!selectedIds.length) return;
     const uncachedFiles = offlineFilesUnderRoots(entries, selectedIds).filter((entry) => offlineModel.entries[entry.id]?.downloadBytes > 0);
     setCopyDownload(uncachedFiles.length ? { entryIds: new Set(uncachedFiles.map((entry) => entry.id)), totalBytes: uncachedFiles.reduce((total, entry) => total + offlineModel.entries[entry.id].downloadBytes, 0) } : null);
     setError("");
@@ -3277,7 +3356,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function beginPaste(parentId: string | null, position?: EntryPosition, supplied?: ClipboardEntrySnapshot) {
-    if (!canMutate) return;
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
     setError("");
     let snapshot = supplied ?? clipboardRef.current;
     if (!supplied && navigator.clipboard?.read) {
@@ -4358,8 +4437,9 @@ function App({ session }: { session: AuthSession | null }) {
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
+                  readOnly={isVirtualThumbnailEntry(entry)}
                   interactive={segmentInteractive}
-                  loadPreview={segmentInteractive ? previewFile : undefined}
+                  loadPreview={segmentInteractive ? thumbnailFile : undefined}
                   offlineAvailability={offlineModel.entries[entry.id]}
                   selected={selectedIdSet.has(entry.id)}
                   onSelect={(event) =>
@@ -4376,7 +4456,7 @@ function App({ session }: { session: AuthSession | null }) {
                     replaceSelection("desktop", []);
                     handleOpen(entry);
                   }}
-                  onMove={(position, destination) => handleDesktopMove(entry, position, destination)}
+                  onMove={(position, destination) => canMutateShellDrop(entry, destination.parentId) ? handleDesktopMove(entry, position, destination) : Promise.resolve(false)}
                   dragEdgeAt={edgeAt}
                   onDragAtEdge={(direction) => handleIconDragAtEdge(entry, direction)}
                   onEdgeDwellChange={handleEdgeDwellChange}
@@ -4387,13 +4467,15 @@ function App({ session }: { session: AuthSession | null }) {
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
                   gridSize={layout.snapToGrid ? layout.gridSize : undefined}
-                  onExternalDrop={(dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
+                  onExternalDrop={isVirtualThumbnailEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();
+                    if (isVirtualThumbnailEntry(entry)) return;
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
                     openEntryContextMenu(entry.id, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                   }}
                   onContextMenuAt={(x, y, presentation) => {
+                    if (isVirtualThumbnailEntry(entry)) return;
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
                     openEntryContextMenu(entry.id, x, y, presentation);
                   }}
@@ -4471,7 +4553,7 @@ function App({ session }: { session: AuthSession | null }) {
           trackRef={windowTrackRef}
           transitionSegmentKeys={transitionSegmentKeys}
           titleForApp={(app) => {
-            const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+            const folderEntry = app.kind === "explorer" && app.folderId ? (shellEntryIndex.byId.get(app.folderId) ?? entryIndex.byId.get(app.folderId)) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
@@ -4494,7 +4576,7 @@ function App({ session }: { session: AuthSession | null }) {
           onSwitchWindow={() => setActivePanel("windows")}
         >
           {(app, headerElements) => {
-            const folderEntry = app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+            const folderEntry = app.kind === "explorer" && app.folderId ? (shellEntryIndex.byId.get(app.folderId) ?? entryIndex.byId.get(app.folderId)) : null;
             const folder = folderEntry?.kind === "folder" ? folderEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
             const mergeReview = app.kind === "merge" ? mergeReviews[app.operationId] : null;
@@ -4506,8 +4588,8 @@ function App({ session }: { session: AuthSession | null }) {
                       <FolderExplorer
                         folder={folder}
                         rootLabel={activeDesktopName}
-                        breadcrumbs={folder ? entryIndex.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []}
-                        children={entryIndex.children.get(folder?.id ?? null) ?? []}
+                        breadcrumbs={folder ? shellEntryIndex.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []}
+                        children={shellEntryIndex.children.get(folder?.id ?? null) ?? []}
                         selectedIds={selectionScope === app.id ? selectedIdSet : new Set()}
                         mobileMultiSelect={mobileMultiSelectScope === app.id}
                         onSelect={(entry, options) => selectEntry(app.id, entry, options)}
@@ -4525,8 +4607,10 @@ function App({ session }: { session: AuthSession | null }) {
                         onImportFolder={chooseFolderImport}
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
                         offlineAvailability={offlineModel.entries}
-                        loadPreview={previewFile}
+                        loadPreview={thumbnailFile}
+                        isEntryReadOnly={isVirtualThumbnailEntry}
                         onMove={(entry, destination, point) => {
+                          if (!canMutateShellDrop(entry, destination.parentId)) return;
                           const items = selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
                           void (destination.desktop
                             ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
@@ -4551,13 +4635,37 @@ function App({ session }: { session: AuthSession | null }) {
                           });
                         }}
                         onClearSelection={() => replaceSelection(app.id, [])}
-                        readOnly={!canMutate}
+                        readOnly={!canMutate || isVirtualThumbnailEntry(folder)}
                         headerElements={headerElements}
                         view={explorerView}
                         onViewChange={(view) => void changeExplorerView(view)}
                         viewChangeDisabled={!preferencesLoaded}
                       />
                     )}
+                    {app.kind === "file" && app.transient && app.file && (app.blob ? <FileWindow
+                      file={app.file}
+                      blob={app.blob}
+                      editable={false}
+                      readOnly
+                      canChangeSettings={false}
+                      headerActionsTarget={headerElements.actions}
+                      editorSettings={appSnapshotRef.current?.editorSettings ?? DEFAULT_EDITOR_SETTINGS}
+                      externalEmbeddedPreviews={false}
+                      theme={activeTheme}
+                      onSave={async () => undefined}
+                      onDownload={() => {
+                        const url = URL.createObjectURL(app.blob!);
+                        const anchor = document.createElement("a");
+                        anchor.href = url;
+                        anchor.download = app.file!.name;
+                        anchor.click();
+                        window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+                      }}
+                      onEdit={() => undefined}
+                      onEditorSettingsChange={() => undefined}
+                      onResolveLink={async () => { throw new Error("Generated thumbnails do not contain file links."); }}
+                      onOpenLinkedFile={() => undefined}
+                    /> : app.loadError ? <div className="app-window__loading" role="alert"><span>{app.loadError}</span><button className="button button--primary" type="button" onClick={() => openVirtualThumbnail(app.file!)}>Retry</button></div> : <div className="app-window__loading" role="status">Opening {app.file.name}...</div>)}
                     {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
                     {app.kind === "merge" && mergeReview && (mergeReview.mode === "text" ? <MergeWindow
                       mode="text"
@@ -4638,6 +4746,7 @@ function App({ session }: { session: AuthSession | null }) {
                         allowBrowserPinchZoom={allowBrowserPinchZoom}
                         localPreferencesLoaded={externalEmbeddedPreviews !== null}
                         searchAllDesktops={searchAllDesktops}
+                        showHiddenFiles={showHiddenFiles}
                         desktopSearchAvailable={desktopSearchAvailable}
                         shortLinksAvailable={shortLinksAvailable}
                         shortLinkBaseUrl={session?.shortLinkBaseUrl ?? ""}
@@ -4710,6 +4819,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onExternalEmbeddedPreviewsChange={(enabled) => void changeExternalEmbeddedPreviews(enabled)}
                         onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
                         onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
+                        onShowHiddenFilesChange={(enabled) => void changeShowHiddenFiles(enabled)}
                         onOpenGettingStarted={() => setShowGettingStarted(true)}
                         onOpenKeyboardShortcuts={() => setActivePanel("shortcuts")}
                         onOpenSharing={() => setSharingOpen(true)}

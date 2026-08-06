@@ -41,6 +41,7 @@ export interface FolderExplorerProps {
   onViewChange: (view: ExplorerView) => void;
   viewChangeDisabled?: boolean;
   loadPreview?: (id: string) => Promise<EntryPreviewSource>;
+  isEntryReadOnly?: (entry: DesktopEntry) => boolean;
 }
 
 type DragState = {
@@ -54,13 +55,14 @@ type DragState = {
   longPressTimer?: number;
   preview?: PointerDragPreview | null;
   snapPreview?: HTMLElement | null;
+  readOnly: boolean;
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
@@ -104,8 +106,9 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       moved: false,
       pointerType: event.pointerType,
       longPressed: false,
+      readOnly: readOnly || isEntryReadOnly(entry),
     };
-    if (event.pointerType === "touch") {
+    if (event.pointerType === "touch" && !isEntryReadOnly(entry)) {
       drag.current.longPressTimer = window.setTimeout(() => {
         const current = drag.current;
         if (!current || current.pointerId !== event.pointerId || current.moved) return;
@@ -115,13 +118,17 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         onContextMenu(entry, event.clientX, event.clientY, "sheet");
       }, 500);
     }
-    if (readOnly) return;
+    if (drag.current.readOnly) return;
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
+    if (current.readOnly) {
+      if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) >= 5) current.moved = true;
+      return;
+    }
     if (!current.moved && Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
     if (current.longPressTimer) window.clearTimeout(current.longPressTimer);
     current.longPressTimer = undefined;
@@ -160,7 +167,8 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
     removePointerDragPreview(current.preview);
     current.snapPreview?.remove();
 
-    if (current.moved) {
+    if (current.readOnly && current.pointerType !== "touch") return;
+    if (current.moved && !current.readOnly) {
       suppressClick.current = true;
       window.setTimeout(() => {
         suppressClick.current = false;
@@ -305,7 +313,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
 
       <div
         className="folder-explorer__content"
-        data-entry-drop-parent={parentId ?? ""}
+        data-entry-drop-parent={readOnly ? undefined : parentId ?? ""}
         onClick={(event) => {
           if (!(event.target as Element).closest(".folder-explorer__row")) onClearSelection?.();
         }}
@@ -318,6 +326,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
           onExternalDrop(event.dataTransfer, parentId);
         }}
         onContextMenu={(event) => {
+          if (readOnly) return;
           if ((event.target as Element).closest(".folder-explorer__row")) return;
           event.preventDefault();
           onBlankContextMenu(parentId, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
@@ -381,7 +390,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                 aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability[entry.id] ? `, ${offlineStatusLabel(offlineAvailability[entry.id])}` : ""}`}
                 data-selected={selectedIds.has(entry.id) || undefined}
                 data-folder-target={entry.kind === "folder" ? entry.id : undefined}
-                data-entry-drop-parent={entry.kind === "folder" ? entry.id : undefined}
+                data-entry-drop-parent={entry.kind === "folder" && !isEntryReadOnly(entry) ? entry.id : undefined}
                 onClick={(event) => {
                   if (suppressClick.current) {
                     suppressClick.current = false;
@@ -415,11 +424,12 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                         orderedIds,
                       });
                     const bounds = event.currentTarget.getBoundingClientRect();
-                    onContextMenu(entry, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
+                    if (!isEntryReadOnly(entry)) onContextMenu(entry, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
                   }
                 }}
                 onContextMenu={(event) => {
                   event.preventDefault();
+                  if (isEntryReadOnly(entry)) return;
                   const current = drag.current;
                   const action = contextMenuPressAction(current);
                   if (action !== "open") {
@@ -442,7 +452,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                   onContextMenu(entry, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                 }}
                 onDragOver={
-                  entry.kind === "folder" && !readOnly
+                  entry.kind === "folder" && !readOnly && !isEntryReadOnly(entry)
                     ? (event) => {
                         event.preventDefault();
                         event.currentTarget.dataset.dropTarget = "true";
@@ -450,14 +460,14 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                     : undefined
                 }
                 onDragLeave={
-                  entry.kind === "folder" && !readOnly
+                  entry.kind === "folder" && !readOnly && !isEntryReadOnly(entry)
                     ? (event) => {
                         if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropTarget;
                       }
                     : undefined
                 }
                 onDrop={
-                  entry.kind === "folder" && !readOnly
+                  entry.kind === "folder" && !readOnly && !isEntryReadOnly(entry)
                     ? (event) => {
                         event.preventDefault();
                         event.stopPropagation();

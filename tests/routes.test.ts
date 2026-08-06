@@ -20,6 +20,8 @@ describe("canonical routes", () => {
     expect(API_ROUTES.desktopEntryTransactionCommit("d", "transaction/id")).toBe("/api/desktops/d/entries/transactions/transaction%2Fid/commit");
     expect(API_ROUTES.desktopContent("d", "a/b", 7)).toBe("/api/desktops/d/entries/a%2Fb/content?revision=7");
     expect(API_ROUTES.desktopContent("d", "a/b", 7, "preview")).toBe("/api/desktops/d/entries/a%2Fb/content?revision=7&purpose=preview");
+    expect(API_ROUTES.desktopThumbnail("d", "a/b", 7, "thumbnail-v1")).toBe("/api/desktops/d/entries/a%2Fb/thumbnail?revision=7&profile=thumbnail-v1");
+    expect(API_ROUTES.publicDesktopThumbnail("desk", "item", "a/b", 7, "thumbnail-v1")).toBe("/api/public/desktops/desk/item/entries/a%2Fb/thumbnail?revision=7&profile=thumbnail-v1");
     expect(API_ROUTES.events).toBe("/api/events?protocol=entry-transactions-v2");
     expect(API_ROUTES.shortLinks).toBe("/api/short-links");
     expect(API_ROUTES.shortLink("launch/notes")).toBe("/api/short-links/launch%2Fnotes");

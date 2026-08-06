@@ -19,6 +19,7 @@ export type AuthSession = {
     desktopSearch?: "accessible-desktops-v1";
 		shortLinks?: "account-short-links-v1";
 		publications?: "alias-publications-v1";
+		thumbnails?: "thumbnail-v1";
 	};
 	shortLinkBaseUrl?: string;
 	publicationBaseUrl?: string;
@@ -90,6 +91,8 @@ export function parseAuthSession(value: unknown): AuthSession {
 	const publicationBaseUrl = session.publicationBaseUrl === undefined ? undefined : requiredString(session.publicationBaseUrl, "publication base URL");
 	if ((publications === undefined) !== (publicationBaseUrl === undefined)) throw new Error("The session bootstrap contains incomplete publication capability metadata.");
 	if (publicationBaseUrl && !isSafeRootRelativePath(publicationBaseUrl) && !isSafeAbsoluteHttpUrl(publicationBaseUrl)) throw new Error("The session bootstrap contains an invalid publication base URL.");
+	const thumbnails = (session.capabilities as { thumbnails?: unknown }).thumbnails;
+	if (thumbnails !== undefined && thumbnails !== "thumbnail-v1") throw new Error("The session bootstrap contains unsupported thumbnail capability metadata.");
   return {
     ...authority,
     apiProtocol: HIRAYA_API_PROTOCOL,
@@ -100,7 +103,7 @@ export function parseAuthSession(value: unknown): AuthSession {
       ...(user.email === undefined ? {} : { email: optionalString(user.email, "email address") }),
       ...(user.avatarUrl === undefined ? {} : { avatarUrl: optionalString(user.avatarUrl, "avatar URL") }),
     },
-		capabilities: { entryTransactions: "prepare-commit-cancel-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}) },
+		capabilities: { entryTransactions: "prepare-commit-cancel-v1", ...(desktopSearch ? { desktopSearch } : {}), ...(shortLinks ? { shortLinks } : {}), ...(publications ? { publications } : {}), ...(thumbnails ? { thumbnails } : {}) },
 		...(shortLinkBaseUrl ? { shortLinkBaseUrl } : {}),
 		...(publicationBaseUrl ? { publicationBaseUrl } : {}),
   };

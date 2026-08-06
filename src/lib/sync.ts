@@ -22,6 +22,7 @@ import { SyncConnectivity } from "../platform/sync/connectivity";
 import { sendOutboxOperation, type BlobUploadPhase } from "../platform/sync/outbox-transport";
 import { AuthorityValidationError, parseAuthorityIdentity, UpgradeRequiredError } from "./wire-authority";
 import type { FilePreviewSource } from "@hiraya-team/apps-contracts";
+import { loadThumbnail, supportsThumbnailMime, THUMBNAIL_MAX_SOURCE_SIZE, THUMBNAIL_PROFILE } from "./thumbnails";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never
@@ -91,6 +92,7 @@ export type SyncEngineOptions = {
   onUnauthorized?: () => void;
   expectedCatalogId?: string | null;
   directBlobOrigin?: string;
+  thumbnails?: boolean;
   createXMLHttpRequest?: () => XMLHttpRequest;
 };
 
@@ -177,6 +179,7 @@ export class SyncEngine {
   private readonly onUnauthorized: () => void;
   private expectedCatalogId: string | null;
   private directBlobOrigin?: string;
+  private thumbnails: boolean;
   private readonly http: SyncHttpClient;
   private readonly connectivity: SyncConnectivity;
   private readonly setTimeoutImpl: typeof globalThis.setTimeout;
@@ -226,6 +229,7 @@ export class SyncEngine {
     this.onUnauthorized = options.onUnauthorized ?? redirectToLogin;
     this.expectedCatalogId = options.expectedCatalogId ?? null;
     this.directBlobOrigin = options.directBlobOrigin;
+    this.thumbnails = options.thumbnails ?? false;
     this.setTimeoutImpl = options.setTimeout ?? globalThis.setTimeout.bind(globalThis);
     this.clearTimeoutImpl = options.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
     this.createXMLHttpRequest = options.createXMLHttpRequest;
@@ -496,10 +500,11 @@ export class SyncEngine {
     for (const listener of this.statusListeners) listener(next);
   }
 
-  setExpectedAuthority(catalogId: string | null, directBlobOrigin?: string) {
+  setExpectedAuthority(catalogId: string | null, directBlobOrigin?: string, thumbnails = false) {
     if (this.running) throw new Error("The synchronization authority cannot change while running.");
     this.expectedCatalogId = catalogId;
     this.directBlobOrigin = directBlobOrigin;
+    this.thumbnails = thumbnails;
   }
 
   private failAuthority(error: unknown) {
@@ -1476,6 +1481,49 @@ export class SyncEngine {
     return { kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt };
   }
 
+  async thumbnailFile(id: FileEntry["id"]): Promise<FilePreviewSource> {
+    const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
+    if (!entry) throw new Error("That file no longer exists.");
+    const image = entry.mimeType.toLowerCase().startsWith("image/");
+    const catalogId = this.current().sync.catalogId;
+    if (this.frontendOnly || !catalogId) {
+      if (image) return { kind: "blob", blob: await this.storage.readFile(id) };
+      throw new Error("Generated thumbnails are unavailable.");
+    }
+    if (!this.thumbnails) {
+      if (image) return this.previewFile(id);
+      throw new Error("Generated thumbnails are unavailable.");
+    }
+    const contentRevision = this.current().sync.contentRevisions[id];
+    if (!Number.isSafeInteger(contentRevision) || contentRevision <= 0) throw new Error("That file has invalid synchronization metadata.");
+    if (!supportsThumbnailMime(entry.mimeType) || entry.size > THUMBNAIL_MAX_SOURCE_SIZE) {
+      if (image) {
+        const cached = await this.storage.readCachedFile(this.desktopId, catalogId, id, contentRevision).catch(() => null);
+        if (cached) return { kind: "blob", blob: cached };
+      }
+      throw new Error("Generated thumbnails are unavailable for this file.");
+    }
+    try {
+      const blob = await loadThumbnail({
+        authority: `${catalogId}/${this.desktopId}`,
+        entryId: id,
+        contentRevision,
+        endpoint: API_ROUTES.desktopThumbnail(this.desktopId, id, contentRevision, THUMBNAIL_PROFILE),
+        expectedDirectOrigin: this.directBlobOrigin,
+        descriptorInit: { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal: this.syncAbort?.signal },
+        fetchImpl: this.fetchImpl,
+        onDescriptorResponse: (response) => { this.requireAuthentication(response); },
+      });
+      return { kind: "blob", blob };
+    } catch (error) {
+      if (image) {
+        const cached = await this.storage.readCachedFile(this.desktopId, catalogId, id, contentRevision).catch(() => null);
+        if (cached) return { kind: "blob", blob: cached };
+      }
+      throw error;
+    }
+  }
+
   async estimateOfflineOperation(rootIds: readonly string[]) {
     const roots = dedupeOfflineRoots(this.current().entries, rootIds);
     const inventory = await this.storage.loadOfflineInventory(this.desktopId);
@@ -1910,7 +1958,7 @@ export class SyncEngine {
 
 const defaultEngine = new SyncEngine({ frontendOnly: import.meta.env.HIRAYA_FRONTEND_ONLY === "true" });
 
-export function configureSyncAuthority(catalogId: string | null, directBlobOrigin?: string) { defaultEngine.setExpectedAuthority(catalogId, directBlobOrigin); }
+export function configureSyncAuthority(catalogId: string | null, directBlobOrigin?: string, thumbnails = false) { defaultEngine.setExpectedAuthority(catalogId, directBlobOrigin, thumbnails); }
 
 export const initializeDesktop = defaultEngine.start.bind(defaultEngine);
 export const stopDesktopSync = defaultEngine.stop.bind(defaultEngine);
@@ -1943,6 +1991,7 @@ export const installThemePackage = defaultEngine.installThemePackage.bind(defaul
 export const deleteCustomTheme = defaultEngine.deleteCustomTheme.bind(defaultEngine);
 export const readFile = defaultEngine.readFile.bind(defaultEngine);
 export const previewFile = defaultEngine.previewFile.bind(defaultEngine);
+export const thumbnailFile = defaultEngine.thumbnailFile.bind(defaultEngine);
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);
 export const subscribeToOfflineStorage = defaultEngine.subscribeOfflineStorage.bind(defaultEngine);
 export const subscribeToEntryDownloads = defaultEngine.subscribeEntryDownloads.bind(defaultEngine);

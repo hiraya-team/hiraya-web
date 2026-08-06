@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, SquaresFour, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
-import { EntryTypeIcon } from "./components/FileIcon";
 import { FileWindow } from "./components/FileWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
@@ -14,7 +13,7 @@ import { createEntryIndex } from "./ui/entry-index";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
 import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
-import { StatusBadge } from "./components/VisualPrimitives";
+import { EntryArtwork, StatusBadge, type EntryPreviewSource } from "./components/VisualPrimitives";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
@@ -25,6 +24,7 @@ import { iconAreaSize, responsiveDesktop, segmentKey, type SurfaceSegment } from
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { homeRelativeAreaLabel } from "./ui/shell";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
+import { withoutDotEntries } from "./ui/hidden-entries";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
@@ -55,7 +55,7 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
   );
 }
 
-function PublicIcon({ entry, selected, interactive, onSelect, onOpen }: { entry: DesktopEntry; selected: boolean; interactive: boolean; onSelect: () => void; onOpen: () => void }) {
+function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onOpen }: { entry: DesktopEntry; selected: boolean; interactive: boolean; loadThumbnail?: (id: string) => Promise<EntryPreviewSource>; onSelect: () => void; onOpen: () => void }) {
   const press = useRef<{
     pointerId: number;
     x: number;
@@ -125,7 +125,7 @@ function PublicIcon({ entry, selected, interactive, onSelect, onOpen }: { entry:
         if (event.key === "Enter") onOpen();
       }}
     >
-      <span className="file-icon__art"><EntryTypeIcon entry={entry} size={43} /></span>
+      <span className="file-icon__art"><EntryArtwork entry={entry} size={43} loadPreview={loadThumbnail} /></span>
       <span className="file-icon__name">{entry.name}</span>
     </button>
   );
@@ -133,7 +133,7 @@ function PublicIcon({ entry, selected, interactive, onSelect, onOpen }: { entry:
 
 export default function PublicDesktop({ authority }: { authority: PublicAuthority }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
-	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, resolveLinkedFile } = usePublicDesktop(authority);
+	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, loadThumbnail, resolveLinkedFile } = usePublicDesktop(authority);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const [activeSegment, setActiveSegment] = useState<SurfaceSegment>({ column: 0, row: 0 });
@@ -144,12 +144,13 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
   const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
-  const index = useMemo(() => createEntryIndex(desktop?.entries ?? []), [desktop?.entries]);
+  const publicEntries = useMemo(() => withoutDotEntries(desktop?.entries ?? []), [desktop?.entries]);
+  const index = useMemo(() => createEntryIndex(publicEntries), [publicEntries]);
   const appearance = desktop?.appearance ?? DEFAULT_THEME_STATE;
   const theme = resolveTheme(appearance);
   const iconMetrics = useMemo(() => themeIconMetrics(theme), [theme]);
   const iconArea = useMemo(() => iconAreaSize(desktopSize, desktop?.layout.gridSize), [desktop?.layout.gridSize, desktopSize]);
-  const responsive = useMemo(() => responsiveDesktop(desktop?.entries ?? [], iconArea, iconMetrics), [desktop?.entries, iconArea, iconMetrics]);
+  const responsive = useMemo(() => responsiveDesktop(publicEntries, iconArea, iconMetrics), [publicEntries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const minimapSegments = useMemo(() => publicAreaMapSegments(responsive.segments, activeSegment), [activeSegment, responsive.segments]);
   const minColumn = Math.min(...minimapSegments.map((segment) => segment.segment.column));
@@ -314,7 +315,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             <p>{error}</p>
           </div>
         )}
-        {desktop && desktop.entries.length === 0 && (
+        {desktop && publicEntries.length === 0 && (
           <div className="desktop-state empty-state">
             <Folder size={30} weight="duotone" />
             <h1>This desktop is empty.</h1>
@@ -328,7 +329,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                 const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
                 const interactive = desktopSegment.key === activeSegmentKey;
                 return <div className="desktop-area-segment" key={desktopSegment.key} data-active={interactive || undefined} aria-hidden={!interactive || undefined} inert={!interactive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: interactive ? "visible" : "hidden" }}>
-                  {desktopSegment.entries.map((entry) => <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={interactive} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />)}
+                  {desktopSegment.entries.map((entry) => <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={interactive} loadThumbnail={desktop.thumbnailProfile ? loadThumbnail : undefined} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />)}
                 </div>;
               })}
             </div>
@@ -388,6 +389,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                     headerElements={headerElements}
                     view={explorerView}
                     onViewChange={setExplorerView}
+                    loadPreview={desktop?.thumbnailProfile ? loadThumbnail : undefined}
                   />
                 ) : open.blob ? (
                   <FileWindow file={open.file} blob={open.blob} editable={fileCapabilities(open.file).editable} readOnly headerActionsTarget={headerElements.actions} editorSettings={desktop?.editorSettings ?? DEFAULT_EDITOR_SETTINGS} externalEmbeddedPreviews={false} theme={theme} onSave={async () => undefined} onDownload={() => void loadFile(open.file, true)} onEdit={() => undefined} onEditorSettingsChange={() => undefined} onResolveLink={(path) => resolveLinkedFile(open.file, path)} onOpenLinkedFile={(file) => void loadFile(file)} />

@@ -10,7 +10,7 @@ import { projectLogicalPosition, type SurfaceSegment } from "../../ui/desktop-ge
 import type { WindowBounds } from "../../ui/window-manager";
 import type { WindowTarget } from "../../lib/window-session";
 
-export type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number };
+export type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number; transient?: boolean };
 export type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
 export type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string | null };
 export type SettingsApp = BaseRunningApp & { kind: "settings" };
@@ -24,6 +24,7 @@ export const MERGE_APP_WINDOW: BuiltinAppWindow = { width: 960, height: 700, min
 
 export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
   return apps.flatMap((app): WindowTarget[] => {
+    if (app.transient) return [];
     if (app.kind === "sandbox" && app.systemTarget) return [app.systemTarget];
     const target = extractBuiltinAppTarget(app);
     return target ? [target] : [];
@@ -31,7 +32,11 @@ export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
 }
 
 export function runningAppIds(apps: readonly RunningApp[]) {
-  return apps.map((app) => app.id);
+  return apps.filter((app) => !app.transient).map((app) => app.id);
+}
+
+export function windowsForHiddenFilePreference(apps: readonly RunningApp[], showHiddenFiles: boolean) {
+  return showHiddenFiles ? [...apps] : apps.filter((app) => !app.transient);
 }
 
 export function runningAppSegment(app: RunningApp, size: { width: number; height: number }) {

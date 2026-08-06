@@ -1032,6 +1032,7 @@ describe("canonical synchronization", () => {
     const local = new SyncEngine({ frontendOnly: true, storage: remoteStorage(localState) });
     await local.start("desk", { x: 0, y: 0 });
     expect(await local.previewFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
+    expect(await local.thumbnailFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
     await local.stop();
 
     const storage = remoteStorage();
@@ -1050,12 +1051,53 @@ describe("canonical synchronization", () => {
     const remote = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
     await remote.start("desk", { x: 0, y: 0 });
     expect(await remote.previewFile("file-1")).toEqual({ kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt });
+    expect(await remote.thumbnailFile("file-1")).toEqual({ kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt });
     expect(storage.stats.cacheWrites).toBe(0);
     expect(requests).not.toContain(descriptor.access.url);
     await remote.readFile("file-1");
     expect(await remote.previewFile("file-1")).toMatchObject({ kind: "blob", blob: expect.any(Blob) });
-    expect(requests.filter((request) => request.includes("purpose=preview"))).toHaveLength(1);
+    expect(requests.filter((request) => request.includes("purpose=preview"))).toHaveLength(2);
     await remote.stop();
+  });
+
+  test("uses only an exact cached original when generated image thumbnails fail", async () => {
+    const remoteState = remoteDesktopState();
+    remoteState.entries[0] = { ...remoteState.entries[0], name: "photo.png", mimeType: "image/png" };
+    const localState = desktopStateSnapshot();
+    localState.entries = [{ kind: "file", id: "file-1", name: "photo.png", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 20 }, mimeType: "image/png", size: 4 }];
+    localState.sync.catalogId = remoteState.catalogId;
+    localState.sync.contentRevisions["file-1"] = 1;
+    const storage = remoteStorage(localState);
+    expect(await storage.cacheRemoteFile("desk", remoteState.catalogId, "file-1", 1, "ignored", new Blob(["note"]))).toBeInstanceOf(File);
+    const requests: string[] = [];
+    const fetchImpl = (async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteState);
+      if (String(input).includes("/thumbnail?")) throw new TypeError("offline");
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, thumbnails: true, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const thumbnail = await engine.thumbnailFile("file-1");
+    expect(thumbnail.kind).toBe("blob");
+    if (thumbnail.kind === "blob") expect(await thumbnail.blob.text()).toBe("note");
+    expect(requests.some((request) => request.includes("purpose=preview"))).toBeFalse();
+    await engine.stop();
+  });
+
+  test("keeps videos on the generic glyph when thumbnail capability is absent", async () => {
+    const remoteState = remoteDesktopState();
+    remoteState.entries[0] = { ...remoteState.entries[0], name: "clip.mp4", mimeType: "video/mp4" };
+    const requests: string[] = [];
+    const engine = new SyncEngine({ storage: remoteStorage(), eventSource: FakeEventSource as unknown as typeof EventSource, fetch: (async (input: RequestInfo | URL) => {
+      requests.push(String(input));
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteState);
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch });
+    await engine.start("desk", { x: 0, y: 0 });
+    await expect(engine.thumbnailFile("file-1")).rejects.toThrow("unavailable");
+    expect(requests.some((request) => request.includes("/content"))).toBeFalse();
+    await engine.stop();
   });
 
   test("reports, requests, and removes exact validated offline file revisions", async () => {

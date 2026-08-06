@@ -23,6 +23,7 @@ export function createWindowSession(apps: readonly (WindowSessionBase & Record<s
   return {
     schemaVersion: 1,
     apps: apps.flatMap((app): WindowSessionApp[] => {
+      if (app.transient) return [];
       const target = extractBuiltinAppTarget(app.systemTarget ?? app);
       return target ? [{ bounds: app.bounds, minimized: app.minimized, zIndex: app.zIndex, ...target }] : [];
     }),

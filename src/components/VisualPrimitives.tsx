@@ -41,7 +41,7 @@ export function EntryIcon({ entry, size = 24 }: { entry: DesktopEntry; size?: nu
 
 export type EntryPreviewSource = Readonly<{ kind: "blob"; blob: Blob }> | Readonly<{ kind: "url"; url: string }>;
 
-function ImageThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEntry, { kind: "file" }>; size: number; loadPreview: (id: string) => Promise<EntryPreviewSource> }) {
+function MediaThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEntry, { kind: "file" }>; size: number; loadPreview: (id: string) => Promise<EntryPreviewSource> }) {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
   const [source, setSource] = useState<string | null>(null);
@@ -102,7 +102,7 @@ function ImageThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEn
 }
 
 export function EntryArtwork({ entry, size = 24, loadPreview }: { entry: DesktopEntry; size?: number; loadPreview?: (id: string) => Promise<EntryPreviewSource> }) {
-  if (entry.kind === "file" && fileCapabilities(entry).preview === "image" && loadPreview) return <ImageThumbnail entry={entry} size={size} loadPreview={loadPreview} />;
+  if (entry.kind === "file" && ["image", "video"].includes(fileCapabilities(entry).preview) && loadPreview) return <MediaThumbnail entry={entry} size={size} loadPreview={loadPreview} />;
   return <EntryIcon entry={entry} size={size} />;
 }
 

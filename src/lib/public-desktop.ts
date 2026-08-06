@@ -3,6 +3,7 @@ import { API_ROUTES } from "./api-routes";
 import { sha256Blob } from "./blob-transfer";
 import { isRecord, parseContentAccessDescriptor, parsePublicDesktopState, type RemoteDesktopState } from "./contracts";
 import { isValidPublicationAlias } from "./sharing";
+import { loadThumbnail, supportsThumbnailMime, THUMBNAIL_MAX_SOURCE_SIZE, THUMBNAIL_PROFILE } from "./thumbnails";
 
 export class LargeDownloadAuthRequiredError extends Error {
   constructor(readonly loginUrl: string) {
@@ -25,12 +26,29 @@ async function largeDownloadError(response: Response) {
   return new Error("This public link is no longer available.");
 }
 
-export async function fetchPublicDesktop(authority: PublicAuthority, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<RemoteDesktopState & { publishedRootId?: string }> {
+export type PublicDesktopState = RemoteDesktopState & { publishedRootId?: string; thumbnailProfile?: typeof THUMBNAIL_PROFILE };
+
+export async function fetchPublicDesktop(authority: PublicAuthority, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<PublicDesktopState> {
   const response = await fetchImpl(API_ROUTES.publicDesktop(authority.desktopAlias, authority.itemAlias), { cache: "no-store", credentials: "omit" });
   if (!response.ok) throw new Error(response.status === 404 ? "This public desktop link is unavailable." : `The public desktop could not be loaded (${response.status}).`);
   const value = await response.json() as unknown;
   const parsed = parsePublicDesktopState(value);
-  return isRecord(value) && typeof value.publishedRootId === "string" ? { ...parsed, publishedRootId: value.publishedRootId } : parsed;
+  if (!isRecord(value)) return parsed;
+  const capabilities = value.capabilities;
+  if (capabilities !== undefined && (!isRecord(capabilities) || capabilities.thumbnails !== undefined && capabilities.thumbnails !== THUMBNAIL_PROFILE)) throw new Error("The public desktop contains unsupported thumbnail capability metadata.");
+  return { ...parsed, ...(typeof value.publishedRootId === "string" ? { publishedRootId: value.publishedRootId } : {}), ...(isRecord(capabilities) && capabilities.thumbnails === THUMBNAIL_PROFILE ? { thumbnailProfile: THUMBNAIL_PROFILE } : {}) };
+}
+
+export function fetchPublicThumbnail(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
+  if (!supportsThumbnailMime(file.mimeType) || file.size > THUMBNAIL_MAX_SOURCE_SIZE || !Number.isSafeInteger(contentRevision) || contentRevision <= 0) throw new Error("Generated thumbnails are unavailable for this file.");
+  return loadThumbnail({
+    authority: `public/${authority.desktopAlias}/${authority.itemAlias ?? ""}`,
+    entryId: file.id,
+    contentRevision,
+    endpoint: API_ROUTES.publicDesktopThumbnail(authority.desktopAlias, authority.itemAlias, file.id, contentRevision, THUMBNAIL_PROFILE),
+    descriptorInit: { cache: "no-store", credentials: "omit" },
+    fetchImpl,
+  });
 }
 
 export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis), purpose?: "preview") {
