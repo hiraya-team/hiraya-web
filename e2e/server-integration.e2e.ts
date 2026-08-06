@@ -1,4 +1,5 @@
 import { expect, test, type Browser, type BrowserContext, type Page } from "@playwright/test";
+import { strToU8, zipSync } from "fflate";
 
 const email = process.env.HIRAYA_SERVER_E2E_EMAIL ?? "e2e-admin@example.test";
 const password = process.env.HIRAYA_SERVER_E2E_PASSWORD ?? "release-gate-e2e-password";
@@ -9,6 +10,55 @@ const mergeFile = "E2E merge conflict.txt";
 const mediaFile = "E2E direct preview.wav";
 const publicDesktopAlias = "e2e-public-desk";
 const publicItemAlias = "public-folder";
+const accountAppId = "dev.hiraya.release-e2e";
+const accountAppName = "Release E2E App";
+const accountAppPackageName = "release-e2e.hiraya.app";
+const accountAppStorageKey = "shared-value";
+const accountAppStorageValue = "written by session A";
+const accountAppMatcher = ".release-e2e";
+const accountAppFile = `handler${accountAppMatcher}`;
+
+function accountAppPackage() {
+  const manifest = { schemaVersion: 2, uiRuntime: 1, id: accountAppId, name: accountAppName, version: "1.0.0", entrypoint: "index.html", description: "Exercises account app synchronization.", permissions: ["files:read", "storage"], fileTypes: [accountAppMatcher] };
+  const html = `<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${accountAppName}</title></head><body><main><h1>${accountAppName}</h1><label>Shared value <input id="value" value="${accountAppStorageValue}"></label><button id="write" disabled>Write synchronized value</button><button id="refresh" disabled>Refresh synchronized value</button><output id="current" role="status">Connecting...</output></main><script type="module" src="./app.js"></script></body></html>`;
+  const script = `
+const appId = "${accountAppId}";
+const pending = new Map();
+let port;
+let sequence = 0;
+const current = document.querySelector("#current");
+const write = document.querySelector("#write");
+const refresh = document.querySelector("#refresh");
+function request(method, params = {}) {
+  const id = String(++sequence);
+  port.postMessage({ protocolVersion: 1, type: "request", id, method, params });
+  return new Promise((resolve, reject) => pending.set(id, { resolve, reject }));
+}
+async function readValue() {
+  const value = await request("storage.get", { key: "${accountAppStorageKey}" });
+  current.textContent = value === undefined ? "No synchronized value" : String(value);
+}
+addEventListener("message", (event) => {
+  if (event.source !== parent || event.data?.type !== "hiraya:init" || event.data.appId !== appId || event.ports.length !== 1) return;
+  port = event.ports[0];
+  port.addEventListener("message", (message) => {
+    if (message.data?.type !== "response") return;
+    const selected = pending.get(message.data.id);
+    if (!selected) return;
+    pending.delete(message.data.id);
+    if (message.data.ok) selected.resolve(message.data.result);
+    else selected.reject(new Error(message.data.error?.message ?? "Host request failed"));
+  });
+  port.start();
+  port.postMessage({ protocolVersion: 1, type: "hiraya:ready", appId, nonce: event.data.nonce });
+  void request("app.getLaunchContext").then(async () => { write.disabled = false; refresh.disabled = false; await readValue(); }).catch((error) => { current.textContent = error.message; });
+});
+write.addEventListener("click", async () => { write.disabled = true; try { const value = document.querySelector("#value").value; await request("storage.set", { key: "${accountAppStorageKey}", value }); current.textContent = value; } catch (error) { current.textContent = error.message; } finally { write.disabled = false; } });
+refresh.addEventListener("click", () => void readValue().catch((error) => { current.textContent = error.message; }));
+parent.postMessage({ protocolVersion: 1, type: "hiraya:connect", appId }, "*");
+`;
+  return Buffer.from(zipSync({ "hiraya.app.json": strToU8(JSON.stringify(manifest)), "index.html": strToU8(html), "app.js": strToU8(script) }));
+}
 
 function wavFile(byteLength = 2 * 1024 * 1024) {
   const dataLength = byteLength - 44;
@@ -56,6 +106,106 @@ async function createTextFile(page: Page, name: string) {
   await page.getByLabel("File name").fill(name);
   await page.getByRole("button", { name: "Create file" }).click();
   await expect(page.getByText(name, { exact: true })).toBeVisible();
+}
+
+async function openAppStore(page: Page) {
+  const existing = page.getByRole("dialog", { name: "App Store" });
+  if (await existing.isVisible()) return existing;
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  const menu = page.getByRole("dialog", { name: /Start; account, system, and applications/ });
+  await menu.locator("summary").filter({ hasText: "Applications" }).click();
+  await menu.getByRole("button", { name: "App Store" }).click();
+  await expect(existing).toBeVisible();
+  return existing;
+}
+
+async function accountInventory(page: Page) {
+  return page.evaluate(async () => {
+    const response = await fetch("/api/apps", { cache: "no-store", headers: { "X-Hiraya-Protocol": "entry-transactions-v2" } });
+    if (!response.ok) throw new Error(`Account inventory failed (${response.status}): ${await response.text()}`);
+    return response.json() as Promise<{ apps: Array<{ appId: string; package: { sha256: string }; data: Array<{ key: string }> }>; handlerHints: Record<string, string> }>;
+  });
+}
+
+async function setAccountHandler(page: Page) {
+  await page.evaluate(async ({ matcher, appId }) => {
+    const response = await fetch("/api/apps/handlers", { method: "PUT", cache: "no-store", headers: { "Content-Type": "application/json", "X-Hiraya-Protocol": "entry-transactions-v2", "X-Hiraya-Client-ID": "server-e2e-apps", "X-Hiraya-Operation-ID": crypto.randomUUID() }, body: JSON.stringify({ hints: { [matcher]: appId } }) });
+    if (!response.ok) throw new Error(`Handler update failed (${response.status}): ${await response.text()}`);
+  }, { matcher: accountAppMatcher, appId: accountAppId });
+}
+
+async function inspectProtectedLayout(page: Page) {
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
+  await settings.getByRole("checkbox", { name: /Show hidden files/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+  await page.locator(".file-icon").filter({ hasText: ".hiraya" }).dblclick();
+  await page.getByRole("dialog", { name: ".hiraya" }).getByRole("button", { name: "desktop, folder" }).dblclick();
+  await page.getByRole("dialog", { name: "desktop" }).getByRole("button", { name: "settings, folder" }).dblclick();
+  await page.getByRole("dialog", { name: "settings" }).getByRole("button", { name: "layout.json, application/json" }).dblclick();
+  const layout = page.getByRole("dialog", { name: "layout.json" });
+  await expect(layout.locator(".cm-content")).toContainText("gridSize");
+  await expect(layout.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
+  await expect(page.getByRole("button", { name: "Download file" })).toBeVisible();
+  await expect(layout.getByRole("button", { name: /Save/ })).toHaveCount(0);
+  await layout.getByRole("button", { name: "Close layout.json" }).click();
+  await page.getByRole("button", { name: "Close settings" }).click();
+}
+
+async function exerciseAccountApps(first: Page, second: Page) {
+  const chooser = first.waitForEvent("filechooser");
+  await first.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: accountAppPackageName, mimeType: "application/vnd.hiraya.app+zip", buffer: accountAppPackage() });
+  await expect(first.getByText(accountAppPackageName, { exact: true })).toBeVisible();
+  await first.locator(".file-icon").filter({ hasText: accountAppPackageName }).dblclick();
+  const confirmation = first.getByRole("alertdialog", { name: `Install ${accountAppName}?` });
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole("button", { name: "Install and run" }).click();
+  const firstApp = first.getByRole("dialog", { name: accountAppName });
+  await expect(firstApp).toBeVisible({ timeout: 30_000 });
+  const firstFrame = firstApp.frameLocator("iframe.sandbox-app-frame");
+  await expect(firstFrame.getByRole("button", { name: "Write synchronized value" })).toBeEnabled();
+  await firstFrame.getByRole("button", { name: "Write synchronized value" }).click();
+  await expect(firstFrame.getByRole("status")).toHaveText(accountAppStorageValue);
+  await first.getByRole("button", { name: `Close ${accountAppName}` }).click();
+
+  await createTextFile(first, accountAppFile);
+  await expect(second.getByText(accountAppFile, { exact: true })).toBeVisible({ timeout: 30_000 });
+  await setAccountHandler(first);
+  await expect.poll(async () => {
+    const inventory = await accountInventory(second);
+    const app = inventory.apps.find((candidate) => candidate.appId === accountAppId);
+    return { app: Boolean(app), data: app?.data.some((item) => item.key === accountAppStorageKey) ?? false, handler: inventory.handlerHints[accountAppMatcher] };
+  }, { timeout: 30_000 }).toEqual({ app: true, data: true, handler: accountAppId });
+  await second.reload();
+  await expect(second.locator(".desktop-shell")).toBeVisible();
+  const store = await openAppStore(second);
+  const accountRow = store.locator("article").filter({ hasText: accountAppName });
+  await expect(accountRow.getByRole("button", { name: "Review & approve" })).toBeVisible({ timeout: 30_000 });
+  await expect(accountRow.getByRole("button", { name: "Open" })).toHaveCount(0);
+  await second.getByRole("button", { name: "Close App Store" }).click();
+
+  await second.locator(".file-icon").filter({ hasText: accountAppFile }).dblclick();
+  await expect(second.getByRole("dialog", { name: `${accountAppFile} - Text Editor` })).toBeVisible();
+  await expect(second.getByRole("dialog", { name: accountAppName })).toHaveCount(0);
+  await second.getByRole("button", { name: `Close ${accountAppFile} - Text Editor` }).click();
+
+  const approvalStore = await openAppStore(second);
+  await approvalStore.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Review & approve" }).click();
+  const openApproved = approvalStore.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Open" });
+  await expect(openApproved).toBeVisible({ timeout: 30_000 });
+  await openApproved.click();
+  const secondApp = second.getByRole("dialog", { name: accountAppName });
+  await expect(secondApp).toBeVisible();
+  await expect(secondApp.frameLocator("iframe.sandbox-app-frame").getByRole("status")).toHaveText(accountAppStorageValue, { timeout: 30_000 });
+  await second.getByRole("button", { name: `Close ${accountAppName}` }).click();
+  await second.getByRole("button", { name: "Close App Store" }).click();
+
+  await second.locator(".file-icon").filter({ hasText: accountAppFile }).dblclick();
+  await expect(second.getByRole("dialog", { name: accountAppName })).toBeVisible({ timeout: 30_000 });
+  await second.getByRole("button", { name: `Close ${accountAppName}` }).click();
 }
 
 async function replaceEditorText(page: Page, text: string) {
@@ -108,6 +258,9 @@ async function primary(browser: Browser) {
   const secondContext = await browser.newContext();
   const first = await signIn(firstContext);
   const second = await signIn(secondContext);
+
+  await inspectProtectedLayout(first);
+  await exerciseAccountApps(first, second);
 
   await first.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await first.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
@@ -263,6 +416,25 @@ async function afterRestart(browser: Browser) {
   const page = await signIn(context);
   await expect(page.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible();
   await expect(page.getByRole("button", { name: `${offlineFolder}, folder` })).toBeVisible();
+
+  const inventory = await accountInventory(page);
+  const persistedApp = inventory.apps.find((app) => app.appId === accountAppId);
+  expect(persistedApp?.package.sha256).toMatch(/^[a-f0-9]{64}$/);
+  expect(persistedApp?.data.some((item) => item.key === accountAppStorageKey)).toBe(true);
+  expect(inventory.handlerHints[accountAppMatcher]).toBe(accountAppId);
+  const store = await openAppStore(page);
+  const appRow = store.locator("article").filter({ hasText: accountAppName });
+  await expect(appRow.getByRole("button", { name: "Review & approve" })).toBeVisible();
+  await appRow.getByRole("button", { name: "Review & approve" }).click();
+  const open = store.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Open" });
+  await expect(open).toBeVisible({ timeout: 30_000 });
+  await open.click();
+  const app = page.getByRole("dialog", { name: accountAppName });
+  await expect(app.frameLocator("iframe.sandbox-app-frame").getByRole("status")).toHaveText(accountAppStorageValue, { timeout: 30_000 });
+  await page.getByRole("button", { name: `Close ${accountAppName}` }).click();
+  await page.getByRole("button", { name: "Close App Store" }).click();
+  await page.locator(".file-icon").filter({ hasText: accountAppFile }).dblclick();
+  await expect(page.getByRole("dialog", { name: accountAppName })).toBeVisible({ timeout: 30_000 });
   await context.close();
 
   const anonymousContext = await browser.newContext();
@@ -275,7 +447,7 @@ async function afterRestart(browser: Browser) {
 }
 
 test("server-backed authentication, convergence, replay, conflict, and restart persistence", async ({ browser }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(240_000);
   if (process.env.HIRAYA_SERVER_E2E_PHASE === "restart") await afterRestart(browser);
   else await primary(browser);
 });

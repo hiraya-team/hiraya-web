@@ -3,6 +3,8 @@ import type { LocalPreferences } from "../../domain/preferences";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
 import { parseWindowSession, type WindowSession } from "../../lib/window-session";
 import { callDatabase, initializeDatabase } from "./database-client";
+import { parseAccountAppsSnapshot, type AccountAppsSnapshot } from "../../lib/account-apps";
+import { parseAccountAppOperation, type AccountAppDataRestoration, type AccountAppOperation } from "../../lib/account-app-outbox";
 
 export async function readPreferences(): Promise<LocalPreferences> {
   return callDatabase("readPreferences", undefined);
@@ -85,4 +87,39 @@ export async function removeAppStorage(appId: string, key: string) {
 export async function clearAppStorage(appId: string) {
   await initializeDatabase();
   return callDatabase("clearAppStorage", { appId }, null);
+}
+
+export async function readAccountApps() {
+  await initializeDatabase();
+  return callDatabase("readAccountApps", undefined, null);
+}
+
+export async function enqueueAccountAppOperation(operation: AccountAppOperation, localData?: { kind: "put"; appId: string; key: string; value: JsonValue } | { kind: "delete"; appId: string; key: string } | { kind: "clear"; appId: string }) {
+  await initializeDatabase();
+  return callDatabase("enqueueAccountAppOperation", { operation: parseAccountAppOperation(operation), ...(localData ? { localData } : {}) }, null);
+}
+
+export async function reconcileAccountApps(snapshot: AccountAppsSnapshot, acknowledgedOperationId?: string) {
+  await initializeDatabase();
+  return callDatabase("reconcileAccountApps", { snapshot: parseAccountAppsSnapshot(snapshot), ...(acknowledgedOperationId ? { acknowledgedOperationId } : {}) }, null);
+}
+
+export async function blockAccountAppOperation(operationId: string, error: string, errorCode: string) {
+  await initializeDatabase();
+  return callDatabase("blockAccountAppOperation", { operationId, error, errorCode }, null);
+}
+
+export async function retryAccountAppOperation(operationId: string) {
+  await initializeDatabase();
+  return callDatabase("retryAccountAppOperation", { operationId }, null);
+}
+
+export async function discardAccountAppOperation(operationId: string, restoration?: AccountAppDataRestoration) {
+  await initializeDatabase();
+  return callDatabase("discardAccountAppOperation", { operationId, ...(restoration ? { restoration } : {}) }, null);
+}
+
+export async function recordAccountAppAttempt(operationId: string) {
+  await initializeDatabase();
+  return callDatabase("recordAccountAppAttempt", { operationId, attemptedAt: Date.now() }, null);
 }

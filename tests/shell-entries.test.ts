@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isVirtualThumbnailEntry, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "../src/ui/shell-entries";
-import { isValidId } from "../src/lib/contracts";
+import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isProtectedShellEntry, isVirtualThumbnailEntry, protectedShellSource, protectedWindowDisposition, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "../src/ui/shell-entries";
+import type { SystemEntry, TrashItem } from "../src/lib/contracts";
+import { isValidId, systemEntryPath } from "../src/lib/contracts";
 import type { DesktopEntry } from "../src/types";
 
 const entries: DesktopEntry[] = [
@@ -59,5 +60,40 @@ describe("desktop shell entries", () => {
     expect(canMutateShellDrop("image-id", null)).toBeTrue();
     expect(canonicalSelectionIds(entries, [virtualFile, "image-id"])).toEqual(["image-id"]);
     expect(canonicalSelectionIds(entries, [virtualFile])).toEqual([]);
+  });
+
+  test("projects system metadata and complete Trash subtrees with collision-safe names", () => {
+    const system: SystemEntry[] = [
+      { kind: "file", id: "layout", name: "layout.json", systemRole: "layout", path: systemEntryPath("layout"), mimeType: "application/json", size: 2, revision: 2, contentRevision: 2, sha256: "a".repeat(64) },
+      { kind: "file", id: "editor", name: "editor-settings.json", systemRole: "editor-settings", path: systemEntryPath("editor-settings"), mimeType: "application/json", size: 2, revision: 2, contentRevision: 2, sha256: "b".repeat(64) },
+    ];
+    const trashedFolder = { kind: "folder" as const, id: "trash-root", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 4, position: { x: 0, y: 0 }, revision: 4, contentRevision: 0 };
+    const trashedFile = { kind: "file" as const, id: "trash-file", name: "plan.json", parentId: "trash-root", createdAt: 1, modifiedAt: 4, position: { x: 0, y: 0 }, mimeType: "application/json", size: 2, revision: 4, contentRevision: 4 };
+    const trash: TrashItem[] = [
+      { entry: trashedFolder, entries: [trashedFile, trashedFolder], deletedAt: 5, descendantCount: 1 },
+      { entry: { ...trashedFolder, id: "trash-root-2" }, entries: [{ ...trashedFolder, id: "trash-root-2" }], deletedAt: 4, descendantCount: 0 },
+    ];
+    const shown = shellEntries(entries, {}, true, false, system, trash);
+    const byName = (name: string) => shown.find((entry) => entry.name === name)!;
+    expect(byName("layout.json").parentId).toBe(byName("settings").id);
+    expect(byName("layout.json").modifiedAt).toBe(0);
+    expect(byName("editor.json").parentId).toBe(byName("settings").id);
+    expect(byName("Plans").parentId).toBe(byName("trash").id);
+    expect(byName("Plans (2)").parentId).toBe(byName("trash").id);
+    expect(byName("plan.json").parentId).toBe(byName("Plans").id);
+    expect(protectedShellSource(byName("layout.json"))).toEqual({ kind: "system", entryId: "layout" });
+    expect(protectedShellSource(byName("plan.json"))).toEqual({ kind: "trash", rootId: "trash-root", entryId: "trash-file" });
+    expect(isProtectedShellEntry(byName("plan.json"))).toBeTrue();
+    expect(canMutateShellDrop(byName("plan.json"), null)).toBeFalse();
+  });
+
+  test("keeps the protected root available while its contents are loading", () => {
+    expect(shellEntries([], {}, true, false, [], [], true).map((entry) => entry.name)).toEqual([".hiraya"]);
+  });
+
+  test("reloads changed protected windows and closes removed resources", () => {
+    expect(protectedWindowDisposition(2, 2)).toBe("keep");
+    expect(protectedWindowDisposition(2, 3)).toBe("reload");
+    expect(protectedWindowDisposition(2, null)).toBe("close");
   });
 });

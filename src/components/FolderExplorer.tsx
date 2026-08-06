@@ -42,6 +42,7 @@ export interface FolderExplorerProps {
   viewChangeDisabled?: boolean;
   loadPreview?: (id: string) => Promise<EntryPreviewSource>;
   isEntryReadOnly?: (entry: DesktopEntry) => boolean;
+  protectedStatus?: { message: string; error?: boolean; onRetry?: () => void };
 }
 
 type DragState = {
@@ -62,7 +63,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
@@ -311,6 +312,8 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
         </span>
       </div>
 
+      {protectedStatus && <div className={protectedStatus.error ? "window-error folder-explorer__status" : "folder-explorer__status"} role={protectedStatus.error ? "alert" : "status"} aria-live="polite"><span>{protectedStatus.message}</span>{protectedStatus.onRetry && <button className="button button--quiet" type="button" onClick={protectedStatus.onRetry}>Retry</button>}</div>}
+
       <div
         className="folder-explorer__content"
         data-entry-drop-parent={readOnly ? undefined : parentId ?? ""}
@@ -491,9 +494,9 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                   {entry.kind === "folder" ? "Folder" : entry.mimeType || "File"}
                   {offlineAvailability[entry.id] && <small data-offline-status={offlineAvailability[entry.id].status}>{offlineStatusLabel(offlineAvailability[entry.id])}</small>}
                 </span>
-                <time className="folder-explorer__date" dateTime={new Date(entry.modifiedAt).toISOString()}>
+                {!isEntryReadOnly(entry) && <time className="folder-explorer__date" dateTime={new Date(entry.modifiedAt).toISOString()}>
                   {dateFormatter.format(entry.modifiedAt)}
-                </time>
+                </time>}
                 <span className="folder-explorer__size">{formatEntrySize(entry)}</span>
               </button>
             ))}

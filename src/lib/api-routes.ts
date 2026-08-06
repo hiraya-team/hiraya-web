@@ -1,5 +1,7 @@
 const desktopBase = (desktopId: string) => `/api/desktops/${encodeURIComponent(desktopId)}`;
 const publicDesktopBase = (desktopAlias: string, itemAlias?: string) => `/api/public/desktops/${encodeURIComponent(desktopAlias)}${itemAlias ? `/${encodeURIComponent(itemAlias)}` : ""}`;
+const appBase = (appId: string) => `/api/apps/${encodeURIComponent(appId)}`;
+const appResourceBase = (kind: "installation" | "handlers" | "manifests", appId?: string) => `/api/apps/resources/${kind}${appId ? `/${encodeURIComponent(appId)}` : ""}`;
 
 export const HIRAYA_API_PROTOCOL = "entry-transactions-v2";
 
@@ -15,12 +17,15 @@ export const API_ROUTES = {
   desktopProjection: (desktopId: string) => `${desktopBase(desktopId)}?projection=web`,
   desktop: (desktopId: string) => desktopBase(desktopId),
   desktopTrash: (desktopId: string) => `${desktopBase(desktopId)}/trash`,
+  desktopSystemEntries: (desktopId: string) => `${desktopBase(desktopId)}/system/entries`,
+  desktopSystemEntry: (desktopId: string, entryId: string) => `${desktopBase(desktopId)}/system/entries/${encodeURIComponent(entryId)}`,
   desktopContent: (desktopId: string, id: string, revision?: number, purpose?: "preview") => {
     const params = new URLSearchParams();
     if (revision !== undefined) params.set("revision", String(revision));
     if (purpose) params.set("purpose", purpose);
     return `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/content${params.size ? `?${params}` : ""}`;
   },
+  desktopTrashContent: (desktopId: string, id: string, revision: number, trashRootId: string) => `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/content?${new URLSearchParams({ revision: String(revision), trashRootId })}`,
   desktopThumbnail: (desktopId: string, id: string, revision: number, profile: "thumbnail-v1") => `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/thumbnail?${new URLSearchParams({ revision: String(revision), profile })}`,
   desktopEntryTransactions: (desktopId: string) => `${desktopBase(desktopId)}/entries/transactions`,
   desktopEntryTransaction: (desktopId: string, transactionId: string) => `${desktopBase(desktopId)}/entries/transactions/${encodeURIComponent(transactionId)}`,
@@ -53,6 +58,16 @@ export const API_ROUTES = {
     if (query.desktopId) params.set("desktopId", query.desktopId);
     return `/api/activity?${params}`;
   },
+  apps: "/api/apps",
+  appHandlers: "/api/apps/handlers",
+  appPackages: "/api/apps/packages",
+  appPackage: (uploadId: string) => `/api/apps/packages/${encodeURIComponent(uploadId)}`,
+  appPackageCommit: (uploadId: string) => `/api/apps/packages/${encodeURIComponent(uploadId)}/commit`,
+  appPackageDownload: (appId: string) => `${appBase(appId)}/package`,
+  app: (appId: string) => appBase(appId),
+  appData: (appId: string, key?: string) => `${appBase(appId)}/data${key === undefined ? "" : `/${encodeURIComponent(key)}`}`,
+  appResource: (kind: "installation" | "handlers" | "manifests", appId?: string) => appResourceBase(kind, appId),
+  appResourceContent: (kind: "installation" | "handlers" | "manifests", appId?: string) => `${appResourceBase(kind, appId)}/content`,
 } as const;
 
 export const SERVER_ROUTES = {

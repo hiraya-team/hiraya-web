@@ -46,7 +46,8 @@ export type RemoteDesktopState = RemoteDesktopIdentity & {
 };
 
 export type TrashItem = {
-  entry: RemoteEntry;
+  entry: TrashEntry;
+  entries: TrashEntry[];
   deletedAt: number;
   descendantCount: number;
 };
@@ -61,9 +62,35 @@ export type TrashDocument = {
 
 export type TrashRestoreResult = { catalogRevision: number; entries: RemoteEntry[] };
 export type TrashDeleteResult = { catalogRevision: number; deletedIds: string[] };
+export type TrashEntry = RemoteEntry & { sha256?: string };
+
+export const SYSTEM_ROLES = ["layout", "editor-settings", "theme-selection", "theme-definition", "theme-package"] as const;
+export type SystemRole = typeof SYSTEM_ROLES[number];
+export type SystemEntry = {
+  kind: "file";
+  id: string;
+  name: string;
+  systemRole: SystemRole;
+  systemKey?: string;
+  path: string;
+  mimeType: string;
+  size: number;
+  revision: number;
+  contentRevision: number;
+  sha256: string;
+};
+export type SystemEntriesDocument = { schemaVersion: 2; catalogId: string; catalogRevision: number; desktopId: string; entries: SystemEntry[] };
 
 export type DirectBlobAccess = { url: string; method: "GET" | "PUT"; headers: Record<string, string>; expiresAt: number };
 export type ContentAccessDescriptor = { entryId: string; contentRevision: number; size: number; sha256: string; access: DirectBlobAccess };
+export type ContentAccessExpectations = {
+  desktopId?: string;
+  trashRootId?: string;
+  sha256?: string;
+  systemRole?: SystemRole;
+  systemKey?: string;
+  catalogId?: string;
+};
 
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const HEADER_NAME = /^[!#$%&'*+.^_`|~\w-]+$/;
@@ -109,13 +136,19 @@ export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT", exp
   return { url: parseDirectUrl(value.url, expectedOrigin), method, headers: parseDirectHeaders(value.headers), expiresAt };
 }
 
-export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number, expectedOrigin?: string): ContentAccessDescriptor {
+export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number, expectedOrigin?: string, expected: ContentAccessExpectations = {}): ContentAccessDescriptor {
   if (!isRecord(value) || value.entryId !== expectedEntryId) throw new Error("The content access response is for a different entry.");
+  if (expected.desktopId !== undefined && value.desktopId !== expected.desktopId) throw new Error("The content access response is for a different desktop.");
+  if (expected.trashRootId !== undefined && value.trashRootId !== expected.trashRootId) throw new Error("The content access response is for a different Trash root.");
+  if (expected.systemRole !== undefined && (value.systemRole !== expected.systemRole || (value.systemKey ?? "") !== (expected.systemKey ?? ""))) throw new Error("The content access response is for a different system resource.");
+  if (expected.catalogId !== undefined && (value.catalogId !== undefined || value.schemaVersion !== undefined)) parseAuthorityIdentity(value, "The content access response", expected.catalogId);
   const contentRevision = readRevision(value.contentRevision, "The content access response has an invalid revision.");
   const size = readNonNegativeInteger(value.size, "The content access response has an invalid size.");
   if (contentRevision !== expectedRevision) throw new Error("The content access response is for a different revision.");
   if (size !== expectedSize) throw new Error("The content access response has an unexpected size.");
-  return { entryId: expectedEntryId, contentRevision, size, sha256: parseSha256(value.sha256), access: parseDirectBlobAccess(value.access, "GET", expectedOrigin) };
+  const sha256 = parseSha256(value.sha256);
+  if (expected.sha256 !== undefined && sha256 !== expected.sha256) throw new Error("The content access response has an unexpected SHA-256 digest.");
+  return { entryId: expectedEntryId, contentRevision, size, sha256, access: parseDirectBlobAccess(value.access, "GET", expectedOrigin) };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -401,12 +434,18 @@ export function parseEntries(value: unknown, remote = false): ParsedEntry[] {
   return entries;
 }
 
-export function parseTrashDocument(value: unknown, expectedDesktopId?: string): TrashDocument {
-  if (!isRecord(value)) throw new Error("The server Trash response has an unsupported format.");
-  if (readRevision(value.schemaVersion, "The server Trash response has an unsupported schema version.") !== 2) {
-    throw new Error("The server Trash response uses an unsupported schema version.");
+function parseTrashEntry(value: unknown): TrashEntry {
+  const entry = parseRemoteEntry(value) as TrashEntry;
+  if (isRecord(value) && value.sha256 !== undefined) {
+    if (entry.kind !== "file") throw new Error("A Trash folder contains a content digest.");
+    entry.sha256 = parseSha256(value.sha256);
   }
-  assertValidId(value.catalogId, "The server Trash response has an invalid catalog identity.");
+  return entry;
+}
+
+export function parseTrashDocument(value: unknown, expectedDesktopId?: string, expectedCatalogId?: string | null): TrashDocument {
+  if (!isRecord(value)) throw new Error("The server Trash response has an unsupported format.");
+  const authority = parseAuthorityIdentity(value, "The server Trash response", expectedCatalogId);
   assertValidId(value.desktopId, "The server Trash response has an invalid desktop identity.");
   if (expectedDesktopId !== undefined && value.desktopId !== expectedDesktopId) throw new Error("The server Trash response is for a different desktop.");
   if (!Array.isArray(value.items)) throw new Error("The server Trash response has invalid items.");
@@ -414,14 +453,25 @@ export function parseTrashDocument(value: unknown, expectedDesktopId?: string): 
   const ids = new Set<string>();
   const items = value.items.map((candidate): TrashItem => {
     if (!isRecord(candidate)) throw new Error("A Trash item has an unsupported format.");
-    const entry = parseRemoteEntry(candidate.entry);
-    if (ids.has(entry.id)) throw new Error("The server Trash response contains duplicate entry IDs.");
-    if (entry.revision > catalogRevision || entry.contentRevision > catalogRevision) throw new Error("A Trash item has a revision newer than its catalog.");
-    ids.add(entry.id);
+    const entry = parseTrashEntry(candidate.entry);
+    if (!Array.isArray(candidate.entries) || candidate.entries.length === 0) throw new Error("A Trash item is missing its entry subtree.");
+    const entries = candidate.entries.map(parseTrashEntry);
+    const root = entries.find((item) => item.id === entry.id);
+    if (!root || JSON.stringify(root) !== JSON.stringify(entry)) throw new Error("A Trash item subtree does not match its root entry.");
+    if (entry.parentId !== null && entries.some((item) => item.id === entry.parentId)) throw new Error("A Trash root parent must be outside its subtree.");
+    const descendantCount = readNonNegativeInteger(candidate.descendantCount, "A Trash item has an invalid descendant count.");
+    if (descendantCount !== entries.length - 1) throw new Error("A Trash item has an inconsistent descendant count.");
+    parseEntries(entries.map((item) => item.id === entry.id ? { ...item, parentId: null } : item), true);
+    for (const item of entries) {
+      if (ids.has(item.id)) throw new Error("The server Trash response contains duplicate entry IDs.");
+      if (item.revision > catalogRevision || item.contentRevision > catalogRevision) throw new Error("A Trash item has a revision newer than its catalog.");
+      ids.add(item.id);
+    }
     return {
       entry,
+      entries,
       deletedAt: readNonNegativeInteger(candidate.deletedAt, "A Trash item has an invalid deletion date."),
-      descendantCount: readNonNegativeInteger(candidate.descendantCount, "A Trash item has an invalid descendant count."),
+      descendantCount,
     };
   });
   for (let index = 1; index < items.length; index += 1) {
@@ -433,11 +483,80 @@ export function parseTrashDocument(value: unknown, expectedDesktopId?: string): 
   }
   return {
     schemaVersion: 2,
-    catalogId: value.catalogId,
+    catalogId: authority.catalogId,
     catalogRevision,
     desktopId: value.desktopId,
     items,
   };
+}
+
+export function systemEntryPath(role: SystemRole, key?: string) {
+  if (role === "layout") return ".hiraya/desktop/settings/layout.json";
+  if (role === "editor-settings") return ".hiraya/desktop/settings/editor.json";
+  if (role === "theme-selection") return ".hiraya/desktop/appearance/applied-theme.json";
+  if (!key) throw new Error("A keyed system entry is missing its key.");
+  return role === "theme-definition" ? `.hiraya/desktop/appearance/themes/${key}.theme.json` : `.hiraya/desktop/appearance/packages/${key}.hiraya.app`;
+}
+
+export function parseSystemEntry(value: unknown): SystemEntry {
+  if (!isRecord(value) || value.kind !== "file") throw new Error("A system entry has an unsupported format.");
+  assertValidId(value.id, "A system entry has an invalid ID.");
+  assertCanonicalEntryName(value.name);
+  if (!SYSTEM_ROLES.includes(value.systemRole as SystemRole)) throw new Error("A system entry has an invalid role.");
+  const role = value.systemRole as SystemRole;
+  const keyed = role === "theme-definition" || role === "theme-package";
+  if (keyed ? !isValidId(value.systemKey) : value.systemKey !== undefined) throw new Error("A system entry has an invalid key.");
+  const key = keyed ? value.systemKey as string : undefined;
+  const expectedName = role === "theme-definition" ? `${key}.theme.json` : role === "theme-package" ? `${key}.hiraya.app` : `${role}.json`;
+  const expectedMimeType = role === "theme-package" ? "application/vnd.hiraya.theme+zip" : "application/json";
+  const path = systemEntryPath(role, key);
+  if (value.name !== expectedName) throw new Error("A system entry has an invalid name for its role.");
+  if (value.mimeType !== expectedMimeType) throw new Error("A system entry has an invalid MIME type for its role.");
+  if (value.path !== undefined && value.path !== path) throw new Error("A system entry has an invalid metadata path for its role.");
+  const size = readNonNegativeInteger(value.size, "A system entry has an invalid size.");
+  if (size === 0) throw new Error("A system entry cannot be empty.");
+  const revision = readRevision(value.revision, "A system entry has an invalid revision.");
+  const contentRevision = readRevision(value.contentRevision, "A system entry has an invalid content revision.");
+  if (role !== "theme-package" && contentRevision !== revision) throw new Error("A system JSON entry has inconsistent revisions.");
+  return {
+    kind: "file",
+    id: value.id,
+    name: value.name,
+    systemRole: role,
+    ...(key ? { systemKey: key } : {}),
+    path,
+    mimeType: expectedMimeType,
+    size,
+    revision,
+    contentRevision,
+    sha256: parseSha256(value.sha256),
+  };
+}
+
+export function parseSystemEntriesDocument(value: unknown, expectedDesktopId?: string, expectedCatalogId?: string | null): SystemEntriesDocument {
+  if (!isRecord(value) || !Array.isArray(value.entries)) throw new Error("The server system entries response has an unsupported format.");
+  const authority = parseAuthorityIdentity(value, "The server system entries response", expectedCatalogId);
+  assertValidId(value.desktopId, "The server system entries response has an invalid desktop identity.");
+  if (expectedDesktopId !== undefined && value.desktopId !== expectedDesktopId) throw new Error("The server system entries response is for a different desktop.");
+  const catalogRevision = readRevision(value.catalogRevision);
+  const entries = value.entries.map(parseSystemEntry);
+  if (new Set(entries.map((entry) => entry.id)).size !== entries.length) throw new Error("The server system entries response contains duplicate entry IDs.");
+  const roleKeys = entries.map((entry) => `${entry.systemRole}\0${entry.systemKey ?? ""}`);
+  if (new Set(roleKeys).size !== roleKeys.length) throw new Error("The server system entries response contains duplicate role keys.");
+  for (const role of ["layout", "editor-settings", "theme-selection"] as const) if (entries.filter((entry) => entry.systemRole === role).length !== 1) throw new Error(`The server system entries response must contain exactly one ${role} entry.`);
+  const definitions = new Set(entries.filter((entry) => entry.systemRole === "theme-definition").map((entry) => entry.systemKey));
+  if (entries.some((entry) => entry.systemRole === "theme-package" && !definitions.has(entry.systemKey))) throw new Error("A system theme package is missing its theme definition.");
+  if (entries.some((entry) => entry.revision > catalogRevision || entry.contentRevision > catalogRevision)) throw new Error("A system entry has a revision newer than its catalog.");
+  return { schemaVersion: 2, catalogId: authority.catalogId, catalogRevision, desktopId: value.desktopId, entries };
+}
+
+export function parseSystemEntryDocument(value: unknown, expectedDesktopId: string, expectedEntryId: string, expectedCatalogId?: string | null) {
+  if (!isRecord(value) || value.schemaVersion !== 2 || value.desktopId !== expectedDesktopId || !isRecord(value.entry)) throw new Error("The server system entry response has an unsupported identity.");
+  parseAuthorityIdentity(value, "The server system entry response", expectedCatalogId);
+  const entry = parseSystemEntry(value.entry);
+  if (entry.id !== expectedEntryId) throw new Error("The server system entry response is for a different entry.");
+  if (entry.revision > readRevision(value.catalogRevision) || entry.contentRevision > readRevision(value.catalogRevision)) throw new Error("A system entry has a revision newer than its catalog.");
+  return entry;
 }
 
 export function parseTrashRestoreResult(value: unknown, rootEntryId: string, destination?: "original" | "root"): TrashRestoreResult {

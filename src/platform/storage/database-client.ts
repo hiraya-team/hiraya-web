@@ -6,6 +6,8 @@ import type { DesktopIdentity } from "../../types";
 import { activityRecord, parseActivityPage, parseActivityQuery, type ActivityPage, type ActivityQuery, type NewActivityRecord, type ValidActivityRecord } from "../../lib/activity";
 import { parseDesktopIdentity } from "../../lib/contracts";
 import { parseDesktopState } from "../../lib/desktop-state";
+import { parseAccountAppsSnapshot, type AccountAppsSnapshot } from "../../lib/account-apps";
+import { parseAccountAppOperation, parseAccountAppOutboxRecord, projectAccountApps, rebaseAccountAppOperation, type AccountAppDataRestoration, type AccountAppOperation, type AccountAppOutboxRecord, type PersistedAccountApps } from "../../lib/account-app-outbox";
 import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord, type RevisionConflictDetails } from "../../lib/outbox";
 import { EMPTY_WINDOW_SESSION, parseWindowSession, type WindowSession } from "../../lib/window-session";
 import { getActiveDesktopContext, getRoot, indexedDatabaseName } from "./namespace";
@@ -54,6 +56,13 @@ type StorageDbRequests = {
   writeAppStorage: { appId: string; key: string; value: JsonValue; maxBytes: number; maxEntries: number };
   removeAppStorage: { appId: string; key: string };
   clearAppStorage: { appId: string };
+  readAccountApps: undefined;
+  enqueueAccountAppOperation: { operation: AccountAppOperation; localData?: { kind: "put"; appId: string; key: string; value: JsonValue } | { kind: "delete"; appId: string; key: string } | { kind: "clear"; appId: string } };
+  reconcileAccountApps: { snapshot: AccountAppsSnapshot; acknowledgedOperationId?: string };
+  blockAccountAppOperation: { operationId: string; error: string; errorCode: string };
+  retryAccountAppOperation: { operationId: string };
+  discardAccountAppOperation: { operationId: string; restoration?: AccountAppDataRestoration };
+  recordAccountAppAttempt: { operationId: string; attemptedAt: number };
 };
 
 type StorageDbResponses = {
@@ -100,14 +109,22 @@ type StorageDbResponses = {
   writeAppStorage: undefined;
   removeAppStorage: undefined;
   clearAppStorage: undefined;
+  readAccountApps: { state: PersistedAccountApps; outbox: AccountAppOutboxRecord[] };
+  enqueueAccountAppOperation: { state: PersistedAccountApps; record: AccountAppOutboxRecord };
+  reconcileAccountApps: PersistedAccountApps;
+  blockAccountAppOperation: undefined;
+  retryAccountAppOperation: AccountAppOutboxRecord;
+  discardAccountAppOperation: undefined;
+  recordAccountAppAttempt: undefined;
 };
 
 type StorageDbMethod = keyof StorageDbRequests;
 type DesktopRecord = { id: string; ordinal: number; identity: DesktopIdentity; state: PersistedDesktopState };
 type ClientState = { id: "singleton"; clientId: string; nextSequence: number };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
+type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
 
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
 const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false };
 const STORES = {
@@ -121,7 +138,11 @@ const STORES = {
   quarantinedApps: "quarantined-apps",
   appStorage: "app-storage",
   fileAssociations: "file-associations",
+  accountApps: "account-apps",
+  accountAppOutbox: "account-app-outbox",
+  accountAppClientState: "account-app-client-state",
 } as const;
+export const ACCOUNT_APP_ATOMIC_STORES = [STORES.accountApps, STORES.accountAppOutbox, STORES.accountAppClientState, STORES.appStorage] as const;
 
 let database: Promise<IDBDatabase> | null = null;
 
@@ -159,23 +180,31 @@ function openDatabase() {
   database = new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open(indexedDatabaseName(), DATABASE_VERSION);
     let settled = false;
-    open.onupgradeneeded = () => {
+    open.onupgradeneeded = (event) => {
       const db = open.result;
-      const desktops = db.createObjectStore(STORES.desktops, { keyPath: "id" });
-      desktops.createIndex("ordinal", "ordinal", { unique: true });
-      const outbox = db.createObjectStore(STORES.outbox, { keyPath: "sequence" });
-      outbox.createIndex("operationId", "operationId", { unique: true });
-      outbox.createIndex("desktopId", "desktopId");
-      db.createObjectStore(STORES.clientState, { keyPath: "id" });
-      db.createObjectStore(STORES.preferences);
-      db.createObjectStore(STORES.sessions);
-      db.createObjectStore(STORES.activity, { keyPath: "catalogRevision", autoIncrement: true });
-      db.createObjectStore(STORES.installedApps, { keyPath: "appId" });
-      db.createObjectStore(STORES.quarantinedApps, { keyPath: "appId" });
-      const appStorage = db.createObjectStore(STORES.appStorage, { keyPath: ["appId", "key"] });
-      appStorage.createIndex("appId", "appId");
-      const associations = db.createObjectStore(STORES.fileAssociations, { keyPath: "matcher" });
-      associations.createIndex("appId", "appId");
+      if (event.oldVersion < 1) {
+        const desktops = db.createObjectStore(STORES.desktops, { keyPath: "id" });
+        desktops.createIndex("ordinal", "ordinal", { unique: true });
+        const outbox = db.createObjectStore(STORES.outbox, { keyPath: "sequence" });
+        outbox.createIndex("operationId", "operationId", { unique: true });
+        outbox.createIndex("desktopId", "desktopId");
+        db.createObjectStore(STORES.clientState, { keyPath: "id" });
+        db.createObjectStore(STORES.preferences);
+        db.createObjectStore(STORES.sessions);
+        db.createObjectStore(STORES.activity, { keyPath: "catalogRevision", autoIncrement: true });
+        db.createObjectStore(STORES.installedApps, { keyPath: "appId" });
+        db.createObjectStore(STORES.quarantinedApps, { keyPath: "appId" });
+        const appStorage = db.createObjectStore(STORES.appStorage, { keyPath: ["appId", "key"] });
+        appStorage.createIndex("appId", "appId");
+        const associations = db.createObjectStore(STORES.fileAssociations, { keyPath: "matcher" });
+        associations.createIndex("appId", "appId");
+      }
+      if (event.oldVersion < 2) {
+        db.createObjectStore(STORES.accountApps, { keyPath: "id" });
+        const outbox = db.createObjectStore(STORES.accountAppOutbox, { keyPath: "sequence" });
+        outbox.createIndex("operationId", "operationId", { unique: true });
+        db.createObjectStore(STORES.accountAppClientState, { keyPath: "id" });
+      }
     };
     open.onsuccess = () => {
       if (settled) { open.result.close(); return; }
@@ -267,6 +296,64 @@ async function reserveOperation(store: IDBObjectStore) {
   const sequence = state.nextSequence;
   await request(store.put({ ...state, nextSequence: sequence + 1 }));
   return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
+}
+
+async function readAccountAppOutbox(store: IDBObjectStore) {
+  return (await request(store.getAll()) as AccountAppOutboxRecord[]).map(parseAccountAppOutboxRecord).sort((left, right) => left.sequence - right.sequence);
+}
+
+async function accountAppState(store: IDBObjectStore, outbox: readonly AccountAppOutboxRecord[]): Promise<PersistedAccountApps> {
+  const stored = await request(store.get("singleton")) as PersistedAccountApps | undefined;
+  const baseline = stored?.baseline == null ? null : parseAccountAppsSnapshot(stored.baseline);
+  const projection = projectAccountApps(baseline, outbox);
+  if (stored && JSON.stringify(stored.projection) !== JSON.stringify(projection)) throw new Error("The account app projection does not match its baseline and outbox.");
+  return { id: "singleton", baseline, projection };
+}
+
+async function reserveAccountAppOperation(store: IDBObjectStore) {
+  let state = await request(store.get("singleton")) as AccountAppClientState | undefined;
+  if (!state) state = { id: "singleton", clientId: crypto.randomUUID(), nextSequence: 1 };
+  if (state.id !== "singleton" || !state.clientId || !Number.isSafeInteger(state.nextSequence) || state.nextSequence < 1) throw new Error("The account app operation identity is invalid.");
+  const sequence = state.nextSequence;
+  await request(store.put({ ...state, nextSequence: sequence + 1 }));
+  return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
+}
+
+async function writeLocalAccountAppData(transaction: IDBTransaction, action: NonNullable<StorageDbRequests["enqueueAccountAppOperation"]["localData"]>) {
+  const store = transaction.objectStore(STORES.appStorage);
+  if (action.kind === "delete") return request(store.delete([action.appId, action.key])).then(() => undefined);
+  if (action.kind === "clear") {
+    for (const record of await request(store.index("appId").getAll(action.appId)) as AppStorageRecord[]) await request(store.delete([record.appId, record.key]));
+    return;
+  }
+  const value = parseJsonValue(action.value);
+  const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength;
+  const records = await request(store.index("appId").getAll(action.appId)) as AppStorageRecord[];
+  const existing = records.find((record) => record.key === action.key);
+  if (!existing && records.length >= 128) throw new Error("App storage entry quota exceeded.");
+  if (records.reduce((sum, record) => sum + record.bytes, 0) - (existing?.bytes ?? 0) + bytes > 64 * 1024) throw new Error("App storage quota exceeded.");
+  await request(store.put({ appId: action.appId, key: action.key, value, bytes } satisfies AppStorageRecord));
+}
+
+async function restoreLocalAccountAppData(transaction: IDBTransaction, operation: AccountAppOperation, restoration?: AccountAppDataRestoration) {
+  if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") {
+    if (restoration) throw new Error("That account app change does not restore local data.");
+    return;
+  }
+  if (!restoration || restoration.appId !== operation.appId) throw new Error("Local app data must be restored before discarding this change.");
+  if (restoration.kind !== "replace" && operation.kind !== "clear-data") {
+    if (restoration.key !== operation.key) throw new Error("The local app data restoration does not match the discarded change.");
+    await writeLocalAccountAppData(transaction, restoration);
+    return;
+  }
+  if (restoration.kind !== "replace") throw new Error("The local app data restoration does not match the discarded clear.");
+  if (restoration.values.length > 128 || new Set(restoration.values.map(([key]) => key)).size !== restoration.values.length) throw new Error("The local app data restoration is invalid.");
+  const values = restoration.values.map(([key, value]) => ({ key, value: parseJsonValue(value) }));
+  const total = values.reduce((sum, item) => sum + new TextEncoder().encode(JSON.stringify(item.value)).byteLength, 0);
+  if (total > 64 * 1024) throw new Error("App storage quota exceeded.");
+  const store = transaction.objectStore(STORES.appStorage);
+  for (const record of await request(store.index("appId").getAll(operation.appId)) as AppStorageRecord[]) await request(store.delete([record.appId, record.key]));
+  for (const item of values) await request(store.put({ appId: operation.appId, key: item.key, value: item.value, bytes: new TextEncoder().encode(JSON.stringify(item.value)).byteLength } satisfies AppStorageRecord));
 }
 
 function parsePreferences(value: unknown): LocalPreferences {
@@ -486,6 +573,91 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     case "clearAppStorage": {
       const appId = (params as StorageDbRequests["clearAppStorage"]).appId;
       return transact(STORES.appStorage, "readwrite", async (tx) => { const store = tx.objectStore(STORES.appStorage); for (const record of await request(store.index("appId").getAll(appId)) as AppStorageRecord[]) await request(store.delete([record.appId, record.key])); }) as Promise<StorageDbResponses[M]>;
+    }
+    case "readAccountApps": return transact([STORES.accountApps, STORES.accountAppOutbox], "readonly", async (tx) => {
+      const outbox = await readAccountAppOutbox(tx.objectStore(STORES.accountAppOutbox));
+      return { state: await accountAppState(tx.objectStore(STORES.accountApps), outbox), outbox };
+    }) as Promise<StorageDbResponses[M]>;
+    case "enqueueAccountAppOperation": {
+      const input = params as StorageDbRequests["enqueueAccountAppOperation"];
+      return transact([...ACCOUNT_APP_ATOMIC_STORES], "readwrite", async (tx) => {
+        const operation = parseAccountAppOperation(input.operation);
+        const outboxStore = tx.objectStore(STORES.accountAppOutbox);
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const current = await accountAppState(tx.objectStore(STORES.accountApps), outbox);
+        const reserved = await reserveAccountAppOperation(tx.objectStore(STORES.accountAppClientState));
+        const record = parseAccountAppOutboxRecord({ ...reserved, operation, status: "pending", error: null, errorCode: null, attemptCount: 0, lastAttemptAt: null });
+        if (input.localData) await writeLocalAccountAppData(tx, input.localData);
+        await request(outboxStore.add(record));
+        const state = { id: "singleton" as const, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
+        await request(tx.objectStore(STORES.accountApps).put(state));
+        return { state, record };
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "reconcileAccountApps": {
+      const input = params as StorageDbRequests["reconcileAccountApps"];
+      return transact([STORES.accountApps, STORES.accountAppOutbox], "readwrite", async (tx) => {
+        const snapshot = parseAccountAppsSnapshot(input.snapshot);
+        const outboxStore = tx.objectStore(STORES.accountAppOutbox);
+        if (input.acknowledgedOperationId) {
+          const selected = await request(outboxStore.index("operationId").get(input.acknowledgedOperationId)) as AccountAppOutboxRecord | undefined;
+          if (selected) await request(outboxStore.delete(selected.sequence));
+        }
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const state = { id: "singleton" as const, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
+        await request(tx.objectStore(STORES.accountApps).put(state));
+        return state;
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "blockAccountAppOperation": {
+      const input = params as StorageDbRequests["blockAccountAppOperation"];
+      return transact([STORES.accountApps, STORES.accountAppOutbox], "readwrite", async (tx) => {
+        const store = tx.objectStore(STORES.accountAppOutbox);
+        const record = await request(store.index("operationId").get(input.operationId)) as AccountAppOutboxRecord | undefined;
+        if (!record) return;
+        await request(store.put({ ...parseAccountAppOutboxRecord(record), status: "blocked", error: input.error, errorCode: input.errorCode }));
+        const outbox = await readAccountAppOutbox(store);
+        const current = await accountAppState(tx.objectStore(STORES.accountApps), outbox.map((candidate) => candidate.operationId === input.operationId ? { ...candidate, status: "pending" as const } : candidate));
+        await request(tx.objectStore(STORES.accountApps).put({ id: "singleton", baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "retryAccountAppOperation": {
+      const input = params as StorageDbRequests["retryAccountAppOperation"];
+      return transact([STORES.accountApps, STORES.accountAppOutbox], "readwrite", async (tx) => {
+        const outboxStore = tx.objectStore(STORES.accountAppOutbox);
+        const selected = await request(outboxStore.index("operationId").get(input.operationId)) as AccountAppOutboxRecord | undefined;
+        if (!selected || selected.status !== "blocked") throw new Error("That blocked account app change no longer exists.");
+        const accountStore = tx.objectStore(STORES.accountApps);
+        const stored = await accountAppState(accountStore, await readAccountAppOutbox(outboxStore));
+        if (!stored.baseline) throw new Error("Refresh account apps before retrying this change.");
+        const changed = parseAccountAppOutboxRecord({ ...selected, operation: rebaseAccountAppOperation(selected.operation, stored.baseline), status: "pending", error: null, errorCode: null });
+        await request(outboxStore.put(changed));
+        const outbox = await readAccountAppOutbox(outboxStore);
+        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        return changed;
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "discardAccountAppOperation": {
+      const input = params as StorageDbRequests["discardAccountAppOperation"];
+      return transact([STORES.accountApps, STORES.accountAppOutbox, STORES.appStorage], "readwrite", async (tx) => {
+        const outboxStore = tx.objectStore(STORES.accountAppOutbox);
+        const selected = await request(outboxStore.index("operationId").get(input.operationId)) as AccountAppOutboxRecord | undefined;
+        if (!selected || selected.status !== "blocked") throw new Error("That blocked account app change no longer exists.");
+        await restoreLocalAccountAppData(tx, selected.operation, input.restoration);
+        await request(outboxStore.delete(selected.sequence));
+        const accountStore = tx.objectStore(STORES.accountApps);
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const stored = await accountAppState(accountStore, [...outbox, selected]);
+        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "recordAccountAppAttempt": {
+      const input = params as StorageDbRequests["recordAccountAppAttempt"];
+      return transact(STORES.accountAppOutbox, "readwrite", async (tx) => {
+        const store = tx.objectStore(STORES.accountAppOutbox);
+        const record = await request(store.index("operationId").get(input.operationId)) as AccountAppOutboxRecord | undefined;
+        if (record) await request(store.put({ ...parseAccountAppOutboxRecord(record), attemptCount: record.attemptCount + 1, lastAttemptAt: input.attemptedAt }));
+      }) as Promise<StorageDbResponses[M]>;
     }
   }
 }
