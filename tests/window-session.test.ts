@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createWindowSession, parseWindowSession, parseWindowTargets, restoreWindowSession } from "../src/lib/window-session";
+import { windowsForHiddenFilePreference } from "../src/features/windows/model";
 import type { DesktopEntry } from "../src/types";
 
 describe("window and browser sessions", () => {
@@ -10,6 +11,28 @@ describe("window and browser sessions", () => {
       { kind: "sandbox", packageId: "dev.hiraya.test", bounds, minimized: false, zIndex: 2 },
       { kind: "merge", operationId: "operation-id", bounds, minimized: false, zIndex: 3 },
     ])).toEqual({ schemaVersion: 1, apps: [{ kind: "settings", bounds, minimized: false, zIndex: 1 }] });
+  });
+  test("never persists transient virtual folders or files", () => {
+    const bounds = { x: 0, y: 0, width: 500, height: 400 };
+    expect(createWindowSession([
+      { kind: "explorer", folderId: "virtual:thumbnail/.hiraya", transient: true, bounds, minimized: false, zIndex: 1 },
+      { kind: "file", fileId: "virtual:thumbnail/file/source/1", transient: true, bounds, minimized: false, zIndex: 2 },
+    ])).toEqual({ schemaVersion: 1, apps: [] });
+  });
+  test("closes all transient shell windows when hidden files are disabled", () => {
+    const bounds = { x: 0, y: 0, width: 500, height: 400 };
+    const apps = [
+      { id: "settings", kind: "settings" as const, bounds, minimized: false, zIndex: 1 },
+      { id: "virtual-folder", kind: "explorer" as const, folderId: "virtual:thumbnail/.hiraya", transient: true, bounds, minimized: false, zIndex: 2 },
+      { id: "virtual-file", kind: "file" as const, fileId: "virtual:thumbnail/file/source/1", transient: true, editMode: false, contentRevision: 1, remoteChanged: false, bounds, minimized: false, zIndex: 3 },
+    ];
+    expect(windowsForHiddenFilePreference(apps, true)).toHaveLength(3);
+    expect(windowsForHiddenFilePreference(apps, false).map((app) => app.id)).toEqual(["settings"]);
+  });
+  test("bypasses canonical entry dependency reconciliation for transient shell windows", async () => {
+    const source = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    expect(source.match(/if \(app\.transient\) return true;/g)).toHaveLength(1);
+    expect(source.match(/if \(app\.transient\) return \[app\];/g)).toHaveLength(1);
   });
   test("requires window session schema version 1", () => {
     const value = { schemaVersion: 1, apps: [{ kind: "settings", bounds: { x: 0, y: 0, width: 500, height: 400 }, minimized: false, zIndex: 1 }] };

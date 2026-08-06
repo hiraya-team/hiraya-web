@@ -744,6 +744,44 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await mobileContext.close();
 });
 
+test("Show hidden files persists in the account IndexedDB preferences", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  let settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
+  const toggle = settings.getByRole("checkbox", { name: /Show hidden files/ });
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
+  await expect(toggle).toBeChecked();
+  await expect.poll(() => page.evaluate(async () => {
+    const databaseName = (await indexedDB.databases()).find((database) => database.name?.startsWith("hiraya-indexeddb-v1-"))?.name;
+    if (!databaseName) return false;
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const request = indexedDB.open(databaseName);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    const value = await new Promise<{ showHiddenFiles?: boolean } | undefined>((resolve, reject) => {
+      const request = db.transaction("preferences").objectStore("preferences").get("singleton");
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return value?.showHiddenFiles === true;
+  })).toBe(true);
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
+  await expect(settings.getByRole("checkbox", { name: /Show hidden files/ })).toBeChecked();
+});
+
 test("reduced motion disables desktop transitions and animations", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openLocalDesktop(page);

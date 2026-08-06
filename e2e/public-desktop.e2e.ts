@@ -50,6 +50,20 @@ test("public desktop reflows without page overflow at 390px", async ({ page }) =
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 });
 
+test("public desktop hides descendants of dot-prefixed folders", async ({ page }) => {
+  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+    ...publicDesktop,
+    entries: [
+      { kind: "folder", id: "hidden", name: ".private", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 10 }, revision: 1, contentRevision: 0 },
+      { kind: "file", id: "hidden-child", name: "leak.txt", parentId: "hidden", createdAt: 1, modifiedAt: 1, position: { x: 20, y: 20 }, mimeType: "text/plain", size: 4, revision: 1, contentRevision: 1 },
+      { ...publicDesktop.entries[0], id: "visible", name: "visible.txt" },
+    ],
+  } }));
+  await page.goto("/published/e2e-desk");
+  await expect(page.getByRole("button", { name: "visible.txt, text/plain" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "leak.txt, text/plain" })).toHaveCount(0);
+});
+
 test("public desktop preserves positions and navigates to a non-Home area", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await mockPublicDesktop(page);

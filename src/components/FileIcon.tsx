@@ -34,6 +34,7 @@ type Props = {
   allowBrowserPinchZoom?: boolean;
   interactive?: boolean;
   loadPreview?: (id: string) => Promise<EntryPreviewSource>;
+  readOnly?: boolean;
 };
 
 type DragState = {
@@ -65,11 +66,12 @@ type DragState = {
   moveSucceeded?: boolean;
   edgeDwell: EdgeDwellState;
   preview?: PointerDragPreview | null;
+  readOnly: boolean;
 };
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -182,9 +184,10 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       finishing: false,
       pointerType: event.pointerType,
       longPressed: false,
+      readOnly,
       edgeDwell: { direction: null, latched: false, timer: null },
     };
-    if (event.pointerType === "touch") {
+    if (event.pointerType === "touch" && !readOnly) {
       drag.current.longPressTimer = window.setTimeout(() => {
         const current = drag.current;
         if (!current || current.pointerId !== event.pointerId || current.moved) return;
@@ -194,6 +197,10 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onContextMenuAt(event.clientX, event.clientY, "sheet");
       }, 500);
     }
+    if (readOnly) {
+      if (event.pointerType !== "touch") onSelect(event);
+      return;
+    }
     canvas.dataset.iconDragging = "true";
     if (event.pointerType !== "touch" || !allowBrowserPinchZoom) event.currentTarget.setPointerCapture(event.pointerId);
     if (event.pointerType !== "touch") onSelect(event);
@@ -201,6 +208,11 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     if (!drag.current || !iconRef.current) return;
+    if (drag.current.readOnly) {
+      const threshold = drag.current.pointerType === "touch" ? 12 : 4;
+      if (Math.hypot(event.clientX - drag.current.pointerX, event.clientY - drag.current.pointerY) >= threshold) drag.current.moved = true;
+      return;
+    }
     const deltaX = event.clientX - drag.current.pointerX;
     const deltaY = event.clientY - drag.current.pointerY;
     drag.current.clientX = event.clientX;
@@ -263,7 +275,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     } catch {
       // Pointer capture may be released implicitly between the check and call.
     }
-    const dropTarget = completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
+    const dropTarget = !completed.readOnly && completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
     const committedPosition = preview && dropTarget?.desktop ? preview(position) : position;
@@ -320,7 +332,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         data-selected={selected || undefined}
         data-entry-id={entry.id}
         data-folder-id={entry.kind === "folder" ? entry.id : undefined}
-        data-entry-drop-parent={entry.kind === "folder" ? entry.id : undefined}
+        data-entry-drop-parent={entry.kind === "folder" && !readOnly ? entry.id : undefined}
         type="button"
         tabIndex={interactive ? undefined : -1}
         aria-hidden={interactive ? undefined : true}
@@ -330,6 +342,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onClick={(event) => { if (event.detail === 0) onSelect(event); }}
         onDoubleClick={() => { if (allowsMouseDoubleClick(performance.now())) onOpen(); }}
         onContextMenu={(event) => {
+          if (readOnly) { event.preventDefault(); return; }
           const current = drag.current;
           const action = contextMenuPressAction(current);
           if (action !== "open") {
@@ -344,15 +357,15 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
           }
           onContextMenu(event);
         }}
-        onDragOver={entry.kind === "folder" ? (event) => {
+        onDragOver={entry.kind === "folder" && !readOnly ? (event) => {
           event.preventDefault();
           event.stopPropagation();
           event.currentTarget.dataset.dropTarget = "true";
         } : undefined}
-        onDragLeave={entry.kind === "folder" ? (event) => {
+        onDragLeave={entry.kind === "folder" && !readOnly ? (event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropTarget;
         } : undefined}
-        onDrop={entry.kind === "folder" ? (event) => {
+        onDrop={entry.kind === "folder" && !readOnly ? (event) => {
           event.preventDefault();
           event.stopPropagation();
           delete event.currentTarget.dataset.dropTarget;
@@ -389,6 +402,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
           }
           else if (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") {
             event.preventDefault();
+            if (readOnly) return;
             const bounds = event.currentTarget.getBoundingClientRect();
             onContextMenuAt(bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
           }

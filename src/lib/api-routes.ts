@@ -21,6 +21,7 @@ export const API_ROUTES = {
     if (purpose) params.set("purpose", purpose);
     return `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/content${params.size ? `?${params}` : ""}`;
   },
+  desktopThumbnail: (desktopId: string, id: string, revision: number, profile: "thumbnail-v1") => `${desktopBase(desktopId)}/entries/${encodeURIComponent(id)}/thumbnail?${new URLSearchParams({ revision: String(revision), profile })}`,
   desktopEntryTransactions: (desktopId: string) => `${desktopBase(desktopId)}/entries/transactions`,
   desktopEntryTransaction: (desktopId: string, transactionId: string) => `${desktopBase(desktopId)}/entries/transactions/${encodeURIComponent(transactionId)}`,
   desktopEntryTransactionCommit: (desktopId: string, transactionId: string) => `${desktopBase(desktopId)}/entries/transactions/${encodeURIComponent(transactionId)}/commit`,
@@ -37,6 +38,7 @@ export const API_ROUTES = {
     if (purpose) params.set("purpose", purpose);
     return `${publicDesktopBase(desktopAlias, itemAlias)}/entries/${encodeURIComponent(id)}/content${params.size ? `?${params}` : ""}`;
   },
+  publicDesktopThumbnail: (desktopAlias: string, itemAlias: string | undefined, id: string, revision: number, profile: "thumbnail-v1") => `${publicDesktopBase(desktopAlias, itemAlias)}/entries/${encodeURIComponent(id)}/thumbnail?${new URLSearchParams({ revision: String(revision), profile })}`,
   events: `/api/events?protocol=${HIRAYA_API_PROTOCOL}`,
   health: "/api/health",
   syncHealth: "/api/sync/health",

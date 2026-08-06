@@ -47,7 +47,7 @@ async function start() {
   await retireUnscopedServiceWorker();
   const session = await bootstrapSession(frontendOnly);
   const { configureSyncAuthority } = await import("./lib/sync");
-  configureSyncAuthority(session?.catalogId ?? null, session?.directBlobOrigin);
+  configureSyncAuthority(session?.catalogId ?? null, session?.directBlobOrigin, session?.capabilities.thumbnails === "thumbnail-v1");
   const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./platform/storage/namespace");
   await configureStorageNamespace(session?.storageId ?? LOCAL_STORAGE_ID);
   const { default: App } = await import("./App");

@@ -109,7 +109,7 @@ type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: n
 
 const DATABASE_VERSION = 1;
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
-const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list" };
+const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false };
 const STORES = {
   desktops: "desktops",
   outbox: "outbox",
@@ -272,8 +272,8 @@ async function reserveOperation(store: IDBObjectStore) {
 function parsePreferences(value: unknown): LocalPreferences {
   if (!value || typeof value !== "object") throw new Error("The local preferences have an unsupported format.");
   const item = value as LocalPreferences;
-  if ([item.autoUpdate, item.externalEmbeddedPreviews, item.allowBrowserPinchZoom, item.searchAllDesktops, item.showDesktopMinimap].some((field) => typeof field !== "boolean") || !Number.isSafeInteger(item.onboardingVersion) || item.onboardingVersion < 0 || !["list", "grid"].includes(item.explorerView)) throw new Error("The local preferences have an unsupported format.");
-  return item;
+  if ([item.autoUpdate, item.externalEmbeddedPreviews, item.allowBrowserPinchZoom, item.searchAllDesktops, item.showDesktopMinimap].some((field) => typeof field !== "boolean") || item.showHiddenFiles !== undefined && typeof item.showHiddenFiles !== "boolean" || !Number.isSafeInteger(item.onboardingVersion) || item.onboardingVersion < 0 || !["list", "grid"].includes(item.explorerView)) throw new Error("The local preferences have an unsupported format.");
+  return { ...item, showHiddenFiles: item.showHiddenFiles ?? false };
 }
 
 async function appendActivity(store: IDBObjectStore, value: NewActivityRecord) {

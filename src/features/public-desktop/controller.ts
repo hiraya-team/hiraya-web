@@ -1,5 +1,5 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { fetchPublicDesktop, fetchPublicFile, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
+import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { fetchPublicDesktop, fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
 import { fileCapabilities } from "../../ui/file-capabilities";
 import type { DesktopEntry, FileEntry } from "../../types";
 
@@ -99,6 +99,13 @@ export function usePublicDesktop(authority: PublicAuthority) {
 	return { file: resolved, blob: await fetchPublicFile(authority, resolved, contentRevision) };
   }
 
+  const loadThumbnail = useCallback(async (id: string) => {
+    if (desktop?.thumbnailProfile !== "thumbnail-v1") throw new Error("Generated thumbnails are unavailable.");
+    const file = desktop.entries.find((entry) => entry.id === id);
+    if (!file || file.kind !== "file") throw new Error("That file no longer exists.");
+    return { kind: "blob" as const, blob: await fetchPublicThumbnail(authority, file, file.contentRevision) };
+  }, [authority, desktop]);
+
   return {
     desktop,
     error,
@@ -109,6 +116,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
     wallpaperUrl,
     wallpaperFailed,
     loadFile,
+    loadThumbnail,
     resolveLinkedFile,
   };
 }

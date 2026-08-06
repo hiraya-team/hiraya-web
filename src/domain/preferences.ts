@@ -8,4 +8,5 @@ export type LocalPreferences = {
   onboardingVersion: number;
   showDesktopMinimap: boolean;
   explorerView: ExplorerView;
+  showHiddenFiles: boolean;
 };

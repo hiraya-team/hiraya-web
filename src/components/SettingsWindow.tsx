@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, GlobeSimple, GridFour, ImageSquare, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash, UploadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, ImageSquare, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash, UploadSimple } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
@@ -86,6 +86,7 @@ type Props = {
   allowBrowserPinchZoom: boolean;
   localPreferencesLoaded: boolean;
   searchAllDesktops: boolean;
+  showHiddenFiles: boolean;
   desktopSearchAvailable: boolean;
   shortLinksAvailable: boolean;
   shortLinkBaseUrl: string;
@@ -125,6 +126,7 @@ type Props = {
   onExternalEmbeddedPreviewsChange: (enabled: boolean) => void;
   onAllowBrowserPinchZoomChange: (enabled: boolean) => void;
   onSearchAllDesktopsChange: (enabled: boolean) => void;
+  onShowHiddenFilesChange: (enabled: boolean) => void;
   onOpenGettingStarted: () => void;
   onOpenKeyboardShortcuts: () => void;
   onOpenSharing: () => void;
@@ -202,6 +204,7 @@ export function SettingsWindow({
   allowBrowserPinchZoom,
   localPreferencesLoaded,
   searchAllDesktops,
+  showHiddenFiles,
   desktopSearchAvailable,
   shortLinksAvailable,
   shortLinkBaseUrl,
@@ -241,6 +244,7 @@ export function SettingsWindow({
   onExternalEmbeddedPreviewsChange,
   onAllowBrowserPinchZoomChange,
   onSearchAllDesktopsChange,
+  onShowHiddenFilesChange,
   onOpenGettingStarted,
   onOpenKeyboardShortcuts,
   onOpenSharing,
@@ -547,6 +551,20 @@ export function SettingsWindow({
                 </label>
               </div>
             </section>
+
+             <section className="settings-section" aria-labelledby="file-visibility-heading" hidden={settingsCategory !== "files-apps"}>
+               <div className="settings-section__heading">
+                 <EyeSlash size={18} />
+                 <div><h3 id="file-visibility-heading">File visibility</h3><p>Choose which shell-owned files appear while browsing.</p></div>
+               </div>
+               <div className="settings-list">
+                 <label className="settings-row">
+                   <span className="settings-row__icon"><EyeSlash size={17} weight={showHiddenFiles ? "fill" : "regular"} /></span>
+                   <span className="settings-row__copy"><strong>Show hidden files</strong><small>Show dot-prefixed files and protected system thumbnails in the desktop shell. This setting applies only to this browser and account.</small></span>
+                   <input type="checkbox" checked={showHiddenFiles} disabled={!localPreferencesLoaded} onChange={(event) => onShowHiddenFilesChange(event.target.checked)} />
+                 </label>
+               </div>
+             </section>
 
              <section className="settings-section" aria-labelledby="external-content-heading" hidden={settingsCategory !== "files-apps"}>
               <div className="settings-section__heading">

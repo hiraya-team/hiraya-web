@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fetchPublicFile, LargeDownloadAuthRequiredError, publicAuthorityFromPath } from "../src/lib/public-desktop";
+import { fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, publicAuthorityFromPath } from "../src/lib/public-desktop";
 import { resolvePublicLinkedEntry } from "../src/features/public-desktop/controller";
 
 const file = {
@@ -46,6 +46,15 @@ describe("public desktop", () => {
       return new Response();
     }) as typeof fetch;
     void fetchImpl;
+    expect(calls).toBe(0);
+  });
+
+  test("does not request impossible public thumbnail sources", () => {
+    let calls = 0;
+    const fetchImpl = (async () => { calls += 1; return new Response(); }) as typeof fetch;
+    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/svg+xml" }, 1, fetchImpl)).toThrow("unavailable");
+    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg", size: 100 * 1024 * 1024 + 1 }, 1, fetchImpl)).toThrow("unavailable");
+    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg" }, 0, fetchImpl)).toThrow("unavailable");
     expect(calls).toBe(0);
   });
 
@@ -100,6 +109,11 @@ describe("public desktop", () => {
     expect(source).toContain("setSelectedIds(new Set());\n    setOpen({");
   });
 
+  test("filters descendants of public dot folders through the ancestor-aware shell projection", async () => {
+    const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    expect(source).toContain("withoutDotEntries(desktop?.entries ?? [])");
+  });
+
   test("loads packaged wallpaper code only when selected", async () => {
     const publicSource = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     const appSource = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
@@ -124,7 +138,7 @@ describe("public desktop", () => {
     const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     expect(source).toContain("themeIconMetrics(theme)");
     expect(source).toContain("iconAreaSize(desktopSize, desktop?.layout.gridSize)");
-    expect(source).toContain("responsiveDesktop(desktop?.entries ?? [], iconArea, iconMetrics)");
+    expect(source).toContain("responsiveDesktop(publicEntries, iconArea, iconMetrics)");
     expect(source).toContain("<AreaSwitcher");
     expect(source).toContain("useMediaQuery(WINDOWED_DESKTOP_QUERY)");
     expect(source).toContain("initialWindowBounds(desktopSize, options)");
