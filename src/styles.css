@@ -2218,6 +2218,19 @@
   user-select: none;
 }
 
+.folder-explorer__status {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  color: var(--theme-text-muted);
+  border-bottom: var(--theme-border-width) solid var(--theme-border);
+  background: var(--theme-window-muted);
+  font-size: 12px;
+}
+
 .folder-explorer__list {
   display: grid;
   gap: 3px;
@@ -6032,6 +6045,8 @@ button.app-picker__disclosure { cursor: pointer; }
 
 .app-store__offline svg { flex: 0 0 auto; color: var(--theme-accent-on-window); }
 .app-store__offline strong { color: var(--theme-text); }
+.app-store__offline > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.app-store__offline .app-store__actions { margin-inline-start: auto; }
 
 .app-store__section > h3 { margin: 0; padding: 24px clamp(20px, 4vw, 36px) 8px; font-size: .84rem; letter-spacing: .04em; text-transform: uppercase; }
 
@@ -6163,6 +6178,8 @@ button.app-picker__disclosure { cursor: pointer; }
 
   .app-store__toolbar { align-items: stretch; flex-direction: column; gap: 8px; }
   .app-store__result-count { align-self: flex-end; }
+  .app-store__offline { align-items: flex-start; flex-wrap: wrap; }
+  .app-store__offline .app-store__actions { flex-basis: 100%; margin-inline-start: 28px; }
 
   .app-store__row {
     grid-template-columns: 46px minmax(0, 1fr);

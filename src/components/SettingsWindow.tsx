@@ -560,7 +560,7 @@ export function SettingsWindow({
                <div className="settings-list">
                  <label className="settings-row">
                    <span className="settings-row__icon"><EyeSlash size={17} weight={showHiddenFiles ? "fill" : "regular"} /></span>
-                   <span className="settings-row__copy"><strong>Show hidden files</strong><small>Show dot-prefixed files and protected system thumbnails in the desktop shell. This setting applies only to this browser and account.</small></span>
+                    <span className="settings-row__copy"><strong>Show hidden files</strong><small>Show dot-prefixed files and the read-only `.hiraya` system tree, including settings, themes, Trash contents, and thumbnails. This setting applies only to this browser and account.</small></span>
                    <input type="checkbox" checked={showHiddenFiles} disabled={!localPreferencesLoaded} onChange={(event) => onShowHiddenFilesChange(event.target.checked)} />
                  </label>
                </div>
@@ -861,7 +861,7 @@ export function SettingsWindow({
           <ShortLinksSettings headingRef={shortLinksHeadingRef} baseUrl={shortLinkBaseUrl} onBack={closeShortLinks} onList={onListShortLinks} onCreate={onCreateShortLink} onUpdate={onUpdateShortLink} onDelete={onDeleteShortLink} onConfirmDelete={onConfirmShortLinkDelete} />
         ) : (
           <div className="settings-page settings-page--apps">
-            <header className="settings-page__header"><button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeApps}><ArrowLeft size={17} /></button><div><h3 ref={appsHeadingRef} tabIndex={-1}>App data &amp; file types</h3><p>Manage recovered app data and preferred handlers for this browser and account.</p></div></header>
+            <header className="settings-page__header"><button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeApps}><ArrowLeft size={17} /></button><div><h3 ref={appsHeadingRef} tabIndex={-1}>App data &amp; file types</h3><p>Manage recovered app data and approved file handlers.</p></div></header>
             {quarantinedApps.length > 0 && <section className="settings-section" aria-labelledby="recovered-apps-heading">
               <div className="settings-section__heading"><div><h4 id="recovered-apps-heading">Recovered app data</h4><p>These user apps used IDs now reserved by trusted system apps. Hiraya preserved their original approval, manifest, digest, and browser-local storage during migration.</p></div></div>
               <div className="installed-app-list">
@@ -869,7 +869,7 @@ export function SettingsWindow({
               </div>
             </section>}
             <section className="settings-section" aria-labelledby="file-types-heading">
-              <div className="settings-section__heading"><div><h4 id="file-types-heading">File types</h4><p>Preferred handlers are local to this browser and account. Missing apps remain selected while a bundled default opens the file.</p></div><button className="button button--quiet" type="button" disabled={!fileAssociations.length} onClick={onResetFileAssociations}>Reset all</button></div>
+              <div className="settings-section__heading"><div><h4 id="file-types-heading">File types</h4><p>Handler hints synchronize when available, but activate only after this device approves the exact compatible app package. A bundled default opens files when approval is missing.</p></div><button className="button button--quiet" type="button" disabled={!fileAssociations.length} onClick={onResetFileAssociations}>Reset all</button></div>
               <div className="settings-list">
                 {fileAssociations.map((association) => { const compatible = installedApps.filter((app) => installedAppIsAvailable(app, entries) && installedAppAcceptsMatcher(app, association.matcher)); const selected = compatible.find((app) => app.appId === association.appId); return <div className="settings-row" key={association.matcher}><span className="settings-row__copy"><strong>{association.matcher}</strong><small>{selected?.manifest.name ?? `${association.appId} (unavailable or incompatible)`}</small></span><select aria-label={`Preferred app for ${association.matcher}`} value={selected?.appId ?? association.appId} onChange={(event) => onSetFileAssociation(association.matcher, event.target.value)}>{!selected && <option value={association.appId}>{association.appId} (unavailable or incompatible)</option>}{compatible.map((app) => <option value={app.appId} key={app.appId}>{app.manifest.name}</option>)}</select><button className="button button--quiet" type="button" onClick={() => onRemoveFileAssociation(association.matcher)}>Remove</button></div>; })}
                 {!fileAssociations.length && <p className="theme-custom__empty">No preferred handlers. Use Open With on a file to choose one.</p>}

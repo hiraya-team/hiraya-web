@@ -1,7 +1,7 @@
 import type { SeededManifest } from "./seeded-manifest";
 import { assertUniqueName, namesMatch, validateEntryName } from "./entry-validation";
 import { API_ROUTES, authenticatedHeaders } from "./api-routes";
-import { assertValidId, isRecord, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, type RemoteDesktopState, type RemoteEntry, type TrashDeleteResult, type TrashDocument, type TrashRestoreResult } from "./contracts";
+import { assertValidId, isRecord, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseSystemEntriesDocument, parseSystemEntryDocument, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, systemEntryPath, type ContentAccessExpectations, type RemoteDesktopState, type RemoteEntry, type SystemEntriesDocument, type SystemEntry, type SystemRole, type TrashDeleteResult, type TrashDocument, type TrashEntry, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import { DEFAULT_WALLPAPER } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
@@ -155,6 +155,43 @@ function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
       themeRevisions,
     },
   };
+}
+
+function localSystemContent(snapshot: DesktopStateSnapshot, role: SystemRole, key?: string) {
+  if (role === "layout") return snapshot.layout;
+  if (role === "editor-settings") return snapshot.editorSettings;
+  if (role === "theme-selection") return { themeId: snapshot.appearance.selectedThemeId };
+  if (role === "theme-definition") {
+    const theme = snapshot.appearance.customThemes.find((candidate) => candidate.id === key);
+    if (theme) return { id: theme.id, name: theme.name, definition: theme.definition };
+  }
+  throw new Error("That protected system resource is unavailable in this browser.");
+}
+
+async function localSystemEntries(snapshot: DesktopStateSnapshot, desktopId: string): Promise<SystemEntriesDocument> {
+  const resources: Array<{ role: SystemRole; key?: string; revision: number }> = [
+    { role: "layout", revision: snapshot.sync.layoutRevision },
+    { role: "editor-settings", revision: snapshot.sync.settingsRevision },
+    { role: "theme-selection", revision: snapshot.sync.themeSelectionRevision },
+    ...snapshot.appearance.customThemes.map((theme) => ({ role: "theme-definition" as const, key: theme.id, revision: snapshot.sync.themeRevisions[theme.id] ?? 0 })),
+  ];
+  const entries = await Promise.all(resources.map(async ({ role, key, revision }): Promise<SystemEntry> => {
+    const content = new Blob([JSON.stringify(localSystemContent(snapshot, role, key))], { type: "application/json" });
+    return {
+      kind: "file",
+      id: `${desktopId}:system:${role}${key ? `:${key}` : ""}`,
+      name: role === "theme-definition" ? `${key}.theme.json` : `${role}.json`,
+      systemRole: role,
+      ...(key ? { systemKey: key } : {}),
+      path: systemEntryPath(role, key),
+      mimeType: "application/json",
+      size: content.size,
+      revision,
+      contentRevision: revision,
+      sha256: await sha256Blob(content),
+    };
+  }));
+  return { schemaVersion: 2, catalogId: snapshot.sync.catalogId ?? desktopId, catalogRevision: Math.max(0, ...resources.map(({ revision }) => revision)), desktopId, entries };
 }
 
 function conflictBase(entry: DesktopEntry): EntryConflictBase {
@@ -1876,6 +1913,68 @@ export class SyncEngine {
     return parseActivityPage(await response.json());
   }
 
+  private async protectedRead(input: RequestInfo | URL) {
+    let response: Response;
+    try {
+      response = await this.fetchImpl(input, { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal: this.syncAbort?.signal });
+    } catch {
+      throw new VirtualFileUnavailableError("Protected files are unavailable while the Hiraya server is offline.");
+    }
+    this.requireAuthentication(response);
+    if (!response.ok) throw new Error(response.status === 404 ? "That protected file no longer exists." : `The protected file could not be loaded (${response.status}).`);
+    return response;
+  }
+
+  async listSystemEntries(desktopId: string): Promise<SystemEntriesDocument> {
+    assertValidId(desktopId, "System files require a valid desktop ID.");
+    if (this.frontendOnly) {
+      if (desktopId !== this.desktopId) throw new Error("System files are unavailable for an inactive local desktop.");
+      return localSystemEntries(this.current(), desktopId);
+    }
+    const value = await (await this.protectedRead(API_ROUTES.desktopSystemEntries(desktopId))).json();
+    const authority = this.assertAuthority(value, "The server system entries response");
+    return parseSystemEntriesDocument(value, desktopId, authority.catalogId);
+  }
+
+  private async downloadProtectedFile(entry: Pick<SystemEntry, "id" | "name" | "mimeType" | "size" | "contentRevision">, endpoint: string, expected: ContentAccessExpectations) {
+    const descriptor = parseContentAccessDescriptor(await (await this.protectedRead(endpoint)).json(), entry.id, entry.contentRevision, entry.size, this.directBlobOrigin, expected);
+    let response: Response;
+    try {
+      response = await this.fetchImpl(descriptor.access.url, { method: descriptor.access.method, headers: descriptor.access.headers, cache: "no-store", credentials: "omit", referrerPolicy: "no-referrer", redirect: "error", signal: this.syncAbort?.signal });
+    } catch {
+      throw new VirtualFileUnavailableError("The protected file could not be downloaded. Reconnect and try again.");
+    }
+    if (!response.ok) throw new VirtualFileUnavailableError(`The protected file could not be downloaded (${response.status}). Reconnect and try again.`);
+    const downloaded = await responseBlobWithProgress(response, descriptor.size, () => undefined);
+    if (downloaded.blob.size !== descriptor.size || downloaded.sha256 !== descriptor.sha256) throw new Error("The protected file failed integrity verification.");
+    return new File([downloaded.blob], entry.name, { type: entry.mimeType });
+  }
+
+  async readSystemFile(desktopId: string, catalogId: string, entry: SystemEntry) {
+    assertValidId(desktopId, "System files require a valid desktop ID.");
+    if (this.frontendOnly) {
+      if (desktopId !== this.desktopId) throw new Error("System files are unavailable for an inactive local desktop.");
+      const content = new Blob([JSON.stringify(localSystemContent(this.current(), entry.systemRole, entry.systemKey))], { type: entry.mimeType });
+      if (content.size !== entry.size || await sha256Blob(content) !== entry.sha256) throw new Error("That protected system resource changed. Reopen the .hiraya folder and try again.");
+      return new File([content], entry.name, { type: entry.mimeType });
+    }
+    this.assertAuthority({ schemaVersion: 2, catalogId }, "The selected system entry");
+    const value = await (await this.protectedRead(API_ROUTES.desktopSystemEntry(desktopId, entry.id))).json();
+    this.assertAuthority(value, "The server system entry response");
+    const current = parseSystemEntryDocument(value, desktopId, entry.id, catalogId);
+    if (current.contentRevision !== entry.contentRevision || current.size !== entry.size || current.sha256 !== entry.sha256 || current.systemRole !== entry.systemRole || current.systemKey !== entry.systemKey) throw new VirtualFileChangedError();
+    return this.downloadProtectedFile(current, API_ROUTES.desktopContent(desktopId, current.id, current.contentRevision), { catalogId, desktopId, sha256: current.sha256, systemRole: current.systemRole, systemKey: current.systemKey });
+  }
+
+  async readTrashFile(desktopId: string, catalogId: string, trashRootId: string, entry: TrashEntry) {
+    assertValidId(desktopId, "Trash files require a valid desktop ID.");
+    assertValidId(trashRootId, "Trash files require a valid Trash root ID.");
+    if (entry.kind !== "file") throw new Error("Only files have content.");
+    if (this.frontendOnly) throw new TrashUnavailableError();
+    this.assertAuthority({ schemaVersion: 2, catalogId }, "The selected Trash entry");
+    return this.downloadProtectedFile(entry, API_ROUTES.desktopTrashContent(desktopId, entry.id, entry.contentRevision, trashRootId), { catalogId, desktopId, trashRootId, sha256: entry.sha256 });
+  }
+
   private async trashRequest(input: RequestInfo | URL, init?: RequestInit) {
     if (this.frontendOnly) throw new TrashUnavailableError();
     let response: Response;
@@ -1895,7 +1994,9 @@ export class SyncEngine {
 
   async listTrash(desktopId: string): Promise<TrashDocument> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
-    return parseTrashDocument(await this.trashRequest(API_ROUTES.desktopTrash(desktopId)), desktopId);
+    const value = await this.trashRequest(API_ROUTES.desktopTrash(desktopId));
+    const authority = this.assertAuthority(value, "The server Trash response");
+    return parseTrashDocument(value, desktopId, authority.catalogId);
   }
 
   async restoreTrash(desktopId: string, entryId: string, destination: "original" | "root", baseRevision: number): Promise<TrashRestoreResult> {
@@ -2013,6 +2114,9 @@ export const resolveContentConflictKeepBoth = defaultEngine.resolveContentConfli
 export const subscribeToOutbox = defaultEngine.subscribeOutbox.bind(defaultEngine);
 export const listActivity = defaultEngine.listActivity.bind(defaultEngine);
 export const subscribeToActivityChanges = defaultEngine.subscribeActivityChanges.bind(defaultEngine);
+export const listSystemEntries = defaultEngine.listSystemEntries.bind(defaultEngine);
+export const readSystemFile = defaultEngine.readSystemFile.bind(defaultEngine);
+export const readTrashFile = defaultEngine.readTrashFile.bind(defaultEngine);
 export const listTrash = defaultEngine.listTrash.bind(defaultEngine);
 export const restoreTrash = defaultEngine.restoreTrash.bind(defaultEngine);
 export const permanentlyDeleteTrash = defaultEngine.permanentlyDeleteTrash.bind(defaultEngine);

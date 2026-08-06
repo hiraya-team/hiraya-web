@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult } from "../src/lib/contracts";
+import { parseContentAccessDescriptor, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult } from "../src/lib/contracts";
 import { API_ROUTES } from "../src/lib/api-routes";
 import { SyncEngine, TrashUnavailableError, type SyncEngineOptions } from "../src/lib/sync";
+import { sha256Blob } from "../src/lib/blob-transfer";
 import { desktopStateSnapshot, remoteDesktopState } from "./fixtures";
 
 class FakeEventSource {
@@ -40,15 +41,21 @@ const file = {
 describe("Trash contracts", () => {
   test("validates schema version 2, ordering, entries, and counts", () => {
     const document = { schemaVersion: 2, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [
-      { entry: folder, deletedAt: 20, descendantCount: 1 },
-      { entry: { ...file, id: "file-2", parentId: null }, deletedAt: 10, descendantCount: 0 },
+      { entry: folder, entries: [folder, file], deletedAt: 20, descendantCount: 1 },
+      { entry: { ...file, id: "file-2", parentId: null }, entries: [{ ...file, id: "file-2", parentId: null }], deletedAt: 10, descendantCount: 0 },
     ] };
     expect(parseTrashDocument(document, "desk")).toEqual(document);
+    expect(parseTrashDocument({ ...document, items: [{ ...document.items[0], entries: [file, folder] }, document.items[1]] }, "desk").items[0].entries.map((entry) => entry.id)).toEqual([file.id, folder.id]);
     expect(() => parseTrashDocument({ ...document, schemaVersion: 1 })).toThrow("schema version");
     expect(() => parseTrashDocument({ ...document, desktopId: "other" }, "desk")).toThrow("different desktop");
+    expect(() => parseTrashDocument(document, "desk", "other-catalog")).toThrow("different catalog");
     expect(() => parseTrashDocument({ ...document, items: [...document.items].reverse() })).toThrow("newest-first");
     expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], descendantCount: -1 }] })).toThrow("descendant count");
-    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entry: { ...folder, revision: 5 } }] })).toThrow("newer than its catalog");
+    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entry: { ...folder, revision: 5 }, entries: [{ ...folder, revision: 5 }, file] }] })).toThrow("newer than its catalog");
+    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entry: { ...folder, revision: 2 } }] })).toThrow("does not match");
+    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entries: [folder] }] })).toThrow("descendant count");
+    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entries: [folder, { ...file, parentId: "missing" }] }] })).toThrow("missing parent");
+    expect(() => parseTrashDocument({ ...document, items: [{ ...document.items[0], entry: { ...folder, parentId: file.id }, entries: [{ ...folder, parentId: file.id }, file] }] })).toThrow("outside its subtree");
   });
 
   test("validates restore subtrees with an external original parent and delete receipts", () => {
@@ -67,6 +74,30 @@ describe("Trash contracts", () => {
 });
 
 describe("Trash API wrappers", () => {
+  test("rejects a Trash listing from a different catalog authority", async () => {
+    const engine = new SyncEngine({ expectedCatalogId: "expected", fetch: (async () => Response.json({ schemaVersion: 2, catalogId: "other", catalogRevision: 4, desktopId: "desk", items: [] })) as typeof fetch });
+    await expect(engine.listTrash("desk")).rejects.toThrow("different catalog");
+  });
+
+  test("reads actual Trash file content through its root-qualified descriptor", async () => {
+    const content = new Blob(["plan"], { type: "text/plain" });
+    const sha256 = await sha256Blob(content);
+    const requests: string[] = [];
+    const engine = new SyncEngine({ directBlobOrigin: "https://blob.test", fetch: (async (input) => {
+      const url = String(input);
+      requests.push(url);
+      if (url === API_ROUTES.desktopTrashContent("desk", file.id, file.contentRevision, folder.id)) return Response.json({ desktopId: "desk", trashRootId: folder.id, entryId: file.id, contentRevision: file.contentRevision, size: file.size, sha256, access: { url: "https://blob.test/trash-file", method: "GET", headers: {}, expiresAt: Date.now() + 60_000 } });
+      if (url === "https://blob.test/trash-file") return new Response(content);
+      throw new Error(`Unexpected request: ${url}`);
+    }) as typeof fetch, expectedCatalogId: "catalog" });
+    expect(await (await engine.readTrashFile("desk", "catalog", folder.id, { ...file, sha256 })).text()).toBe("plan");
+    expect(requests).toEqual([API_ROUTES.desktopTrashContent("desk", file.id, file.contentRevision, folder.id), "https://blob.test/trash-file"]);
+    const descriptor = { desktopId: "desk", trashRootId: folder.id, entryId: file.id, contentRevision: file.contentRevision, size: file.size, sha256, access: { url: "https://blob.test/trash-file", method: "GET", headers: {}, expiresAt: Date.now() + 60_000 } };
+    expect(() => parseContentAccessDescriptor({ ...descriptor, desktopId: "other" }, file.id, file.contentRevision, file.size, "https://blob.test", { desktopId: "desk", trashRootId: folder.id, sha256 })).toThrow("different desktop");
+    expect(() => parseContentAccessDescriptor({ ...descriptor, trashRootId: "other" }, file.id, file.contentRevision, file.size, "https://blob.test", { desktopId: "desk", trashRootId: folder.id, sha256 })).toThrow("different Trash root");
+    expect(() => parseContentAccessDescriptor({ ...descriptor, sha256: "0".repeat(64) }, file.id, file.contentRevision, file.size, "https://blob.test", { desktopId: "desk", trashRootId: folder.id, sha256 })).toThrow("SHA-256");
+  });
+
   test("reports frontend-only Trash as unavailable without fetching", async () => {
     let fetched = false;
     const engine = new SyncEngine({ frontendOnly: true, fetch: (async () => { fetched = true; throw new Error("unexpected"); }) as typeof fetch });
@@ -81,7 +112,7 @@ describe("Trash API wrappers", () => {
     const engine = new SyncEngine({ fetch: (async (input, init) => {
       requests.push({ url: String(input), init });
        if (String(input).endsWith("/entries/transactions")) return Response.json({ state: "committed", catalogRevision: init?.body?.toString().includes("entry.restore") ? 5 : 6 });
-       return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [{ entry: folder, deletedAt: 20, descendantCount: 1 }] });
+       return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 4, desktopId: "desk", items: [{ entry: folder, entries: [folder, file], deletedAt: 20, descendantCount: 1 }] });
     }) as typeof fetch });
 
     await engine.listTrash("desk");

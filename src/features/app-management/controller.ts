@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
-import type { FileAssociation, InstalledApp, QuarantinedApp } from "../../apps/installed-apps";
+import { parseFileAssociation, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
 import { SYSTEM_APP_CATALOG, type SystemAppCatalogItem } from "../../apps/system-apps";
 import type { ThemeDefinition } from "../../domain/theme";
 import {
@@ -20,15 +20,19 @@ import {
   writeAppStorage,
 } from "../../platform/storage/repositories";
 import { readApprovedPackageArchive } from "../../platform/storage/blobs";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
+import { AccountAppsClient, type AccountAppsClientState } from "./account-sync";
+import type { AccountApp } from "../../lib/account-apps";
 
 type AppPlatformOptions = {
   enabled: boolean;
   initialTheme: ThemeDefinition;
   onCloseRequest: (owner: AppInstanceOwner) => boolean | void | Promise<boolean | void>;
   onError: (error: Error) => void;
+  accountSyncOrigin: string | null;
 };
 
-export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError }: AppPlatformOptions) {
+export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError, accountSyncOrigin }: AppPlatformOptions) {
   const closeRequestRef = useRef(onCloseRequest);
   closeRequestRef.current = onCloseRequest;
   const errorRef = useRef(onError);
@@ -37,17 +41,47 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
 
   const lifecycle = useMemo(() => new AppLifecycleService(2_000, (owner) => closeRequestRef.current(owner)), []);
   const theme = useMemo(() => new AppThemeService(initialThemeRef.current), []);
-  const hostServices = useMemo(() => new AppHostServices(lifecycle, theme, new AppPersistentStorageService({ get: readAppStorage, set: writeAppStorage, remove: removeAppStorage, clear: clearAppStorage })), [lifecycle, theme]);
+  const accountClient = useMemo(() => accountSyncOrigin ? new AccountAppsClient(accountSyncOrigin) : null, [accountSyncOrigin]);
+  const hostServices = useMemo(() => new AppHostServices(lifecycle, theme, new AppPersistentStorageService(accountClient ? {
+    get: (appId, key) => accountClient.owns(appId) ? accountClient.getData(appId, key) : readAppStorage(appId, key),
+    set: (appId, key, value, maxBytes, maxEntries) => accountClient.owns(appId) ? accountClient.setData(appId, key, value).then(() => undefined) : writeAppStorage(appId, key, value, maxBytes, maxEntries),
+    remove: (appId, key) => accountClient.owns(appId) ? accountClient.removeData(appId, key).then(() => undefined) : removeAppStorage(appId, key),
+    clear: (appId) => accountClient.owns(appId) ? accountClient.clearData(appId).then(() => undefined) : clearAppStorage(appId),
+  } : { get: readAppStorage, set: writeAppStorage, remove: removeAppStorage, clear: clearAppStorage })), [accountClient, lifecycle, theme]);
   const capabilities = useMemo(() => new CapabilityStore(), []);
-  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [localApps, setLocalApps] = useState<InstalledApp[]>([]);
+  const [accountState, setAccountState] = useState<AccountAppsClientState | null>(null);
   const [appsLoaded, setAppsLoaded] = useState(false);
-  const [fileAssociations, setFileAssociations] = useState<FileAssociation[]>([]);
+  const [localFileAssociations, setLocalFileAssociations] = useState<FileAssociation[]>([]);
   const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
   const [dialogRequests, setDialogRequests] = useState<readonly DialogRequest[]>([]);
   const [notifications, setNotifications] = useState<readonly AppNotification[]>([]);
 
   useEffect(() => hostServices.dialogs.subscribe(setDialogRequests), [hostServices]);
   useEffect(() => hostServices.notifications.subscribe(setNotifications), [hostServices]);
+
+  useEffect(() => {
+    if (!enabled || !accountClient) { setAccountState(null); return; }
+    let active = true;
+    void accountClient.start((value) => { if (active) setAccountState(value); }).catch((error) => errorRef.current(error instanceof Error ? error : new Error("Account apps could not be loaded.")));
+    return () => { active = false; accountClient.stop(); };
+  }, [accountClient, enabled]);
+
+  const installedApps = useMemo(() => localApps.filter((approval) => {
+    if (approval.source !== "account") return true;
+    const desired = accountState?.state.projection.apps.find((app) => app.appId === approval.appId);
+    return Boolean(desired && approval.installationGeneration === desired.installationGeneration && approval.digest === desired.digest && approval.manifest.permissions.length === desired.manifest.permissions.length && approval.manifest.permissions.every((permission, index) => permission === desired.manifest.permissions[index]));
+  }), [accountState, localApps]);
+  const fileAssociations = useMemo(() => {
+    if (!accountClient || !accountState) return localFileAssociations;
+    const remote = Object.entries(accountState.state.projection.handlerHints).flatMap(([matcher, appId]) => {
+      try { return [parseFileAssociation({ matcher, appId, createdAt: 0 })]; } catch { return []; }
+    });
+    const remoteMatchers = new Set(remote.map((association) => association.matcher));
+    const accountAppIds = new Set(accountState.state.baseline?.apps.map((app) => app.appId) ?? []);
+    return [...localFileAssociations.filter((association) => !remoteMatchers.has(association.matcher) && !accountAppIds.has(association.appId)), ...remote].sort((left, right) => left.matcher.localeCompare(right.matcher));
+  }, [accountClient, accountState, localFileAssociations]);
+  const availableAccountApps = useMemo(() => accountState?.state.baseline?.apps.filter((app) => !installedApps.some((approval) => approval.appId === app.appId)) ?? [], [accountState, installedApps]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -68,8 +102,8 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
         }));
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
-        setInstalledApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => !systemIds.has(app.appId)), ...systemApps]);
-        setFileAssociations(associations);
+        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => !systemIds.has(app.appId)), ...systemApps]);
+        setLocalFileAssociations(associations);
         setQuarantinedApps(quarantined);
         setAppsLoaded(true);
       })
@@ -86,13 +120,13 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
 
   async function approveInstall(install: InstalledApp) {
     await installApp(install);
-    setInstalledApps((current) => [...current.filter((item) => item.appId !== install.appId), install]);
+    setLocalApps((current) => [...current.filter((item) => item.appId !== install.appId), install]);
   }
 
   async function removeInstall(appId: string) {
     await uninstallApp(appId);
-    setInstalledApps((current) => current.filter((item) => item.appId !== appId));
-    setFileAssociations((current) => current.filter((association) => association.appId !== appId));
+    setLocalApps((current) => current.filter((item) => item.appId !== appId));
+    setLocalFileAssociations((current) => current.filter((association) => association.appId !== appId));
   }
 
   async function discardQuarantine(appId: string) {
@@ -102,18 +136,54 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
 
   async function saveAssociation(matcher: string, appId: string) {
     const association = await setFileAssociation({ matcher, appId, createdAt: Date.now() });
-    setFileAssociations((current) => [...current.filter((item) => item.matcher !== association.matcher), association].sort((left, right) => left.matcher.localeCompare(right.matcher)));
+    const next = [...fileAssociations.filter((item) => item.matcher !== association.matcher), association].sort((left, right) => left.matcher.localeCompare(right.matcher));
+    setLocalFileAssociations(next);
+    if (accountClient) {
+      const hints = { ...(accountState?.state.projection.handlerHints ?? {}) };
+      if (accountClient.owns(appId)) {
+        hints[association.matcher] = association.appId;
+        await accountClient.setHandlers(hints);
+      } else if (association.matcher in hints) {
+        delete hints[association.matcher];
+        await accountClient.setHandlers(hints);
+      }
+    }
     return association;
   }
 
   async function deleteAssociation(matcher: string) {
     await removeFileAssociation(matcher);
-    setFileAssociations((current) => current.filter((item) => item.matcher !== matcher));
+    const next = fileAssociations.filter((item) => item.matcher !== matcher);
+    setLocalFileAssociations(next);
+    if (accountClient) {
+      const hints = { ...(accountState?.state.projection.handlerHints ?? {}) };
+      if (matcher in hints) {
+        delete hints[matcher];
+        await accountClient.setHandlers(hints);
+      }
+    }
   }
 
   async function clearAssociations() {
     await resetFileAssociations();
-    setFileAssociations([]);
+    setLocalFileAssociations([]);
+    if (accountClient && Object.keys(accountState?.state.projection.handlerHints ?? {}).length) await accountClient.setHandlers({});
+  }
+
+  async function publishAccountInstall(archive: Blob, inspection: AppPackageInspection) {
+    if (!accountClient) throw new Error("Account app synchronization is unavailable.");
+    const app = await accountClient.install(archive, inspection);
+    if (!app) return null;
+    const approval: InstalledApp = { appId: app.appId, source: "account", packageEntryId: null, archivePath: null, installationGeneration: app.generations.installationGeneration, digest: app.package.sha256, version: app.manifest.version, manifest: app.manifest, approvedAt: Date.now() };
+    await approveInstall(approval);
+    return approval;
+  }
+
+  async function approveAccountInstall(app: AccountApp) {
+    if (!accountClient) throw new Error("Account app synchronization is unavailable.");
+    const approval = await accountClient.approve(app);
+    await approveInstall(approval);
+    return approval;
   }
 
   return {
@@ -122,6 +192,11 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
     hostServices,
     capabilities,
     installedApps,
+    availableAccountApps,
+    accountAppsSnapshot: accountState?.state.baseline ?? null,
+    accountAppsError: accountState?.error ?? "",
+    accountAppsPending: accountState?.outbox.filter((record) => record.status === "pending").length ?? 0,
+    blockedAccountAppOperations: accountState?.outbox.filter((record) => record.status === "blocked") ?? [],
     appsLoaded,
     fileAssociations,
     quarantinedApps,
@@ -133,7 +208,12 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError 
     saveAssociation,
     deleteAssociation,
     clearAssociations,
-    clearAppData: clearAppStorage,
+    clearAppData: (appId: string) => accountClient?.owns(appId) ? accountClient.clearData(appId).then(() => undefined) : clearAppStorage(appId),
+    publishAccountInstall,
+    approveAccountInstall,
+    uninstallAccountApp: accountClient?.uninstall.bind(accountClient),
+    retryAccountAppOperation: accountClient?.retry.bind(accountClient),
+    discardAccountAppOperation: accountClient?.discard.bind(accountClient),
   };
 }
 

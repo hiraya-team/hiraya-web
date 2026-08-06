@@ -1,10 +1,21 @@
 import type { OutboxOperation, OutboxRecord } from "../../lib/outbox";
 import { sha256Blob } from "../../lib/blob-transfer";
 import { APPROVED_PACKAGE_ARCHIVES_DIRECTORY, CONTENT_CACHE_DIRECTORY, FILES_DIRECTORY, LOCAL_MUTATIONS_DIRECTORY, PENDING_DIRECTORY, getRoot, isNotFound } from "./namespace";
+import { callDatabase } from "./database-client";
 
 export type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number; sha256: string };
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const CONFLICT_SERVER = ".content-conflict-server";
+let packageArchiveWork = Promise.resolve();
+
+function serializePackageArchives<T>(operation: () => Promise<T>) {
+  const locked = () => typeof navigator !== "undefined" && typeof navigator.locks?.request === "function"
+    ? navigator.locks.request("hiraya-approved-package-archives", operation)
+    : operation();
+  const next = packageArchiveWork.then(locked, locked);
+  packageArchiveWork = next.then(() => undefined, () => undefined);
+  return next;
+}
 
 function conflictBaseName(revision: number) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("The content conflict base revision is invalid.");
@@ -96,10 +107,13 @@ function validatePackageDigest(digest: string) {
   if (!SHA256_HEX.test(digest)) throw new TypeError("Approved package digest is invalid.");
 }
 
-export async function saveApprovedPackageArchive(digest: string, archive: Blob) {
+export async function saveApprovedPackageArchive(digest: string, archive: Blob, retain?: () => Promise<void>) {
   validatePackageDigest(digest);
-  if (await sha256Blob(archive) !== digest) throw new Error("Approved package archive does not match its digest.");
-  await writeHandleContent(await getApprovedPackageArchivesDirectory(), digest, archive);
+  return await serializePackageArchives(async () => {
+    if (await sha256Blob(archive) !== digest) throw new Error("Approved package archive does not match its digest.");
+    await writeHandleContent(await getApprovedPackageArchivesDirectory(), digest, archive);
+    await retain?.();
+  });
 }
 
 export async function readApprovedPackageArchive(digest: string) {
@@ -109,13 +123,26 @@ export async function readApprovedPackageArchive(digest: string) {
   return archive;
 }
 
-export async function deleteApprovedPackageArchive(digest: string) {
-  validatePackageDigest(digest);
+async function deleteApprovedPackageArchiveUnsafe(digest: string) {
   try {
     await (await getApprovedPackageArchivesDirectory()).removeEntry(digest);
   } catch (error) {
     if (!isNotFound(error)) throw error;
   }
+}
+
+export async function deleteApprovedPackageArchive(digest: string) {
+  validatePackageDigest(digest);
+  return await serializePackageArchives(() => deleteApprovedPackageArchiveUnsafe(digest));
+}
+
+export async function releaseApprovedPackageArchive(digest: string) {
+  validatePackageDigest(digest);
+  await serializePackageArchives(async () => {
+    const [installed, account] = await Promise.all([callDatabase("listInstalledApps", undefined, null), callDatabase("readAccountApps", undefined, null)]);
+    if (installed.some((app) => app.digest === digest) || account.state.baseline?.apps.some((app) => app.package.sha256 === digest) || account.outbox.some((record) => record.operation.kind === "install" && record.operation.digest === digest)) return;
+    await deleteApprovedPackageArchiveUnsafe(digest);
+  });
 }
 
 export type LocalContentJournal = {

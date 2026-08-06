@@ -66,6 +66,9 @@ import {
   downloadOfflineCopies,
   releaseOfflineCopies,
   listTrash,
+  listSystemEntries,
+  readSystemFile,
+  readTrashFile,
   restoreTrash,
   permanentlyDeleteTrash,
   stopDesktopSync,
@@ -73,6 +76,7 @@ import {
   type OfflineOperationProgress,
   type FileTransferState,
   type ContentConflictBundle,
+  VirtualFileChangedError,
 } from "./lib/sync";
 import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
@@ -90,7 +94,7 @@ import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
-import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isVirtualThumbnailEntry, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "./ui/shell-entries";
+import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isProtectedShellEntry, protectedShellSource, protectedWindowDisposition, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "./ui/shell-entries";
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
@@ -107,7 +111,8 @@ import { SharingDialog } from "./components/SharingDialog";
 import { PublishDialog } from "./components/PublishDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
 import { isRevisionConflictRecord, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
-import type { TrashItem } from "./lib/contracts";
+import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
+import { accountResources, downloadAccountResource } from "./lib/account-apps";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
@@ -161,7 +166,7 @@ import { ShellNotifications, type ShellMessage } from "./features/notifications/
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
 import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
-import { deleteApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
+import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
@@ -171,6 +176,7 @@ const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((mo
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
+type ProtectedLoadState = { status: "idle" | "loading" | "ready" | "error"; message?: string };
 function publishedSystemApp(item: StorePackage) {
   if (item.kind !== "system" || !item.release) return null;
   return { slug: item.release.slug, archivePath: `system-apps/${item.release.slug}.hiraya.app`, digest: item.release.digest, manifest: item.release.manifest };
@@ -244,6 +250,11 @@ function App({ session }: { session: AuthSession | null }) {
     hostServices: appHostServices,
     capabilities: appCapabilities,
     installedApps,
+    availableAccountApps,
+    accountAppsSnapshot,
+    accountAppsError,
+    accountAppsPending,
+    blockedAccountAppOperations,
     appsLoaded,
     fileAssociations,
     quarantinedApps,
@@ -256,11 +267,17 @@ function App({ session }: { session: AuthSession | null }) {
     deleteAssociation,
     clearAssociations,
     clearAppData,
+    publishAccountInstall,
+    approveAccountInstall,
+    uninstallAccountApp,
+    retryAccountAppOperation,
+    discardAccountAppOperation,
   } = useAppPlatform({
     enabled: !loading,
     initialTheme: resolveTheme(DEFAULT_THEME_STATE),
     onCloseRequest: ({ instanceId }) => closeAppRef.current(instanceId, false),
     onError: (loadError) => setError(loadError.message),
+    accountSyncOrigin: session?.directBlobOrigin ?? null,
   });
   const [entries, setEntries] = useState<DesktopEntry[]>([]);
   const [desktops, setDesktops] = useState<DesktopIdentity[]>([]);
@@ -333,6 +350,11 @@ function App({ session }: { session: AuthSession | null }) {
   const [searchAllDesktops, setSearchAllDesktops] = useState(false);
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
   const [showHiddenFiles, setShowHiddenFiles] = useState(false);
+  const [systemDocument, setSystemDocument] = useState<SystemEntriesDocument | null>(null);
+  const [shellTrash, setShellTrash] = useState<TrashDocument | null>(null);
+  const [systemLoad, setSystemLoad] = useState<ProtectedLoadState>({ status: "idle" });
+  const [trashLoad, setTrashLoad] = useState<ProtectedLoadState>({ status: "idle" });
+  const [protectedRefreshToken, setProtectedRefreshToken] = useState(0);
   const [minimapExpanded, setMinimapExpanded] = useState(false);
   const [showGettingStarted, setShowGettingStarted] = useState(false);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
@@ -520,13 +542,59 @@ function App({ session }: { session: AuthSession | null }) {
   const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
   const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
+  useEffect(() => {
+    let active = true;
+    if (!showHiddenFiles || !activeDesktopId || loading) {
+      setSystemDocument(null);
+      setShellTrash(null);
+      setSystemLoad({ status: "idle" });
+      setTrashLoad({ status: "idle" });
+      return () => { active = false; };
+    }
+    setSystemLoad({ status: "loading" });
+    void listSystemEntries(activeDesktopId).then((document) => {
+      if (!active) return;
+      setSystemDocument(document);
+      setSystemLoad({ status: "ready" });
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      setSystemDocument(null);
+      setSystemLoad({ status: "error", message: reason instanceof Error ? reason.message : "System resources could not be loaded." });
+    });
+    if (syncStatus === "local") {
+      setShellTrash(null);
+      setTrashLoad({ status: "ready" });
+    } else {
+      setTrashLoad({ status: "loading" });
+      void listTrash(activeDesktopId).then((document) => {
+        if (!active) return;
+        setShellTrash(document);
+        setTrashLoad({ status: "ready" });
+      }).catch((reason: unknown) => {
+        if (!active) return;
+        setShellTrash(null);
+        setTrashLoad({ status: "error", message: reason instanceof Error ? reason.message : "Trash contents could not be loaded." });
+      });
+    }
+    return () => { active = false; };
+  }, [activeDesktopId, appearance, entries, layout, loading, protectedRefreshToken, showHiddenFiles, syncStatus]);
+  const activeSystemDocument = systemDocument?.desktopId === activeDesktopId ? systemDocument : null;
+  const activeShellTrash = shellTrash?.desktopId === activeDesktopId ? shellTrash : null;
+  const accountResourceList = useMemo(() => accountAppsSnapshot ? accountResources(accountAppsSnapshot) : [], [accountAppsSnapshot]);
+  const protectedTreeStatus = (() => {
+    if (!showHiddenFiles) return undefined;
+    if (systemLoad.status === "loading" || trashLoad.status === "loading" || systemLoad.status === "idle" || trashLoad.status === "idle") return { message: "Loading protected desktop files..." };
+    const failures = [systemLoad.status === "error" ? systemLoad.message : "", trashLoad.status === "error" ? trashLoad.message : ""].filter(Boolean);
+    if (!failures.length) return undefined;
+    return { message: `${failures.length === 1 && (activeSystemDocument || activeShellTrash) ? "The protected tree is incomplete. " : "The protected tree could not be loaded. "}${failures.join(" ")}`, error: true, onRetry: () => setProtectedRefreshToken((value) => value + 1) };
+  })();
   const shellEntryList = useMemo(() => {
-    const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable);
+    const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable, activeSystemDocument?.entries, activeShellTrash?.items, showHiddenFiles, accountResourceList);
     if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
     const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
     const position = nextAvailableDesktopSlot(iconArea, occupied, false, occupied.length, iconMetrics);
     return projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry);
-  }, [entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
+  }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
   const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
   const rootEntries = shellEntryIndex.roots;
   const responsive = useMemo(() => responsiveDesktop(shellEntryList, iconArea, iconMetrics), [shellEntryList, iconArea, iconMetrics]);
@@ -574,7 +642,7 @@ function App({ session }: { session: AuthSession | null }) {
       return position.x + iconMetrics.width > iconArea.width - minimapWidth && position.y + iconMetrics.height > iconArea.height - minimapHeight;
     });
   const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const hasVirtualSelection = selectedIds.some(isVirtualThumbnailEntry);
+  const hasVirtualSelection = selectedIds.some(isProtectedShellEntry);
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? "desktop";
@@ -886,6 +954,10 @@ function App({ session }: { session: AuthSession | null }) {
   // Retry a deferred trusted update after its running app becomes clean or closes.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dirtyAppIds, runningApps, storeInspections, storePackages]);
+  useEffect(() => {
+    const approved = new Set(installedApps.filter((app) => app.source === "account").map((app) => `${app.appId}:${app.installationGeneration}:${app.digest}`));
+    for (const running of runningAppsRef.current) if (running.kind === "sandbox" && running.install.source === "account" && !approved.has(`${running.install.appId}:${running.install.installationGeneration}:${running.install.digest}`)) void closeAppRef.current(running.id, false, false);
+  }, [installedApps, runningAppsRef]);
 
   useEffect(() => {
     const beforeInstall = (event: Event) => {
@@ -1932,7 +2004,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (modifier && key === "a") {
         const explorer = activeExplorer();
         const surface = explorer?.id ?? "desktop";
-        const ids = (explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id)).filter((id) => !isVirtualThumbnailEntry(id));
+        const ids = (explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id)).filter((id) => !isProtectedShellEntry(id));
         event.preventDefault();
         replaceSelection(surface, ids);
       } else if (modifier && key === "c" && selectedIdsRef.current.length) {
@@ -2385,7 +2457,7 @@ function App({ session }: { session: AuthSession | null }) {
       const remaining = windowsForHiddenFilePreference(runningAppsRef.current, false);
       updateRunningApps(remaining);
       if (focusedAppIdRef.current && !remaining.some((app) => app.id === focusedAppIdRef.current)) setFocusedApp(null);
-      if (selectedIdsRef.current.some(isVirtualThumbnailEntry)) replaceSelection(selectionScope, []);
+      if (selectedIdsRef.current.some(isProtectedShellEntry)) replaceSelection(selectionScope, []);
     }
     setShowHiddenFiles(enabled);
     try {
@@ -2773,7 +2845,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (focus) focusApp(id, syncRoute);
       return false;
     }
-    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId, ...(isVirtualThumbnailEntry(folderId) ? { transient: true } : {}) };
+    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId, ...(isProtectedShellEntry(folderId) ? { transient: true } : {}) };
     updateRunningApps([...runningAppsRef.current, app]);
     if (focus) setFocusedApp(id);
     return true;
@@ -2788,10 +2860,10 @@ function App({ session }: { session: AuthSession | null }) {
     if (existing) {
       updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => (app.id === nextId ? { ...app, minimized: false, zIndex } : app)));
     } else {
-      updateRunningApps(runningAppsRef.current.map((app) => (app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex, transient: isVirtualThumbnailEntry(folderId) || undefined } : app)));
+      updateRunningApps(runningAppsRef.current.map((app) => (app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex, transient: isProtectedShellEntry(folderId) || undefined } : app)));
     }
     setFocusedApp(nextId);
-    if (isVirtualThumbnailEntry(folderId)) return;
+    if (isProtectedShellEntry(folderId)) return;
     const currentRoute = routeRef.current;
     if (currentRoute && existing) {
       const segment = segmentForApp(existing);
@@ -2926,10 +2998,14 @@ function App({ session }: { session: AuthSession | null }) {
         const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
         const confirmed = await requestConfirmation({ title: `${approved ? "Approve updated" : "Install"} ${appPackage.manifest.name}?`, message: `Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`, confirmLabel: approved ? "Approve update" : "Install and run" });
         if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
-        install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
+        if (session) {
+          const published = await publishAccountInstall(blob ?? await readFile(file.id), appPackage);
+          if (!published) { setNotice(`${appPackage.manifest.name} queued for account synchronization`); return; }
+          install = published;
+        } else install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
         if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
-        await approveInstall(install);
-        if (approved?.source === "store") await deleteApprovedPackageArchive(approved.digest).catch(() => undefined);
+        if (!session) await approveInstall(install);
+        if (approved?.source === "store" || approved?.source === "account") await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
       }
       await launchInstalledApp(install!, launchFile);
     } catch (openError) {
@@ -2968,7 +3044,7 @@ function App({ session }: { session: AuthSession | null }) {
       const published = remoteStore ? (await loadStorePackages(remoteStore, session!.directBlobOrigin)).packages : [];
       if (!published.some((candidate) => storePackageKey(candidate) === key)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
       await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
-      const install: InstalledApp = {
+      const install: InstalledApp | null = session ? await publishAccountInstall(inspected.archive, appPackage) : {
         appId: appPackage.manifest.id,
         source: "store",
         packageEntryId: item.entry.id,
@@ -2981,9 +3057,10 @@ function App({ session }: { session: AuthSession | null }) {
         manifest: appPackage.manifest,
         approvedAt: Date.now(),
       };
+      if (!install) { setNotice(`${appPackage.manifest.name} queued for account synchronization`); return; }
       if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
-      await approveInstall(install);
-      if (approved?.source === "store" && approved.digest !== install.digest) await deleteApprovedPackageArchive(approved.digest).catch(() => undefined);
+      if (!session) await approveInstall(install);
+      if ((approved?.source === "store" || approved?.source === "account") && approved.digest !== install.digest) await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
       setNotice(`${appPackage.manifest.name} ${approved ? "updated" : "installed"}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The app could not be installed.");
@@ -3042,7 +3119,7 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function launchApp(install: InstalledApp) {
-    if (install.source === "system" || install.source === "store") void launchInstalledApp(install);
+    if (install.source === "system" || install.source === "store" || install.source === "account") void launchInstalledApp(install);
     else {
       const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === install.packageEntryId && candidate.kind === "file");
       if (entry) void openAppPackage(entry);
@@ -3056,7 +3133,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (!currentRoute) return;
     const previousApps = runningAppTargets();
     const target: SystemAppTarget = { kind: "system", appId: app.appId, targetKind: "file", entryId: file.id };
-    if (app.source === "system" || app.source === "store") await launchInstalledApp(app, file);
+    if (app.source === "system" || app.source === "store" || app.source === "account") await launchInstalledApp(app, file);
     else {
       const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
       if (packageEntry) await openAppPackage(packageEntry, file);
@@ -3071,11 +3148,26 @@ function App({ session }: { session: AuthSession | null }) {
 
   async function removeInstalledApp(app: InstalledApp) {
     if (app.source === "system") return;
-    if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
+    const accountApproval = app.source === "account";
+    if (!(await requestConfirmation({ title: `${accountApproval ? "Remove local approval for" : "Uninstall"} ${app.manifest.name}?`, message: accountApproval ? "This device will stop running the app. The account installation and synchronized app data remain available to approve again." : "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: accountApproval ? "Remove approval" : "Uninstall", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
     await removeInstall(app.appId);
-    if (app.source === "store") await deleteApprovedPackageArchive(app.digest).catch(() => undefined);
-    setNotice(`${app.manifest.name} uninstalled`);
+    if (app.source === "store") await releaseApprovedPackageArchive(app.digest).catch(() => undefined);
+    setNotice(accountApproval ? `${app.manifest.name} approval removed from this device` : `${app.manifest.name} uninstalled`);
+  }
+
+  async function uninstallFromAccount(appId: string) {
+    const app = availableAccountApps.find((candidate) => candidate.appId === appId) ?? null;
+    const approved = installedApps.find((candidate) => candidate.appId === appId && candidate.source === "account");
+    const desired = app ?? (approved ? { appId: approved.appId, manifest: approved.manifest } : null);
+    const remote = availableAccountApps.find((candidate) => candidate.appId === appId) ?? (accountAppsSnapshot?.apps.find((candidate) => candidate.appId === appId));
+    if (!desired || !remote || !uninstallAccountApp) return;
+    if (!(await requestConfirmation({ title: `Uninstall ${desired.manifest.name} from this account?`, message: "This removes the app package, synchronized app data, and handler hints for every device. Local approvals will no longer launch it.", confirmLabel: "Uninstall from account", danger: true }))) return;
+    forceCloseRunningAppInstances([...runningAppsRef.current], appId, closeApp);
+    await uninstallAccountApp(remote);
+    if (approved) await removeInstall(appId);
+    if (approved) await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
+    setNotice(`${desired.manifest.name} will be uninstalled from this account`);
   }
 
   function exportQuarantinedApp(app: QuarantinedApp) {
@@ -3135,11 +3227,104 @@ function App({ session }: { session: AuthSession | null }) {
     }).catch((openError) => updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The thumbnail could not be opened." } : candidate)));
   }
 
+  function downloadProtectedBlob(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
+
+  function protectedFileDetails(file: FileEntry) {
+    const source = protectedShellSource(file);
+    const systemEntry = source?.kind === "system" ? activeSystemDocument?.entries.find((entry) => entry.id === source.entryId) : undefined;
+    const trashItem = source?.kind === "trash" ? activeShellTrash?.items.find((item) => item.entry.id === source.rootId) : undefined;
+    const trashEntry = source?.kind === "trash" ? trashItem?.entries.find((entry) => entry.id === source.entryId) : undefined;
+    const accountResource = source?.kind === "account" ? accountResourceList.find((resource) => resource.id === source.resourceId) : undefined;
+    if (!source || source.kind === "system" && !systemEntry || source.kind === "trash" && (!trashEntry || trashEntry.kind !== "file") || source.kind === "account" && !accountResource) return null;
+    if (source.kind === "account") return {
+      source,
+      revision: accountResource!.revision,
+      package: false,
+      load: async () => {
+        if (!session) throw new Error("Sign in again to open this account resource.");
+        return downloadAccountResource(accountResource!, session.directBlobOrigin);
+      },
+    };
+    return source.kind === "system"
+      ? { source, revision: systemEntry!.contentRevision, package: systemEntry!.systemRole === "theme-package", load: () => readSystemFile(activeDesktopId, activeSystemDocument!.catalogId, systemEntry!) }
+      : { source, revision: trashEntry!.contentRevision, package: false, load: () => readTrashFile(activeDesktopId, activeShellTrash!.catalogId, source.rootId, trashEntry!) };
+  }
+
+  function loadProtectedWindow(id: string, file: FileEntry, revision: number, load: () => Promise<File>) {
+    const generation = (fileLoadGenerationsRef.current[id] ?? 0) + 1;
+    fileLoadGenerationsRef.current[id] = generation;
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, file, blob: undefined, editable: fileCapabilities(file).editable, contentRevision: revision, loadError: undefined } : candidate));
+    void load().then((blob) => {
+      if (fileLoadGenerationsRef.current[id] !== generation || !runningAppsRef.current.some((candidate) => candidate.id === id)) return;
+      const opened = new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, blob: opened, loadError: undefined } : candidate));
+    }).catch((openError) => {
+      if (fileLoadGenerationsRef.current[id] !== generation) return;
+      if (openError instanceof VirtualFileChangedError) setProtectedRefreshToken((value) => value + 1);
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The protected file could not be opened." } : candidate));
+    });
+  }
+
+  function openProtectedFile(file: FileEntry) {
+    const details = protectedFileDetails(file);
+    if (!details) {
+      setError("That protected file is no longer available. Reopen the .hiraya folder and try again.");
+      return;
+    }
+    if (details.package) {
+      void details.load().then((blob) => downloadProtectedBlob(blob, file.name)).catch((openError) => setError(openError instanceof Error ? openError.message : "The protected package could not be downloaded."));
+      return;
+    }
+    const id = `protected-file-window:${file.id}`;
+    const existing = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (existing && (existing.kind !== "file" || !existing.loadError)) {
+      focusApp(id, false);
+      return;
+    }
+    if (existing) updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: undefined } : candidate));
+    else {
+      const app: FileApp = { ...createAppBase(id, "file"), transient: true, kind: "file", fileId: file.id, file, editable: fileCapabilities(file).editable, editMode: false, contentRevision: details.revision, remoteChanged: false };
+      updateRunningApps([...runningAppsRef.current, app]);
+    }
+    setFocusedApp(id);
+    loadProtectedWindow(id, file, details.revision, details.load);
+  }
+
+  const reconcileProtectedWindows = useEffectEvent(() => {
+    for (const app of runningAppsRef.current) {
+      if (app.kind !== "file" || !app.transient || !app.file || virtualThumbnailSource(app.file)) continue;
+      const source = protectedShellSource(app.file);
+      if (!source) continue;
+      const loadState = source.kind === "system" ? systemLoad.status : source.kind === "trash" ? trashLoad.status : "ready";
+      if (loadState === "idle" || loadState === "loading") continue;
+      const details = protectedFileDetails(app.file);
+      const projected = shellEntryIndex.byId.get(app.fileId);
+      const disposition = protectedWindowDisposition(app.contentRevision, details?.revision ?? null);
+      if (disposition === "close" || !projected || projected.kind !== "file") {
+        void closeAppRef.current(app.id, false, false);
+        continue;
+      }
+      if (disposition === "reload") loadProtectedWindow(app.id, projected, details!.revision, details!.load);
+    }
+  });
+
+  useEffect(() => {
+    reconcileProtectedWindows();
+  }, [accountAppsSnapshot, accountResourceList, activeShellTrash, activeSystemDocument, reconcileProtectedWindows, systemLoad.status, trashLoad.status]);
+
   function handleOpen(entry: DesktopEntry) {
     setContextMenu(null);
-    if (isVirtualThumbnailEntry(entry)) {
+    if (isProtectedShellEntry(entry)) {
       if (entry.kind === "folder") openExplorerWindow(entry.id, false);
-      else openVirtualThumbnail(entry);
+      else if (virtualThumbnailSource(entry)) openVirtualThumbnail(entry);
+      else openProtectedFile(entry);
       return;
     }
     if (entry.kind === "file" && isAppPackageName(entry.name)) {
@@ -3256,6 +3441,10 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  function invalidateShellTrashRoot(rootId: string) {
+    setShellTrash((current) => current ? { ...current, items: current.items.filter((item) => item.entry.id !== rootId) } : current);
+  }
+
   async function undoMoveToTrash(pending: TrashNotification) {
     if (pending.state === "running") return;
     setTrashNotifications((current) => updateTrashNotification(current, pending.id, "running"));
@@ -3267,6 +3456,7 @@ function App({ session }: { session: AuthSession | null }) {
         const revision = revisions.get(id);
         if (revision === undefined) throw new Error("That item is no longer in Trash.");
         await restoreTrash(pending.desktopId, id, "original", revision);
+        invalidateShellTrashRoot(id);
       }
       setTrashNotifications((current) => dismissTrashNotification(current, pending.id));
     } catch (restoreError) {
@@ -4437,7 +4627,7 @@ function App({ session }: { session: AuthSession | null }) {
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
-                  readOnly={isVirtualThumbnailEntry(entry)}
+                  readOnly={isProtectedShellEntry(entry)}
                   interactive={segmentInteractive}
                   loadPreview={segmentInteractive ? thumbnailFile : undefined}
                   offlineAvailability={offlineModel.entries[entry.id]}
@@ -4467,15 +4657,15 @@ function App({ session }: { session: AuthSession | null }) {
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
                   gridSize={layout.snapToGrid ? layout.gridSize : undefined}
-                  onExternalDrop={isVirtualThumbnailEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
+                  onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();
-                    if (isVirtualThumbnailEntry(entry)) return;
+                    if (isProtectedShellEntry(entry)) return;
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
                     openEntryContextMenu(entry.id, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                   }}
                   onContextMenuAt={(x, y, presentation) => {
-                    if (isVirtualThumbnailEntry(entry)) return;
+                    if (isProtectedShellEntry(entry)) return;
                     if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
                     openEntryContextMenu(entry.id, x, y, presentation);
                   }}
@@ -4608,7 +4798,8 @@ function App({ session }: { session: AuthSession | null }) {
                         onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
                         offlineAvailability={offlineModel.entries}
                         loadPreview={thumbnailFile}
-                        isEntryReadOnly={isVirtualThumbnailEntry}
+                        isEntryReadOnly={isProtectedShellEntry}
+                        protectedStatus={isProtectedShellEntry(folder) ? protectedTreeStatus : undefined}
                         onMove={(entry, destination, point) => {
                           if (!canMutateShellDrop(entry, destination.parentId)) return;
                           const items = selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
@@ -4619,10 +4810,12 @@ function App({ session }: { session: AuthSession | null }) {
                         getDesktopDropPreview={positionAtDesktopPoint}
                         gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                         onContextMenu={(entry, x, y, presentation) => {
+                          if (isProtectedShellEntry(entry)) return;
                           if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
                           openEntryContextMenu(entry.id, x, y, presentation);
                         }}
                         onBlankContextMenu={(parentId, x, y, presentation) => {
+                          if (isProtectedShellEntry(parentId)) return;
                           window.getSelection()?.removeAllRanges();
                           replaceSelection(app.id, []);
                           setContextMenu({
@@ -4635,7 +4828,7 @@ function App({ session }: { session: AuthSession | null }) {
                           });
                         }}
                         onClearSelection={() => replaceSelection(app.id, [])}
-                        readOnly={!canMutate || isVirtualThumbnailEntry(folder)}
+                        readOnly={!canMutate || isProtectedShellEntry(folder)}
                         headerElements={headerElements}
                         view={explorerView}
                         onViewChange={(view) => void changeExplorerView(view)}
@@ -4645,7 +4838,7 @@ function App({ session }: { session: AuthSession | null }) {
                     {app.kind === "file" && app.transient && app.file && (app.blob ? <FileWindow
                       file={app.file}
                       blob={app.blob}
-                      editable={false}
+                      editable={app.editable ?? false}
                       readOnly
                       canChangeSettings={false}
                       headerActionsTarget={headerElements.actions}
@@ -4653,19 +4846,12 @@ function App({ session }: { session: AuthSession | null }) {
                       externalEmbeddedPreviews={false}
                       theme={activeTheme}
                       onSave={async () => undefined}
-                      onDownload={() => {
-                        const url = URL.createObjectURL(app.blob!);
-                        const anchor = document.createElement("a");
-                        anchor.href = url;
-                        anchor.download = app.file!.name;
-                        anchor.click();
-                        window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-                      }}
+                      onDownload={() => downloadProtectedBlob(app.blob!, app.file!.name)}
                       onEdit={() => undefined}
                       onEditorSettingsChange={() => undefined}
-                      onResolveLink={async () => { throw new Error("Generated thumbnails do not contain file links."); }}
+                      onResolveLink={async () => { throw new Error("Protected files do not expose file links."); }}
                       onOpenLinkedFile={() => undefined}
-                    /> : app.loadError ? <div className="app-window__loading" role="alert"><span>{app.loadError}</span><button className="button button--primary" type="button" onClick={() => openVirtualThumbnail(app.file!)}>Retry</button></div> : <div className="app-window__loading" role="status">Opening {app.file.name}...</div>)}
+                    /> : app.loadError ? <div className="app-window__loading" role="alert"><span>{app.loadError}</span><button className="button button--primary" type="button" onClick={() => virtualThumbnailSource(app.file!) ? openVirtualThumbnail(app.file!) : openProtectedFile(app.file!)}>Retry</button></div> : <div className="app-window__loading" role="status">Opening {app.file.name}...</div>)}
                     {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
                     {app.kind === "merge" && mergeReview && (mergeReview.mode === "text" ? <MergeWindow
                       mode="text"
@@ -4828,10 +5014,10 @@ function App({ session }: { session: AuthSession | null }) {
                         onOpenHelp={openHelp}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} onReset={(installed) =>
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onApproveAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} approved on this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be approved."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
                       void requestConfirmation({
                         title: `Reset ${installed.manifest.name}?`,
-                        message: "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
+                        message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
                         confirmLabel: "Reset data",
                         danger: true,
                       }).then(async (confirmed) => {
@@ -5350,8 +5536,8 @@ function App({ session }: { session: AuthSession | null }) {
           <TrashWindow
             readOnly={!canMutate}
             onListTrash={() => listTrash(activeDesktopId)}
-            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination, item.entry.revision); }}
-            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id, item.entry.revision); }}
+            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination, item.entry.revision); invalidateShellTrashRoot(item.entry.id); }}
+            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id, item.entry.revision); invalidateShellTrashRoot(item.entry.id); }}
             onRequestPermanentDelete={(item: TrashItem, confirmedDelete) => {
               void requestConfirmation({
                 title: `Delete ${item.entry.name} permanently?`,

@@ -70,7 +70,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
           return response.blob();
         }))
-      : install.source === "store"
+      : install.source === "store" || install.source === "account"
         ? await readApprovedPackageArchive(install.digest)
       : await options.fileSync.readFile(install.packageEntryId);
     const { inspectAppArchive } = await import("@hiraya-team/app-cli");
