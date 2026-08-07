@@ -37,6 +37,19 @@ describe("Context menu presentation", () => {
     expect(markup).toContain("action-sheet-backdrop");
     expect(markup).not.toContain("data-positioned");
   });
+
+  test("keeps Publish visible but disabled while offline", () => {
+    const markup = renderToStaticMarkup(createElement(ContextMenu, {
+      ...callbacks,
+      entry,
+      menu: { type: "entry", entryId: entry.id, x: 24, y: 80, presentation: "menu" },
+      onPublish() {},
+      publishDisabled: true,
+    }));
+
+    expect(markup).toContain("disabled=\"\"");
+    expect(markup).toContain("Publish...");
+  });
 });
 
 describe("Paste actions", () => {
