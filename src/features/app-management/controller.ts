@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import { parseFileAssociation, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
@@ -19,10 +19,10 @@ import {
   uninstallApp,
   writeAppStorage,
 } from "../../platform/storage/repositories";
-import { readApprovedPackageArchive } from "../../platform/storage/blobs";
+import { readApprovedPackageArchive, releaseApprovedPackageArchive } from "../../platform/storage/blobs";
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { AccountAppsClient, type AccountAppsClientState } from "./account-sync";
-import type { AccountApp } from "../../lib/account-apps";
+import { accountApprovalMatches, type AccountApp, type AccountAppsSnapshot } from "../../lib/account-apps";
 
 type AppPlatformOptions = {
   enabled: boolean;
@@ -51,6 +51,9 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
   const capabilities = useMemo(() => new CapabilityStore(), []);
   const [localApps, setLocalApps] = useState<InstalledApp[]>([]);
   const [accountState, setAccountState] = useState<AccountAppsClientState | null>(null);
+  const [accountAppSyncError, setAccountAppSyncError] = useState("");
+  const accountAppDownloads = useRef(new Map<string, Promise<InstalledApp>>());
+  const accountAppQueue = useRef<Promise<void>>(Promise.resolve());
   const [appsLoaded, setAppsLoaded] = useState(false);
   const [localFileAssociations, setLocalFileAssociations] = useState<FileAssociation[]>([]);
   const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
@@ -81,7 +84,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     const accountAppIds = new Set(accountState.state.baseline?.apps.map((app) => app.appId) ?? []);
     return [...localFileAssociations.filter((association) => !remoteMatchers.has(association.matcher) && !accountAppIds.has(association.appId)), ...remote].sort((left, right) => left.matcher.localeCompare(right.matcher));
   }, [accountClient, accountState, localFileAssociations]);
-  const availableAccountApps = useMemo(() => accountState?.state.baseline?.apps.filter((app) => !installedApps.some((approval) => approval.appId === app.appId)) ?? [], [accountState, installedApps]);
+  const availableAccountApps = useMemo(() => accountState?.state.baseline?.apps.filter((app) => accountState.state.projection.apps.some((desired) => desired.appId === app.appId) && !installedApps.some((approval) => approval.appId === app.appId)) ?? [], [accountState, installedApps]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -122,6 +125,80 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     await installApp(install);
     setLocalApps((current) => [...current.filter((item) => item.appId !== install.appId), install]);
   }
+
+  function enqueueAccountAppWork<T>(work: () => Promise<T>) {
+    const result = accountAppQueue.current.catch(() => undefined).then(work);
+    accountAppQueue.current = result.then(() => undefined, () => undefined);
+    return result;
+  }
+
+  async function synchronizeAccountInstallNow(app: AccountApp) {
+    if (!accountClient) throw new Error("Account app synchronization is unavailable.");
+    const previous = (await listInstalledApps()).find((item) => item.appId === app.appId && item.source === "account");
+    const approval = await accountClient.approve(app);
+    const current = accountClient.snapshot()?.apps.find((item) => item.appId === app.appId);
+    if (!current || !accountApprovalMatches(approval, current)) {
+      await releaseApprovedPackageArchive(approval.digest).catch(() => undefined);
+      throw new Error(`${app.manifest.name} changed while synchronizing. Hiraya will retry the current version.`);
+    }
+    await approveInstall(approval);
+    if (previous && previous.digest !== approval.digest) await releaseApprovedPackageArchive(previous.digest).catch(() => undefined);
+    setAccountAppSyncError("");
+    return approval;
+  }
+
+  async function synchronizeAccountInstall(app: AccountApp) {
+    if (!accountClient) throw new Error("Account app synchronization is unavailable.");
+    const key = `${app.appId}:${app.generations.installationGeneration}:${app.package.sha256}`;
+    const existing = accountAppDownloads.current.get(key);
+    if (existing) return existing;
+    const download = enqueueAccountAppWork(async () => {
+      const current = accountClient.snapshot()?.apps.find((item) => item.appId === app.appId);
+      if (!current || current.generations.installationGeneration !== app.generations.installationGeneration || current.package.sha256 !== app.package.sha256) throw new Error(`${app.manifest.name} changed while waiting to synchronize.`);
+      const approval = (await listInstalledApps()).find((item) => item.appId === app.appId);
+      if (approval && accountApprovalMatches(approval, app)) {
+        try { await readApprovedPackageArchive(approval.digest); setAccountAppSyncError(""); return approval; } catch { /* Restore a missing or damaged local archive below. */ }
+      }
+      return synchronizeAccountInstallNow(app);
+    });
+    accountAppDownloads.current.set(key, download);
+    try {
+      return await download;
+    } catch (error) {
+      setAccountAppSyncError(error instanceof Error ? error.message : "An account app could not be synchronized to this device.");
+      throw error;
+    } finally {
+      accountAppDownloads.current.delete(key);
+    }
+  }
+
+  const reconcileAccountInstalls = useEffectEvent((snapshot: AccountAppsSnapshot) => {
+    void enqueueAccountAppWork(async () => {
+      if (accountClient?.snapshot()?.appsRevision !== snapshot.appsRevision) return;
+      const local = await listInstalledApps();
+      const desiredIds = new Set(snapshot.apps.map((app) => app.appId));
+      for (const stale of local.filter((app) => app.source === "account" && !desiredIds.has(app.appId))) {
+        await removeInstall(stale.appId);
+        await releaseApprovedPackageArchive(stale.digest).catch(() => undefined);
+      }
+      for (const app of snapshot.apps) {
+        const approval = local.find((item) => item.appId === app.appId);
+        if (approval && accountApprovalMatches(approval, app)) {
+          try { await readApprovedPackageArchive(approval.digest); continue; } catch { /* Restore a missing or damaged local archive below. */ }
+        }
+        await synchronizeAccountInstallNow(app);
+      }
+      setAccountAppSyncError("");
+    }).catch((error) => setAccountAppSyncError(error instanceof Error ? error.message : "An account app could not be synchronized to this device."));
+  });
+
+  useEffect(() => {
+    const baseline = accountState?.state.baseline;
+    if (!enabled || !appsLoaded || !accountClient || !baseline) return;
+    reconcileAccountInstalls(baseline);
+    // useEffectEvent keeps local app state current without restarting an active download.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountClient, accountState?.state.baseline, appsLoaded, enabled]);
 
   async function removeInstall(appId: string) {
     await uninstallApp(appId);
@@ -180,10 +257,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
   }
 
   async function approveAccountInstall(app: AccountApp) {
-    if (!accountClient) throw new Error("Account app synchronization is unavailable.");
-    const approval = await accountClient.approve(app);
-    await approveInstall(approval);
-    return approval;
+    return synchronizeAccountInstall(app);
   }
 
   return {
@@ -194,7 +268,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     installedApps,
     availableAccountApps,
     accountAppsSnapshot: accountState?.state.baseline ?? null,
-    accountAppsError: accountState?.error ?? "",
+    accountAppsError: accountState?.error || accountAppSyncError,
     accountAppsPending: accountState?.outbox.filter((record) => record.status === "pending").length ?? 0,
     blockedAccountAppOperations: accountState?.outbox.filter((record) => record.status === "blocked") ?? [],
     appsLoaded,

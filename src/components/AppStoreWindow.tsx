@@ -39,7 +39,7 @@ type Props = {
   accountBlocked?: readonly AccountAppOutboxRecord[];
   onRetryAccount?: (operationId: string) => void;
   onDiscardAccount?: (operationId: string) => void;
-  onApproveAccount?: (app: AccountApp) => void;
+  onSyncAccount?: (app: AccountApp) => void;
   onUninstallAccount?: (appId: string) => void;
 };
 
@@ -54,10 +54,10 @@ function installedSource(app: InstalledApp) {
 }
 
 function installedTrust(app: InstalledApp) {
-  return app.source === "system" ? "Trusted by Hiraya" : app.source === "store" && app.sourceCatalogId === LEGACY_HIRAYA_STORE_CATALOG_ID ? "Published by Hiraya; approved in this browser" : "Approved in this browser";
+  return app.source === "system" ? "Trusted by Hiraya" : app.source === "account" ? "Approved for this account" : app.source === "store" && app.sourceCatalogId === LEGACY_HIRAYA_STORE_CATALOG_ID ? "Published by Hiraya; approved in this browser" : "Approved in this browser";
 }
 
-export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, installingPackageKey, onRetry, onInstall, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onApproveAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
+export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, installingPackageKey, onRetry, onInstall, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onSyncAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const searching = Boolean(deferredQuery.trim());
@@ -112,7 +112,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
               <div><h4>{app.manifest.name}</h4><StatusBadge tone={available ? "neutral" : "danger"}>{available ? `v${app.version}` : "Unavailable"}</StatusBadge></div>
               <p>{app.manifest.description ?? "No description provided."}</p>
               <small>{installedSource(app)}{view && !current ? " · Update available" : ""}</small>
-               <details className="app-store__details"><summary>Details</summary><dl><div><dt>App ID</dt><dd>{app.appId}</dd></div><div><dt>Trust</dt><dd>{installedTrust(app)}</dd></div><div><dt>Scope</dt><dd>{app.source === "account" ? "Account installation; local approval" : "This browser and account"}</dd></div><div><dt>Permissions</dt><dd>{app.manifest.permissions.join(", ") || "None"}</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="app-store__management"><button className="button button--quiet" type="button" onClick={() => onReset(app)}><ArrowClockwise size={15} /> Reset data</button>{app.source !== "system" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstall(app)}><Trash size={15} /> {app.source === "account" ? "Remove local approval" : "Uninstall"}</button>}{app.source === "account" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstallAccount(app.appId)}><Trash size={15} /> Uninstall from account</button>}</div></details>
+               <details className="app-store__details"><summary>Details</summary><dl><div><dt>App ID</dt><dd>{app.appId}</dd></div><div><dt>Trust</dt><dd>{installedTrust(app)}</dd></div><div><dt>Scope</dt><dd>{app.source === "account" ? "Synchronized across this account" : "This browser and account"}</dd></div><div><dt>Permissions</dt><dd>{app.manifest.permissions.join(", ") || "None"}</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="app-store__management"><button className="button button--quiet" type="button" onClick={() => onReset(app)}><ArrowClockwise size={15} /> Reset data</button>{app.source !== "system" && app.source !== "account" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstall(app)}><Trash size={15} /> Uninstall</button>}{app.source === "account" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstallAccount(app.appId)}><Trash size={15} /> Uninstall from account</button>}</div></details>
             </div>
             <div className="app-store__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunch(app)}><Play size={16} weight="fill" /> Open</button>{hasUpdate && view && <button className="button button--primary" type="button" disabled={!canUpdate} aria-busy={installing || undefined} title={offline ? "Reconnect to update this app" : view.loading ? "Inspecting this update" : view.error || undefined} onClick={() => onInstall(view.item)}>{installing ? <SpinnerGap className="activity-spinner" size={16} /> : <DownloadSimple size={16} />} {installing ? "Updating..." : "Update"}</button>}</div>
           </article>;
@@ -120,11 +120,11 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
       </div> : <div className="app-store__state app-store__state--compact"><Package size={26} weight="duotone" /><h4>No applications installed</h4><p>Install an application below or open a <code>.hiraya.app</code> package from the desktop.</p></div>}
     </section>}
     {!noMatches && availableAccountApps.length > 0 && <section className="app-store__section" aria-labelledby="account-apps-heading">
-      <h3 id="account-apps-heading">Available to approve</h3>
+      <h3 id="account-apps-heading">Syncing to this device</h3>
       <div className="app-store__list" role="list">{availableAccountApps.map((app) => <article className="app-store__row" role="listitem" key={app.appId}>
         <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
-        <div className="app-store__copy"><div><h4>{app.manifest.name}</h4><span>v{app.manifest.version}</span></div><p>{app.manifest.description ?? "No description provided."}</p><small>Synchronized package · Approval required on this device</small></div>
-        <div className="app-store__actions"><button className="button button--primary" type="button" disabled={offline} title={offline ? "Reconnect to inspect and approve this package" : undefined} onClick={() => onApproveAccount(app)}><ShieldCheck size={16} /> Review &amp; approve</button><button className="button button--quiet button--danger" type="button" disabled={offline} onClick={() => onUninstallAccount(app.appId)}><Trash size={16} /> Uninstall</button></div>
+        <div className="app-store__copy"><div><h4>{app.manifest.name}</h4><span>v{app.manifest.version}</span></div><p>{app.manifest.description ?? "No description provided."}</p><small>Approved for this account · Downloading and verifying locally</small></div>
+        <div className="app-store__actions"><button className="button button--primary" type="button" disabled={offline} title={offline ? "Reconnect to finish synchronizing this app" : undefined} onClick={() => onSyncAccount(app)}><ArrowClockwise size={16} /> Retry sync</button><button className="button button--quiet button--danger" type="button" disabled={offline} onClick={() => onUninstallAccount(app.appId)}><Trash size={16} /> Uninstall</button></div>
       </article>)}</div>
     </section>}
     {!noMatches && (!searching || availablePackages.length > 0 || loading || error) && <section className="app-store__section" aria-labelledby="available-apps-heading">

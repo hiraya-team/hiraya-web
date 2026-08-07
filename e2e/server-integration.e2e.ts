@@ -183,18 +183,7 @@ async function exerciseAccountApps(first: Page, second: Page) {
   await expect(second.locator(".desktop-shell")).toBeVisible();
   const store = await openAppStore(second);
   const accountRow = store.locator("article").filter({ hasText: accountAppName });
-  await expect(accountRow.getByRole("button", { name: "Review & approve" })).toBeVisible({ timeout: 30_000 });
-  await expect(accountRow.getByRole("button", { name: "Open" })).toHaveCount(0);
-  await second.getByRole("button", { name: "Close App Store" }).click();
-
-  await second.locator(".file-icon").filter({ hasText: accountAppFile }).dblclick();
-  await expect(second.getByRole("dialog", { name: `${accountAppFile} - Text Editor` })).toBeVisible();
-  await expect(second.getByRole("dialog", { name: accountAppName })).toHaveCount(0);
-  await second.getByRole("button", { name: `Close ${accountAppFile} - Text Editor` }).click();
-
-  const approvalStore = await openAppStore(second);
-  await approvalStore.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Review & approve" }).click();
-  const openApproved = approvalStore.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Open" });
+  const openApproved = accountRow.getByRole("button", { name: "Open" });
   await expect(openApproved).toBeVisible({ timeout: 30_000 });
   await openApproved.click();
   const secondApp = second.getByRole("dialog", { name: accountAppName });
@@ -423,9 +412,6 @@ async function afterRestart(browser: Browser) {
   expect(persistedApp?.data.some((item) => item.key === accountAppStorageKey)).toBe(true);
   expect(inventory.handlerHints[accountAppMatcher]).toBe(accountAppId);
   const store = await openAppStore(page);
-  const appRow = store.locator("article").filter({ hasText: accountAppName });
-  await expect(appRow.getByRole("button", { name: "Review & approve" })).toBeVisible();
-  await appRow.getByRole("button", { name: "Review & approve" }).click();
   const open = store.locator("article").filter({ hasText: accountAppName }).getByRole("button", { name: "Open" });
   await expect(open).toBeVisible({ timeout: 30_000 });
   await open.click();
