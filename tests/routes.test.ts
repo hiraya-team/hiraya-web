@@ -14,6 +14,7 @@ describe("canonical routes", () => {
 
   test("constructs only canonical scoped API paths", () => {
     expect(API_ROUTES.desktops).toBe("/api/desktops");
+    expect(API_ROUTES.desktopPreferences).toBe("/api/account/desktop-preferences");
     expect(API_ROUTES.desktopProjection("a/b")).toBe("/api/desktops/a%2Fb?projection=web");
     expect(API_ROUTES.desktopContent("d", "a/b")).toBe("/api/desktops/d/entries/a%2Fb/content");
     expect(API_ROUTES.desktopEntryTransactions("d")).toBe("/api/desktops/d/entries/transactions");

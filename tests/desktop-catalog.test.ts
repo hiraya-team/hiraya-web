@@ -8,6 +8,8 @@ describe("desktop catalog", () => {
     expect(parseDesktopCatalog(value)).toEqual(value);
     expect(() => parseDesktopCatalog({ ...value, schemaVersion: 1 })).toThrow("schema version");
     expect(() => parseDesktopCatalog({ ...value, catalogRevision: -1 })).toThrow("revision");
+    expect(parseDesktopCatalog({ ...value, desktops: [{ ...remoteDesktopIdentity(), pinned: undefined }] }).desktops[0].pinned).toBeFalse();
+    expect(() => parseDesktopCatalog({ ...value, desktops: [{ ...remoteDesktopIdentity(), pinned: "yes" }] })).toThrow("pinned preference");
     expect(() => parseDesktopCatalog({ ...value, quota: { ...value.quota, entries: { used: 2, limit: 0 } } })).toThrow("entry quota");
   });
 

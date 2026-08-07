@@ -700,6 +700,15 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await expect(categories).toHaveCSS("display", "grid");
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
+  const desktopsLauncher = settingsWindow.locator('[aria-labelledby="desktops-link-heading"] .settings-row--navigation');
+  await desktopsLauncher.click();
+  await expect(settingsWindow.locator(".settings-page__header h3")).toHaveText("Desktops");
+  const pinDesktop = settingsWindow.locator('.desktop-settings__arrange button[aria-pressed]').first();
+  await pinDesktop.click();
+  await expect(pinDesktop).toHaveAttribute("aria-pressed", "true");
+  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
+  await expect(desktopsLauncher).toBeFocused();
+
   const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
   await themesLauncher.focus();
   await page.keyboard.press("Enter");
@@ -734,6 +743,12 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const mobileSettings = mobilePage.locator('[data-app-window="settings"]');
+  const mobileDesktopsLauncher = mobileSettings.locator('[aria-labelledby="desktops-link-heading"] .settings-row--navigation');
+  await mobileDesktopsLauncher.click();
+  await expect(mobileSettings.locator(".settings-page__header h3")).toHaveText("Desktops");
+  await expect.poll(() => mobileSettings.locator(".settings-window__content").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mobilePage.getByRole("button", { name: "Back to settings" }).click();
+  await expect(mobileDesktopsLauncher).toBeFocused();
   const mobileThemesLauncher = mobileSettings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
   await mobileThemesLauncher.click();
   const mobileBack = mobilePage.getByRole("button", { name: "Back to settings" });

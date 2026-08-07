@@ -207,6 +207,7 @@ export function parseDesktopIdentity(value: unknown, localDefaults = false): Des
   return {
     id: value.id,
     name,
+    pinned: typeof value.pinned === "boolean" ? value.pinned : false,
     ownership: value.ownership,
     role: value.role,
     owner: { id: value.owner.id, displayName: value.owner.displayName.trim(), avatar: value.owner.avatar },

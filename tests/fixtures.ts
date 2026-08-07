@@ -4,7 +4,7 @@ import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import { OWNER_CAPABILITIES } from "../src/lib/permissions";
 
 export function remoteDesktopIdentity(id = "desk", name = "Desktop") {
-  return { id, name, ownership: "owned" as const, role: "owner" as const, owner: { id: "user-1", displayName: "Owner", avatar: null }, capabilities: { ...OWNER_CAPABILITIES }, authorityCatalogId: "catalog-1" };
+  return { id, name, pinned: false, ownership: "owned" as const, role: "owner" as const, owner: { id: "user-1", displayName: "Owner", avatar: null }, capabilities: { ...OWNER_CAPABILITIES }, authorityCatalogId: "catalog-1" };
 }
 
 export function desktopStateSnapshot(): DesktopStateSnapshot {

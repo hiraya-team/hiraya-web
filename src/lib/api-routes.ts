@@ -14,6 +14,7 @@ export function authenticatedHeaders(headers?: HeadersInit) {
 export const API_ROUTES = {
   authSession: "/api/auth/session",
   desktops: "/api/desktops",
+  desktopPreferences: "/api/account/desktop-preferences",
   desktopProjection: (desktopId: string) => `${desktopBase(desktopId)}?projection=web`,
   desktop: (desktopId: string) => desktopBase(desktopId),
   desktopTrash: (desktopId: string) => `${desktopBase(desktopId)}/trash`,

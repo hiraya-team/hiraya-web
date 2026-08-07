@@ -29,6 +29,7 @@ export function parseDesktopCatalog(value: unknown): RemoteDesktopCatalog {
   if (!isRecord(value) || !Array.isArray(value.desktops)) throw new Error("The server desktop catalog has an unsupported format.");
   const authority = parseAuthorityIdentity(value, "The server catalog");
   const desktops = value.desktops.map((candidate): RemoteDesktopIdentity => {
+    if (!isRecord(candidate) || candidate.pinned !== undefined && typeof candidate.pinned !== "boolean") throw new Error("A server desktop has an invalid pinned preference.");
     return parseDesktopIdentity(candidate);
   });
   if (new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The server desktop catalog contains duplicate IDs.");
