@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -1794,6 +1794,13 @@ function App({ session }: { session: AuthSession | null }) {
   }, []);
 
   useEffect(() => {
+    quitBackRef.current = { count: 0, lastAt: 0 };
+    setBackPrompt("");
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = null;
+  }, [focusedAppId, route?.column, route?.explorerFolderId, route?.fileId, route?.propertiesEntryId, route?.row, route?.settings]);
+
+  useEffect(() => {
     let active = true;
     const updater = createPwaUpdater({
       onUpdateAvailable: () => {
@@ -1920,7 +1927,7 @@ function App({ session }: { session: AuthSession | null }) {
     return () => {
       window.removeEventListener("popstate", onPopState);
     };
-  }, [runningAppIds]);
+  }, [navigateBackEvent, runningAppIds]);
 
   useEffect(() => {
     function syncFullscreen() {
@@ -4040,7 +4047,13 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function navigateBack(source: "ui" | "history" = "ui", historyState?: unknown): Promise<"handled" | "restore"> {
-    if (backInFlightRef.current) return "handled";
+    if (backInFlightRef.current) {
+      if (source === "history") {
+        restoreOnlyPopRef.current = true;
+        window.history.forward();
+      }
+      return "handled";
+    }
     backInFlightRef.current = true;
     try {
     const settingsParent = SETTINGS_PARENTS[settingsPage];
@@ -4070,7 +4083,13 @@ function App({ session }: { session: AuthSession | null }) {
           { appId: focused.package.manifest.id, instanceId: focused.id },
           (requestId) => focused.dispatcher.emit("app.backRequested", { requestId }),
         );
-        if (outcome === "handled") return "handled";
+        if (outcome === "handled") {
+          if (source === "history") {
+            restoreOnlyPopRef.current = true;
+            window.history.forward();
+          }
+          return "handled";
+        }
         if (outcome === "failed") {
           setNotice(`${runningAppLabel(focused)} could not go back. Use Close to leave the app.`);
           if (source === "history") {
@@ -4799,8 +4818,9 @@ function App({ session }: { session: AuthSession | null }) {
   return (
     <main className="desktop-shell" data-windowed={windowed || undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
-        <nav className="mobile-window-nav" aria-label="Desktop navigation">
-            <div className="mobile-window-nav__leading">
+        <nav className="mobile-window-nav" data-back={!windowed || undefined} aria-label="Desktop navigation">
+            <div className="mobile-window-nav__leading" data-back={!windowed || undefined}>
+              {!windowed && <button className="mobile-shell-back" type="button" aria-label="Back" title="Back" onClick={() => { void navigateBack(); }}><ArrowLeft size={20} /></button>}
               <MobileHeaderMenu
                 label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
                 icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}

@@ -797,7 +797,7 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await mobileDesktopsLauncher.click();
   await expect(mobileSettings.locator(".settings-page__header h3")).toHaveText("Desktops");
   await expect.poll(() => mobileSettings.locator(".settings-window__content").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await mobilePage.getByRole("button", { name: "Back to Desktop" }).click();
+  await mobilePage.getByRole("button", { name: "Back", exact: true }).click();
   await expect(mobileDesktopsLauncher).toBeFocused();
   const mobileThemesLauncher = mobileSettings.getByRole("button", { name: /Appearance/ });
   await mobileThemesLauncher.click();
@@ -805,6 +805,10 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
   await mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileThemeEditor.frameLocator("iframe").getByRole("heading", { name: "Image treatment" })).toBeVisible();
+  await mobilePage.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Theme", exact: true })).toHaveAttribute("aria-selected", "true");
+  await mobilePage.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(mobileThemeEditor).toHaveCount(0);
   await mobileContext.close();
 });
 
@@ -1007,6 +1011,40 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await trigger.tap();
   await expect(page).toHaveURL(/\/areas\/0\/0$/);
   await expect(switcher).toHaveCount(0);
+  await context.close();
+});
+
+test("mobile Back climbs Settings before closing it", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.locator('[data-app-window="settings"]');
+  await settings.getByRole("button", { name: "Files & apps" }).click();
+  await settings.getByRole("button", { name: /File type defaults/ }).click();
+
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/files-apps$/);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(page).toHaveURL(/\/settings\/desktop$/);
+  await page.getByRole("button", { name: "Back", exact: true }).click();
+  await expect(settings).toHaveCount(0);
+  await context.close();
+});
+
+test("mobile root Back requires two additional presses and resets", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+
+  await page.goBack();
+  await expect(page.getByRole("status").filter({ hasText: "Press Back twice more to quit Hiraya." })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("status").filter({ hasText: "Press Back once more to quit Hiraya." })).toBeVisible();
+  await page.waitForTimeout(3_100);
+  await page.goBack();
+  await expect(page.getByRole("status").filter({ hasText: "Press Back twice more to quit Hiraya." })).toBeVisible();
   await context.close();
 });
 
