@@ -5435,6 +5435,7 @@ function App({ session }: { session: AuthSession | null }) {
                 type: request.params.mimeType ?? "application/octet-stream",
               }),
               request.params.mimeType,
+              true,
             );
             appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, [file])[0]);
           }}

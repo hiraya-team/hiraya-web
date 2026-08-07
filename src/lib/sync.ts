@@ -1011,13 +1011,13 @@ export class SyncEngine {
     }
   }
 
-  private async mutate<T>(operation: OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void) {
+  private async mutate<T>(operation: OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void, replay = true) {
     return this.queue(async () => {
       validate?.();
       const queued = await this.storage.enqueueMutation({ ...operation, schemaVersion: 1 } as OutboxOperation, contents);
       this.publish(queued.desktop);
       await this.publishOutbox();
-      this.requestReplay();
+      if (replay) this.requestReplay();
       return select(this.current());
     });
   }
@@ -1050,7 +1050,7 @@ export class SyncEngine {
     return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, new Blob([], { type: entry.mimeType })]]));
   }
 
-  createFile(nameValue: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string) {
+  createFile(nameValue: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string, deferReplay = false) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.createFile(nameValue, parentId, position, content, mimeType));
     const parsedPosition = parsePosition(position);
     const name = validateEntryName(nameValue);
@@ -1062,7 +1062,7 @@ export class SyncEngine {
       mimeType: mimeType ?? (content.type || "application/octet-stream"), size: content.size,
       createdAt: now, modifiedAt: now, position: parsedPosition,
     };
-    return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, content.slice(0, content.size, entry.mimeType)]]));
+    return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, content.slice(0, content.size, entry.mimeType)]]), undefined, !deferReplay);
   }
 
   createFolder(nameValue: string, parentId: string | null, position: EntryPosition) {
