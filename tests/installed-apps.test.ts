@@ -74,5 +74,7 @@ describe("installed apps", () => {
   test("keeps bundled system apps available without a desktop package", () => {
     const system = parseInstalledApp({ ...install(), source: "system", packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app" });
     expect(installedAppIsAvailable(system, [])).toBe(true);
+    const account = parseInstalledApp({ ...install(), source: "account", packageEntryId: null, archivePath: null, installationGeneration: 1 });
+    expect(installedAppIsAvailable(account, [])).toBe(true);
   });
 });

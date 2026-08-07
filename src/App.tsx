@@ -1417,7 +1417,7 @@ function App({ session }: { session: AuthSession | null }) {
           if (app.transient) return true;
           if (app.kind === "sandbox") {
             if (app.systemTarget?.entryId) return syncedIds.has(app.systemTarget.entryId);
-            return app.install.source === "system" || syncedIds.has(app.packageEntryId!);
+            return installedAppIsAvailable(app.install, synced.entries);
           }
           if (app.kind === "merge") return true;
           const dependency = builtinAppEntryDependency(app);
@@ -1898,8 +1898,8 @@ function App({ session }: { session: AuthSession | null }) {
     const reconciledApps = currentApps.flatMap((app): RunningApp[] => {
       if (app.transient) return [app];
       if (app.kind === "sandbox") {
-        const dependencyId = app.systemTarget?.entryId ?? app.packageEntryId;
-        return dependencyId === null || entryIndex.byId.has(dependencyId) ? [app] : [];
+        if (app.systemTarget?.entryId) return entryIndex.byId.has(app.systemTarget.entryId) ? [app] : [];
+        return installedAppIsAvailable(app.install, entries) ? [app] : [];
       }
       if (app.kind === "merge") return [app];
       const dependency = builtinAppEntryDependency(app);
@@ -1947,7 +1947,7 @@ function App({ session }: { session: AuthSession | null }) {
         })
         .catch(() => setError("An open file changed on the server but could not be refreshed."));
     }
-  }, [entryIndex, focusedAppIdRef, loading, runningAppsRef, setFocusedApp, updateRunningApps]);
+  }, [entries, entryIndex, focusedAppIdRef, loading, runningAppsRef, setFocusedApp, updateRunningApps]);
 
   useEffect(() => {
     if (loading || !windowSessionRestored) return;
