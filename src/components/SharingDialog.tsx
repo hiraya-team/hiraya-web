@@ -43,11 +43,13 @@ export function SharingDialog({
   onClose,
   onOpenHelp,
   restoreFocus,
+  embedded = false,
 }: {
   desktop: DesktopIdentity;
   onClose: () => void;
   onOpenHelp: () => void;
   restoreFocus?: () => HTMLElement | null;
+  embedded?: boolean;
 }) {
   const [sharing, setSharing] = useState<SharingState | null>(null);
   const [email, setEmail] = useState("");
@@ -70,7 +72,7 @@ export function SharingDialog({
   const copyGenerationRef = useRef(0);
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, busy !== "", restoreFocus);
+  useModalDialog(backdropRef, dialogRef, onClose, busy !== "", restoreFocus, !embedded);
 
   function applySharing(next: SharingState) {
     setSharing(next);
@@ -159,22 +161,22 @@ export function SharingDialog({
   return (
     <div
       ref={backdropRef}
-      className="modal-backdrop"
+      className={embedded ? "sharing-dialog-embedded" : "modal-backdrop"}
       role="presentation"
       onPointerDown={(event) => {
-        if (!busy && event.target === event.currentTarget) onClose();
+        if (!embedded && !busy && event.target === event.currentTarget) onClose();
       }}
     >
       <section
         ref={dialogRef}
-        className="file-window sharing-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="sharing-title"
+        className={embedded ? "sharing-dialog sharing-dialog--embedded" : "file-window sharing-dialog"}
+        role={embedded ? undefined : "dialog"}
+        aria-modal={embedded ? undefined : "true"}
+        aria-labelledby={embedded ? undefined : "sharing-title"}
         tabIndex={-1}
         aria-busy={busy !== "" || undefined}
       >
-        <header className="window-header">
+        {!embedded && <header className="window-header">
           <div>
             <span className="window-kicker">Access and publication</span>
             <h2 id="sharing-title">Share {desktop.name}</h2>
@@ -188,7 +190,7 @@ export function SharingDialog({
           >
             <X size={18} />
           </button>
-        </header>
+        </header>}
         <div className="sharing-dialog__content">
           <section className="sharing-section">
             <div className="sharing-section__heading">

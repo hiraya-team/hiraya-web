@@ -1,4 +1,4 @@
-export type AppHistorySettingsPage = "main" | "desktops" | "activity" | "apps" | "short-links";
+import { SETTINGS_PAGES, type SettingsPage } from "../lib/routes";
 
 type AppHistoryState = {
   hiraya?: unknown;
@@ -16,9 +16,14 @@ export function historyInstanceIds(state: unknown, fallback: readonly string[] =
   return [...new Set(instances)];
 }
 
-export function historySettingsPage(state: unknown): AppHistorySettingsPage {
+export function historySettingsPage(state: unknown): SettingsPage {
   const page = historyRecord(state)?.settingsPage;
-  return page === "desktops" || page === "activity" || page === "apps" || page === "short-links" ? page : "main";
+  if (typeof page === "string" && (SETTINGS_PAGES as readonly string[]).includes(page)) return page as SettingsPage;
+  if (page === "desktops") return "desktop/desktops";
+  if (page === "activity") return "sync-storage/activity";
+  if (page === "apps") return "files-apps/file-types";
+  if (page === "short-links") return "sharing/short-links";
+  return "desktop";
 }
 
 export function removedHistoryInstanceIds(current: readonly string[], destination: readonly string[]) {

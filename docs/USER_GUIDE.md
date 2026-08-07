@@ -16,11 +16,12 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Link directly to every Settings page.** Settings now uses stable addresses for each category and detail page, with embedded sharing and connection controls, direct theme and wallpaper choices, and reliable Back and Forward navigation.
 - **Switch desktops from the full row.** In the desktop and area switcher, the entire desktop row now opens that desktop instead of requiring a click directly on its name.
 - **Keep context-menu actions in place offline.** When a synchronized session loses its connection, **Publish...** remains visible for managers and is greyed out until the connection returns.
 - **Manage desktops in Settings.** Open **Settings > Desktop > Desktops** to create, rename, delete, pin, and order owned and shared desktops, review roles, and check account limits. The desktop switcher now stays focused on switching in your chosen order, including while showing the last cached arrangement offline.
 - **Synchronize approved apps across devices.** Approving an app or update once now synchronizes that exact package and its permissions to every signed-in device. **Applications** verifies each local download before enabling it and offers **Retry sync** if setup cannot finish.
-- **Customize themes and wallpaper together.** Open **Settings > Desktop > Themes & wallpaper** to browse themes, choose an image with Hiraya's file picker or upload one from your device, and tune its fit, alignment, blur, dim, and overlay in one live-preview workspace.
+- **Customize themes and wallpaper together.** Open **Settings > Desktop > Appearance** to choose a theme or built-in wallpaper directly, then use **Open Theme Editor** to choose an image and tune its fit, alignment, blur, dim, and overlay.
 - **Show only real app updates.** **Applications** now recognizes the exact package installed from a synchronized account or republished catalog, so **Update** appears only when the published app package actually changed.
 - **Finish saves from account apps.** Account-installed apps now stay open while synchronized file changes finish, so **Save As** can write the selected file before returning to the app.
 - **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
@@ -84,7 +85,7 @@ Actions adapt to each invocation rather than the device as a whole. Mouse or tra
 
 ## Sharing, roles, and public links {#sharing}
 
-Desktop owners and managers can open **Settings > Sharing > Desktop & item sharing** when sharing is available.
+Desktop owners and managers can open **Settings > Sharing > Desktop sharing** when sharing is available.
 
 - **Owner** controls the desktop.
 - **Manager** can organize, edit, customize, and manage sharing.
@@ -105,17 +106,17 @@ Shared desktops have stricter offline rules. Cached shared content remains read-
 
 ## Installation and updates {#installation-and-updates}
 
-Install Hiraya from **Settings > Install Hiraya** when an Install button is offered. Otherwise use the browser's **Install app** or **Add to Home Screen** command. Installation adds app-like launch and window behavior; it does not move authoritative data out of the server or protect browser-local data from site-data removal.
+Install Hiraya from **Settings > System > Updates** when an Install button is offered. Otherwise use the browser's **Install app** or **Add to Home Screen** command. Installation adds app-like launch and window behavior; it does not move authoritative data out of the server or protect browser-local data from site-data removal.
 
 Production installations can check for updates in Settings. Automatic updates check in the background and ask before reloading. Save editor and app work before applying an update. If installation is unsupported, keep using Hiraya in a normal browser tab; all core desktop data remains in the same browser origin.
 
 ## `.hiraya.app` apps, themes, and permissions {#apps-and-permissions}
 
-A new or empty desktop includes six trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, File Viewer, and Terminal. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Settings > Apps** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files. Folder browsing is built into the desktop shell so it shares the desktop's selection, context menus, imports, offline state, and window behavior.
+A new or empty desktop includes six trusted system apps without adding package files to the desktop: Text Editor, Markdown Preview, Image Viewer, Document & Media Viewer, File Viewer, and Terminal. Hiraya updates these bundled apps with the app shell, keeps their local app data during automatic updates, and does not allow them to be uninstalled. **Applications** identifies their system source and trust. **Reset data** clears one app's browser-local data without deleting user files. Folder browsing is built into the desktop shell so it shares the desktop's selection, context menus, imports, offline state, and window behavior.
 
 Text Editor reloads an open clean document when it changes elsewhere and preserves unsaved text with a conflict warning when the document is dirty. Its auto-save, format-on-save, font-size, and wrapping preferences start from the desktop editor settings on first launch, then remain app-local to this browser and signed-in account.
 
-Ordinary file and folder opens use these apps by default. `.hiraya.app` remains reserved for package installation and `.url` remains reserved for internet shortcuts. Use **Open with** to choose another matching installed app or make it preferred for the file's longest extension (including compound extensions). Manage or reset preferences under **Settings > Apps > File types**. In synchronized installations, ordinary app packages, app data, approvals, and preferred-handler hints belong to the account rather than a desktop. Browser-local installations keep the existing device-local behavior. A synchronized hint activates after this device downloads and verifies the exact compatible app package; until then Hiraya reports the fallback and opens a safe bundled default.
+Ordinary file and folder opens use these apps by default. `.hiraya.app` remains reserved for package installation and `.url` remains reserved for internet shortcuts. Use **Open with** to choose another matching installed app or make it preferred for the file's longest extension (including compound extensions). Manage or reset preferences under **Settings > Files & apps > File type defaults**. In synchronized installations, ordinary app packages, app data, approvals, and preferred-handler hints belong to the account rather than a desktop. Browser-local installations keep the existing device-local behavior. A synchronized hint activates after this device downloads and verifies the exact compatible app package; until then Hiraya reports the fallback and opens a safe bundled default.
 
 A file ending in `.hiraya.app` can contain a Hiraya app or an importable desktop theme. Open an app package to review its name, version, and requested permissions. Open a theme package to review and apply its colors, metrics, and optional wallpaper. Unsupported, ambiguous, or malformed packages are rejected.
 
@@ -125,7 +126,7 @@ Apps run in opaque-origin sandboxed frames. Hiraya rejects static remote package
 
 Review installed apps and their permission names in **Applications**. **Uninstall from account** removes the synchronized package, app data, approval, and handler hints for every device. Browser-local uninstall keeps its previous behavior and does not delete the original `.hiraya.app` file or files the app saved. Only install packages you trust.
 
-If an older user-installed app used an ID later reserved for a trusted system app, migration moves the original approval, manifest, digest, and every app-storage record into **Settings > Apps > Recovered app data**. Download its JSON export before removing the recovered copy.
+If an older user-installed app used an ID later reserved for a trusted system app, migration moves the original approval, manifest, digest, and every app-storage record into **Settings > Files & apps > Recovered app data**. Download its JSON export before removing the recovered copy.
 
 Anonymous public read-only desktops continue to use Hiraya's host previews rather than launching sandbox apps. Public sessions do not have the authenticated, account-local app installation and capability context needed to restore app windows safely.
 

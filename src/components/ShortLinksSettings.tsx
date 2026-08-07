@@ -3,7 +3,8 @@ import { ArrowLeft, ArrowSquareOut, Check, Copy, LinkSimple, PencilSimple, Plus,
 import { resolveShortLinkUrl, type ShortLink } from "../lib/short-links";
 
 type Props = {
-  headingRef: React.RefObject<HTMLHeadingElement | null>;
+  headingRef?: React.RefObject<HTMLHeadingElement | null>;
+  embedded?: boolean;
   baseUrl: string;
   onBack: () => void;
   onList: () => Promise<ShortLink[]>;
@@ -13,7 +14,7 @@ type Props = {
   onConfirmDelete: (link: ShortLink) => Promise<boolean>;
 };
 
-export function ShortLinksSettings({ headingRef, baseUrl, onBack, onList, onCreate, onUpdate, onDelete, onConfirmDelete }: Props) {
+export function ShortLinksSettings({ headingRef, embedded = false, baseUrl, onBack, onList, onCreate, onUpdate, onDelete, onConfirmDelete }: Props) {
   const [links, setLinks] = useState<ShortLink[] | null>(null);
   const [error, setError] = useState("");
   const [busySlug, setBusySlug] = useState<string | null>(null);
@@ -40,10 +41,10 @@ export function ShortLinksSettings({ headingRef, baseUrl, onBack, onList, onCrea
 
   return (
     <div className="settings-page short-links-page">
-      <header className="settings-page__header">
+      {!embedded && <header className="settings-page__header">
         <button className="settings-page__back" type="button" aria-label="Back to settings" disabled={creating || busySlug !== null} onClick={onBack}><ArrowLeft size={17} /></button>
         <div><h3 ref={headingRef} tabIndex={-1}>Short Links</h3><p>Create account-wide redirects using {baseUrl}.</p></div>
-      </header>
+      </header>}
 
       <section className="settings-section" aria-labelledby="short-link-create-heading">
         <div className="settings-section__heading"><Plus size={18} /><div><h3 id="short-link-create-heading">Create a short link</h3><p>Leave the custom slug blank to generate one automatically.</p></div></div>

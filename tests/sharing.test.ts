@@ -60,7 +60,7 @@ describe("sharing contracts", () => {
     const publish = await Bun.file(new URL("../src/components/PublishDialog.tsx", import.meta.url)).text();
     expect(app).toMatch(/contextMenuEntries\.length === 1\s*&&\s*activeDesktop\?\.capabilities\.manage\s*&&\s*publicationsAvailable/);
     expect(app).toContain("publishDisabled={!canManage}");
-    expect(app).toMatch(/sharingOpen\s*\|\|\s*publishEntryId\s*\|\|\s*confirmation/);
+    expect(app).toMatch(/publishEntryId\s*\|\|\s*confirmation/);
     expect(menu).toContain("Publish...");
     expect(sharing).toContain("Share entire desktop");
     expect(sharing).toContain("publicationUrl && sharing.publication.shareEntire");

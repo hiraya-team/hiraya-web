@@ -9,7 +9,30 @@ export type DesktopRoute = {
   explorerFolderId?: string | null;
   fileId?: string;
   propertiesEntryId?: string;
-  settings?: true;
+  settings?: SettingsPage;
+};
+
+export const SETTINGS_PAGES = [
+  "desktop", "desktop/appearance", "desktop/desktops",
+  "files-apps", "files-apps/file-types", "files-apps/recovered-data",
+  "sharing", "sharing/desktop", "sharing/short-links",
+  "sync-storage", "sync-storage/connection", "sync-storage/activity", "sync-storage/export",
+  "system", "system/updates", "system/about",
+] as const;
+export type SettingsPage = typeof SETTINGS_PAGES[number];
+export const SETTINGS_PAGE_TITLES: Record<SettingsPage, string> = {
+  desktop: "Desktop", "desktop/appearance": "Appearance", "desktop/desktops": "Desktops",
+  "files-apps": "Files & apps", "files-apps/file-types": "File type defaults", "files-apps/recovered-data": "Recovered app data",
+  sharing: "Sharing", "sharing/desktop": "Desktop sharing", "sharing/short-links": "Short Links",
+  "sync-storage": "Sync & storage", "sync-storage/connection": "Connection & Offline", "sync-storage/activity": "Activity", "sync-storage/export": "Export",
+  system: "System", "system/updates": "Updates", "system/about": "About",
+};
+export const SETTINGS_PARENTS: Partial<Record<SettingsPage, SettingsPage>> = {
+  "desktop/appearance": "desktop", "desktop/desktops": "desktop",
+  "files-apps/file-types": "files-apps", "files-apps/recovered-data": "files-apps",
+  "sharing/desktop": "sharing", "sharing/short-links": "sharing",
+  "sync-storage/connection": "sync-storage", "sync-storage/activity": "sync-storage", "sync-storage/export": "sync-storage",
+  "system/updates": "system", "system/about": "system",
 };
 
 export function routeTargetsAppEntry(route: DesktopRoute | null, target: { targetKind: "file" | "folder" | "root"; entryId: string | null }) {
@@ -59,8 +82,10 @@ function parseSuffix(parts: string[], route: DesktopRoute, startIndex: number) {
   }
   if (parts[index] === "settings") {
     if (next.explorerFolderId !== undefined || next.fileId || next.propertiesEntryId) return null;
-    next.settings = true;
-    index += 1;
+    const page = parts.slice(index + 1).join("/") || "desktop";
+    if (!(SETTINGS_PAGES as readonly string[]).includes(page)) return null;
+    next.settings = page as SettingsPage;
+    index = parts.length;
   }
   return index === parts.length ? next : null;
 }
@@ -82,7 +107,7 @@ export function parseDesktopRoute(pathname: string): DesktopRoute | null {
 export function formatDesktopRoute(route: DesktopRoute) {
   if (!route.desktopId) throw new Error("A desktop route requires a desktop ID.");
   let pathname = `/desktops/${encodeURIComponent(route.desktopId)}/areas/${route.column}/${route.row}`;
-  if (route.settings) return `${pathname}/settings`;
+  if (route.settings) return `${pathname}/settings/${route.settings}`;
   if (route.propertiesEntryId) return `${pathname}/properties/${encodeURIComponent(route.propertiesEntryId)}`;
   if (route.explorerFolderId === null) pathname += "/explorer/root";
   else if (route.explorerFolderId !== undefined) pathname += `/explorer/folder/${encodeURIComponent(route.explorerFolderId)}`;
@@ -94,7 +119,7 @@ export function normalizeDesktopRoute(route: DesktopRoute | null, entries: Deskt
   const column = route && Number.isSafeInteger(route.column) ? route.column : 0;
   const row = route && Number.isSafeInteger(route.row) ? route.row : 0;
   const next: DesktopRoute = { desktopId, column, row };
-  if (route?.settings) return { ...next, settings: true };
+  if (route?.settings) return { ...next, settings: route.settings };
   if (route?.propertiesEntryId && entries.some((entry) => entry.id === route.propertiesEntryId)) return { ...next, propertiesEntryId: route.propertiesEntryId };
   if (route?.explorerFolderId === null) next.explorerFolderId = null;
   else if (route?.explorerFolderId !== undefined && entries.some((entry) => entry.id === route.explorerFolderId && entry.kind === "folder")) {

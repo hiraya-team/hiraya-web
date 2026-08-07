@@ -13,10 +13,12 @@ describe("app browser history", () => {
   });
 
   test("restores only supported Settings pages", () => {
-    expect(historySettingsPage({ hiraya: true, settingsPage: "desktops" })).toBe("desktops");
-    expect(historySettingsPage({ hiraya: true, settingsPage: "themes" })).toBe("main");
-    expect(historySettingsPage({ hiraya: true, settingsPage: "short-links" })).toBe("short-links");
-    expect(historySettingsPage({ hiraya: true, settingsPage: "unknown" })).toBe("main");
-    expect(historySettingsPage(null)).toBe("main");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "desktops" })).toBe("desktop/desktops");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "activity" })).toBe("sync-storage/activity");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "apps" })).toBe("files-apps/file-types");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "short-links" })).toBe("sharing/short-links");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "system/about" })).toBe("system/about");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "unknown" })).toBe("desktop");
+    expect(historySettingsPage(null)).toBe("desktop");
   });
 });
