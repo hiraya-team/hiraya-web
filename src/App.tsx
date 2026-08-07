@@ -10,6 +10,7 @@ import { MoveDialog } from "./components/MoveDialog";
 import { DesktopSwitcher } from "./components/DesktopSwitcher";
 import type { CatalogQuota } from "./lib/desktop-catalog";
 import { PasteConflictDialog } from "./components/PasteConflictDialog";
+import { PasteFromDeviceDialog } from "./components/PasteFromDeviceDialog";
 import { PropertiesWindow } from "./components/PropertiesWindow";
 import { SettingsWindow } from "./components/SettingsWindow";
 import { GettingStartedDialog } from "./components/GettingStartedDialog";
@@ -174,6 +175,7 @@ import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
+type PendingDevicePaste = { parentId: string | null; position?: EntryPosition; error?: string };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
 type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
 type ProtectedLoadState = { status: "idle" | "loading" | "ready" | "error"; message?: string };
@@ -328,6 +330,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [updateApplying, setUpdateApplying] = useState(false);
   const [serverBuildTimestamp, setServerBuildTimestamp] = useState<string | null>(null);
   const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [pendingDevicePaste, setPendingDevicePaste] = useState<PendingDevicePaste | null>(null);
   const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(() => restoreClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage));
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [edgeDwell, setEdgeDwell] = useState<{ direction: EdgeDirection; id: number } | null>(null);
@@ -653,7 +656,7 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
-  const shortcutsSuspended = Boolean(dialog || pendingPaste || moveDialogEntryIds.length || activePanel || sharingOpen || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
+  const shortcutsSuspended = Boolean(dialog || pendingPaste || pendingDevicePaste || moveDialogEntryIds.length || activePanel || sharingOpen || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
 
   const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
     if (("parentId" in next && next.parentId !== null && !entriesRef.current.some((entry) => entry.id === next.parentId && entry.kind === "folder"))
@@ -2027,31 +2030,40 @@ function App({ session }: { session: AuthSession | null }) {
       }
     }
     function onPaste(event: ClipboardEvent) {
-      if (editableTarget(event.target) || !canMutate || shortcutsSuspended || transientMenuOpen()) return;
+      if (editableTarget(event.target) || !canMutate || (!pendingDevicePaste && (shortcutsSuspended || transientMenuOpen()))) return;
       if (!event.clipboardData) return;
       const keyboardPaste = keyboardPasteRef.current;
       keyboardPasteRef.current = false;
       const files = Array.from(event.clipboardData.files);
+      const items = Array.from(event.clipboardData.items);
       event.preventDefault();
       const explorer = activeExplorer();
-      if (explorer?.transient) return;
-      const parentId = explorer?.folderId ?? null;
-      if (files.length) {
+      if (!pendingDevicePaste && explorer?.transient) return;
+      const parentId = pendingDevicePaste?.parentId ?? explorer?.folderId ?? null;
+      const position = pendingDevicePaste?.position;
+      if (files.length || items.some((item) => item.kind === "file" && !isClipboardArchiveType(item.type))) {
+        setPendingDevicePaste(null);
         void snapshotFromClipboardItems(event.clipboardData.items)
-          .then((snapshot) => (snapshot ? beginPasteRef.current(parentId, undefined, snapshot) : handleImportRef.current(files, parentId)))
+          .then((snapshot) => snapshot ? beginPasteRef.current(parentId, position, snapshot) : files.length ? handleImportRef.current(files, parentId, position) : Promise.reject(new Error("Clipboard folders could not be read. Use Import folder instead.")))
           .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
         return;
       }
-      if (Array.from(event.clipboardData.items).some((item) => isClipboardArchiveType(item.type))) {
-        void beginPasteRef.current(parentId);
+      if (items.some((item) => isClipboardArchiveType(item.type))) {
+        setPendingDevicePaste(null);
+        void beginPasteRef.current(parentId, position);
         return;
       }
       const clipboardText = event.clipboardData.getData("text/plain");
       try {
         const shortcut = createInternetShortcut(clipboardText);
-        openFileDialog({ type: "create-shortcut", parentId, url: shortcut.url, name: shortcut.name });
+        setPendingDevicePaste(null);
+        openFileDialog({ type: "create-shortcut", parentId, position, url: shortcut.url, name: shortcut.name });
       } catch {
-        if (keyboardPaste) void beginPasteRef.current(parentId);
+        if (pendingDevicePaste && !clipboardText && clipboardRef.current) {
+          setPendingDevicePaste(null);
+          void beginPasteRef.current(parentId, position, clipboardRef.current);
+        } else if (pendingDevicePaste) setPendingDevicePaste({ ...pendingDevicePaste, error: "The clipboard does not contain files, a Hiraya item, or a complete URL." });
+        else if (keyboardPaste) void beginPasteRef.current(parentId);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -2060,7 +2072,7 @@ function App({ session }: { session: AuthSession | null }) {
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
+  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, pendingDevicePaste, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
 
   useEffect(() => {
     function onGlobalShortcut(event: KeyboardEvent) {
@@ -3576,6 +3588,29 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
   beginPasteRef.current = beginPaste;
+
+  async function pasteFromContextMenu(parentId: string | null, position?: EntryPosition) {
+    if (!canMutate) return;
+    setContextMenu(null);
+    try {
+      if (!navigator.clipboard?.read) throw new Error("Clipboard reading is unavailable.");
+      const items = await navigator.clipboard.read();
+      const archive = items.find((item) => item.types.some(isClipboardArchiveType));
+      if (archive) {
+        await beginPaste(parentId, position, await decodeClipboardArchiveItem(archive));
+        return;
+      }
+      const textItem = items.find((item) => item.types.includes("text/plain"));
+      if (textItem) {
+        const shortcut = createInternetShortcut(await (await textItem.getType("text/plain")).text());
+        openFileDialog({ type: "create-shortcut", parentId, position, url: shortcut.url, name: shortcut.name });
+        return;
+      }
+    } catch {
+      /* A real paste event is required for host files and denied clipboard reads. */
+    }
+    setPendingDevicePaste({ parentId, position });
+  }
 
   async function handleExport() {
     setError("");
@@ -5277,7 +5312,7 @@ function App({ session }: { session: AuthSession | null }) {
             setContextMenu(null);
           }}
           offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"}
-          onPasteInto={contextMenuEntry.kind === "folder" && clipboardRef.current ? () => void beginPaste(contextMenuEntry.id) : undefined}
+          onPasteInto={contextMenuEntry.kind === "folder" ? () => void pasteFromContextMenu(contextMenuEntry.id) : undefined}
           onUploadInto={
             contextMenuEntry.kind === "folder"
               ? () => {
@@ -5347,7 +5382,7 @@ function App({ session }: { session: AuthSession | null }) {
             openSettingsWindow();
             setContextMenu(null);
           }}
-          onPaste={clipboardRef.current ? () => void beginPaste(contextMenu.parentId, contextMenu.parentId === null ? contextMenu.position : undefined) : undefined}
+          onPaste={() => void pasteFromContextMenu(contextMenu.parentId, contextMenu.parentId === null ? contextMenu.position : undefined)}
           readOnly={!canMutate}
           onClose={() => setContextMenu(null)}
         />
@@ -5448,6 +5483,7 @@ function App({ session }: { session: AuthSession | null }) {
         />
       )}
       {pendingPaste && <PasteConflictDialog roots={pendingPaste.snapshot.selectedRootIds.map((id) => pendingPaste.snapshot.entries.find((entry) => entry.id === id)!)} existingNames={entries.filter((entry) => entry.parentId === pendingPaste.parentId).map((entry) => entry.name)} onClose={() => setPendingPaste(null)} onPaste={(names) => commitPaste(pendingPaste.snapshot, pendingPaste.parentId, pendingPaste.position, names)} />}
+      {pendingDevicePaste && <PasteFromDeviceDialog error={pendingDevicePaste.error} onClose={() => setPendingDevicePaste(null)} />}
       {activePanel === "search" && (
         <SearchCommandPalette
           entries={entries}
