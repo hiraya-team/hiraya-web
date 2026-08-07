@@ -127,6 +127,22 @@ describe("app file authority", () => {
     await expectCode(service.commitWrite({ uploadId: session.uploadId }), "NOT_FOUND");
   });
 
+  test("keeps omitted staged-write revisions unconditional while preserving explicit conflicts", async () => {
+    const h = fixture();
+    const handle = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write"]);
+    const service = h.service();
+    const unchecked = await service.beginWrite({ handle, size: 1 });
+    await h.sync.saveFile(h.nested.id, new Blob(["remote"]));
+    await service.writeChunk({ uploadId: unchecked.uploadId, offset: 0, data: new Uint8Array([42]).buffer });
+    expect(await service.commitWrite({ uploadId: unchecked.uploadId })).toMatchObject({ contentRevision: 9 });
+    expect([...new Uint8Array(await h.contents.get(h.nested.id)!.arrayBuffer())]).toEqual([42]);
+
+    const checked = await service.beginWrite({ handle, size: 1, expectedRevision: 9 });
+    await h.sync.saveFile(h.nested.id, new Blob(["newer"]));
+    await service.writeChunk({ uploadId: checked.uploadId, offset: 0, data: new Uint8Array([43]).buffer });
+    await expectCode(service.commitWrite({ uploadId: checked.uploadId }), "CONFLICT");
+  });
+
   test("rejects incomplete, out-of-order, oversized, and stale staged writes", async () => {
     const h = fixture();
     const handle = h.capabilities.grantFile("app-1", h.nested.id, ["stat", "read", "write"]);
