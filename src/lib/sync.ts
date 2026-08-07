@@ -1323,7 +1323,7 @@ export class SyncEngine {
     if (!existing) throw new Error("That file no longer exists.");
     const entry = { ...existing, mimeType: options.mimeType ?? existing.mimeType, size: content.size, modifiedAt: Date.now() };
     return this.mutate(
-      { kind: "save-content", entryId: id, mimeType: entry.mimeType, size: entry.size, modifiedAt: entry.modifiedAt, baseContentRevision: this.current().sync.contentRevisions[id] },
+      { kind: "save-content", entryId: id, mimeType: entry.mimeType, size: entry.size, modifiedAt: entry.modifiedAt, baseContentRevision: options.unconditional ? undefined : this.current().sync.contentRevisions[id] },
       (next) => next.entries.find((item) => item.id === id) as FileEntry,
       new Map([[id, content.slice(0, content.size, entry.mimeType)]]),
       () => {

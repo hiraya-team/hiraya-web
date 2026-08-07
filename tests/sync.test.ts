@@ -208,8 +208,23 @@ describe("canonical synchronization", () => {
     await engine.start("desk", { x: 0, y: 0 });
     const blocked = await blockEngineQueue(engine);
     const file = await engine.createFile("store.hpos", null, { x: 0, y: 0 }, new Blob([]));
-    await engine.saveFile(file.id, new Blob(["store"]), { expectedContentRevision: 0 });
+    await engine.saveFile(file.id, new Blob(["store"]), { unconditional: true });
     expect((await engine.getOutboxStatus()).records.at(-1)?.operation).toMatchObject({ kind: "save-content", entryId: file.id, baseContentRevision: undefined });
+    blocked.release();
+    await blocked.pending;
+    await engine.stop();
+  });
+
+  test("keeps an explicitly unconditional save unversioned for existing files", async () => {
+    const storage = remoteStorage();
+    const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    await engine.saveFile("file-1", new Blob(["updated"]), { unconditional: true });
+    expect((await engine.getOutboxStatus()).records.at(-1)?.operation).toMatchObject({ kind: "save-content", entryId: "file-1", baseContentRevision: undefined });
     blocked.release();
     await blocked.pending;
     await engine.stop();

@@ -93,6 +93,7 @@ export class FileService {
       const saved = await this.options.sync.saveFile(entry.id, new Blob([params.data], { type: params.mimeType ?? entry.mimeType }), {
         mimeType: params.mimeType,
         expectedContentRevision: params.expectedRevision,
+        unconditional: params.expectedRevision === undefined,
       });
       return this.fileMetadata(saved, capability);
     });
@@ -137,6 +138,7 @@ export class FileService {
         const saved = await this.options.sync.saveFile(entry.id, new Blob(write.chunks, { type: write.mimeType ?? entry.mimeType }), {
           mimeType: write.mimeType,
           expectedContentRevision: write.expectedRevision,
+          unconditional: write.expectedRevision === undefined,
         });
         return this.fileMetadata(saved, capability);
       } finally {

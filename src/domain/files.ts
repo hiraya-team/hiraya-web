@@ -1,6 +1,7 @@
 export type SaveFileOptions = {
   mimeType?: string;
   expectedContentRevision?: number;
+  unconditional?: boolean;
 };
 
 export class ContentRevisionConflictError extends Error {
