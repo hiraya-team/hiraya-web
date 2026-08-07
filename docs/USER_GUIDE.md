@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Finish saves from account apps.** Account-installed apps now stay open while synchronized file changes finish, so **Save As** can write the selected file before returning to the app.
 - **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
 - **Paste from the context menu.** **Paste** now stays available on writable desktops and folders. Hiraya pastes copied Hiraya items and complete URLs directly, or asks you to press **Ctrl/⌘ V** so the browser can share files copied from your device.
 - **Synchronize apps without synchronizing trust.** In synchronized installations, app packages, app data, and preferred-handler hints now follow your account and replay after short outages. Each device must still review and approve the exact package generation, digest, and permissions before it can launch; **Applications** clearly separates removing this device's approval from uninstalling the app and its data from the account.
