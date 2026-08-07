@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Customize themes in a dedicated workspace.** Open **Settings > Desktop > Themes**, then choose **Open Theme Editor** to browse presets, adjust essential colors first, reveal advanced controls when needed, and preview changes before saving and applying them.
 - **Show only real app updates.** **Applications** now recognizes the exact package installed from a synchronized account or republished catalog, so **Update** appears only when the published app package actually changed.
 - **Finish saves from account apps.** Account-installed apps now stay open while synchronized file changes finish, so **Save As** can write the selected file before returning to the app.
 - **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
