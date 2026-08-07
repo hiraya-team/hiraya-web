@@ -195,13 +195,10 @@ async function save(saveAs: boolean) {
   clearTimeout(autoSaveTimer);
   try {
     let destination = saveAs ? null : handle;
-    let expected = saveAs ? null : documentState.revision;
+    const expected = saveAs ? null : documentState.revision;
     if (!destination) {
       destination = await hiraya.dialogs.saveFile({ suggestedName: name, mimeType: "text/plain" });
       if (!destination) return;
-      const entry = await hiraya.files.stat(destination);
-      if (entry.kind !== "file") throw new Error("The save destination is not a file.");
-      expected = entry.metadata.contentRevision;
     }
     const sourceText = editorText();
     const text = settings.autoFormat ? formatText(name, sourceText) : sourceText;

@@ -108,7 +108,7 @@ export class FileService {
       if (params.expectedRevision !== undefined && params.expectedRevision !== revision) throw new FileServiceError("CONFLICT", "The file changed since it was last read.");
       if (this.writes.size >= MAX_STAGED_WRITE_SESSIONS || this.stagedBytes() + params.size > MAX_STAGED_WRITE_BYTES) throw new FileServiceError("QUOTA_EXCEEDED", "The app has too much file data staged in memory.");
       const uploadId = `upload_${crypto.randomUUID().replaceAll("-", "")}`;
-      this.writes.set(uploadId, { handle: params.handle, size: params.size, mimeType: params.mimeType, expectedRevision: params.expectedRevision ?? revision, offset: 0, chunks: [], touchedAt: Date.now() });
+      this.writes.set(uploadId, { handle: params.handle, size: params.size, mimeType: params.mimeType, expectedRevision: params.expectedRevision, offset: 0, chunks: [], touchedAt: Date.now() });
       return { uploadId, chunkSize: MAX_FILE_CHUNK_BYTES };
     });
   }
