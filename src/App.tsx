@@ -87,7 +87,7 @@ import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, type DesktopRoute } from "./lib/routes";
-import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
+import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
@@ -119,7 +119,7 @@ import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settings
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
-import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
+import type { AppPackageInspection, ServiceMethods, ThemeEditorState } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
@@ -241,6 +241,18 @@ async function decodeLegacyConflictText(content: Blob) {
 
 function transientMenuOpen() {
   return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel, .app-window__menu"));
+}
+
+function themeEditorState(appearance: ThemeState, canManage: boolean, restrictionReason: string): ThemeEditorState {
+  return {
+    selectedThemeId: appearance.selectedThemeId,
+    themes: [
+      ...BUILTIN_THEME_IDS.map((id) => ({ id, ...BUILTIN_THEMES[id], builtIn: true, hasWallpaper: false })),
+      ...appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, builtIn: false, hasWallpaper: Boolean(wallpaper) })),
+    ],
+    canManage,
+    restrictionReason: canManage ? "" : restrictionReason,
+  };
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -484,6 +496,9 @@ function App({ session }: { session: AuthSession | null }) {
   const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
   const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
   const canMutateRef = useRef(false);
+  const canSettingsRef = useRef(false);
+  const appearanceRef = useRef<ThemeState>(DEFAULT_THEME_STATE);
+  const syncStatusRef = useRef<SyncStatus>("connecting");
   const offlineModelRef = useRef<ReturnType<typeof buildOfflineAvailability> | null>(null);
   const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
   const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
@@ -512,6 +527,9 @@ function App({ session }: { session: AuthSession | null }) {
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
+  canSettingsRef.current = canSettings;
+  appearanceRef.current = appearance;
+  syncStatusRef.current = syncStatus;
   const canViewActivity = canViewDesktopActivity(activeDesktop, syncStatus);
   const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
@@ -726,6 +744,11 @@ function App({ session }: { session: AuthSession | null }) {
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
   }, [activeTheme, appTheme, runningAppsRef]);
+
+  useEffect(() => {
+    const next = themeEditorState(appearance, canSettings, settingsRestrictionReason(activeDesktop, syncStatus));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox" && app.install.appId === SYSTEM_APP_IDS.themeEditor) app.dispatcher.emit("themes.changed", next);
+  }, [activeDesktop, appearance, canSettings, runningAppsRef, syncStatus]);
 
   useEffect(() => {
     persistClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage, clipboardOffer);
@@ -2337,9 +2360,12 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function changeTheme(themeId: string) {
-    if (!canSettings) return;
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
     try {
-      setAppearance(await selectTheme(themeId));
+      const next = await selectTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The selected theme could not be saved.");
       throw themeError;
@@ -2347,10 +2373,14 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function persistCustomTheme(theme: CustomTheme) {
-    if (!canSettings) return;
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
     try {
-      const saved = await saveCustomTheme(theme);
-      setAppearance(await selectTheme(saved.id));
+      const existing = appearanceRef.current.customThemes.find((candidate) => candidate.id === theme.id);
+      const saved = await saveCustomTheme(existing?.wallpaper ? { ...theme, wallpaper: existing.wallpaper } : theme);
+      const next = await selectTheme(saved.id);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be saved.");
       throw themeError;
@@ -2358,9 +2388,12 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function removeCustomTheme(themeId: string) {
-    if (!canSettings) return;
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
     try {
-      setAppearance(await deleteCustomTheme(themeId));
+      const next = await deleteCustomTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be deleted.");
       throw themeError;
@@ -2937,9 +2970,10 @@ function App({ session }: { session: AuthSession | null }) {
   async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
     setError("");
     try {
+      const launchTarget = target ?? (install.source === "system" && install.appId === SYSTEM_APP_IDS.themeEditor ? "root" : undefined);
       const result = await launchSandboxApp({
         install,
-        target,
+        target: launchTarget,
         source: launchSource,
         activeSegment,
         desktopSize,
@@ -2981,6 +3015,10 @@ function App({ session }: { session: AuthSession | null }) {
           return { status: legacyStatus, pinned: false, directlyPinned: false };
         },
         setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
+        getThemeEditorState: () => themeEditorState(appearanceRef.current, canSettingsRef.current, settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current)),
+        selectTheme: async (themeId) => themeEditorState(await changeTheme(themeId), true, ""),
+        saveTheme: async (theme: ServiceMethods["themes.save"]["params"]) => themeEditorState(await persistCustomTheme(theme), true, ""),
+        deleteTheme: async (themeId) => themeEditorState(await removeCustomTheme(themeId), true, ""),
       });
       if (result.kind === "existing") {
         if (result.shouldFocus) focusApp(result.id);
@@ -5027,21 +5065,15 @@ function App({ session }: { session: AuthSession | null }) {
                             if (root) goToSegment(projectLogicalPosition(root.position, iconAreaSizeRef.current).segment);
                           } else setError("The entries affected by this activity no longer exist.");
                         }}
-                        onConfirmThemeDelete={(theme) =>
-                          requestConfirmation({
-                            title: `Delete ${theme.name}?`,
-                            message: `Delete the custom theme “${theme.name}”?`,
-                            confirmLabel: "Delete theme",
-                            danger: true,
-                          })
-                        }
+                        onOpenThemeEditor={() => {
+                          const install = installedApps.find((candidate) => candidate.source === "system" && candidate.appId === SYSTEM_APP_IDS.themeEditor);
+                          if (install) void launchInstalledAppRef.current(install);
+                          else setError("Theme Editor is still being installed. Try again in a moment.");
+                        }}
                         onLayoutPreview={previewLayout}
                         onLayoutChange={persistLayout}
                         onWallpaperUpload={handleWallpaperUpload}
                         onWallpaperSelect={handleWallpaperSelect}
-                        onThemeSelect={changeTheme}
-                        onThemeSave={persistCustomTheme}
-                        onThemeDelete={removeCustomTheme}
                         onExport={() => void handleExport()}
                         onToggleFullscreen={() => void toggleFullscreen()}
                         onCheckForUpdate={() => void checkForUpdate()}

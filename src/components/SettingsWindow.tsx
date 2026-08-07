@@ -4,22 +4,15 @@ import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCo
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
-import {
-  BUILTIN_THEME_IDS,
-  BUILTIN_THEMES,
-  DEFAULT_THEME_TREATMENT,
-  isBuiltinThemeId,
-  themeContrastIssues,
-  themeStyle,
-} from "../lib/themes";
-import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeState, ThemeTreatment } from "../domain/theme";
+import { BUILTIN_THEMES, isBuiltinThemeId } from "../lib/themes";
+import type { ThemeState } from "../domain/theme";
 import { DEFAULT_WALLPAPER, GRID_SIZES, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type GridSize, type WallpaperPreset } from "../types";
 import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
 import type { AppWindowHeaderElements } from "./AppWindow";
 import { installedAppAcceptsMatcher, installedAppIsAvailable, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
 import { SYSTEM_FILE_DEFAULTS } from "../apps/file-associations";
 import type { PwaInstallState } from "../lib/pwa-install";
-import { RoleBadge, StatusBadge } from "./VisualPrimitives";
+import { StatusBadge } from "./VisualPrimitives";
 import { ShortLinksSettings } from "./ShortLinksSettings";
 import type { ShortLink } from "../lib/short-links";
 
@@ -27,29 +20,6 @@ const WALLPAPER_LABELS: Record<WallpaperPreset, { name: string; description: str
   dusk: { name: "Dusk", description: "Misty green with a warm horizon" },
   grove: { name: "Grove", description: "Deep forest layers in cool green" },
   ember: { name: "Ember", description: "Smoky earth with an amber glow" },
-};
-
-const COLOR_LABELS: Record<keyof ThemeColors, string> = {
-  shell: "Shell",
-  chrome: "Chrome",
-  chromeText: "Chrome text",
-  window: "Window",
-  windowMuted: "Muted window",
-  text: "Text",
-  textMuted: "Muted text",
-  accent: "Accent",
-  accentText: "Accent text",
-  border: "Border",
-  danger: "Danger",
-  dangerSurface: "Danger surface",
-  desktopText: "Desktop text",
-  selection: "Selection",
-  editorBackground: "Editor background",
-  editorText: "Editor text",
-  editorGutter: "Editor gutter",
-  editorKeyword: "Editor keyword",
-  editorString: "Editor string",
-  editorComment: "Editor comment",
 };
 
 const SETTINGS_CATEGORIES = [
@@ -111,14 +81,11 @@ type Props = {
   onSubscribeToActivity: (listener: () => void) => () => void;
   onOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => void;
   canOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => boolean;
-  onConfirmThemeDelete: (theme: CustomTheme) => Promise<boolean>;
+  onOpenThemeEditor: () => void;
   onLayoutPreview: (layout: DesktopLayout, desktopId: string) => void;
   onLayoutChange: (layout: DesktopLayout, desktopId: string) => Promise<void>;
   onWallpaperUpload: (file: File, layout: DesktopLayout, desktopId: string) => Promise<void>;
   onWallpaperSelect: (fileId: string, layout: DesktopLayout, desktopId: string) => Promise<void>;
-  onThemeSelect: (themeId: string) => void | Promise<void>;
-  onThemeSave: (theme: CustomTheme) => void | Promise<void>;
-  onThemeDelete: (themeId: string) => void | Promise<void>;
   onExport: () => void;
   onToggleFullscreen: () => void;
   onCheckForUpdate: () => void;
@@ -161,22 +128,6 @@ function NumberControl({ idPrefix = "theme", label, value, min, max, step, disab
       </div>
     </div>
   );
-}
-
-function copyDefinition(definition: ThemeDefinition): ThemeDefinition {
-  return {
-    ...definition,
-    colors: { ...definition.colors },
-    shape: { ...definition.shape },
-    effects: { ...definition.effects },
-    ...(definition.treatment ? { treatment: { ...definition.treatment } } : {}),
-    typography: { ...definition.typography },
-  };
-}
-
-function copyName(name: string) {
-  const suffix = name.endsWith(" Copy") ? " 2" : " Copy";
-  return `${name.slice(0, 60 - suffix.length)}${suffix}`;
 }
 
 export function SettingsWindow({
@@ -229,14 +180,11 @@ export function SettingsWindow({
   onSubscribeToActivity,
   onOpenAffectedEntries,
   canOpenAffectedEntries,
-  onConfirmThemeDelete,
+  onOpenThemeEditor,
   onLayoutPreview,
   onLayoutChange,
   onWallpaperUpload,
   onWallpaperSelect,
-  onThemeSelect,
-  onThemeSave,
-  onThemeDelete,
   onExport,
   onToggleFullscreen,
   onCheckForUpdate,
@@ -252,8 +200,6 @@ export function SettingsWindow({
   onOpenOfflineStorage,
   onOpenHelp,
 }: Props) {
-  const [draft, setDraft] = useState<CustomTheme | null>(null);
-  const [saving, setSaving] = useState(false);
   const [wallpaperBusy, setWallpaperBusy] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("desktop");
   const [layoutDraft, setLayoutDraft] = useState(() => ({ desktopId: activeDesktopId, layout }));
@@ -262,7 +208,6 @@ export function SettingsWindow({
   const wallpaperCommitTimerRef = useRef<number | null>(null);
   const onLayoutChangeRef = useRef(onLayoutChange);
   const previousPageRef = useRef(page);
-  const draftSafeColorsRef = useRef<ThemeColors | null>(null);
   const pendingLayoutRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const mainThemesButtonRef = useRef<HTMLButtonElement>(null);
   const mainActivityButtonRef = useRef<HTMLButtonElement>(null);
@@ -274,10 +219,7 @@ export function SettingsWindow({
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
   const shortLinksHeadingRef = useRef<HTMLHeadingElement>(null);
   onLayoutChangeRef.current = onLayoutChange;
-  const mutationsDisabled = !canMutate || saving;
   const displayedLayout = layoutDraft.desktopId === activeDesktopId ? layoutDraft.layout : layout;
-  const contrastIssues = draft ? themeContrastIssues(draft.definition) : [];
-  const draftTreatment = draft?.definition.treatment ?? DEFAULT_THEME_TREATMENT;
   const selectedThemeName = isBuiltinThemeId(appearance.selectedThemeId)
     ? BUILTIN_THEMES[appearance.selectedThemeId].name
     : appearance.customThemes.find((theme) => theme.id === appearance.selectedThemeId)?.name ?? "Custom theme";
@@ -358,70 +300,6 @@ export function SettingsWindow({
     await onLayoutChange(next, activeDesktopId);
   };
 
-  const startDraft = (name: string, definition: ThemeDefinition, id: string = crypto.randomUUID()) => {
-    const next = { id, name, definition: copyDefinition(definition) };
-    draftSafeColorsRef.current = { ...definition.colors };
-    setDraft(next);
-  };
-
-  const updateDraft = (update: (current: CustomTheme) => CustomTheme) => {
-    setDraft((current) => {
-      if (!current) return current;
-      return update(current);
-    });
-  };
-
-  const updateTreatment = (update: Partial<ThemeTreatment>) => updateDraft((current) => ({
-    ...current,
-    definition: { ...current.definition, treatment: { ...DEFAULT_THEME_TREATMENT, ...current.definition.treatment, ...update } },
-  }));
-
-  const selectTheme = async (themeId: string) => {
-    if (mutationsDisabled) return;
-    setSaving(true);
-    try {
-      await onThemeSelect(themeId);
-      setDraft(null);
-    } catch {
-      // The app-level error banner reports synchronization failures.
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const saveDraft = async () => {
-    if (!draft || mutationsDisabled || !draft.name.trim() || contrastIssues.length) return;
-    const saved = { ...draft, name: draft.name.trim() };
-    setSaving(true);
-    try {
-      await onThemeSave(saved);
-      setDraft(null);
-    } catch {
-      // Keep the draft and preview available for retry.
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const deleteTheme = async (theme: CustomTheme) => {
-    if (mutationsDisabled || !await onConfirmThemeDelete(theme)) return;
-    setSaving(true);
-    try {
-      await onThemeDelete(theme.id);
-      if (draft?.id === theme.id) {
-        setDraft(null);
-      }
-    } catch {
-      // Keep the draft available if deletion fails.
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const cancelDraft = () => {
-    setDraft(null);
-  };
-
   const focusSubpage = (heading: { current: HTMLHeadingElement | null }) => {
     requestAnimationFrame(() => {
       const mobileBack = mobileBackButtonRef.current;
@@ -438,7 +316,6 @@ export function SettingsWindow({
 
   const closeThemes = () => {
     void commitWallpaperDraft();
-    cancelDraft();
     contentRef.current?.scrollTo({ top: 0 });
     onPageChange("main");
   };
@@ -461,7 +338,7 @@ export function SettingsWindow({
   return (
     <div className="settings-window settings-window--embedded">
       {page !== "main" && mobileHeaderElements?.actions && createPortal(
-        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" disabled={page === "themes" && saving} onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
+        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
           <ArrowLeft size={18} />
         </button>,
         mobileHeaderElements.actions,
@@ -640,147 +517,24 @@ export function SettingsWindow({
         ) : page === "themes" ? (
           <div className="settings-page">
             <header className="settings-page__header">
-              <button className="settings-page__back" type="button" aria-label="Back to settings" disabled={saving} onClick={closeThemes}><ArrowLeft size={17} /></button>
+              <button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeThemes}><ArrowLeft size={17} /></button>
               <div>
                 <h3 ref={themesHeadingRef} tabIndex={-1}>Themes</h3>
                 <p>Change the desktop theme and wallpaper.</p>
               </div>
             </header>
 
-        <section className="settings-section" aria-labelledby="appearance-heading">
+        <section className="settings-section" aria-labelledby="theme-editor-heading">
           <div className="settings-section__heading">
             <PaintBrush size={18} />
-            <div>
-              <h3 id="appearance-heading">Appearance</h3>
-              <p>Choose a shared theme or make one for this desktop.</p>
+            <div><h3 id="theme-editor-heading">Theme Editor</h3><p>Browse, create, and adjust themes in a dedicated workspace.</p></div>
+          </div>
+          <div className="settings-list">
+            <div className="settings-row">
+              <span className="settings-row__copy"><strong>{selectedThemeName}</strong><small>{appearance.customThemes.length} shared custom {appearance.customThemes.length === 1 ? "theme" : "themes"} available.</small></span>
+              <button className="button button--primary" type="button" onClick={onOpenThemeEditor}>Open Theme Editor</button>
             </div>
           </div>
-
-          <div className="theme-list" aria-label="Built-in themes">
-            {BUILTIN_THEME_IDS.map((themeId) => {
-              const theme = BUILTIN_THEMES[themeId];
-              const selected = appearance.selectedThemeId === themeId;
-              return (
-                <div className="theme-item" data-selected={selected || undefined} key={themeId}>
-                  <button className="theme-item__select" type="button" aria-pressed={selected} disabled={mutationsDisabled} onClick={() => void selectTheme(themeId)}>
-                    <span className="theme-swatch" style={{ background: `linear-gradient(135deg, ${theme.definition.colors.chrome} 0 50%, ${theme.definition.colors.accent} 50%)` }} aria-hidden="true" />
-                    <span className="theme-item__copy"><strong>{theme.name}</strong><small>{theme.description}</small></span>
-                  </button>
-                  <button className="button button--quiet theme-item__action" type="button" disabled={mutationsDisabled} onClick={() => startDraft(copyName(theme.name), theme.definition)}>Duplicate / edit</button>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="theme-custom">
-            <h4>Shared custom themes</h4>
-            {appearance.customThemes.length === 0 ? (
-              <p className="theme-custom__empty">No custom themes yet. Duplicate a preset to begin.</p>
-            ) : (
-              <div className="theme-list" aria-label="Custom themes">
-                {appearance.customThemes.map((theme) => {
-                  const selected = appearance.selectedThemeId === theme.id;
-                  return (
-                    <div className="theme-item" data-selected={selected || undefined} key={theme.id}>
-                      <button className="theme-item__select" type="button" aria-pressed={selected} disabled={mutationsDisabled} onClick={() => void selectTheme(theme.id)}>
-                        <span className="theme-swatch" style={{ background: `linear-gradient(135deg, ${theme.definition.colors.chrome} 0 50%, ${theme.definition.colors.accent} 50%)` }} aria-hidden="true" />
-                        <span className="theme-item__copy"><strong>{theme.name}</strong><small>{theme.wallpaper ? `${theme.wallpaper.kind} wallpaper package` : selected ? "Selected" : "Custom theme"}</small></span>
-                      </button>
-                      <div className="theme-item__actions">
-                        <button className="button button--quiet" type="button" disabled={mutationsDisabled} onClick={() => startDraft(theme.name, theme.definition, theme.id)}>Edit</button>
-                        <button className="button button--quiet" type="button" disabled={mutationsDisabled} onClick={() => startDraft(copyName(theme.name), theme.definition)}>Duplicate</button>
-                        <button className="button button--quiet" type="button" disabled={mutationsDisabled} onClick={() => void deleteTheme(theme)}>Delete</button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {draft && (
-            <form className="theme-editor" onSubmit={(event) => { event.preventDefault(); void saveDraft(); }}>
-              <div className="theme-editor__heading">
-                <h4>Theme editor</h4>
-                <span className="theme-swatch" style={{ background: `linear-gradient(135deg, ${draft.definition.colors.chrome} 0 50%, ${draft.definition.colors.accent} 50%)` }} aria-hidden="true" />
-              </div>
-              <section className="theme-preview-canvas desktop-shell" style={themeStyle(draft.definition)} role="region" aria-label="Isolated custom theme component preview">
-                <div className="theme-preview-canvas__illustration" inert>
-                  <div className="theme-preview-canvas__chrome"><span>Hiraya</span><StatusBadge tone="success" surface="chrome">Synced</StatusBadge></div>
-                  <div className="theme-preview-canvas__window">
-                    <strong>Preview window</strong><small>Muted metadata remains readable.</small>
-                    <div><button className="button button--primary" type="button" tabIndex={-1}>Primary</button><button className="button button--quiet" type="button" tabIndex={-1}>Secondary</button><RoleBadge>Reader</RoleBadge></div>
-                  </div>
-                </div>
-              </section>
-              <label className="theme-field">Name<input type="text" value={draft.name} maxLength={60} required disabled={mutationsDisabled} onChange={(event) => updateDraft((current) => ({ ...current, name: event.target.value }))} /></label>
-
-              <fieldset className="theme-group">
-                <legend>Colors</legend>
-                <div className="theme-colors">
-                  {(Object.keys(draft.definition.colors) as Array<keyof ThemeColors>).map((key) => (
-                    <label className="theme-color" key={key}>
-                      <span>{COLOR_LABELS[key]}</span>
-                      <input type="color" value={draft.definition.colors[key]} disabled={mutationsDisabled} onChange={(event) => updateDraft((current) => ({ ...current, definition: { ...current.definition, colors: { ...current.definition.colors, [key]: event.target.value } } }))} />
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-
-              <fieldset className="theme-group">
-                <legend>Shape &amp; effects</legend>
-                <NumberControl label="Radius" value={draft.definition.shape.radius} min={0} max={24} step={1} disabled={mutationsDisabled} onChange={(radius) => updateDraft((current) => ({ ...current, definition: { ...current.definition, shape: { ...current.definition.shape, radius } } }))} />
-                <NumberControl label="Border width" value={draft.definition.shape.borderWidth} min={0} max={2} step={0.25} disabled={mutationsDisabled} onChange={(borderWidth) => updateDraft((current) => ({ ...current, definition: { ...current.definition, shape: { ...current.definition.shape, borderWidth } } }))} />
-                <NumberControl label="Blur" value={draft.definition.effects.blur} min={0} max={30} step={1} disabled={mutationsDisabled} onChange={(blur) => updateDraft((current) => ({ ...current, definition: { ...current.definition, effects: { ...current.definition.effects, blur } } }))} />
-                <NumberControl label="Opacity" value={draft.definition.effects.opacity} min={0.65} max={1} step={0.01} disabled={mutationsDisabled} onChange={(opacity) => updateDraft((current) => ({ ...current, definition: { ...current.definition, effects: { ...current.definition.effects, opacity } } }))} />
-                <NumberControl label="Shadow" value={draft.definition.effects.shadow} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(shadow) => updateDraft((current) => ({ ...current, definition: { ...current.definition, effects: { ...current.definition.effects, shadow } } }))} />
-                <NumberControl label="Motion" value={draft.definition.motion} min={0} max={1.5} step={0.05} disabled={mutationsDisabled} onChange={(motion) => updateDraft((current) => ({ ...current, definition: { ...current.definition, motion } }))} />
-              </fieldset>
-
-              <fieldset className="theme-group">
-                <legend>Surface treatment</legend>
-                <NumberControl label="Gradient strength" value={draftTreatment.gradientStrength} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(gradientStrength) => updateTreatment({ gradientStrength })} />
-                <label className="theme-field">Gradient direction
-                  <select value={draftTreatment.gradientAngle} disabled={mutationsDisabled || draftTreatment.gradientStrength === 0} onChange={(event) => updateTreatment({ gradientAngle: Number(event.target.value) })}>
-                    <option value={0}>Up</option><option value={45}>Up right</option><option value={90}>Right</option><option value={135}>Down right</option><option value={180}>Down</option><option value={225}>Down left</option><option value={270}>Left</option><option value={315}>Up left</option>
-                  </select>
-                </label>
-                <label className="theme-field">Texture
-                  <select value={draftTreatment.texture} disabled={mutationsDisabled} onChange={(event) => updateTreatment({ texture: event.target.value as ThemeTreatment["texture"] })}>
-                    <option value="none">None</option><option value="halftone">Halftone dots</option><option value="dither">Ordered dither</option>
-                  </select>
-                </label>
-                {draftTreatment.texture !== "none" && <>
-                  <NumberControl label="Texture strength" value={draftTreatment.textureStrength} min={0} max={1} step={0.05} disabled={mutationsDisabled} onChange={(textureStrength) => updateTreatment({ textureStrength })} />
-                  <NumberControl label="Texture scale" value={draftTreatment.textureScale} min={2} max={12} step={1} disabled={mutationsDisabled} onChange={(textureScale) => updateTreatment({ textureScale })} />
-                </>}
-                <label className="theme-field theme-field--toggle"><span><strong>Pixel geometry</strong><small>Use square corners, crisp edges, and stepped shadows.</small></span><input type="checkbox" checked={draftTreatment.pixelated} disabled={mutationsDisabled} onChange={(event) => updateTreatment({ pixelated: event.target.checked })} /></label>
-              </fieldset>
-
-              <fieldset className="theme-group">
-                <legend>Typography &amp; scale</legend>
-                <label className="theme-field">Font family
-                  <select value={draft.definition.typography.family} disabled={mutationsDisabled} onChange={(event) => updateDraft((current) => ({ ...current, definition: { ...current.definition, typography: { ...current.definition.typography, family: event.target.value as ThemeDefinition["typography"]["family"] } } }))}>
-                    <option value="humanist">Humanist</option><option value="system">System</option><option value="mono">Monospace</option>
-                  </select>
-                </label>
-                <NumberControl label="Type scale" value={draft.definition.typography.scale} min={0.85} max={1.2} step={0.01} disabled={mutationsDisabled} onChange={(scale) => updateDraft((current) => ({ ...current, definition: { ...current.definition, typography: { ...current.definition.typography, scale } } }))} />
-                <NumberControl label="Weight" value={draft.definition.typography.weight} min={400} max={700} step={50} disabled={mutationsDisabled} onChange={(weight) => updateDraft((current) => ({ ...current, definition: { ...current.definition, typography: { ...current.definition.typography, weight } } }))} />
-                <NumberControl label="Density" value={draft.definition.density} min={0.8} max={1.2} step={0.01} disabled={mutationsDisabled} onChange={(density) => updateDraft((current) => ({ ...current, definition: { ...current.definition, density } }))} />
-                <NumberControl label="Icon size" value={draft.definition.iconSize} min={48} max={72} step={1} disabled={mutationsDisabled} onChange={(iconSize) => updateDraft((current) => ({ ...current, definition: { ...current.definition, iconSize } }))} />
-              </fieldset>
-
-              {contrastIssues.length > 0 && <div className="theme-editor__warning" role="alert"><span>Increase contrast for {contrastIssues.join(", ")} before saving.</span><button className="button button--quiet" type="button" onClick={() => {
-                const safeColors = draftSafeColorsRef.current;
-                if (safeColors) updateDraft((current) => ({ ...current, definition: { ...current.definition, colors: { ...safeColors } } }));
-              }}>Reset unsafe colors</button></div>}
-
-              <div className="theme-editor__actions">
-                <button className="button button--quiet" type="button" disabled={saving} onClick={cancelDraft}>Cancel</button>
-                <button className="button" type="submit" disabled={mutationsDisabled || !draft.name.trim() || contrastIssues.length > 0}>{saving ? "Saving" : "Save theme"}</button>
-              </div>
-            </form>
-          )}
         </section>
 
         <section className="settings-section" aria-labelledby="wallpaper-heading">
