@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Switch desktops from the full row.** In the desktop and area switcher, the entire desktop row now opens that desktop instead of requiring a click directly on its name.
 - **Manage desktops in Settings.** Open **Settings > Desktop > Desktops** to create, rename, delete, pin, and order owned and shared desktops, review roles, and check account limits. The desktop switcher now stays focused on switching in your chosen order, including while showing the last cached arrangement offline.
 - **Synchronize approved apps across devices.** Approving an app or update once now synchronizes that exact package and its permissions to every signed-in device. **Applications** verifies each local download before enabling it and offers **Retry sync** if setup cannot finish.
 - **Customize themes and wallpaper together.** Open **Settings > Desktop > Themes & wallpaper** to browse themes, adjust colors, choose or upload a desktop wallpaper, and tune its fit, alignment, blur, dim, and overlay in one live-preview workspace.

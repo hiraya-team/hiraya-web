@@ -161,6 +161,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain('className="mobile-desktop-summary"');
     expect(app).toContain("desktopRail={<DesktopSwitcher");
     expect(desktopSwitcher).toContain('className="desktop-switcher__rail" aria-label="Desktops"');
+    expect(desktopSwitcher).toContain('<button className="desktop-switcher__row desktop-switcher__row--switch"');
     expect(desktopSwitcher).not.toContain("onCreate");
     expect(desktopSwitcher).not.toContain("onRename");
     expect(desktopSwitcher).not.toContain("onDelete");
