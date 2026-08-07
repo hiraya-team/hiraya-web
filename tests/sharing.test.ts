@@ -53,12 +53,13 @@ describe("sharing contracts", () => {
     expect(confirmItemAliasChange("roadmap", "new-roadmap", () => true)).toBe(true);
   });
 
-  test("keeps publication controls scoped to online managers", async () => {
+  test("keeps publication controls visible to managers and disables them offline", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const menu = await Bun.file(new URL("../src/components/ContextMenu.tsx", import.meta.url)).text();
     const sharing = await Bun.file(new URL("../src/components/SharingDialog.tsx", import.meta.url)).text();
     const publish = await Bun.file(new URL("../src/components/PublishDialog.tsx", import.meta.url)).text();
-    expect(app).toMatch(/contextMenuEntries\.length === 1\s*&&\s*canManage\s*&&\s*publicationsAvailable/);
+    expect(app).toMatch(/contextMenuEntries\.length === 1\s*&&\s*activeDesktop\?\.capabilities\.manage\s*&&\s*publicationsAvailable/);
+    expect(app).toContain("publishDisabled={!canManage}");
     expect(app).toMatch(/sharingOpen\s*\|\|\s*publishEntryId\s*\|\|\s*confirmation/);
     expect(menu).toContain("Publish...");
     expect(sharing).toContain("Share entire desktop");

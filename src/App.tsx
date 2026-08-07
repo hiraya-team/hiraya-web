@@ -5488,7 +5488,8 @@ function App({ session }: { session: AuthSession | null }) {
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
-          onPublish={contextMenuEntries.length === 1 && canManage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}
+          onPublish={contextMenuEntries.length === 1 && activeDesktop?.capabilities.manage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}
+          publishDisabled={!canManage}
           onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => ["partial", "online-only"].includes(offlineModel.entries[entry.id]?.status)) ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
           onRemoveOfflineCopy={
             syncStatus !== "local" &&
