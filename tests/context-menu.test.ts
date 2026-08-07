@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ContextMenu } from "../src/components/ContextMenu";
+import { ContextMenu, DesktopContextMenu } from "../src/components/ContextMenu";
+import { PasteFromDeviceDialog } from "../src/components/PasteFromDeviceDialog";
 import { openWithMenuItems } from "../src/ui/open-with-menu";
 
 describe("Open with menu", () => {
@@ -35,5 +36,30 @@ describe("Context menu presentation", () => {
 
     expect(markup).toContain("action-sheet-backdrop");
     expect(markup).not.toContain("data-positioned");
+  });
+});
+
+describe("Paste actions", () => {
+  test("keeps Paste available without a pre-inspected clipboard", () => {
+    const desktop = renderToStaticMarkup(createElement(DesktopContextMenu, {
+      menu: { type: "desktop", parentId: null, position: { x: 20, y: 30 }, x: 20, y: 30, presentation: "menu" },
+      onCreateFile() {}, onCreateFolder() {}, onUpload() {}, onImportFolder() {}, onPaste() {}, onClose() {},
+    }));
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const entry = renderToStaticMarkup(createElement(ContextMenu, {
+      menu: { type: "entry", entryId: folder.id, x: 20, y: 30, presentation: "menu" }, entry: folder,
+      onOpen() {}, onRename() {}, onCopy() {}, onPasteInto() {}, onMove() {}, onProperties() {}, onDelete() {}, onClose() {},
+    }));
+
+    expect(desktop).toContain("Paste");
+    expect(desktop).toContain("Ctrl/⌘ V");
+    expect(entry).toContain("Paste into");
+  });
+
+  test("explains the native paste fallback", () => {
+    const markup = renderToStaticMarkup(createElement(PasteFromDeviceDialog, { onClose() {} }));
+
+    expect(markup).toContain("Paste from device");
+    expect(markup).toContain("Ctrl/⌘ V");
   });
 });
