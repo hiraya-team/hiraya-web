@@ -1,4 +1,4 @@
-import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus, ServiceMethods, ThemeEditorState } from "@hiraya-team/apps-contracts";
+import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus, ServiceMethods, ThemeEditorState, WallpaperEditorState } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import type { ThemeDefinition } from "../../domain/theme";
@@ -58,6 +58,11 @@ type LaunchSandboxAppOptions = {
   selectTheme: (themeId: string) => Promise<ThemeEditorState>;
   saveTheme: (theme: ServiceMethods["themes.save"]["params"]) => Promise<ThemeEditorState>;
   deleteTheme: (themeId: string) => Promise<ThemeEditorState>;
+  getWallpaperEditorState: () => WallpaperEditorState;
+  previewWallpaper: (wallpaper: ServiceMethods["wallpapers.preview"]["params"]["wallpaper"]) => void;
+  saveWallpaper: (wallpaper: ServiceMethods["wallpapers.save"]["params"]["wallpaper"]) => Promise<WallpaperEditorState>;
+  uploadWallpaper: (file: File) => Promise<WallpaperEditorState>;
+  selectWallpaper: (fileId: string) => Promise<WallpaperEditorState>;
 };
 
 export type SandboxLaunchResult =
@@ -190,6 +195,38 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
         delete: ({ themeId }: ServiceMethods["themes.delete"]["params"]) => {
           requireThemeEditor(install);
           return options.deleteTheme(themeId);
+        },
+      },
+      wallpapers: {
+        getState: () => {
+          requireThemeEditor(install);
+          return options.getWallpaperEditorState();
+        },
+        preview: ({ wallpaper }: ServiceMethods["wallpapers.preview"]["params"]) => {
+          requireThemeEditor(install);
+          return options.previewWallpaper(wallpaper);
+        },
+        save: ({ wallpaper }: ServiceMethods["wallpapers.save"]["params"]) => {
+          requireThemeEditor(install);
+          return options.saveWallpaper(wallpaper);
+        },
+        upload: ({ name, mimeType, data }: ServiceMethods["wallpapers.upload"]["params"]) => {
+          requireThemeEditor(install);
+          return options.uploadWallpaper(new File([data], name, { type: mimeType }));
+        },
+        select: ({ fileId }: ServiceMethods["wallpapers.select"]["params"]) => {
+          requireThemeEditor(install);
+          return options.selectWallpaper(fileId);
+        },
+        readCurrentImage: async () => {
+          requireThemeEditor(install);
+          const source = options.getWallpaperEditorState().wallpaper.source;
+          if (!source.startsWith("file:")) return null;
+          const fileId = source.slice(5);
+          const entry = options.getEntries().find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
+          if (!entry) throw new HostServiceError("The current wallpaper image is unavailable.", "NOT_FOUND");
+          const blob = await options.fileSync.readFile(fileId);
+          return { data: await blob.arrayBuffer(), mimeType: blob.type || entry.mimeType };
         },
       },
     };

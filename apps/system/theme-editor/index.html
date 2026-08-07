@@ -32,7 +32,8 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       <section class="stage" aria-labelledby="preview-title">
         <div class="section-heading"><h2 id="preview-title">Desktop specimen</h2><span id="preview-kind"></span></div>
         <div id="preview-empty" class="empty-state" hidden><strong>No themes available</strong><span>The host did not return a desktop theme.</span></div>
-        <div id="specimen" class="desktop-specimen" aria-hidden="true" inert>
+        <div id="specimen" class="desktop-specimen" data-wallpaper="dusk" aria-hidden="true" inert>
+          <div id="specimen-wallpaper" class="specimen-wallpaper"></div>
           <div class="specimen-menu"><strong>Hiraya</strong><span>9:41</span></div>
           <div class="specimen-icons" aria-hidden="true"><span class="specimen-icon"></span><span class="specimen-icon"></span></div>
           <div class="specimen-window">
@@ -46,14 +47,50 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
       </section>
       <aside class="inspector" aria-labelledby="inspector-title">
         <div class="section-heading"><h2 id="inspector-title">Controls</h2><span id="dirty-label"></span></div>
-        <div id="inspector-empty" class="empty-state"><strong>Choose Edit or Duplicate</strong><span>Edit a custom theme, or duplicate any theme to make a new one.</span></div>
-        <form id="theme-form" hidden novalidate>
-          <label class="name-field">Theme name<input id="theme-name" maxlength="60" required autocomplete="off"></label>
-          <section aria-labelledby="essentials-title"><h3 id="essentials-title">Essentials</h3><div id="simple-fields" class="field-stack"></div></section>
-          <details><summary>Advanced theme fields</summary><div id="advanced-fields" class="field-stack"></div></details>
-          <div id="contrast-error" class="validation" role="alert" hidden></div>
-          <div class="form-actions"><hiraya-button id="cancel">Cancel</hiraya-button><hiraya-button id="save" variant="primary" disabled>Save and apply</hiraya-button></div>
-        </form>
+        <div class="inspector-tabs" role="tablist" aria-label="Appearance controls">
+          <button id="theme-tab" type="button" role="tab" aria-selected="true" aria-controls="theme-panel">Theme</button>
+          <button id="wallpaper-tab" type="button" role="tab" aria-selected="false" aria-controls="wallpaper-panel" tabindex="-1">Wallpaper</button>
+        </div>
+        <div id="theme-panel" role="tabpanel" aria-labelledby="theme-tab">
+          <div id="inspector-empty" class="empty-state"><strong>Choose Edit or Duplicate</strong><span>Edit a custom theme, or duplicate any theme to make a new one.</span></div>
+          <form id="theme-form" hidden novalidate>
+            <label class="name-field">Theme name<input id="theme-name" maxlength="60" required autocomplete="off"></label>
+            <section aria-labelledby="essentials-title"><h3 id="essentials-title">Essentials</h3><div id="simple-fields" class="field-stack"></div></section>
+            <details><summary>Advanced theme fields</summary><div id="advanced-fields" class="field-stack"></div></details>
+            <div id="contrast-error" class="validation" role="alert" hidden></div>
+            <div class="form-actions"><hiraya-button id="cancel">Cancel</hiraya-button><hiraya-button id="save" variant="primary" disabled>Save and apply</hiraya-button></div>
+          </form>
+        </div>
+        <div id="wallpaper-panel" role="tabpanel" aria-labelledby="wallpaper-tab" hidden>
+          <section class="wallpaper-source" aria-labelledby="wallpaper-source-title">
+            <h3 id="wallpaper-source-title">Desktop background</h3>
+            <div class="wallpaper-presets" role="group" aria-label="Built-in wallpapers">
+              <button type="button" data-wallpaper-source="dusk"><span></span>Dusk</button>
+              <button type="button" data-wallpaper-source="grove"><span></span>Grove</button>
+              <button type="button" data-wallpaper-source="ember"><span></span>Ember</button>
+            </div>
+            <p id="wallpaper-current" class="wallpaper-current"></p>
+            <input id="wallpaper-upload" type="file" accept="image/jpeg,image/png,image/webp" hidden>
+            <div class="wallpaper-actions">
+              <button id="wallpaper-upload-button" type="button">Upload image</button>
+              <label>Existing image<select id="wallpaper-image-select"><option value="">Choose an image</option></select></label>
+              <button id="wallpaper-reset" type="button">Reset</button>
+            </div>
+          </section>
+          <section aria-labelledby="wallpaper-treatment-title">
+            <h3 id="wallpaper-treatment-title">Image treatment</h3>
+            <div id="wallpaper-fields" class="field-stack">
+              <label class="number-field"><span>Fit</span><select data-wallpaper-field="fit"><option value="cover">Cover</option><option value="contain">Contain</option></select></label>
+              <label class="range-field"><span>Horizontal alignment <output></output></span><input type="range" data-wallpaper-field="positionX" aria-label="Horizontal alignment" min="0" max="100" step="1"></label>
+              <label class="range-field"><span>Vertical alignment <output></output></span><input type="range" data-wallpaper-field="positionY" aria-label="Vertical alignment" min="0" max="100" step="1"></label>
+              <label class="range-field"><span>Blur <output></output></span><input type="range" data-wallpaper-field="blur" aria-label="Blur" min="0" max="24" step="1"></label>
+              <label class="range-field"><span>Dim <output></output></span><input type="range" data-wallpaper-field="dim" aria-label="Dim" min="0" max="0.8" step="0.05"></label>
+              <label class="color-field"><span>Overlay color</span><span class="color-pair"><input type="color" data-wallpaper-field="overlayColor" aria-label="Overlay color picker"><input class="hex-input" data-wallpaper-hex aria-label="Overlay color hex" maxlength="7" pattern="#[0-9A-Fa-f]{6}" spellcheck="false"></span></label>
+              <label class="range-field"><span>Overlay opacity <output></output></span><input type="range" data-wallpaper-field="overlayOpacity" aria-label="Overlay opacity" min="0" max="0.8" step="0.05"></label>
+            </div>
+          </section>
+          <p id="wallpaper-restriction" class="restriction" hidden></p>
+        </div>
       </aside>
       <div id="fatal" class="fatal-state" hidden role="alert"><strong>Theme Editor is unavailable</strong><span id="fatal-message"></span></div>
     </section>

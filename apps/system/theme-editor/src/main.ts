@@ -1,4 +1,4 @@
-import type { HirayaClient, ThemeDefinition, ThemeEditorState } from "@hiraya-team/apps-sdk";
+import type { HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { contrastIssues, copyDraft, draftChanged, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
 import "./style.css";
@@ -17,12 +17,26 @@ const form = required<HTMLFormElement>("#theme-form");
 const nameInput = required<HTMLInputElement>("#theme-name");
 const status = required<HTMLElement>("#status");
 const saveButton = required<HirayaButton>("#save");
+const wallpaperPanel = required<HTMLElement>("#wallpaper-panel");
+const themePanel = required<HTMLElement>("#theme-panel");
+const wallpaperFields = required<HTMLElement>("#wallpaper-fields");
+const wallpaperUpload = required<HTMLInputElement>("#wallpaper-upload");
+const wallpaperImageSelect = required<HTMLSelectElement>("#wallpaper-image-select");
 const managementButtons = ["edit", "duplicate", "delete"].map((id) => required<HirayaButton>(`#${id}`));
 let hiraya: HirayaClient;
 let state: ThemeEditorState | null = null;
+let wallpaperState: WallpaperEditorState | null = null;
 let draft: ThemeDraft | null = null;
 let focusedThemeId = "";
 let busy = false;
+let wallpaperBusy = false;
+let wallpaperSaveTimer: number | null = null;
+let wallpaperImageUrl = "";
+let wallpaperImageSource = "";
+let wallpaperImageGeneration = 0;
+let wallpaperSaveGeneration = 0;
+
+const DEFAULT_WALLPAPER: WallpaperEditorWallpaper = { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#000000", overlayOpacity: 0 };
 
 const simpleColors: Array<[string, ColorKey, string, ColorKey]> = [
   ["Desktop", "shell", "Shell", "desktopText"],
@@ -49,6 +63,23 @@ nameInput.addEventListener("input", () => { if (draft) { draft.name = nameInput.
 form.addEventListener("input", handleFieldInput);
 form.addEventListener("change", handleFieldInput);
 required<HTMLInputElement>("#treatment-enabled").addEventListener("change", toggleTreatment);
+required("#theme-tab").addEventListener("click", () => setInspectorMode("theme"));
+required("#wallpaper-tab").addEventListener("click", () => setInspectorMode("wallpaper"));
+required(".inspector-tabs").addEventListener("keydown", (event) => {
+  if (!(event instanceof KeyboardEvent) || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const wallpaper = event.key === "ArrowRight" || event.key === "End";
+  setInspectorMode(wallpaper ? "wallpaper" : "theme");
+  required<HTMLElement>(wallpaper ? "#wallpaper-tab" : "#theme-tab").focus();
+});
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-wallpaper-source]")) button.addEventListener("click", () => void saveWallpaper({ source: button.dataset.wallpaperSource! }));
+required("#wallpaper-upload-button").addEventListener("click", () => wallpaperUpload.click());
+required("#wallpaper-reset").addEventListener("click", () => void saveWallpaper(DEFAULT_WALLPAPER, true));
+wallpaperUpload.addEventListener("change", () => void uploadWallpaper());
+wallpaperImageSelect.addEventListener("change", () => { if (wallpaperImageSelect.value) void selectWallpaper(wallpaperImageSelect.value); });
+wallpaperFields.addEventListener("input", wallpaperFieldChanged);
+wallpaperFields.addEventListener("change", wallpaperFieldChanged);
+for (const input of wallpaperFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select")) input.addEventListener("blur", () => void commitWallpaper());
 addEventListener("keydown", (event) => {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); if (draft) void saveTheme(); }
   if (event.key === "Escape" && draft) { event.preventDefault(); void cancelEdit(); }
@@ -71,7 +102,12 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
-    app.onDispose(() => { state = null; });
+    app.onDispose(() => {
+      state = null;
+      wallpaperState = null;
+      if (wallpaperSaveTimer !== null) clearTimeout(wallpaperSaveTimer);
+      if (wallpaperImageUrl) URL.revokeObjectURL(wallpaperImageUrl);
+    });
     hiraya.on("themes.changed", (incoming) => {
       const merged = mergeThemeState(incoming, draft);
       state = merged.state;
@@ -81,10 +117,18 @@ async function start() {
       setStatus(draft ? "The theme library changed elsewhere. Your draft is preserved." : "Theme library updated.");
     });
     hiraya.on("commands.invoked", ({ id }) => { if (id === "save" && draft) void saveTheme(); });
-    state = await hiraya.themes.getState();
+    hiraya.on("wallpapers.changed", (incoming) => {
+      const sourceChanged = incoming.wallpaper.source !== wallpaperState?.wallpaper.source;
+      wallpaperState = incoming;
+      renderWallpaper();
+      renderPreview();
+      if (sourceChanged) void refreshWallpaperImage();
+    });
+    [state, wallpaperState] = await Promise.all([hiraya.themes.getState(), hiraya.wallpapers.getState()]);
     focusedThemeId = state.selectedThemeId || state.themes[0]?.id || "";
     setAppLoading(content, workspace, loading);
     render();
+    void refreshWallpaperImage();
     setStatus(state.canManage ? "Choose a theme to inspect or customize." : state.restrictionReason || "Theme management is restricted.", !state.canManage);
   } catch (error) {
     setAppLoading(content, workspace, loading);
@@ -105,10 +149,11 @@ function previewDefinition() {
 
 function render() {
   if (!state) return;
-  renderLibrary();
-  renderPreview();
-  renderInspector();
-  renderControls();
+    renderLibrary();
+    renderPreview();
+    renderInspector();
+    renderWallpaper();
+    renderControls();
 }
 
 function renderLibrary() {
@@ -121,6 +166,8 @@ function renderLibrary() {
     button.className = "theme-item";
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(theme.id === focusedThemeId));
+    button.dataset.themeId = theme.id;
+    button.tabIndex = theme.id === focusedThemeId ? 0 : -1;
     if (theme.id === focusedThemeId) button.classList.add("focused");
     button.innerHTML = `<span class="theme-swatch" aria-hidden="true"></span><span><strong></strong><small></small></span><span class="selected-mark"></span>`;
     button.style.setProperty("--swatch-shell", theme.definition.colors.shell);
@@ -129,6 +176,7 @@ function renderLibrary() {
     button.querySelector("small")!.textContent = theme.builtIn ? "Built-in" : "Custom";
     button.querySelector(".selected-mark")!.textContent = theme.id === current.selectedThemeId ? "Applied" : "";
     button.addEventListener("click", () => void focusTheme(theme.id));
+    button.addEventListener("keydown", (event) => { if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) { event.preventDefault(); void moveThemeFocus(event.key); } });
     return button;
   }));
   const restriction = required<HTMLElement>("#restriction");
@@ -155,6 +203,18 @@ function renderPreview() {
     "--preview-family": definition.typography.family === "mono" ? "ui-monospace, monospace" : definition.typography.family === "humanist" ? "'Segoe UI', ui-sans-serif, sans-serif" : "ui-sans-serif, system-ui, sans-serif",
   };
   for (const [property, value] of Object.entries(values)) specimen.style.setProperty(property, value);
+  const wallpaper = wallpaperState?.wallpaper;
+  if (wallpaper) {
+    specimen.dataset.wallpaper = wallpaper.source.startsWith("file:") ? "file" : wallpaper.source.startsWith("theme:") ? "theme" : wallpaper.source;
+    specimen.style.setProperty("--wallpaper-image", wallpaperImageUrl ? `url(${wallpaperImageUrl})` : "none");
+    specimen.style.setProperty("--wallpaper-fit", wallpaper.fit);
+    specimen.style.setProperty("--wallpaper-x", `${wallpaper.positionX}%`);
+    specimen.style.setProperty("--wallpaper-y", `${wallpaper.positionY}%`);
+    specimen.style.setProperty("--wallpaper-blur", `${wallpaper.blur * .55}px`);
+    specimen.style.setProperty("--wallpaper-dim", String(wallpaper.dim));
+    specimen.style.setProperty("--wallpaper-overlay", wallpaper.overlayColor);
+    specimen.style.setProperty("--wallpaper-overlay-opacity", String(wallpaper.overlayOpacity));
+  }
   required("#preview-kind").textContent = draft ? "Draft preview" : selectedTheme()?.builtIn ? "Built-in" : "Custom";
 }
 
@@ -176,6 +236,28 @@ function renderInspector() {
   validateDraft();
 }
 
+function renderWallpaper() {
+  if (!wallpaperState) return;
+  const current = wallpaperState;
+  required("#wallpaper-current").textContent = `Current: ${current.currentName}`;
+  wallpaperImageSelect.replaceChildren(new Option(current.images.length ? "Choose an image" : "No supported images", ""), ...current.images.map((image) => new Option(image.name, image.id)));
+  wallpaperImageSelect.value = current.wallpaper.source.startsWith("file:") ? current.wallpaper.source.slice(5) : "";
+  for (const button of document.querySelectorAll<HTMLButtonElement>("[data-wallpaper-source]")) {
+    button.setAttribute("aria-pressed", String(button.dataset.wallpaperSource === current.wallpaper.source));
+    button.disabled = !current.canManage || wallpaperBusy;
+  }
+  for (const input of wallpaperPanel.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input,select,button")) input.disabled = !current.canManage || wallpaperBusy || input === wallpaperImageSelect && current.images.length === 0;
+  for (const input of wallpaperFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-wallpaper-field]")) {
+    const value = current.wallpaper[input.dataset.wallpaperField as keyof WallpaperEditorWallpaper];
+    input.value = String(value);
+    input.closest("label")?.querySelector("output")?.replaceChildren(String(value));
+  }
+  required<HTMLInputElement>("[data-wallpaper-hex]").value = current.wallpaper.overlayColor;
+  const restriction = required<HTMLElement>("#wallpaper-restriction");
+  restriction.hidden = current.canManage;
+  restriction.textContent = current.restrictionReason;
+}
+
 function renderControls() {
   const theme = selectedTheme();
   const canManage = Boolean(state?.canManage) && !busy;
@@ -188,6 +270,26 @@ function renderControls() {
   required("#mode-badge").textContent = draft ? "Editing" : "Library";
   required("#dirty-label").textContent = draft && draftChanged(draft) ? "Unsaved" : "";
   void hiraya?.commands.set([{ id: "save", title: "Save and apply theme", shortcut: "Ctrl+S", enabled: Boolean(draft) && !saveButton.disabled }]);
+}
+
+function setInspectorMode(mode: "theme" | "wallpaper") {
+  const wallpaper = mode === "wallpaper";
+  themePanel.hidden = wallpaper;
+  wallpaperPanel.hidden = !wallpaper;
+  required("#theme-tab").setAttribute("aria-selected", String(!wallpaper));
+  required("#wallpaper-tab").setAttribute("aria-selected", String(wallpaper));
+  required<HTMLElement>("#theme-tab").tabIndex = wallpaper ? -1 : 0;
+  required<HTMLElement>("#wallpaper-tab").tabIndex = wallpaper ? 0 : -1;
+  if (wallpaper) void refreshWallpaperImage();
+}
+
+async function moveThemeFocus(key: string) {
+  if (!state?.themes.length) return;
+  const current = Math.max(0, state.themes.findIndex((theme) => theme.id === focusedThemeId));
+  const index = key === "Home" ? 0 : key === "End" ? state.themes.length - 1 : (current + (key === "ArrowDown" ? 1 : -1) + state.themes.length) % state.themes.length;
+  const id = state.themes[index].id;
+  await focusTheme(id);
+  themeList.querySelector<HTMLElement>(`[data-theme-id="${CSS.escape(id)}"]`)?.focus();
 }
 
 async function confirmDiscard() {
@@ -310,6 +412,111 @@ function validateDraft() {
   validation.hidden = issues.length === 0;
   validation.textContent = issues.length ? `Save is blocked. Improve contrast for: ${issues.join(", ")}.` : "";
   saveButton.disabled = busy || !state?.canManage || !form.checkValidity() || !draft.name.trim() || draft.name.trim() !== draft.name || issues.length > 0;
+}
+
+function wallpaperFieldChanged(event: Event) {
+  if (!wallpaperState || !(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) return;
+  const input = event.target;
+  const field = input.dataset.wallpaperField as keyof WallpaperEditorWallpaper | undefined;
+  if (input.hasAttribute("data-wallpaper-hex")) {
+    const value = input.value.toUpperCase();
+    input.setAttribute("aria-invalid", String(!HEX.test(value)));
+    if (!HEX.test(value)) return;
+    wallpaperState.wallpaper.overlayColor = value;
+    required<HTMLInputElement>('[data-wallpaper-field="overlayColor"]').value = value;
+  } else if (field) {
+    const value = input.type === "range" ? Number(input.value) : input.value;
+    Object.assign(wallpaperState.wallpaper, { [field]: value });
+    if (field === "overlayColor") required<HTMLInputElement>("[data-wallpaper-hex]").value = String(value).toUpperCase();
+  } else return;
+  renderWallpaper();
+  renderPreview();
+  void hiraya.wallpapers.preview(wallpaperState.wallpaper).catch((error) => setStatus(describeError(error, "The wallpaper preview could not be updated."), true));
+  if (wallpaperSaveTimer !== null) clearTimeout(wallpaperSaveTimer);
+  wallpaperSaveTimer = window.setTimeout(() => { wallpaperSaveTimer = null; void commitWallpaper(); }, 400);
+}
+
+async function commitWallpaper() {
+  if (!wallpaperState || !wallpaperState.canManage || wallpaperBusy) return;
+  if (wallpaperSaveTimer !== null) clearTimeout(wallpaperSaveTimer);
+  wallpaperSaveTimer = null;
+  const generation = ++wallpaperSaveGeneration;
+  const wallpaper = structuredClone(wallpaperState.wallpaper);
+  setStatus("Saving wallpaper...");
+  try {
+    const saved = await hiraya.wallpapers.save(wallpaper);
+    if (generation !== wallpaperSaveGeneration) return;
+    wallpaperState = saved;
+    renderWallpaper();
+    renderPreview();
+    setStatus(`${saved.currentName} wallpaper applied.`);
+  } catch (error) {
+    if (generation !== wallpaperSaveGeneration) return;
+    wallpaperState = await hiraya.wallpapers.getState().catch(() => wallpaperState);
+    renderWallpaper();
+    renderPreview();
+    setStatus(describeError(error, "The wallpaper could not be saved."), true);
+  }
+}
+
+async function saveWallpaper(change: Partial<WallpaperEditorWallpaper>, reset = false) {
+  if (!wallpaperState || !wallpaperState.canManage || wallpaperBusy) return;
+  wallpaperSaveGeneration += 1;
+  const wallpaper = reset ? structuredClone(DEFAULT_WALLPAPER) : { ...wallpaperState.wallpaper, ...change };
+  await runWallpaper("Saving wallpaper...", async () => {
+    wallpaperState = await hiraya.wallpapers.save(wallpaper);
+    renderWallpaper();
+    renderPreview();
+    await refreshWallpaperImage();
+    setStatus(`${wallpaperState.currentName} wallpaper applied.`);
+  }, "The wallpaper could not be saved.");
+}
+
+async function uploadWallpaper() {
+  const file = wallpaperUpload.files?.[0];
+  wallpaperUpload.value = "";
+  if (!file || !wallpaperState?.canManage || wallpaperBusy) return;
+  wallpaperSaveGeneration += 1;
+  await runWallpaper("Adding wallpaper image...", async () => {
+    wallpaperState = await hiraya.wallpapers.upload(file.name, file.type, await file.arrayBuffer());
+    renderWallpaper();
+    renderPreview();
+    await refreshWallpaperImage();
+    setStatus(`${file.name} added and applied.`);
+  }, "The wallpaper image could not be added.");
+}
+
+async function selectWallpaper(fileId: string) {
+  if (!wallpaperState?.canManage || wallpaperBusy) return;
+  wallpaperSaveGeneration += 1;
+  await runWallpaper("Applying wallpaper image...", async () => {
+    wallpaperState = await hiraya.wallpapers.select(fileId);
+    renderWallpaper();
+    renderPreview();
+    await refreshWallpaperImage();
+    setStatus(`${wallpaperState.currentName} applied.`);
+  }, "The wallpaper image could not be applied.");
+}
+
+async function refreshWallpaperImage() {
+  const source = wallpaperState?.wallpaper.source ?? "";
+  if (source === wallpaperImageSource) return;
+  wallpaperImageSource = source;
+  const generation = ++wallpaperImageGeneration;
+  const image = await hiraya.wallpapers.readCurrentImage().catch(() => null);
+  if (generation !== wallpaperImageGeneration) return;
+  if (wallpaperImageUrl) URL.revokeObjectURL(wallpaperImageUrl);
+  wallpaperImageUrl = image ? URL.createObjectURL(new Blob([image.data], { type: image.mimeType })) : "";
+  renderPreview();
+}
+
+async function runWallpaper(message: string, operation: () => Promise<void>, fallback: string) {
+  wallpaperBusy = true;
+  setStatus(message);
+  renderWallpaper();
+  try { await operation(); }
+  catch (error) { setStatus(describeError(error, fallback), true); }
+  finally { wallpaperBusy = false; renderWallpaper(); }
 }
 
 function getPath(target: ThemeDefinition, path: string): unknown {

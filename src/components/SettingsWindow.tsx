@@ -1,13 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, ImageSquare, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash, UploadSimple } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
 import { BUILTIN_THEMES, isBuiltinThemeId } from "../lib/themes";
 import type { ThemeState } from "../domain/theme";
-import { DEFAULT_WALLPAPER, GRID_SIZES, WALLPAPERS, type DesktopEntry, type DesktopLayout, type FileEntry, type GridSize, type WallpaperPreset } from "../types";
-import { WALLPAPER_IMAGE_ACCEPT } from "../lib/wallpaper-image";
+import { GRID_SIZES, type DesktopEntry, type DesktopLayout, type GridSize } from "../types";
 import type { AppWindowHeaderElements } from "./AppWindow";
 import { installedAppAcceptsMatcher, installedAppIsAvailable, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../apps/installed-apps";
 import { SYSTEM_FILE_DEFAULTS } from "../apps/file-associations";
@@ -15,12 +14,6 @@ import type { PwaInstallState } from "../lib/pwa-install";
 import { StatusBadge } from "./VisualPrimitives";
 import { ShortLinksSettings } from "./ShortLinksSettings";
 import type { ShortLink } from "../lib/short-links";
-
-const WALLPAPER_LABELS: Record<WallpaperPreset, { name: string; description: string }> = {
-  dusk: { name: "Dusk", description: "Misty green with a warm horizon" },
-  grove: { name: "Grove", description: "Deep forest layers in cool green" },
-  ember: { name: "Ember", description: "Smoky earth with an amber glow" },
-};
 
 const SETTINGS_CATEGORIES = [
   { id: "desktop", label: "Desktop" },
@@ -32,13 +25,12 @@ const SETTINGS_CATEGORIES = [
 type SettingsCategory = typeof SETTINGS_CATEGORIES[number]["id"];
 
 type Props = {
-  page: "main" | "themes" | "activity" | "apps" | "short-links";
-  onPageChange: (page: "main" | "themes" | "activity" | "apps" | "short-links") => void;
+  page: "main" | "activity" | "apps" | "short-links";
+  onPageChange: (page: "main" | "activity" | "apps" | "short-links") => void;
   mobileHeaderElements?: AppWindowHeaderElements;
   layout: DesktopLayout;
   activeDesktopId: string;
   entries: DesktopEntry[];
-  wallpaperUrl: string | null;
   appearance: ThemeState;
   canMutate: boolean;
   canViewActivity: boolean;
@@ -82,10 +74,7 @@ type Props = {
   onOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => void;
   canOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => boolean;
   onOpenThemeEditor: () => void;
-  onLayoutPreview: (layout: DesktopLayout, desktopId: string) => void;
   onLayoutChange: (layout: DesktopLayout, desktopId: string) => Promise<void>;
-  onWallpaperUpload: (file: File, layout: DesktopLayout, desktopId: string) => Promise<void>;
-  onWallpaperSelect: (fileId: string, layout: DesktopLayout, desktopId: string) => Promise<void>;
   onExport: () => void;
   onToggleFullscreen: () => void;
   onCheckForUpdate: () => void;
@@ -102,34 +91,6 @@ type Props = {
   onOpenHelp: (section?: "start-here" | "installation-and-updates" | "apps-and-permissions" | "export-backup-and-recovery") => void;
 };
 
-type NumberControlProps = {
-  idPrefix?: string;
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  disabled: boolean;
-  onChange: (value: number) => void;
-  onCommit?: () => void;
-};
-
-function NumberControl({ idPrefix = "theme", label, value, min, max, step, disabled, onChange, onCommit }: NumberControlProps) {
-  const id = `${idPrefix}-${label.toLowerCase().replaceAll(" ", "-")}`;
-  const changeValue = (next: number) => {
-    if (Number.isFinite(next)) onChange(Math.min(max, Math.max(min, next)));
-  };
-  return (
-    <div className="theme-control">
-      <label htmlFor={id}>{label} <output>{value}</output></label>
-      <div className="theme-control__inputs">
-        <input id={id} type="range" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(event) => changeValue(event.target.valueAsNumber)} onPointerUp={onCommit} onKeyUp={onCommit} onBlur={onCommit} />
-        <input aria-label={`${label} value`} type="number" min={min} max={max} step={step} value={value} disabled={disabled} onChange={(event) => changeValue(event.target.valueAsNumber)} onBlur={onCommit} />
-      </div>
-    </div>
-  );
-}
-
 export function SettingsWindow({
   page,
   onPageChange,
@@ -137,7 +98,6 @@ export function SettingsWindow({
   layout,
   activeDesktopId,
   entries,
-  wallpaperUrl,
   appearance,
   canMutate,
   canViewActivity,
@@ -181,10 +141,7 @@ export function SettingsWindow({
   onOpenAffectedEntries,
   canOpenAffectedEntries,
   onOpenThemeEditor,
-  onLayoutPreview,
   onLayoutChange,
-  onWallpaperUpload,
-  onWallpaperSelect,
   onExport,
   onToggleFullscreen,
   onCheckForUpdate,
@@ -200,35 +157,19 @@ export function SettingsWindow({
   onOpenOfflineStorage,
   onOpenHelp,
 }: Props) {
-  const [wallpaperBusy, setWallpaperBusy] = useState(false);
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("desktop");
-  const [layoutDraft, setLayoutDraft] = useState(() => ({ desktopId: activeDesktopId, layout }));
   const contentRef = useRef<HTMLDivElement>(null);
-  const wallpaperUploadRef = useRef<HTMLInputElement>(null);
-  const wallpaperCommitTimerRef = useRef<number | null>(null);
-  const onLayoutChangeRef = useRef(onLayoutChange);
   const previousPageRef = useRef(page);
-  const pendingLayoutRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
-  const mainThemesButtonRef = useRef<HTMLButtonElement>(null);
   const mainActivityButtonRef = useRef<HTMLButtonElement>(null);
   const mainAppsButtonRef = useRef<HTMLButtonElement>(null);
   const mainShortLinksButtonRef = useRef<HTMLButtonElement>(null);
   const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
-  const themesHeadingRef = useRef<HTMLHeadingElement>(null);
   const activityHeadingRef = useRef<HTMLHeadingElement>(null);
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
   const shortLinksHeadingRef = useRef<HTMLHeadingElement>(null);
-  onLayoutChangeRef.current = onLayoutChange;
-  const displayedLayout = layoutDraft.desktopId === activeDesktopId ? layoutDraft.layout : layout;
   const selectedThemeName = isBuiltinThemeId(appearance.selectedThemeId)
     ? BUILTIN_THEMES[appearance.selectedThemeId].name
     : appearance.customThemes.find((theme) => theme.id === appearance.selectedThemeId)?.name ?? "Custom theme";
-  const wallpaperFileId = displayedLayout.wallpaper.source.startsWith("file:") ? displayedLayout.wallpaper.source.slice(5) : null;
-  const wallpaperThemeId = displayedLayout.wallpaper.source.startsWith("theme:") ? displayedLayout.wallpaper.source.slice(6) : null;
-  const wallpaperTheme = wallpaperThemeId ? appearance.customThemes.find((theme) => theme.id === wallpaperThemeId && theme.wallpaper) : null;
-  const wallpaperFile = wallpaperFileId ? entries.find((entry): entry is FileEntry => entry.id === wallpaperFileId && entry.kind === "file") : null;
-  const wallpaperFiles = entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024);
-  const wallpaperName = displayedLayout.wallpaper.source in WALLPAPER_LABELS ? WALLPAPER_LABELS[displayedLayout.wallpaper.source as WallpaperPreset].name : wallpaperTheme ? `${wallpaperTheme.name} included` : wallpaperFile?.name ?? "Custom image";
   const formatBuildTimestamp = (timestamp: string | null) => {
     if (!timestamp) return "Unavailable";
     const date = new Date(timestamp);
@@ -237,68 +178,17 @@ export function SettingsWindow({
   };
 
   useEffect(() => {
-    if (pendingLayoutRef.current?.desktopId === activeDesktopId) return;
-    const pending = pendingLayoutRef.current;
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    wallpaperCommitTimerRef.current = null;
-    pendingLayoutRef.current = null;
-    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
-    setLayoutDraft({ desktopId: activeDesktopId, layout });
-  }, [activeDesktopId, layout]);
-
-  useEffect(() => () => {
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    const pending = pendingLayoutRef.current;
-    pendingLayoutRef.current = null;
-    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
-  }, []);
-
-  const commitWallpaperDraft = async () => {
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    wallpaperCommitTimerRef.current = null;
-    const pending = pendingLayoutRef.current;
-    pendingLayoutRef.current = null;
-    if (pending) await onLayoutChange(pending.layout, pending.desktopId);
-  };
-
-  useEffect(() => {
     const previousPage = previousPageRef.current;
     previousPageRef.current = page;
     if (page === "main" && previousPage !== "main") {
-      const button = previousPage === "themes" ? mainThemesButtonRef : previousPage === "activity" ? mainActivityButtonRef : previousPage === "short-links" ? mainShortLinksButtonRef : mainAppsButtonRef;
+      const button = previousPage === "activity" ? mainActivityButtonRef : previousPage === "short-links" ? mainShortLinksButtonRef : mainAppsButtonRef;
       requestAnimationFrame(() => button.current?.focus());
     }
-    if (previousPage !== "themes" || page === "themes") return;
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    wallpaperCommitTimerRef.current = null;
-    const pending = pendingLayoutRef.current;
-    pendingLayoutRef.current = null;
-    if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId);
   }, [page]);
 
   useEffect(() => {
     if (settingsCategory === "sharing" && !sharingAvailable && !shortLinksAvailable) setSettingsCategory("desktop");
   }, [settingsCategory, sharingAvailable, shortLinksAvailable]);
-
-  const previewWallpaper = (wallpaper: DesktopLayout["wallpaper"]) => {
-    const next = { ...displayedLayout, wallpaper };
-    const pending = { desktopId: activeDesktopId, layout: next };
-    pendingLayoutRef.current = pending;
-    setLayoutDraft(pending);
-    onLayoutPreview(next, activeDesktopId);
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    wallpaperCommitTimerRef.current = window.setTimeout(() => { void commitWallpaperDraft(); }, 400);
-  };
-
-  const commitWallpaperChange = async (wallpaper: DesktopLayout["wallpaper"]) => {
-    if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-    wallpaperCommitTimerRef.current = null;
-    pendingLayoutRef.current = null;
-    const next = { ...displayedLayout, wallpaper };
-    setLayoutDraft({ desktopId: activeDesktopId, layout: next });
-    onLayoutPreview(next, activeDesktopId);
-    await onLayoutChange(next, activeDesktopId);
-  };
 
   const focusSubpage = (heading: { current: HTMLHeadingElement | null }) => {
     requestAnimationFrame(() => {
@@ -306,18 +196,6 @@ export function SettingsWindow({
       if (mobileBack?.getClientRects().length) mobileBack.focus();
       else heading.current?.focus();
     });
-  };
-
-  const openThemes = () => {
-    contentRef.current?.scrollTo({ top: 0 });
-    onPageChange("themes");
-    focusSubpage(themesHeadingRef);
-  };
-
-  const closeThemes = () => {
-    void commitWallpaperDraft();
-    contentRef.current?.scrollTo({ top: 0 });
-    onPageChange("main");
   };
 
   const openActivity = () => {
@@ -338,7 +216,7 @@ export function SettingsWindow({
   return (
     <div className="settings-window settings-window--embedded">
       {page !== "main" && mobileHeaderElements?.actions && createPortal(
-        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" onClick={page === "themes" ? closeThemes : page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
+        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" onClick={page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
           <ArrowLeft size={18} />
         </button>,
         mobileHeaderElements.actions,
@@ -349,11 +227,11 @@ export function SettingsWindow({
               <header className="settings-ia-header"><h2>Settings</h2><p>Personalize this desktop, manage its data, and control this installation of Hiraya.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
                <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.filter((category) => category.id !== "sharing" || sharingAvailable || shortLinksAvailable).map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
                <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "desktop"}>
-              <button className="settings-row settings-row--navigation" type="button" ref={mainThemesButtonRef} onClick={openThemes}>
+              <button className="settings-row settings-row--navigation" type="button" onClick={onOpenThemeEditor}>
                 <span className="settings-row__icon"><PaintBrush size={17} /></span>
                 <span className="settings-row__copy">
-                  <strong id="themes-link-heading">Themes</strong>
-                  <small>{selectedThemeName} theme with {wallpaperName.toLowerCase()} wallpaper.</small>
+                  <strong id="themes-link-heading">Themes &amp; wallpaper</strong>
+                  <small>Open Theme Editor to adjust {selectedThemeName} and the active background.</small>
                 </span>
                 <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
               </button>
@@ -514,92 +392,6 @@ export function SettingsWindow({
             </section>
 
           </>
-        ) : page === "themes" ? (
-          <div className="settings-page">
-            <header className="settings-page__header">
-              <button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeThemes}><ArrowLeft size={17} /></button>
-              <div>
-                <h3 ref={themesHeadingRef} tabIndex={-1}>Themes</h3>
-                <p>Change the desktop theme and wallpaper.</p>
-              </div>
-            </header>
-
-        <section className="settings-section" aria-labelledby="theme-editor-heading">
-          <div className="settings-section__heading">
-            <PaintBrush size={18} />
-            <div><h3 id="theme-editor-heading">Theme Editor</h3><p>Browse, create, and adjust themes in a dedicated workspace.</p></div>
-          </div>
-          <div className="settings-list">
-            <div className="settings-row">
-              <span className="settings-row__copy"><strong>{selectedThemeName}</strong><small>{appearance.customThemes.length} shared custom {appearance.customThemes.length === 1 ? "theme" : "themes"} available.</small></span>
-              <button className="button button--primary" type="button" onClick={onOpenThemeEditor}>Open Theme Editor</button>
-            </div>
-          </div>
-        </section>
-
-        <section className="settings-section" aria-labelledby="wallpaper-heading">
-          <div className="settings-section__heading">
-            <PaintBrush size={18} />
-            <div>
-              <h3 id="wallpaper-heading">Wallpaper</h3>
-              <p>Choose the wallpaper shared by this desktop.</p>
-            </div>
-          </div>
-          <div className="wallpaper-options">
-            {WALLPAPERS.map((wallpaper) => (
-              <button className="wallpaper-option" data-selected={displayedLayout.wallpaper.source === wallpaper || undefined} type="button" key={wallpaper} aria-pressed={displayedLayout.wallpaper.source === wallpaper} disabled={!canMutate || wallpaperBusy} onClick={() => void commitWallpaperChange({ ...displayedLayout.wallpaper, source: wallpaper })}>
-                <span className="wallpaper-option__preview" data-wallpaper={wallpaper} aria-hidden="true"><span /></span>
-                <span className="wallpaper-option__copy"><strong>{WALLPAPER_LABELS[wallpaper].name}</strong><small>{WALLPAPER_LABELS[wallpaper].description}</small></span>
-              </button>
-            ))}
-          </div>
-          <div className="wallpaper-custom">
-            <div className="wallpaper-custom__current">
-              <span className="wallpaper-custom__thumbnail" style={wallpaperUrl ? { backgroundImage: `url(${wallpaperUrl})` } : undefined}><ImageSquare size={22} aria-hidden="true" /></span>
-              <span><strong>{wallpaperName}</strong><small>{wallpaperFile ? "Image stored on this desktop" : "Built-in wallpaper"}</small></span>
-              <button className="button button--quiet" type="button" disabled={!canMutate || wallpaperBusy || displayedLayout.wallpaper.source === DEFAULT_WALLPAPER.source && JSON.stringify(displayedLayout.wallpaper) === JSON.stringify(DEFAULT_WALLPAPER)} onClick={() => void commitWallpaperChange({ ...DEFAULT_WALLPAPER })}>Reset</button>
-            </div>
-            <div className="wallpaper-custom__actions">
-              <input ref={wallpaperUploadRef} className="visually-hidden" type="file" tabIndex={-1} aria-hidden="true" accept={WALLPAPER_IMAGE_ACCEPT} onChange={(event) => {
-                const file = event.target.files?.[0];
-                event.target.value = "";
-                if (!file) return;
-                if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-                wallpaperCommitTimerRef.current = null;
-                pendingLayoutRef.current = null;
-                setWallpaperBusy(true);
-                void onWallpaperUpload(file, displayedLayout, activeDesktopId).finally(() => setWallpaperBusy(false));
-              }} />
-              <button className="button button--quiet" type="button" disabled={!canMutate || wallpaperBusy} onClick={() => wallpaperUploadRef.current?.click()}><UploadSimple size={15} /> {wallpaperBusy ? "Adding image..." : "Upload image"}</button>
-              <label className="wallpaper-custom__select">Choose existing image
-                <select value={wallpaperFileId ?? ""} disabled={!canMutate || wallpaperBusy || wallpaperFiles.length === 0} onChange={(event) => {
-                  const fileId = event.target.value;
-                  if (!fileId) return;
-                  if (wallpaperCommitTimerRef.current !== null) window.clearTimeout(wallpaperCommitTimerRef.current);
-                  wallpaperCommitTimerRef.current = null;
-                  pendingLayoutRef.current = null;
-                  setWallpaperBusy(true);
-                  void onWallpaperSelect(fileId, displayedLayout, activeDesktopId).finally(() => setWallpaperBusy(false));
-                }}>
-                  <option value="">{wallpaperFiles.length ? "Select an image" : "No supported images"}</option>
-                  {wallpaperFiles.map((file) => <option value={file.id} key={file.id}>{file.name}</option>)}
-                </select>
-              </label>
-            </div>
-            <fieldset className="wallpaper-controls" disabled={!canMutate || wallpaperBusy}>
-              <legend>Image treatment</legend>
-              <label className="theme-field">Fit<select value={displayedLayout.wallpaper.fit} onChange={(event) => void commitWallpaperChange({ ...displayedLayout.wallpaper, fit: event.target.value as "cover" | "contain" })}><option value="cover">Cover</option><option value="contain">Contain</option></select></label>
-              <NumberControl idPrefix="wallpaper" label="Horizontal alignment" value={displayedLayout.wallpaper.positionX} min={0} max={100} step={1} disabled={!canMutate || wallpaperBusy} onChange={(positionX) => previewWallpaper({ ...displayedLayout.wallpaper, positionX })} onCommit={() => void commitWallpaperDraft()} />
-              <NumberControl idPrefix="wallpaper" label="Vertical alignment" value={displayedLayout.wallpaper.positionY} min={0} max={100} step={1} disabled={!canMutate || wallpaperBusy} onChange={(positionY) => previewWallpaper({ ...displayedLayout.wallpaper, positionY })} onCommit={() => void commitWallpaperDraft()} />
-              <NumberControl idPrefix="wallpaper" label="Blur" value={displayedLayout.wallpaper.blur} min={0} max={24} step={1} disabled={!canMutate || wallpaperBusy} onChange={(blur) => previewWallpaper({ ...displayedLayout.wallpaper, blur })} onCommit={() => void commitWallpaperDraft()} />
-              <NumberControl idPrefix="wallpaper" label="Dim" value={displayedLayout.wallpaper.dim} min={0} max={0.8} step={0.05} disabled={!canMutate || wallpaperBusy} onChange={(dim) => previewWallpaper({ ...displayedLayout.wallpaper, dim })} onCommit={() => void commitWallpaperDraft()} />
-              <label className="theme-color wallpaper-color"><span>Overlay color</span><input type="color" value={displayedLayout.wallpaper.overlayColor} onInput={(event) => previewWallpaper({ ...displayedLayout.wallpaper, overlayColor: event.currentTarget.value.toUpperCase() })} onBlur={() => void commitWallpaperDraft()} /></label>
-              <NumberControl idPrefix="wallpaper" label="Overlay opacity" value={displayedLayout.wallpaper.overlayOpacity} min={0} max={0.8} step={0.05} disabled={!canMutate || wallpaperBusy} onChange={(overlayOpacity) => previewWallpaper({ ...displayedLayout.wallpaper, overlayOpacity })} onCommit={() => void commitWallpaperDraft()} />
-            </fieldset>
-          </div>
-        </section>
-            {!canMutate && <p className="settings-window__offline" role="status">{restrictionReason} Appearance remains visible for reference.</p>}
-          </div>
         ) : page === "activity" ? (
           <div className="settings-page settings-page--activity">
             <header className="settings-page__header">
