@@ -137,7 +137,7 @@ async function setAccountHandler(page: Page) {
 async function inspectProtectedLayout(page: Page) {
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.locator('[data-app-window="settings"]');
   await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
   await settings.getByRole("checkbox", { name: /Show hidden files/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
@@ -234,7 +234,7 @@ async function verifyDirectDesktopLogin(browser: Browser) {
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill(password);
   await Promise.all([
-    page.waitForURL(/\/desktops\/[^/]+\/areas\/-2\/3\/settings$/),
+    page.waitForURL(/\/desktops\/[^/]+\/areas\/-2\/3\/settings\/desktop$/),
     page.getByRole("button", { name: "Sign in" }).click(),
   ]);
   await expect(page.locator(".desktop-shell")).toBeVisible();
@@ -253,11 +253,10 @@ async function primary(browser: Browser) {
 
   await first.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await first.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
-  const settings = first.getByRole("dialog", { name: "Settings" });
+  const settings = first.locator('[data-app-window="settings"]');
   await settings.getByRole("button", { name: "Sharing" }).click();
-  await settings.getByRole("button", { name: "Desktop & item sharing" }).click();
-  const sharingDialog = first.getByRole("dialog", { name: /^Share / });
-  const aliasInput = sharingDialog.getByLabel("Desktop alias");
+  await settings.getByRole("button", { name: /Desktop sharing/ }).click();
+  const aliasInput = settings.getByLabel("Desktop alias");
   await expect(aliasInput).not.toHaveValue("");
   let sharingReloads = 0;
   first.on("request", (request) => {
@@ -267,7 +266,7 @@ async function primary(browser: Browser) {
   await first.waitForTimeout(250);
   await expect(aliasInput).toHaveValue("draft-public-alias");
   expect(sharingReloads).toBe(0);
-  await sharingDialog.getByRole("button", { name: "Close sharing" }).click();
+  await settings.getByRole("button", { name: "Back to Sharing" }).click();
   await settings.getByRole("button", { name: "Close Settings" }).click();
 
   await createFolder(first, onlineFolder);

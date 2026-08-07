@@ -27,7 +27,7 @@ const systemApp: InstalledApp = {
 describe("Settings app data UI", () => {
   test("keeps file defaults without duplicating installed-app management", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "apps",
+      page: "files-apps/file-types",
       onPageChange: () => undefined,
       layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER },
       activeDesktopId: "desktop",
@@ -48,7 +48,7 @@ describe("Settings app data UI", () => {
       onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
 
-    expect(markup).toContain("App data &amp; file types");
+    expect(markup).toContain("File type defaults");
     expect(markup).toContain("Text and source files");
     expect(markup).toContain("Preferred app for .txt");
     expect(markup).not.toContain("Bundled system app");
@@ -58,7 +58,7 @@ describe("Settings app data UI", () => {
 
   test("surfaces quarantined app storage with download and removal controls", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "apps", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      page: "files-apps/recovered-data", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
       installedApps: [systemApp], fileAssociations: [], quarantinedApps: [{ appId: systemApp.appId, packageEntryId: "old-package", digest: "b".repeat(64), version: "0.9.0", manifest: { name: "Old editor" }, approvedAt: 1, storage: [{ key: "draft", value: { text: "kept" }, bytes: 15 }] }],
       onLaunchApp: () => undefined, onUninstallApp: () => undefined, onResetApp: () => undefined, onExportQuarantinedApp: () => undefined, onRemoveQuarantinedApp: () => undefined, onSetFileAssociation: () => undefined, onRemoveFileAssociation: () => undefined, onResetFileAssociations: () => undefined, onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
@@ -68,9 +68,17 @@ describe("Settings app data UI", () => {
     expect(markup).toContain("Remove");
   });
 
+  test("shows an empty recovered-data state", () => {
+    const markup = renderToStaticMarkup(<SettingsWindow {...({
+      page: "files-apps/recovered-data", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      installedApps: [], fileAssociations: [], quarantinedApps: [],
+    } as Parameters<typeof SettingsWindow>[0])} />);
+    expect(markup).toContain("No recovered app data.");
+  });
+
   test("offers the synchronized icon grid presets", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "main", onPageChange: () => undefined, layout: { snapToGrid: true, gridSize: 36, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      page: "desktop", onPageChange: () => undefined, layout: { snapToGrid: true, gridSize: 36, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
       installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
     expect(markup).toContain("Grid size");
@@ -80,7 +88,7 @@ describe("Settings app data UI", () => {
 
   test("shows account short links only when the session advertises support", () => {
     const props = {
-      page: "main", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: false,
+      page: "sharing", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: false,
       installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, shortLinkBaseUrl: "https://go.example.test/r/",
     } as Parameters<typeof SettingsWindow>[0];
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable={false} />)).not.toContain("Create and manage account-wide redirect URLs.");
@@ -89,14 +97,14 @@ describe("Settings app data UI", () => {
 
   test("groups appearance with desktop settings and sharing tools together", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "main", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
+      page: "desktop", onPageChange: () => undefined, layout: { snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], appearance: DEFAULT_THEME_STATE, canMutate: true,
       installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, sharingAvailable: true, shortLinksAvailable: true,
     } as Parameters<typeof SettingsWindow>[0])} />);
     expect(markup).toContain('aria-pressed="true">Desktop</button>');
     expect(markup).toContain('aria-pressed="false">Sharing</button>');
     expect(markup).not.toContain(">Appearance</button>");
     expect(markup).not.toContain("Desktop &amp; sharing");
-    expect(markup).toContain("Desktop &amp; item sharing");
-    expect(markup.indexOf("Desktop &amp; item sharing")).toBeLessThan(markup.indexOf("Short Links"));
+    expect(markup).toContain("Appearance");
+    expect(markup).toContain("Desktops");
   });
 });
