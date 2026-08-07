@@ -266,7 +266,6 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   const theme = source.startsWith("theme:") ? appearance.customThemes.find((candidate) => candidate.id === source.slice(6) && candidate.wallpaper) : null;
   return {
     wallpaper: layout.wallpaper,
-    images: entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024).map(({ id, name }) => ({ id, name })),
     currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom image",
     canManage,
     restrictionReason: canManage ? "" : restrictionReason,

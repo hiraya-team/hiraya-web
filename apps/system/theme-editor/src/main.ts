@@ -1,4 +1,4 @@
-import type { HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
+import type { FileHandle, HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { contrastIssues, copyDraft, draftChanged, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
 import "./style.css";
@@ -21,7 +21,6 @@ const wallpaperPanel = required<HTMLElement>("#wallpaper-panel");
 const themePanel = required<HTMLElement>("#theme-panel");
 const wallpaperFields = required<HTMLElement>("#wallpaper-fields");
 const wallpaperUpload = required<HTMLInputElement>("#wallpaper-upload");
-const wallpaperImageSelect = required<HTMLSelectElement>("#wallpaper-image-select");
 const managementButtons = ["edit", "duplicate", "delete"].map((id) => required<HirayaButton>(`#${id}`));
 let hiraya: HirayaClient;
 let state: ThemeEditorState | null = null;
@@ -74,9 +73,9 @@ required(".inspector-tabs").addEventListener("keydown", (event) => {
 });
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-wallpaper-source]")) button.addEventListener("click", () => void saveWallpaper({ source: button.dataset.wallpaperSource! }));
 required("#wallpaper-upload-button").addEventListener("click", () => wallpaperUpload.click());
+required("#wallpaper-image-button").addEventListener("click", () => void chooseWallpaper());
 required("#wallpaper-reset").addEventListener("click", () => void saveWallpaper(DEFAULT_WALLPAPER, true));
 wallpaperUpload.addEventListener("change", () => void uploadWallpaper());
-wallpaperImageSelect.addEventListener("change", () => { if (wallpaperImageSelect.value) void selectWallpaper(wallpaperImageSelect.value); });
 wallpaperFields.addEventListener("input", wallpaperFieldChanged);
 wallpaperFields.addEventListener("change", wallpaperFieldChanged);
 for (const input of wallpaperFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>("input,select")) input.addEventListener("blur", () => void commitWallpaper());
@@ -240,13 +239,11 @@ function renderWallpaper() {
   if (!wallpaperState) return;
   const current = wallpaperState;
   required("#wallpaper-current").textContent = `Current: ${current.currentName}`;
-  wallpaperImageSelect.replaceChildren(new Option(current.images.length ? "Choose an image" : "No supported images", ""), ...current.images.map((image) => new Option(image.name, image.id)));
-  wallpaperImageSelect.value = current.wallpaper.source.startsWith("file:") ? current.wallpaper.source.slice(5) : "";
   for (const button of document.querySelectorAll<HTMLButtonElement>("[data-wallpaper-source]")) {
     button.setAttribute("aria-pressed", String(button.dataset.wallpaperSource === current.wallpaper.source));
     button.disabled = !current.canManage || wallpaperBusy;
   }
-  for (const input of wallpaperPanel.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input,select,button")) input.disabled = !current.canManage || wallpaperBusy || input === wallpaperImageSelect && current.images.length === 0;
+  for (const input of wallpaperPanel.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>("input,select,button")) input.disabled = !current.canManage || wallpaperBusy;
   for (const input of wallpaperFields.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-wallpaper-field]")) {
     const value = current.wallpaper[input.dataset.wallpaperField as keyof WallpaperEditorWallpaper];
     input.value = String(value);
@@ -486,11 +483,19 @@ async function uploadWallpaper() {
   }, "The wallpaper image could not be added.");
 }
 
-async function selectWallpaper(fileId: string) {
+async function chooseWallpaper() {
+  const handles = await hiraya.dialogs.openFile({ mimeTypes: ["image/jpeg", "image/png", "image/webp"] }).catch((error) => {
+    setStatus(describeError(error, "The Hiraya file picker could not be opened."), true);
+    return null;
+  });
+  if (handles?.[0]) await selectWallpaper(handles[0]);
+}
+
+async function selectWallpaper(handle: FileHandle) {
   if (!wallpaperState?.canManage || wallpaperBusy) return;
   wallpaperSaveGeneration += 1;
   await runWallpaper("Applying wallpaper image...", async () => {
-    wallpaperState = await hiraya.wallpapers.select(fileId);
+    wallpaperState = await hiraya.wallpapers.select(handle);
     renderWallpaper();
     renderPreview();
     await refreshWallpaperImage();
