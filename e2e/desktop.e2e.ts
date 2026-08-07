@@ -431,7 +431,7 @@ test("rapid icon releases cannot accumulate snap previews", async ({ page }) => 
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
-  await settings.getByRole("button", { name: "Desktop" }).click();
+  await settings.getByRole("button", { name: "Desktop", exact: true }).click();
   await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
 
@@ -851,6 +851,16 @@ test("reduced motion disables desktop transitions and animations", async ({ page
   });
   expect(parseFloat(motion.animationDuration)).toBeLessThanOrEqual(0.001);
   expect(parseFloat(motion.transitionDuration)).toBeLessThanOrEqual(0.001);
+});
+
+test("desktop switcher rows use their full width", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Open desktop and area switcher/ }).click();
+  const target = page.locator("[data-desktop-switch-target]").first();
+  const bounds = await target.boundingBox();
+  if (!bounds) throw new Error("The desktop switch target is not visible.");
+  await target.click({ position: { x: bounds.width - 4, y: bounds.height / 2 } });
+  await expect(page.locator(".desktop-minimap")).toHaveCount(0);
 });
 
 test("service worker excludes API responses from navigation fallback and caches", async ({ page }) => {
