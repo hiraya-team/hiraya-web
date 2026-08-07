@@ -29,6 +29,12 @@ describe("app host context", () => {
     const context = host.openInstance({ instanceId: "one", launch: launch(), window: windowState, title: "Editor" });
     const dialog = context.dialogs.confirm({ title: "Continue?", message: "There are changes." });
     const notification = await context.notifications.show({ title: "Saved" });
+    await context.app.setBackHandler(true);
+    let requestId = "";
+    const handledBack = lifecycle.requestBack(context.owner, (id) => { requestId = id; });
+    await context.app.resolveBackRequest(requestId, "handled");
+    expect(await handledBack).toBe("handled");
+    const back = lifecycle.requestBack(context.owner, () => undefined);
 
     expect(host.dialogs.requests()).toHaveLength(1);
     expect(host.notifications.list()[0]?.owner).toEqual(context.owner);
@@ -36,11 +42,13 @@ describe("app host context", () => {
 
     expect(host.dialogs.requests()).toEqual([]);
     expect(host.notifications.list()).toEqual([]);
+    expect(await back).toBe("unsupported");
     expect(dialog).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(context.notifications.dismiss(notification.id)).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(context.dialogs.openFolder()).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(context.notifications.show({ title: "Late" })).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(context.storage.get("late")).rejects.toMatchObject({ code: "UNAVAILABLE" });
+    expect(context.app.setBackHandler(true)).rejects.toMatchObject({ code: "UNAVAILABLE" });
     expect(context.window.getState()).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 
@@ -104,6 +112,50 @@ describe("app lifecycle", () => {
     service.open(owner, windowState, "Editor");
     expect(await service.requestClose(owner)).toBe(false);
     expect(service.snapshot(owner).title).toBe("Editor");
+  });
+
+  test("coordinates one Back request per app instance", async () => {
+    const service = new AppLifecycleService(100);
+    const owner = { appId: "test.editor", instanceId: "one" };
+    service.open(owner, windowState, "Editor");
+    expect(await service.requestBack(owner, () => { throw new Error("must not emit"); })).toBe("unsupported");
+
+    service.setBackHandler(owner, true);
+    const ids: string[] = [];
+    const handled = service.requestBack(owner, (id) => ids.push(id));
+    expect(await service.requestBack(owner, (id) => ids.push(id))).toBe("unsupported");
+    expect(() => service.resolveBackRequest(owner, "wrong", "handled")).toThrow(HostServiceError);
+    service.resolveBackRequest(owner, ids[0], "handled");
+    expect(await handled).toBe("handled");
+
+    const home = service.requestBack(owner, (id) => ids.push(id));
+    service.resolveBackRequest(owner, ids[1], "home");
+    expect(await home).toBe("home");
+    expect(ids[0]).not.toBe(ids[1]);
+    expect(() => service.resolveBackRequest(owner, ids[0], "handled")).toThrow(HostServiceError);
+  });
+
+  test("distinguishes Back failures from unsupported handlers", async () => {
+    const service = new AppLifecycleService(10);
+    const owner = { appId: "test.editor", instanceId: "one" };
+    const context = service.open(owner, windowState, "Editor");
+    service.setBackHandler(owner, true);
+
+    let requestId = "";
+    const failed = service.requestBack(owner, (id) => { requestId = id; });
+    service.resolveBackRequest(owner, requestId, "failed");
+    expect(await failed).toBe("failed");
+
+    expect(await service.requestBack(owner, () => undefined)).toBe("failed");
+    const unregistered = service.requestBack(owner, () => undefined);
+    service.setBackHandler(owner, false);
+    expect(await unregistered).toBe("unsupported");
+
+    service.setBackHandler(owner, true);
+    const closed = service.requestBack(owner, () => undefined);
+    service.closeInstance(owner);
+    expect(await closed).toBe("unsupported");
+    expect(context.getState()).rejects.toMatchObject({ code: "UNAVAILABLE" });
   });
 });
 

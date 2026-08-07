@@ -7,6 +7,10 @@ export type ThemeDraft = {
   baseline: string | null;
 };
 
+export function backAction(editingDraft: boolean, wallpaperActive: boolean) {
+  return editingDraft ? "draft" : wallpaperActive ? "theme" : "home";
+}
+
 function snapshot(name: string, definition: ThemeDefinition) {
   return JSON.stringify({ name, definition });
 }

@@ -5107,6 +5107,27 @@ button.app-picker__disclosure { cursor: pointer; }
 .notification-center__empty strong { color: var(--theme-text); font-size: 14px; }
 .notification-center__empty span { max-width: 28ch; font-size: 12px; line-height: 1.45; }
 
+.shell-back-prompt {
+  position: fixed;
+  z-index: var(--layer-toast, 6000);
+  right: max(14px, env(safe-area-inset-right));
+  bottom: max(18px, calc(env(safe-area-inset-bottom) + 14px));
+  left: max(14px, env(safe-area-inset-left));
+  width: fit-content;
+  max-width: min(32rem, calc(100vw - 28px));
+  margin-inline: auto;
+  padding: 11px 15px;
+  border: var(--theme-border-width) solid var(--theme-border);
+  border-radius: var(--theme-radius-medium);
+  color: var(--theme-text);
+  background: var(--theme-window);
+  box-shadow: 0 10px 28px rgba(3, 12, 10, .32);
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center;
+  animation: notification-card-in 160ms cubic-bezier(.2, .8, .2, 1);
+}
+
 @keyframes notification-panel-in {
   from { opacity: 0; transform: translateY(-6px); }
 }

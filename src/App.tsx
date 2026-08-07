@@ -167,6 +167,7 @@ import { createShortLink, deleteShortLink, listShortLinks, updateShortLink } fro
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
+import { nextQuitBack, type QuitBackState } from "./ui/back-navigation";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
 import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
@@ -318,6 +319,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [error, setError] = useState("");
   const [folderImportError, setFolderImportError] = useState("");
   const [notice, setNotice] = useState("");
+  const [backPrompt, setBackPrompt] = useState("");
   const [shellMessages, setShellMessages] = useState<ShellMessage[]>([]);
   const nextShellMessageIdRef = useRef(0);
   const transferDismissTimersRef = useRef(new Map<string, number>());
@@ -537,6 +539,10 @@ function App({ session }: { session: AuthSession | null }) {
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
   const restoringHistoryRef = useRef(false);
+  const restoreOnlyPopRef = useRef(false);
+  const backInFlightRef = useRef(false);
+  const quitBackRef = useRef<QuitBackState>({ count: 0, lastAt: 0 });
+  const quitBackTimerRef = useRef<number | null>(null);
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
   areaTransitionRef.current = areaTransition;
   desktopSizeRef.current = desktopSize;
@@ -1773,12 +1779,25 @@ function App({ session }: { session: AuthSession | null }) {
         hiraya: true,
         schemaVersion: 1,
         ...(current?.hiraya && current.parentPath ? { parentPath: current.parentPath } : {}),
+        ...(current?.hiraya && current.rootBackGuard ? { rootBackGuard: true as const } : {}),
         apps: runningAppTargets(runningApps),
         instances: runningAppIds(runningApps),
         settingsPage: current?.hiraya ? historySettingsPage(current) : settingsPageRef.current,
       } satisfies RouteHistoryState, "", window.location.href);
     }
   }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
+
+  useEffect(() => {
+    if (!navigationReadyRef.current || !routeHistoryReady || focusedAppId || route?.column !== 0 || route.row !== 0 || route.explorerFolderId !== undefined || route.fileId || route.propertiesEntryId || route.settings) return;
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (!current?.hiraya || current.rootBackGuard) return;
+    window.history.replaceState({ ...current, rootBackGuard: undefined }, "", window.location.href);
+    window.history.pushState({ ...current, rootBackGuard: true }, "", window.location.href);
+  }, [focusedAppId, route, routeHistoryReady]);
+
+  useEffect(() => () => {
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -1897,7 +1916,14 @@ function App({ session }: { session: AuthSession | null }) {
         setContextMenu(null);
         return;
       }
-      void restoreRoute(event.state);
+      if (restoreOnlyPopRef.current) {
+        restoreOnlyPopRef.current = false;
+        void restoreRoute(event.state);
+        return;
+      }
+      void navigateBack("history", event.state).then((result) => {
+        if (result === "restore") return restoreRoute(event.state);
+      });
     };
     window.addEventListener("popstate", onPopState);
     return () => {
@@ -3030,7 +3056,7 @@ function App({ session }: { session: AuthSession | null }) {
     return true;
   }
 
-  function navigateExplorerWindow(appId: string, folderId: string | null) {
+  function navigateExplorerWindow(appId: string, folderId: string | null, mode: "push" | "replace" = "push") {
     const nextId = builtinAppTargetId({ kind: "explorer", folderId });
     if (nextId === appId) return;
     const previousApps = runningAppTargets();
@@ -3046,8 +3072,8 @@ function App({ session }: { session: AuthSession | null }) {
     const currentRoute = routeRef.current;
     if (currentRoute && existing) {
       const segment = segmentForApp(existing);
-      navigateRoute({ ...segment, explorerFolderId: folderId }, "push", previousApps);
-    } else if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: folderId }, "push", previousApps);
+      navigateRoute({ ...segment, explorerFolderId: folderId }, mode, previousApps);
+    } else if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: folderId }, mode, previousApps);
   }
 
   function openSettingsWindow(syncRoute = true) {
@@ -3996,18 +4022,102 @@ function App({ session }: { session: AuthSession | null }) {
     if (currentRoute) navigateRoute({ desktopId: activeDesktopIdRef.current, column: currentRoute.column, row: currentRoute.row }, "replace");
   }
 
-  function navigateBack() {
+  function resetQuitBack() {
+    quitBackRef.current = { count: 0, lastAt: 0 };
+    setBackPrompt("");
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = null;
+  }
+
+  function confirmQuit(source: "ui" | "history", historyState?: unknown) {
+    const next = nextQuitBack(quitBackRef.current, Date.now());
+    quitBackRef.current = next.state;
+    setBackPrompt(next.message);
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = window.setTimeout(resetQuitBack, 3_000);
+    if (!next.quit) {
+      if (source === "history") {
+        const state = historyState && typeof historyState === "object" ? historyState : window.history.state;
+        window.history.pushState({ ...(state as object), rootBackGuard: true }, "", window.location.href);
+      }
+      return;
+    }
+    resetQuitBack();
+    window.close();
+    if (source === "history") window.history.back();
+    else window.history.go(-2);
+  }
+
+  async function navigateBack(source: "ui" | "history" = "ui", historyState?: unknown): Promise<"handled" | "restore"> {
+    if (backInFlightRef.current) return "handled";
+    backInFlightRef.current = true;
+    try {
     if (settingsPageRef.current !== "main" && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
-      navigateSettingsPage("main");
-      return;
+      resetQuitBack();
+      if (source === "ui") navigateSettingsPage("main");
+      else {
+        settingsPageRef.current = "main";
+        setSettingsPage("main");
+        return "restore";
+      }
+      return "handled";
     }
-    const current = window.history.state as Partial<RouteHistoryState> | null;
-    if (current?.hiraya && current.parentPath !== undefined) {
-      window.history.back();
-      return;
-    }
+
     const focusedId = focusedAppIdRef.current;
-    if (focusedId) void requestCloseApp(focusedId);
+    const focused = focusedId ? runningAppsRef.current.find((app) => app.id === focusedId) : undefined;
+    if (focused?.kind === "explorer" && focused.folderId !== null) {
+      resetQuitBack();
+      const folder = entriesRef.current.find((entry) => entry.id === focused.folderId && entry.kind === "folder");
+      navigateExplorerWindow(focused.id, folder?.parentId ?? null, source === "history" ? "replace" : "push");
+      return "handled";
+    }
+
+    if (focused) {
+      resetQuitBack();
+      if (focused.kind === "sandbox") {
+        const outcome = await appLifecycle.requestBack(
+          { appId: focused.package.manifest.id, instanceId: focused.id },
+          (requestId) => focused.dispatcher.emit("app.backRequested", { requestId }),
+        );
+        if (outcome === "handled") return "handled";
+        if (outcome === "failed") {
+          setNotice(`${runningAppLabel(focused)} could not go back. Use Close to leave the app.`);
+          if (source === "history") {
+            restoreOnlyPopRef.current = true;
+            window.history.forward();
+          }
+          return "handled";
+        }
+      }
+      const current = window.history.state as Partial<RouteHistoryState> | null;
+      const closed = await requestCloseApp(focused.id, true, !(source === "history" || current?.hiraya && current.parentPath !== undefined));
+      if (!closed) {
+        if (source === "history") {
+          restoreOnlyPopRef.current = true;
+          window.history.forward();
+        }
+        return "handled";
+      }
+      if (source === "history") return "restore";
+      if (current?.hiraya && current.parentPath !== undefined) {
+        restoreOnlyPopRef.current = true;
+        window.history.back();
+      }
+      return "handled";
+    }
+
+    const currentRoute = routeRef.current;
+    if (currentRoute && (currentRoute.column !== 0 || currentRoute.row !== 0)) {
+      resetQuitBack();
+      goToSegment({ column: 0, row: 0 }, "replace", null, false, source !== "history");
+      return "handled";
+    }
+
+    confirmQuit(source, historyState);
+    return "handled";
+    } finally {
+      backInFlightRef.current = false;
+    }
   }
 
   windowCommandRef.current = { maximize: toggleMaximizeApp, move: moveAppToArea, adjust: adjustAppWindow };
@@ -5343,6 +5453,7 @@ function App({ session }: { session: AuthSession | null }) {
         onCloseApp={(id) => { collapseAreaMap(false); void requestCloseApp(id); }}
         onShowAllWindows={() => { collapseAreaMap(false); setActivePanel("windows"); }}
       />}
+      {backPrompt && <div className="shell-back-prompt" role="status" aria-live="polite" aria-atomic="true">{backPrompt}</div>}
       <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {areaAnnouncement}
       </span>

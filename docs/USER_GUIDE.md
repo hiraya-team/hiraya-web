@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use Back to move up one level.** On mobile, the system and Hiraya **Back** actions now return to an app's parent page, close an app from its home page, return another desktop area to Home, and require three quick presses before leaving Hiraya from Home.
 - **Switch desktops from the full row.** In the desktop and area switcher, the entire desktop row now opens that desktop instead of requiring a click directly on its name.
 - **Keep context-menu actions in place offline.** When a synchronized session loses its connection, **Publish...** remains visible for managers and is greyed out until the connection returns.
 - **Manage desktops in Settings.** Open **Settings > Desktop > Desktops** to create, rename, delete, pin, and order owned and shared desktops, review roles, and check account limits. The desktop switcher now stays focused on switching in your chosen order, including while showing the last cached arrangement offline.

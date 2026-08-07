@@ -98,6 +98,36 @@ describe("app runtime", () => {
     channel.port2.close();
   });
 
+  test("binds permissionless app Back methods", async () => {
+    const service = host();
+    const calls: unknown[][] = [];
+    const dispatcher = new RpcDispatcher({
+      permissions: [],
+      host: {
+        ...service.value,
+        app: {
+          ...service.value.app,
+          setBackHandler: (...args: unknown[]) => { calls.push(args); },
+          resolveBackRequest: (...args: unknown[]) => { calls.push(args); },
+        },
+      },
+      files,
+    });
+    const channel = new MessageChannel();
+    const received = messages(channel.port2, 2);
+    dispatcher.attach(channel.port1);
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "register", method: "app.setBackHandler", params: { enabled: true } });
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "resolve", method: "app.resolveBackRequest", params: { requestId: "back-1", result: "handled" } });
+
+    expect(await received).toEqual([
+      expect.objectContaining({ id: "register", ok: true }),
+      expect.objectContaining({ id: "resolve", ok: true }),
+    ]);
+    expect(calls).toEqual([[true], ["back-1", "handled"]]);
+    dispatcher.dispose();
+    channel.port2.close();
+  });
+
   test("detaches a frame channel without closing its host lifecycle", async () => {
     const service = host();
     const dispatcher = new RpcDispatcher({ permissions: [], host: service.value, files });

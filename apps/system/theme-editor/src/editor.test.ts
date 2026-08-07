@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { ThemeDefinition, ThemeEditorState, ThemeEditorTheme } from "@hiraya-team/apps-sdk";
-import { contrastIssues, contrastRatio, copyDraft, draftChanged, mergeThemeState, nextCopyName } from "./editor";
+import { backAction, contrastIssues, contrastRatio, copyDraft, draftChanged, mergeThemeState, nextCopyName } from "./editor";
 
 const definition: ThemeDefinition = {
   colors: {
@@ -46,4 +46,10 @@ test("remote state replaces the library and preserves the active draft", () => {
   expect(merged.state.selectedThemeId).toBe("built-in");
   expect(merged.draft).toBe(draft);
   expect(merged.draft?.name).toBe("Unsaved");
+});
+
+test("Back cancels drafts before leaving wallpaper or the app", () => {
+  expect(backAction(true, true)).toBe("draft");
+  expect(backAction(false, true)).toBe("theme");
+  expect(backAction(false, false)).toBe("home");
 });
