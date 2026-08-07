@@ -364,6 +364,7 @@ function App({ session }: { session: AuthSession | null }) {
   const [publishEntryId, setPublishEntryId] = useState<string | null>(null);
   const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
   const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
+  const [storeInstallKey, setStoreInstallKey] = useState<string | null>(null);
   const [storeLoading, setStoreLoading] = useState(false);
   const [storeError, setStoreError] = useState("");
   const storeInspectionCacheRef = useRef(new Map<string, InspectedStorePackage>());
@@ -3014,9 +3015,10 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function installStorePackage(item: StorePackage) {
+    const key = storePackageKey(item);
+    setStoreInstallKey(key);
     setError("");
     try {
-      const key = storePackageKey(item);
       let inspected = storeInspectionCacheRef.current.get(key);
       if (!inspected) {
         setStoreInspections((current) => new Map(current).set(key, { status: "loading" }));
@@ -3064,6 +3066,8 @@ function App({ session }: { session: AuthSession | null }) {
       setNotice(`${appPackage.manifest.name} ${approved ? "updated" : "installed"}`);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The app could not be installed.");
+    } finally {
+      setStoreInstallKey((current) => current === key ? null : current);
     }
   }
 
@@ -5014,7 +5018,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onOpenHelp={openHelp}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onApproveAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} approved on this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be approved."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onApproveAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} approved on this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be approved."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
                       void requestConfirmation({
                         title: `Reset ${installed.manifest.name}?`,
                         message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",

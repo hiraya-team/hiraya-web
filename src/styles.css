@@ -6202,7 +6202,8 @@ button.app-picker__disclosure { cursor: pointer; }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .app-store__loading span:not(.visually-hidden) {
+  .app-store__loading span:not(.visually-hidden),
+  .app-store__row .activity-spinner {
     animation: none;
   }
 }

@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
 - **Synchronize apps without synchronizing trust.** In synchronized installations, app packages, app data, and preferred-handler hints now follow your account and replay after short outages. Each device must still review and approve the exact package generation, digest, and permissions before it can launch; **Applications** clearly separates removing this device's approval from uninstalling the app and its data from the account.
 - **Inspect protected desktop files.** Turn on **Show hidden files** under **Settings > Files & apps** to browse the read-only `.hiraya` tree, including desktop settings, appearance resources, complete Trash subtrees, and generated thumbnails. JSON opens read-only, theme packages download without being installed, and protected files stay outside normal desktop actions, apps, search, sharing, and public links.
 - **See thumbnails and hidden files safely.** Images and videos use verified generated thumbnails on synchronized and public desktops, with familiar file icons when a thumbnail is unavailable. Turn on **Show hidden files** under **Settings > Files & apps** to reveal ordinary dot-prefixed entries and the read-only `.hiraya` system thumbnail hierarchy on the signed-in desktop.
