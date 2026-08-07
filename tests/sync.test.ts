@@ -207,9 +207,12 @@ describe("canonical synchronization", () => {
     }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
     await engine.start("desk", { x: 0, y: 0 });
     const blocked = await blockEngineQueue(engine);
-    const file = await engine.createFile("store.hpos", null, { x: 0, y: 0 }, new Blob([]));
+    const replay = engine as unknown as { replayRequested: boolean };
+    const file = await engine.createFile("store.hpos", null, { x: 0, y: 0 }, new Blob([]), undefined, true);
+    expect(replay.replayRequested).toBeFalse();
     await engine.saveFile(file.id, new Blob(["store"]), { unconditional: true });
     expect((await engine.getOutboxStatus()).records.at(-1)?.operation).toMatchObject({ kind: "save-content", entryId: file.id, baseContentRevision: undefined });
+    expect(replay.replayRequested).toBeTrue();
     blocked.release();
     await blocked.pending;
     await engine.stop();
