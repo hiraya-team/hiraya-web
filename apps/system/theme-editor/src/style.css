@@ -61,9 +61,7 @@ button, input, select, summary { touch-action: manipulation; }
 .wallpaper-presets button[aria-pressed="true"] { border-color: var(--hiraya-focus); color: var(--hiraya-text); background: color-mix(in srgb, var(--hiraya-accent) 10%, var(--hiraya-background)); }
 .wallpaper-current { color: var(--hiraya-text-muted); font-size: .72rem; }
 .wallpaper-actions { display: grid; gap: .45rem; }
-.wallpaper-actions > button, .wallpaper-actions label { min-height: 2.25rem; }
-.wallpaper-actions label { display: grid; gap: .3rem; color: var(--hiraya-text-muted); font-size: .72rem; }
-.wallpaper-actions select, .wallpaper-actions button { width: 100%; min-height: 2.25rem; border: 1px solid var(--hiraya-border); border-radius: .4rem; color: var(--hiraya-text); background: var(--hiraya-background); }
+.wallpaper-actions button { width: 100%; min-height: 2.25rem; border: 1px solid var(--hiraya-border); border-radius: .4rem; color: var(--hiraya-text); background: var(--hiraya-background); }
 .range-field { display: grid; gap: .3rem; color: var(--hiraya-text-muted); font-size: .72rem; }
 .range-field span { display: flex; justify-content: space-between; gap: .5rem; }
 .range-field output { color: var(--hiraya-text); font-variant-numeric: tabular-nums; }

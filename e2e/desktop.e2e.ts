@@ -682,6 +682,43 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
 });
 
+test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation').click();
+  const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  const frame = themeEditor.frameLocator("iframe");
+  await frame.getByRole("tab", { name: "Wallpaper" }).click();
+
+  const wallpaperName = `wallpaper-${Date.now()}.png`;
+  const chooser = page.waitForEvent("filechooser");
+  await frame.getByRole("button", { name: "Upload image" }).click();
+  await (await chooser).setFiles({ name: wallpaperName, mimeType: "image/png", buffer: pngFile });
+  await expect(frame.getByText(`${wallpaperName} added and applied.`)).toBeVisible();
+  await frame.getByRole("button", { name: "Grove" }).click();
+
+  await frame.getByRole("button", { name: "Choose Hiraya image" }).click();
+  const picker = page.getByRole("dialog", { name: "Choose file" });
+  await expect(picker.getByRole("radio", { name: wallpaperName })).toBeVisible();
+  await picker.getByRole("radio", { name: wallpaperName }).check();
+  await picker.getByRole("button", { name: "Choose file" }).click();
+  await expect(frame.getByText(`${wallpaperName} applied.`)).toBeVisible();
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation').click();
+  const mobileFrame = mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
+  await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
+  await expect.poll(() => mobileFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mobileContext.close();
+});
+
 test("Settings adapts to its window and preserves subpage navigation", async ({ page, browser }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
