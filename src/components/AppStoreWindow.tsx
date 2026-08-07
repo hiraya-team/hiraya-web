@@ -1,7 +1,7 @@
 import { useDeferredValue, useState } from "react";
 import { ArrowClockwise, DownloadSimple, MagnifyingGlass, Package, Play, ShieldCheck, SpinnerGap, Trash, WarningCircle, WifiSlash, X } from "@phosphor-icons/react";
 import { installedAppIsAvailable, type InstalledApp } from "../apps/installed-apps";
-import { storePackageKey, storeSearchMatches, type StorePackage } from "../lib/app-store";
+import { storePackageKey, storePackageMatchesInstall, storeSearchMatches, type StorePackage } from "../lib/app-store";
 import type { DesktopEntry } from "../types";
 import { StatusBadge } from "./VisualPrimitives";
 import type { AccountApp } from "../lib/account-apps";
@@ -15,6 +15,7 @@ export type StorePackageView = Readonly<{
   description: string;
   version: string | null;
   appId: string | null;
+  digest: string | null;
   loading: boolean;
   error: string;
 }>;
@@ -101,7 +102,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
           const available = installedAppIsAvailable(app, entries);
           const view = packages.find((candidate) => app.source === "store" && candidate.item.catalogId === app.sourceCatalogId && candidate.item.desktopId === app.sourceDesktopId && candidate.item.entry.id === app.packageEntryId)
             ?? packages.find((candidate) => candidate.appId === app.appId);
-          const current = view && app.source === "store" && app.sourceCatalogId === view.item.catalogId && app.sourceDesktopId === view.item.desktopId && app.packageEntryId === view.item.entry.id && app.sourceContentRevision === view.item.contentRevision;
+          const current = Boolean(view && storePackageMatchesInstall(view.item, app, view.appId, view.digest));
           const hasUpdate = Boolean(view && !current);
           const installing = Boolean(view && installingPackageKey === storePackageKey(view.item));
           const canUpdate = Boolean(hasUpdate && view && !view.loading && !view.error && !offline && installingPackageKey === null);
@@ -134,7 +135,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
       {!loading && !error && availablePackages.length > 0 && <div className="app-store__list" role="list">
       {availablePackages.map((view) => {
         const installed = installedForView(view);
-        const current = installed?.source === "store" && installed.sourceCatalogId === view.item.catalogId && installed.sourceDesktopId === view.item.desktopId && installed.packageEntryId === view.item.entry.id && installed.sourceContentRevision === view.item.contentRevision;
+        const current = Boolean(installed && storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
         const launchApproved = Boolean(installed && (current || view.loading || view.error || offline));
         const retry = Boolean(view.error && !installed);
         const installing = installingPackageKey === storePackageKey(view.item);

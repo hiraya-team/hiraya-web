@@ -166,7 +166,7 @@ import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
-import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
+import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
@@ -4494,13 +4494,18 @@ function App({ session }: { session: AuthSession | null }) {
 
   const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store").map((item) => {
     const inspection = storeInspections.get(storePackageKey(item));
-    const manifest = storePackageManifest(item, inspection?.status === "ready" ? inspection.value.inspection : undefined);
+    const inspected = inspection?.status === "ready" ? inspection.value.inspection : undefined;
+    const manifest = storePackageManifest(item, inspected);
+    const digest = item.release?.digest ?? inspected?.digest ?? null;
     const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
     return manifest
-      ? { item, name: manifest.name, description: manifest.description ?? "No description provided.", version: manifest.version, appId: manifest.id, loading: inspection?.status === "loading", error: inspection?.status === "error" ? inspection.message : "" }
-      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
+      ? { item, name: manifest.name, description: manifest.description ?? "No description provided.", version: manifest.version, appId: manifest.id, digest, loading: inspection?.status === "loading", error: inspection?.status === "error" ? inspection.message : "" }
+      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, digest: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
   });
-  const storeUpdateCount = storePackages.filter((item) => item.kind === "store" && installedApps.some((app) => app.source === "store" && app.sourceCatalogId === item.catalogId && app.sourceDesktopId === item.desktopId && app.packageEntryId === item.entry.id && app.sourceContentRevision !== item.contentRevision)).length;
+  const storeUpdateCount = storePackageViews.filter((view) => {
+    const installed = view.appId ? installedApps.find((app) => app.appId === view.appId) : installedApps.find((app) => app.source === "store" && app.packageEntryId === view.item.entry.id);
+    return Boolean(installed && !storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
+  }).length;
   const desktopChoices = desktops.filter(isDesktopSurface);
   const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);

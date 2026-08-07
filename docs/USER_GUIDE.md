@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Show only real app updates.** **Applications** now recognizes the exact package installed from a synchronized account or republished catalog, so **Update** appears only when the published app package actually changed.
 - **Finish saves from account apps.** Account-installed apps now stay open while synchronized file changes finish, so **Save As** can write the selected file before returning to the app.
 - **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
 - **Paste from the context menu.** **Paste** now stays available on writable desktops and folders. Hiraya pastes copied Hiraya items and complete URLs directly, or asks you to press **Ctrl/⌘ V** so the browser can share files copied from your device.
