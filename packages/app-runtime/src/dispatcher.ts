@@ -71,7 +71,9 @@ const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
   "dialogs.openFile": "dialogs", "dialogs.openFolder": "dialogs", "dialogs.saveFile": "dialogs", "dialogs.confirm": "dialogs",
   "window.getState": "window", "window.setTitle": "window", "window.setDirty": "window", "window.setSize": "window", "window.setFullscreen": "window", "window.close": "window",
   "commands.set": "commands", "commands.clear": "commands", "notifications.show": "notifications", "notifications.dismiss": "notifications",
-  "theme.get": "theme", "storage.get": "storage", "storage.set": "storage", "storage.remove": "storage", "storage.clear": "storage",
+  "theme.get": "theme", "themes.getState": "themes:manage", "themes.select": "themes:manage", "themes.save": "themes:manage", "themes.delete": "themes:manage",
+  "wallpapers.getState": "themes:manage", "wallpapers.preview": "themes:manage", "wallpapers.save": "themes:manage", "wallpapers.upload": "themes:manage", "wallpapers.select": "themes:manage", "wallpapers.readCurrentImage": "themes:manage",
+  "storage.get": "storage", "storage.set": "storage", "storage.remove": "storage", "storage.clear": "storage",
 };
 
 export class RpcDispatcher {
@@ -222,6 +224,6 @@ async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number, side
 function hasSideEffects(method: ServiceMethod): boolean {
   return !new Set<ServiceMethod>([
     "app.getLaunchContext", "app.getCapabilities", "files.stat", "files.read", "files.readChunk", "files.resolve", "files.list",
-    "host.getEntryStatus", "host.getFilePreviewSource", "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm", "window.getState", "theme.get", "storage.get",
+    "host.getEntryStatus", "host.getFilePreviewSource", "dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm", "window.getState", "theme.get", "themes.getState", "storage.get",
   ]).has(method);
 }

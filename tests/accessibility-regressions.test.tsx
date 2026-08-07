@@ -298,10 +298,11 @@ describe("accessibility regressions", () => {
 
   test("programmatically activated file inputs are not hidden keyboard stops", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
-    const settings = await Bun.file(new URL("../src/components/SettingsWindow.tsx", import.meta.url)).text();
+    const themeEditor = await Bun.file(new URL("../apps/system/theme-editor/index.html", import.meta.url)).text();
 
     expect(app.match(/type="file"\s+tabIndex=\{-1\}\s+aria-hidden="true"/g)).toHaveLength(2);
-    expect(settings).toContain('type="file" tabIndex={-1} aria-hidden="true"');
+    expect(themeEditor).toContain('id="wallpaper-upload" type="file"');
+    expect(themeEditor).toContain('accept="image/jpeg,image/png,image/webp" hidden');
   });
 
   test("file dialogs restore their invoker or focus the successful result", async () => {

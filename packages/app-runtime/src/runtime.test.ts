@@ -82,14 +82,16 @@ describe("app runtime", () => {
     const service = host();
     const dispatcher = new RpcDispatcher({ permissions: [], host: service.value, files });
     const channel = new MessageChannel();
-    const received = messages(channel.port2, 3);
+    const received = messages(channel.port2, 4);
     dispatcher.attach(channel.port1);
     channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "launch", method: "app.getLaunchContext", params: {} });
     channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "storage", method: "storage.get", params: { key: "x" } });
+    channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "themes", method: "themes.getState", params: {} });
     channel.port2.postMessage({ protocolVersion: 1, type: "request", id: "invalid", method: "window.setDirty", params: { dirty: "yes" } });
     const responses = await received;
     expect(responses).toContainEqual(expect.objectContaining({ id: "launch", ok: true }));
     expect(responses).toContainEqual(expect.objectContaining({ id: "storage", ok: false, error: expect.objectContaining({ code: "PERMISSION_DENIED" }) }));
+    expect(responses).toContainEqual(expect.objectContaining({ id: "themes", ok: false, error: expect.objectContaining({ code: "PERMISSION_DENIED" }) }));
     expect(responses).toContainEqual(expect.objectContaining({ id: "invalid", ok: false, error: expect.objectContaining({ code: "INVALID_REQUEST" }) }));
     dispatcher.dispose();
     expect(service.closed()).toBe(true);

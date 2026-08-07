@@ -5,4 +5,5 @@ export const SYSTEM_APP_IDS = {
   mediaViewer: "app.hiraya.media-viewer",
   fileViewer: "app.hiraya.file-viewer",
   terminal: "app.hiraya.terminal",
+  themeEditor: "app.hiraya.theme-editor",
 } as const;

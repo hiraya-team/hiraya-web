@@ -13,8 +13,8 @@ describe("app browser history", () => {
   });
 
   test("restores only supported Settings pages", () => {
-    expect(historySettingsPage({ hiraya: true, settingsPage: "themes" })).toBe("themes");
     expect(historySettingsPage({ hiraya: true, settingsPage: "desktops" })).toBe("desktops");
+    expect(historySettingsPage({ hiraya: true, settingsPage: "themes" })).toBe("main");
     expect(historySettingsPage({ hiraya: true, settingsPage: "short-links" })).toBe("short-links");
     expect(historySettingsPage({ hiraya: true, settingsPage: "unknown" })).toBe("main");
     expect(historySettingsPage(null)).toBe("main");

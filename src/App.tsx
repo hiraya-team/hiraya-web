@@ -88,7 +88,7 @@ import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, type DesktopRoute } from "./lib/routes";
-import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
+import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
 import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
@@ -120,7 +120,7 @@ import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settings
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
-import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
+import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
@@ -173,6 +173,7 @@ import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./pla
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
+import { assertWallpaperSource, parseLayout } from "./lib/contracts";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 
@@ -243,6 +244,33 @@ async function decodeLegacyConflictText(content: Blob) {
 
 function transientMenuOpen() {
   return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel, .app-window__menu"));
+}
+
+function themeEditorState(appearance: ThemeState, canManage: boolean, restrictionReason: string): ThemeEditorState {
+  return {
+    selectedThemeId: appearance.selectedThemeId,
+    themes: [
+      ...BUILTIN_THEME_IDS.map((id) => ({ id, ...BUILTIN_THEMES[id], builtIn: true, hasWallpaper: false })),
+      ...appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, builtIn: false, hasWallpaper: Boolean(wallpaper) })),
+    ],
+    canManage,
+    restrictionReason: canManage ? "" : restrictionReason,
+  };
+}
+
+const WALLPAPER_NAMES = { dusk: "Dusk", grove: "Grove", ember: "Ember" } as const;
+
+function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEntry[], appearance: ThemeState, canManage: boolean, restrictionReason: string): WallpaperEditorState {
+  const source = layout.wallpaper.source;
+  const file = source.startsWith("file:") ? entries.find((entry): entry is FileEntry => entry.id === source.slice(5) && entry.kind === "file") : null;
+  const theme = source.startsWith("theme:") ? appearance.customThemes.find((candidate) => candidate.id === source.slice(6) && candidate.wallpaper) : null;
+  return {
+    wallpaper: layout.wallpaper,
+    images: entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024).map(({ id, name }) => ({ id, name })),
+    currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom image",
+    canManage,
+    restrictionReason: canManage ? "" : restrictionReason,
+  };
 }
 
 function App({ session }: { session: AuthSession | null }) {
@@ -453,6 +481,8 @@ function App({ session }: { session: AuthSession | null }) {
   const layoutRef = useRef(layout);
   const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
   const entriesRef = useRef(entries);
+  const installedAppsRef = useRef(installedApps);
+  installedAppsRef.current = installedApps;
   const routeRef = useRef<DesktopRoute | null>(null);
   const navigationReadyRef = useRef(false);
   const applyLocationRouteRef = useRef<(entriesValue?: DesktopEntry[], layoutValue?: DesktopLayout) => void>(() => undefined);
@@ -468,6 +498,8 @@ function App({ session }: { session: AuthSession | null }) {
   const mergeLoadSequenceRef = useRef(0);
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
+  const wallpaperPreviewTimerRef = useRef<number | null>(null);
+  const wallpaperPreviewRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const contentRevisionsRef = useRef<Record<string, number>>({});
   const activeDesktopIdRef = useRef("");
   const desktopsRef = useRef<DesktopIdentity[]>([]);
@@ -487,6 +519,9 @@ function App({ session }: { session: AuthSession | null }) {
   const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
   const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
   const canMutateRef = useRef(false);
+  const canSettingsRef = useRef(false);
+  const appearanceRef = useRef<ThemeState>(DEFAULT_THEME_STATE);
+  const syncStatusRef = useRef<SyncStatus>("connecting");
   const offlineModelRef = useRef<ReturnType<typeof buildOfflineAvailability> | null>(null);
   const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
   const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
@@ -515,6 +550,9 @@ function App({ session }: { session: AuthSession | null }) {
   canMutateRef.current = canMutate;
   const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
   const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
+  canSettingsRef.current = canSettings;
+  appearanceRef.current = appearance;
+  syncStatusRef.current = syncStatus;
   const canViewActivity = canViewDesktopActivity(activeDesktop, syncStatus);
   const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
   const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
@@ -729,6 +767,16 @@ function App({ session }: { session: AuthSession | null }) {
     const tokens = mapThemeTokens(activeTheme);
     for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
   }, [activeTheme, appTheme, runningAppsRef]);
+
+  useEffect(() => {
+    const next = themeEditorState(appearance, canSettings, settingsRestrictionReason(activeDesktop, syncStatus));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox" && app.install.appId === SYSTEM_APP_IDS.themeEditor) app.dispatcher.emit("themes.changed", next);
+  }, [activeDesktop, appearance, canSettings, runningAppsRef, syncStatus]);
+
+  useEffect(() => {
+    const next = wallpaperEditorState(layout, entries, appearance, canSettings, settingsRestrictionReason(activeDesktop, syncStatus));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox" && app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.themeEditor) app.dispatcher.emit("wallpapers.changed", next);
+  }, [activeDesktop, appearance, canSettings, entries, layout, runningAppsRef, syncStatus]);
 
   useEffect(() => {
     persistClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage, clipboardOffer);
@@ -1570,6 +1618,10 @@ function App({ session }: { session: AuthSession | null }) {
       });
     return () => {
       active = false;
+      if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
+      const pendingWallpaper = wallpaperPreviewRef.current;
+      wallpaperPreviewRef.current = null;
+      if (pendingWallpaper && pendingWallpaper.desktopId === activeDesktopIdRef.current && canSettingsRef.current) layoutSaveRef.current = layoutSaveRef.current.catch(() => undefined).then(() => saveDesktopLayout(pendingWallpaper.layout)).catch(() => undefined);
       unsubscribe();
       unsubscribeOutbox();
       unsubscribeOffline();
@@ -1578,7 +1630,7 @@ function App({ session }: { session: AuthSession | null }) {
       if (transferFrame) cancelAnimationFrame(transferFrame);
       transferPhases.clear();
       unsubscribeCatalog();
-      void stopDesktopSync();
+      void layoutSaveRef.current.catch(() => undefined).then(() => stopDesktopSync());
     };
   }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps]);
 
@@ -2319,22 +2371,28 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   function previewLayout(next: DesktopLayout, desktopId: string) {
-    if (!canMutate || desktopId !== activeDesktopIdRef.current) return;
+    if (!canMutateRef.current || desktopId !== activeDesktopIdRef.current) return;
     layoutDraftRef.current = { desktopId, layout: next };
     layoutRef.current = next;
     setLayout(next);
   }
 
-  async function persistLayout(next: DesktopLayout, desktopId = activeDesktopIdRef.current) {
-    if (!canMutate || desktopId !== activeDesktopIdRef.current) return;
+  async function saveLayout(next: DesktopLayout, desktopId: string) {
     if (layoutDraftRef.current?.desktopId === desktopId) layoutDraftRef.current = null;
     layoutRef.current = next;
     setLayout(next);
-    const save = saveDesktopLayout(next).catch(() => {
-      setError("The desktop area layout could not be saved.");
-    });
+    const save = saveDesktopLayout(next);
     layoutSaveRef.current = save;
     await save;
+  }
+
+  async function persistLayout(next: DesktopLayout, desktopId = activeDesktopIdRef.current) {
+    if (!canMutateRef.current || desktopId !== activeDesktopIdRef.current) return;
+    try {
+      await saveLayout(next, desktopId);
+    } catch {
+      setError("The desktop area layout could not be saved.");
+    }
   }
 
   async function flushLayoutDraft(desktopId: string) {
@@ -2343,10 +2401,82 @@ function App({ session }: { session: AuthSession | null }) {
     await persistLayout(pending.layout, desktopId);
   }
 
-  async function changeTheme(themeId: string) {
-    if (!canSettings) return;
+  function requireWallpaperManagement() {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+  }
+
+  function wallpaperLayout(wallpaper: WallpaperEditorWallpaper) {
+    const next = parseLayout({ ...layoutRef.current, wallpaper });
+    assertWallpaperSource(entriesRef.current, next.wallpaper, appearanceRef.current);
+    return next;
+  }
+
+  function clearWallpaperPreview() {
+    if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
+    wallpaperPreviewTimerRef.current = null;
+    const pending = wallpaperPreviewRef.current;
+    wallpaperPreviewRef.current = null;
+    return pending;
+  }
+
+  async function persistWallpaperLayout(next: DesktopLayout, desktopId: string) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
     try {
-      setAppearance(await selectTheme(themeId));
+      await saveLayout(next, desktopId);
+      return wallpaperEditorState(next, entriesRef.current, appearanceRef.current, true, "");
+    } catch (saveError) {
+      const persisted = appSnapshotRef.current?.layout;
+      if (persisted && desktopId === activeDesktopIdRef.current) {
+        layoutDraftRef.current = null;
+        layoutRef.current = persisted;
+        setLayout(persisted);
+      }
+      setError(saveError instanceof Error ? saveError.message : "The wallpaper could not be saved.");
+      throw saveError;
+    }
+  }
+
+  function previewWallpaper(wallpaper: WallpaperEditorWallpaper) {
+    requireWallpaperManagement();
+    const desktopId = activeDesktopIdRef.current;
+    const next = wallpaperLayout(wallpaper);
+    clearWallpaperPreview();
+    wallpaperPreviewRef.current = { desktopId, layout: next };
+    previewLayout(next, desktopId);
+    wallpaperPreviewTimerRef.current = window.setTimeout(() => {
+      const pending = clearWallpaperPreview();
+      if (pending) void persistWallpaperLayout(pending.layout, pending.desktopId).catch(() => undefined);
+    }, 400);
+  }
+
+  async function saveWallpaper(wallpaper: WallpaperEditorWallpaper) {
+    requireWallpaperManagement();
+    clearWallpaperPreview();
+    const desktopId = activeDesktopIdRef.current;
+    const next = wallpaperLayout(wallpaper);
+    previewLayout(next, desktopId);
+    return persistWallpaperLayout(next, desktopId);
+  }
+
+  async function flushWallpaperPreview(desktopId: string) {
+    const pending = wallpaperPreviewRef.current;
+    if (!pending || pending.desktopId !== desktopId) return;
+    clearWallpaperPreview();
+    if (!canSettingsRef.current) {
+      if (layoutDraftRef.current?.desktopId === desktopId) layoutDraftRef.current = null;
+      return;
+    }
+    await persistWallpaperLayout(pending.layout, desktopId);
+  }
+
+  async function changeTheme(themeId: string) {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+    try {
+      const next = await selectTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The selected theme could not be saved.");
       throw themeError;
@@ -2354,10 +2484,14 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function persistCustomTheme(theme: CustomTheme) {
-    if (!canSettings) return;
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
     try {
-      const saved = await saveCustomTheme(theme);
-      setAppearance(await selectTheme(saved.id));
+      const existing = appearanceRef.current.customThemes.find((candidate) => candidate.id === theme.id);
+      const saved = await saveCustomTheme(existing?.wallpaper ? { ...theme, wallpaper: existing.wallpaper } : theme);
+      const next = await selectTheme(saved.id);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be saved.");
       throw themeError;
@@ -2365,9 +2499,12 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function removeCustomTheme(themeId: string) {
-    if (!canSettings) return;
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
     try {
-      setAppearance(await deleteCustomTheme(themeId));
+      const next = await deleteCustomTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
     } catch (themeError) {
       setError(themeError instanceof Error ? themeError.message : "The custom theme could not be deleted.");
       throw themeError;
@@ -2542,6 +2679,7 @@ function App({ session }: { session: AuthSession | null }) {
     setMoveDialogEntryIds([]);
     windowSessionReadyRef.current = false;
     try {
+      await flushWallpaperPreview(previousDesktopId);
       await flushLayoutDraft(previousDesktopId);
       await layoutSaveRef.current;
       await stopDesktopSync();
@@ -2764,32 +2902,29 @@ function App({ session }: { session: AuthSession | null }) {
   }
   handleImportRef.current = handleImport;
 
-  async function handleWallpaperUpload(file: File, nextLayout: DesktopLayout, desktopId: string) {
-    if (!canMutate || desktopId !== activeDesktopIdRef.current) return;
-    setError("");
-    try {
-      await validateWallpaperImage(file);
-      const imported = await importFiles([file], null, [positionFor(null)]);
-      const image = imported[0];
-      setEntries((current) => (current.some((entry) => entry.id === image.id) ? current : [...current, image]));
-      replaceSelection("desktop", [image.id]);
-      await persistLayout({ ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` } }, desktopId);
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "The wallpaper image could not be added.");
-    }
+  async function importWallpaper(file: File, nextLayout: DesktopLayout, desktopId: string, selectDesktopIcon: boolean) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    await validateWallpaperImage(file);
+    const [image] = await importFiles([file], null, [positionFor(null)]);
+    const nextEntries = entriesRef.current.some((entry) => entry.id === image.id) ? entriesRef.current : [...entriesRef.current, image];
+    entriesRef.current = nextEntries;
+    setEntries([...nextEntries]);
+    if (selectDesktopIcon) replaceSelection("desktop", [image.id]);
+    const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` as const } };
+    await persistWallpaperLayout(layoutWithImage, desktopId);
+    return wallpaperEditorState(layoutWithImage, nextEntries, appearanceRef.current, true, "");
   }
 
-  async function handleWallpaperSelect(fileId: string, nextLayout: DesktopLayout, desktopId: string) {
-    if (!canMutate || desktopId !== activeDesktopIdRef.current) return;
-    setError("");
-    try {
-      const file = await readFile(fileId);
-      await validateWallpaperImage(file);
-      if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((entry) => entry.id === fileId && entry.kind === "file")) return;
-      await persistLayout({ ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` } }, desktopId);
-    } catch (selectionError) {
-      setError(selectionError instanceof Error ? selectionError.message : "The wallpaper image could not be selected.");
-    }
+  async function selectWallpaperFile(fileId: string, nextLayout: DesktopLayout, desktopId: string) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    const file = await readFile(fileId);
+    await validateWallpaperImage(file);
+    if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((entry) => entry.id === fileId && entry.kind === "file")) throw new HostServiceError("The wallpaper image is no longer available.", "NOT_FOUND");
+    const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` as const } };
+    await persistWallpaperLayout(layoutWithImage, desktopId);
+    return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
   }
 
   async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
@@ -2968,9 +3103,10 @@ function App({ session }: { session: AuthSession | null }) {
   async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
     setError("");
     try {
+      const launchTarget = target ?? (install.source === "system" && install.appId === SYSTEM_APP_IDS.themeEditor ? "root" : undefined);
       const result = await launchSandboxApp({
         install,
-        target,
+        target: launchTarget,
         source: launchSource,
         activeSegment,
         desktopSize,
@@ -3012,9 +3148,29 @@ function App({ session }: { session: AuthSession | null }) {
           return { status: legacyStatus, pinned: false, directlyPinned: false };
         },
         setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
+        getThemeEditorState: () => themeEditorState(appearanceRef.current, canSettingsRef.current, settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current)),
+        selectTheme: async (themeId) => themeEditorState(await changeTheme(themeId), true, ""),
+        saveTheme: async (theme: ServiceMethods["themes.save"]["params"]) => themeEditorState(await persistCustomTheme(theme), true, ""),
+        deleteTheme: async (themeId) => themeEditorState(await removeCustomTheme(themeId), true, ""),
+        getWallpaperEditorState: () => wallpaperEditorState(layoutRef.current, entriesRef.current, appearanceRef.current, canSettingsRef.current, settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current)),
+        previewWallpaper,
+        saveWallpaper,
+        uploadWallpaper: (file) => {
+          clearWallpaperPreview();
+          return importWallpaper(file, layoutRef.current, activeDesktopIdRef.current, false);
+        },
+        selectWallpaper: (fileId) => {
+          clearWallpaperPreview();
+          return selectWallpaperFile(fileId, layoutRef.current, activeDesktopIdRef.current);
+        },
       });
       if (result.kind === "existing") {
         if (result.shouldFocus) focusApp(result.id);
+        return;
+      }
+      if (install.source === "account" && !installedAppsRef.current.some((current) => current.source === "account" && current.appId === install.appId && current.installationGeneration === install.installationGeneration && current.digest === install.digest)) {
+        result.app.dispatcher.dispose();
+        appCapabilities.revokeInstance(result.app.id);
         return;
       }
       updateRunningApps([...runningAppsRef.current, result.app]);
@@ -3194,13 +3350,12 @@ function App({ session }: { session: AuthSession | null }) {
   }
 
   async function removeInstalledApp(app: InstalledApp) {
-    if (app.source === "system") return;
-    const accountApproval = app.source === "account";
-    if (!(await requestConfirmation({ title: `${accountApproval ? "Remove local approval for" : "Uninstall"} ${app.manifest.name}?`, message: accountApproval ? "This device will stop running the app. The account installation and synchronized app data remain available to approve again." : "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: accountApproval ? "Remove approval" : "Uninstall", danger: true }))) return;
+    if (app.source === "system" || app.source === "account") return;
+    if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
     await removeInstall(app.appId);
     if (app.source === "store") await releaseApprovedPackageArchive(app.digest).catch(() => undefined);
-    setNotice(accountApproval ? `${app.manifest.name} approval removed from this device` : `${app.manifest.name} uninstalled`);
+    setNotice(`${app.manifest.name} uninstalled`);
   }
 
   async function uninstallFromAccount(appId: string) {
@@ -3212,8 +3367,6 @@ function App({ session }: { session: AuthSession | null }) {
     if (!(await requestConfirmation({ title: `Uninstall ${desired.manifest.name} from this account?`, message: "This removes the app package, synchronized app data, and handler hints for every device. Local approvals will no longer launch it.", confirmLabel: "Uninstall from account", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], appId, closeApp);
     await uninstallAccountApp(remote);
-    if (approved) await removeInstall(appId);
-    if (approved) await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
     setNotice(`${desired.manifest.name} will be uninstalled from this account`);
   }
 
@@ -4823,7 +4976,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "desktops" ? "Desktops" : settingsPage === "themes" ? "Themes" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "desktops" ? "Desktops" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -4993,7 +5146,6 @@ function App({ session }: { session: AuthSession | null }) {
                         quotaStale={syncStatus === "offline"}
                         desktopArrangementDisabled={Boolean(session && syncStatus !== "online" && syncStatus !== "blocked")}
                         entries={entries}
-                        wallpaperUrl={wallpaperUrl}
                         appearance={appearance}
                         canMutate={canSettings}
                         canViewActivity={canViewActivity}
@@ -5062,21 +5214,12 @@ function App({ session }: { session: AuthSession | null }) {
                             if (root) goToSegment(projectLogicalPosition(root.position, iconAreaSizeRef.current).segment);
                           } else setError("The entries affected by this activity no longer exist.");
                         }}
-                        onConfirmThemeDelete={(theme) =>
-                          requestConfirmation({
-                            title: `Delete ${theme.name}?`,
-                            message: `Delete the custom theme “${theme.name}”?`,
-                            confirmLabel: "Delete theme",
-                            danger: true,
-                          })
-                        }
-                        onLayoutPreview={previewLayout}
+                        onOpenThemeEditor={() => {
+                          const install = installedApps.find((candidate) => candidate.source === "system" && candidate.appId === SYSTEM_APP_IDS.themeEditor);
+                          if (install) void launchInstalledAppRef.current(install);
+                          else setError("Theme Editor is still being installed. Try again in a moment.");
+                        }}
                         onLayoutChange={persistLayout}
-                        onWallpaperUpload={handleWallpaperUpload}
-                        onWallpaperSelect={handleWallpaperSelect}
-                        onThemeSelect={changeTheme}
-                        onThemeSave={persistCustomTheme}
-                        onThemeDelete={removeCustomTheme}
                         onExport={() => void handleExport()}
                         onToggleFullscreen={() => void toggleFullscreen()}
                         onCheckForUpdate={() => void checkForUpdate()}
@@ -5098,7 +5241,7 @@ function App({ session }: { session: AuthSession | null }) {
                         canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online" || syncStatus === "blocked"}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onApproveAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} approved on this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be approved."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
                       void requestConfirmation({
                         title: `Reset ${installed.manifest.name}?`,
                         message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
