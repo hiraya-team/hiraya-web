@@ -53,7 +53,7 @@ const managedTodoPackage: StorePackage = {
 };
 const managedTodoRelease = managedTodoPackage.release;
 
-const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", loading: false, error: "" };
+const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", digest: null, loading: false, error: "" };
 
 describe("App Store", () => {
   test("matches every search term across app metadata", () => {
@@ -177,5 +177,26 @@ describe("App Store", () => {
 
     expect(markup).toContain("Administrator App Store");
     expect(markup).not.toContain("Update available");
+  });
+
+  test("does not offer an update when an account install matches the published package", () => {
+    const installed: InstalledApp = {
+      ...systemApp,
+      appId: "dev.hiraya.todo",
+      source: "account",
+      packageEntryId: null,
+      archivePath: null,
+      installationGeneration: 1,
+      digest: managedTodoRelease!.digest,
+      manifest: managedTodoRelease!.manifest,
+    };
+    const view: StorePackageView = { ...todoView, item: managedTodoPackage, digest: managedTodoRelease!.digest };
+    const current = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[view]} />);
+    const changed = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[{ ...installed, digest: "c".repeat(64) }]} packages={[view]} />);
+
+    expect(current).not.toContain("Update available");
+    expect(current).not.toContain(" Update</button>");
+    expect(changed).toContain("Update available");
+    expect(changed).toContain(" Update</button>");
   });
 });

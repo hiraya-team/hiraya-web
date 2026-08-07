@@ -1,4 +1,5 @@
 import { parseAppCatalog, type AppCatalogRelease, type AppPackageInspection } from "@hiraya-team/apps-contracts";
+import type { InstalledApp } from "../apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import type { DesktopIdentity, FileEntry } from "../types";
 import { API_ROUTES, authenticatedHeaders } from "./api-routes";
@@ -44,6 +45,11 @@ export function storePackageManifest(item: StorePackage, inspection?: AppPackage
 
 export function storePackageNeedsRefreshInspection(item: StorePackage, currentSystemRelease: boolean) {
   return !item.release || item.kind === "system" && !currentSystemRelease;
+}
+
+export function storePackageMatchesInstall(item: StorePackage, app: InstalledApp, appId: string | null, digest: string | null) {
+  if (appId && digest) return app.appId === appId && app.digest === digest;
+  return app.source === "store" && app.sourceCatalogId === item.catalogId && app.sourceDesktopId === item.desktopId && app.packageEntryId === item.entry.id && app.sourceContentRevision === item.contentRevision;
 }
 
 export async function loadStorePackages(desktop: DesktopIdentity, directBlobOrigin: string): Promise<LoadedStorePackages> {
