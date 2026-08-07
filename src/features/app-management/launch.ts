@@ -1,4 +1,4 @@
-import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus } from "@hiraya-team/apps-contracts";
+import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus, ServiceMethods, ThemeEditorState, WallpaperEditorState } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import type { ThemeDefinition } from "../../domain/theme";
@@ -54,6 +54,15 @@ type LaunchSandboxAppOptions = {
   showEntryActions: (instanceId: string, ids: string[]) => void;
   getEntryStatus: (id: string) => { status: OfflineEntryStatus; pinned: boolean; directlyPinned: boolean };
   setExternalEmbeddedPreviews: (enabled: boolean) => Promise<void>;
+  getThemeEditorState: () => ThemeEditorState;
+  selectTheme: (themeId: string) => Promise<ThemeEditorState>;
+  saveTheme: (theme: ServiceMethods["themes.save"]["params"]) => Promise<ThemeEditorState>;
+  deleteTheme: (themeId: string) => Promise<ThemeEditorState>;
+  getWallpaperEditorState: () => WallpaperEditorState;
+  previewWallpaper: (wallpaper: ServiceMethods["wallpapers.preview"]["params"]["wallpaper"]) => void;
+  saveWallpaper: (wallpaper: ServiceMethods["wallpapers.save"]["params"]["wallpaper"]) => Promise<WallpaperEditorState>;
+  uploadWallpaper: (file: File) => Promise<WallpaperEditorState>;
+  selectWallpaper: (fileId: string) => Promise<WallpaperEditorState>;
 };
 
 export type SandboxLaunchResult =
@@ -89,7 +98,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
         }
       : undefined;
     const id = systemTarget ? builtinAppTargetId(systemTarget) : `sandbox:${install.packageEntryId}:${crypto.randomUUID()}`;
-    const shouldFocus = !systemTarget || options.shouldFocusTarget(systemTarget);
+    const shouldFocus = !systemTarget || (install.appId === SYSTEM_APP_IDS.themeEditor && options.source !== "restore") || options.shouldFocusTarget(systemTarget);
     if (options.runningApps.some((app) => app.kind === "sandbox" && app.id === id)) return { kind: "existing", id, shouldFocus };
 
     pendingInstanceId = id;
@@ -170,6 +179,56 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           await options.setExternalEmbeddedPreviews(enabled);
         },
       },
+      themes: {
+        getState: () => {
+          requireThemeEditor(install);
+          return options.getThemeEditorState();
+        },
+        select: ({ themeId }: ServiceMethods["themes.select"]["params"]) => {
+          requireThemeEditor(install);
+          return options.selectTheme(themeId);
+        },
+        save: (theme: ServiceMethods["themes.save"]["params"]) => {
+          requireThemeEditor(install);
+          return options.saveTheme(theme);
+        },
+        delete: ({ themeId }: ServiceMethods["themes.delete"]["params"]) => {
+          requireThemeEditor(install);
+          return options.deleteTheme(themeId);
+        },
+      },
+      wallpapers: {
+        getState: () => {
+          requireThemeEditor(install);
+          return options.getWallpaperEditorState();
+        },
+        preview: ({ wallpaper }: ServiceMethods["wallpapers.preview"]["params"]) => {
+          requireThemeEditor(install);
+          return options.previewWallpaper(wallpaper);
+        },
+        save: ({ wallpaper }: ServiceMethods["wallpapers.save"]["params"]) => {
+          requireThemeEditor(install);
+          return options.saveWallpaper(wallpaper);
+        },
+        upload: ({ name, mimeType, data }: ServiceMethods["wallpapers.upload"]["params"]) => {
+          requireThemeEditor(install);
+          return options.uploadWallpaper(new File([data], name, { type: mimeType }));
+        },
+        select: ({ fileId }: ServiceMethods["wallpapers.select"]["params"]) => {
+          requireThemeEditor(install);
+          return options.selectWallpaper(fileId);
+        },
+        readCurrentImage: async () => {
+          requireThemeEditor(install);
+          const source = options.getWallpaperEditorState().wallpaper.source;
+          if (!source.startsWith("file:")) return null;
+          const fileId = source.slice(5);
+          const entry = options.getEntries().find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
+          if (!entry) throw new HostServiceError("The current wallpaper image is unavailable.", "NOT_FOUND");
+          const blob = await options.fileSync.readFile(fileId);
+          return { data: await blob.arrayBuffer(), mimeType: blob.type || entry.mimeType };
+        },
+      },
     };
     const dispatcher = new RpcDispatcher({
       permissions: effectivePermissions,
@@ -186,4 +245,8 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
     if (pendingInstanceId) options.capabilities.revokeInstance(pendingInstanceId);
     throw error;
   }
+}
+
+function requireThemeEditor(install: InstalledApp) {
+  if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.themeEditor) throw new HostServiceError("Only the bundled Theme Editor can manage desktop themes.", "PERMISSION_DENIED");
 }

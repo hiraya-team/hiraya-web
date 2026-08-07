@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Synchronize approved apps across devices.** Approving an app or update once now synchronizes that exact package and its permissions to every signed-in device. **Applications** verifies each local download before enabling it and offers **Retry sync** if setup cannot finish.
+- **Customize themes and wallpaper together.** Open **Settings > Desktop > Themes & wallpaper** to browse themes, adjust colors, choose or upload a desktop wallpaper, and tune its fit, alignment, blur, dim, and overlay in one live-preview workspace.
 - **Show only real app updates.** **Applications** now recognizes the exact package installed from a synchronized account or republished catalog, so **Update** appears only when the published app package actually changed.
 - **Finish saves from account apps.** Account-installed apps now stay open while synchronized file changes finish, so **Save As** can write the selected file before returning to the app.
 - **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.

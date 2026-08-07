@@ -703,12 +703,21 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
   await themesLauncher.focus();
   await page.keyboard.press("Enter");
-  await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
-  await expect(settingsWindow.locator(".wallpaper-options")).toHaveCSS("grid-template-columns", /^(?!.*\s).+$/);
-  await settingsWindow.getByRole("button", { name: "Duplicate / edit" }).first().click();
-  await expect.poll(() => settingsWindow.locator(".theme-control").first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
-  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
-  await expect(themesLauncher).toBeFocused();
+  const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  const themeEditorFrame = themeEditor.frameLocator("iframe");
+  await expect(themeEditorFrame.getByRole("heading", { name: "Theme library" })).toBeVisible();
+  await themeEditorFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(themeEditorFrame.getByRole("heading", { name: "Desktop background" })).toBeVisible();
+  await expect(themeEditorFrame.getByRole("button", { name: "Dusk" })).toHaveAttribute("aria-pressed", "true");
+  await themeEditorFrame.getByRole("button", { name: "Grove" }).click();
+  await expect(themeEditorFrame.getByText("Grove wallpaper applied.")).toBeVisible();
+  await themeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
+  await themesLauncher.click();
+  const reopenedThemeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  const reopenedFrame = reopenedThemeEditor.frameLocator("iframe");
+  await reopenedFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(reopenedFrame.getByRole("button", { name: "Grove" })).toHaveAttribute("aria-pressed", "true");
+  await reopenedThemeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
 
   await categories.getByRole("button", { name: "Files & apps" }).click();
   const appsLauncher = settingsWindow.locator('[aria-labelledby="apps-link-heading"] .settings-row--navigation');
@@ -736,11 +745,9 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const mobileSettings = mobilePage.locator('[data-app-window="settings"]');
   const mobileThemesLauncher = mobileSettings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
   await mobileThemesLauncher.click();
-  const mobileBack = mobilePage.getByRole("button", { name: "Back to settings" });
-  await expect(mobileBack).toBeVisible();
-  await expect(mobileBack).toBeFocused();
-  await mobileBack.click();
-  await expect(mobileThemesLauncher).toBeFocused();
+  const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
+  await mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(mobileThemeEditor.frameLocator("iframe").getByRole("heading", { name: "Image treatment" })).toBeVisible();
   await mobileContext.close();
 });
 
