@@ -65,7 +65,7 @@ export function AppWindow({
   segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, dragEdgeAt, onDragAtEdge, onEdgeDwellChange,
   onDragEnd,
   onMinimize, onClose, maximized = false, canMoveArea = false, onToggleMaximize, onMoveArea, onAdjustBounds,
-  onShowDesktop, onSwitchWindow, backLabel = "Back to Desktop", hideFocusedHeader = false,
+  onShowDesktop, onSwitchWindow, backLabel = "Back", hideFocusedHeader = false,
   externalHeaderElements, children, titleArea, headerContent,
 }: AppWindowProps) {
   const windowRef = useRef<HTMLElement>(null);

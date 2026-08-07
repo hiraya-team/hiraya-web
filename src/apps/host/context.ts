@@ -1,4 +1,4 @@
-import type { AppCapabilities, LaunchContext, WindowState } from "@hiraya-team/apps-contracts";
+import type { AppBackRequestResult, AppCapabilities, LaunchContext, WindowState } from "@hiraya-team/apps-contracts";
 import { AppDialogService, type AppDialogApi } from "./dialogs";
 import { AppLifecycleService, type AppWindowApi } from "./lifecycle";
 import { AppNotificationService, type AppNotificationApi } from "./notifications";
@@ -8,7 +8,12 @@ import { unavailable, type AppInstanceOwner } from "./types";
 
 export interface AppHostContext {
   readonly owner: AppInstanceOwner;
-  readonly app: { getLaunchContext(): Promise<LaunchContext>; getCapabilities(): Promise<AppCapabilities> };
+  readonly app: {
+    getLaunchContext(): Promise<LaunchContext>;
+    getCapabilities(): Promise<AppCapabilities>;
+    setBackHandler(enabled: boolean): Promise<void>;
+    resolveBackRequest(requestId: string, result: AppBackRequestResult): Promise<void>;
+  };
   readonly window: AppWindowApi;
   readonly dialogs: AppDialogApi;
   readonly notifications: AppNotificationApi;
@@ -58,6 +63,8 @@ export class AppHostServices {
       app: {
         getLaunchContext: async () => { assertOpen(); return structuredClone(launch); },
         getCapabilities: async () => { assertOpen(); return structuredClone(input.getCapabilities?.() ?? { files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false }); },
+        setBackHandler: async (enabled) => { assertOpen(); this.lifecycle.setBackHandler(owner, enabled); },
+        resolveBackRequest: async (requestId, result) => { assertOpen(); this.lifecycle.resolveBackRequest(owner, requestId, result); },
       },
       window: windowApi,
       dialogs: {

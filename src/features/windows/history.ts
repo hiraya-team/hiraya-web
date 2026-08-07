@@ -3,7 +3,7 @@ import { parseWindowTargets, type WindowTarget } from "../../lib/window-session"
 import type { SettingsPage } from "../../lib/routes";
 import type { RunningApp } from "./model";
 
-export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; apps: WindowTarget[]; instances: string[]; settingsPage: SettingsPage };
+export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; rootBackGuard?: true; apps: WindowTarget[]; instances: string[]; settingsPage: SettingsPage };
 
 export function parseRunningAppHistory(state: unknown) {
   if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;

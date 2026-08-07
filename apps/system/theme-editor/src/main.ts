@@ -1,6 +1,6 @@
 import type { FileHandle, HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
-import { contrastIssues, copyDraft, draftChanged, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
+import { backAction, contrastIssues, copyDraft, draftChanged, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
@@ -101,7 +101,14 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
+    await hiraya.app.setBackHandler(async () => {
+      const action = backAction(Boolean(draft), !wallpaperPanel.hidden);
+      if (action === "draft") await cancelEdit();
+      else if (action === "theme") setInspectorMode("theme");
+      return action === "home" ? "home" : "handled";
+    });
     app.onDispose(() => {
+      void hiraya.app.clearBackHandler().catch(() => undefined);
       state = null;
       wallpaperState = null;
       if (wallpaperSaveTimer !== null) clearTimeout(wallpaperSaveTimer);

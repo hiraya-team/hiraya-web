@@ -165,6 +165,8 @@ export class RpcDispatcher {
     if (!method) throw rpcError("METHOD_NOT_FOUND", "The requested method is not available.");
     const params = request.params as Record<string, unknown>;
     if (Object.keys(params).length === 0) return method.call(api);
+    if (group === "app" && name === "setBackHandler") return method.call(api, params.enabled);
+    if (group === "app" && name === "resolveBackRequest") return method.call(api, params.requestId, params.result);
     if (group === "window" && name === "setTitle") return method.call(api, params.title);
     if (group === "window" && name === "setDirty") return method.call(api, params.dirty);
     if (group === "window" && name === "setSize") return method.call(api, params.width, params.height);

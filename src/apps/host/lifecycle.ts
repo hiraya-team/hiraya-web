@@ -1,4 +1,4 @@
-import type { WindowState } from "@hiraya-team/apps-contracts";
+import type { AppBackRequestResult, WindowState } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, unavailable, type AppInstanceOwner } from "./types";
 
 export const MAX_APP_WINDOW_TITLE_LENGTH = 120;
@@ -12,12 +12,21 @@ export type AppWindowSnapshot = WindowState & {
 export type BeforeCloseHandler = (signal: AbortSignal) => boolean | void | Promise<boolean | void>;
 export type SaveHandler = (signal: AbortSignal) => void | Promise<void>;
 export type AppWindowListener = (owner: AppInstanceOwner, state: AppWindowSnapshot) => void;
+export type AppBackRequestOutcome = "unsupported" | "handled" | "home" | "failed";
+
+type PendingBackRequest = {
+  id: string;
+  timer: ReturnType<typeof setTimeout>;
+  resolve: (outcome: AppBackRequestOutcome) => void;
+};
 
 type InstanceRecord = {
   owner: AppInstanceOwner;
   state: AppWindowSnapshot;
   beforeClose?: BeforeCloseHandler;
   save?: SaveHandler;
+  backHandler: boolean;
+  backRequest?: PendingBackRequest;
   pending: Set<AbortController>;
 };
 
@@ -49,7 +58,7 @@ export class AppLifecycleService {
     if (this.#instances.has(key)) throw new HostServiceError(`App instance ${owner.instanceId} is already open.`, "ALREADY_EXISTS");
     validateTitle(title);
     validateWindowState(initial);
-    this.#instances.set(key, { owner, state: { ...initial, title, dirty: false }, pending: new Set() });
+    this.#instances.set(key, { owner, state: { ...initial, title, dirty: false }, backHandler: false, pending: new Set() });
     return {
       getState: async () => this.getState(owner),
       setTitle: async (nextTitle) => this.setTitle(owner, nextTitle),
@@ -119,6 +128,39 @@ export class AppLifecycleService {
     this.#record(owner).save = handler;
   }
 
+  setBackHandler(owner: AppInstanceOwner, enabled: boolean): void {
+    if (typeof enabled !== "boolean") throw new TypeError("Back handler state must be boolean.");
+    const record = this.#record(owner);
+    record.backHandler = enabled;
+    if (!enabled) this.#finishBackRequest(record, "unsupported");
+  }
+
+  requestBack(owner: AppInstanceOwner, emit: (requestId: string) => void): Promise<AppBackRequestOutcome> {
+    const record = this.#record(owner);
+    if (!record.backHandler || record.backRequest) return Promise.resolve("unsupported");
+    const id = crypto.randomUUID();
+    const result = new Promise<AppBackRequestOutcome>((resolve) => {
+      record.backRequest = {
+        id,
+        resolve,
+        timer: setTimeout(() => this.#finishBackRequest(record, "failed"), this.handlerDeadlineMs),
+      };
+    });
+    try {
+      emit(id);
+    } catch {
+      this.#finishBackRequest(record, "failed");
+    }
+    return result;
+  }
+
+  resolveBackRequest(owner: AppInstanceOwner, requestId: string, result: AppBackRequestResult): void {
+    if (result !== "handled" && result !== "home" && result !== "failed") throw new TypeError("Back request result is invalid.");
+    const record = this.#record(owner);
+    if (record.backRequest?.id !== requestId) throw new HostServiceError("The Back request is not pending for this app instance.", "NOT_FOUND");
+    this.#finishBackRequest(record, result);
+  }
+
   async requestClose(owner: AppInstanceOwner): Promise<boolean> {
     const record = this.#record(owner);
     if (record.beforeClose && await this.#runWithDeadline(record, record.beforeClose) === false) return false;
@@ -143,6 +185,7 @@ export class AppLifecycleService {
     const record = this.#instances.get(key);
     if (!record) return;
     this.#instances.delete(key);
+    this.#finishBackRequest(record, "unsupported");
     for (const controller of record.pending) controller.abort(unavailable(owner));
     record.pending.clear();
   }
@@ -154,6 +197,14 @@ export class AppLifecycleService {
   #publish(record: InstanceRecord): void {
     const state = { ...record.state };
     for (const listener of this.#listeners) listener(record.owner, state);
+  }
+
+  #finishBackRequest(record: InstanceRecord, outcome: AppBackRequestOutcome): void {
+    const request = record.backRequest;
+    if (!request) return;
+    record.backRequest = undefined;
+    clearTimeout(request.timer);
+    request.resolve(outcome);
   }
 
   async #runWithDeadline<T>(record: InstanceRecord, handler: (signal: AbortSignal) => T | Promise<T>): Promise<T> {
