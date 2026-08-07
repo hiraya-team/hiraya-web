@@ -22,6 +22,7 @@ export function localDesktopIdentity(id: string, name: string): DesktopIdentity 
   return {
     id,
     name,
+    pinned: false,
     ownership: "owned",
     role: "owner",
     owner: { id: "local", displayName: "You", avatar: null },

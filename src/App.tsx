@@ -77,6 +77,7 @@ import {
   type OfflineOperationProgress,
   type FileTransferState,
   type ContentConflictBundle,
+  updateDesktopPreferences as updateDesktopPreferencesMutation,
   VirtualFileChangedError,
 } from "./lib/sync";
 import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
@@ -152,6 +153,7 @@ import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, typ
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
 import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, windowsForHiddenFilePreference, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
+import { arrangeDesktops, type DesktopPreference } from "./lib/desktop-preferences";
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
@@ -501,6 +503,7 @@ function App({ session }: { session: AuthSession | null }) {
   const contentRevisionsRef = useRef<Record<string, number>>({});
   const activeDesktopIdRef = useRef("");
   const desktopsRef = useRef<DesktopIdentity[]>([]);
+  const catalogAuthoritativeRef = useRef(false);
   const activateDesktopRef = useRef<(desktopId: string) => Promise<boolean>>(async () => false);
   const activationQueueRef = useRef(createSerialTaskQueue());
   const activationGenerationRef = useRef(0);
@@ -529,7 +532,7 @@ function App({ session }: { session: AuthSession | null }) {
     adjust: (id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") => void;
   }>({ maximize: () => {}, move: () => {}, adjust: () => {} });
   const autoUpdateRef = useRef(true);
-  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false });
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] });
   const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
   const actionSheetHistoryRef = useRef<string | null>(null);
@@ -1545,8 +1548,10 @@ function App({ session }: { session: AuthSession | null }) {
     });
     const unsubscribeCatalog = subscribeToDesktopCatalog((registry) => {
       if (!active) return;
-      desktopsRef.current = registry.desktops;
-      setDesktops(registry.desktops);
+      catalogAuthoritativeRef.current = Boolean(registry.catalogId);
+      const nextDesktops = registry.catalogId ? registry.desktops : arrangeDesktops(registry.desktops, localPreferencesRef.current.desktops);
+      desktopsRef.current = nextDesktops;
+      setDesktops(nextDesktops);
       setCatalogQuota(registry.quota);
       const retainedIds = registry.desktops.map((desktop) => desktop.id);
       if (activeDesktopIdRef.current && !retainedIds.includes(activeDesktopIdRef.current)) {
@@ -1562,10 +1567,11 @@ function App({ session }: { session: AuthSession | null }) {
     void listDesktops(seededDesktop)
       .then((registry) => {
         if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
+        catalogAuthoritativeRef.current = Boolean(registry.catalogId);
         const routeDesktopId = parseDesktopRoute(window.location.pathname)?.desktopId;
         const surfaces = registry.desktops.filter(isDesktopSurface);
         const desktopId = routeDesktopId && surfaces.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && surfaces.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : surfaces[0].id;
-        setDesktops(registry.desktops);
+        setDesktops(registry.catalogId ? registry.desktops : arrangeDesktops(registry.desktops, localPreferencesRef.current.desktops));
         setCatalogQuota(registry.quota);
         activeDesktopIdRef.current = desktopId;
         setActiveDesktopId(desktopId);
@@ -1813,6 +1819,7 @@ function App({ session }: { session: AuthSession | null }) {
         setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
         setExplorerView(preferences.explorerView);
         setShowHiddenFiles(preferences.showHiddenFiles);
+        if (!catalogAuthoritativeRef.current) setDesktops((current) => arrangeDesktops(current, preferences.desktops));
         setPreferencesLoaded(true);
         checkAutomatically();
       })
@@ -2731,6 +2738,30 @@ function App({ session }: { session: AuthSession | null }) {
     }
     await deleteDesktopMutation(desktopId);
     setDesktops((current) => current.filter((candidate) => candidate.id !== desktopId));
+  }
+
+  async function arrangeDesktopCatalog(preferences: DesktopPreference[]) {
+    const previousDesktops = desktopsRef.current;
+    const nextDesktops = arrangeDesktops(previousDesktops, preferences);
+    setDesktops(nextDesktops);
+    if (session && syncStatus !== "online" && syncStatus !== "blocked") {
+      setDesktops(previousDesktops);
+      throw new Error("Reconnect to change pinned desktops or their order.");
+    }
+    try {
+      if (session) await updateDesktopPreferencesMutation(preferences);
+      const previousPreferences = localPreferencesRef.current;
+      const nextPreferences = { ...previousPreferences, desktops: preferences };
+      localPreferencesRef.current = nextPreferences;
+      try { await saveLocalPreferences(nextPreferences); }
+      catch {
+        localPreferencesRef.current = previousPreferences;
+        setError("The desktop order was saved, but its offline copy could not be updated.");
+      }
+    } catch (reason) {
+      setDesktops(previousDesktops);
+      throw reason;
+    }
   }
 
   async function activateUpdate() {
@@ -4945,7 +4976,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "desktops" ? "Desktops" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -5110,6 +5141,10 @@ function App({ session }: { session: AuthSession | null }) {
                         mobileHeaderElements={headerElements}
                         layout={layout}
                         activeDesktopId={activeDesktopId}
+                        desktops={desktopChoices}
+                        catalogQuota={catalogQuota}
+                        quotaStale={syncStatus === "offline"}
+                        desktopArrangementDisabled={Boolean(session && syncStatus !== "online" && syncStatus !== "blocked")}
                         entries={entries}
                         appearance={appearance}
                         canMutate={canSettings}
@@ -5199,6 +5234,11 @@ function App({ session }: { session: AuthSession | null }) {
                         onInstall={() => void installPwa()}
                         onOpenOfflineStorage={() => setActivePanel("offline")}
                         onOpenHelp={openHelp}
+                        onCreateDesktop={createDesktop}
+                        onRenameDesktop={renameDesktop}
+                        onDeleteDesktop={deleteDesktop}
+                        onArrangeDesktops={arrangeDesktopCatalog}
+                        canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online" || syncStatus === "blocked"}
                       />
                     )}
                     {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
@@ -5266,7 +5306,7 @@ function App({ session }: { session: AuthSession | null }) {
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}
         desktopName={activeDesktopName}
-        desktopRail={<DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} quota={catalogQuota} quotaStale={syncStatus === "offline"} onSwitch={(id) => { collapseAreaMap(); void activateDesktop(id); }} onCreate={createDesktop} onRename={renameDesktop} onDelete={deleteDesktop} onDismiss={collapseAreaMap} canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online"} />}
+        desktopRail={<DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { collapseAreaMap(); void activateDesktop(id); }} onDismiss={collapseAreaMap} />}
         desktopSize={iconArea}
         detailed={minimapDetailed}
         dirtyAppIds={dirtyAppIds}

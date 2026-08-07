@@ -1,4 +1,4 @@
-export type AppHistorySettingsPage = "main" | "activity" | "apps" | "short-links";
+export type AppHistorySettingsPage = "main" | "desktops" | "activity" | "apps" | "short-links";
 
 type AppHistoryState = {
   hiraya?: unknown;
@@ -18,7 +18,7 @@ export function historyInstanceIds(state: unknown, fallback: readonly string[] =
 
 export function historySettingsPage(state: unknown): AppHistorySettingsPage {
   const page = historyRecord(state)?.settingsPage;
-  return page === "activity" || page === "apps" || page === "short-links" ? page : "main";
+  return page === "desktops" || page === "activity" || page === "apps" || page === "short-links" ? page : "main";
 }
 
 export function removedHistoryInstanceIds(current: readonly string[], destination: readonly string[]) {

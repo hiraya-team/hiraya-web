@@ -126,7 +126,7 @@ type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: 
 
 const DATABASE_VERSION = 2;
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
-const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false };
+const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] };
 const STORES = {
   desktops: "desktops",
   outbox: "outbox",
@@ -360,7 +360,9 @@ function parsePreferences(value: unknown): LocalPreferences {
   if (!value || typeof value !== "object") throw new Error("The local preferences have an unsupported format.");
   const item = value as LocalPreferences;
   if ([item.autoUpdate, item.externalEmbeddedPreviews, item.allowBrowserPinchZoom, item.searchAllDesktops, item.showDesktopMinimap].some((field) => typeof field !== "boolean") || item.showHiddenFiles !== undefined && typeof item.showHiddenFiles !== "boolean" || !Number.isSafeInteger(item.onboardingVersion) || item.onboardingVersion < 0 || !["list", "grid"].includes(item.explorerView)) throw new Error("The local preferences have an unsupported format.");
-  return { ...item, showHiddenFiles: item.showHiddenFiles ?? false };
+  const desktops = item.desktops ?? [];
+  if (!Array.isArray(desktops) || desktops.length > 1000 || desktops.some((desktop) => !desktop || typeof desktop.id !== "string" || !desktop.id || typeof desktop.pinned !== "boolean") || new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The local preferences have an unsupported format.");
+  return { ...item, showHiddenFiles: item.showHiddenFiles ?? false, desktops };
 }
 
 async function appendActivity(store: IDBObjectStore, value: NewActivityRecord) {

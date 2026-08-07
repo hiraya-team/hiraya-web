@@ -40,6 +40,7 @@ export type RootEntryPositionUpdate = {
 export type DesktopIdentity = {
   id: string;
   name: string;
+  pinned: boolean;
   ownership: "owned" | "shared";
   role: "owner" | "manager" | "writer" | "reader";
   owner: { id: string; displayName: string; avatar: string | null };

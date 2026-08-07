@@ -11,6 +11,7 @@ import type { CustomTheme } from "../domain/theme";
 import type { ClipboardEntrySnapshot } from "./clipboard";
 import { parseActivityPage, parseActivityQuery, type ActivityQuery } from "./activity";
 import { parseDesktopCatalog, type CatalogQuota } from "./desktop-catalog";
+import type { DesktopPreference } from "./desktop-preferences";
 import { AuthenticationRequiredError, redirectToLogin } from "./auth";
 import { mapWithConcurrency, responseBlobWithProgress, sha256Blob } from "./blob-transfer";
 import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, type OfflineStorageInventory } from "./offline-availability";
@@ -1229,6 +1230,19 @@ export class SyncEngine {
     return this.publishCatalog(catalog);
   }
 
+  async updateDesktopPreferences(desktops: DesktopPreference[]) {
+    if (this.frontendOnly) throw new Error("Local desktop preferences do not use the server.");
+    if (!desktops.length || desktops.some((desktop) => typeof desktop.pinned !== "boolean") || new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The desktop preferences are invalid.");
+    for (const desktop of desktops) assertValidId(desktop.id, "A desktop preference has an invalid ID.");
+    if ((await this.storage.readOutbox()).some((record) => record.operation.kind === "create-desktop")) throw new Error("Wait for new desktops to finish syncing before changing their order.");
+    parseDesktopCatalog(await this.requestJson(API_ROUTES.desktopPreferences, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ desktops }),
+    }));
+    return this.refreshCatalog();
+  }
+
   async renameDesktop(desktopId: string, name: string) {
     if (this.frontendOnly) return this.storage.renameDesktop(desktopId, name);
     const queued = await this.storage.enqueueDesktopRename(desktopId, name, this.catalogRevision);
@@ -2078,6 +2092,7 @@ export const transferEntries = defaultEngine.transferEntries.bind(defaultEngine)
 export const createDesktop = defaultEngine.createDesktop.bind(defaultEngine);
 export const listDesktops = defaultEngine.listDesktops.bind(defaultEngine);
 export const subscribeToDesktopCatalog = defaultEngine.subscribeDesktopCatalog.bind(defaultEngine);
+export const updateDesktopPreferences = defaultEngine.updateDesktopPreferences.bind(defaultEngine);
 export const renameDesktop = defaultEngine.renameDesktop.bind(defaultEngine);
 export const deleteDesktop = defaultEngine.deleteDesktop.bind(defaultEngine);
 export const captureEntries = defaultEngine.captureEntries.bind(defaultEngine);

@@ -522,6 +522,42 @@ describe("canonical synchronization", () => {
     expect(await engine.listDesktops()).toEqual({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, activeDesktopId: "desk", desktops: [remoteDesktopIdentity()], quota: catalogQuota });
   });
 
+  test("updates synchronized desktop pinning and order through account preferences", async () => {
+    const first = remoteDesktopIdentity("one", "One");
+    const second = { ...remoteDesktopIdentity("two", "Two"), pinned: true };
+    const ensured: string[] = [];
+    const requests: Array<{ url: string; method: string; body: unknown }> = [];
+    const storage = {
+      ensureDesktop: async (desktop: { id: string }) => { ensured.push(desktop.id); return desktop; },
+      listDesktops: async () => ({ desktops: [first, second], activeDesktopId: "one" }),
+      bindOutboxCatalog: async () => undefined,
+      readOutbox: async () => [],
+    } as unknown as NonNullable<SyncEngineOptions["storage"]>;
+    const engine = new SyncEngine({ storage, fetch: (async (input, init) => {
+      requests.push({ url: String(input), method: init?.method ?? "GET", body: init?.body ? JSON.parse(String(init.body)) : null });
+      return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 2, desktops: [second, first], quota: { ...catalogQuota, desktops: { used: 2, limit: 10 } } });
+    }) as typeof fetch });
+
+    const result = await engine.updateDesktopPreferences([{ id: "two", pinned: true }, { id: "one", pinned: false }]);
+    expect(requests).toEqual([
+      { url: "/api/account/desktop-preferences", method: "PUT", body: { desktops: [{ id: "two", pinned: true }, { id: "one", pinned: false }] } },
+      { url: "/api/desktops", method: "GET", body: null },
+    ]);
+    expect(ensured).toEqual(["two", "one"]);
+    expect(result.desktops.map(({ id, pinned }) => [id, pinned])).toEqual([["two", true], ["one", false]]);
+  });
+
+  test("waits for pending desktop creation before saving order", async () => {
+    let requested = false;
+    const storage = {
+      readOutbox: async () => [{ operation: { kind: "create-desktop" } }],
+    } as unknown as NonNullable<SyncEngineOptions["storage"]>;
+    const engine = new SyncEngine({ storage, fetch: (async () => { requested = true; return Response.json({}); }) as typeof fetch });
+
+    await expect(engine.updateDesktopPreferences([{ id: "one", pinned: false }])).rejects.toThrow("finish syncing");
+    expect(requested).toBeFalse();
+  });
+
   test("recovers when concurrent first-run initialization creates the local desktop", async () => {
     const local = [remoteDesktopIdentity("desk", "Desktop")];
     let reads = 0;

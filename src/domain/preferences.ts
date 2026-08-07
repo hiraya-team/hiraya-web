@@ -1,5 +1,7 @@
 export type ExplorerView = "list" | "grid";
 
+export type DesktopPreference = { id: string; pinned: boolean };
+
 export type LocalPreferences = {
   autoUpdate: boolean;
   externalEmbeddedPreviews: boolean;
@@ -9,4 +11,5 @@ export type LocalPreferences = {
   showDesktopMinimap: boolean;
   explorerView: ExplorerView;
   showHiddenFiles: boolean;
+  desktops: DesktopPreference[];
 };

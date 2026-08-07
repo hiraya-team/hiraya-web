@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, BookOpenText, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, Desktop, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, Info, Keyboard, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork, Trash } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery } from "../lib/activity";
 import type { ActivityRecord } from "../lib/activity";
@@ -14,6 +14,10 @@ import type { PwaInstallState } from "../lib/pwa-install";
 import { StatusBadge } from "./VisualPrimitives";
 import { ShortLinksSettings } from "./ShortLinksSettings";
 import type { ShortLink } from "../lib/short-links";
+import { DesktopSettings } from "./DesktopSettings";
+import type { DesktopIdentity } from "../types";
+import type { CatalogQuota } from "../lib/desktop-catalog";
+import type { DesktopPreference } from "../lib/desktop-preferences";
 
 const SETTINGS_CATEGORIES = [
   { id: "desktop", label: "Desktop" },
@@ -25,11 +29,15 @@ const SETTINGS_CATEGORIES = [
 type SettingsCategory = typeof SETTINGS_CATEGORIES[number]["id"];
 
 type Props = {
-  page: "main" | "activity" | "apps" | "short-links";
-  onPageChange: (page: "main" | "activity" | "apps" | "short-links") => void;
+  page: "main" | "desktops" | "activity" | "apps" | "short-links";
+  onPageChange: (page: "main" | "desktops" | "activity" | "apps" | "short-links") => void;
   mobileHeaderElements?: AppWindowHeaderElements;
   layout: DesktopLayout;
   activeDesktopId: string;
+  desktops: readonly DesktopIdentity[];
+  catalogQuota: CatalogQuota | null;
+  quotaStale: boolean;
+  desktopArrangementDisabled: boolean;
   entries: DesktopEntry[];
   appearance: ThemeState;
   canMutate: boolean;
@@ -89,6 +97,11 @@ type Props = {
   onInstall: () => void;
   onOpenOfflineStorage: () => void;
   onOpenHelp: (section?: "start-here" | "installation-and-updates" | "apps-and-permissions" | "export-backup-and-recovery") => void;
+  onCreateDesktop: (name: string) => Promise<void>;
+  onRenameDesktop: (id: string, name: string) => Promise<void>;
+  onDeleteDesktop: (id: string) => Promise<void>;
+  onArrangeDesktops: (desktops: DesktopPreference[]) => Promise<void>;
+  canManageDesktop: (desktop: DesktopIdentity) => boolean;
 };
 
 export function SettingsWindow({
@@ -97,6 +110,10 @@ export function SettingsWindow({
   mobileHeaderElements,
   layout,
   activeDesktopId,
+  desktops,
+  catalogQuota,
+  quotaStale,
+  desktopArrangementDisabled,
   entries,
   appearance,
   canMutate,
@@ -156,14 +173,21 @@ export function SettingsWindow({
   onInstall,
   onOpenOfflineStorage,
   onOpenHelp,
+  onCreateDesktop,
+  onRenameDesktop,
+  onDeleteDesktop,
+  onArrangeDesktops,
+  canManageDesktop,
 }: Props) {
   const [settingsCategory, setSettingsCategory] = useState<SettingsCategory>("desktop");
   const contentRef = useRef<HTMLDivElement>(null);
   const previousPageRef = useRef(page);
+  const mainDesktopsButtonRef = useRef<HTMLButtonElement>(null);
   const mainActivityButtonRef = useRef<HTMLButtonElement>(null);
   const mainAppsButtonRef = useRef<HTMLButtonElement>(null);
   const mainShortLinksButtonRef = useRef<HTMLButtonElement>(null);
   const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
+  const desktopsHeadingRef = useRef<HTMLHeadingElement>(null);
   const activityHeadingRef = useRef<HTMLHeadingElement>(null);
   const appsHeadingRef = useRef<HTMLHeadingElement>(null);
   const shortLinksHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -181,7 +205,7 @@ export function SettingsWindow({
     const previousPage = previousPageRef.current;
     previousPageRef.current = page;
     if (page === "main" && previousPage !== "main") {
-      const button = previousPage === "activity" ? mainActivityButtonRef : previousPage === "short-links" ? mainShortLinksButtonRef : mainAppsButtonRef;
+      const button = previousPage === "desktops" ? mainDesktopsButtonRef : previousPage === "activity" ? mainActivityButtonRef : previousPage === "short-links" ? mainShortLinksButtonRef : mainAppsButtonRef;
       requestAnimationFrame(() => button.current?.focus());
     }
   }, [page]);
@@ -197,6 +221,9 @@ export function SettingsWindow({
       else heading.current?.focus();
     });
   };
+
+  const openDesktops = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("desktops"); focusSubpage(desktopsHeadingRef); };
+  const closeDesktops = () => { contentRef.current?.scrollTo({ top: 0 }); onPageChange("main"); };
 
   const openActivity = () => {
     contentRef.current?.scrollTo({ top: 0 });
@@ -216,7 +243,7 @@ export function SettingsWindow({
   return (
     <div className="settings-window settings-window--embedded">
       {page !== "main" && mobileHeaderElements?.actions && createPortal(
-        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" onClick={page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
+        <button ref={mobileBackButtonRef} className="app-window__control mobile-header-back" type="button" aria-label="Back to settings" onClick={page === "desktops" ? closeDesktops : page === "apps" ? closeApps : page === "short-links" ? closeShortLinks : closeActivity}>
           <ArrowLeft size={18} />
         </button>,
         mobileHeaderElements.actions,
@@ -226,6 +253,13 @@ export function SettingsWindow({
            <>
               <header className="settings-ia-header"><h2>Settings</h2><p>Personalize this desktop, manage its data, and control this installation of Hiraya.</p>{!canMutate && <p className="settings-window__offline" role="status">Restricted: {restrictionReason}</p>}</header>
                <nav className="settings-ia-categories" aria-label="Settings categories">{SETTINGS_CATEGORIES.filter((category) => category.id !== "sharing" || sharingAvailable || shortLinksAvailable).map((category) => <button type="button" aria-pressed={category.id === settingsCategory} key={category.id} onClick={() => { setSettingsCategory(category.id); contentRef.current?.scrollTo({ top: 0 }); }}>{category.label}</button>)}</nav>
+              <section className="settings-section" aria-labelledby="desktops-link-heading" hidden={settingsCategory !== "desktop"}>
+                <button className="settings-row settings-row--navigation" type="button" ref={mainDesktopsButtonRef} onClick={openDesktops}>
+                  <span className="settings-row__icon"><Desktop size={17} /></span>
+                  <span className="settings-row__copy"><strong id="desktops-link-heading">Desktops</strong><small>Switch priority, pins, names, ownership, and account limits.</small></span>
+                  <CaretRight className="settings-row__chevron" size={17} aria-hidden="true" />
+                </button>
+              </section>
                <section className="settings-section" aria-labelledby="themes-link-heading" hidden={settingsCategory !== "desktop"}>
               <button className="settings-row settings-row--navigation" type="button" onClick={onOpenThemeEditor}>
                 <span className="settings-row__icon"><PaintBrush size={17} /></span>
@@ -392,6 +426,14 @@ export function SettingsWindow({
             </section>
 
           </>
+        ) : page === "desktops" ? (
+          <div className="settings-page settings-page--desktops">
+            <header className="settings-page__header">
+              <button className="settings-page__back" type="button" aria-label="Back to settings" onClick={closeDesktops}><ArrowLeft size={17} /></button>
+              <div><h3 ref={desktopsHeadingRef} tabIndex={-1}>Desktops</h3><p>Manage every desktop you can access and choose their switcher order.</p></div>
+            </header>
+            <DesktopSettings desktops={desktops} activeDesktopId={activeDesktopId} quota={catalogQuota} quotaStale={quotaStale} arrangementDisabled={desktopArrangementDisabled} onCreate={onCreateDesktop} onRename={onRenameDesktop} onDelete={onDeleteDesktop} onArrange={onArrangeDesktops} canManageDesktop={canManageDesktop} />
+          </div>
         ) : page === "activity" ? (
           <div className="settings-page settings-page--activity">
             <header className="settings-page__header">

@@ -150,6 +150,7 @@ describe("accessibility regressions", () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
+    const desktopSettings = await Bun.file(new URL("../src/components/DesktopSettings.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain("areaSwitcherTriggerRef.current?.focus()");
@@ -160,7 +161,15 @@ describe("accessibility regressions", () => {
     expect(app).toContain('className="mobile-desktop-summary"');
     expect(app).toContain("desktopRail={<DesktopSwitcher");
     expect(desktopSwitcher).toContain('className="desktop-switcher__rail" aria-label="Desktops"');
-    expect(desktopSwitcher).toContain('<details className="desktop-switcher__manage">');
+    expect(desktopSwitcher).not.toContain("onCreate");
+    expect(desktopSwitcher).not.toContain("onRename");
+    expect(desktopSwitcher).not.toContain("onDelete");
+    expect(desktopSwitcher).toContain("desktop.pinned");
+    expect(desktopSettings).toContain("onPointerDown");
+    expect(desktopSettings).toContain("onPointerUp");
+    expect(desktopSettings).toContain('event.key !== "ArrowUp" && event.key !== "ArrowDown"');
+    expect(desktopSettings).toContain("Move ${desktop.name} up");
+    expect(desktopSettings).toContain("Move ${desktop.name} down");
     expect(desktopSwitcher).not.toContain('aria-haspopup="dialog"');
     expect(desktopSwitcher).toContain('if (event.key !== "Escape") return;');
     expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}');
