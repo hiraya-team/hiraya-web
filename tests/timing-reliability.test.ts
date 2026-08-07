@@ -152,7 +152,6 @@ describe("desktop timing reliability", () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const fileIcon = await Bun.file(new URL("../src/components/FileIcon.tsx", import.meta.url)).text();
     const search = await Bun.file(new URL("../src/components/SearchCommandPalette.tsx", import.meta.url)).text();
-    const settings = await Bun.file(new URL("../src/components/SettingsWindow.tsx", import.meta.url)).text();
     const sharing = await Bun.file(new URL("../src/components/SharingDialog.tsx", import.meta.url)).text();
 
     expect(app).toContain("waitForAnimations([...hosts]");
@@ -162,7 +161,8 @@ describe("desktop timing reliability", () => {
     expect(fileIcon).not.toContain("requestAnimationFrame(cleanUp)");
     expect(fileIcon).toContain("current.moveSucceeded");
     expect(search).toContain("searchGenerationRef.current === generation");
-    expect(settings).toContain("if (pending) void onLayoutChangeRef.current(pending.layout, pending.desktopId)");
+    expect(app).toContain("const pendingWallpaper = wallpaperPreviewRef.current");
+    expect(app).toContain("saveDesktopLayout(pendingWallpaper.layout)");
     expect(sharing).toContain("copyGenerationRef.current !== generation");
     expect(sharing).toContain("copiedTimerRef.current === timer");
     expect(sharing).toContain('role={copyFeedback.error ? "alert" : "status"}');
