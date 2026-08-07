@@ -87,7 +87,7 @@ import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
 import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
-import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, type DesktopRoute } from "./lib/routes";
+import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, SETTINGS_PAGE_TITLES, SETTINGS_PARENTS, type DesktopRoute, type SettingsPage } from "./lib/routes";
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
@@ -149,7 +149,7 @@ import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committed
 import { SERVER_ROUTES } from "./lib/api-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
-import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds, type AppHistorySettingsPage } from "./ui/app-history";
+import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds } from "./ui/app-history";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
 import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, windowsForHiddenFilePreference, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
@@ -267,7 +267,6 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   const theme = source.startsWith("theme:") ? appearance.customThemes.find((candidate) => candidate.id === source.slice(6) && candidate.wallpaper) : null;
   return {
     wallpaper: layout.wallpaper,
-    images: entries.filter((entry): entry is FileEntry => entry.kind === "file" && ["image/jpeg", "image/png", "image/webp"].includes(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= 20 * 1024 * 1024).map(({ id, name }) => ({ id, name })),
     currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom image",
     canManage,
     restrictionReason: canManage ? "" : restrictionReason,
@@ -350,7 +349,6 @@ function App({ session }: { session: AuthSession | null }) {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
   const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
-  const [settingsPage, setSettingsPage] = useState<AppHistorySettingsPage>("main");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [externalEmbeddedPreviews, setExternalEmbeddedPreviews] = useState<boolean | null>(null);
   const [allowBrowserPinchZoom, setAllowBrowserPinchZoom] = useState(false);
@@ -395,7 +393,6 @@ function App({ session }: { session: AuthSession | null }) {
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(false);
-  const [sharingOpen, setSharingOpen] = useState(false);
   const [publishEntryId, setPublishEntryId] = useState<string | null>(null);
   const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
   const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
@@ -486,6 +483,7 @@ function App({ session }: { session: AuthSession | null }) {
   const installedAppsRef = useRef(installedApps);
   installedAppsRef.current = installedApps;
   const routeRef = useRef<DesktopRoute | null>(null);
+  const settingsPageRef = useRef<SettingsPage>("desktop");
   const navigationReadyRef = useRef(false);
   const applyLocationRouteRef = useRef<(entriesValue?: DesktopEntry[], layoutValue?: DesktopLayout) => void>(() => undefined);
   const navigateRouteRef = useRef<(next: DesktopRoute, mode?: "push" | "replace", previousApps?: WindowTarget[]) => void>(() => undefined);
@@ -494,7 +492,6 @@ function App({ session }: { session: AuthSession | null }) {
   const restoreRunningAppsRef = useRef<(session: WindowSession, entries: DesktopEntry[]) => void>(() => undefined);
   const applyOpenQueryRef = useRef<(entries: DesktopEntry[], layout: DesktopLayout) => void>(() => undefined);
   const closeAppRef = useRef<(id: string, consultLifecycle?: boolean, syncRoute?: boolean) => Promise<boolean>>(async () => false);
-  const settingsPageRef = useRef<AppHistorySettingsPage>("main");
   const fileLoadGenerationsRef = useRef<Record<string, number>>({});
   const mergeLoadGenerationsRef = useRef<Record<string, number>>({});
   const mergeLoadSequenceRef = useRef(0);
@@ -543,6 +540,7 @@ function App({ session }: { session: AuthSession | null }) {
   const backInFlightRef = useRef(false);
   const quitBackRef = useRef<QuitBackState>({ count: 0, lastAt: 0 });
   const quitBackTimerRef = useRef<number | null>(null);
+  const navigateBackEvent = useEffectEvent((source: "ui" | "history", historyState?: unknown) => navigateBack(source, historyState));
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
   areaTransitionRef.current = areaTransition;
   desktopSizeRef.current = desktopSize;
@@ -551,6 +549,8 @@ function App({ session }: { session: AuthSession | null }) {
   const routeFileId = route?.fileId;
   const routePropertiesEntryId = route?.propertiesEntryId;
   const routeSettings = route?.settings;
+  if (routeSettings) settingsPageRef.current = routeSettings;
+  const settingsPage = routeSettings ?? settingsPageRef.current;
   const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
   const canMutate = canMutateDesktop(activeDesktop, syncStatus);
   canMutateRef.current = canMutate;
@@ -704,7 +704,7 @@ function App({ session }: { session: AuthSession | null }) {
   const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
-  const shortcutsSuspended = Boolean(dialog || pendingPaste || pendingDevicePaste || moveDialogEntryIds.length || activePanel || sharingOpen || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
+  const shortcutsSuspended = Boolean(dialog || pendingPaste || pendingDevicePaste || moveDialogEntryIds.length || activePanel || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
 
   const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
     if (("parentId" in next && next.parentId !== null && !entriesRef.current.some((entry) => entry.id === next.parentId && entry.kind === "folder"))
@@ -857,25 +857,18 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }, [activeDesktop, appCapabilities, canMutate, externalEmbeddedPreviews, runningAppsRef, syncStatus]);
   useEffect(() => {
-    if (!canViewActivity && settingsPage === "activity") {
-      const current = window.history.state;
-      if (historySettingsPage(current) === "activity") window.history.back();
-      else {
-        settingsPageRef.current = "main";
-        setSettingsPage("main");
-      }
-    }
+    const current = routeRef.current;
+    if (!canViewActivity && settingsPage === "sync-storage/activity" && current) navigateRouteRef.current({ column: current.column, row: current.row, settings: "sync-storage" }, "replace");
   }, [canViewActivity, settingsPage]);
   useEffect(() => {
-    if (!shortLinksAvailable && settingsPage === "short-links") {
-      const current = window.history.state;
-      if (historySettingsPage(current) === "short-links") window.history.back();
-      else {
-        settingsPageRef.current = "main";
-        setSettingsPage("main");
-      }
-    }
-  }, [settingsPage, shortLinksAvailable]);
+    const current = routeRef.current;
+    if (!shortLinksAvailable && settingsPage === "sharing/short-links" && current) navigateRouteRef.current({ column: current.column, row: current.row, settings: activeDesktop?.capabilities.manage ? "sharing" : "desktop" }, "replace");
+  }, [activeDesktop?.capabilities.manage, settingsPage, shortLinksAvailable]);
+  useEffect(() => {
+    const current = routeRef.current;
+    if (current && (!session || !activeDesktop?.capabilities.manage) && (settingsPage === "sharing" || settingsPage === "sharing/desktop")) navigateRouteRef.current({ column: current.column, row: current.row, settings: shortLinksAvailable ? "sharing" : "desktop" }, "replace");
+    else if (current && settingsPage === "sharing/desktop" && !canManage) navigateRouteRef.current({ column: current.column, row: current.row, settings: "sharing" }, "replace");
+  }, [activeDesktop?.capabilities.manage, canManage, session, settingsPage, shortLinksAvailable]);
   useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
   }, [loading, preferencesLoaded]);
@@ -1072,7 +1065,7 @@ function App({ session }: { session: AuthSession | null }) {
     return parseRunningAppHistory(state);
   }
 
-  function routeHistoryState(apps: WindowTarget[], parentPath?: string, instances = runningAppIds(), page = settingsPageRef.current): RouteHistoryState {
+  function routeHistoryState(apps: WindowTarget[], parentPath?: string, instances = runningAppIds(), page = routeRef.current?.settings ?? "desktop"): RouteHistoryState {
     return createRouteHistoryState(apps, instances, page, parentPath);
   }
 
@@ -1082,18 +1075,21 @@ function App({ session }: { session: AuthSession | null }) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
       const previousInstances = current?.hiraya ? historyInstanceIds(current, (previousApps ?? runningAppTargets()).map(builtinAppTargetId)) : (previousApps ?? runningAppTargets()).map(builtinAppTargetId);
       window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentPath : undefined, previousInstances), "", window.location.href);
-      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", pathname);
+      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname, runningAppIds(), next.settings ?? "desktop"), "", pathname);
     } else if (mode === "replace" || pathname !== window.location.pathname || window.location.search) {
       const current = window.history.state as Partial<RouteHistoryState> | null;
-      window.history.replaceState(routeHistoryState(runningAppTargets(), current?.hiraya ? current.parentPath : undefined), "", pathname);
+      window.history.replaceState(routeHistoryState(runningAppTargets(), current?.hiraya ? current.parentPath : undefined, runningAppIds(), next.settings ?? "desktop"), "", pathname);
     }
+    if (next.settings) settingsPageRef.current = next.settings;
     setCurrentRoute(next);
   }
 
   function applyLocationRoute(entriesValue = entriesRef.current, layoutValue = layoutRef.current) {
     if (!navigationReadyRef.current) return;
     void layoutValue;
-    const normalized = normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), entriesValue, activeDesktopIdRef.current);
+    const parsed = parseDesktopRoute(window.location.pathname);
+    const requested = parsed?.settings === "desktop" && window.location.pathname.endsWith("/settings") ? { ...parsed, settings: historySettingsPage(window.history.state) } : parsed;
+    const normalized = normalizeDesktopRoute(requested, entriesValue, activeDesktopIdRef.current);
     if (!normalized) return;
     const canonicalPath = formatDesktopRoute(normalized);
     if (canonicalPath !== window.location.pathname || window.location.search) writeRoute(normalized, "replace");
@@ -1105,22 +1101,23 @@ function App({ session }: { session: AuthSession | null }) {
     if (normalized) writeRoute(normalized, mode, previousApps);
   }
 
-  function navigateSettingsPage(next: AppHistorySettingsPage) {
-    const previous = settingsPageRef.current;
-    if (next === previous) return;
-    const current = window.history.state as Partial<RouteHistoryState> | null;
-    if (next !== "main" && previous === "main" && current?.hiraya) {
-      window.history.replaceState(routeHistoryState(runningAppTargets(), current.parentPath, runningAppIds(), "main"), "", window.location.href);
-      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname, runningAppIds(), next), "", window.location.href);
-    } else if (next === "main" && current?.hiraya && historySettingsPage(current) !== "main") {
-      window.history.back();
-      return;
-    }
-    settingsPageRef.current = next;
-    setSettingsPage(next);
+  function navigateSettingsPage(next: SettingsPage, mode: "push" | "replace" = "push") {
+    const current = routeRef.current;
+    if (!current || current.settings === next) return;
+    navigateRoute({ column: current.column, row: current.row, settings: next }, mode);
+  }
+
+  function navigateSettingsBack(parent: SettingsPage) {
+    const current = routeRef.current;
+    if (!current) return;
+    const parentPath = formatDesktopRoute({ desktopId: activeDesktopIdRef.current, column: current.column, row: current.row, settings: parent });
+    const state = window.history.state as Partial<RouteHistoryState> | null;
+    if (state?.hiraya && state.parentPath === parentPath) window.history.back();
+    else navigateSettingsPage(parent, "replace");
   }
 
   function routeForApp(app: RunningApp | null, current: DesktopRoute): DesktopRoute {
+    if (app?.kind === "settings") return { desktopId: activeDesktopIdRef.current, column: current.column, row: current.row, settings: settingsPageRef.current };
     return routeForRunningApp(app, current, activeDesktopIdRef.current);
   }
 
@@ -1149,10 +1146,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function closeApp(id: string, syncRoute = true) {
     const closing = runningAppsRef.current.find((app) => app.id === id);
-    if (id === builtinAppTargetId({ kind: "settings" })) {
-      settingsPageRef.current = "main";
-      setSettingsPage("main");
-    }
+    if (closing?.kind === "settings") settingsPageRef.current = "desktop";
     delete fileDirtyRef.current[id];
     setDirtyAppIds((current) => {
       if (!current.has(id)) return current;
@@ -1782,7 +1776,7 @@ function App({ session }: { session: AuthSession | null }) {
         ...(current?.hiraya && current.rootBackGuard ? { rootBackGuard: true as const } : {}),
         apps: runningAppTargets(runningApps),
         instances: runningAppIds(runningApps),
-        settingsPage: current?.hiraya ? historySettingsPage(current) : settingsPageRef.current,
+        settingsPage: routeRef.current?.settings ?? "desktop",
       } satisfies RouteHistoryState, "", window.location.href);
     }
   }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
@@ -1904,9 +1898,6 @@ function App({ session }: { session: AuthSession | null }) {
           restoringHistoryRef.current = false;
         }
         restoreHistoryAppsRef.current(apps);
-        const restoredSettingsPage = historySettingsPage(state);
-        settingsPageRef.current = restoredSettingsPage;
-        setSettingsPage(restoredSettingsPage);
       }
       applyLocationRouteRef.current();
     }
@@ -1921,7 +1912,7 @@ function App({ session }: { session: AuthSession | null }) {
         void restoreRoute(event.state);
         return;
       }
-      void navigateBack("history", event.state).then((result) => {
+      void navigateBackEvent("history", event.state).then((result) => {
         if (result === "restore") return restoreRoute(event.state);
       });
     };
@@ -2042,7 +2033,7 @@ function App({ session }: { session: AuthSession | null }) {
       ...(routeExplorerFolderId !== undefined ? { explorerFolderId: routeExplorerFolderId } : {}),
       ...(routeFileId ? { fileId: routeFileId } : {}),
       ...(routePropertiesEntryId ? { propertiesEntryId: routePropertiesEntryId } : {}),
-      ...(routeSettings ? { settings: true as const } : {}),
+      ...(routeSettings ? { settings: routeSettings } : {}),
     });
   }, [fileAssociations, installedApps, loading, routeExplorerFolderId, routeFileId, routePropertiesEntryId, routeSettings, windowSessionRestored]);
 
@@ -3087,7 +3078,7 @@ function App({ session }: { session: AuthSession | null }) {
     updateRunningApps([...runningAppsRef.current, app]);
     setFocusedApp(id);
     const currentRoute = routeRef.current;
-    if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, settings: true }, "push", previousApps);
+    if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, settings: "desktop" }, "push", previousApps);
     return true;
   }
 
@@ -3106,7 +3097,7 @@ function App({ session }: { session: AuthSession | null }) {
 
   function openActivityLog() {
     openSettingsWindow();
-    navigateSettingsPage("activity");
+    navigateSettingsPage("sync-storage/activity");
   }
 
   function openPropertiesWindow(entryId: string, syncRoute = true) {
@@ -4052,12 +4043,12 @@ function App({ session }: { session: AuthSession | null }) {
     if (backInFlightRef.current) return "handled";
     backInFlightRef.current = true;
     try {
-    if (settingsPageRef.current !== "main" && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
+    const settingsParent = SETTINGS_PARENTS[settingsPage];
+    if (settingsParent && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
       resetQuitBack();
-      if (source === "ui") navigateSettingsPage("main");
+      if (source === "ui") navigateSettingsBack(settingsParent);
       else {
-        settingsPageRef.current = "main";
-        setSettingsPage("main");
+        settingsPageRef.current = settingsParent;
         return "restore";
       }
       return "handled";
@@ -5086,7 +5077,7 @@ function App({ session }: { session: AuthSession | null }) {
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (settingsPage !== "main" ? (settingsPage === "desktops" ? "Desktops" : settingsPage === "activity" ? "Activity" : settingsPage === "short-links" ? "Short Links" : "App data & file types") : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (SETTINGS_PARENTS[settingsPage] ? SETTINGS_PAGE_TITLES[settingsPage] : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onFocus={focusApp}
@@ -5248,6 +5239,7 @@ function App({ session }: { session: AuthSession | null }) {
                       <SettingsWindow
                         page={settingsPage}
                         onPageChange={navigateSettingsPage}
+                        onBack={navigateSettingsBack}
                         mobileHeaderElements={headerElements}
                         layout={layout}
                         activeDesktopId={activeDesktopId}
@@ -5283,6 +5275,24 @@ function App({ session }: { session: AuthSession | null }) {
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
                         quarantinedApps={quarantinedApps}
+                        connectionPanel={<ConnectionPanel
+                          embedded
+                          status={syncStatus}
+                          records={outboxRecords}
+                          lastSyncedAt={lastSyncedAt}
+                          affectedLabels={outboxAffectedLabels}
+                          entries={entries}
+                          inventory={offlineInventory}
+                          progress={offlineProgress}
+                          online={syncStatus === "online"}
+                          persistence={storagePersistence}
+                          onRetryRecord={retrySyncIssue}
+                          onDiscardRecord={discardSyncIssue}
+                          onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
+                          onReleaseAll={() => void removeDownloadedCopies()}
+                          onOpenHelp={() => openHelp("offline")}
+                        />}
+                        sharingPanel={activeDesktop?.capabilities.manage ? <SharingDialog desktop={activeDesktop} embedded onClose={() => navigateSettingsPage("sharing")} onOpenHelp={() => openHelp("sharing")} /> : null}
                         onExportQuarantinedApp={exportQuarantinedApp}
                         onRemoveQuarantinedApp={(app) => void discardQuarantinedApp(app)}
                         fileAssociations={fileAssociations}
@@ -5329,6 +5339,7 @@ function App({ session }: { session: AuthSession | null }) {
                           if (install) void launchInstalledAppRef.current(install);
                           else setError("Theme Editor is still being installed. Try again in a moment.");
                         }}
+                        onThemeChange={(themeId) => void changeTheme(themeId).catch(() => undefined)}
                         onLayoutChange={persistLayout}
                         onExport={() => void handleExport()}
                         onToggleFullscreen={() => void toggleFullscreen()}
@@ -5338,11 +5349,7 @@ function App({ session }: { session: AuthSession | null }) {
                         onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
                         onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
                         onShowHiddenFilesChange={(enabled) => void changeShowHiddenFiles(enabled)}
-                        onOpenGettingStarted={() => setShowGettingStarted(true)}
-                        onOpenKeyboardShortcuts={() => setActivePanel("shortcuts")}
-                        onOpenSharing={() => setSharingOpen(true)}
                         onInstall={() => void installPwa()}
-                        onOpenOfflineStorage={() => setActivePanel("offline")}
                         onOpenHelp={openHelp}
                         onCreateDesktop={createDesktop}
                         onRenameDesktop={renameDesktop}
@@ -5891,17 +5898,6 @@ function App({ session }: { session: AuthSession | null }) {
             }}
           />
         </PanelDialog>
-      )}
-      {sharingOpen && activeDesktop?.capabilities.manage && (
-        <SharingDialog
-          desktop={activeDesktop}
-          onClose={() => setSharingOpen(false)}
-          restoreFocus={restoreMobileDestinationFocus}
-          onOpenHelp={() => {
-            setSharingOpen(false);
-            openHelp("sharing");
-          }}
-        />
       )}
       {publishEntryId && activeDesktop?.capabilities.manage && entries.find((entry) => entry.id === publishEntryId) && <PublishDialog desktop={activeDesktop} entry={entries.find((entry) => entry.id === publishEntryId)!} onClose={() => setPublishEntryId(null)} />}
       {confirmation && <ConfirmationDialog {...confirmation} onClose={resolveConfirmation} />}

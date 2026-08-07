@@ -40,7 +40,9 @@ describe("canonical routes", () => {
   test("round-trips explorer, properties, settings, and signed area coordinates", () => {
     expect(parseDesktopRoute("/desktops/desk/areas/-7/2/explorer/root/file/read%20me")).toEqual({ desktopId: "desk", column: -7, row: 2, explorerFolderId: null, fileId: "read me" });
     expect(formatDesktopRoute({ desktopId: "desk", column: 0, row: -1, propertiesEntryId: "entry" })).toBe("/desktops/desk/areas/0/-1/properties/entry");
-    expect(formatDesktopRoute({ desktopId: "desk", column: 3, row: 4, settings: true })).toBe("/desktops/desk/areas/3/4/settings");
+    expect(formatDesktopRoute({ desktopId: "desk", column: 3, row: 4, settings: "desktop/appearance" })).toBe("/desktops/desk/areas/3/4/settings/desktop/appearance");
+    expect(parseDesktopRoute("/desktops/desk/areas/3/4/settings")).toEqual({ desktopId: "desk", column: 3, row: 4, settings: "desktop" });
+    expect(parseDesktopRoute("/desktops/desk/areas/3/4/settings/not-a-page")).toBeNull();
     expect(parseDesktopRoute("/desktops/desk/areas/0/0/file/a/properties/b")).toBeNull();
   });
 

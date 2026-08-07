@@ -3392,6 +3392,12 @@ button.app-picker__disclosure { cursor: pointer; }
 .settings-page--apps .settings-section__heading h4, .settings-page--apps .settings-section__heading p { margin: 0; }
 .settings-page--apps .settings-section__heading p { margin-top: 4px; color: var(--theme-text-muted); }
 .settings-page--apps .settings-row select { min-width: 160px; max-width: 220px; }
+.settings-category-content { min-width: 0; }
+.settings-choice-list > button { width: 100%; border: 0; background: transparent; text-align: left; cursor: pointer; }
+.settings-choice-list > button[aria-pressed="true"] { background: var(--theme-selected); }
+.sharing-dialog-embedded, .sharing-dialog--embedded { display: block; width: 100%; }
+.sharing-dialog--embedded { max-height: none; border: 0; background: transparent; box-shadow: none; animation: none; }
+.sharing-dialog--embedded .sharing-dialog__content { padding: 0; overflow: visible; }
 @media (max-width: 620px) { .settings-page--apps .settings-section__heading, .settings-page--apps .settings-row { align-items: stretch; flex-direction: column; } .settings-page--apps .settings-row select { max-width: none; } }
 
 .image-zoom-control { color: var(--theme-text-muted); font-size: max(12px, calc(9px * var(--theme-type-scale))); }

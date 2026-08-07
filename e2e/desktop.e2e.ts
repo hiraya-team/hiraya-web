@@ -66,7 +66,7 @@ test("close-window shortcut closes the focused window without claiming the empty
   const search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.locator('[data-app-window="settings"]');
   await expect(settings).toBeVisible();
 
   await page.keyboard.press("Control+Shift+x");
@@ -147,7 +147,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Settings");
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
-  const settings = page.getByRole("dialog", { name: "Settings" });
+  const settings = page.locator('[data-app-window="settings"]');
   await expect(settings).toHaveAttribute("data-focused", "true");
   const viewport = page.viewportSize();
   if (!viewport) throw new Error("The viewport is unavailable.");
@@ -631,10 +631,10 @@ test("desktop wheel gestures switch one area while app scrolling stays native", 
   await search.getByRole("group", { name: "Commands" }).getByRole("option", { name: "Open Settings" }).click();
   const settings = page.getByRole("dialog", { name: "Settings" });
   await settings.dispatchEvent("wheel", { deltaY: 100 });
-  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings\/desktop$/);
 
   await desktop.dispatchEvent("wheel", { deltaY: 100, ctrlKey: true });
-  await expect(page).toHaveURL(/\/areas\/0\/0\/settings$/);
+  await expect(page).toHaveURL(/\/areas\/0\/0\/settings\/desktop$/);
 });
 
 test("fine pointers use overlapping window chrome and positioned context menus", async ({ page }) => {
@@ -682,6 +682,45 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
 });
 
+test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.locator('[data-app-window="settings"]');
+  await settings.getByRole("button", { name: /Appearance/ }).click();
+  await settings.getByRole("button", { name: "Open Theme Editor" }).click();
+  const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  const frame = themeEditor.frameLocator("iframe");
+  await frame.getByRole("tab", { name: "Wallpaper" }).click();
+
+  const wallpaperName = `wallpaper-${Date.now()}.png`;
+  const chooser = page.waitForEvent("filechooser");
+  await frame.getByRole("button", { name: "Upload image" }).click();
+  await (await chooser).setFiles({ name: wallpaperName, mimeType: "image/png", buffer: pngFile });
+  await expect(frame.getByText(`${wallpaperName} added and applied.`)).toBeVisible();
+  await frame.getByRole("button", { name: "Grove" }).click();
+
+  await frame.getByRole("button", { name: "Choose Hiraya image" }).click();
+  const picker = page.getByRole("dialog", { name: "Choose file" });
+  await expect(picker.getByRole("radio", { name: wallpaperName })).toBeVisible();
+  await picker.getByRole("radio", { name: wallpaperName }).check();
+  await picker.getByRole("button", { name: "Choose file" }).click();
+  await expect(frame.getByText(`${wallpaperName} applied.`)).toBeVisible();
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Appearance/ }).click();
+  await mobilePage.getByRole("dialog", { name: "Appearance" }).getByRole("button", { name: "Open Theme Editor" }).click();
+  const mobileFrame = mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
+  await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
+  await expect.poll(() => mobileFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mobileContext.close();
+});
+
 test("Settings adapts to its window and preserves subpage navigation", async ({ page, browser }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
@@ -700,18 +739,19 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await expect(categories).toHaveCSS("display", "grid");
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 
-  const desktopsLauncher = settingsWindow.locator('[aria-labelledby="desktops-link-heading"] .settings-row--navigation');
+  const desktopsLauncher = settingsWindow.getByRole("button", { name: /Desktops/ });
   await desktopsLauncher.click();
   await expect(settingsWindow.locator(".settings-page__header h3")).toHaveText("Desktops");
   const pinDesktop = settingsWindow.locator('.desktop-settings__arrange button[aria-pressed]').first();
   await pinDesktop.click();
   await expect(pinDesktop).toHaveAttribute("aria-pressed", "true");
-  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
+  await settingsWindow.getByRole("button", { name: "Back to Desktop" }).click();
   await expect(desktopsLauncher).toBeFocused();
 
-  const themesLauncher = settingsWindow.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
+  const themesLauncher = settingsWindow.getByRole("button", { name: /Appearance/ });
   await themesLauncher.focus();
   await page.keyboard.press("Enter");
+  await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
   const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const themeEditorFrame = themeEditor.frameLocator("iframe");
   await expect(themeEditorFrame.getByRole("heading", { name: "Theme library" })).toBeVisible();
@@ -721,26 +761,27 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await themeEditorFrame.getByRole("button", { name: "Grove" }).click();
   await expect(themeEditorFrame.getByText("Grove wallpaper applied.")).toBeVisible();
   await themeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
-  await themesLauncher.click();
+  await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
   const reopenedThemeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const reopenedFrame = reopenedThemeEditor.frameLocator("iframe");
   await reopenedFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(reopenedFrame.getByRole("button", { name: "Grove" })).toHaveAttribute("aria-pressed", "true");
   await reopenedThemeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
+  await settingsWindow.getByRole("button", { name: "Back to Desktop" }).click();
 
   await categories.getByRole("button", { name: "Files & apps" }).click();
-  const appsLauncher = settingsWindow.locator('[aria-labelledby="apps-link-heading"] .settings-row--navigation');
+  const appsLauncher = settingsWindow.getByRole("button", { name: /File type defaults/ });
   await appsLauncher.click();
   await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
-  await expect(settingsWindow.locator(".settings-page__header h3")).toHaveText("App data & file types");
+  await expect(settingsWindow.locator(".settings-page__header h3")).toHaveText("File type defaults");
   await expect(settingsWindow.locator(".installed-app__actions")).toHaveCount(0);
-  await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
+  await settingsWindow.getByRole("button", { name: "Back to Files & apps" }).click();
   await expect(appsLauncher).toBeFocused();
 
   await resizeWindowWidth(page, settingsWindow, 360);
   await expect.poll(() => settingsContent.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await categories.getByRole("button", { name: "Sync & data" }).click();
-  const activityLauncher = settingsWindow.locator('[aria-labelledby="activity-link-heading"] .settings-row--navigation');
+  await categories.getByRole("button", { name: "Sync & storage" }).click();
+  const activityLauncher = settingsWindow.getByRole("button", { name: /Activity/ });
   await activityLauncher.click();
   await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
   const narrowResults = await new AxeBuilder({ page }).include(".settings-window").analyze();
@@ -752,25 +793,48 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const mobileSettings = mobilePage.locator('[data-app-window="settings"]');
-  const mobileDesktopsLauncher = mobileSettings.locator('[aria-labelledby="desktops-link-heading"] .settings-row--navigation');
+  const mobileDesktopsLauncher = mobileSettings.getByRole("button", { name: /Desktops/ });
   await mobileDesktopsLauncher.click();
   await expect(mobileSettings.locator(".settings-page__header h3")).toHaveText("Desktops");
   await expect.poll(() => mobileSettings.locator(".settings-window__content").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await mobilePage.getByRole("button", { name: "Back to settings" }).click();
+  await mobilePage.getByRole("button", { name: "Back to Desktop" }).click();
   await expect(mobileDesktopsLauncher).toBeFocused();
-  const mobileThemesLauncher = mobileSettings.locator('[aria-labelledby="themes-link-heading"] .settings-row--navigation');
+  const mobileThemesLauncher = mobileSettings.getByRole("button", { name: /Appearance/ });
   await mobileThemesLauncher.click();
+  await mobileSettings.getByRole("button", { name: "Open Theme Editor" }).click();
   const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
   await mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileThemeEditor.frameLocator("iframe").getByRole("heading", { name: "Image treatment" })).toBeVisible();
   await mobileContext.close();
 });
 
+test("Settings routes survive history navigation and reload", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.locator('[data-app-window="settings"]');
+
+  await expect(page).toHaveURL(/\/settings\/desktop$/);
+  await settings.getByRole("button", { name: "Files & apps" }).click();
+  await settings.getByRole("button", { name: /File type defaults/ }).click();
+  await expect(page).toHaveURL(/\/settings\/files-apps\/file-types$/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/settings\/files-apps$/);
+  await expect(settings.getByRole("heading", { name: "Files & apps" })).toBeVisible();
+  await page.goForward();
+  await expect(settings.locator(".settings-page__header h3")).toHaveText("File type defaults");
+
+  await page.reload();
+  await expect(page.locator('[data-app-window="settings"]')).toBeVisible();
+  await expect(page.locator('[data-app-window="settings"] .settings-page__header h3')).toHaveText("File type defaults");
+});
+
 test("Show hidden files persists in the account IndexedDB preferences", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
-  let settings = page.getByRole("dialog", { name: "Settings" });
+  let settings = page.locator('[data-app-window="settings"]');
   await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
   const toggle = settings.getByRole("checkbox", { name: /Show hidden files/ });
   await expect(toggle).not.toBeChecked();
@@ -799,7 +863,7 @@ test("Show hidden files persists in the account IndexedDB preferences", async ({
   await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
-  settings = page.getByRole("dialog", { name: "Settings" });
+  settings = page.locator('[data-app-window="settings"]');
   await settings.getByRole("navigation", { name: "Settings categories" }).getByRole("button", { name: "Files & apps" }).click();
   await expect(settings.getByRole("checkbox", { name: /Show hidden files/ })).toBeChecked();
 });

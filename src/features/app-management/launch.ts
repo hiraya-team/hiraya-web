@@ -214,9 +214,9 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           requireThemeEditor(install);
           return options.uploadWallpaper(new File([data], name, { type: mimeType }));
         },
-        select: ({ fileId }: ServiceMethods["wallpapers.select"]["params"]) => {
+        select: ({ handle }: ServiceMethods["wallpapers.select"]["params"]) => {
           requireThemeEditor(install);
-          return options.selectWallpaper(fileId);
+          return options.selectWallpaper(files.entryForHost(handle, "read").id);
         },
         readCurrentImage: async () => {
           requireThemeEditor(install);

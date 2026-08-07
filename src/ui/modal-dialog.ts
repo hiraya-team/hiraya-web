@@ -37,6 +37,7 @@ export function useModalDialog(
   onClose: () => void,
   dismissDisabled = false,
   restoreFocus?: () => HTMLElement | null,
+  enabled = true,
 ) {
   const onCloseRef = useRef(onClose);
   const dismissDisabledRef = useRef(dismissDisabled);
@@ -46,6 +47,7 @@ export function useModalDialog(
   dismissDisabledRef.current = dismissDisabled;
   restoreFocusRef.current = restoreFocus;
   useEffect(() => {
+    if (!enabled) return;
     const backdrop = backdropRef.current;
     const dialog = dialogRef.current;
     if (!backdrop || !dialog) return;
@@ -101,5 +103,5 @@ export function useModalDialog(
         else next?.dialog.focus();
       });
     };
-  }, [backdropRef, dialogRef]);
+  }, [backdropRef, dialogRef, enabled]);
 }

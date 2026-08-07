@@ -1,9 +1,9 @@
 import type { DesktopRoute } from "../../lib/routes";
 import { parseWindowTargets, type WindowTarget } from "../../lib/window-session";
-import type { AppHistorySettingsPage } from "../../ui/app-history";
+import type { SettingsPage } from "../../lib/routes";
 import type { RunningApp } from "./model";
 
-export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; rootBackGuard?: true; apps: WindowTarget[]; instances: string[]; settingsPage: AppHistorySettingsPage };
+export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; rootBackGuard?: true; apps: WindowTarget[]; instances: string[]; settingsPage: SettingsPage };
 
 export function parseRunningAppHistory(state: unknown) {
   if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;
@@ -14,7 +14,7 @@ export function parseRunningAppHistory(state: unknown) {
   }
 }
 
-export function createRouteHistoryState(apps: WindowTarget[], instances: string[], settingsPage: AppHistorySettingsPage, parentPath?: string): RouteHistoryState {
+export function createRouteHistoryState(apps: WindowTarget[], instances: string[], settingsPage: SettingsPage, parentPath?: string): RouteHistoryState {
   return { hiraya: true, schemaVersion: 1, ...(parentPath ? { parentPath } : {}), apps, instances, settingsPage };
 }
 
@@ -31,5 +31,5 @@ export function routeForRunningApp(app: RunningApp | null, current: DesktopRoute
     if (app.systemTarget?.targetKind === "folder") return { ...base, explorerFolderId: app.systemTarget.entryId };
     return base;
   }
-  return { ...base, settings: true };
+  return { ...base, settings: current.settings ?? "desktop" };
 }
