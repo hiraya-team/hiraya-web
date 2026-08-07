@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { InstalledApp } from "../src/apps/installed-apps";
-import { storePackageManifest, storePackageNeedsRefreshInspection, storeSearchMatches, type StorePackage } from "../src/lib/app-store";
+import { storePackageKey, storePackageManifest, storePackageNeedsRefreshInspection, storeSearchMatches, type StorePackage } from "../src/lib/app-store";
 import { AppStoreWindow, type StorePackageView } from "../src/components/AppStoreWindow";
 
 const systemApp: InstalledApp = {
@@ -30,6 +30,7 @@ const base = {
   loading: false,
   error: "The app store requires a synchronized Hiraya account.",
   offline: false,
+  installingPackageKey: null,
   onRetry: () => undefined,
   onInstall: () => undefined,
   onLaunch: () => undefined,
@@ -101,6 +102,28 @@ describe("App Store", () => {
     expect(markup).toContain("Keep portable task lists.");
     expect(markup).toContain("Install");
     expect(markup).not.toContain("No apps published yet");
+  });
+
+  test("shows immediate progress while installing or updating a package", () => {
+    const installing = renderToStaticMarkup(<AppStoreWindow {...base} error="" packages={[todoView]} installingPackageKey={storePackageKey(todoPackage)} />);
+    const installed: InstalledApp = {
+      ...systemApp,
+      appId: "dev.hiraya.todo",
+      source: "store",
+      packageEntryId: todoPackage.entry.id,
+      archivePath: null,
+      sourceCatalogId: todoPackage.catalogId,
+      sourceDesktopId: todoPackage.desktopId,
+      sourceContentRevision: 0,
+      manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo" },
+    };
+    const updating = renderToStaticMarkup(<AppStoreWindow {...base} error="" installedApps={[installed]} packages={[todoView]} installingPackageKey={storePackageKey(todoPackage)} />);
+
+    expect(installing).toContain("Installing...");
+    expect(installing).toContain('aria-busy="true"');
+    expect(installing).toContain("activity-spinner");
+    expect(updating).toContain("Updating...");
+    expect(updating).toContain('aria-busy="true"');
   });
 
   test("explains offline actions", () => {

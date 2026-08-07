@@ -1,7 +1,7 @@
 import { useDeferredValue, useState } from "react";
-import { ArrowClockwise, DownloadSimple, MagnifyingGlass, Package, Play, ShieldCheck, Trash, WarningCircle, WifiSlash, X } from "@phosphor-icons/react";
+import { ArrowClockwise, DownloadSimple, MagnifyingGlass, Package, Play, ShieldCheck, SpinnerGap, Trash, WarningCircle, WifiSlash, X } from "@phosphor-icons/react";
 import { installedAppIsAvailable, type InstalledApp } from "../apps/installed-apps";
-import { storeSearchMatches, type StorePackage } from "../lib/app-store";
+import { storePackageKey, storeSearchMatches, type StorePackage } from "../lib/app-store";
 import type { DesktopEntry } from "../types";
 import { StatusBadge } from "./VisualPrimitives";
 import type { AccountApp } from "../lib/account-apps";
@@ -26,6 +26,7 @@ type Props = {
   loading: boolean;
   error: string;
   offline: boolean;
+  installingPackageKey: string | null;
   onRetry: () => void;
   onInstall: (item: StorePackage) => void;
   onLaunch: (app: InstalledApp) => void;
@@ -55,7 +56,7 @@ function installedTrust(app: InstalledApp) {
   return app.source === "system" ? "Trusted by Hiraya" : app.source === "store" && app.sourceCatalogId === LEGACY_HIRAYA_STORE_CATALOG_ID ? "Published by Hiraya; approved in this browser" : "Approved in this browser";
 }
 
-export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, onRetry, onInstall, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onApproveAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
+export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, installingPackageKey, onRetry, onInstall, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onApproveAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);
   const searching = Boolean(deferredQuery.trim());
@@ -102,7 +103,8 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
             ?? packages.find((candidate) => candidate.appId === app.appId);
           const current = view && app.source === "store" && app.sourceCatalogId === view.item.catalogId && app.sourceDesktopId === view.item.desktopId && app.packageEntryId === view.item.entry.id && app.sourceContentRevision === view.item.contentRevision;
           const hasUpdate = Boolean(view && !current);
-          const canUpdate = Boolean(hasUpdate && view && !view.loading && !view.error && !offline);
+          const installing = Boolean(view && installingPackageKey === storePackageKey(view.item));
+          const canUpdate = Boolean(hasUpdate && view && !view.loading && !view.error && !offline && installingPackageKey === null);
           return <article className="app-store__row app-store__row--installed" role="listitem" key={app.appId}>
             <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
             <div className="app-store__copy">
@@ -111,7 +113,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
               <small>{installedSource(app)}{view && !current ? " · Update available" : ""}</small>
                <details className="app-store__details"><summary>Details</summary><dl><div><dt>App ID</dt><dd>{app.appId}</dd></div><div><dt>Trust</dt><dd>{installedTrust(app)}</dd></div><div><dt>Scope</dt><dd>{app.source === "account" ? "Account installation; local approval" : "This browser and account"}</dd></div><div><dt>Permissions</dt><dd>{app.manifest.permissions.join(", ") || "None"}</dd></div><div><dt>Digest</dt><dd><code title={app.digest}>{app.digest.slice(0, 12)}...</code></dd></div></dl><div className="app-store__management"><button className="button button--quiet" type="button" onClick={() => onReset(app)}><ArrowClockwise size={15} /> Reset data</button>{app.source !== "system" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstall(app)}><Trash size={15} /> {app.source === "account" ? "Remove local approval" : "Uninstall"}</button>}{app.source === "account" && <button className="button button--quiet button--danger" type="button" onClick={() => onUninstallAccount(app.appId)}><Trash size={15} /> Uninstall from account</button>}</div></details>
             </div>
-            <div className="app-store__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunch(app)}><Play size={16} weight="fill" /> Open</button>{hasUpdate && view && <button className="button button--primary" type="button" disabled={!canUpdate} title={offline ? "Reconnect to update this app" : view.loading ? "Inspecting this update" : view.error || undefined} onClick={() => onInstall(view.item)}><DownloadSimple size={16} /> Update</button>}</div>
+            <div className="app-store__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunch(app)}><Play size={16} weight="fill" /> Open</button>{hasUpdate && view && <button className="button button--primary" type="button" disabled={!canUpdate} aria-busy={installing || undefined} title={offline ? "Reconnect to update this app" : view.loading ? "Inspecting this update" : view.error || undefined} onClick={() => onInstall(view.item)}>{installing ? <SpinnerGap className="activity-spinner" size={16} /> : <DownloadSimple size={16} />} {installing ? "Updating..." : "Update"}</button>}</div>
           </article>;
         })}
       </div> : <div className="app-store__state app-store__state--compact"><Package size={26} weight="duotone" /><h4>No applications installed</h4><p>Install an application below or open a <code>.hiraya.app</code> package from the desktop.</p></div>}
@@ -135,7 +137,9 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
         const current = installed?.source === "store" && installed.sourceCatalogId === view.item.catalogId && installed.sourceDesktopId === view.item.desktopId && installed.packageEntryId === view.item.entry.id && installed.sourceContentRevision === view.item.contentRevision;
         const launchApproved = Boolean(installed && (current || view.loading || view.error || offline));
         const retry = Boolean(view.error && !installed);
-        const action = launchApproved ? "Open" : retry ? "Retry" : installed ? "Update" : "Install";
+        const installing = installingPackageKey === storePackageKey(view.item);
+        const action = installing ? installed ? "Updating..." : "Installing..." : launchApproved ? "Open" : retry ? "Retry" : installed ? "Update" : "Install";
+        const actionDisabled = !launchApproved && (installingPackageKey !== null || !retry && (view.loading || offline));
         return <article className="app-store__row" role="listitem" key={view.item.entry.id}>
           <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
           <div className="app-store__copy">
@@ -143,8 +147,8 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
             <p role={view.error ? "alert" : undefined}>{view.loading ? "Inspecting package..." : view.error || view.description}</p>
             <small>{formatBytes(view.item.entry.size)}{installed && !current ? " · Update available" : current ? " · Installed on this device" : ""}</small>
           </div>
-          <button className={`button ${launchApproved || retry ? "button--quiet" : "button--primary"}`} type="button" disabled={!launchApproved && !retry && (view.loading || offline)} title={!launchApproved && !retry && offline ? "Reconnect to install this app" : undefined} onClick={() => launchApproved && installed ? onLaunch(installed) : retry ? onRetry() : onInstall(view.item)}>
-            {launchApproved ? <Play size={16} weight="fill" /> : retry ? <ArrowClockwise size={16} /> : <DownloadSimple size={16} />}{action}
+          <button className={`button ${launchApproved || retry ? "button--quiet" : "button--primary"}`} type="button" disabled={actionDisabled} aria-busy={installing || undefined} title={!launchApproved && !retry && offline ? "Reconnect to install this app" : undefined} onClick={() => launchApproved && installed ? onLaunch(installed) : retry ? onRetry() : onInstall(view.item)}>
+            {installing ? <SpinnerGap className="activity-spinner" size={16} /> : launchApproved ? <Play size={16} weight="fill" /> : retry ? <ArrowClockwise size={16} /> : <DownloadSimple size={16} />}{action}
           </button>
         </article>;
       })}

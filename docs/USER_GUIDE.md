@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **See app installation progress.** In **Applications**, an app's action immediately changes to **Installing...** or **Updating...** and remains disabled while Hiraya finishes the approved operation.
 - **Paste from the context menu.** **Paste** now stays available on writable desktops and folders. Hiraya pastes copied Hiraya items and complete URLs directly, or asks you to press **Ctrl/⌘ V** so the browser can share files copied from your device.
 - **Synchronize apps without synchronizing trust.** In synchronized installations, app packages, app data, and preferred-handler hints now follow your account and replay after short outages. Each device must still review and approve the exact package generation, digest, and permissions before it can launch; **Applications** clearly separates removing this device's approval from uninstalling the app and its data from the account.
 - **Inspect protected desktop files.** Turn on **Show hidden files** under **Settings > Files & apps** to browse the read-only `.hiraya` tree, including desktop settings, appearance resources, complete Trash subtrees, and generated thumbnails. JSON opens read-only, theme packages download without being installed, and protected files stay outside normal desktop actions, apps, search, sharing, and public links.
