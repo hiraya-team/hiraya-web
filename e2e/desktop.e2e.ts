@@ -705,8 +705,10 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await page.keyboard.press("Enter");
   await expect(settingsWindow.locator(".settings-page__header h3")).toBeFocused();
   await expect(settingsWindow.locator(".wallpaper-options")).toHaveCSS("grid-template-columns", /^(?!.*\s).+$/);
-  await settingsWindow.getByRole("button", { name: "Duplicate / edit" }).first().click();
-  await expect.poll(() => settingsWindow.locator(".theme-control").first().evaluate((element) => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+  await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
+  const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  await expect(themeEditor.frameLocator("iframe").getByRole("heading", { name: "Theme library" })).toBeVisible();
+  await themeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
   await settingsWindow.getByRole("button", { name: "Back to settings" }).click();
   await expect(themesLauncher).toBeFocused();
 
