@@ -187,6 +187,8 @@ describe("accessibility regressions", () => {
     expect(areaSwitcher).not.toContain("onBeginDrag");
     expect(areaSwitcher).not.toContain("desktop-minimap__handle");
     expect(areaSwitcher).not.toContain("desktopRail");
+    expect(areaSwitcher).toContain('className="desktop-minimap__grid"');
+    expect(areaSwitcher).toContain("segments.map((desktopSegment, visibleIndex)");
     expect(areaSwitcher).toContain('className="desktop-minimap__direction"');
     expect(areaSwitcher).toContain('`${occupied ? "Go to" : "Add"} ${areaDirectionalLabel(target, activeSegment)} area`');
     expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}');
@@ -219,8 +221,9 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
     expect(css).toContain(".desktop-minimap__handle { display: none; }");
     expect(areaSwitcher).toContain("adjacentArea(activeSegment, direction)");
-    expect(css).toContain("grid-template-columns: 48px minmax(148px, 176px) 48px;");
-    expect(css).toContain("grid-template-rows: 48px 116px 48px;");
+    expect(areaSwitcher).toContain('"--minimap-columns": columnCount, "--minimap-rows": rowCount');
+    expect(css).toContain("grid-template-columns: 44px minmax(0, 1fr) 44px;");
+    expect(css).toContain("grid-template-rows: 44px minmax(140px, 170px) 44px;");
     expect(css).toContain("min-width: var(--touch-target);");
     expect(css).toContain('.desktop-minimap__direction[data-direction="right"]');
     expect(css).toContain(".desktop-minimap__direction-plus");
