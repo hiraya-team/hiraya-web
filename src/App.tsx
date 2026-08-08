@@ -130,7 +130,7 @@ import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens }
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
-import { SYSTEM_APP_CATALOG } from "./apps/system-apps";
+import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
 import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
 import type { SystemAppTarget } from "./apps/types";
@@ -159,7 +159,7 @@ import { arrangeDesktops, type DesktopPreference } from "./lib/desktop-preferenc
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
-import { systemInstallFromCatalog, systemInstallMatchesCatalog, useAppPlatform } from "./features/app-management/controller";
+import { systemInstallMatchesCatalog, useAppPlatform } from "./features/app-management/controller";
 import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
 import { sandboxWindowOptions } from "./ui/app-window-sizing";
 import { useDesktopSelection } from "./features/selection/controller";
@@ -3197,6 +3197,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
         getAppCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
         canMutate: () => canMutateRef.current,
+        loadArchive: async (candidate) => (await import("./features/app-management/archive-loader")).loadInstalledAppArchive(candidate, readFile),
         shouldFocusTarget: (systemTarget) => routeTargetsAppEntry(routeRef.current, systemTarget),
         createBase: (id) => createAppBase(id, "sandbox"),
         createPosition: () => positionFor(null),

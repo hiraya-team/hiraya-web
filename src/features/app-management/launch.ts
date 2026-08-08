@@ -9,7 +9,6 @@ import { sandboxWindowOptions } from "../../ui/app-window-sizing";
 import { builtinAppTargetId } from "../../apps/registry";
 import { RuntimeCommandContributions, type createAppCommandService } from "../../apps/commands";
 import type { InstalledApp } from "../../apps/installed-apps";
-import { systemAppArchiveUrl } from "../../apps/system-apps";
 import { SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 import type { SystemAppTarget } from "../../apps/types";
 import {
@@ -22,12 +21,11 @@ import {
   type FileSyncFunctions,
 } from "../../apps/host";
 import type { BaseRunningApp, RunningApp, SandboxApp } from "../windows/model";
-import { readApprovedPackageArchive } from "../../platform/storage/blobs";
 
 export type AppLaunchSource = "launcher" | "file" | "restore";
 export type AppLaunchTarget = FileEntry | FolderEntry | "root";
 
-type LaunchSandboxAppOptions = {
+export type LaunchSandboxAppOptions = {
   install: InstalledApp;
   target?: AppLaunchTarget;
   source: AppLaunchSource;
@@ -44,6 +42,7 @@ type LaunchSandboxAppOptions = {
   getLaunchArguments: () => string[];
   getAppCapabilities: () => AppCapabilities;
   canMutate: () => boolean;
+  loadArchive: (install: InstalledApp) => Promise<Blob>;
   shouldFocusTarget: (target: SystemAppTarget) => boolean;
   createBase: (id: string) => BaseRunningApp;
   createPosition: () => EntryPosition;
@@ -74,14 +73,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
   let pendingInstanceId: string | null = null;
   let pendingHost: { close(): void } | null = null;
   try {
-    const blob = install.source === "system"
-      ? await readApprovedPackageArchive(install.digest).catch(() => fetch(systemAppArchiveUrl({ archivePath: install.archivePath })).then((response) => {
-          if (!response.ok) throw new Error(`${install.manifest.name} is unavailable. Reconnect and retry.`);
-          return response.blob();
-        }))
-      : install.source === "store" || install.source === "account"
-        ? await readApprovedPackageArchive(install.digest)
-      : await options.fileSync.readFile(install.packageEntryId);
+    const blob = await options.loadArchive(install);
     const { inspectAppArchive } = await import("@hiraya-team/app-cli");
     const appPackage = await inspectAppArchive(new Uint8Array(await blob.arrayBuffer()));
     if (appPackage.digest !== install.digest || appPackage.manifest.id !== install.appId) throw new Error(`${install.manifest.name} failed package verification.`);

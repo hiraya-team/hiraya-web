@@ -30,8 +30,8 @@ export default tseslint.config(
         {
           patterns: [
             {
-              group: ["**/sync", "**/opfs", "**/outbox", "**/apps/host", "**/apps/host/**"],
-              message: "The public desktop must remain independent of authenticated storage, synchronization, outbox, and app-host modules.",
+              group: ["**/sync", "**/opfs", "**/outbox", "**/platform/storage/**"],
+              message: "The public desktop must remain independent of authenticated storage, synchronization, and outbox modules.",
             },
           ],
         },

@@ -24,6 +24,7 @@ import { sendOutboxOperation, type BlobUploadPhase } from "../platform/sync/outb
 import { AuthorityValidationError, parseAuthorityIdentity, UpgradeRequiredError } from "./wire-authority";
 import type { FilePreviewSource } from "@hiraya-team/apps-contracts";
 import { loadThumbnail, supportsThumbnailMime, THUMBNAIL_MAX_SOURCE_SIZE, THUMBNAIL_PROFILE } from "./thumbnails";
+import { remoteDesktopSnapshot } from "./desktop-state";
 
 type OutboxOperationInput = OutboxOperation extends infer Operation
   ? Operation extends OutboxOperation ? Omit<Operation, "schemaVersion"> : never
@@ -121,42 +122,7 @@ export class TrashUnavailableError extends Error {
   }
 }
 
-function localEntry(entry: RemoteEntry): DesktopEntry {
-  const { revision: _revision, contentRevision: _contentRevision, ...local } = entry;
-  void _revision;
-  void _contentRevision;
-  return local;
-}
-
-function toSnapshot(remote: RemoteDesktopState): DesktopStateSnapshot {
-  const entryRevisions: Record<string, number> = {};
-  const contentRevisions: Record<string, number> = {};
-  const themeRevisions: Record<string, number> = {};
-  for (const entry of remote.entries) {
-    entryRevisions[entry.id] = entry.revision;
-    if (entry.kind === "file") contentRevisions[entry.id] = entry.contentRevision;
-  }
-  for (const theme of remote.appearance.customThemes) themeRevisions[theme.id] = theme.revision;
-  return {
-    entries: remote.entries.map(localEntry),
-    layout: remote.layout,
-    editorSettings: remote.editorSettings,
-    appearance: {
-      selectedThemeId: remote.appearance.selectedThemeId,
-      customThemes: remote.appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, ...(wallpaper ? { wallpaper } : {}) })),
-    },
-    sync: {
-      catalogId: remote.catalogId,
-      catalogRevision: remote.catalogRevision,
-      entryRevisions,
-      contentRevisions,
-      layoutRevision: remote.layoutRevision,
-      settingsRevision: remote.settingsRevision,
-      themeSelectionRevision: remote.appearance.selectionRevision,
-      themeRevisions,
-    },
-  };
-}
+const toSnapshot = remoteDesktopSnapshot;
 
 function localSystemContent(snapshot: DesktopStateSnapshot, role: SystemRole, key?: string) {
   if (role === "layout") return snapshot.layout;

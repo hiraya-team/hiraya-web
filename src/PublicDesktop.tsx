@@ -1,16 +1,13 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, SquaresFour, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
-import { FileWindow } from "./components/FileWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { loginUrl } from "./lib/auth";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
-import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
 import type { DesktopEntry, FolderEntry } from "./types";
 import { builtinAppWindow } from "./apps/registry";
 import { createEntryIndex } from "./ui/entry-index";
-import { fileCapabilities } from "./ui/file-capabilities";
 import { useModalDialog } from "./ui/modal-dialog";
 import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { EntryArtwork, StatusBadge, type EntryPreviewSource } from "./components/VisualPrimitives";
@@ -25,8 +22,10 @@ import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { homeRelativeAreaLabel } from "./ui/shell";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { withoutDotEntries } from "./ui/hidden-entries";
+import { reservedFileHandler } from "./apps/file-associations";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
+const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -133,7 +132,7 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
 
 export default function PublicDesktop({ authority }: { authority: PublicAuthority }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
-	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, loadThumbnail, resolveLinkedFile } = usePublicDesktop(authority);
+	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, loadThumbnail, openInternetShortcut } = usePublicDesktop(authority);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const [activeSegment, setActiveSegment] = useState<SurfaceSegment>({ column: 0, row: 0 });
@@ -167,18 +166,20 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
     return () => observer.disconnect();
   }, []);
 
-  const openTarget = open?.kind === "folder" ? `folder:${open.folderId ?? "root"}` : open ? `file:${open.file.id}` : "";
+  const openTarget = open?.kind === "folder" ? `folder:${open.folderId ?? "root"}` : open ? `file:${open.file.id}:${open.runtime?.app.id ?? "loading"}` : "";
   useEffect(() => {
     if (!open) return;
-    const options = builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
-    setWindowBounds(initialWindowBounds(desktopSize, options));
+    if (open.kind === "file" && open.runtime) setWindowBounds(open.runtime.app.bounds);
+    else setWindowBounds(initialWindowBounds(desktopSize, builtinAppWindow(open.kind === "folder" ? "explorer" : "file")));
     // Opening a different target starts a fresh ephemeral public window.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openTarget]);
 
   useEffect(() => {
     if (!open || !windowed) return;
-    const { minWidth, minHeight } = builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
+    const { minWidth, minHeight } = open.kind === "file" && open.runtime
+      ? { minWidth: open.runtime.app.package.manifest.window?.minWidth ?? 360, minHeight: open.runtime.app.package.manifest.window?.minHeight ?? 260 }
+      : builtinAppWindow(open.kind === "folder" ? "explorer" : "file");
     setWindowBounds((current) => clampWindowBounds(current, desktopSize, { minWidth, minHeight }));
   }, [desktopSize, open, windowed]);
 
@@ -201,6 +202,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   function openEntry(entry: DesktopEntry) {
     setSelectedIds(new Set());
     if (entry.kind === "folder") setOpen({ kind: "folder", folderId: entry.id });
+    else if (reservedFileHandler(entry) === "internet-shortcut") void openInternetShortcut(entry, window.open("about:blank", "_blank"));
     else void loadFile(entry);
   }
   function selectEntry(entry: DesktopEntry) {
@@ -335,11 +337,11 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
           <div className="app-window-layer">
             <AppWindow
               id="public-view"
-              title={open.kind === "folder" ? (folder?.name ?? desktop?.name ?? "Desktop") : open.file.name}
+               title={open.kind === "folder" ? (folder?.name ?? desktop?.name ?? "Desktop") : (open.runtime?.app.title ?? open.file.name)}
               titleId="public-view-title"
               bounds={windowBounds}
-              minWidth={builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minWidth}
-              minHeight={builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minHeight}
+               minWidth={open.kind === "file" && open.runtime ? (open.runtime.app.package.manifest.window?.minWidth ?? 360) : builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minWidth}
+               minHeight={open.kind === "file" && open.runtime ? (open.runtime.app.package.manifest.window?.minHeight ?? 260) : builtinAppWindow(open.kind === "folder" ? "explorer" : "file").minHeight}
               zIndex={1}
               focused
               minimized={false}
@@ -348,14 +350,17 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               hideFocusedHeader={!windowed}
               externalHeaderElements={windowed ? undefined : { leading: null, actions: mobileHeaderActionsElement }}
               onFocus={() => undefined}
-              onBoundsChange={(_id, bounds) => setWindowBounds(bounds)}
+               onBoundsChange={(_id, bounds) => {
+                 setWindowBounds(bounds);
+                 if (open.kind === "file" && open.runtime) open.runtime.lifecycle.setHostState({ appId: open.runtime.app.package.manifest.id, instanceId: open.runtime.app.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
+               }}
               onClose={closePublicView}
               onShowDesktop={backPublicView}
               backLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}
               titleArea={
                 <div>
                   <span className="window-kicker">Public · Read only</span>
-                  <h2 id="public-view-title">{open.kind === "folder" ? (folder?.name ?? desktop?.name) : open.file.name}</h2>
+                   <h2 id="public-view-title">{open.kind === "folder" ? (folder?.name ?? desktop?.name) : (open.runtime?.app.title ?? open.file.name)}</h2>
                 </div>
               }
             >
@@ -387,8 +392,10 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                     onViewChange={setExplorerView}
                     loadPreview={desktop?.thumbnailProfile ? loadThumbnail : undefined}
                   />
-                ) : open.blob ? (
-                  <FileWindow file={open.file} blob={open.blob} editable={fileCapabilities(open.file).editable} readOnly headerActionsTarget={headerElements.actions} editorSettings={desktop?.editorSettings ?? DEFAULT_EDITOR_SETTINGS} externalEmbeddedPreviews={false} theme={theme} onSave={async () => undefined} onDownload={() => void loadFile(open.file, true)} onEdit={() => undefined} onEditorSettingsChange={() => undefined} onResolveLink={(path) => resolveLinkedFile(open.file, path)} onOpenLinkedFile={(file) => void loadFile(file)} />
+                ) : open.runtime ? (
+                  <Suspense fallback={<div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}>
+                    <PublicAppFrame runtime={open.runtime} onNavigation={closePublicView} />
+                  </Suspense>
                 ) : open.error ? (
                   <div className="app-window__loading" role="alert">
                     <span>{open.error}</span>
@@ -396,9 +403,14 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                       Retry
                     </button>
                   </div>
-                ) : fileCapabilities(open.file).preview === "none" ? (
+                ) : open.reserved === "internet-shortcut" ? (
                   <div className="no-preview">
-                    <p>No preview is available for this file type.</p>
+                    <p>This internet shortcut opens in a new browser tab.</p>
+                    <button className="button button--primary" type="button" onClick={() => void openInternetShortcut(open.file, window.open("about:blank", "_blank"))}>Open link</button>
+                  </div>
+                ) : open.reserved === "app-package" ? (
+                  <div className="no-preview">
+                    <p>Public app packages can be downloaded, but cannot be installed or run.</p>
                     <button className="button button--primary" type="button" onClick={() => void loadFile(open.file, true)}>
                       <DownloadSimple size={16} /> Download file
                     </button>

@@ -2,7 +2,7 @@ import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import { parseFileAssociation, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
-import { SYSTEM_APP_CATALOG, type SystemAppCatalogItem } from "../../apps/system-apps";
+import { SYSTEM_APP_CATALOG, systemInstallFromCatalog, type SystemAppCatalogItem } from "../../apps/system-apps";
 import type { ThemeDefinition } from "../../domain/theme";
 import {
   clearAppStorage,
@@ -297,17 +297,4 @@ export function systemInstallMatchesCatalog(install: InstalledApp, item: SystemA
     && install.archivePath === item.archivePath
     && install.digest === item.digest
     && install.version === item.manifest.version;
-}
-
-export function systemInstallFromCatalog(item: SystemAppCatalogItem, current?: InstalledApp): InstalledApp {
-  return {
-    appId: item.manifest.id,
-    source: "system",
-    packageEntryId: null,
-    archivePath: item.archivePath,
-    digest: item.digest,
-    version: item.manifest.version,
-    manifest: item.manifest,
-    approvedAt: current?.approvedAt ?? Date.now(),
-  };
 }
