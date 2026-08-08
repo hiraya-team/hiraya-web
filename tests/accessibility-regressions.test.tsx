@@ -158,9 +158,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain("areaSwitcherRestoreFocusRef.current = minimapExpanded;");
     expect(app).toContain("setMinimapExpanded(!minimapExpanded);");
     expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] }');
-    expect(app).toContain('className="mobile-desktop-summary"');
-    expect(app).toContain("desktopRail={<DesktopSwitcher");
-    expect(desktopSwitcher).toContain('className="desktop-switcher__rail" aria-label="Desktops"');
+    expect(app).toContain('className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher"');
+    expect(app).toContain("<DesktopSwitcher desktops={desktopChoices}");
+    expect(desktopSwitcher).toContain('className="desktop-switcher__picker" aria-label="Desktops" popover="auto"');
     expect(desktopSwitcher).toContain('<button className="desktop-switcher__row desktop-switcher__row--switch"');
     expect(desktopSwitcher).not.toContain("onCreate");
     expect(desktopSwitcher).not.toContain("onRename");
@@ -172,7 +172,7 @@ describe("accessibility regressions", () => {
     expect(desktopSettings).toContain("Move ${desktop.name} up");
     expect(desktopSettings).toContain("Move ${desktop.name} down");
     expect(desktopSwitcher).not.toContain('aria-haspopup="dialog"');
-    expect(desktopSwitcher).toContain('if (event.key !== "Escape") return;');
+    expect(desktopSwitcher).toContain("hidePopover()");
     expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}');
     expect(app).toContain('className="mobile-start-applications"');
     expect(app).not.toContain("<SquaresFour /> Switch Window");
@@ -186,6 +186,9 @@ describe("accessibility regressions", () => {
     expect(app).toContain(".desktop-minimap__area[aria-current=\"true\"]");
     expect(areaSwitcher).not.toContain("onBeginDrag");
     expect(areaSwitcher).not.toContain("desktop-minimap__handle");
+    expect(areaSwitcher).not.toContain("desktopRail");
+    expect(areaSwitcher).toContain('className="desktop-minimap__direction"');
+    expect(areaSwitcher).toContain('`${occupied ? "Go to" : "Add"} ${areaDirectionalLabel(target, activeSegment)} area`');
     expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}');
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
     expect(app).toContain("collapseAreaMap();");
@@ -215,22 +218,16 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-minimap__header-tools { display: flex; width: 100%;");
     expect(css).toContain(".desktop-minimap:not([data-open-apps]) .desktop-minimap__body { padding-top: 0; }");
     expect(css).toContain(".desktop-minimap__handle { display: none; }");
-    expect(areaSwitcher).toContain('"--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width');
-    expect(css).toContain("(100cqh - (var(--minimap-rows) - 1) * var(--minimap-gap))");
-    expect(css).toContain("(100cqw - (var(--minimap-columns) - 1) * var(--minimap-gap))");
-    expect(css).toContain("grid-template-rows: repeat(var(--minimap-rows), minmax(0, 1fr));");
-    expect(css).not.toContain(".desktop-minimap__slot { aspect-ratio:");
-    expect(css).not.toContain("calc(var(--minimap-columns) * 16) / calc(var(--minimap-rows) * 10)");
-    expect(css).not.toContain("calc(var(--minimap-columns) * 15) / calc(var(--minimap-rows) * 10)");
-    expect(css).toContain(".desktop-minimap__area:not([data-occupied]):not([data-active])::after {");
-    expect(css).toContain('content: "+";');
-    expect(css).toContain("height: min(34dvh, 240px);");
-    expect(css).toContain("min-height: 52px;");
-    expect(css).toContain(".desktop-minimap__header { min-height: 50px; padding-bottom: 6px; }");
+    expect(areaSwitcher).toContain("adjacentArea(activeSegment, direction)");
+    expect(css).toContain("grid-template-columns: 48px minmax(148px, 176px) 48px;");
+    expect(css).toContain("grid-template-rows: 48px 116px 48px;");
+    expect(css).toContain("min-width: var(--touch-target);");
+    expect(css).toContain('.desktop-minimap__direction[data-direction="right"]');
+    expect(css).toContain(".desktop-minimap__direction-plus");
+    expect(css).not.toContain("height: min(54dvh, 430px);");
     expect(css).toContain(".desktop-minimap__window-target { display: none; }");
-    expect(css).toContain(".desktop-minimap__window-controls > button { width: var(--touch-target);");
-    expect(css).toContain(".desktop-minimap__area-pane { grid-row: 1; }");
-    expect(css).toContain(".desktop-switcher__rail { grid-row: 2;");
+    expect(css).toContain(".desktop-minimap__window-controls > button { width: 36px;");
+    expect(css).toContain(".desktop-switcher__picker:popover-open");
   });
 
   test("live area transitions project windowed apps while focused surfaces stay viewport-owned", async () => {

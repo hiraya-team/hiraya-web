@@ -674,12 +674,6 @@ function App({ session }: { session: AuthSession | null }) {
     const key = segmentKey(segment);
     return visibleSegmentsByKey.get(key) ?? { entries: [], key, segment };
   });
-  const minimapColumns = minimapSegments.map((candidate) => candidate.segment.column);
-  const minimapRows = minimapSegments.map((candidate) => candidate.segment.row);
-  const minimapMinColumn = Math.min(...minimapColumns);
-  const minimapMinRow = Math.min(...minimapRows);
-  const minimapColumnCount = Math.max(...minimapColumns) - minimapMinColumn + 1;
-  const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, true);
   const minimapDetailed = minimapExpanded;
   const restingCamera = areaCameraPosition(activeSegment, desktopSize);
@@ -4874,7 +4868,7 @@ function App({ session }: { session: AuthSession | null }) {
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-              : activeDesktopId && <span className="mobile-desktop-summary"><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></span>}
+              : activeDesktopId && <button className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
@@ -4915,6 +4909,7 @@ function App({ session }: { session: AuthSession | null }) {
           <DesktopClock />
         </div>
       </header>
+      <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { void activateDesktop(id); }} />
 
       <section
         className="desktop"
@@ -5487,7 +5482,6 @@ function App({ session }: { session: AuthSession | null }) {
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}
         desktopName={activeDesktopName}
-        desktopRail={<DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { collapseAreaMap(); void activateDesktop(id); }} onDismiss={collapseAreaMap} />}
         desktopSize={iconArea}
         detailed={minimapDetailed}
         dirtyAppIds={dirtyAppIds}
@@ -5498,10 +5492,6 @@ function App({ session }: { session: AuthSession | null }) {
         positions={responsive.positions}
         rootRef={areaSwitcherRef}
         segments={minimapSegments}
-        minColumn={minimapMinColumn}
-        minRow={minimapMinRow}
-        columnCount={minimapColumnCount}
-        rowCount={minimapRowCount}
         swipePreview={swipePreview}
         windowLimit={minimapWindowLimit}
         getAppEntry={(app) => app.kind === "file" ? (entryIndex.byId.get(app.fileId) ?? null) : app.kind === "properties" ? (entryIndex.byId.get(app.entryId) ?? null) : app.kind === "explorer" && app.folderId ? (entryIndex.byId.get(app.folderId) ?? null) : null}
