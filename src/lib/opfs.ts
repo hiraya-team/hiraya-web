@@ -79,6 +79,7 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
   });
   const created: DesktopState = {
     entries,
+    autoArrangeIcons: parsedSeeded.layout.autoArrangeIcons,
     snapToGrid: parsedSeeded.layout.snapToGrid,
     gridSize: parsedSeeded.layout.gridSize,
     wallpaper: parsedSeeded.layout.wallpaper,
@@ -168,7 +169,7 @@ let desktopLoad: Promise<DesktopState> | null = null;
 let databaseInitialization: Promise<void> | null = null;
 
 function emptyDesktopState(): DesktopState {
-  return { entries: [], snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
+  return { entries: [], autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
 }
 
 async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
@@ -362,6 +363,7 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   }
   const next: Manifest = {
     entries: snapshot.entries,
+    autoArrangeIcons: snapshot.layout.autoArrangeIcons,
     snapToGrid: snapshot.layout.snapToGrid,
     gridSize: snapshot.layout.gridSize,
     wallpaper: snapshot.layout.wallpaper,
@@ -473,7 +475,7 @@ async function resolveContentConflictKeepBothUnsafe(operationId: string, remote:
   await stageOperationContents(reservation.operationId, new Map([[sibling.id, content]]));
   let committed = false;
   try {
-    const state: Manifest = { entries: remote.entries, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
+    const state: Manifest = { entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
     const result = await callDatabase("resolveContentConflictKeepBoth", { operationId, replacementOperationId: reservation.operationId, state, operation }, selected.desktopId);
     committed = true;
     const projected = parseDesktopState(result.state);
@@ -535,9 +537,10 @@ async function saveEditorSettingsUnsafe(settings: EditorSettings) {
 async function saveDesktopLayoutUnsafe(layout: DesktopLayout) {
   const manifest = await readManifest();
   const parsed = parseLayout(layout);
-  const next = { ...manifest, snapToGrid: parsed.snapToGrid, gridSize: parsed.gridSize, wallpaper: parsed.wallpaper };
+  const next = { ...manifest, autoArrangeIcons: parsed.autoArrangeIcons, snapToGrid: parsed.snapToGrid, gridSize: parsed.gridSize, wallpaper: parsed.wallpaper };
   assertValidManifest(next);
   await writeManifest(next, activityRecord("Changed desktop layout", [
+    `Auto-arrange icons: ${parsed.autoArrangeIcons ? "On" : "Off"}`,
     `Snap to grid: ${parsed.snapToGrid ? "On" : "Off"}`,
     `Grid size: ${parsed.gridSize}px`,
     `Wallpaper: ${parsed.wallpaper.source}`,

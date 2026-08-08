@@ -27,6 +27,7 @@ export const DEFAULT_WALLPAPER: Wallpaper = {
 };
 
 export type DesktopLayout = {
+  autoArrangeIcons: boolean;
   snapToGrid: boolean;
   gridSize: GridSize;
   wallpaper: Wallpaper;

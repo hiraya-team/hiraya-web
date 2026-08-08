@@ -88,6 +88,74 @@ export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment:
   return arranged.map((entry, index) => ({ entryId: entry.id, position: restoreLogicalPosition(slots[index], segment, size) }));
 }
 
+export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntryIds: ReadonlySet<string>, anchorEntryId: string, anchorPosition: EntryPosition, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS): RootEntryPositionUpdate[] | null {
+  const roots = entries.filter((entry) => entry.parentId === null);
+  const anchor = roots.find((entry) => entry.id === anchorEntryId && movingEntryIds.has(entry.id));
+  if (!anchor) return null;
+  const moving = roots.filter((entry) => movingEntryIds.has(entry.id)).sort((a, b) => a.id.localeCompare(b.id));
+  const delta = { x: anchorPosition.x - anchor.position.x, y: anchorPosition.y - anchor.position.y };
+  const positions = new Map<string, EntryPosition>();
+  const settled = new Set<string>();
+  const maxX = Math.max(8, size.width - metrics.width);
+  const maxY = Math.max(8, size.height - metrics.height);
+
+  for (const entry of moving) {
+    const position = { x: entry.position.x + delta.x, y: entry.position.y + delta.y };
+    const projection = projectLogicalPosition(position, size);
+    if (segmentKey(projection.segment) !== segmentKey(targetSegment) || projection.local.x < 8 || projection.local.x > maxX || projection.local.y < 8 || projection.local.y > maxY) return null;
+    if ([...positions.values()].some((other) => positionsOverlap(position, other, metrics))) return null;
+    positions.set(entry.id, position);
+    settled.add(entry.id);
+  }
+
+  const neighbors = roots
+    .filter((entry) => !movingEntryIds.has(entry.id) && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(targetSegment))
+    .sort((a, b) => {
+      const left = projectLogicalPosition(a.position, size).local;
+      const right = projectLogicalPosition(b.position, size).local;
+      return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id);
+    });
+  const byId = new Map(neighbors.map((entry) => [entry.id, entry]));
+  const queue: string[] = [];
+  const queued = new Set<string>();
+  const enqueueCollisions = (position: EntryPosition) => {
+    for (const entry of neighbors) {
+      if (settled.has(entry.id) || queued.has(entry.id) || !positionsOverlap(position, entry.position, metrics)) continue;
+      queued.add(entry.id);
+      queue.push(entry.id);
+    }
+  };
+  for (const position of positions.values()) enqueueCollisions(position);
+
+  const slots = desktopSlots(size, false, metrics);
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (settled.has(id)) continue;
+    const entry = byId.get(id)!;
+    const origin = projectLogicalPosition(entry.position, size).local;
+    const candidates = slots
+      .map((slot, index) => ({ slot, index, distance: (slot.x - origin.x) ** 2 + (slot.y - origin.y) ** 2 }))
+      .sort((a, b) => a.distance - b.distance || a.index - b.index);
+    const candidate = candidates.find(({ slot }) => {
+      const logical = restoreLogicalPosition(slot, targetSegment, size);
+      return [...settled].every((settledId) => !positionsOverlap(logical, positions.get(settledId)!, metrics));
+    });
+    if (!candidate) return null;
+    const logical = restoreLogicalPosition(candidate.slot, targetSegment, size);
+    positions.set(id, logical);
+    settled.add(id);
+    enqueueCollisions(logical);
+  }
+
+  return [...positions]
+    .map(([entryId, position]) => ({ entryId, position }))
+    .filter(({ entryId, position }) => {
+      const current = roots.find((entry) => entry.id === entryId)!.position;
+      return current.x !== position.x || current.y !== position.y;
+    })
+    .sort((a, b) => a.entryId.localeCompare(b.entryId));
+}
+
 export function iconAreaSize(viewport: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE) {
   return {
     width: Math.max(gridSize, Math.floor(viewport.width / gridSize) * gridSize),
