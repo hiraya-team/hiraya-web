@@ -153,10 +153,6 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const responsive = useMemo(() => responsiveDesktop(publicEntries, iconArea, iconMetrics), [publicEntries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const minimapSegments = useMemo(() => publicAreaMapSegments(responsive.segments, activeSegment), [activeSegment, responsive.segments]);
-  const minColumn = Math.min(...minimapSegments.map((segment) => segment.segment.column));
-  const maxColumn = Math.max(...minimapSegments.map((segment) => segment.segment.column));
-  const minRow = Math.min(...minimapSegments.map((segment) => segment.segment.row));
-  const maxRow = Math.max(...minimapSegments.map((segment) => segment.segment.row));
   const wholeDesktop = !authority.itemAlias;
 
   useEffect(() => {
@@ -422,7 +418,6 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         activeSegmentKey={activeSegmentKey}
         apps={[]}
         desktopName={desktop.name}
-        desktopRail={null}
         navigationLabel={`${desktop.name} public desktop areas`}
         desktopSize={iconArea}
         detailed
@@ -434,10 +429,6 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         positions={responsive.positions}
         rootRef={areaSwitcherRef}
         segments={minimapSegments}
-        minColumn={minColumn}
-        minRow={minRow}
-        columnCount={maxColumn - minColumn + 1}
-        rowCount={maxRow - minRow + 1}
         swipePreview={null}
         windowLimit={0}
         getAppEntry={() => null}

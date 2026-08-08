@@ -947,7 +947,7 @@ test("reduced motion disables desktop transitions and animations", async ({ page
 
 test("desktop switcher rows use their full width", async ({ page }) => {
   await openLocalDesktop(page);
-  await page.getByRole("button", { name: /Open desktop and area switcher/ }).click();
+  await page.getByRole("button", { name: /Switch desktop, current desktop/ }).click();
   const target = page.locator("[data-desktop-switch-target]").first();
   const bounds = await target.boundingBox();
   if (!bounds) throw new Error("The desktop switch target is not visible.");
@@ -994,6 +994,11 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
 
   const switcher = page.locator(".desktop-minimap");
   const trigger = page.locator(".mobile-area-switcher-trigger");
+  const desktopTrigger = page.getByRole("button", { name: /Switch desktop, current desktop/ });
+  await desktopTrigger.click();
+  await expect(page.getByRole("complementary", { name: "Desktops" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(desktopTrigger).toBeFocused();
   await start.click();
   await startMenu.locator(".mobile-start-applications > summary").click();
   await startMenu.getByRole("button", { name: "App Store" }).click();
@@ -1031,12 +1036,8 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(switcher).toHaveAttribute("data-expanded", "true");
-    await expect(switcher.getByRole("complementary", { name: "Desktops" })).toBeVisible();
-    await expect.poll(() => switcher.evaluate((element) => {
-      const areas = element.querySelector(".desktop-minimap__area-pane")?.getBoundingClientRect();
-      const desktops = element.querySelector(".desktop-switcher__rail")?.getBoundingClientRect();
-      return Boolean(areas && desktops && areas.bottom <= desktops.top);
-    })).toBe(true);
+    await expect(switcher.locator(".desktop-minimap__direction")).toHaveCount(4);
+    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(260);
     await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
     await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
     await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
@@ -1064,7 +1065,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(trigger).toBeFocused();
 
   await trigger.tap();
-  await page.getByRole("button", { name: /1 right of Home/ }).tap();
+  await page.getByRole("button", { name: "Add Right area" }).tap();
   await expect(page).toHaveURL(/\/areas\/1\/0$/);
   await expect(switcher).toHaveCount(0);
 
