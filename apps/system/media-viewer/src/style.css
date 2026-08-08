@@ -11,4 +11,20 @@
 .document-page img { max-width: 100%; height: auto; }
 .document-page table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .document-page :where(th, td) { padding: .45rem .65rem; border: 1px solid #c9cecb; vertical-align: top; }
-@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page { padding: 1.25rem; } :is(#open, #fullscreen) { min-width: 44px; min-height: 44px; } }
+.markdown-page { align-self: start; width: min(52rem, 100%); padding: clamp(.75rem, 3vw, 2rem); overflow-wrap: anywhere; }
+.markdown-page :where(h1, h2, h3, h4, h5, h6) { margin-block: 1.6em .55em; line-height: 1.2; }
+.markdown-page h1 { padding-bottom: .5rem; border-bottom: 1px solid var(--hiraya-border); font-size: 2rem; }
+.markdown-page :where(p, li) { line-height: 1.7; }
+.markdown-page pre { padding: 1rem; overflow: auto; border: 1px solid var(--hiraya-border); border-radius: .5rem; background: var(--hiraya-surface); }
+.markdown-page code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.markdown-page :not(pre) > code { padding: .15em .35em; border-radius: .25rem; background: var(--hiraya-surface); }
+.markdown-page blockquote { margin-left: 0; padding-left: 1rem; border-left: .25rem solid var(--hiraya-accent); color: var(--hiraya-text-muted); }
+.markdown-page img { display: block; max-width: 100%; max-height: 70vh; margin: 1.2rem auto; }
+.markdown-page a { color: var(--hiraya-accent); }
+.markdown-page table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
+.markdown-page :where(th, td) { padding: .45rem .65rem; border: 1px solid var(--hiraya-border); text-align: left; }
+.markdown-page .task-list-item { list-style: none; }
+.markdown-page input[type="checkbox"] { margin-inline: -1.25rem .5rem; accent-color: var(--hiraya-accent); }
+.external-embed { max-width: 100%; margin: 1rem auto; overflow-wrap: anywhere; }
+.external-embed::part(actions) { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .55rem; }
+@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page, .markdown-page { padding: 1.25rem; } :is(#open, #fullscreen) { min-width: 44px; min-height: 44px; } }

@@ -15,3 +15,9 @@ export function parsedDocumentKind(name: string, mimeType: string): ParsedDocume
   if (lowerName.endsWith(".rtf") || RTF_MIMES.has(mime)) return "rtf";
   return null;
 }
+
+export function isMarkdownDocument(name: string, mimeType: string): boolean {
+  const lowerName = name.toLowerCase();
+  const mime = normalizedMime(mimeType);
+  return lowerName.endsWith(".md") || lowerName.endsWith(".markdown") || mime === "text/markdown" || mime === "text/plain";
+}

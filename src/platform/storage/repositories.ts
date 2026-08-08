@@ -34,6 +34,11 @@ export async function installApp(install: InstalledApp) {
   return callDatabase("installApp", { install: parseInstalledApp(install) }, null);
 }
 
+export async function retireMarkdownPreview() {
+  await initializeDatabase();
+  return callDatabase("retireMarkdownPreview", undefined, null);
+}
+
 export async function uninstallApp(appId: string) {
   await initializeDatabase();
   return callDatabase("uninstallApp", { appId }, null);

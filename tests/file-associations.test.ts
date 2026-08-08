@@ -8,7 +8,7 @@ function app(appId: string, fileTypes: string[]): InstalledApp {
 }
 
 describe("file association resolution", () => {
-  const markdown = app(SYSTEM_APP_IDS.markdownPreview, [".md", "text/markdown"]);
+  const media = app(SYSTEM_APP_IDS.mediaViewer, [".md", ".markdown", "text/markdown", "application/pdf", "audio/*", "video/*"]);
   const text = app(SYSTEM_APP_IDS.textEditor, ["text/*"]);
   const generic = app(SYSTEM_APP_IDS.fileViewer, ["application/*", "text/*"]);
   const terminal = app(SYSTEM_APP_IDS.terminal, [".hsh", "text/x-hiraya-shell"]);
@@ -19,10 +19,11 @@ describe("file association resolution", () => {
 
   test("uses only compatible extension, exact MIME, wildcard MIME, then system defaults", () => {
     const file = { name: "notes.md", mimeType: "text/markdown" };
-    expect(resolveFileApp(file, [markdown, text, generic], [], [{ matcher: ".md", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(markdown.appId);
-    expect(resolveFileApp(file, [markdown, text, generic], [], [{ matcher: "text/markdown", appId: generic.appId, createdAt: 1 }])?.app.appId).toBe(generic.appId);
-    expect(resolveFileApp(file, [markdown, text, generic], [], [{ matcher: "text/*", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(text.appId);
-    expect(resolveFileApp(file, [markdown, text, generic], [], [])?.app.appId).toBe(markdown.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: ".md", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(media.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: "text/markdown", appId: generic.appId, createdAt: 1 }])?.app.appId).toBe(generic.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: "text/*", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(text.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [])?.app.appId).toBe(media.appId);
+    expect(systemDefaultAppId({ name: "README.markdown", mimeType: "application/octet-stream" })).toBe(media.appId);
   });
 
   test("retains an unavailable preference and safely falls back", () => {
