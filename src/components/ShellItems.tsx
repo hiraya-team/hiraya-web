@@ -1,8 +1,8 @@
 import { useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { ArrowSquareOut, CalendarBlank, Clock, CloudCheck, FolderOpen, Gauge, X } from "@phosphor-icons/react";
 import type { CatalogQuota } from "../lib/desktop-catalog";
-import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, FolderEntry } from "../types";
-import { clampShellItemBounds, projectLogicalPosition, segmentKey, type SurfaceSegment } from "../ui/desktop-geometry";
+import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, FolderEntry, GridSize } from "../types";
+import { MIN_SHELL_ITEM_SIZE, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
 import { useTickingDate } from "../ui/use-ticking-date";
 import { EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
 
@@ -26,23 +26,34 @@ type Props = {
   onDrop?: (dataTransfer: DataTransfer, folderId: string) => void;
   onMoveWidget?: (widget: DesktopWidget, position: EntryPosition) => void;
   onResizeWidget?: (widget: DesktopWidget, size: { width: number; height: number }) => void;
+  onPreviewWidget?: (widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) => readonly { entryId: string; delta: EntryPosition }[] | null;
   onRemoveWidget?: (widget: DesktopWidget) => void;
+  onSelectWidget?: (widget: DesktopWidget) => void;
+  selectedWidgetId?: string | null;
+  widgetBusy?: boolean;
+  gridSize?: GridSize;
   onMoveGroup?: (folder: FolderEntry, position: EntryPosition) => void;
   onResizeGroup?: (group: DesktopIconGroup, size: { width: number; height: number }) => void;
   onUngroup?: (group: DesktopIconGroup) => void;
 };
 
-type Interaction = { pointerId: number; startX: number; startY: number; width: number; height: number };
+type Interaction = { pointerId: number; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, onMove, onResize, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ label, position, width, height, areaSize, readOnly, widget = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
   position: EntryPosition;
   width: number;
   height: number;
   areaSize: { width: number; height: number };
   readOnly: boolean;
+  widget?: boolean;
+  selected?: boolean;
+  busy?: boolean;
+  gridSize?: GridSize;
+  onSelect?: () => void;
   onMove?: (position: EntryPosition) => void;
   onResize?: (size: { width: number; height: number }) => void;
+  onPreview?: (change: { x: number; y: number; width: number; height: number }) => readonly { entryId: string; delta: EntryPosition }[] | null;
   onRemove?: () => void;
   removeLabel?: string;
   dropParentId?: string;
@@ -53,10 +64,32 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, onMove,
   const ref = useRef<HTMLElement>(null);
   const drag = useRef<Interaction | null>(null);
   const resize = useRef<Interaction | null>(null);
+  const adjustedBounds = (target: typeof drag, current: Interaction, x: number, y: number) => {
+    const next = target === drag
+      ? clampShellItemBounds({ x: bounds.x + x, y: bounds.y + y }, bounds.width, bounds.height, areaSize)
+      : clampShellItemBounds(bounds, Math.max(MIN_SHELL_ITEM_SIZE.width, current.width + x), Math.max(MIN_SHELL_ITEM_SIZE.height, current.height + y), areaSize);
+    return gridSize ? snapShellItemBounds(next, next.width, next.height, areaSize, gridSize) : next;
+  };
+  const applyIconTransforms = (transforms: readonly { entryId: string; delta: EntryPosition }[] | null) => {
+    const desktop = ref.current?.closest<HTMLElement>(".desktop");
+    desktop?.querySelectorAll<HTMLElement>(".file-icon[data-widget-arrange-dragging]").forEach((icon) => {
+      icon.style.removeProperty("transform");
+      delete icon.dataset.widgetArrangeDragging;
+    });
+    if (!transforms) return;
+    const byId = new Map(transforms.map((transform) => [transform.entryId, transform.delta]));
+    desktop?.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]").forEach((icon) => {
+      const delta = byId.get(icon.dataset.entryId ?? "");
+      if (!delta) return;
+      icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
+      icon.dataset.widgetArrangeDragging = "true";
+    });
+  };
   const begin = (event: ReactPointerEvent, target: typeof drag) => {
-    if (readOnly || event.button !== 0) return;
+    if (readOnly || busy || event.button !== 0) return;
     event.preventDefault();
-    target.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height };
+    onSelect?.();
+    target.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const move = (event: ReactPointerEvent, target: typeof drag) => {
@@ -64,15 +97,17 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, onMove,
     if (!current || current.pointerId !== event.pointerId) return;
     const x = event.clientX - current.startX;
     const y = event.clientY - current.startY;
+    if (!current.moved && Math.hypot(x, y) < 4) return;
+    current.moved = true;
+    const next = adjustedBounds(target, current, x, y);
     if (target === drag) {
-      const next = clampShellItemBounds({ x: bounds.x + x, y: bounds.y + y }, bounds.width, bounds.height, areaSize);
       ref.current?.style.setProperty("transform", `translate3d(${next.x - bounds.x}px, ${next.y - bounds.y}px, 0)`);
     }
     else {
-      const next = clampShellItemBounds(bounds, Math.max(180, current.width + x), Math.max(112, current.height + y), areaSize);
       ref.current?.style.setProperty("width", `${next.width}px`);
       ref.current?.style.setProperty("height", `${next.height}px`);
     }
+    applyIconTransforms(onPreview?.(next) ?? null);
   };
   const finish = (event: ReactPointerEvent, target: typeof drag, cancelled = false) => {
     const current = target.current;
@@ -83,46 +118,49 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, onMove,
     const y = event.clientY - current.startY;
     ref.current?.style.removeProperty(target === drag ? "transform" : "width");
     ref.current?.style.removeProperty("height");
-    if (cancelled) return;
+    applyIconTransforms(null);
+    if (cancelled || !current.moved) return;
+    const next = adjustedBounds(target, current, x, y);
     if (target === drag) {
-      const next = clampShellItemBounds({ x: bounds.x + x, y: bounds.y + y }, bounds.width, bounds.height, areaSize);
       onMove?.({ x: next.x, y: next.y });
     } else {
-      const next = clampShellItemBounds(bounds, Math.max(180, Math.round(current.width + x)), Math.max(112, Math.round(current.height + y)), areaSize);
       onResize?.({ width: next.width, height: next.height });
     }
   };
   const keyboardAdjust = (event: React.KeyboardEvent, mode: "move" | "resize") => {
-    if (readOnly || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
+    if (readOnly || busy || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
-    const step = event.shiftKey ? 24 : 8;
+    const step = gridSize ?? (event.shiftKey ? 24 : 8);
     const x = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
     const y = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
     if (mode === "move") {
-      const next = clampShellItemBounds({ x: bounds.x + x, y: bounds.y + y }, bounds.width, bounds.height, areaSize);
+      const next = adjustedBounds(drag, { pointerId: 0, startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
       onMove?.({ x: next.x, y: next.y });
     } else {
-      const next = clampShellItemBounds(bounds, Math.max(180, bounds.width + x), Math.max(112, bounds.height + y), areaSize);
+      const next = adjustedBounds(resize, { pointerId: 0, startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
       onResize?.({ width: next.width, height: next.height });
     }
   };
 
   return <article
     ref={ref}
-    className="shell-item"
+    className={`shell-item${widget ? " shell-item--widget" : ""}`}
     style={{ "--shell-x": `${bounds.x}px`, "--shell-y": `${bounds.y}px`, width: bounds.width, height: bounds.height } as CSSProperties}
     aria-label={label}
+    data-selected={selected || undefined}
     data-entry-drop-parent={readOnly ? undefined : dropParentId}
     onDragOver={onDrop && !readOnly ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropActive = "true"; } : undefined}
     onDragLeave={onDrop ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropActive; } : undefined}
     onDrop={onDrop && !readOnly ? (event) => { event.preventDefault(); delete event.currentTarget.dataset.dropActive; onDrop(event.dataTransfer); } : undefined}
   >
-    <header className="shell-item__header">
+    {!widget && <header className="shell-item__header">
       <button className="shell-item__drag" type="button" disabled={readOnly} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)}>{label}</button>
       {!readOnly && onRemove && <button className="shell-item__remove" type="button" aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
-    </header>
+    </header>}
+    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={`Move ${label}`} aria-pressed={selected} title="Drag to move; use arrow keys for precise movement" onClick={onSelect} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} />}
     <div className="shell-item__content">{children}</div>
-    {!readOnly && onResize && <button className="shell-item__resize" type="button" aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} />}
+    {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={widget && busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} />}
+    {widget && selected && onRemove && <button className="shell-item__remove shell-item__remove--widget" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
   </article>;
 }
 
@@ -143,7 +181,7 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onRemoveWidget, onMoveGroup, onResizeGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const activeKey = segmentKey(activeSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === activeKey);
@@ -157,7 +195,7 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSi
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
       const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : "Status";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} onMove={(local) => onMoveWidget?.(widget, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onRemove={() => onRemoveWidget?.(widget)}>
+      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} widget selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
         {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : <StatusWidget status={status} />}
       </ShellItem>;
     })}

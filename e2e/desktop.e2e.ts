@@ -912,8 +912,15 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
   const clock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
   await expect(clock).toBeVisible();
+  await expect(clock.locator(".shell-item__header")).toHaveCount(0);
+  await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toBeVisible();
+  await expect(clock.getByRole("button", { name: "Remove Clock", exact: true })).toBeVisible();
+  await desktop.click({ position: { x: 700, y: 500 } });
+  await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toHaveCount(0);
+  await expect(clock.getByRole("button", { name: "Remove Clock", exact: true })).toHaveCount(0);
   const initialLeft = await clock.evaluate((element) => element.getBoundingClientRect().left);
   await clock.getByRole("button", { name: "Move Clock", exact: true }).focus();
+  await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toBeVisible();
   await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().left)).toBeGreaterThan(initialLeft);
   const initialWidth = await clock.evaluate((element) => element.getBoundingClientRect().width);
@@ -938,6 +945,55 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   const results = await new AxeBuilder({ page }).include(".desktop").analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+});
+
+test("adding a widget rearranges overlapping icons and persists both positions", async ({ page }) => {
+  await openLocalDesktop(page);
+  const name = `widget-arrange-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const desktop = page.locator(".desktop");
+  const desktopBounds = await desktop.boundingBox();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  if (!desktopBounds) throw new Error("The desktop is not visible.");
+  await dragPointerTo(page, icon, desktopBounds.x + 420, desktopBounds.y + 260);
+  const before = await icon.boundingBox();
+  if (!before) throw new Error("The test icon is not visible.");
+
+  await desktop.click({ button: "right", position: { x: before.x - desktopBounds.x - 10, y: before.y - desktopBounds.y + before.height / 2 } });
+  const desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await desktopMenu.getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
+  const clock = page.locator(".shell-item--widget", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  await expect(clock).toBeVisible();
+  await expect.poll(async () => {
+    const moved = await icon.boundingBox();
+    return moved ? Math.round(moved.y - before.y) : 0;
+  }).toBeGreaterThan(0);
+
+  await dragPointerTo(page, icon, desktopBounds.x + 800, desktopBounds.y + 260);
+  const iconTarget = await icon.boundingBox();
+  if (!iconTarget) throw new Error("The arranged icon is not visible.");
+  await beginDragPointerTo(page, clock.getByRole("button", { name: "Move Clock", exact: true }), iconTarget.x + iconTarget.width / 2, iconTarget.y + iconTarget.height / 2);
+  await expect(icon).toHaveAttribute("data-widget-arrange-dragging", "true");
+  await page.mouse.up();
+  await expect(icon).not.toHaveAttribute("data-widget-arrange-dragging", "true");
+  await expect.poll(async () => {
+    const moved = await icon.boundingBox();
+    return moved ? Math.round(moved.y - iconTarget.y) : 0;
+  }).toBeGreaterThan(0);
+
+  const saved = await Promise.all([icon.boundingBox(), clock.boundingBox()]);
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(async () => {
+    const reloadedClock = page.locator(".shell-item--widget", { hasText: /\d/ });
+    const [nextIcon, nextClock] = await Promise.all([icon.boundingBox(), reloadedClock.boundingBox()]);
+    return nextIcon && nextClock && saved[0] && saved[1]
+      ? [Math.round(nextIcon.x - saved[0].x), Math.round(nextIcon.y - saved[0].y), Math.round(nextClock.x - saved[1].x), Math.round(nextClock.y - saved[1].y)]
+      : null;
+  }).toEqual([0, 0, 0, 0]);
 });
 
 test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {

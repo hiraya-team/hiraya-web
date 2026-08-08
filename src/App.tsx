@@ -93,7 +93,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type DesktopWidget, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, arrangeDesktopDrag, arrangeDesktopSegment, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -332,6 +332,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
   const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
+  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const [widgetMutationPending, setWidgetMutationPending] = useState(false);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [dialog, setDialog] = useState<DialogState>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
@@ -484,6 +486,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     targetSegment?: SurfaceSegment;
   } | null>(null);
   const layoutRef = useRef(layout);
+  const widgetMutationPendingRef = useRef(false);
   const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
   const entriesRef = useRef(entries);
   const installedAppsRef = useRef(installedApps);
@@ -1073,6 +1076,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function selectEntry(surface: string, entry: DesktopEntry, options: { toggle?: boolean; range?: boolean; orderedIds?: string[] } = {}) {
+    setSelectedWidgetId(null);
     selectEntryId(surface, entry.id, options);
   }
 
@@ -2380,12 +2384,14 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function openDesktopContextMenu(clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
+    setSelectedWidgetId(null);
     replaceSelection("desktop", []);
     setContextMenu({ type: "desktop", parentId: null, x: clientX, y: clientY, position: positionAtDesktopPoint(clientX, clientY), presentation });
   }
 
   function openEntryContextMenu(entryId: string, clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
+    setSelectedWidgetId(null);
     setContextMenu({ type: "entry", entryId, x: clientX, y: clientY, presentation });
   }
 
@@ -2476,19 +2482,132 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     }
   }
 
+  function normalizeWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    const changed = { ...widget, ...change };
+    const projection = projectLogicalPosition(changed, iconArea);
+    const bounds = layoutRef.current.snapToGrid
+      ? snapShellItemBounds(projection.local, changed.width, changed.height, iconArea, layoutRef.current.gridSize)
+      : clampShellItemBounds(projection.local, changed.width, changed.height, iconArea);
+    return { ...changed, ...restoreLogicalPosition(bounds, projection.segment, iconArea), width: bounds.width, height: bounds.height };
+  }
+
+  function widgetChangePlan(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    const nextWidget = normalizeWidget(widget, change);
+    const currentLayout = layoutRef.current;
+    const widgets = currentLayout.widgets.some((item) => item.id === widget.id)
+      ? currentLayout.widgets.map((item) => item.id === widget.id ? nextWidget : item)
+      : [...currentLayout.widgets, nextWidget];
+    const nextLayout = { ...currentLayout, widgets };
+    const projection = projectLogicalPosition(nextWidget, iconArea);
+    const proposed = clampShellItemBounds(projection.local, nextWidget.width, nextWidget.height, iconArea);
+    const otherObstacles = desktopShellItemObstacles(widgets.filter((item) => item.id !== widget.id), nextLayout.iconGroups, entriesRef.current, projection.segment, iconArea);
+    const grouped = new Set(nextLayout.iconGroups.map((group) => group.folderId));
+    const persistedIds = new Set(entriesRef.current.map((entry) => entry.id));
+    const fixedIconObstacles = desktopEntryList.flatMap((entry) => {
+      const entryProjection = projectLogicalPosition(entry.position, iconArea);
+      return !persistedIds.has(entry.id) && entry.parentId === null && segmentKey(entryProjection.segment) === segmentKey(projection.segment)
+        ? [{ ...entryProjection.local, width: iconMetrics.width, height: iconMetrics.height }]
+        : [];
+    });
+    otherObstacles.push(...fixedIconObstacles);
+    if (positionOverlapsObstacles(proposed, proposed, otherObstacles)) return null;
+    const desktopEntries = entriesRef.current.filter((entry) => !grouped.has(entry.id));
+    if (!currentLayout.autoArrangeIcons) {
+      const overlap = desktopEntries.some((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, iconArea).segment) === segmentKey(projection.segment) && positionOverlapsObstacles(projectLogicalPosition(entry.position, iconArea).local, iconMetrics, [proposed]));
+      return overlap ? null : { currentLayout, nextLayout, nextWidget, updates: [] };
+    }
+    const updates = arrangeDesktopAroundObstacle(desktopEntries, proposed, projection.segment, iconArea, iconMetrics, currentLayout.gridSize, otherObstacles);
+    return updates ? { currentLayout, nextLayout, nextWidget, updates } : null;
+  }
+
+  function previewWidgetChange(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if (!layoutRef.current.autoArrangeIcons) return null;
+    const plan = widgetChangePlan(widget, change);
+    return plan ? plan.updates.flatMap(({ entryId, position }) => {
+      const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
+      return current ? [{ entryId, delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+    }) : [];
+  }
+
+  async function commitWidgetChange(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if (widgetMutationPendingRef.current) return false;
+    const plan = widgetChangePlan(widget, change);
+    if (!plan) {
+      setError(layoutRef.current.autoArrangeIcons ? "There is not enough room to place the widget without overlaps." : "Widgets cannot overlap desktop icons, widgets, or icon groups.");
+      return false;
+    }
+    const desktopId = activeDesktopIdRef.current;
+    const previous = new Map(plan.updates.map(({ entryId }) => [entryId, entriesRef.current.find((entry) => entry.id === entryId)!.position]));
+    const positions = new Map(plan.updates.map(({ entryId, position }) => [entryId, position]));
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    previewLayout(plan.nextLayout, desktopId);
+    entriesRef.current = entriesRef.current.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let iconsSaved = false;
+    try {
+      if (plan.updates.length) {
+        await updateRootEntryPositions(plan.updates);
+        iconsSaved = true;
+      }
+      const latestLayout = layoutRef.current;
+      const mergedLayout = {
+        ...latestLayout,
+        widgets: latestLayout.widgets.some((item) => item.id === plan.nextWidget.id)
+          ? latestLayout.widgets.map((item) => item.id === plan.nextWidget.id ? plan.nextWidget : item)
+          : [...latestLayout.widgets, plan.nextWidget],
+      };
+      await saveLayout(mergedLayout, desktopId);
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let iconsRestored = !iconsSaved;
+      if (iconsSaved && previous.size) {
+        try {
+          await updateRootEntryPositions([...previous].map(([entryId, position]) => ({ entryId, position })));
+          iconsRestored = true;
+        } catch {
+          // Keep the successfully persisted icon arrangement rather than showing stale positions.
+        }
+      }
+      const rollbackLayout = { ...layoutRef.current, widgets: plan.currentLayout.widgets };
+      previewLayout(rollbackLayout, desktopId);
+      if (iconsRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(iconsRestored ? "The widget change could not be saved." : "The widget change failed after nearby icons moved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+    setSelectedWidgetId(plan.nextWidget.id);
+    return true;
+  }
+
   function addWidget(kind: DesktopWidget["kind"], position: EntryPosition) {
     const size = kind === "status" ? { width: 260, height: 150 } : { width: 220, height: 150 };
     const widget: DesktopWidget = { id: `${kind}-${crypto.randomUUID()}`, kind, ...position, ...size };
-    void persistLayout({ ...layoutRef.current, widgets: [...layoutRef.current.widgets, widget] });
+    void commitWidgetChange(widget, {});
     setContextMenu(null);
   }
 
   function updateWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
-    void persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.map((item) => item.id === widget.id ? { ...item, ...change } : item) });
+    void commitWidgetChange(widget, change);
   }
 
-  function removeWidget(widget: DesktopWidget) {
-    void persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.filter((item) => item.id !== widget.id) });
+  async function removeWidget(widget: DesktopWidget) {
+    if (widgetMutationPendingRef.current) return;
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    setSelectedWidgetId((current) => current === widget.id ? null : current);
+    try {
+      await persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.filter((item) => item.id !== widget.id) });
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
   }
 
   function addIconGroup(folder: FolderEntry) {
@@ -3103,7 +3222,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
-    if (!canMutate) return false;
+    if (!canMutate || widgetMutationPendingRef.current) return false;
     if (!destination.desktop) {
       return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
     }
@@ -3193,7 +3312,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   async function handleMoveToDesktop(items: readonly DesktopEntry[], anchor: DesktopEntry, clientX: number, clientY: number) {
-    if (!canMutate) return false;
+    if (!canMutate || widgetMutationPendingRef.current) return false;
     const origin = restoreLogicalPosition(positionAtDesktopPoint(clientX, clientY), activeSegment, iconArea);
     const positions = items.map((entry) => ({
       entryId: entry.id,
@@ -4368,6 +4487,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (event.button !== 0) return;
     const target = event.target as Element;
     if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
+    setSelectedWidgetId(null);
     if (event.pointerType !== "touch") {
       event.preventDefault();
       const additive = event.metaKey || event.ctrlKey;
@@ -5148,7 +5268,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           event.stopPropagation();
         }}
         onClick={(event) => {
-          if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) replaceSelection("desktop", []);
+          if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) {
+            setSelectedWidgetId(null);
+            replaceSelection("desktop", []);
+          }
         }}
         onContextMenu={(event) => {
           if ((event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) return;
@@ -5241,6 +5364,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                     })
                   }
                   onOpen={() => {
+                    setSelectedWidgetId(null);
                     replaceSelection("desktop", []);
                     handleOpen(entry);
                   }}
@@ -5288,7 +5412,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
             onMoveWidget={(widget, position) => updateWidget(widget, position)}
             onResizeWidget={(widget, size) => updateWidget(widget, size)}
+            onPreviewWidget={previewWidgetChange}
             onRemoveWidget={removeWidget}
+            onSelectWidget={(widget) => {
+              replaceSelection("desktop", []);
+              setSelectedWidgetId(widget.id);
+            }}
+            selectedWidgetId={selectedWidgetId}
+            widgetBusy={widgetMutationPending}
+            gridSize={layout.snapToGrid ? layout.gridSize : undefined}
             onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
             onResizeGroup={updateIconGroup}
             onUngroup={ungroupIconGroup}
