@@ -53,7 +53,7 @@
     },
     "apps/system/file-viewer": {
       "name": "@hiraya/system-file-viewer",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@hiraya-team/apps-sdk": "1.2.0",
         "@hiraya/system-apps-shared": "workspace:*",
@@ -65,7 +65,7 @@
     },
     "apps/system/image-viewer": {
       "name": "@hiraya/system-image-viewer",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@hiraya-team/apps-sdk": "1.2.0",
         "@hiraya/system-apps-shared": "workspace:*",
@@ -77,7 +77,7 @@
     },
     "apps/system/markdown-preview": {
       "name": "@hiraya/system-markdown-preview",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@hiraya-team/apps-sdk": "1.2.0",
         "@hiraya/system-apps-shared": "workspace:*",
@@ -89,7 +89,7 @@
     },
     "apps/system/media-viewer": {
       "name": "@hiraya/system-media-viewer",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "dependencies": {
         "@hiraya-team/apps-sdk": "1.2.0",
         "@hiraya/system-apps-shared": "workspace:*",
