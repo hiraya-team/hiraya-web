@@ -132,6 +132,44 @@ test("search combines commands with other results", async ({ page }) => {
   await expect(page.getByRole("dialog", { name: "Settings" })).toBeVisible();
 });
 
+test("auto-arrange packs current-area icons and persists their positions", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLocalDesktop(page);
+  const names = [`arrange-first-${Date.now()}.txt`, `arrange-second-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 300, y: 500 } });
+  }
+  const first = page.locator(".file-icon").filter({ hasText: names[0] });
+  const second = page.locator(".file-icon").filter({ hasText: names[1] });
+  const desktop = await page.locator(".desktop").boundingBox();
+  if (!desktop) throw new Error("The desktop is not visible.");
+  await dragPointerTo(page, first, desktop.x + desktop.width - 140, desktop.y + desktop.height - 140);
+
+  await page.keyboard.press("Control+k");
+  const palette = page.getByRole("dialog", { name: /Search/ });
+  await palette.locator("input").fill("Auto-arrange desktop icons");
+  await palette.getByRole("group", { name: "Commands" }).getByRole("option", { name: /Auto-arrange desktop icons/ }).click();
+  await expect.poll(async () => {
+    const [a, b] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    return a && b ? { sameColumn: Math.abs(a.x - b.x) < 2, visualOrder: b.y < a.y } : null;
+  }).toEqual({ sameColumn: true, visualOrder: true });
+
+  const beforeReload = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await expect.poll(async () => {
+    const [a, b] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    return a && b && beforeReload[0] && beforeReload[1]
+      ? [Math.round(a.x - beforeReload[0].x), Math.round(a.y - beforeReload[0].y), Math.round(b.x - beforeReload[1].x), Math.round(b.y - beforeReload[1].y)]
+      : null;
+  }).toEqual([0, 0, 0, 0]);
+});
+
 test("clicking inside a sandbox app focuses and raises its window", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();

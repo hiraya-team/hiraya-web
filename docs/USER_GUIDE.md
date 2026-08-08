@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Navigate areas from a compact pill.** The area switcher now keeps the desktop visible while offering touch-friendly controls for each adjacent area. Select the desktop name in the global header to switch named desktops separately.
+- **Auto-arrange desktop icons.** Open Search and run **Auto-arrange desktop icons** to neatly pack icons in the current desktop area while preserving their visual order.
 - **Receive bundled app updates reliably.** After Hiraya updates, existing browsers now replace stale bundled app releases automatically while keeping each app's saved settings and data.
 - **Work across files in Text Editor.** Choose **Open workspace** to browse, search, create, rename, and delete files in a folder tree. Text Editor now keeps multiple files in tabs with breadcrumbs, keyboard navigation, icon controls, and a mobile sidebar while preserving unsaved changes independently in each tab.
 - **Dismiss open panels with Back.** On mobile, **Back** now closes the topmost dialog, notification panel, search, **User Guide**, **Start** menu, or desktop switcher before navigating away.

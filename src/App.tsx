@@ -91,7 +91,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopSegment, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -3000,6 +3000,30 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  async function autoArrangeDesktopIcons() {
+    if (!canMutate) return;
+    const arranged = arrangeDesktopSegment(entriesRef.current, activeSegment, iconArea, iconMetrics);
+    if (!arranged) {
+      setError("There is not enough room to auto-arrange every icon in this area.");
+      return;
+    }
+    const updates = arranged.filter(({ entryId, position }) => {
+      const current = entryIndex.byId.get(entryId)?.position;
+      return current?.x !== position.x || current.y !== position.y;
+    });
+    if (!updates.length) return;
+    const previous = new Map(updates.map(({ entryId }) => [entryId, entryIndex.byId.get(entryId)!.position]));
+    const positions = new Map(updates.map(({ entryId, position }) => [entryId, position]));
+    setError("");
+    setEntries((current) => current.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry));
+    try {
+      await updateRootEntryPositions(updates);
+    } catch {
+      setEntries((current) => current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry));
+      setError("The desktop icons could not be auto-arranged.");
+    }
+  }
+
   async function handleMoveToDesktop(items: readonly DesktopEntry[], anchor: DesktopEntry, clientX: number, clientY: number) {
     if (!canMutate) return false;
     const origin = restoreLogicalPosition(positionAtDesktopPoint(clientX, clientY), activeSegment, iconArea);
@@ -4469,6 +4493,7 @@ function App({ session }: { session: AuthSession | null }) {
     createFolder: () => openFileDialog({ type: "create-folder", parentId: null }),
     uploadFiles: () => chooseUpload(null),
     importFolder: () => chooseFolderImport(null),
+    autoArrange: autoArrangeDesktopIcons,
     openSettings: openSettingsWindow,
     openAreaMap,
     openPanel: setActivePanel,

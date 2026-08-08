@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
-import { desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
+import { arrangeDesktopSegment, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -31,6 +31,21 @@ describe("responsive desktop geometry", () => {
     const slots = desktopSlots(size);
     expect(nextAvailableDesktopSlot(size, [slots[0], slots[2]])).toEqual(slots[1]);
     expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
+  });
+
+  test("packs the current area in visual order without moving neighboring areas", () => {
+    const size = { width: 500, height: 500 };
+    const entries = [file("bottom", 30, 300), file("right", 250, 30), file("top", 30, 40), file("neighbor", 530, 30)];
+    expect(arrangeDesktopSegment(entries, { column: 0, row: 0 }, size)).toEqual([
+      { entryId: "top", position: { x: 22, y: 22 } },
+      { entryId: "bottom", position: { x: 22, y: 134 } },
+      { entryId: "right", position: { x: 22, y: 246 } },
+    ]);
+  });
+
+  test("does not produce colliding positions when an area is over capacity", () => {
+    const size = { width: 220, height: 260 };
+    expect(arrangeDesktopSegment([file("one"), file("two"), file("three")], { column: 0, row: 0 }, size)).toBeNull();
   });
 
   test("aligns icon areas to the selected sub-grid with only trailing remainders", () => {
