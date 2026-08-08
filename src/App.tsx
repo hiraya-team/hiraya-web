@@ -37,6 +37,7 @@ import {
   pasteEntries,
   readFile,
   previewFile,
+  refreshDesktopCatalog,
   thumbnailFile,
   renameEntry,
   renameDesktop as renameDesktopMutation,
@@ -274,7 +275,7 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   };
 }
 
-function App({ session }: { session: AuthSession | null }) {
+function App({ session, warmStart = false }: { session: AuthSession | null; warmStart?: boolean }) {
   const commandService = useMemo(createAppCommandService, []);
   const [loading, setLoading] = useState(true);
   const {
@@ -1564,7 +1565,7 @@ function App({ session }: { session: AuthSession | null }) {
         void pruneLocalDesktops(retainedIds);
       }
     });
-    void listDesktops(seededDesktop)
+    void listDesktops(seededDesktop, { cacheFirst: warmStart })
       .then((registry) => {
         if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
         catalogAuthoritativeRef.current = Boolean(registry.catalogId);
@@ -1578,7 +1579,9 @@ function App({ session }: { session: AuthSession | null }) {
         return switchLocalDesktop(desktopId)
           .then(() => pruneLocalDesktops(registry.desktops.map((desktop) => desktop.id)))
           .then(() => {
-            const initialization = initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, seededDesktop);
+            const backgroundServer = warmStart && !registry.catalogId;
+            const initialization = initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, seededDesktop, { backgroundServer });
+            if (backgroundServer) void initialization.then(() => refreshDesktopCatalog()).catch(() => undefined);
             savedWindowSession = readWindowSession(desktopId).then(
               (session) => ({ session, loaded: true as const }),
               () => ({ session: null, loaded: false as const }),
@@ -1632,7 +1635,7 @@ function App({ session }: { session: AuthSession | null }) {
       unsubscribeCatalog();
       void layoutSaveRef.current.catch(() => undefined).then(() => stopDesktopSync());
     };
-  }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps]);
+  }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps, warmStart]);
 
   useEffect(() => {
     const completedIds = new Set(fileTransfers.filter((transfer) => transfer.phase === "complete").map((transfer) => transfer.id));
@@ -4922,7 +4925,7 @@ function App({ session }: { session: AuthSession | null }) {
         data-area-transitioning={areaTransition || undefined}
         data-area-transition-phase={areaTransition?.phase}
         data-area-transition-kind={areaTransition?.kind}
-        data-loading={loading || undefined}
+        data-loading={loading && !warmStart || undefined}
         data-wallpaper={layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         data-custom-failed={wallpaperFailed || undefined}
@@ -5082,7 +5085,7 @@ function App({ session }: { session: AuthSession | null }) {
           />
         )}
 
-        {loading && (
+        {loading && !warmStart && (
           <div className="desktop-state desktop-state--loading" role="status">
             <span className="loading-line" />
             <span className="loading-line loading-line--short" />

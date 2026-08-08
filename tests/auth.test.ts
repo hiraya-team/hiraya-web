@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AuthenticationRequiredError, bootstrapSession, lockAuthBootstrap, loginUrl, parseAuthSession, safeReturnPath } from "../src/lib/auth";
+import { AuthenticationRequiredError, bootstrapSession, lockAuthBootstrap, loginUrl, parseAuthSession, readCachedSession, safeReturnPath } from "../src/lib/auth";
 
 function memoryStorage() {
   const values = new Map<string, string>();
@@ -72,6 +72,7 @@ describe("session bootstrap", () => {
     const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v2" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { entryTransactions: "prepare-commit-cancel-v1" as const } };
     let bootstrapRequest: RequestInit | undefined;
     expect(await bootstrapSession(false, (async (_input, init) => { bootstrapRequest = init; return Response.json(session); }) as typeof fetch, () => undefined, storage)).toEqual(session);
+    expect(readCachedSession(storage)).toEqual(session);
     expect(new Headers(bootstrapRequest?.headers).get("X-Hiraya-Protocol")).toBe("entry-transactions-v2");
     expect(await bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).toEqual(session);
     await expect(bootstrapSession(false, (async () => new Response(null, { status: 401 })) as typeof fetch, () => undefined, storage)).rejects.toBeInstanceOf(AuthenticationRequiredError);
@@ -88,6 +89,7 @@ describe("session bootstrap", () => {
     const session = { schemaVersion: 2 as const, apiProtocol: "entry-transactions-v2" as const, catalogId: "catalog-a", storageId: "account-a", directBlobOrigin: "https://objects.test", user: { displayName: "Ada" }, capabilities: { entryTransactions: "prepare-commit-cancel-v1" as const } };
     await bootstrapSession(false, (async () => Response.json(session)) as typeof fetch, () => undefined, storage);
     lockAuthBootstrap(storage);
+    expect(readCachedSession(storage)).toBeNull();
     await expect(bootstrapSession(false, (async () => { throw new TypeError("offline"); }) as typeof fetch, () => undefined, storage)).rejects.toThrow("offline");
   });
 
