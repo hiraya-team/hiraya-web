@@ -1260,17 +1260,19 @@ describe("canonical synchronization", () => {
     expect(progress).toHaveLength(countAfterStop);
   });
 
-  test("retries blocked records in order and publishes queue changes", async () => {
+  test("retries the selected blocked record and all later records in order", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
     let rejectMutation = true;
+    const retriedOperationIds: string[] = [];
     const queueSizes: number[] = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
       if (String(input) === "/api/desktops/desk/entries/transactions") {
         if (rejectMutation) return Response.json({ error: "position conflict" }, { status: 409 });
-        remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], position: { x: 5, y: 6 }, revision: 2 }] };
-        return Response.json({ state: "committed", catalogRevision: 1 });
+        retriedOperationIds.push(new Headers(init?.headers).get("X-Hiraya-Operation-ID")!);
+        remote = { ...remote, catalogRevision: remote.catalogRevision + 1 };
+        return Response.json({ state: "committed", catalogRevision: remote.catalogRevision });
       }
       throw new Error(`Unexpected request: ${String(input)}`);
     }) as typeof fetch;
@@ -1279,13 +1281,18 @@ describe("canonical synchronization", () => {
     const unsubscribe = engine.subscribeOutbox((records) => queueSizes.push(records.length));
     await engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 5, y: 6 } }]);
     await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
-    const [blocked] = await engine.listOutboxRecords();
-    expect(blocked.status).toBe("blocked");
+    await engine.saveEditorSettings({ ...remote.editorSettings, fontSize: 15 });
+    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 2);
+    await engine.saveDesktopLayout({ ...remote.layout, snapToGrid: true });
+    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 3);
+    const records = await engine.listOutboxRecords();
+    expect(records.every((record) => record.status === "blocked")).toBeTrue();
 
     rejectMutation = false;
-    await engine.retryBlockedOutboxRecord(blocked.operationId);
+    await engine.retryBlockedOutboxRecord(records[0].operationId);
+    expect(retriedOperationIds).toEqual(records.map((record) => record.operationId));
     expect(await engine.listOutboxRecords()).toEqual([]);
-    expect(queueSizes).toContain(1);
+    expect(queueSizes).toContain(3);
     expect(queueSizes.at(-1)).toBe(0);
     unsubscribe();
     await engine.stop();

@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Edit themes with clearer controls.** Theme Editor now opens ready to edit, keeps **Save and Apply** at the top, and scrolls only the controls when space is limited. Editor syntax colors are owned by each editor rather than desktop themes.
+- **Retry queued changes in one step.** In **Sync status**, selecting **Retry** now retries that blocked change and every later queued change in order, stopping if another change still needs attention.
 - **Open public files in familiar apps.** Public desktops now use the same bundled default app for each file type as signed-in desktops, while file access and controls remain read-only. Folders continue to open in Explorer, safe internet shortcuts open in a new tab, and public app packages remain download-only.
 - **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Overlapping icons shift down along the selected grid, wrapping to the next column when needed, and the arrangement follows the desktop across devices.
 - **Copy item links from the keyboard.** Select one file or folder on the desktop or in Explorer, then press **Ctrl/⌘ Shift C** to copy its link.
