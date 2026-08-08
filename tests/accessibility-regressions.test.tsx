@@ -80,12 +80,12 @@ describe("accessibility regressions", () => {
 
   test("search exposes installed apps and disables unavailable packages", () => {
     const markup = renderToStaticMarkup(<SearchCommandPalette {...baseProps} apps={[
-      { id: "app.hiraya.text-editor", name: "Text Editor", source: "system", available: true },
+      { id: "app.hiraya.text-editor", name: "Integrated Editor", source: "system", available: true },
       { id: "example.missing", name: "Missing App", source: "desktop", available: false },
     ]} />);
 
     expect(markup).toContain('role="group" aria-label="Apps"');
-    expect(markup).toContain("Text Editor");
+    expect(markup).toContain("Integrated Editor");
     expect(markup).toMatch(/<button[^>]+aria-disabled="true"[^>]+disabled=""[^>]*>[^<]*<svg[^>]*>/);
     expect(markup).toContain("Missing App");
     expect(markup).toContain("Package unavailable");

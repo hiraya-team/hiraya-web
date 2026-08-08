@@ -15,7 +15,7 @@ const systemApp: InstalledApp = {
   manifest: {
     schemaVersion: 2,
     id: "app.hiraya.text-editor",
-    name: "Text Editor",
+    name: "Integrated Editor",
     version: "1.0.0",
     entrypoint: "index.html",
     permissions: ["files:read", "files:write"],
@@ -77,7 +77,7 @@ describe("App Store", () => {
     const markup = renderToStaticMarkup(<AppStoreWindow {...base} />);
 
     expect(markup).toContain("Search apps, descriptions, or IDs");
-    expect(markup).toContain("Text Editor");
+    expect(markup).toContain("Integrated Editor");
     expect(markup).toContain("Trusted system app");
     expect(markup).toContain("Trusted by Hiraya");
     expect(markup).toContain("Reset data");

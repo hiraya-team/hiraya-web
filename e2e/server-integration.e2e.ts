@@ -281,7 +281,7 @@ async function primary(browser: Browser) {
 
   await createTextFile(first, sandboxRuntimeFile);
   await first.locator(".file-icon").filter({ hasText: sandboxRuntimeFile }).dblclick();
-  await expect(first.getByRole("dialog", { name: `${sandboxRuntimeFile} - Text Editor` })).toBeVisible();
+  await expect(first.getByRole("dialog", { name: "Integrated Editor" })).toBeVisible();
   const appFrame = first.frameLocator("iframe.sandbox-app-frame");
   await expect(appFrame.locator("#status")).toContainText(new RegExp(`^(Opened|Reloaded) ${sandboxRuntimeFile}`));
   await expect.poll(() => appFrame.locator("hiraya-toolbar").evaluate((toolbar) => ({
@@ -291,14 +291,14 @@ async function primary(browser: Browser) {
     buttonDefined: Boolean(customElements.get("hiraya-button")),
     buttonShadow: Boolean(document.querySelector("hiraya-button")?.shadowRoot),
   }))).toEqual({ foundation: true, toolbarDefined: true, toolbarShadow: true, buttonDefined: true, buttonShadow: true });
-  await first.getByRole("button", { name: `Close ${sandboxRuntimeFile} - Text Editor` }).click();
+  await first.getByRole("button", { name: "Close Integrated Editor" }).click();
 
   await createTextFile(first, mergeFile);
   await expect(second.getByText(mergeFile, { exact: true })).toBeVisible({ timeout: 20_000 });
   await first.locator(".file-icon").filter({ hasText: mergeFile }).dblclick();
   await second.locator(".file-icon").filter({ hasText: mergeFile }).dblclick();
-  await expect(first.getByRole("dialog", { name: `${mergeFile} - Text Editor` })).toBeVisible();
-  await expect(second.getByRole("dialog", { name: `${mergeFile} - Text Editor` })).toBeVisible();
+  await expect(first.getByRole("dialog", { name: "Integrated Editor" })).toBeVisible();
+  await expect(second.getByRole("dialog", { name: "Integrated Editor" })).toBeVisible();
   await expect(first.frameLocator("iframe.sandbox-app-frame").locator("#status")).toContainText("Opened");
   await expect(second.frameLocator("iframe.sandbox-app-frame").locator("#status")).toContainText("Opened");
   await first.waitForTimeout(1_000);
@@ -330,11 +330,11 @@ async function primary(browser: Browser) {
   await merge.getByRole("button", { name: "Save merged" }).click();
   await expect(merge).toBeHidden({ timeout: 30_000 });
   await first.setViewportSize({ width: 1280, height: 720 });
-  const restoredEditor = first.getByRole("dialog", { name: "Text Editor" });
-  if (await restoredEditor.isVisible()) await first.getByRole("button", { name: "Close Text Editor" }).click();
+  const restoredEditor = first.getByRole("dialog", { name: "Integrated Editor" });
+  if (await restoredEditor.isVisible()) await first.getByRole("button", { name: "Close Integrated Editor" }).click();
 
   await expect.poll(() => remoteText(second, mergeFile), { timeout: 30_000 }).toBe("Resolved by Merge\n");
-  await second.getByRole("button", { name: `Close ${mergeFile} - Text Editor` }).click();
+  await second.getByRole("button", { name: "Close Integrated Editor" }).click();
 
   const chooser = first.waitForEvent("filechooser");
   await first.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "Upload files" }).click();

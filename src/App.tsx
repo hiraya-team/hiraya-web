@@ -3620,7 +3620,7 @@ function App({ session }: { session: AuthSession | null }) {
     if (!currentRoute || !fileCapabilities(file).editable) return;
     const editor = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.textEditor);
     if (!editor) {
-      setError("Text Editor is unavailable.");
+      setError("Integrated Editor is unavailable.");
       return;
     }
     void openFileWithApp(editor, file);
