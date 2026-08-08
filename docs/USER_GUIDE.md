@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Receive bundled app updates reliably.** After Hiraya updates, existing browsers now replace stale bundled app releases automatically while keeping each app's saved settings and data.
 - **Work across files in Text Editor.** Choose **Open workspace** to browse, search, create, rename, and delete files in a folder tree. Text Editor now keeps multiple files in tabs with breadcrumbs, keyboard navigation, icon controls, and a mobile sidebar while preserving unsaved changes independently in each tab.
 - **Dismiss open panels with Back.** On mobile, **Back** now closes the topmost dialog, notification panel, search, **User Guide**, **Start** menu, or desktop switcher before navigating away.
 - **Use Back to move up one level.** On mobile, the system **Back** action returns to an app's parent page, closes an app from its home page, returns another desktop area to Home, and reliably requires three quick presses before leaving Hiraya from Home, including after reopening Hiraya.
