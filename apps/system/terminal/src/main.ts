@@ -4,7 +4,6 @@ import { HirayaShell, type OutputTone, type ShellState } from "./shell";
 import { HirayaFileSystem } from "./vfs";
 import "./style.css";
 
-type HirayaButton = HTMLElement & { disabled: boolean };
 const APP_ID = "app.hiraya.terminal";
 const STATE_KEY = "shell-state";
 const surface = required<HTMLElement>("#surface");
@@ -15,16 +14,12 @@ const command = required<HTMLTextAreaElement>("#command");
 const promptLabel = required<HTMLLabelElement>("#prompt-label");
 const status = required<HTMLElement>("#status");
 const loading = required<HTMLElement>("#loading");
-const stop = required<HirayaButton>("#stop");
 let shell: HirayaShell | null = null;
 let hiraya: HirayaClient | null = null;
 let active: AbortController | null = null;
 let historyIndex = 0;
 let saveTimer = 0;
 
-required("#help").addEventListener("click", () => { command.value = "help"; void execute(); });
-required("#clear").addEventListener("click", clear);
-stop.addEventListener("click", cancel);
 prompt.addEventListener("submit", (event) => { event.preventDefault(); void execute(); });
 command.addEventListener("input", resizeInput);
 command.addEventListener("keydown", (event) => {
@@ -51,10 +46,9 @@ async function start() {
     app.onDispose(() => { active?.abort(); shell?.dispose(); clearTimeout(saveTimer); });
     app.hiraya.on("capabilities.changed", applyCapabilities);
     app.hiraya.on("commands.invoked", ({ id }) => id === "clear" ? clear() : id === "help" ? (command.value = "help", void execute()) : id === "stop" ? cancel() : undefined);
-    await app.hiraya.commands.set([{ id: "help", title: "Show Terminal help" }, { id: "clear", title: "Clear Terminal" }, { id: "stop", title: "Stop foreground command", shortcut: "Ctrl+C", enabled: false }]);
+    await publishCommands();
     applyCapabilities(await app.hiraya.app.getCapabilities());
     setAppLoading(surface, terminal, loading);
-    for (const id of ["help", "clear"]) required<HirayaButton>(`#${id}`).disabled = false;
     append("Hiraya Terminal 1.0", "accent");
     append("A Unix-like shell for this desktop's files. Type 'help' to list commands.", "muted");
     const launchFile = app.launch.files[0];
@@ -84,7 +78,6 @@ async function execute() {
   resizeInput();
   append(`${shell.cwd} $ ${source}`, "command");
   active = new AbortController();
-  stop.disabled = false;
   command.disabled = true;
   status.textContent = "Running...";
   void publishCommands();
@@ -96,7 +89,6 @@ async function execute() {
     status.textContent = "Command failed.";
   } finally {
     active = null;
-    stop.disabled = true;
     command.disabled = false;
     historyIndex = shell.history.length;
     updatePrompt();
@@ -168,7 +160,11 @@ async function saveState(state: ShellState) {
 }
 
 function publishCommands() {
-  return hiraya?.commands.set([{ id: "help", title: "Show Terminal help" }, { id: "clear", title: "Clear Terminal" }, { id: "stop", title: "Stop foreground command", shortcut: "Ctrl+C", enabled: Boolean(active) }]) ?? Promise.resolve();
+  return hiraya?.commands.set([
+    { id: "help", title: "Help", enabled: Boolean(shell) && !active, promoted: true },
+    { id: "clear", title: "Clear", enabled: Boolean(shell), promoted: true },
+    { id: "stop", title: "Stop", shortcut: "Ctrl+C", enabled: Boolean(active), promoted: Boolean(active) },
+  ]) ?? Promise.resolve();
 }
 
 function parseState(value: JsonValue | undefined): Partial<ShellState> | undefined {

@@ -263,9 +263,8 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true });
   await expect(editor).toBeVisible();
-  await expect(open).toBeVisible();
+  await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeVisible();
 
   await page.keyboard.press("Control+k");
   search = page.getByRole("dialog", { name: /Search/ });
@@ -304,7 +303,8 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  await editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true }).click();
+  await editor.getByRole("button", { name: "More Integrated Editor actions" }).click();
+  await editor.getByRole("dialog", { name: "More Integrated Editor actions" }).getByRole("button", { name: /^Open/ }).click();
 
   const picker = page.getByRole("dialog", { name: "Choose file" });
   const folder = picker.getByRole("button", { name: folderName });
@@ -359,7 +359,8 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
 
   await frame.getByRole("treeitem", { name: new RegExp(firstName) }).click();
   await expect(app).toHaveAccessibleName("Integrated Editor");
-  await expect(frame.getByRole("tab", { name: new RegExp(firstName) })).toHaveAttribute("aria-selected", "true");
+  const openFiles = frame.getByRole("toolbar", { name: "Open files" });
+  await expect(openFiles.getByRole("button", { name: firstName, exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(frame.locator("#breadcrumbs")).not.toContainText(firstName);
   await frame.getByRole("button", { name: "New file" }).click();
   const create = frame.getByRole("dialog", { name: "New file" });
@@ -372,8 +373,8 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await frame.getByLabel("Workspace sidebar").getByRole("button", { name: folderName, exact: true }).click();
   await expect(frame.getByRole("button", { name: "Rename selected item" })).toBeDisabled();
   await secondRow.click();
-  await expect(frame.getByRole("tab", { name: new RegExp(firstName) })).toBeVisible();
-  await expect(frame.getByRole("tab", { name: new RegExp(secondName) })).toHaveAttribute("aria-selected", "true");
+  await expect(openFiles.getByRole("button", { name: firstName, exact: true })).toBeVisible();
+  await expect(openFiles.getByRole("button", { name: secondName, exact: true })).toHaveAttribute("aria-pressed", "true");
 
   await frame.getByRole("button", { name: "Search workspace" }).click();
   await frame.getByRole("searchbox", { name: "Search files by name" }).fill("first-");
@@ -391,7 +392,7 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await expect(tree.getByRole("treeitem", { name: renamedName, exact: true })).toHaveCount(0);
   await tree.getByRole("treeitem", { name: imageName, exact: true }).click();
   await expect(frame.locator(`img[alt="Preview of ${imageName}"]`)).toBeVisible();
-  await expect(frame.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await expect(app.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 });
 
 test("app save picker creates and selects a folder", async ({ page }) => {
@@ -408,7 +409,7 @@ test("app save picker creates and selects a folder", async ({ page }) => {
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  const saveAs = editor.frameLocator("iframe").getByRole("button", { name: "Save as" });
+  const saveAs = editor.getByRole("button", { name: "Save As", exact: true });
   await expect(saveAs).toBeEnabled();
   await saveAs.click();
 
@@ -650,7 +651,7 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   let app = page.getByRole("dialog", { name: "Integrated Editor" });
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
-  await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await app.getByRole("button", { name: "Save", exact: true }).click();
   await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
   await app.getByRole("button", { name: "Close Integrated Editor" }).click();
   const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });

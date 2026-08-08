@@ -27,4 +27,4 @@
 .markdown-page input[type="checkbox"] { margin-inline: -1.25rem .5rem; accent-color: var(--hiraya-accent); }
 .external-embed { max-width: 100%; margin: 1rem auto; overflow-wrap: anywhere; }
 .external-embed::part(actions) { display: flex; flex-wrap: wrap; gap: .55rem; margin-top: .55rem; }
-@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page, .markdown-page { padding: 1.25rem; } :is(#open, #fullscreen) { min-width: 44px; min-height: 44px; } }
+@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page, .markdown-page { padding: 1.25rem; } }

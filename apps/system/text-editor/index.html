@@ -12,9 +12,6 @@
       <symbol id="icon-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6V3.5Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M14 3.5v4h4" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
       <symbol id="icon-code" viewBox="0 0 24 24"><path d="m9 8-4 4 4 4m6-8 4 4-4 4m-2.5-10-2 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
-      <symbol id="icon-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4V4Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M8 4v6h8V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
-      <symbol id="icon-save-as" viewBox="0 0 24 24"><path d="M4 4h12l3 3v4M4 4v16h8M8 4v6h7V4M8 20v-6h4" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="m14 18 5-5 2 2-5 5-3 1 1-3Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
-      <symbol id="icon-format" viewBox="0 0 24 24"><path d="M4 6h10M4 10h7M4 14h5M4 18h8m5-8 .7 2.3L20 13l-2.3.7L17 16l-.7-2.3L14 13l2.3-.7L17 10Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
       <symbol id="icon-plus-file" viewBox="0 0 24 24"><path d="M5 3.5h8l4 4V12M13 3.5v4h4M5 3.5V20h7" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-plus-folder" viewBox="0 0 24 24"><path d="M3.5 19V5.5h6l2 2h9V12" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
@@ -25,19 +22,11 @@
       <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
     </svg>
     <main class="app-shell">
-      <hiraya-toolbar label="Editor commands">
-        <hiraya-button class="icon-button" id="toggle-sidebar" variant="quiet" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)" disabled><svg slot="icon-start"><use href="#icon-sidebar"></use></svg></hiraya-button>
-        <hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge>
-        <hiraya-button class="icon-button" slot="actions" id="open" aria-label="Open" title="Open file (Ctrl+O)" disabled><svg slot="icon-start"><use href="#icon-folder-open"></use></svg></hiraya-button>
-        <hiraya-button class="icon-button" slot="actions" id="format" aria-label="Format document" title="Format document" disabled><svg slot="icon-start"><use href="#icon-format"></use></svg></hiraya-button>
-        <hiraya-button class="icon-button" slot="actions" id="save-as" aria-label="Save as" title="Save as (Ctrl+Shift+S)" disabled><svg slot="icon-start"><use href="#icon-save-as"></use></svg></hiraya-button>
-        <hiraya-button class="icon-button" slot="actions" id="save" variant="primary" aria-label="Save" title="Save (Ctrl+S)" disabled><svg slot="icon-start"><use href="#icon-save"></use></svg></hiraya-button>
-      </hiraya-toolbar>
       <div id="content" class="app-content" aria-busy="true">
         <hiraya-loading-state id="loading"><strong slot="title">Starting Integrated Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state>
         <div id="workbench" class="workbench" inert aria-hidden="true">
           <nav class="activity-bar" aria-label="Integrated Editor views">
-            <button id="explorer-view" class="activity-button" type="button" aria-label="Explorer" title="Explorer (Ctrl+Shift+E)" aria-pressed="true"><svg><use href="#icon-sidebar"></use></svg></button>
+            <button id="explorer-view" class="activity-button" type="button" aria-label="Explorer" title="Explorer (Ctrl+Shift+E)" aria-pressed="true" aria-expanded="true"><svg><use href="#icon-sidebar"></use></svg></button>
             <button id="search-view" class="activity-button" type="button" aria-label="Search workspace" title="Search workspace (Ctrl+P)" aria-pressed="false"><svg><use href="#icon-search"></use></svg></button>
             <button id="settings-view" class="activity-button activity-button--bottom" type="button" aria-label="Settings" title="Settings" aria-pressed="false"><svg><use href="#icon-settings"></use></svg></button>
           </nav>
@@ -74,14 +63,14 @@
             </section>
           </aside>
           <section class="editor-stage">
-            <div id="tabs" class="editor-tabs" role="tablist" aria-label="Open files"></div>
+            <div id="tabs" class="editor-tabs" role="toolbar" aria-label="Open files"></div>
             <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden></nav>
             <div id="editor"></div>
             <div id="preview" class="file-preview" tabindex="-1" hidden></div>
           </section>
         </div>
       </div>
-      <hiraya-status-bar id="status" live="polite">Connecting...</hiraya-status-bar>
+      <hiraya-status-bar live="polite"><span id="status">Connecting...</span><hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge></hiraya-status-bar>
     </main>
     <dialog id="entry-dialog" class="entry-dialog" aria-labelledby="entry-dialog-title">
       <form method="dialog">
