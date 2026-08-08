@@ -39,6 +39,7 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
   assertWallpaperSource(entries, layout.wallpaper, appearance);
   return {
     entries,
+    autoArrangeIcons: layout.autoArrangeIcons,
     snapToGrid: layout.snapToGrid,
     gridSize: layout.gridSize,
     wallpaper: layout.wallpaper,
@@ -49,7 +50,7 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
 }
 
 export function desktopStateLayout(state: PersistedDesktopState): DesktopLayout {
-  return { snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper };
+  return { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper };
 }
 
 function localEntry(entry: RemoteEntry): DesktopEntry {

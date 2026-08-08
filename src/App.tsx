@@ -92,7 +92,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, arrangeDesktopSegment, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopDrag, arrangeDesktopSegment, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -342,7 +342,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [routeHistoryReady, setRouteHistoryReady] = useState(false);
   const [route, setRoute] = useState<DesktopRoute | null>(null);
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
-  const [layout, setLayout] = useState<DesktopLayout>(() => ({ snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }));
+  const [layout, setLayout] = useState<DesktopLayout>(() => ({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
   const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
@@ -2969,11 +2969,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
   }
 
-  async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
-    if (!canMutate) return false;
-    if (!destination.desktop) {
-      return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
-    }
+  function desktopMovePosition(entry: DesktopEntry, position: EntryPosition) {
     const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
     const sourceOrigin = areaWorldOrigin(sourceSegment, iconArea);
     const worldPosition = { x: sourceOrigin.x + position.x, y: sourceOrigin.y + position.y };
@@ -2984,22 +2980,65 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, logicalCanvasPosition.x - targetSegment.column * iconArea.width)),
       y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, logicalCanvasPosition.y - targetSegment.row * iconArea.height)),
     };
-    const logicalPosition = restoreLogicalPosition(localPosition, targetSegment, iconArea);
-    const group = selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
-    if (group.length > 1) {
-      const delta = { x: logicalPosition.x - entry.position.x, y: logicalPosition.y - entry.position.y };
-      const updates = group.map((item) => ({ entryId: item.id, position: { x: item.position.x + delta.x, y: item.position.y + delta.y } }));
-      const previous = new Map(group.map((item) => [item.id, item.position]));
-      const nextPositions = new Map(updates.map((item) => [item.entryId, item.position]));
-      setEntries((current) => current.map((item) => (nextPositions.has(item.id) ? { ...item, position: nextPositions.get(item.id)! } : item)));
+    return { logicalPosition: restoreLogicalPosition(localPosition, targetSegment, iconArea), targetSegment };
+  }
+
+  function desktopMoveGroup(entry: DesktopEntry) {
+    return selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
+  }
+
+  function arrangedDesktopMove(entry: DesktopEntry, position: EntryPosition) {
+    const { logicalPosition, targetSegment } = desktopMovePosition(entry, position);
+    const group = desktopMoveGroup(entry);
+    const sourceSegmentKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
+    if (group.some((item) => segmentKey(projectLogicalPosition(item.position, iconArea).segment) !== sourceSegmentKey)) return undefined;
+    return arrangeDesktopDrag(entries, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics, layoutRef.current.gridSize);
+  }
+
+  function previewDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination | null) {
+    if (!layoutRef.current.autoArrangeIcons || !destination?.desktop) return null;
+    const movingIds = new Set(desktopMoveGroup(entry).map((item) => item.id));
+    const updates = arrangedDesktopMove(entry, position);
+    if (!updates) return updates === null ? [] : null;
+    return updates.flatMap(({ entryId, position: next }) => {
+      if (movingIds.has(entryId)) return [];
+      const current = entryIndex.byId.get(entryId)?.position;
+      return current ? [{ entryId, delta: { x: next.x - current.x, y: next.y - current.y } }] : [];
+    });
+  }
+
+  async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
+    if (!canMutate) return false;
+    if (!destination.desktop) {
+      return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
+    }
+    const { logicalPosition } = desktopMovePosition(entry, position);
+    const group = desktopMoveGroup(entry);
+    if (layoutRef.current.autoArrangeIcons) {
+      const updates = arrangedDesktopMove(entry, position);
+      if (updates === null) {
+        setError("There is not enough room to prevent icon overlaps in this area.");
+        return false;
+      }
+      if (updates === undefined) return moveDesktopGroup(group, entry, logicalPosition);
+      if (!updates.length) return true;
+      const previous = new Map(updates.map(({ entryId }) => [entryId, entryIndex.byId.get(entryId)!.position]));
+      const nextPositions = new Map(updates.map(({ entryId, position: next }) => [entryId, next]));
+      setEntries((current) => current.map((item) => nextPositions.has(item.id) ? { ...item, position: nextPositions.get(item.id)! } : item));
       try {
         await updateRootEntryPositions(updates);
         return true;
       } catch {
-        setEntries((current) => current.map((item) => (previous.has(item.id) ? { ...item, position: previous.get(item.id)! } : item)));
-        setError("The selected icon positions could not be saved.");
+        setEntries((current) => current.map((item) => {
+          const intended = nextPositions.get(item.id);
+          return intended && item.position.x === intended.x && item.position.y === intended.y ? { ...item, position: previous.get(item.id)! } : item;
+        }));
+        setError("The arranged icon positions could not be saved.");
         return false;
       }
+    }
+    if (group.length > 1) {
+      return moveDesktopGroup(group, entry, logicalPosition);
     }
     setEntries((current) => current.map((item) => (item.id === entry.id ? { ...item, position: logicalPosition } : item)));
     try {
@@ -3008,6 +3047,22 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     } catch {
       setEntries((current) => current.map((item) => (item.id === entry.id ? { ...item, position: entry.position } : item)));
       setError("The new icon position could not be saved.");
+      return false;
+    }
+  }
+
+  async function moveDesktopGroup(group: DesktopEntry[], anchor: DesktopEntry, logicalPosition: EntryPosition) {
+    const delta = { x: logicalPosition.x - anchor.position.x, y: logicalPosition.y - anchor.position.y };
+    const updates = group.map((item) => ({ entryId: item.id, position: { x: item.position.x + delta.x, y: item.position.y + delta.y } }));
+    const previous = new Map(group.map((item) => [item.id, item.position]));
+    const nextPositions = new Map(updates.map((item) => [item.entryId, item.position]));
+    setEntries((current) => current.map((item) => (nextPositions.has(item.id) ? { ...item, position: nextPositions.get(item.id)! } : item)));
+    try {
+      await updateRootEntryPositions(updates);
+      return true;
+    } catch {
+      setEntries((current) => current.map((item) => (previous.has(item.id) ? { ...item, position: previous.get(item.id)! } : item)));
+      setError("The selected icon positions could not be saved.");
       return false;
     }
   }
@@ -5054,6 +5109,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                     handleOpen(entry);
                   }}
                   onMove={(position, destination) => canMutateShellDrop(entry, destination.parentId) ? handleDesktopMove(entry, position, destination) : Promise.resolve(false)}
+                  onDragMove={(position, destination) => previewDesktopMove(entry, position, destination)}
                   dragEdgeAt={edgeAt}
                   onDragAtEdge={(direction) => handleIconDragAtEdge(entry, direction)}
                   onEdgeDwellChange={handleEdgeDwellChange}

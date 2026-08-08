@@ -187,6 +187,75 @@ test("auto-arrange packs current-area icons and persists their positions", async
   }).toEqual([0, 0, 0, 0]);
 });
 
+test("dragging shifts overlapping icons live and persists the arrangement", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await openLocalDesktop(page);
+  const names = [`live-arrange-first-${Date.now()}.txt`, `live-arrange-second-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 300, y: 500 } });
+  }
+  const first = page.locator(".file-icon").filter({ hasText: names[0] });
+  const second = page.locator(".file-icon").filter({ hasText: names[1] });
+  const target = await second.boundingBox();
+  if (!target) throw new Error("The target icon is not visible.");
+  const originalSecond = { x: target.x, y: target.y };
+
+  await beginDragPointerTo(page, first, target.x + target.width / 2, target.y + target.height / 2);
+  await expect(second).toHaveAttribute("data-auto-arrange-dragging", "true");
+  await first.dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", clientX: target.x + target.width / 2, clientY: target.y + target.height / 2 });
+  await page.mouse.up();
+  await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
+  await expect.poll(async () => {
+    const restored = await second.boundingBox();
+    return restored ? [Math.round(restored.x - originalSecond.x), Math.round(restored.y - originalSecond.y)] : null;
+  }).toEqual([0, 0]);
+
+  await beginDragPointerTo(page, first, target.x + target.width / 2, target.y + target.height / 2);
+  await expect(second).toHaveAttribute("data-auto-arrange-dragging", "true");
+  await page.mouse.up();
+  await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
+  await expect.poll(async () => {
+    const moved = await second.boundingBox();
+    return moved ? { x: Math.round(moved.x - originalSecond.x), down: moved.y > originalSecond.y } : null;
+  }).toEqual({ x: 0, down: true });
+
+  const beforeReload = await Promise.all([first.boundingBox(), second.boundingBox()]);
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await expect.poll(async () => {
+    const [a, b] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    return a && b && beforeReload[0] && beforeReload[1]
+      ? [Math.round(a.x - beforeReload[0].x), Math.round(a.y - beforeReload[0].y), Math.round(b.x - beforeReload[1].x), Math.round(b.y - beforeReload[1].y)]
+      : null;
+  }).toEqual([0, 0, 0, 0]);
+});
+
+test("auto-arrange while dragging defaults on and persists an opt-out", async ({ page }) => {
+  await openLocalDesktop(page);
+  const openDesktopSettings = async () => {
+    await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+    await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("button", { name: "Desktop", exact: true }).click();
+    return settings;
+  };
+  let settings = await openDesktopSettings();
+  const toggle = settings.getByRole("checkbox", { name: /Auto-arrange while dragging/ });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  settings = await openDesktopSettings();
+  await expect(settings.getByRole("checkbox", { name: /Auto-arrange while dragging/ })).not.toBeChecked();
+});
+
 test("clicking inside a sandbox app focuses and raises its window", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
@@ -194,7 +263,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open" });
+  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true });
   await expect(editor).toBeVisible();
   await expect(open).toBeVisible();
 
@@ -235,7 +304,7 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  await editor.frameLocator("iframe").getByRole("button", { name: "Open" }).click();
+  await editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true }).click();
 
   const picker = page.getByRole("dialog", { name: "Choose file" });
   const folder = picker.getByRole("button", { name: folderName });
@@ -546,7 +615,12 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
   await app.getByRole("button", { name: "Close Integrated Editor" }).click();
+  const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
+  await expect.poll(async () => await app.isHidden() || await discard.isVisible()).toBe(true);
+  if (await discard.isVisible()) await discard.click();
+  await expect(app).toBeHidden();
 
   await icon.dblclick();
   app = page.getByRole("dialog", { name: "Integrated Editor" });
@@ -1107,8 +1181,9 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(switcher).toHaveAttribute("data-expanded", "true");
+    await expect(switcher.locator(".desktop-minimap__area")).toHaveCount(5);
     await expect(switcher.locator(".desktop-minimap__direction")).toHaveCount(4);
-    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(260);
+    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(340);
     await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
     await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
     await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);

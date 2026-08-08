@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "layout": {
+    "autoArrangeIcons": true,
     "snapToGrid": false,
     "gridSize": 24,
     "wallpaper": {

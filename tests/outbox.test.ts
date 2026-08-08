@@ -6,13 +6,13 @@ import { DEFAULT_WALLPAPER } from "../src/types";
 
 function state() {
   const snapshot = desktopStateSnapshot();
-  return { entries: snapshot.entries, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
+  return { entries: snapshot.entries, autoArrangeIcons: snapshot.layout.autoArrangeIcons, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
 }
 
 describe("strict outbox", () => {
   test("requires operation schema version 1", () => {
     const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { snapToGrid: true, wallpaper: { ...DEFAULT_WALLPAPER } } };
-    expect(normalizeOutboxOperation(operation)).toEqual({ ...operation, layout: { ...operation.layout, gridSize: 24 } });
+    expect(normalizeOutboxOperation(operation)).toEqual({ ...operation, layout: { ...operation.layout, autoArrangeIcons: true, gridSize: 24 } });
     expect(applyOutboxOperation(state(), operation).snapToGrid).toBe(true);
     expect(() => normalizeOutboxOperation({ ...operation, schemaVersion: 2 } as never)).toThrow("schema version");
   });
@@ -156,11 +156,12 @@ describe("strict outbox", () => {
 
   test("three-way merges disjoint layout fields without overwriting remote state", () => {
     const snapshot = desktopStateSnapshot();
-    const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { ...snapshot.layout, snapToGrid: true }, baseRevision: 1, conflictBase: snapshot.layout };
+    const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { ...snapshot.layout, autoArrangeIcons: false, snapToGrid: true }, baseRevision: 1, conflictBase: snapshot.layout };
     const remote = { ...snapshot, layout: { ...snapshot.layout, wallpaper: { ...snapshot.layout.wallpaper, dim: 0.8 } }, sync: { ...snapshot.sync, layoutRevision: 2 } };
     const resolution = resolveOutboxRevisionConflict(operation, { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 }, remote);
 
-    expect(resolution).toMatchObject({ kind: "rebase", operation: { baseRevision: 2, layout: { snapToGrid: true, wallpaper: { dim: 0.8 } } } });
+    expect(resolution).toMatchObject({ kind: "rebase", operation: { baseRevision: 2, layout: { autoArrangeIcons: false, snapToGrid: true, wallpaper: { dim: 0.8 } } } });
+    expect(resolveOutboxRevisionConflict(operation, { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 }, { ...remote, layout: { ...remote.layout, autoArrangeIcons: false } })).toMatchObject({ kind: "rebase" });
   });
 
   test("identifies pending changes waiting on an earlier causal conflict", () => {

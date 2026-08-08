@@ -9,6 +9,7 @@ export const DEFAULT_ICON_METRICS: DesktopIconMetrics = { ...FILE_ICON_SIZE, ste
 const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
 
 export type SurfaceSegment = { column: number; row: number };
+export type DesktopIconFootprint = Pick<DesktopIconMetrics, "width" | "height">;
 
 export type DesktopSegment = {
   entries: DesktopEntry[];
@@ -65,14 +66,14 @@ export function desktopSlots(size: { width: number; height: number }, reserveMin
   return slots.length ? slots : [{ x: Math.min(maxX, GRID_ORIGIN.x), y: Math.min(maxY, GRID_ORIGIN.y) }];
 }
 
-function positionsOverlap(a: EntryPosition, b: EntryPosition, metrics: DesktopIconMetrics) {
-  return a.x < b.x + metrics.width && a.x + metrics.width > b.x
-    && a.y < b.y + metrics.height && a.y + metrics.height > b.y;
+function positionsOverlap(a: EntryPosition, aFootprint: DesktopIconFootprint, b: EntryPosition, bFootprint: DesktopIconFootprint) {
+  return a.x < b.x + bFootprint.width && a.x + aFootprint.width > b.x
+    && a.y < b.y + bFootprint.height && a.y + aFootprint.height > b.y;
 }
 
 export function nextAvailableDesktopSlot(size: { width: number; height: number }, occupied: readonly EntryPosition[], reserveMinimap = false, fallbackIndex = 0, metrics = DEFAULT_ICON_METRICS) {
   const slots = desktopSlots(size, reserveMinimap, metrics);
-  return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, slot, metrics))) ?? slots[fallbackIndex % slots.length];
+  return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, metrics, slot, metrics))) ?? slots[fallbackIndex % slots.length];
 }
 
 export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS): RootEntryPositionUpdate[] | null {
@@ -86,6 +87,83 @@ export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment:
   const slots = desktopSlots(size, false, metrics);
   if (arranged.length > slots.length) return null;
   return arranged.map((entry, index) => ({ entryId: entry.id, position: restoreLogicalPosition(slots[index], segment, size) }));
+}
+
+export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntryIds: ReadonlySet<string>, anchorEntryId: string, anchorPosition: EntryPosition, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, footprintFor: (entry: DesktopEntry) => DesktopIconFootprint = () => metrics): RootEntryPositionUpdate[] | null {
+  const roots = entries.filter((entry) => entry.parentId === null);
+  const anchor = roots.find((entry) => entry.id === anchorEntryId && movingEntryIds.has(entry.id));
+  if (!anchor) return null;
+  const moving = roots.filter((entry) => movingEntryIds.has(entry.id)).sort((a, b) => a.id.localeCompare(b.id));
+  const delta = { x: anchorPosition.x - anchor.position.x, y: anchorPosition.y - anchor.position.y };
+  const positions = new Map<string, EntryPosition>();
+  const settled = new Set<string>();
+  const byId = new Map(roots.map((entry) => [entry.id, entry]));
+  const overlaps = (entryId: string, position: EntryPosition, otherId: string, otherPosition: EntryPosition) => positionsOverlap(position, footprintFor(byId.get(entryId)!), otherPosition, footprintFor(byId.get(otherId)!));
+
+  for (const entry of moving) {
+    const position = { x: entry.position.x + delta.x, y: entry.position.y + delta.y };
+    const projection = projectLogicalPosition(position, size);
+    const footprint = footprintFor(entry);
+    const maxX = Math.max(8, size.width - footprint.width);
+    const maxY = Math.max(8, size.height - footprint.height);
+    if (segmentKey(projection.segment) !== segmentKey(targetSegment) || projection.local.x < 8 || projection.local.x > maxX || projection.local.y < 8 || projection.local.y > maxY) return null;
+    if ([...positions].some(([otherId, other]) => overlaps(entry.id, position, otherId, other))) return null;
+    positions.set(entry.id, position);
+    settled.add(entry.id);
+  }
+
+  const neighbors = roots
+    .filter((entry) => !movingEntryIds.has(entry.id) && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(targetSegment))
+    .sort((a, b) => {
+      const left = projectLogicalPosition(a.position, size).local;
+      const right = projectLogicalPosition(b.position, size).local;
+      return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id);
+    });
+  const queue: string[] = [];
+  const queued = new Set<string>();
+  const enqueueCollisions = (entryId: string, position: EntryPosition) => {
+    for (const entry of neighbors) {
+      if (settled.has(entry.id) || queued.has(entry.id) || !overlaps(entryId, position, entry.id, entry.position)) continue;
+      queued.add(entry.id);
+      queue.push(entry.id);
+    }
+  };
+  for (const [entryId, position] of positions) enqueueCollisions(entryId, position);
+
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (settled.has(id)) continue;
+    const entry = byId.get(id)!;
+    const footprint = footprintFor(entry);
+    const origin = projectLogicalPosition(entry.position, size).local;
+    const maxX = size.width - footprint.width;
+    const maxY = size.height - footprint.height;
+    const startX = snapAxis(origin.x, GRID_ORIGIN.x, gridSize, maxX);
+    const startY = snapAxis(origin.y, GRID_ORIGIN.y, gridSize, maxY);
+    const columnStep = Math.ceil(footprint.width / gridSize) * gridSize;
+    let logical: EntryPosition | undefined;
+    for (let x = startX; x <= maxX && !logical; x += columnStep) {
+      for (let y = x === startX ? startY + gridSize : GRID_ORIGIN.y; y <= maxY; y += gridSize) {
+        const candidate = restoreLogicalPosition({ x, y }, targetSegment, size);
+        if ([...settled].every((settledId) => !overlaps(id, candidate, settledId, positions.get(settledId)!))) {
+          logical = candidate;
+          break;
+        }
+      }
+    }
+    if (!logical) return null;
+    positions.set(id, logical);
+    settled.add(id);
+    enqueueCollisions(id, logical);
+  }
+
+  return [...positions]
+    .map(([entryId, position]) => ({ entryId, position }))
+    .filter(({ entryId, position }) => {
+      const current = roots.find((entry) => entry.id === entryId)!.position;
+      return current.x !== position.x || current.y !== position.y;
+    })
+    .sort((a, b) => a.entryId.localeCompare(b.entryId));
 }
 
 export function iconAreaSize(viewport: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE) {

@@ -138,8 +138,8 @@ function remoteStorage(initial = desktopStateSnapshot()) {
     },
     readOutbox: async () => outbox,
     enqueueMutation: async (operation: OutboxOperation, contents = new Map<string, Blob>()) => {
-      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
-      current = { entries: state.entries, layout: { snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
+      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      current = { entries: state.entries, layout: { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
       pending.set(record.operationId, contents);
@@ -147,7 +147,7 @@ function remoteStorage(initial = desktopStateSnapshot()) {
     },
     enqueueTransfer: async (_source: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) => {
       const operation: OutboxOperation = { schemaVersion: 1, kind: "entry-transfer", destinationDesktopId, entryIds, parentId };
-      const state = applyOutboxOperation({ entries: current.entries, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { ...current, entries: state.entries };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
@@ -173,8 +173,8 @@ function remoteStorage(initial = desktopStateSnapshot()) {
       const record: OutboxRecord = { ...selected, operationId: String(++sequence), sequence, operation, status: "pending", error: null, errorCode: null, conflictDetails: null };
       outbox.push(record);
       pending.set(record.operationId, new Map([[sibling.id, mine]]));
-      const projected = applyOutboxOperation({ entries: remote.entries, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, operation);
-      current = { entries: projected.entries, layout: { snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
+      const projected = applyOutboxOperation({ entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, operation);
+      current = { entries: projected.entries, layout: { autoArrangeIcons: projected.autoArrangeIcons, snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
       return { desktop: current, record };
     },
     blockMutation: async (operationId: string, error: string, errorCode: string | null = null, conflictDetails: OutboxRecord["conflictDetails"] = null) => {

@@ -324,7 +324,9 @@ export function parseLayout(value: unknown, allowLegacyWallpaper = false): Deskt
   }
   const gridSize = value.gridSize === undefined ? DEFAULT_GRID_SIZE : value.gridSize;
   if (!GRID_SIZES.includes(gridSize as GridSize)) throw new Error("The desktop layout has an unsupported grid size.");
-  return { snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper) };
+  const autoArrangeIcons = value.autoArrangeIcons === undefined ? true : value.autoArrangeIcons;
+  if (typeof autoArrangeIcons !== "boolean") throw new Error("The desktop layout has an unsupported auto-arrange setting.");
+  return { autoArrangeIcons, snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper) };
 }
 
 export function parseRootEntryPositions(value: unknown): RootEntryPositionUpdate[] {

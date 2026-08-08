@@ -14,6 +14,7 @@ type Props = {
   onTouchSelect: () => void;
   onOpen: () => void;
   onMove: (position: EntryPosition, destination: EntryDropDestination, delta: EntryPosition) => Promise<boolean>;
+  onDragMove?: (position: EntryPosition, destination: EntryDropDestination | null) => readonly { entryId: string; delta: EntryPosition }[] | null;
   dragEdgeAt: (clientX: number, clientY: number) => EdgeDirection | null;
   onDragAtEdge: (direction: EdgeDirection) => {
     deltaX: number;
@@ -71,17 +72,19 @@ type DragState = {
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
   const drag = useRef<DragState | null>(null);
   const renderedEntryRef = useRef({ parentId: entry.parentId, position: entry.position });
   const onMoveRef = useRef(onMove);
+  const onDragMoveRef = useRef(onDragMove);
   const onDragEndRef = useRef(onDragEnd);
   const onEdgeDwellChangeRef = useRef(onEdgeDwellChange);
   const getSnapPreviewRef = useRef(getSnapPreview);
   onMoveRef.current = onMove;
+  onDragMoveRef.current = onDragMove;
   onDragEndRef.current = onDragEnd;
   onEdgeDwellChangeRef.current = onEdgeDwellChange;
   getSnapPreviewRef.current = getSnapPreview;
@@ -95,9 +98,10 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     delete completed.canvas.dataset.iconDragging;
     iconRef.current?.style.removeProperty("transform");
     if (iconRef.current) delete iconRef.current.dataset.dragging;
-    document.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging]").forEach((icon) => {
+    completed.canvas.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging], .file-icon[data-auto-arrange-dragging]").forEach((icon) => {
       icon.style.removeProperty("transform");
       delete icon.dataset.groupDragging;
+      delete icon.dataset.autoArrangeDragging;
     });
   }
 
@@ -145,6 +149,21 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       if (icon === iconRef.current) return;
       icon.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;
       icon.dataset.groupDragging = "true";
+    });
+  }
+
+  function applyAutoArrangeTransforms(current: DragState, transforms: readonly { entryId: string; delta: EntryPosition }[] | null) {
+    current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-auto-arrange-dragging]").forEach((icon) => {
+      icon.style.removeProperty("transform");
+      delete icon.dataset.autoArrangeDragging;
+    });
+    if (!transforms) return;
+    const byId = new Map(transforms.map((transform) => [transform.entryId, transform.delta]));
+    current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]").forEach((icon) => {
+      const delta = byId.get(icon.dataset.entryId ?? "");
+      if (!delta || icon === iconRef.current || icon.dataset.groupDragging) return;
+      icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
+      icon.dataset.autoArrangeDragging = "true";
     });
   }
 
@@ -248,8 +267,11 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     }, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
     const dropTarget = entryDropTargetAt(event.clientX, event.clientY, entry.id);
     highlightEntryDropTarget(dropTarget?.element ?? null);
-    updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview({ x, y }) : null);
+    const currentPosition = { x: drag.current.x, y: drag.current.y };
+    updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview(currentPosition) : null);
     applyDragTransform(drag.current);
+    const previewPosition = getSnapPreviewRef.current && dropTarget?.desktop ? getSnapPreviewRef.current(currentPosition) : currentPosition;
+    applyAutoArrangeTransforms(drag.current, onDragMoveRef.current?.(previewPosition, dropTarget) ?? null);
     iconRef.current.dataset.dragging = "true";
     if (dropTarget && !dropTarget.desktop) {
       drag.current.preview ??= createPointerDragPreview(iconRef.current, event.clientX, event.clientY);
@@ -282,7 +304,10 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     completed.expectedPosition = dropTarget?.desktop ? committedPosition : renderedEntryRef.current.position;
     completed.expectedParentId = dropTarget?.parentId ?? renderedEntryRef.current.parentId;
     const move = completed.moved && !cancelled && dropTarget
-      ? Promise.resolve().then(() => onMoveRef.current(committedPosition, dropTarget, { x: position.x - completed.originX, y: position.y - completed.originY }))
+      ? Promise.resolve().then(() => {
+        applyAutoArrangeTransforms(completed, null);
+        return onMoveRef.current(committedPosition, dropTarget, { x: position.x - completed.originX, y: position.y - completed.originY });
+      })
       : Promise.resolve(!completed.moved && !cancelled);
     if (!completed.moved || cancelled) cleanUpDrag(completed);
 
