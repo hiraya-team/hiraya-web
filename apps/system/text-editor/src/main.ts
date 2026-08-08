@@ -1,5 +1,5 @@
 import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FileMetadata, type FolderHandle, type FolderMetadata, type HirayaClient } from "@hiraya-team/apps-sdk";
-import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, formatBytes, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
@@ -13,19 +13,32 @@ import { EditorView, placeholder } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { minimalSetup } from "codemirror";
 import { formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorLanguage, type TextEditorSettings } from "./editor";
-import { filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries } from "./workspace";
+import { editorFileKind, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries, type EditorFileKind } from "./workspace";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
-type DocumentTab = { id: string; handle: FileHandle | null; metadata: FileMetadata | null; name: string; state: TextDocumentState; saving: boolean; autoSaveTimer: number };
+type DocumentTab = {
+  id: string;
+  handle: FileHandle | null;
+  metadata: FileMetadata | null;
+  name: string;
+  kind: EditorFileKind;
+  state: TextDocumentState | null;
+  saving: boolean;
+  autoSaveTimer: number;
+  previewSource: string | null;
+  previewObjectUrl: string | null;
+  previewExpiresAt: number;
+  previewRefreshAttempted: boolean;
+};
 
 const APP_ID = "app.hiraya.text-editor";
 const SETTINGS_KEY = "editor-settings";
 const status = required<HTMLElement>("#status");
-const title = required<HTMLElement>("#title");
 const content = required<HTMLElement>("#content");
 const workbench = required<HTMLElement>("#workbench");
 const editorElement = required<HTMLElement>("#editor");
+const previewElement = required<HTMLElement>("#preview");
 const loading = required<HTMLElement>("#loading");
 const tabsElement = required<HTMLElement>("#tabs");
 const breadcrumbs = required<HTMLElement>("#breadcrumbs");
@@ -59,7 +72,7 @@ const editorExtensions: Extension = [
   ])),
   EditorView.updateListener.of((update) => {
     if (!update.docChanged || switchingDocument || !activeTab) return;
-    activeTab.state.edit(update.state.doc.toString());
+    activeTab.state?.edit(update.state.doc.toString());
     renderDocumentState();
     scheduleAutoSave(activeTab);
   }),
@@ -94,6 +107,7 @@ required("#close-sidebar").addEventListener("click", () => setSidebarOpen(false)
 required("#sidebar-backdrop").addEventListener("click", () => setSidebarOpen(false));
 required("#explorer-view").addEventListener("click", () => showSidebar("explorer"));
 required("#search-view").addEventListener("click", () => showSidebar("search"));
+required("#settings-view").addEventListener("click", () => showSidebar("settings"));
 required("#open-workspace").addEventListener("click", () => void chooseWorkspace());
 workspaceHeading.addEventListener("click", () => { if (workspace) { selectedHandle = workspace.handle; selectedPath = ""; renderWorkspace(); renderControlState(); } });
 required("#refresh-tree").addEventListener("click", () => void refreshWorkspace());
@@ -101,7 +115,6 @@ required("#new-file").addEventListener("click", () => void createEntry("file"));
 required("#new-folder").addEventListener("click", () => void createEntry("folder"));
 required("#rename-entry").addEventListener("click", () => void renameEntry());
 required("#delete-entry").addEventListener("click", () => void deleteEntry());
-required("#settings-button").addEventListener("click", () => required<HTMLElement>("#settings-panel").togglePopover());
 required<HTMLSelectElement>("#font-size").addEventListener("change", (event) => void changeSettings({ ...settings, fontSize: Number((event.target as HTMLSelectElement).value) }));
 for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], ["auto-format", "autoFormat"]] as const) {
   required<HTMLInputElement>(`#${id}`).addEventListener("change", (event) => void changeSettings({ ...settings, [key]: (event.target as HTMLInputElement).checked }));
@@ -118,7 +131,8 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
-    app.onDispose(() => { initialized = false; operations.invalidate(); for (const tab of tabs) clearTimeout(tab.autoSaveTimer); editor.destroy(); });
+    await hiraya.window.setTitle("Integrated Editor");
+    app.onDispose(() => { initialized = false; operations.invalidate(); for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); } editor.destroy(); });
     let copiedSettings: unknown;
     try { copiedSettings = app.launch.arguments[0] ? JSON.parse(app.launch.arguments[0]) : undefined; } catch { copiedSettings = undefined; }
     const stored = await hiraya.storage.get(SETTINGS_KEY);
@@ -132,7 +146,7 @@ async function start() {
     const launchFile = app.launch.files[0];
     if (launchFile) {
       const generation = operations.beginForeground();
-      try { await load(launchFile, generation, true); }
+      try { await load(launchFile, generation); }
       catch (error) { setStatus(describeError(error, "Could not open the launch file."), true); }
       finally { operations.finishForeground(generation); }
     } else createUntitled();
@@ -146,14 +160,14 @@ async function start() {
     opening = false;
     setAppLoading(content, workbench, loading);
     renderControlState();
-    setStatus(describeError(error, "Text Editor could not start."), true);
+    setStatus(describeError(error, "Integrated Editor could not start."), true);
   }
 }
 
 function createUntitled() {
   const state = new TextDocumentState();
   state.load("", 0);
-  const tab: DocumentTab = { id: crypto.randomUUID(), handle: null, metadata: null, name: "Untitled.txt", state, saving: false, autoSaveTimer: 0 };
+  const tab: DocumentTab = { id: crypto.randomUUID(), handle: null, metadata: null, name: "Untitled.txt", kind: "text", state, saving: false, autoSaveTimer: 0, previewSource: null, previewObjectUrl: null, previewExpiresAt: 0, previewRefreshAttempted: false };
   tabs.push(tab);
   activateTab(tab, false);
 }
@@ -168,7 +182,7 @@ async function open() {
   finally { operations.finishForeground(generation); }
 }
 
-async function load(next: FileHandle, generation: number, identifyBeforeRead = false) {
+async function load(next: FileHandle, generation: number) {
   const existing = tabs.find((tab) => tab.handle === next);
   if (existing) { activateTab(existing); return; }
   opening = true;
@@ -177,17 +191,19 @@ async function load(next: FileHandle, generation: number, identifyBeforeRead = f
   try {
     const entry = await statFile(next);
     if (!operations.isForegroundCurrent(generation)) return;
-    if (identifyBeforeRead) setWindowIdentity(entry.name, false);
-    const loaded = await read(next, entry);
-    if (!operations.isForegroundCurrent(generation)) return;
-    const state = new TextDocumentState();
-    state.load(loaded.text, loaded.entry.contentRevision);
-    const tab: DocumentTab = { id: crypto.randomUUID(), handle: next, metadata: loaded.entry, name: loaded.entry.name, state, saving: false, autoSaveTimer: 0 };
-    const cleanUntitled = tabs.length === 1 && tabs[0]?.handle === null && !tabs[0].state.dirty;
+    const kind = editorFileKind(entry);
+    const loaded = kind === "text" ? await readText(next, entry) : null;
+    const preview = kind === "text" ? emptyPreview() : await createPreview(next, entry, kind);
+    if (!operations.isForegroundCurrent(generation)) { releasePreviewValue(preview.previewObjectUrl); return; }
+    const state = loaded ? new TextDocumentState() : null;
+    if (state && loaded) state.load(loaded.text, loaded.entry.contentRevision);
+    const metadata = loaded?.entry ?? entry;
+    const tab: DocumentTab = { id: crypto.randomUUID(), handle: next, metadata, name: metadata.name, kind, state, saving: false, autoSaveTimer: 0, ...preview };
+    const cleanUntitled = tabs.length === 1 && tabs[0]?.handle === null && !tabDirty(tabs[0]);
     if (cleanUntitled) tabs = [];
     tabs.push(tab);
     activateTab(tab);
-    setStatus(canWrite ? `Opened ${tab.name}.` : writeRestrictionMessage(writeReason, false));
+    setStatus(kind === "text" ? canWrite ? `Opened ${tab.name}.` : writeRestrictionMessage(writeReason, false) : `${metadata.mimeType} · ${formatBytes(metadata.size)}`);
   } finally {
     if (operations.isForegroundCurrent(generation)) {
       opening = false;
@@ -203,27 +219,52 @@ async function statFile(next: FileHandle) {
   return entry.metadata;
 }
 
-async function read(next: FileHandle, entry?: FileMetadata) {
+async function readText(next: FileHandle, entry?: FileMetadata) {
   entry ??= await statFile(next);
   const { data } = await hiraya.files.readAll(next);
   return { entry, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
 }
 
+function emptyPreview() { return { previewSource: null, previewObjectUrl: null, previewExpiresAt: 0, previewRefreshAttempted: false }; }
+
+async function createPreview(handle: FileHandle, entry: FileMetadata, kind: EditorFileKind) {
+  if (kind === "metadata") return emptyPreview();
+  if (kind === "image" || kind === "pdf") {
+    const { data } = await hiraya.files.readAll(handle);
+    const objectUrl = URL.createObjectURL(new Blob([data], { type: entry.mimeType }));
+    return { previewSource: objectUrl, previewObjectUrl: objectUrl, previewExpiresAt: 0, previewRefreshAttempted: false };
+  }
+  const source = await hiraya.host.getFilePreviewSource(handle);
+  if (source.kind === "blob") {
+    const objectUrl = URL.createObjectURL(source.blob);
+    return { previewSource: objectUrl, previewObjectUrl: objectUrl, previewExpiresAt: 0, previewRefreshAttempted: false };
+  }
+  return { previewSource: source.url, previewObjectUrl: null, previewExpiresAt: source.expiresAt, previewRefreshAttempted: false };
+}
+
 function activateTab(tab: DocumentTab, focus = true) {
   activeTab = tab;
-  switchingDocument = true;
-  editor.setState(EditorState.create({ doc: tab.state.text, extensions: editorExtensions }));
-  switchingDocument = false;
-  applySettings();
-  editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name))) });
+  editorElement.hidden = tab.kind !== "text";
+  previewElement.hidden = tab.kind === "text";
+  if (tab.state) {
+    switchingDocument = true;
+    editor.setState(EditorState.create({ doc: tab.state.text, extensions: editorExtensions }));
+    switchingDocument = false;
+    applySettings();
+    editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name))) });
+  } else renderPreview(tab);
   renderControlState();
   renderDocumentState();
-  if (focus) editor.focus();
+  if (focus) {
+    if (tab.state) editor.focus();
+    else previewElement.focus();
+  }
 }
 
 async function closeTab(tab: DocumentTab, confirm = true) {
-  if (confirm && tab.state.dirty && !await hiraya.dialogs.confirm({ title: `Close ${tab.name}?`, message: "This tab has changes that have not been saved.", confirmLabel: "Close without saving", destructive: true })) return false;
+  if (confirm && tabDirty(tab) && !await hiraya.dialogs.confirm({ title: `Close ${tab.name}?`, message: "This tab has changes that have not been saved.", confirmLabel: "Close without saving", destructive: true })) return false;
   clearTimeout(tab.autoSaveTimer);
+  releasePreview(tab);
   const index = tabs.indexOf(tab);
   tabs.splice(index, 1);
   if (activeTab === tab) {
@@ -239,7 +280,8 @@ async function save(saveAs: boolean) {
 }
 
 async function saveTab(tab: DocumentTab, saveAs: boolean) {
-  if (!initialized || tab.saving || opening || !canWrite) return;
+  if (!initialized || !tab.state || tab.saving || opening || !canWrite) return;
+  const state = tab.state;
   tab.saving = true;
   saving = true;
   clearTimeout(tab.autoSaveTimer);
@@ -247,24 +289,24 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
   publishCommands();
   try {
     let destination = saveAs ? null : tab.handle;
-    const expected = saveAs ? null : tab.state.revision;
+    const expected = saveAs ? null : state.revision;
     if (!destination) destination = await hiraya.dialogs.saveFile({ suggestedName: tab.name, mimeType: "text/plain" });
     if (!destination) return;
-    const sourceText = tab.state.text;
+    const sourceText = state.text;
     const text = settings.autoFormat ? formatText(tab.name, sourceText) : sourceText;
-    if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, tab.state.dirty), tab.state.dirty); return; }
+    if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, state.dirty), state.dirty); return; }
     const bytes = new TextEncoder().encode(text);
     const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
     tab.handle = destination;
     tab.metadata = saved;
     tab.name = saved.name;
-    tab.state.saved(sourceText, text, saved.contentRevision);
+    state.saved(sourceText, text, saved.contentRevision);
     if (activeTab === tab) {
-      replaceEditorText(tab.state.text);
+      replaceEditorText(state.text);
       editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name))) });
     }
     renderDocumentState();
-    if (tab.state.dirty) scheduleAutoSave(tab);
+    if (state.dirty) scheduleAutoSave(tab);
     setStatus(`Saved ${tab.name}.`);
   } catch (error) {
     const message = error instanceof HirayaSdkError && error.code === "CONFLICT" ? `This file changed elsewhere. ${tab.name}'s unsaved text is preserved.` : describeError(error, `Could not save ${tab.name}.`);
@@ -283,15 +325,24 @@ async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
   for (const tab of tabs) {
     if (!tab.handle || tab.saving || !handles.includes(tab.handle)) continue;
     try {
-      const loaded = await read(tab.handle);
-      if (!operations.isBackgroundCurrent(generation)) return;
-      if (!tab.state.remote(loaded.text, loaded.entry.contentRevision)) {
-        setStatus(`${tab.name} changed elsewhere. Its unsaved text is preserved.`, true);
-        continue;
+      if (tab.state) {
+        const loaded = await readText(tab.handle);
+        if (!operations.isBackgroundCurrent(generation)) return;
+        if (!tab.state.remote(loaded.text, loaded.entry.contentRevision)) {
+          setStatus(`${tab.name} changed elsewhere. Its unsaved text is preserved.`, true);
+          continue;
+        }
+        tab.metadata = loaded.entry;
+        tab.name = loaded.entry.name;
+        if (activeTab === tab) replaceEditorText(tab.state.text);
+      } else {
+        const entry = await statFile(tab.handle);
+        const preview = await createPreview(tab.handle, entry, tab.kind);
+        if (!operations.isBackgroundCurrent(generation)) { releasePreviewValue(preview.previewObjectUrl); return; }
+        releasePreview(tab);
+        Object.assign(tab, preview, { metadata: entry, name: entry.name });
+        if (activeTab === tab) renderPreview(tab);
       }
-      tab.metadata = loaded.entry;
-      tab.name = loaded.entry.name;
-      if (activeTab === tab) replaceEditorText(tab.state.text);
     } catch (error) { if (operations.isBackgroundCurrent(generation)) setStatus(describeError(error, `Could not reload ${tab.name}.`), true); }
   }
   renderDocumentState();
@@ -299,7 +350,7 @@ async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
 }
 
 function applyFormatting() {
-  if (!initialized || opening || !canWrite || !activeTab) return;
+  if (!initialized || opening || !canWrite || !activeTab?.state) return;
   try {
     replaceEditorText(formatText(activeTab.name, editorText()));
     setStatus("Document formatted.");
@@ -308,12 +359,12 @@ function applyFormatting() {
 
 function scheduleAutoSave(tab: DocumentTab) {
   clearTimeout(tab.autoSaveTimer);
-  if (initialized && canWrite && settings.autoSave && tab.handle && tab.state.dirty && !tab.state.remoteConflict) tab.autoSaveTimer = setTimeout(() => void saveTab(tab, false), 750) as unknown as number;
+  if (initialized && canWrite && settings.autoSave && tab.handle && tab.state?.dirty && !tab.state.remoteConflict) tab.autoSaveTimer = setTimeout(() => void saveTab(tab, false), 750) as unknown as number;
 }
 
 async function chooseWorkspace() {
   if (!initialized || opening) return;
-  if (tabs.some((tab) => tab.state.dirty) && !await hiraya.dialogs.confirm({ title: "Change workspace?", message: "Open tabs have unsaved changes. Changing workspace will close them.", confirmLabel: "Change workspace", destructive: true })) return;
+  if (tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Change workspace?", message: "Open tabs have unsaved changes. Changing workspace will close them.", confirmLabel: "Change workspace", destructive: true })) return;
   try {
     const selected = await hiraya.dialogs.openFolder();
     if (!selected) return;
@@ -326,7 +377,7 @@ async function chooseWorkspace() {
       if (!(error instanceof HirayaSdkError) || error.code !== "NOT_FOUND") throw error;
       metadata = { handle: selected, name: "Desktop", modifiedAt: 0, parent: null };
     }
-    for (const tab of tabs) clearTimeout(tab.autoSaveTimer);
+    for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); }
     tabs = [];
     activeTab = null;
     createUntitled();
@@ -446,7 +497,6 @@ async function activateTreeTarget(target: EventTarget | null) {
 }
 
 async function openWorkspaceFile(entry: Extract<DirectoryEntry, { kind: "file" }>) {
-  if (!isEditableFile(entry.metadata)) { await hiraya.host.openEntry(entry.metadata.handle); return; }
   const generation = operations.beginForeground();
   try { await load(entry.metadata.handle, generation); }
   catch (error) { setStatus(describeError(error, `Could not open ${entry.metadata.name}.`), true); }
@@ -570,7 +620,7 @@ async function deleteEntry() {
   const entry = selectedHandle ? entries.get(selectedHandle) : null;
   if (!entry || !canWrite) return;
   const affected = tabs.filter((tab) => tab.handle && (tab.handle === entry.metadata.handle || entry.kind === "folder" && isWithinFolder(tab.handle, entry.metadata.handle, parents)));
-  const draftWarning = affected.some((tab) => tab.state.dirty) ? " Unsaved changes in affected tabs will be lost." : "";
+  const draftWarning = affected.some(tabDirty) ? " Unsaved changes in affected tabs will be lost." : "";
   if (!await hiraya.dialogs.confirm({ title: `Delete ${entry.metadata.name}?`, message: `${entry.kind === "folder" ? "This folder and everything inside it" : "This file"} will move to Trash.${draftWarning}`, confirmLabel: "Delete", destructive: true })) return;
   try {
     await hiraya.files.delete(entry.metadata.handle, entry.kind === "folder");
@@ -611,9 +661,8 @@ function promptName(titleText: string, labelText: string, initial: string, submi
 
 function renderDocumentState() {
   renderTabs(); renderBreadcrumbs();
-  const dirty = tabs.some((tab) => tab.state.dirty);
-  const activeDirty = activeTab?.state.dirty ?? false;
-  setWindowIdentity(`${activeDirty ? "*" : ""}${activeTab?.name ?? "Text Editor"}`, dirty);
+  const dirty = tabs.some(tabDirty);
+  void hiraya?.window.setDirty(dirty);
   renderControlState();
 }
 
@@ -623,7 +672,7 @@ function renderTabs() {
     const wrapper = document.createElement("div"); wrapper.className = "editor-tab"; wrapper.setAttribute("role", "presentation");
     const button = document.createElement("button"); button.type = "button"; button.setAttribute("role", "tab"); button.setAttribute("aria-selected", String(tab === activeTab)); button.title = tab.name;
     button.append(makeIcon(isEditableFile(tab.metadata ?? { handle: "" as FileHandle, name: tab.name, mimeType: "text/plain", size: 0, modifiedAt: 0, parent: null, contentRevision: 0 }) ? "code" : "file"));
-    const label = document.createElement("span"); label.textContent = `${tab.state.dirty ? "● " : ""}${tab.name}`; button.append(label);
+    const label = document.createElement("span"); label.textContent = `${tabDirty(tab) ? "● " : ""}${tab.name}`; button.append(label);
     button.addEventListener("click", () => activateTab(tab));
     button.addEventListener("keydown", (event) => {
       if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
@@ -639,8 +688,8 @@ function renderTabs() {
 
 function renderBreadcrumbs() {
   breadcrumbs.replaceChildren();
-  if (!activeTab) return;
-  const path: { name: string; handle?: FolderHandle }[] = [{ name: activeTab.name }];
+  if (!activeTab) { breadcrumbs.hidden = true; return; }
+  const path: { name: string; handle: FolderHandle }[] = [];
   let parent = activeTab.metadata?.parent ?? null;
   const seen = new Set<string>();
   while (parent && !seen.has(parent)) {
@@ -651,34 +700,29 @@ function renderBreadcrumbs() {
     path.unshift({ name: entry.metadata.name, handle: entry.metadata.handle });
     parent = entry.metadata.parent;
   }
+  breadcrumbs.hidden = path.length === 0;
   for (const [index, part] of path.entries()) {
     if (index) { const separator = document.createElement("span"); separator.textContent = "/"; separator.ariaHidden = "true"; breadcrumbs.append(separator); }
-    if (part.handle) {
-      const button = document.createElement("button"); button.type = "button"; button.textContent = part.name; button.addEventListener("click", () => {
-        selectedHandle = part.handle!;
-        const entry = entries.get(part.handle!);
-        selectedPath = part.handle === workspace?.handle ? "" : entry ? workspaceEntryPath(entry) : selectedPath;
-        expanded.add(part.handle!);
-        showSidebar("explorer");
-        renderWorkspace();
-      }); breadcrumbs.append(button);
-    } else { const label = document.createElement("span"); label.textContent = part.name; breadcrumbs.append(label); }
+    const button = document.createElement("button"); button.type = "button"; button.textContent = part.name; button.addEventListener("click", () => {
+      selectedHandle = part.handle;
+      const entry = entries.get(part.handle);
+      selectedPath = part.handle === workspace?.handle ? "" : entry ? workspaceEntryPath(entry) : selectedPath;
+      expanded.add(part.handle);
+      showSidebar("explorer");
+      renderWorkspace();
+    }); breadcrumbs.append(button);
   }
 }
 
-function setWindowIdentity(label: string, dirty: boolean) {
-  title.textContent = label;
-  void hiraya?.window.setDirty(dirty);
-  void hiraya?.window.setTitle(`${label} - Text Editor`);
-}
-
-function showSidebar(mode: "explorer" | "search") {
-  required("#sidebar-title").textContent = mode === "explorer" ? "Explorer" : "Search";
+function showSidebar(mode: "explorer" | "search" | "settings") {
+  required("#sidebar-title").textContent = mode === "explorer" ? "Explorer" : mode === "search" ? "Search" : "Settings";
   required<HTMLElement>("#explorer-panel").hidden = mode !== "explorer";
   required<HTMLElement>("#search-panel").hidden = mode !== "search";
+  required<HTMLElement>("#settings-panel").hidden = mode !== "settings";
   required<HTMLElement>("#explorer-actions").hidden = mode !== "explorer";
   required("#explorer-view").setAttribute("aria-pressed", String(mode === "explorer"));
   required("#search-view").setAttribute("aria-pressed", String(mode === "search"));
+  required("#settings-view").setAttribute("aria-pressed", String(mode === "settings"));
   setSidebarOpen(true);
   if (mode === "search") { searchInput.focus(); void searchWorkspace(searchInput.value); }
 }
@@ -771,15 +815,15 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
   if (!canWrite) for (const tab of tabs) clearTimeout(tab.autoSaveTimer);
   else for (const tab of tabs) scheduleAutoSave(tab);
   renderControlState(); publishCommands();
-  if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, tabs.some((tab) => tab.state.dirty)), !canWrite && tabs.some((tab) => tab.state.dirty));
+  if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, tabs.some(tabDirty)), !canWrite && tabs.some(tabDirty));
 }
 
 function renderControlState() {
   const controls = textEditorControlState(initialized, saving || opening, canWrite);
-  for (const id of ["open", "toggle-sidebar", "settings-button"]) required<HirayaButton>(`#${id}`).disabled = !controls.open;
+  for (const id of ["open", "toggle-sidebar"]) required<HirayaButton>(`#${id}`).disabled = !controls.open;
   required<HTMLButtonElement>("#open-workspace").disabled = !controls.open;
   for (const id of ["font-size", "line-wrap"]) required<HTMLInputElement | HTMLSelectElement>(`#${id}`).disabled = !controls.settings;
-  const writableTab = controls.write && Boolean(activeTab);
+  const writableTab = controls.write && Boolean(activeTab?.state);
   editor.dispatch({ effects: editableConfig.reconfigure([EditorState.readOnly.of(!writableTab), EditorView.editable.of(writableTab)]) });
   for (const id of ["save", "save-as", "format"]) required<HirayaButton>(`#${id}`).disabled = !writableTab;
   for (const id of ["auto-save", "auto-format"]) required<HTMLInputElement>(`#${id}`).disabled = !controls.write;
@@ -794,9 +838,80 @@ function publishCommands() {
     { id: "open", title: "Open file", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening },
     { id: "workspace", title: "Open workspace", enabled: initialized && !opening },
     { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace) },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite },
-    { id: "format", title: "Format document", enabled: initialized && !saving && !opening && canWrite },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state) },
+    { id: "format", title: "Format document", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state) },
   ]);
+}
+
+function renderPreview(tab: DocumentTab) {
+  previewElement.replaceChildren();
+  const source = tab.previewSource;
+  let element: HTMLElement;
+  if (tab.kind === "image" && source) {
+    const image = document.createElement("img");
+    image.src = source;
+    image.alt = `Preview of ${tab.name}`;
+    image.addEventListener("error", () => setStatus("The browser could not display this image.", true));
+    element = image;
+  } else if (tab.kind === "pdf" && source) {
+    const frame = document.createElement("iframe");
+    frame.src = source;
+    frame.title = `PDF preview of ${tab.name}`;
+    frame.setAttribute("sandbox", "");
+    frame.referrerPolicy = "no-referrer";
+    element = frame;
+  } else if ((tab.kind === "audio" || tab.kind === "video") && source) {
+    const media = document.createElement(tab.kind) as HTMLMediaElement;
+    media.controls = true;
+    media.preload = "metadata";
+    media.src = source;
+    if (media instanceof HTMLVideoElement) media.playsInline = true;
+    media.addEventListener("canplay", () => { tab.previewRefreshAttempted = false; });
+    media.addEventListener("error", () => void refreshMediaPreview(tab, media));
+    element = media;
+  } else {
+    const details = document.createElement("section");
+    details.className = "file-metadata";
+    const heading = document.createElement("h2"); heading.textContent = "Read-only file information";
+    const list = document.createElement("dl");
+    for (const [label, value] of [["Type", tab.metadata?.mimeType ?? "Unknown"], ["Size", formatBytes(tab.metadata?.size ?? 0)], ["Modified", tab.metadata ? new Date(tab.metadata.modifiedAt).toLocaleString() : "Unknown"]]) {
+      const term = document.createElement("dt"); term.textContent = label;
+      const description = document.createElement("dd"); description.textContent = value;
+      list.append(term, description);
+    }
+    details.append(heading, list);
+    element = details;
+  }
+  previewElement.append(element);
+}
+
+async function refreshMediaPreview(tab: DocumentTab, media: HTMLMediaElement) {
+  if (!tab.handle || activeTab !== tab || tab.previewRefreshAttempted || !tab.previewExpiresAt) {
+    setStatus("The browser could not play this media.", true);
+    return;
+  }
+  tab.previewRefreshAttempted = true;
+  try {
+    const source = await hiraya.host.getFilePreviewSource(tab.handle);
+    const objectUrl = source.kind === "blob" ? URL.createObjectURL(source.blob) : null;
+    releasePreviewValue(tab.previewObjectUrl);
+    tab.previewObjectUrl = objectUrl;
+    tab.previewSource = source.kind === "blob" ? objectUrl : source.url;
+    tab.previewExpiresAt = source.kind === "url" ? source.expiresAt : 0;
+    media.src = tab.previewSource!;
+    media.load();
+  } catch (error) { setStatus(describeError(error, "The media preview could not be refreshed."), true); }
+}
+
+function tabDirty(tab: DocumentTab) { return tab.state?.dirty ?? false; }
+
+function releasePreview(tab: DocumentTab) {
+  releasePreviewValue(tab.previewObjectUrl);
+  Object.assign(tab, emptyPreview());
+}
+
+function releasePreviewValue(objectUrl: string | null) {
+  if (objectUrl) URL.revokeObjectURL(objectUrl);
 }
 
 function languageExtension(language: TextEditorLanguage): Extension {

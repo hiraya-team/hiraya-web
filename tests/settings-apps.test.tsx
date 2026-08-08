@@ -16,7 +16,7 @@ const systemApp: InstalledApp = {
   manifest: {
     schemaVersion: 1,
     id: "app.hiraya.text-editor",
-    name: "Text Editor",
+    name: "Integrated Editor",
     version: "1.0.0",
     entrypoint: "index.html",
     permissions: ["files:read", "files:write"],

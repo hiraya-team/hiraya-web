@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
-describe("Text Editor document behavior", () => {
-  test("identifies a launch file before reading its contents", async () => {
+describe("Integrated Editor document behavior", () => {
+  test("keeps a stable app title while opening a launch file", async () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
-    expect(source).toContain("await load(launchFile, generation, true)");
+    expect(source).toContain('await hiraya.window.setTitle("Integrated Editor")');
+    expect(source).toContain("await load(launchFile, generation)");
 
     const load = source.slice(source.indexOf("async function load("), source.indexOf("async function statFile("));
-    expect(load.indexOf("setWindowIdentity(entry.name, false)")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
-    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("setWindowIdentity(entry.name, false)"));
+    expect(load.indexOf("const loaded = kind ===")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
+    expect(source).not.toContain(" - Text Editor");
   });
 
   test("does not replace the current document identity before an interactive file opens", async () => {
@@ -28,6 +29,15 @@ describe("Text Editor document behavior", () => {
     const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
     expect(html).toContain('<hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge>');
     expect(css).not.toContain(".write-state");
+  });
+
+  test("keeps settings in the sidebar and the filename in tabs", async () => {
+    const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+    expect(html).toContain('id="settings-view"');
+    expect(html).toContain('id="settings-panel" class="sidebar-panel settings-page"');
+    expect(html).not.toContain("popover");
+    expect(html).not.toContain('id="title"');
+    expect(html).toContain('id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden');
   });
 
   test("reloads a clean document after a remote change", () => {

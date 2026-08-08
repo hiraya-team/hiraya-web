@@ -77,11 +77,11 @@ test("search launches installed apps", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Text Editor");
-  await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ })).toBeVisible();
+  await search.locator("input").fill("Integrated Editor");
+  await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
-  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
   await expect(editor).toBeVisible();
   await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
@@ -174,9 +174,9 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   let search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Text Editor");
-  await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Text Editor/ }).click();
-  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  await search.locator("input").fill("Integrated Editor");
+  await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
+  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
   const open = editor.frameLocator("iframe").getByRole("button", { name: "Open" });
   await expect(editor).toBeVisible();
   await expect(open).toBeVisible();
@@ -215,9 +215,9 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
 
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Text Editor");
+  await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
-  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
   await editor.frameLocator("iframe").getByRole("button", { name: "Open" }).click();
 
   const picker = page.getByRole("dialog", { name: "Choose file" });
@@ -231,29 +231,39 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await expect(picker.getByRole("button", { name: "Choose file" })).toBeEnabled();
 });
 
-test("Text Editor browses and manages a selected workspace", async ({ page }) => {
+test("Integrated Editor browses and manages a selected workspace", async ({ page }) => {
   await openLocalDesktop(page);
   const stamp = Date.now();
   const folderName = `editor-workspace-${stamp}`;
   const firstName = `first-${stamp}.txt`;
   const secondName = `second-${stamp}.ts`;
   const renamedName = `renamed-${stamp}.txt`;
+  const imageName = `z-preview-${stamp}.png`;
   const fileActions = page.getByRole("toolbar", { name: "File actions" });
 
   await fileActions.getByRole("button", { name: "New folder" }).click();
   await page.getByLabel("Folder name").fill(folderName);
   await page.getByRole("button", { name: "Create folder" }).click();
   await page.locator(".file-icon").filter({ hasText: folderName }).dblclick();
-  await page.getByRole("dialog", { name: folderName }).getByRole("button", { name: "New text file" }).click();
+  const folderWindow = page.getByRole("dialog", { name: folderName });
+  await folderWindow.getByRole("button", { name: "New text file" }).click();
   await page.getByLabel("File name").fill(firstName);
   await page.getByRole("button", { name: "Create file" }).click();
+  const upload = page.waitForEvent("filechooser");
+  await folderWindow.getByRole("button", { name: "Upload files" }).click();
+  await (await upload).setFiles({ name: imageName, mimeType: "image/png", buffer: pngFile });
 
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const launcher = page.getByRole("dialog", { name: /Search/ });
-  await launcher.locator("input").fill("Text Editor");
+  await launcher.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
-  const app = page.getByRole("dialog", { name: /Text Editor/ });
+  const app = page.getByRole("dialog", { name: /Integrated Editor/ });
   const frame = app.frameLocator("iframe");
+
+  await frame.getByRole("button", { name: "Settings" }).click();
+  await expect(frame.getByLabel("Editor font size")).toHaveValue("13");
+  await frame.getByLabel("Editor font size").selectOption("15");
+  await frame.getByRole("button", { name: "Explorer" }).click();
 
   await frame.getByRole("button", { name: "Open workspace" }).click();
   const picker = page.getByRole("dialog", { name: "Choose folder" });
@@ -262,6 +272,9 @@ test("Text Editor browses and manages a selected workspace", async ({ page }) =>
   await expect(frame.getByRole("tree", { name: "Workspace files" }).getByRole("treeitem", { name: new RegExp(firstName) })).toBeVisible();
 
   await frame.getByRole("treeitem", { name: new RegExp(firstName) }).click();
+  await expect(app).toHaveAccessibleName("Integrated Editor");
+  await expect(frame.getByRole("tab", { name: new RegExp(firstName) })).toHaveAttribute("aria-selected", "true");
+  await expect(frame.locator("#breadcrumbs")).not.toContainText(firstName);
   await frame.getByRole("button", { name: "New file" }).click();
   const create = frame.getByRole("dialog", { name: "New file" });
   await create.getByLabel("File name").fill(secondName);
@@ -290,6 +303,9 @@ test("Text Editor browses and manages a selected workspace", async ({ page }) =>
   await frame.getByRole("button", { name: "Delete selected item" }).click();
   await page.getByRole("button", { name: "Delete", exact: true }).click();
   await expect(tree.getByRole("treeitem", { name: renamedName, exact: true })).toHaveCount(0);
+  await tree.getByRole("treeitem", { name: imageName, exact: true }).click();
+  await expect(frame.locator(`img[alt="Preview of ${imageName}"]`)).toBeVisible();
+  await expect(frame.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
 });
 
 test("app save picker creates and selects a folder", async ({ page }) => {
@@ -303,9 +319,9 @@ test("app save picker creates and selects a folder", async ({ page }) => {
   await page.getByRole("button", { name: "Create folder" }).click();
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const search = page.getByRole("dialog", { name: /Search/ });
-  await search.locator("input").fill("Text Editor");
+  await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
-  const editor = page.getByRole("dialog", { name: "Text Editor" });
+  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
   const saveAs = editor.frameLocator("iframe").getByRole("button", { name: "Save as" });
   await expect(saveAs).toBeEnabled();
   await saveAs.click();
@@ -509,14 +525,14 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   const icon = page.locator(".file-icon").filter({ hasText: name });
   await icon.dblclick();
 
-  let app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  let app = page.getByRole("dialog", { name: "Integrated Editor" });
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
-  await app.getByRole("button", { name: `Close ${name} - Text Editor` }).click();
+  await app.getByRole("button", { name: "Close Integrated Editor" }).click();
 
   await icon.dblclick();
-  app = page.getByRole("dialog", { name: `${name} - Text Editor` });
+  app = page.getByRole("dialog", { name: "Integrated Editor" });
   editor = app.frameLocator("iframe");
   await expect(editor.locator(".cm-content")).toHaveText(contents);
   await editor.locator(".cm-content").focus();
@@ -748,7 +764,7 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   const icon = page.locator(".file-icon").filter({ hasText: name });
   await icon.dblclick();
 
-  const windowTitle = `${name} - Text Editor`;
+  const windowTitle = "Integrated Editor";
   const appWindow = page.getByRole("dialog", { name: windowTitle });
   await expect(appWindow).toBeVisible();
   await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
@@ -1025,7 +1041,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(startMenu.getByRole("button", { name: "Back to Desktop" })).toHaveCount(0);
   await expect(page.locator(".menu-bar__store")).toHaveCount(0);
   await startMenu.locator(".mobile-start-applications > summary").click();
-  await expect(startMenu.getByRole("button", { name: "Text Editor" })).toBeVisible();
+  await expect(startMenu.getByRole("button", { name: "Integrated Editor" })).toBeVisible();
   await expect(startMenu.getByRole("button", { name: "App Store" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(start).toBeFocused();
@@ -1038,7 +1054,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   const appStore = page.locator('[data-app-window="store"]');
   await expect(appStore.getByRole("heading", { name: "Applications" })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Installed" })).toBeVisible();
-  await expect(appStore.getByText("Text Editor", { exact: true })).toBeVisible();
+  await expect(appStore.getByText("Integrated Editor", { exact: true })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Administrator store unavailable" })).toBeVisible();
   await expect(appStore.getByText("The App Store requires a synchronized Hiraya account.")).toBeVisible();
   await trigger.click();

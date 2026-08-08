@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>Text Editor</title>
+    <title>Integrated Editor</title>
   </head>
   <body>
     <svg class="icon-sprite" aria-hidden="true">
@@ -25,29 +25,21 @@
       <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
     </svg>
     <main class="app-shell">
-      <hiraya-toolbar label="Text editor">
+      <hiraya-toolbar label="Editor commands">
         <hiraya-button class="icon-button" id="toggle-sidebar" variant="quiet" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)" disabled><svg slot="icon-start"><use href="#icon-sidebar"></use></svg></hiraya-button>
-        <span class="title" id="title">Untitled.txt</span>
         <hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge>
         <hiraya-button class="icon-button" slot="actions" id="open" aria-label="Open" title="Open file (Ctrl+O)" disabled><svg slot="icon-start"><use href="#icon-folder-open"></use></svg></hiraya-button>
         <hiraya-button class="icon-button" slot="actions" id="format" aria-label="Format document" title="Format document" disabled><svg slot="icon-start"><use href="#icon-format"></use></svg></hiraya-button>
         <hiraya-button class="icon-button" slot="actions" id="save-as" aria-label="Save as" title="Save as (Ctrl+Shift+S)" disabled><svg slot="icon-start"><use href="#icon-save-as"></use></svg></hiraya-button>
         <hiraya-button class="icon-button" slot="actions" id="save" variant="primary" aria-label="Save" title="Save (Ctrl+S)" disabled><svg slot="icon-start"><use href="#icon-save"></use></svg></hiraya-button>
-        <hiraya-button class="icon-button" slot="actions" id="settings-button" popovertarget="settings-panel" aria-label="Editor settings" title="Editor settings" disabled><svg slot="icon-start"><use href="#icon-settings"></use></svg></hiraya-button>
       </hiraya-toolbar>
-      <section id="settings-panel" class="settings-panel" popover aria-labelledby="settings-title">
-        <strong id="settings-title">Editor settings</strong>
-        <label>Font size <select id="font-size" aria-label="Editor font size" disabled><option>11</option><option>13</option><option>15</option><option>18</option><option>22</option></select></label>
-        <label><input id="line-wrap" type="checkbox" disabled> Wrap long lines</label>
-        <label><input id="auto-save" type="checkbox" disabled> Auto-save changes</label>
-        <label><input id="auto-format" type="checkbox" disabled> Format on save</label>
-      </section>
       <div id="content" class="app-content" aria-busy="true">
-        <hiraya-loading-state id="loading"><strong slot="title">Starting Text Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state>
+        <hiraya-loading-state id="loading"><strong slot="title">Starting Integrated Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state>
         <div id="workbench" class="workbench" inert aria-hidden="true">
-          <nav class="activity-bar" aria-label="Editor views">
+          <nav class="activity-bar" aria-label="Integrated Editor views">
             <button id="explorer-view" class="activity-button" type="button" aria-label="Explorer" title="Explorer (Ctrl+Shift+E)" aria-pressed="true"><svg><use href="#icon-sidebar"></use></svg></button>
             <button id="search-view" class="activity-button" type="button" aria-label="Search workspace" title="Search workspace (Ctrl+P)" aria-pressed="false"><svg><use href="#icon-search"></use></svg></button>
+            <button id="settings-view" class="activity-button activity-button--bottom" type="button" aria-label="Settings" title="Settings" aria-pressed="false"><svg><use href="#icon-settings"></use></svg></button>
           </nav>
           <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Close sidebar" hidden></button>
           <aside id="sidebar" class="sidebar" aria-label="Workspace sidebar">
@@ -71,11 +63,21 @@
               <label class="search-box"><svg><use href="#icon-search"></use></svg><input id="workspace-search" type="search" placeholder="Search files by name" aria-label="Search files by name" autocomplete="off" spellcheck="false"></label>
               <div id="search-results" class="search-results" role="listbox" aria-label="Matching workspace files"></div>
             </section>
+            <section id="settings-panel" class="sidebar-panel settings-page" aria-labelledby="settings-title" hidden>
+              <div class="settings-group">
+                <strong id="settings-title">Text editing</strong>
+                <label>Font size <select id="font-size" aria-label="Editor font size" disabled><option>11</option><option>13</option><option>15</option><option>18</option><option>22</option></select></label>
+                <label><input id="line-wrap" type="checkbox" disabled> Wrap long lines</label>
+                <label><input id="auto-save" type="checkbox" disabled> Auto-save changes</label>
+                <label><input id="auto-format" type="checkbox" disabled> Format on save</label>
+              </div>
+            </section>
           </aside>
           <section class="editor-stage">
             <div id="tabs" class="editor-tabs" role="tablist" aria-label="Open files"></div>
-            <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current file path"></nav>
+            <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden></nav>
             <div id="editor"></div>
+            <div id="preview" class="file-preview" tabindex="-1" hidden></div>
           </section>
         </div>
       </div>

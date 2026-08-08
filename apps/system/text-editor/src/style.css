@@ -17,6 +17,7 @@ svg { width: 1.1rem; height: 1.1rem; pointer-events: none; }
 .activity-button { position: relative; display: grid; width: 100%; height: 2.75rem; place-items: center; color: var(--hiraya-text-muted); }
 .activity-button:hover, .activity-button[aria-pressed="true"] { color: var(--hiraya-text); background: var(--hiraya-surface-hover); }
 .activity-button[aria-pressed="true"]::before { position: absolute; inset-block: .45rem; inset-inline-start: 0; width: 2px; border-radius: 0 2px 2px 0; background: var(--hiraya-accent); content: ""; }
+.activity-button--bottom { margin-block-start: auto; }
 
 .sidebar { z-index: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; overflow: hidden; border-right: 1px solid var(--hiraya-border); background: var(--editor-sidebar); }
 .sidebar-closed .sidebar { visibility: hidden; }
@@ -67,7 +68,7 @@ svg { width: 1.1rem; height: 1.1rem; pointer-events: none; }
 .breadcrumbs button { color: inherit; font-size: inherit; }
 .breadcrumbs button:hover { color: var(--hiraya-text); text-decoration: underline; }
 
-#editor { width: 100%; min-height: 0; overflow: hidden; color: var(--hiraya-text); background: var(--hiraya-background); }
+#editor, .file-preview { grid-row: 3; width: 100%; min-height: 0; overflow: hidden; color: var(--hiraya-text); background: var(--hiraya-background); }
 #editor .cm-editor { height: 100%; color: var(--hiraya-text); background: var(--hiraya-background); font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
 #editor .cm-editor.cm-focused { outline: 0; }
 #editor .cm-scroller { overflow: auto; font-family: inherit; line-height: 1.55; }
@@ -75,10 +76,21 @@ svg { width: 1.1rem; height: 1.1rem; pointer-events: none; }
 #editor .cm-selectionBackground, #editor .cm-content ::selection { background: color-mix(in srgb, var(--hiraya-focus) 28%, transparent) !important; }
 #editor .cm-editor:not(.cm-focused) .cm-cursor { display: none; }
 
-.settings-panel { width: min(18rem, calc(100vw - 1rem)); margin: .5rem .5rem auto auto; padding: .8rem; border: 1px solid var(--hiraya-border); border-radius: .55rem; color: var(--hiraya-text); background: var(--hiraya-surface-elevated); box-shadow: 0 10px 28px color-mix(in srgb, #000 35%, transparent); }
-.settings-panel:popover-open { display: grid; gap: .7rem; }
-.settings-panel label { display: flex; align-items: center; justify-content: space-between; gap: 1rem; color: var(--hiraya-text-muted); font-size: .82rem; }
-.settings-panel select { min-width: 4rem; }
+.settings-page { padding: .8rem; }
+.settings-group { display: grid; gap: .8rem; }
+.settings-group > strong { font-size: .78rem; }
+.settings-group label { display: flex; min-height: 2rem; align-items: center; justify-content: space-between; gap: 1rem; color: var(--hiraya-text-muted); font-size: .82rem; }
+.settings-group label:has(input[type="checkbox"]) { justify-content: flex-start; }
+.settings-group input[type="checkbox"] { margin: 0; }
+.settings-group select { min-width: 4rem; }
+.file-preview { overflow: auto; }
+.file-preview > :is(img, video, iframe) { display: block; width: 100%; height: 100%; border: 0; object-fit: contain; }
+.file-preview > audio { display: block; width: min(32rem, calc(100% - 2rem)); margin: 2rem auto; }
+.file-metadata { display: grid; width: min(32rem, calc(100% - 2rem)); gap: .8rem; margin: 2rem auto; }
+.file-metadata h2 { margin: 0; font-size: 1rem; }
+.file-metadata dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .55rem 1rem; margin: 0; font-size: .82rem; }
+.file-metadata dt { color: var(--hiraya-text-muted); }
+.file-metadata dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .entry-dialog { width: min(24rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--hiraya-border); border-radius: .6rem; color: var(--hiraya-text); background: var(--hiraya-surface-elevated); box-shadow: 0 16px 40px color-mix(in srgb, #000 42%, transparent); }
 .entry-dialog::backdrop { background: color-mix(in srgb, #000 45%, transparent); backdrop-filter: blur(2px); }
 .entry-dialog form { display: grid; gap: .85rem; padding: 1rem; }
