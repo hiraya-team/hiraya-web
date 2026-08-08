@@ -15,10 +15,10 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
 --><main class="app-shell">
   <hiraya-toolbar label="Theme editor" wrap>
     <span class="title">Theme Editor</span>
-    <hiraya-badge id="mode-badge" tone="readonly">Library</hiraya-badge>
+    <hiraya-badge id="mode-badge" tone="readonly">Editing</hiraya-badge>
     <hiraya-button slot="actions" id="edit" disabled>Edit</hiraya-button>
     <hiraya-button slot="actions" id="duplicate" disabled>Duplicate</hiraya-button>
-    <hiraya-button slot="actions" id="apply" variant="primary" disabled>Apply</hiraya-button>
+    <hiraya-button slot="actions" id="save" variant="primary" disabled>Save and Apply</hiraya-button>
     <hiraya-button slot="actions" id="delete" variant="danger" disabled>Delete</hiraya-button>
   </hiraya-toolbar>
   <div id="content" class="app-content" aria-busy="true">
@@ -58,7 +58,7 @@ FINISH: unreviewed and undocumented is unfinished; this build ends with the fini
             <section aria-labelledby="essentials-title"><h3 id="essentials-title">Essentials</h3><div id="simple-fields" class="field-stack"></div></section>
             <details><summary>Advanced theme fields</summary><div id="advanced-fields" class="field-stack"></div></details>
             <div id="contrast-error" class="validation" role="alert" hidden></div>
-            <div class="form-actions"><hiraya-button id="cancel">Cancel</hiraya-button><hiraya-button id="save" variant="primary" disabled>Save and apply</hiraya-button></div>
+            <div class="form-actions"><hiraya-button id="cancel">Cancel</hiraya-button></div>
           </form>
         </div>
         <div id="wallpaper-panel" role="tabpanel" aria-labelledby="wallpaper-tab" hidden>

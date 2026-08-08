@@ -29,13 +29,9 @@ describe("themes", () => {
       ["textMuted", "muted"],
       ["chromeText", "text / chrome"],
       ["accentText", "accent"],
-      ["editorComment", "editor comment"],
-      ["editorKeyword", "editor keyword"],
-      ["editorString", "editor string"],
     ];
     for (const [key, issue] of cases) {
       const colors = { ...definition.colors, [key]: key === "chromeText" ? definition.colors.chrome : definition.colors.window };
-      if (key.startsWith("editor")) colors[key] = definition.colors.editorBackground;
       if (key === "accentText") colors[key] = definition.colors.accent;
       expect(themeContrastIssues({ ...definition, colors })).toContainEqual(expect.stringContaining(issue));
     }
@@ -86,6 +82,9 @@ describe("themes", () => {
     expect(() => parseThemeDefinition({ ...definition, treatment: { ...treatment, textureScale: 13 } })).toThrow();
     expect(() => parseThemeDefinition({ ...definition, treatment: { ...treatment, extra: true } })).toThrow("surface treatment");
     expect(() => parseCustomTheme({ id: "theme-1", name: "Invisible", definition: { ...definition, colors: { ...definition.colors, text: definition.colors.window } } })).toThrow("contrast");
+    const legacy = structuredClone(definition) as typeof definition & { colors: typeof definition.colors & Record<string, string> };
+    Object.assign(legacy.colors, { editorBackground: "#ffffff", editorText: "#000000" });
+    expect(parseThemeDefinition(legacy)).toEqual(definition);
   });
 
   test("renders optional treatments as scoped CSS variables", () => {
