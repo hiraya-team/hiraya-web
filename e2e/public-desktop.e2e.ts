@@ -146,3 +146,26 @@ test("public desktop reflows at 200 percent zoom", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect.poll(() => page.evaluate(() => document.activeElement !== document.body && Boolean(document.activeElement))).toBe(true);
 });
+
+test("whole public desktops render widgets and folder-backed groups read only", async ({ page }) => {
+  const folder = { kind: "folder", id: "public-group", name: "Reference", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 420, y: 90 }, revision: 1, contentRevision: 0 };
+  const child = { ...publicDesktop.entries[0], id: "group-child", name: "Inside.txt", parentId: folder.id, position: { x: 0, y: 0 } };
+  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+    ...publicDesktop,
+    entries: [folder, child],
+    layout: {
+      ...publicDesktop.layout,
+      widgets: [{ id: "status", kind: "status", x: 90, y: 90, width: 240, height: 150 }],
+      iconGroups: [{ folderId: folder.id, width: 320, height: 240 }],
+    },
+  } }));
+  await page.goto("/published/e2e-desk");
+
+  await expect(page.getByText("Shared desktop", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Published work public desktop").getByText("Read only", { exact: true })).toBeVisible();
+  const group = page.locator(".shell-item", { hasText: "Reference" });
+  await expect(group.getByRole("button", { name: "Open Inside.txt" })).toBeVisible();
+  await expect(group.getByRole("button", { name: "Open in Explorer" })).toBeVisible();
+  await expect(group.getByRole("button", { name: "Move Reference" })).toBeDisabled();
+  await expect(group.getByRole("button", { name: "Resize Reference" })).toHaveCount(0);
+});

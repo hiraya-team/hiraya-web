@@ -5,6 +5,7 @@ export type WallpaperPreset = typeof WALLPAPERS[number];
 export const GRID_SIZES = [12, 24, 36, 48] as const;
 export type GridSize = typeof GRID_SIZES[number];
 export const DEFAULT_GRID_SIZE: GridSize = 24;
+export const MAX_LAYOUT_DIMENSION = 4096;
 export type Wallpaper = {
   source: WallpaperPreset | `file:${string}` | `theme:${string}`;
   fit: "cover" | "contain";
@@ -26,11 +27,28 @@ export const DEFAULT_WALLPAPER: Wallpaper = {
   overlayOpacity: 0,
 };
 
+export type DesktopWidget = {
+  id: string;
+  kind: "clock" | "calendar" | "status";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+export type DesktopIconGroup = {
+  folderId: string;
+  width: number;
+  height: number;
+};
+
 export type DesktopLayout = {
   autoArrangeIcons: boolean;
   snapToGrid: boolean;
   gridSize: GridSize;
   wallpaper: Wallpaper;
+  widgets: DesktopWidget[];
+  iconGroups: DesktopIconGroup[];
 };
 
 export type RootEntryPositionUpdate = {

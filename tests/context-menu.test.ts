@@ -76,3 +76,19 @@ describe("Paste actions", () => {
     expect(markup).toContain("Ctrl/⌘ V");
   });
 });
+
+describe("Desktop shell items", () => {
+  test("offers widgets, new icon groups, and grouping for root folders", () => {
+    const desktop = renderToStaticMarkup(createElement(DesktopContextMenu, {
+      menu: { type: "desktop", parentId: null, position: { x: 20, y: 30 }, x: 20, y: 30, presentation: "menu" },
+      onCreateFile() {}, onCreateFolder() {}, onCreateIconGroup() {}, onAddWidget() {}, onUpload() {}, onImportFolder() {}, onClose() {},
+    }));
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const entry = renderToStaticMarkup(createElement(ContextMenu, { entry: folder, onOpen() {}, onRename() {}, onCopy() {}, onMove() {}, onProperties() {}, onDelete() {}, onClose() {}, onGroup() {}, menu: { type: "entry", entryId: folder.id, x: 20, y: 30, presentation: "menu" } }));
+
+    expect(desktop).toContain("New icon group");
+    expect(desktop).toContain("Add widget");
+    expect(desktop).toContain("Calendar");
+    expect(entry).toContain("Show as icon group");
+  });
+});

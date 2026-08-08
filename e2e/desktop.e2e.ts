@@ -902,6 +902,44 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(page.locator(".action-sheet-backdrop")).toHaveCount(0);
 });
 
+test("desktop widgets and icon groups persist and remain usable on mobile", async ({ page }) => {
+  await openLocalDesktop(page);
+  const desktop = page.locator(".desktop");
+
+  await desktop.click({ button: "right", position: { x: 420, y: 220 } });
+  const desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await desktopMenu.getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
+  const clock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  await expect(clock).toBeVisible();
+  const initialLeft = await clock.evaluate((element) => element.getBoundingClientRect().left);
+  await clock.getByRole("button", { name: "Move Clock", exact: true }).focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().left)).toBeGreaterThan(initialLeft);
+  const initialWidth = await clock.evaluate((element) => element.getBoundingClientRect().width);
+  await clock.getByRole("button", { name: "Resize Clock", exact: true }).focus();
+  await page.keyboard.press("Shift+ArrowRight");
+  await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialWidth);
+
+  await desktop.click({ button: "right", position: { x: 120, y: 420 } });
+  await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "New icon group" }).click();
+  const groupName = `Projects ${Date.now()}`;
+  await page.getByLabel("Folder name").fill(groupName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  await expect(group.getByRole("button", { name: "Open in Explorer" })).toBeVisible();
+
+  await page.waitForTimeout(200);
+  await page.reload();
+  await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) })).toBeVisible();
+  await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  const results = await new AxeBuilder({ page }).include(".desktop").analyze();
+  expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
+});
+
 test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();

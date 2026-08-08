@@ -1326,10 +1326,10 @@ export class SyncEngine {
     return this.saveFile(id, new Blob([content], { type: existing.mimeType }));
   }
 
-  saveDesktopLayout(layout: DesktopLayout) {
+  saveDesktopLayout(layout: DesktopLayout, base?: { revision: number; layout: DesktopLayout }) {
     const parsed = parseLayout(layout);
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveDesktopLayout(parsed), false);
-    return this.mutate({ kind: "layout", layout: parsed, baseRevision: this.current().sync.layoutRevision, conflictBase: this.current().layout }, () => undefined);
+    return this.mutate({ kind: "layout", layout: parsed, baseRevision: base?.revision ?? this.current().sync.layoutRevision, conflictBase: base?.layout ?? this.current().layout }, () => undefined);
   }
 
   saveEditorSettings(settings: EditorSettings) {
@@ -1364,7 +1364,7 @@ export class SyncEngine {
     const assetId = crypto.randomUUID();
     const packaged = parseCustomTheme(wallpaperKind === null ? theme : { ...theme, wallpaper: { assetId, kind: wallpaperKind, size: archive.size, sha256: "0".repeat(64), revision: 0 } });
     const current = this.current();
-    const parsedLayout = parseLayout(wallpaperKind === null && layout.wallpaper.source === `theme:${theme.id}` ? { ...layout, wallpaper: DEFAULT_WALLPAPER } : layout);
+    const parsedLayout = parseLayout({ ...(wallpaperKind === null && layout.wallpaper.source === `theme:${theme.id}` ? { ...layout, wallpaper: DEFAULT_WALLPAPER } : layout), widgets: current.layout.widgets, iconGroups: current.layout.iconGroups });
     return this.mutate({
       kind: "install-theme-package",
       theme: packaged,

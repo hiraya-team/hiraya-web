@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
-import { arrangeDesktopDrag, arrangeDesktopSegment, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
+import { arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -30,7 +30,40 @@ describe("responsive desktop geometry", () => {
     const size = { width: 500, height: 500 };
     const slots = desktopSlots(size);
     expect(nextAvailableDesktopSlot(size, [slots[0], slots[2]])).toEqual(slots[1]);
-    expect(nextAvailableDesktopSlot(size, slots)).toEqual(slots[0]);
+    expect(nextAvailableDesktopSlot(size, slots)).toBeNull();
+  });
+
+  test("keeps default placement and auto-arrange clear of shell item rectangles", () => {
+    const size = { width: 500, height: 500 };
+    const obstacle = { x: 0, y: 0, width: 130, height: 250 };
+    expect(nextAvailableDesktopSlot(size, [], false, undefined, [obstacle])).toEqual({ x: 22, y: 358 });
+    expect(arrangeDesktopSegment([file("one"), file("two")], { column: 0, row: 0 }, size, undefined, [obstacle])).toEqual([
+      { entryId: "one", position: { x: 22, y: 358 } },
+      { entryId: "two", position: { x: 126, y: 358 } },
+    ]);
+    expect(arrangeDesktopDrag([file("moving", 230, 22)], new Set(["moving"]), "moving", { x: 22, y: 22 }, { column: 0, row: 0 }, size, undefined, undefined, undefined, [obstacle])).toBeNull();
+  });
+
+  test("returns no slot when shell obstacles consume the area", () => {
+    const size = { width: 220, height: 260 };
+    const obstacle = { x: 0, y: 0, width: 220, height: 260 };
+    expect(desktopSlots(size, false, undefined, [obstacle])).toEqual([]);
+    expect(nextAvailableDesktopSlot(size, [], false, undefined, [obstacle])).toBeNull();
+    expect(arrangeDesktopSegment([file("one")], { column: 0, row: 0 }, size, undefined, [obstacle])).toBeNull();
+  });
+
+  test("detects single and grouped manual drops over shell obstacles", () => {
+    const obstacles = [{ x: 80, y: 40, width: 180, height: 160 }];
+    expect(positionOverlapsObstacles({ x: 22, y: 22 }, { width: 98, height: 102 }, obstacles)).toBe(true);
+    expect([{ x: 280, y: 22 }, { x: 100, y: 220 }].some((position) => positionOverlapsObstacles(position, { width: 98, height: 102 }, obstacles))).toBe(false);
+    expect([{ x: 280, y: 22 }, { x: 160, y: 100 }].some((position) => positionOverlapsObstacles(position, { width: 98, height: 102 }, obstacles))).toBe(true);
+  });
+
+  test("clamps shell items to the active area and server dimension limit", () => {
+    expect(clampShellItemBounds({ x: 350, y: -20 }, 5000, 200, { width: 390, height: 600 })).toEqual({ x: 0, y: 0, width: 390, height: 200 });
+    expect(clampShellItemBounds({ x: 480, y: 480 }, 100, 100, { width: 500, height: 500 })).toEqual({ x: 400, y: 400, width: 100, height: 100 });
+    const folder: DesktopEntry = { kind: "folder", id: "group", name: "Group", parentId: null, modifiedAt: 1, position: { x: 20, y: 30 } };
+    expect(desktopShellItemObstacles([{ id: "clock", kind: "clock", x: 450, y: 20, width: 200, height: 120 }], [{ folderId: folder.id, width: 320, height: 240 }], [folder], { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([{ x: 300, y: 20, width: 200, height: 120 }, { x: 20, y: 30, width: 320, height: 240 }]);
   });
 
   test("packs the current area in visual order without moving neighboring areas", () => {

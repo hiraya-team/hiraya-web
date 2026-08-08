@@ -11,13 +11,14 @@ import { createEntryIndex } from "./ui/entry-index";
 import { useModalDialog } from "./ui/modal-dialog";
 import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { EntryArtwork, StatusBadge, type EntryPreviewSource } from "./components/VisualPrimitives";
+import { ShellItemLayer } from "./components/ShellItems";
 import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
 import { API_ROUTES } from "./lib/api-routes";
 import type { PublicAuthority } from "./lib/public-desktop";
 import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
-import { iconAreaSize, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
+import { iconAreaSize, projectLogicalPosition, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { homeRelativeAreaLabel } from "./ui/shell";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -149,9 +150,27 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const theme = resolveTheme(appearance);
   const iconMetrics = useMemo(() => themeIconMetrics(theme), [theme]);
   const iconArea = useMemo(() => iconAreaSize(desktopSize, desktop?.layout.gridSize), [desktop?.layout.gridSize, desktopSize]);
-  const responsive = useMemo(() => responsiveDesktop(publicEntries, iconArea, iconMetrics), [publicEntries, iconArea, iconMetrics]);
+  const groupedFolderIds = useMemo(() => new Set(desktop?.layout.iconGroups.map((group) => group.folderId) ?? []), [desktop?.layout.iconGroups]);
+  const desktopEntries = useMemo(() => publicEntries.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, publicEntries]);
+  const responsive = useMemo(() => responsiveDesktop(desktopEntries, iconArea, iconMetrics), [desktopEntries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
-  const minimapSegments = useMemo(() => publicAreaMapSegments(responsive.segments, activeSegment), [activeSegment, responsive.segments]);
+  const occupiedSegments = useMemo(() => {
+    const byKey = new Map(responsive.segments.map((segment) => [segment.key, segment]));
+    for (const widget of desktop?.layout.widgets ?? []) {
+      const segment = projectLogicalPosition(widget, iconArea).segment;
+      const key = segmentKey(segment);
+      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+    }
+    for (const group of desktop?.layout.iconGroups ?? []) {
+      const folder = publicEntries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+      if (!folder) continue;
+      const segment = projectLogicalPosition(folder.position, iconArea).segment;
+      const key = segmentKey(segment);
+      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+    }
+    return [...byKey.values()];
+  }, [desktop?.layout.iconGroups, desktop?.layout.widgets, iconArea, publicEntries, responsive.segments]);
+  const minimapSegments = useMemo(() => publicAreaMapSegments(occupiedSegments, activeSegment), [activeSegment, occupiedSegments]);
   const wholeDesktop = !authority.itemAlias;
 
   useEffect(() => {
@@ -313,7 +332,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             <p>{error}</p>
           </div>
         )}
-        {desktop && publicEntries.length === 0 && (
+        {desktop && publicEntries.length === 0 && desktop.layout.widgets.length === 0 && desktop.layout.iconGroups.length === 0 && (
           <div className="desktop-state empty-state">
             <Folder size={30} weight="duotone" />
             <h1>This desktop is empty.</h1>
@@ -333,6 +352,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             </div>
           </div>
         )}
+        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} onOpen={openEntry} /></div>}
         {open && (
           <div className="app-window-layer">
             <AppWindow
@@ -437,7 +457,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         focusedApp={undefined}
         focusedAppId={null}
         obscured={false}
-        occupiedSegmentKeys={new Set(responsive.segments.map((segment) => segment.key))}
+        occupiedSegmentKeys={new Set(occupiedSegments.map((segment) => segment.key))}
         positions={responsive.positions}
         rootRef={areaSwitcherRef}
         segments={minimapSegments}

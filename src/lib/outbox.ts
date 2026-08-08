@@ -1,5 +1,5 @@
-import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type Wallpaper } from "../types";
-import { assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parsePosition, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
+import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type Wallpaper } from "../types";
+import { assertIconGroupFolders, assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parsePosition, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
 import type { DesktopStateSnapshot, PersistedDesktopState } from "../domain/desktop-state";
 import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
@@ -117,13 +117,20 @@ export function wallpaperAfterEntryRemoval(entries: readonly DesktopEntry[], wal
     : wallpaper;
 }
 
+export function iconGroupsAfterEntryChange(entries: readonly DesktopEntry[], iconGroups: readonly DesktopIconGroup[]) {
+  return iconGroups.filter((group) => entries.some((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null));
+}
+
 function resetWallpaperAfterEntryRemoval(state: PersistedDesktopState, entries: DesktopEntry[]): PersistedDesktopState {
   const wallpaper = wallpaperAfterEntryRemoval(entries, state.wallpaper);
+  const iconGroups = iconGroupsAfterEntryChange(entries, state.iconGroups ?? []);
+  const layoutChanged = wallpaper !== state.wallpaper || iconGroups.length !== (state.iconGroups?.length ?? 0);
   return {
     ...state,
     entries,
     wallpaper,
-    sync: wallpaper === state.wallpaper ? state.sync : { ...state.sync, layoutRevision: state.sync.catalogRevision },
+    iconGroups,
+    sync: layoutChanged ? { ...state.sync, layoutRevision: state.sync.catalogRevision } : state.sync,
   };
 }
 
@@ -361,7 +368,8 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     case "layout": {
       const layout = parseLayout(operation.layout);
       assertWallpaperSource(entries, layout.wallpaper);
-      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper };
+      assertIconGroupFolders(entries, layout);
+      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, widgets: layout.widgets, iconGroups: layout.iconGroups };
     }
     case "editor-settings":
       return { ...state, editorSettings: parseEditorSettings(operation.settings) };
@@ -382,7 +390,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
         : [...state.appearance.customThemes, theme];
       const appearance = parseThemeState({ selectedThemeId: theme.id, customThemes });
       const layout = parseLayout(operation.wallpaperKind === null ? operation.layout : { ...operation.layout, wallpaper: { ...operation.layout.wallpaper, source: `theme:${theme.id}` } });
-      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, appearance };
+      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, widgets: state.widgets, iconGroups: state.iconGroups, appearance };
     }
     case "delete-theme": {
       if (!state.appearance.customThemes.some((theme) => theme.id === operation.themeId)) return state;
@@ -479,15 +487,39 @@ export type OutboxConflictResolution =
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
 const entryBase = (entry: DesktopEntry): EntryConflictBase => ({ name: entry.name, parentId: entry.parentId, position: entry.position });
 
-function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, remote: DesktopLayout) {
-  const base = operation.conflictBase;
-  if (!base) return operation.layout;
-  return parseLayout({
-    autoArrangeIcons: same(operation.layout.autoArrangeIcons, base.autoArrangeIcons) ? remote.autoArrangeIcons : operation.layout.autoArrangeIcons,
-    snapToGrid: same(operation.layout.snapToGrid, base.snapToGrid) ? remote.snapToGrid : operation.layout.snapToGrid,
-    gridSize: same(operation.layout.gridSize, base.gridSize) ? remote.gridSize : operation.layout.gridSize,
-    wallpaper: same(operation.layout.wallpaper, base.wallpaper) ? remote.wallpaper : operation.layout.wallpaper,
+function changedItemIds<T>(base: readonly T[], value: readonly T[], id: (item: T) => string) {
+  const before = new Map(base.map((item) => [id(item), item]));
+  const after = new Map(value.map((item) => [id(item), item]));
+  return new Set([...new Set([...before.keys(), ...after.keys()])].filter((key) => !same(before.get(key), after.get(key))));
+}
+
+function mergeItems<T>(base: readonly T[], local: readonly T[], remote: readonly T[], id: (item: T) => string) {
+  const changed = changedItemIds(base, local, id);
+  const localById = new Map(local.map((item) => [id(item), item]));
+  const merged = remote.filter((item) => !changed.has(id(item)) || localById.has(id(item)));
+  for (const itemId of changed) {
+    const item = localById.get(itemId);
+    if (!item) continue;
+    const index = merged.findIndex((candidate) => id(candidate) === itemId);
+    if (index < 0) merged.push(item); else merged[index] = item;
+  }
+  return merged;
+}
+
+export function mergeDesktopLayout(base: DesktopLayout, local: DesktopLayout, remote: DesktopLayout) {
+  const merged = parseLayout({
+    autoArrangeIcons: same(local.autoArrangeIcons, base.autoArrangeIcons) ? remote.autoArrangeIcons : local.autoArrangeIcons,
+    snapToGrid: same(local.snapToGrid, base.snapToGrid) ? remote.snapToGrid : local.snapToGrid,
+    gridSize: same(local.gridSize, base.gridSize) ? remote.gridSize : local.gridSize,
+    wallpaper: same(local.wallpaper, base.wallpaper) ? remote.wallpaper : local.wallpaper,
+    widgets: mergeItems(base.widgets, local.widgets, remote.widgets, (item) => item.id),
+    iconGroups: mergeItems(base.iconGroups, local.iconGroups, remote.iconGroups, (item) => item.folderId),
   });
+  return same(merged, local) ? local : merged;
+}
+
+function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, remote: DesktopLayout) {
+  return operation.conflictBase ? mergeDesktopLayout(operation.conflictBase, operation.layout, remote) : operation.layout;
 }
 
 function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor-settings" }>, remote: EditorSettings) {
@@ -521,8 +553,14 @@ export function resolveOutboxRevisionConflict(operation: OutboxOperation, confli
   }
   if (operation.kind === "layout") {
     if (!operation.conflictBase) return { kind: "blocked", fields: ["layout"] };
-    const fields = (["autoArrangeIcons", "snapToGrid", "gridSize", "wallpaper"] as const).filter((key) => !same(operation.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.layout[key]));
-    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "autoArrangeIcons" ? "icon auto-arrangement" : field === "snapToGrid" ? "grid snapping" : field === "gridSize" ? "grid size" : "wallpaper") } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, layout: mergeLayout(operation, remote.layout) } };
+    const fields: string[] = (["autoArrangeIcons", "snapToGrid", "gridSize", "wallpaper"] as const).filter((key) => !same(operation.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.layout[key]));
+    const localWidgets = changedItemIds(operation.conflictBase.widgets, operation.layout.widgets, (item) => item.id);
+    const remoteWidgets = changedItemIds(operation.conflictBase.widgets, remote.layout.widgets, (item) => item.id);
+    const localGroups = changedItemIds(operation.conflictBase.iconGroups, operation.layout.iconGroups, (item) => item.folderId);
+    const remoteGroups = changedItemIds(operation.conflictBase.iconGroups, remote.layout.iconGroups, (item) => item.folderId);
+    if ([...localWidgets].some((id) => remoteWidgets.has(id) && !same(operation.layout.widgets.find((item) => item.id === id), remote.layout.widgets.find((item) => item.id === id)))) fields.push("widgets");
+    if ([...localGroups].some((id) => remoteGroups.has(id) && !same(operation.layout.iconGroups.find((item) => item.folderId === id), remote.layout.iconGroups.find((item) => item.folderId === id)))) fields.push("icon groups");
+    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "autoArrangeIcons" ? "icon auto-arrangement" : field === "snapToGrid" ? "grid snapping" : field === "gridSize" ? "grid size" : field) } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, layout: mergeLayout(operation, remote.layout) } };
   }
   if (operation.kind === "editor-settings") {
     if (!operation.conflictBase) return { kind: "blocked", fields: ["editor settings"] };

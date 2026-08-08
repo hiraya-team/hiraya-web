@@ -138,8 +138,8 @@ function remoteStorage(initial = desktopStateSnapshot()) {
     },
     readOutbox: async () => outbox,
     enqueueMutation: async (operation: OutboxOperation, contents = new Map<string, Blob>()) => {
-      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
-      current = { entries: state.entries, layout: { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
+      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, widgets: current.layout.widgets, iconGroups: current.layout.iconGroups, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      current = { entries: state.entries, layout: { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper, widgets: state.widgets, iconGroups: state.iconGroups }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
       pending.set(record.operationId, contents);
@@ -147,7 +147,7 @@ function remoteStorage(initial = desktopStateSnapshot()) {
     },
     enqueueTransfer: async (_source: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) => {
       const operation: OutboxOperation = { schemaVersion: 1, kind: "entry-transfer", destinationDesktopId, entryIds, parentId };
-      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
+      const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, widgets: current.layout.widgets, iconGroups: current.layout.iconGroups, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { ...current, entries: state.entries };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
       outbox.push(record);
@@ -173,8 +173,8 @@ function remoteStorage(initial = desktopStateSnapshot()) {
       const record: OutboxRecord = { ...selected, operationId: String(++sequence), sequence, operation, status: "pending", error: null, errorCode: null, conflictDetails: null };
       outbox.push(record);
       pending.set(record.operationId, new Map([[sibling.id, mine]]));
-      const projected = applyOutboxOperation({ entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, operation);
-      current = { entries: projected.entries, layout: { autoArrangeIcons: projected.autoArrangeIcons, snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
+      const projected = applyOutboxOperation({ entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, widgets: remote.layout.widgets, iconGroups: remote.layout.iconGroups, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, operation);
+      current = { entries: projected.entries, layout: { autoArrangeIcons: projected.autoArrangeIcons, snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper, widgets: projected.widgets, iconGroups: projected.iconGroups }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
       return { desktop: current, record };
     },
     blockMutation: async (operationId: string, error: string, errorCode: string | null = null, conflictDetails: OutboxRecord["conflictDetails"] = null) => {
@@ -405,7 +405,9 @@ describe("canonical synchronization", () => {
 
   test("stages, replays, and cleans up an installed theme package asset", async () => {
     const storage = remoteStorage();
-    let remote = remoteDesktopState();
+    const folder = { kind: "folder" as const, id: "group-folder", name: "Group", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 40, y: 50 }, revision: 1, contentRevision: 1 };
+    const widget = { id: "status", kind: "status" as const, x: 20, y: 30, width: 240, height: 120 };
+    let remote = { ...remoteDesktopState(), entries: [...remoteDesktopState().entries, folder], layout: { ...remoteDesktopState().layout, widgets: [widget], iconGroups: [{ folderId: folder.id, width: 320, height: 240 }] } };
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
       if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
@@ -426,9 +428,10 @@ describe("canonical synchronization", () => {
     await engine.start("desk", { x: 0, y: 0 });
     const blocked = await blockEngineQueue(engine);
     const theme = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition };
-    await engine.installThemePackage(theme, "static", new Blob(["theme package"]), { ...remote.layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" } });
+    await engine.installThemePackage(theme, "static", new Blob(["theme package"]), { ...remote.layout, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" }, widgets: [], iconGroups: [] });
     const [record] = await storage.readOutbox();
     expect(record.operation.kind).toBe("install-theme-package");
+    expect(record.operation).toMatchObject({ layout: { widgets: [widget], iconGroups: [{ folderId: folder.id }] } });
     const assetId = record.operation.kind === "install-theme-package" ? record.operation.assetId : "";
     expect(await storage.readPendingContent(record.operationId, assetId).then((content) => content.text())).toBe("theme package");
 

@@ -22,6 +22,8 @@ describe("seeded packages", () => {
       { kind: "folder", id: "empty", name: "Empty", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: -40, y: 20 } },
       { kind: "file", id: "file", name: "notes.txt", parentId: null, createdAt: 2, modifiedAt: 2, position: { x: 60, y: 20 }, mimeType: "text/plain", size: 0 },
     ];
+    snapshot.layout.widgets = [{ id: "calendar", kind: "calendar", x: 10, y: 20, width: 240, height: 180 }];
+    snapshot.layout.iconGroups = [{ folderId: "empty", width: 300, height: 220 }];
     const value = toPortableSeededManifest(snapshot, () => "content/notes.txt");
     expect(parsePortableSeededManifest(value)).toMatchObject({ schemaVersion: 1, layout: snapshot.layout, appearance: snapshot.appearance, entries: snapshot.entries });
     expect(() => parsePortableSeededManifest({ ...value, entries: value.entries.map((entry) => entry.kind === "file" ? { ...entry, contentUrl: "../notes.txt" } : entry) })).toThrow("normalized relative");

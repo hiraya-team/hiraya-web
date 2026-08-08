@@ -1,4 +1,4 @@
-import { DEFAULT_GRID_SIZE, type DesktopEntry, type EntryPosition, type RootEntryPositionUpdate } from "../types";
+import { DEFAULT_GRID_SIZE, MAX_LAYOUT_DIMENSION, type DesktopEntry, type DesktopIconGroup, type DesktopWidget, type EntryPosition, type RootEntryPositionUpdate } from "../types";
 import type { DesktopIconMetrics } from "../lib/themes";
 
 export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
@@ -10,6 +10,7 @@ const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
 
 export type SurfaceSegment = { column: number; row: number };
 export type DesktopIconFootprint = Pick<DesktopIconMetrics, "width" | "height">;
+export type DesktopObstacle = EntryPosition & { width: number; height: number };
 
 export type DesktopSegment = {
   entries: DesktopEntry[];
@@ -45,7 +46,7 @@ export function snapAxis(value: number, origin: number, step: number, max: numbe
   return origin + index * step;
 }
 
-export function desktopSlots(size: { width: number; height: number }, reserveMinimap = false, metrics = DEFAULT_ICON_METRICS) {
+export function desktopSlots(size: { width: number; height: number }, reserveMinimap = false, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []) {
   const maxX = Math.max(8, size.width - metrics.width);
   const maxY = Math.max(8, size.height - metrics.height);
   const columns = Math.max(1, Math.floor((maxX - GRID_ORIGIN.x) / metrics.stepX) + 1);
@@ -60,10 +61,10 @@ export function desktopSlots(size: { width: number; height: number }, reserveMin
       const underMinimap = reserveMinimap
         && slot.x + metrics.width > size.width - MINIMAP_RESERVED_SIZE.width
         && slot.y + metrics.height > size.height - MINIMAP_RESERVED_SIZE.height;
-      if (!underMinimap) slots.push(slot);
+      if (!underMinimap && obstacles.every((obstacle) => !positionsOverlap(slot, metrics, obstacle, obstacle))) slots.push(slot);
     }
   }
-  return slots.length ? slots : [{ x: Math.min(maxX, GRID_ORIGIN.x), y: Math.min(maxY, GRID_ORIGIN.y) }];
+  return slots;
 }
 
 function positionsOverlap(a: EntryPosition, aFootprint: DesktopIconFootprint, b: EntryPosition, bFootprint: DesktopIconFootprint) {
@@ -71,12 +72,16 @@ function positionsOverlap(a: EntryPosition, aFootprint: DesktopIconFootprint, b:
     && a.y < b.y + bFootprint.height && a.y + aFootprint.height > b.y;
 }
 
-export function nextAvailableDesktopSlot(size: { width: number; height: number }, occupied: readonly EntryPosition[], reserveMinimap = false, fallbackIndex = 0, metrics = DEFAULT_ICON_METRICS) {
-  const slots = desktopSlots(size, reserveMinimap, metrics);
-  return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, metrics, slot, metrics))) ?? slots[fallbackIndex % slots.length];
+export function positionOverlapsObstacles(position: EntryPosition, footprint: DesktopIconFootprint, obstacles: readonly DesktopObstacle[]) {
+  return obstacles.some((obstacle) => positionsOverlap(position, footprint, obstacle, obstacle));
 }
 
-export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS): RootEntryPositionUpdate[] | null {
+export function nextAvailableDesktopSlot(size: { width: number; height: number }, occupied: readonly EntryPosition[], reserveMinimap = false, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []) {
+  const slots = desktopSlots(size, reserveMinimap, metrics, obstacles);
+  return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, metrics, slot, metrics))) ?? null;
+}
+
+export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
   const arranged = entries
     .filter((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(segment))
     .sort((left, right) => {
@@ -84,12 +89,12 @@ export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment:
       const b = projectLogicalPosition(right.position, size).local;
       return a.x - b.x || a.y - b.y || left.id.localeCompare(right.id);
     });
-  const slots = desktopSlots(size, false, metrics);
+  const slots = desktopSlots(size, false, metrics, obstacles);
   if (arranged.length > slots.length) return null;
   return arranged.map((entry, index) => ({ entryId: entry.id, position: restoreLogicalPosition(slots[index], segment, size) }));
 }
 
-export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntryIds: ReadonlySet<string>, anchorEntryId: string, anchorPosition: EntryPosition, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, footprintFor: (entry: DesktopEntry) => DesktopIconFootprint = () => metrics): RootEntryPositionUpdate[] | null {
+export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntryIds: ReadonlySet<string>, anchorEntryId: string, anchorPosition: EntryPosition, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, footprintFor: (entry: DesktopEntry) => DesktopIconFootprint = () => metrics, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
   const roots = entries.filter((entry) => entry.parentId === null);
   const anchor = roots.find((entry) => entry.id === anchorEntryId && movingEntryIds.has(entry.id));
   if (!anchor) return null;
@@ -107,6 +112,7 @@ export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntry
     const maxX = Math.max(8, size.width - footprint.width);
     const maxY = Math.max(8, size.height - footprint.height);
     if (segmentKey(projection.segment) !== segmentKey(targetSegment) || projection.local.x < 8 || projection.local.x > maxX || projection.local.y < 8 || projection.local.y > maxY) return null;
+    if (obstacles.some((obstacle) => positionsOverlap(projection.local, footprint, obstacle, obstacle))) return null;
     if ([...positions].some(([otherId, other]) => overlaps(entry.id, position, otherId, other))) return null;
     positions.set(entry.id, position);
     settled.add(entry.id);
@@ -145,7 +151,7 @@ export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntry
     for (let x = startX; x <= maxX && !logical; x += columnStep) {
       for (let y = x === startX ? startY + gridSize : GRID_ORIGIN.y; y <= maxY; y += gridSize) {
         const candidate = restoreLogicalPosition({ x, y }, targetSegment, size);
-        if ([...settled].every((settledId) => !overlaps(id, candidate, settledId, positions.get(settledId)!))) {
+        if (obstacles.every((obstacle) => !positionsOverlap({ x, y }, footprint, obstacle, obstacle)) && [...settled].every((settledId) => !overlaps(id, candidate, settledId, positions.get(settledId)!))) {
           logical = candidate;
           break;
         }
@@ -164,6 +170,33 @@ export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntry
       return current.x !== position.x || current.y !== position.y;
     })
     .sort((a, b) => a.entryId.localeCompare(b.entryId));
+}
+
+export function clampShellItemBounds(position: EntryPosition, width: number, height: number, area: { width: number; height: number }): DesktopObstacle {
+  const nextWidth = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, width, area.width));
+  const nextHeight = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, height, area.height));
+  return {
+    x: Math.max(0, Math.min(position.x, area.width - nextWidth)),
+    y: Math.max(0, Math.min(position.y, area.height - nextHeight)),
+    width: nextWidth,
+    height: nextHeight,
+  };
+}
+
+export function desktopShellItemObstacles(widgets: readonly DesktopWidget[], groups: readonly DesktopIconGroup[], entries: readonly DesktopEntry[], segment: SurfaceSegment, area: { width: number; height: number }) {
+  const key = segmentKey(segment);
+  const index = new Map(entries.map((entry) => [entry.id, entry]));
+  const obstacles = widgets.flatMap((widget) => {
+    const projection = projectLogicalPosition(widget, area);
+    return segmentKey(projection.segment) === key ? [clampShellItemBounds(projection.local, widget.width, widget.height, area)] : [];
+  });
+  for (const group of groups) {
+    const folder = index.get(group.folderId);
+    if (folder?.kind !== "folder" || folder.parentId !== null) continue;
+    const projection = projectLogicalPosition(folder.position, area);
+    if (segmentKey(projection.segment) === key) obstacles.push(clampShellItemBounds(projection.local, group.width, group.height, area));
+  }
+  return obstacles;
 }
 
 export function iconAreaSize(viewport: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE) {
