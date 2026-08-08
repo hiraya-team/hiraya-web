@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Switch desktops from Search.** Open **Search** and run **Switch to [desktop name]** to move directly to another desktop without opening the desktop switcher.
 - **Receive bundled app updates reliably.** After Hiraya updates, existing browsers now replace stale bundled app releases automatically while keeping each app's saved settings and data.
 - **Work across files in Text Editor.** Choose **Open workspace** to browse, search, create, rename, and delete files in a folder tree. Text Editor now keeps multiple files in tabs with breadcrumbs, keyboard navigation, icon controls, and a mobile sidebar while preserving unsaved changes independently in each tab.
 - **Dismiss open panels with Back.** On mobile, **Back** now closes the topmost dialog, notification panel, search, **User Guide**, **Start** menu, or desktop switcher before navigating away.

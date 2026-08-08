@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { APP_COMMAND_IDS, CommandService, RuntimeCommandContributions, createAppCommandService, runtimeCommandId, type AppCommandContext } from "../src/apps/commands";
+import { APP_COMMAND_IDS, CommandService, RuntimeCommandContributions, createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, runtimeCommandId, type AppCommandContext } from "../src/apps/commands";
 
 describe("command service", () => {
   test("protects namespaced IDs and duplicate registrations", () => {
@@ -44,6 +44,18 @@ describe("command service", () => {
 });
 
 describe("app command contributions", () => {
+  test("creates ordered switch commands for every other desktop", () => {
+    expect(createDesktopSwitchCommands([
+      { id: "current", name: "Home" },
+      { id: "shared desktop", name: "Team Space" },
+      { id: "resume space", name: "Resume" },
+    ], "current")).toEqual([
+      { id: desktopSwitchCommandId("shared desktop"), label: "Switch to Team Space", keywords: ["switch desktop", "Team Space"], enabled: true },
+      { id: desktopSwitchCommandId("resume space"), label: "Switch to Resume", keywords: ["switch desktop", "Resume"], enabled: true },
+    ]);
+    expect(desktopSwitchCommandId("shared desktop")).toMatch(/^desktop\.switch-[a-f0-9]+$/);
+  });
+
   test("namespaces runtime commands, emits local IDs, and disposes replacements", async () => {
     const service = new CommandService<object>();
     const invoked: string[] = [];
