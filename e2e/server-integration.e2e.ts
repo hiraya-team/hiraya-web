@@ -108,6 +108,22 @@ async function createTextFile(page: Page, name: string) {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
 }
 
+async function verifyWarmStart(page: Page, cachedName: string) {
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.route("**/api/**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname === "/api/auth/session" || url.pathname === "/api/desktops" || (url.pathname.startsWith("/api/desktops/") && url.searchParams.get("projection") === "web")) await gate;
+    await route.continue();
+  });
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByRole("button", { name: `${cachedName}, folder` })).toBeVisible();
+  await expect(page.getByText("Opening your desktop...", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Loading desktop...", { exact: true })).toHaveCount(0);
+  release();
+}
+
 async function openAppStore(page: Page) {
   const existing = page.getByRole("dialog", { name: "App Store" });
   if (await existing.isVisible()) return existing;
@@ -271,6 +287,11 @@ async function primary(browser: Browser) {
 
   await createFolder(first, onlineFolder);
   await expect(second.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible({ timeout: 30_000 });
+  const warmContext = await browser.newContext();
+  const warm = await signIn(warmContext);
+  await expect(warm.getByRole("button", { name: `${onlineFolder}, folder` })).toBeVisible();
+  await verifyWarmStart(warm, onlineFolder);
+  await warmContext.close();
 
   await firstContext.setOffline(true);
   await createFolder(first, offlineFolder);

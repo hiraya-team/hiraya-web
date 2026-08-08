@@ -1167,7 +1167,7 @@ export class SyncEngine {
     return queued.desktop;
   }
 
-  async listDesktops(seeded: SeededManifest | null = null) {
+  async listDesktops(seeded: SeededManifest | null = null, options: { cacheFirst?: boolean } = {}) {
     let local = await this.storage.listDesktops(seeded);
     if (this.frontendOnly) {
       if (local.desktops.length === 0) {
@@ -1180,6 +1180,10 @@ export class SyncEngine {
         }
       }
       return { schemaVersion: 2 as const, catalogId: null, catalogRevision: 0, quota: null, ...local };
+    }
+    if (options.cacheFirst && local.desktops.length > 0) {
+      const quota = this.lastQuota?.catalogId === this.catalogId ? this.lastQuota.quota : null;
+      return { schemaVersion: 2 as const, catalogId: null, catalogRevision: 0, quota, ...local };
     }
     try {
       const catalog = parseDesktopCatalog(await this.requestJson(API_ROUTES.desktops, { cache: "no-store" }));
@@ -2091,6 +2095,7 @@ export const moveEntries = defaultEngine.moveEntries.bind(defaultEngine);
 export const transferEntries = defaultEngine.transferEntries.bind(defaultEngine);
 export const createDesktop = defaultEngine.createDesktop.bind(defaultEngine);
 export const listDesktops = defaultEngine.listDesktops.bind(defaultEngine);
+export const refreshDesktopCatalog = defaultEngine.refreshCatalog.bind(defaultEngine);
 export const subscribeToDesktopCatalog = defaultEngine.subscribeDesktopCatalog.bind(defaultEngine);
 export const updateDesktopPreferences = defaultEngine.updateDesktopPreferences.bind(defaultEngine);
 export const renameDesktop = defaultEngine.renameDesktop.bind(defaultEngine);

@@ -1,6 +1,6 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import { bootstrapSession } from "./lib/auth";
+import { bootstrapSession, readCachedSession } from "./lib/auth";
 import { UpgradeRequiredError } from "./lib/wire-authority";
 import { publicAuthorityFromPath } from "./lib/public-desktop";
 import "./styles/index.css";
@@ -8,7 +8,8 @@ import "./styles/index.css";
 const frontendOnly = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 
 const root = document.getElementById("root")!;
-root.innerHTML = `<main class="startup-state" role="status"><img class="brand-mark__shape" src="${import.meta.env.BASE_URL}pwa-192x192.png" alt=""><div><strong>Hiraya</strong><span>Opening your desktop...</span></div></main>`;
+const cachedSession = frontendOnly ? null : readCachedSession();
+if (!cachedSession) root.innerHTML = `<main class="startup-state" role="status"><img class="brand-mark__shape" src="${import.meta.env.BASE_URL}pwa-192x192.png" alt=""><div><strong>Hiraya</strong><span>Opening your desktop...</span></div></main>`;
 
 async function retireUnscopedServiceWorker() {
   if (!import.meta.env.PROD || frontendOnly || localStorage.getItem("hiraya-auth-pwa-rollout-v1") === "complete") return;
@@ -45,7 +46,8 @@ async function start() {
     return;
   }
   await retireUnscopedServiceWorker();
-  const session = await bootstrapSession(frontendOnly);
+  const sessionRequest = bootstrapSession(frontendOnly);
+  const session = cachedSession ?? await sessionRequest;
   const { configureSyncAuthority } = await import("./lib/sync");
   configureSyncAuthority(session?.catalogId ?? null, session?.directBlobOrigin, session?.capabilities.thumbnails === "thumbnail-v1");
   const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./platform/storage/namespace");
@@ -53,9 +55,12 @@ async function start() {
   const { default: App } = await import("./App");
   createRoot(root).render(
     <StrictMode>
-      <App session={session} />
+      <App session={session} warmStart={cachedSession !== null} />
     </StrictMode>,
   );
+  if (cachedSession) void sessionRequest.then((fresh) => {
+    if (fresh && JSON.stringify(fresh) !== JSON.stringify(cachedSession)) window.location.reload();
+  }).catch(() => undefined);
 }
 
 void start().catch((error: unknown) => {

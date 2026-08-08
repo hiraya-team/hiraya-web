@@ -131,9 +131,11 @@ export function requireAuthenticatedResponse(response: Response, onUnauthorized:
   throw new AuthenticationRequiredError();
 }
 
-function cachedSession(storage: BootstrapStorage): AuthSession | null {
+export function readCachedSession(storage?: BootstrapStorage): AuthSession | null {
+  const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
+  if (!bootstrapStorage) return null;
   try {
-    const value = JSON.parse(storage.getItem(AUTH_BOOTSTRAP_CACHE_KEY) ?? "null") as unknown;
+    const value = JSON.parse(bootstrapStorage.getItem(AUTH_BOOTSTRAP_CACHE_KEY) ?? "null") as unknown;
     if (!value || typeof value !== "object") return null;
     const cache = value as { version?: unknown; locked?: unknown; session?: unknown };
     if (cache.version !== 2 || cache.locked !== false) return null;
@@ -160,8 +162,7 @@ export async function bootstrapSession(
   try {
     response = await fetchImpl(API_ROUTES.authSession, { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders() });
   } catch (error) {
-    const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
-    const cached = bootstrapStorage ? cachedSession(bootstrapStorage) : null;
+    const cached = readCachedSession(storage);
     if (cached) return cached;
     throw error;
   }

@@ -155,7 +155,7 @@ async function start() {
     renderControlState();
     renderDocumentState();
     publishCommands();
-    setStatus(canWrite ? "Ready. Open a workspace to browse and manage files." : writeRestrictionMessage(writeReason, false));
+    if (!launchFile) setStatus(canWrite ? "Ready. Open a workspace to browse and manage files." : writeRestrictionMessage(writeReason, false));
   } catch (error) {
     opening = false;
     setAppLoading(content, workbench, loading);

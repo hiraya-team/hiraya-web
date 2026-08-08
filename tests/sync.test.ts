@@ -522,6 +522,26 @@ describe("canonical synchronization", () => {
     expect(await engine.listDesktops()).toEqual({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, activeDesktopId: "desk", desktops: [remoteDesktopIdentity()], quota: catalogQuota });
   });
 
+  test("returns a cached desktop before refreshing the server catalog", async () => {
+    const local = [remoteDesktopIdentity()];
+    let requests = 0;
+    const storage = {
+      listDesktops: async () => ({ desktops: local, activeDesktopId: "desk" }),
+      ensureDesktop: async (desktop: { id: string; name: string }) => desktop,
+      bindOutboxCatalog: async () => undefined,
+      readOutbox: async () => [],
+    } as unknown as NonNullable<SyncEngineOptions["storage"]>;
+    const engine = new SyncEngine({ storage, fetch: (async () => {
+      requests += 1;
+      return Response.json({ schemaVersion: 2, catalogId: "catalog", catalogRevision: 1, desktops: local, quota: catalogQuota });
+    }) as typeof fetch });
+
+    expect(await engine.listDesktops(null, { cacheFirst: true })).toMatchObject({ catalogId: null, activeDesktopId: "desk", desktops: local });
+    expect(requests).toBe(0);
+    expect(await engine.refreshCatalog()).toMatchObject({ catalogId: "catalog", desktops: local });
+    expect(requests).toBe(1);
+  });
+
   test("updates synchronized desktop pinning and order through account preferences", async () => {
     const first = remoteDesktopIdentity("one", "One");
     const second = { ...remoteDesktopIdentity("two", "Two"), pinned: true };
