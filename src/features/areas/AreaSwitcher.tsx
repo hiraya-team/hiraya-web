@@ -1,4 +1,4 @@
-import type { MouseEvent, PointerEvent, Ref } from "react";
+import type { CSSProperties, MouseEvent, PointerEvent, Ref } from "react";
 import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Desktop, Minus, Plus, X } from "@phosphor-icons/react";
 import { AppIcon, EntryIcon } from "../../components/VisualPrimitives";
 import type { DesktopEntry } from "../../types";
@@ -77,8 +77,12 @@ export function AreaSwitcher({
     windowLimit,
   );
   const focusedLabel = focusedApp ? getAppLabel(focusedApp) : "";
-  const activeArea = segments.find((candidate) => candidate.key === activeSegmentKey) ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
-  const hiddenEntryCount = Math.max(0, activeArea.entries.length - 6);
+  const columns = segments.map(({ segment }) => segment.column);
+  const rows = segments.map(({ segment }) => segment.row);
+  const minColumn = Math.min(...columns);
+  const minRow = Math.min(...rows);
+  const columnCount = Math.max(...columns) - minColumn + 1;
+  const rowCount = Math.max(...rows) - minRow + 1;
   const directions = [
     { direction: "up", Icon: ArrowUp },
     { direction: "right", Icon: ArrowRight },
@@ -107,15 +111,25 @@ export function AreaSwitcher({
           </div>
         </header>}
         <div className="desktop-minimap__navigator">
-          <div className="desktop-minimap__preview" onPointerDown={onBeginGridSwipe} onPointerMove={onMoveGridSwipe} onPointerUp={onFinishGridSwipe} onPointerCancel={(event) => onFinishGridSwipe(event, true)}>
-            <button className="desktop-minimap__area" data-active data-preview={segmentKey(swipePreview ?? activeSegment) !== activeSegmentKey || undefined} data-home={activeSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={occupiedSegmentKeys.has(activeSegmentKey) || undefined} type="button" aria-label={`${homeRelativeAreaLabel(activeSegment)}, current area`} aria-current="true" onClick={(event) => onSelectArea(activeSegment, event)} onContextMenu={(event) => event.preventDefault()}>
-              <span className="desktop-minimap__area-title"><strong>{homeRelativeAreaLabel(activeSegment)}</strong><small>{activeArea.entries.length || "Empty"}</small></span>
-              {activeArea.entries.slice(0, 6).map((entry) => {
-                const position = positions.get(entry.id) ?? entry.position;
-                return <span className="desktop-minimap__file" key={entry.id} title={entry.name} style={{ left: `${Math.min(92, Math.max(8, position.x / desktopSize.width * 100))}%`, top: `${Math.min(78, Math.max(24, position.y / desktopSize.height * 100))}%` }}><EntryIcon entry={entry} size={18} /></span>;
+          <div className="desktop-minimap__preview desktop-minimap__grid-viewport" onPointerDown={onBeginGridSwipe} onPointerMove={onMoveGridSwipe} onPointerUp={onFinishGridSwipe} onPointerCancel={(event) => onFinishGridSwipe(event, true)}>
+            <div className="desktop-minimap__grid" style={{ "--desktop-area-height": desktopSize.height, "--desktop-area-width": desktopSize.width, "--minimap-columns": columnCount, "--minimap-rows": rowCount } as CSSProperties}>
+              {segments.map((desktopSegment, visibleIndex) => {
+                const currentSegmentKey = desktopSegment.key;
+                const isActive = currentSegmentKey === activeSegmentKey;
+                const isOccupied = occupiedSegmentKeys.has(currentSegmentKey);
+                const hiddenEntryCount = Math.max(0, desktopSegment.entries.length - 6);
+                return <div className="desktop-minimap__slot" data-segment-key={isOccupied ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: desktopSegment.segment.column - minColumn + 1, gridRow: desktopSegment.segment.row - minRow + 1 }}>
+                  <button className="desktop-minimap__area" data-active={isActive || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && !isActive) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupied || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${segments.length}${isActive ? ", current area" : ""}${isOccupied ? "" : ", empty"}`} aria-current={isActive ? "true" : undefined} onClick={(event) => onSelectArea(desktopSegment.segment, event)} onContextMenu={(event) => event.preventDefault()}>
+                    <span className="desktop-minimap__area-title"><strong>{areaDirectionalLabel(desktopSegment.segment, activeSegment)}</strong><small>{desktopSegment.entries.length || "Empty"}</small></span>
+                    {desktopSegment.entries.slice(0, 6).map((entry) => {
+                      const position = positions.get(entry.id) ?? entry.position;
+                      return <span className="desktop-minimap__file" key={entry.id} title={entry.name} style={{ left: `${Math.min(92, Math.max(8, position.x / desktopSize.width * 100))}%`, top: `${Math.min(78, Math.max(24, position.y / desktopSize.height * 100))}%` }}><EntryIcon entry={entry} size={18} /></span>;
+                    })}
+                    {hiddenEntryCount > 0 && <span className="desktop-minimap__area-overflow">+{hiddenEntryCount}</span>}
+                  </button>
+                </div>;
               })}
-              {hiddenEntryCount > 0 && <span className="desktop-minimap__area-overflow">+{hiddenEntryCount}</span>}
-            </button>
+            </div>
           </div>
           {directions.map(({ direction, Icon }) => {
             const target = adjacentArea(activeSegment, direction);

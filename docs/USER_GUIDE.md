@@ -19,7 +19,7 @@ New user-facing features are listed newest first.
 - **Copy item links from the keyboard.** Select one file or folder on the desktop or in Explorer, then press **Ctrl/⌘ Shift C** to copy its link.
 - **Open cached desktops immediately.** After the first visit, Hiraya now opens the desktop saved in this browser without a loading screen while account checks and server synchronization continue in the background.
 - **Switch desktops from Search.** Open **Search** and run **Switch to [desktop name]** to move directly to another desktop without opening the desktop switcher.
-- **Navigate areas from a compact pill.** The area switcher now keeps the desktop visible while offering touch-friendly controls for each adjacent area. Select the desktop name in the global header to switch named desktops separately.
+- **Navigate areas from a compact map.** The area switcher keeps the desktop visible, shows every area in a minimap, and offers touch-friendly controls for each adjacent area. Select the desktop name in the global header to switch named desktops separately.
 - **Auto-arrange desktop icons.** Open Search and run **Auto-arrange desktop icons** to neatly pack icons in the current desktop area while preserving their visual order.
 - **Receive bundled app updates reliably.** After Hiraya updates, existing browsers now replace stale bundled app releases automatically while keeping each app's saved settings and data.
 - **Edit and preview files together.** **Integrated Editor** opens text, source, images, PDF, audio, and video in tabs, with safe file details for other formats. Its sidebar now keeps Explorer, Search, and customization settings together without repeating the active filename across the window.
