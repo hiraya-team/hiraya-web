@@ -73,6 +73,23 @@ test("close-window shortcut closes the focused window without claiming the empty
   await expect(settings).toBeHidden();
 });
 
+test("copy-link shortcut copies a deep link for the selected item", async ({ page, context }) => {
+  await openLocalDesktop(page);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  const name = `copy-link-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  const entryId = await icon.getAttribute("data-entry-id");
+  await icon.click();
+
+  await page.keyboard.press("Control+Shift+c");
+
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`/file/${entryId}`);
+  await expect(page.getByText(`Link to ${name} copied`)).toBeVisible();
+});
+
 test("search launches installed apps", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
