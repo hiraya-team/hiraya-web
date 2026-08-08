@@ -188,6 +188,7 @@ test("auto-arrange packs current-area icons and persists their positions", async
 });
 
 test("dragging shifts overlapping icons live and persists the arrangement", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
   const names = [`live-arrange-first-${Date.now()}.txt`, `live-arrange-second-${Date.now()}.txt`];
   const fileActions = page.getByRole("toolbar", { name: "File actions" });
@@ -195,7 +196,7 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
     await fileActions.getByRole("button", { name: "New text file" }).click();
     await page.getByLabel("File name").fill(name);
     await page.getByRole("button", { name: "Create file" }).click();
-    await page.locator(".desktop").click({ position: { x: 700, y: 500 } });
+    await page.locator(".desktop").click({ position: { x: 300, y: 500 } });
   }
   const first = page.locator(".file-icon").filter({ hasText: names[0] });
   const second = page.locator(".file-icon").filter({ hasText: names[1] });
@@ -219,8 +220,8 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
   await expect.poll(async () => {
     const moved = await second.boundingBox();
-    return moved ? Math.hypot(moved.x - originalSecond.x, moved.y - originalSecond.y) : 0;
-  }).toBeGreaterThan(20);
+    return moved ? { x: Math.round(moved.x - originalSecond.x), down: moved.y > originalSecond.y } : null;
+  }).toEqual({ x: 0, down: true });
 
   const beforeReload = await Promise.all([first.boundingBox(), second.boundingBox()]);
   await page.reload();

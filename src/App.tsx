@@ -2992,7 +2992,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const group = desktopMoveGroup(entry);
     const sourceSegmentKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
     if (group.some((item) => segmentKey(projectLogicalPosition(item.position, iconArea).segment) !== sourceSegmentKey)) return undefined;
-    return arrangeDesktopDrag(entries, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics);
+    return arrangeDesktopDrag(entries, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics, layoutRef.current.gridSize);
   }
 
   function previewDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination | null) {

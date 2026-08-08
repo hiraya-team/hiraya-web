@@ -48,12 +48,28 @@ describe("responsive desktop geometry", () => {
     expect(arrangeDesktopSegment([file("one"), file("two"), file("three")], { column: 0, row: 0 }, size)).toBeNull();
   });
 
-  test("cascades occupied icons into the nearest available slots", () => {
-    const entries = [file("moving", 230, 300), file("first", 22, 22), file("second", 126, 22)];
+  test("cascades overlapping icons down the selected grid", () => {
+    const entries = [file("moving", 230, 300), file("first", 22, 22), file("second", 22, 142), file("unrelated", 262, 22)];
     expect(arrangeDesktopDrag(entries, new Set(["moving"]), "moving", { x: 22, y: 22 }, { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([
-      { entryId: "first", position: { x: 126, y: 22 } },
+      { entryId: "first", position: { x: 22, y: 142 } },
       { entryId: "moving", position: { x: 22, y: 22 } },
-      { entryId: "second", position: { x: 230, y: 22 } },
+      { entryId: "second", position: { x: 22, y: 262 } },
+    ]);
+  });
+
+  test("wraps a bottom collision to the next grid column", () => {
+    const entries = [file("moving", 230, 22), file("bottom", 22, 142)];
+    expect(arrangeDesktopDrag(entries, new Set(["moving"]), "moving", { x: 22, y: 142 }, { column: 0, row: 0 }, { width: 500, height: 260 })).toEqual([
+      { entryId: "bottom", position: { x: 142, y: 22 } },
+      { entryId: "moving", position: { x: 22, y: 142 } },
+    ]);
+  });
+
+  test("uses each icon footprint when shifting future multi-cell icons", () => {
+    const entries = [file("tall", 230, 300), file("overlap", 22, 22)];
+    expect(arrangeDesktopDrag(entries, new Set(["tall"]), "tall", { x: 22, y: 22 }, { column: 0, row: 0 }, { width: 500, height: 500 }, undefined, 24, (entry) => entry.id === "tall" ? { width: 98, height: 150 } : { width: 98, height: 102 })).toEqual([
+      { entryId: "overlap", position: { x: 22, y: 190 } },
+      { entryId: "tall", position: { x: 22, y: 22 } },
     ]);
   });
 
@@ -63,6 +79,7 @@ describe("responsive desktop geometry", () => {
     const positions = new Map(updates?.map((update) => [update.entryId, update.position]));
     expect(positions.get("a")).toEqual({ x: 22, y: 22 });
     expect(positions.get("b")).toEqual({ x: 126, y: 22 });
+    expect(positions.get("occupied")).toEqual({ x: 22, y: 142 });
     expect(positions.has("neighbor")).toBe(false);
   });
 

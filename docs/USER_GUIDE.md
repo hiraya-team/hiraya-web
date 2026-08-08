@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Nearby icons shift into open spots as you drag, and the arrangement follows the desktop across devices.
+- **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Overlapping icons shift down along the selected grid, wrapping to the next column when needed, and the arrangement follows the desktop across devices.
 - **Copy item links from the keyboard.** Select one file or folder on the desktop or in Explorer, then press **Ctrl/⌘ Shift C** to copy its link.
 - **Open cached desktops immediately.** After the first visit, Hiraya now opens the desktop saved in this browser without a loading screen while account checks and server synchronization continue in the background.
 - **Switch desktops from Search.** Open **Search** and run **Switch to [desktop name]** to move directly to another desktop without opening the desktop switcher.
