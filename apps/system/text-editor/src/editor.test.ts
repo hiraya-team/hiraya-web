@@ -6,6 +6,7 @@ describe("Integrated Editor document behavior", () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     expect(source).toContain('await hiraya.window.setTitle("Integrated Editor")');
     expect(source).toContain("await load(launchFile, generation)");
+    expect(source).toContain("if (!launchFile) setStatus(");
 
     const load = source.slice(source.indexOf("async function load("), source.indexOf("async function statFile("));
     expect(load.indexOf("const loaded = kind ===")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
