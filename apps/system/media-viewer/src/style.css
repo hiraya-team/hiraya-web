@@ -11,4 +11,4 @@
 .document-page img { max-width: 100%; height: auto; }
 .document-page table { display: block; max-width: 100%; overflow-x: auto; border-collapse: collapse; }
 .document-page :where(th, td) { padding: .45rem .65rem; border: 1px solid #c9cecb; vertical-align: top; }
-@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page { padding: 1.25rem; } :is(#open, #fullscreen) { min-width: 44px; min-height: 44px; } }
+@media (max-width: 700px) { .viewer { padding: .5rem; } .document-page { padding: 1.25rem; } }

@@ -24,6 +24,7 @@ import { homeRelativeAreaLabel } from "./ui/shell";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { withoutDotEntries } from "./ui/hidden-entries";
 import { reservedFileHandler } from "./apps/file-associations";
+import { RuntimeAppActions } from "./features/windows/WindowLayer";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
@@ -413,9 +414,12 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                     loadPreview={desktop?.thumbnailProfile ? loadThumbnail : undefined}
                   />
                 ) : open.runtime ? (
-                  <Suspense fallback={<div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}>
-                    <PublicAppFrame runtime={open.runtime} onNavigation={closePublicView} />
-                  </Suspense>
+                  <>
+                    <RuntimeAppActions app={open.runtime.app} target={headerElements.actions} onExecute={open.runtime.app.commands.execute} />
+                    <Suspense fallback={<div className="app-window__loading" role="status"><SpinnerGap size={22} /> Opening {open.file.name}...</div>}>
+                      <PublicAppFrame runtime={open.runtime} onNavigation={closePublicView} />
+                    </Suspense>
+                  </>
                 ) : open.error ? (
                   <div className="app-window__loading" role="alert">
                     <span>{open.error}</span>

@@ -82,7 +82,7 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
   </div>;
 }
 
-function RuntimeAppActions({ app, target, onExecute }: { app: Extract<RunningApp, { kind: "sandbox" }>; target: HTMLDivElement | null; onExecute: (id: CommandId) => void }) {
+export function RuntimeAppActions({ app, target, onExecute }: { app: Extract<RunningApp, { kind: "sandbox" }>; target: HTMLDivElement | null; onExecute: (id: CommandId) => void }) {
   const commands = useSyncExternalStore(app.commands.subscribe, app.commands.getPromoted, app.commands.getPromoted);
   const primary = commands.at(-1);
   if (!target || !primary) return null;

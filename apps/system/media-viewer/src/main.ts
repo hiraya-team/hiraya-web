@@ -4,13 +4,9 @@ import { DOCX_MIME, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKin
 import { renderParsedDocument } from "./document-preview";
 import "./style.css";
 
-type HirayaButton = HTMLElement & { disabled: boolean };
-
 const APP_ID = "app.hiraya.media-viewer";
 const viewer = required<HTMLElement>("#viewer");
 const status = required<HTMLElement>("#status");
-const openButton = required<HirayaButton>("#open");
-const fullscreenButton = required<HirayaButton>("#fullscreen");
 const content = required<HTMLElement>("#content");
 const loading = required<HTMLElement>("#loading");
 const operations = new LatestOperation();
@@ -21,9 +17,10 @@ let previewExpiresAt = 0;
 let previewGeneration = 0;
 let refreshingPreview = false;
 let previewRefreshAttempted = false;
+let ready = false;
+let opening = false;
+let fullscreen = false;
 
-openButton.addEventListener("click", () => void open());
-fullscreenButton.addEventListener("click", () => void toggleFullscreen());
 addEventListener("pagehide", () => { operations.invalidate(); clear(); }, { once: true });
 void start();
 
@@ -31,8 +28,11 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
-    openButton.disabled = false;
-    fullscreenButton.disabled = false;
+    hiraya.on("commands.invoked", ({ id }) => id === "open" ? void open() : id === "fullscreen" ? void toggleFullscreen() : undefined);
+    hiraya.on("window.stateChanged", (state) => { fullscreen = state.fullscreen; publishCommands(); });
+    fullscreen = (await hiraya.window.getState()).fullscreen;
+    ready = true;
+    publishCommands();
     if (app.launch.files[0]) await load(app.launch.files[0]);
     else { setAppLoading(content, viewer, loading); status.textContent = "Ready."; }
   } catch (error) {
@@ -51,6 +51,8 @@ async function open() {
 }
 
 async function load(handle: FileHandle, generation = operations.begin()) {
+  opening = true;
+  publishCommands();
   setAppLoading(content, viewer, loading, "Opening file...");
   try {
     const entry = await hiraya.files.stat(handle);
@@ -116,18 +118,18 @@ async function load(handle: FileHandle, generation = operations.begin()) {
       previewGeneration = generation;
     }
     viewer.replaceChildren(element);
-    required("#title").textContent = name;
     status.textContent = `${mimeType} · ${formatBytes(size)}`;
     await hiraya.window.setTitle(`${name} - Document & Media Viewer`);
   } finally {
-    if (operations.isLatest(generation)) setAppLoading(content, viewer, loading);
+    if (operations.isLatest(generation)) { opening = false; setAppLoading(content, viewer, loading); publishCommands(); }
   }
 }
 
 async function toggleFullscreen() {
   try {
-    const state = await hiraya.window.getState();
-    await hiraya.window.setFullscreen(!state.fullscreen);
+    const state = await hiraya.window.setFullscreen(!fullscreen);
+    fullscreen = state.fullscreen;
+    publishCommands();
   } catch (error) {
     setStatusError(error, "Could not change fullscreen mode.");
   }
@@ -187,6 +189,7 @@ function setStatusError(error: unknown, fallback: string) {
 }
 
 function showPreviewError(error: unknown, fallback: string) {
+  opening = false;
   setAppLoading(content, viewer, loading);
   clear();
   const message = describeError(error, fallback);
@@ -197,4 +200,12 @@ function showPreviewError(error: unknown, fallback: string) {
   empty.append(title, document.createTextNode(message));
   viewer.replaceChildren(empty);
   setStatusError(error, fallback);
+  publishCommands();
+}
+
+function publishCommands() {
+  void hiraya?.commands.set([
+    { id: "open", title: "Open", enabled: ready && !opening, promoted: true },
+    { id: "fullscreen", title: fullscreen ? "Exit Fullscreen" : "Fullscreen", enabled: ready, promoted: true },
+  ]);
 }

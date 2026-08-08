@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep app actions in the window chrome.** Store and bundled system apps now place important file and app-wide actions such as **Open**, **Save**, **Clear**, and **Fullscreen** in the window title bar or global header. Contextual editing, navigation, and destructive controls remain beside the content they affect.
 - **Add widgets and icon groups to the desktop.** Right-click or long-press the desktop to add **Clock**, **Calendar**, or **Status** widgets, or create an icon group backed by a real folder. Widgets and groups can be moved, resized, removed without deleting folder contents, and viewed read-only on whole public desktops.
 - **Keep app controls at the edges.** Floating windows now place close, minimize, restore, and window actions at the left of their title bar while each app's promoted actions sit at the right. Maximized and touch full-surface apps move the same controls into the global header, where **Back** replaces **Start** on mobile and less-used system tools remain available under **System**.
 - **Edit themes with clearer controls.** Theme Editor now opens ready to edit, keeps **Save and Apply** at the top, and scrolls only the controls when space is limited. Editor syntax colors are owned by each editor rather than desktop themes.

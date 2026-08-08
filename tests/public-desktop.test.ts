@@ -170,6 +170,7 @@ describe("public desktop", () => {
     expect(runtime).not.toContain("platform/storage");
     expect(runtime).not.toContain('lib/sync');
     expect(publicSource).toContain("<PublicAppFrame");
+    expect(publicSource).toContain("<RuntimeAppActions");
     expect(publicSource).not.toContain("<FileWindow");
   });
 
