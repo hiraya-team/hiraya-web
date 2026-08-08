@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsLeftRight, Bell, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Minus, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -326,6 +326,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const transferDismissTimersRef = useRef(new Map<string, number>());
   const [areaAnnouncement, setAreaAnnouncement] = useState("");
   const [notificationAnnouncement, setNotificationAnnouncement] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
   const transferPhasesRef = useRef(new Map<string, FileTransferState["phase"]>());
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
@@ -443,6 +444,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   } | null>(null);
   const desktopTouchPointersRef = useRef(new Set<number>());
   const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreNotificationFocus = useCallback(() => areaSwitcherTriggerRef.current?.focus(), []);
   const areaSwitcherTapRef = useRef<AreaSwitcherTap | null>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherRestoreFocusRef = useRef(false);
@@ -4927,60 +4929,91 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
   const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
+  const focusedIntegratedApp = focusedApp && (!windowed || appIsMaximized(focusedApp)) ? focusedApp : null;
+  const shellNotifications = <ShellNotifications
+    syncIssue={syncIssue}
+    syncIssueLabels={syncIssue ? outboxAffectedLabels(syncIssue) : []}
+    messages={shellMessages}
+    trashNotifications={trashNotifications}
+    appNotifications={appNotifications}
+    importProgress={importProgress}
+    fileTransfers={fileTransfers}
+    copyDownload={copyDownload}
+    showUpdateToast={showUpdateToast}
+    updateApplying={updateApplying}
+    updateBlocked={updateBlocked}
+    announcement={shellAnnouncement}
+    canViewActivity={canViewActivity}
+    open={notificationsOpen}
+    hideTrigger={Boolean(focusedIntegratedApp)}
+    onOpenChange={setNotificationsOpen}
+    onRestoreFocus={focusedIntegratedApp ? restoreNotificationFocus : undefined}
+    onRetrySyncIssue={retrySyncIssue}
+    onDiscardSyncIssue={discardSyncIssue}
+    onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
+    onOpenFolderImportHelp={() => openHelp("files-and-folders")}
+    onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
+    onUndoTrash={(notification) => void undoMoveToTrash(notification)}
+    onOpenTrash={(notification) => void openTrashNotification(notification)}
+    onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
+    onDismissTransfer={dismissFileTransfer}
+    onActivateUpdate={() => void activateUpdate()}
+    onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
+    onViewActivity={openActivityLog}
+  />;
 
   return (
-    <main className="desktop-shell" data-windowed={windowed || undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
+    <main className="desktop-shell" data-windowed={windowed || undefined} data-integrated-app={focusedIntegratedApp ? true : undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
-        <nav className="mobile-window-nav" aria-label="Desktop navigation">
+        <nav className="mobile-window-nav" data-integrated={focusedIntegratedApp ? true : undefined} aria-label={focusedIntegratedApp ? `${runningAppLabel(focusedIntegratedApp)} window controls` : "Desktop navigation"}>
             <div className="mobile-window-nav__leading">
-              <MobileHeaderMenu
-                label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
-                icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
-              >
-                {renderMobileStartMenu}
-              </MobileHeaderMenu>
+              {focusedIntegratedApp ? (!windowed
+                ? <button className="integrated-window-control integrated-window-control--back" type="button" aria-label={`Back from ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => { void navigateBack(); }}><ArrowLeft size={20} /></button>
+                : <div className="integrated-window-controls" role="group" aria-label={`Window controls for ${runningAppLabel(focusedIntegratedApp)}`}>
+                    <button className="integrated-window-control integrated-window-control--close" type="button" aria-label={`Close ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => { void requestCloseApp(focusedIntegratedApp.id); }}><X size={15} /></button>
+                    <button className="integrated-window-control" type="button" aria-label={`Minimize ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => minimizeApp(focusedIntegratedApp.id)}><Minus size={15} /></button>
+                    <button className="integrated-window-control" type="button" data-window-control="restore" data-window-id={focusedIntegratedApp.id} aria-label={`Restore ${runningAppLabel(focusedIntegratedApp)}`} onClick={(event) => {
+                      const restoreFocus = event.currentTarget === document.activeElement;
+                      toggleMaximizeApp(focusedIntegratedApp.id);
+                      if (restoreFocus) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-app-window="${CSS.escape(focusedIntegratedApp.id)}"] [data-window-control="maximize"]`)?.focus());
+                    }}><ArrowsIn size={15} /></button>
+                  </div>)
+                : <MobileHeaderMenu
+                    label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
+                    icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
+                  >
+                    {renderMobileStartMenu}
+                  </MobileHeaderMenu>}
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
               : activeDesktopId && <button className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
         </nav>
         <div className="menu-bar__actions">
-          {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
-          <button type="button" aria-label="Search apps, files, windows, and commands" title="Search" onClick={() => setActivePanel("search")}>
-            <MagnifyingGlass size={17} />
-            <span className="desktop-action-label">Search</span>
-          </button>
-          <ShellNotifications
-            syncIssue={syncIssue}
-            syncIssueLabels={syncIssue ? outboxAffectedLabels(syncIssue) : []}
-            messages={shellMessages}
-            trashNotifications={trashNotifications}
-            appNotifications={appNotifications}
-            importProgress={importProgress}
-            fileTransfers={fileTransfers}
-            copyDownload={copyDownload}
-            showUpdateToast={showUpdateToast}
-            updateApplying={updateApplying}
-            updateBlocked={updateBlocked}
-            announcement={shellAnnouncement}
-            canViewActivity={canViewActivity}
-            onRetrySyncIssue={retrySyncIssue}
-            onDiscardSyncIssue={discardSyncIssue}
-            onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
-            onOpenFolderImportHelp={() => openHelp("files-and-folders")}
-            onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
-            onUndoTrash={(notification) => void undoMoveToTrash(notification)}
-            onOpenTrash={(notification) => void openTrashNotification(notification)}
-            onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
-            onDismissTransfer={dismissFileTransfer}
-            onActivateUpdate={() => void activateUpdate()}
-            onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
-            onViewActivity={openActivityLog}
-          />
-          <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher, current desktop ${activeDesktopName}, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
-            <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
-          </button>
-          <DesktopClock />
+          {focusedIntegratedApp ? <>
+            <MobileHeaderMenu label="System" icon={<DotsThree size={20} />} onTriggerElement={(element) => { areaSwitcherTriggerRef.current = element; }}>
+              {(dismiss) => <>
+                <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("search"))}><MagnifyingGlass size={17} /> Search</button>
+                <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}><SquaresFour size={17} /> All windows</button>
+                <button type="button" onClick={() => launchMobileDestination(dismiss, toggleAreaSwitcher)}><Desktop size={17} /> Desktops and areas</button>
+                <button type="button" onClick={() => { dismiss(false); setNotificationsOpen(true); }}><Bell size={17} /> Notifications</button>
+                <span className="mobile-header-menu__separator" />
+                {renderMobileStartMenu(dismiss)}
+              </>}
+            </MobileHeaderMenu>
+            {shellNotifications}
+            <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />
+          </> : <>
+            <button type="button" aria-label="Search apps, files, windows, and commands" title="Search" onClick={() => setActivePanel("search")}>
+              <MagnifyingGlass size={17} />
+              <span className="desktop-action-label">Search</span>
+            </button>
+            {shellNotifications}
+            <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher, current desktop ${activeDesktopName}, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
+              <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
+            </button>
+            <DesktopClock />
+          </>}
         </div>
       </header>
       <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { void activateDesktop(id); }} />
@@ -5214,6 +5247,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (SETTINGS_PARENTS[settingsPage] ? SETTINGS_PAGE_TITLES[settingsPage] : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
+          onExecuteCommand={(id) => { void commandService.execute(id, commandContext); }}
           onFocus={focusApp}
           onBoundsChange={updateAppBounds}
           dragEdgeAt={edgeAt}

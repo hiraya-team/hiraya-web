@@ -1,6 +1,6 @@
 {
   "name": "@hiraya/system-markdown-preview", "private": true, "version": "1.0.1", "type": "module",
   "scripts": { "build": "bunx --bun tsc --noEmit && bunx --bun vite build --config ../shared/vite.config.ts" },
-  "dependencies": { "@hiraya-team/apps-sdk": "2.0.0", "@hiraya/system-apps-shared": "workspace:*" },
+  "dependencies": { "@hiraya-team/apps-sdk": "2.1.0", "@hiraya/system-apps-shared": "workspace:*" },
   "devDependencies": { "typescript": "~5.8.3", "vite": "^7.0.4" }
 }

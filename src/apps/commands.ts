@@ -1,3 +1,5 @@
+import type { CommandDefinition } from "@hiraya-team/apps-contracts";
+
 export type CommandId = `${string}.${string}`;
 
 export type CommandDescriptor<Context, Id extends CommandId = CommandId> = {
@@ -5,13 +7,14 @@ export type CommandDescriptor<Context, Id extends CommandId = CommandId> = {
   label: string;
   detail?: string;
   keywords?: readonly string[];
+  promoted?: boolean;
   order?: number;
   visible?: (context: Context) => boolean;
   enabled?: (context: Context) => boolean;
   execute: (context: Context) => void | Promise<void>;
 };
 
-export type CommandItem<Id extends CommandId = CommandId> = Pick<CommandDescriptor<unknown, Id>, "id" | "label" | "detail" | "keywords"> & {
+export type CommandItem<Id extends CommandId = CommandId> = Pick<CommandDescriptor<unknown, Id>, "id" | "label" | "detail" | "keywords" | "promoted"> & {
   enabled: boolean;
 };
 
@@ -34,12 +37,13 @@ export class CommandService<Context, Id extends CommandId = CommandId> {
   list(context: Context): CommandItem<Id>[] {
     return [...this.#commands.values()]
       .filter((command) => command.visible?.(context) ?? true)
-      .sort((left, right) => (left.order ?? 0) - (right.order ?? 0) || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+      .sort((left, right) => (left.order ?? 0) - (right.order ?? 0))
       .map((command) => ({
         id: command.id,
         label: command.label,
         detail: command.detail,
         keywords: command.keywords,
+        promoted: command.promoted,
         enabled: command.enabled?.(context) ?? true,
       }));
   }
@@ -83,36 +87,55 @@ export type AppCommandContext = {
   openPanel: (panel: AppCommandPanel) => void;
 };
 
-export type RuntimeCommandDefinition = { id: string; title: string; shortcut?: string; enabled?: boolean };
+export type RuntimeCommandDefinition = CommandDefinition;
+export type RuntimeChromeCommand = { id: CommandId; title: string; shortcut?: string; enabled: boolean };
 
 export class RuntimeCommandContributions<Context> {
   readonly #disposals: Array<() => void> = [];
+  readonly #listeners = new Set<() => void>();
+  #promoted: readonly RuntimeChromeCommand[] = [];
 
   constructor(
     private readonly service: CommandService<Context>,
-    private readonly appId: string,
+    private readonly ownerId: string,
     private readonly invoke: (id: string) => void,
   ) {}
 
   set(commands: readonly RuntimeCommandDefinition[]): void {
-    this.clear();
+    this.#clearRegistrations();
     const localIds = new Set<string>();
     try {
       for (const command of commands) {
         if (localIds.has(command.id)) throw new TypeError(`Duplicate app command: ${command.id}`);
         localIds.add(command.id);
-        const id = runtimeCommandId(this.appId, command.id);
-        this.#disposals.push(this.service.register({ id, label: command.title, detail: command.shortcut, enabled: () => command.enabled ?? true, execute: () => this.invoke(command.id) }));
+        const id = runtimeCommandId(this.ownerId, command.id);
+        this.#disposals.push(this.service.register({ id, label: command.title, detail: command.shortcut, promoted: command.promoted, enabled: () => command.enabled ?? true, execute: () => this.invoke(command.id) }));
       }
     } catch (error) {
-      this.clear();
+      this.#clearRegistrations();
+      this.#promoted = [];
+      this.#emit();
       throw error;
     }
+    this.#promoted = commands.flatMap((command) => command.promoted ? [{ id: runtimeCommandId(this.ownerId, command.id), title: command.title, shortcut: command.shortcut, enabled: command.enabled ?? true }] : []);
+    this.#emit();
   }
 
   clear(): void {
+    this.#clearRegistrations();
+    if (this.#promoted.length === 0) return;
+    this.#promoted = [];
+    this.#emit();
+  }
+
+  readonly getPromoted = () => this.#promoted;
+  readonly subscribe = (listener: () => void) => { this.#listeners.add(listener); return () => this.#listeners.delete(listener); };
+
+  #clearRegistrations(): void {
     for (const dispose of this.#disposals.splice(0)) dispose();
   }
+
+  #emit(): void { for (const listener of this.#listeners) listener(); }
 
   close(): void { this.clear(); }
 }
