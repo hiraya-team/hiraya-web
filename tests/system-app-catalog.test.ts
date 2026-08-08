@@ -5,11 +5,12 @@ import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 import { SYSTEM_APP_SLUGS } from "../build/system-apps";
 
 describe("bundled system app catalog", () => {
-  test("contains seven valid, unique trusted manifests and archive names", async () => {
-    expect(SYSTEM_APP_SLUGS).toHaveLength(7);
+  test("contains six valid, unique trusted manifests and archive names", async () => {
+    expect(SYSTEM_APP_SLUGS).toHaveLength(6);
     const manifests = await Promise.all(SYSTEM_APP_SLUGS.map(async (slug) => parseManifestV2(JSON.parse(await readFile(join(import.meta.dir, "..", "apps", "system", slug, "public", "hiraya.app.json"), "utf8")))));
-    expect(new Set(manifests.map((manifest) => manifest.id)).size).toBe(7);
+    expect(new Set(manifests.map((manifest) => manifest.id)).size).toBe(6);
     expect(SYSTEM_APP_SLUGS.map((slug) => `system-apps/${slug}.hiraya.app`)).not.toContain("system-apps/folder-explorer.hiraya.app");
+    expect(SYSTEM_APP_SLUGS.map((slug) => `system-apps/${slug}.hiraya.app`)).not.toContain("system-apps/markdown-preview.hiraya.app");
   });
 
   test("emits trusted digests so ordinary startup does not inspect unchanged archives", async () => {
@@ -21,7 +22,11 @@ describe("bundled system app catalog", () => {
     expect(controller).not.toContain('import("@hiraya-team/app-cli")');
     expect(controller).not.toContain("systemAppArchiveUrl");
     expect(controller).toContain('current?.source === "system" && systemInstallMatchesCatalog(current, item)');
+    expect(controller.indexOf("await installApp(install)")).toBeLessThan(controller.indexOf("await retireMarkdownPreview()"));
+    expect(controller.indexOf("await retireMarkdownPreview()")).toBeLessThan(controller.indexOf("await releaseApprovedPackageArchive(retiredDigest)"));
     expect(launcher).toContain('import("@hiraya-team/app-cli")');
+    expect(launcher).toContain("install.appId === SYSTEM_APP_IDS.mediaViewer && isMarkdownFile(target)");
+    expect(launcher).toContain("Only the bundled Document & Media Viewer can change this preference.");
     expect(launcher).toContain("Only the bundled Theme Editor can manage desktop themes.");
   });
 

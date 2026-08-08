@@ -529,6 +529,42 @@ test("opens an imported RTF document in the document viewer", async ({ page }) =
   expect(cycleErrors).toEqual([]);
 });
 
+test("opens GFM Markdown with safe relative and external images in the document viewer", async ({ page }) => {
+  await openLocalDesktop(page);
+  const actions = page.getByRole("toolbar", { name: "File actions" });
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill("Markdown preview");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: "Markdown preview" }).dblclick();
+
+  const folder = page.getByRole("dialog", { name: "Markdown preview" });
+  const chooser = page.waitForEvent("filechooser");
+  await folder.getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles([
+    { name: "pixel.png", mimeType: "image/png", buffer: pngFile },
+    {
+      name: "README.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# GFM preview\n\n~~complete~~\n\n- [x] Safe task\n\n| File | State |\n| --- | --- |\n| README | ready |\n\n![Local pixel](pixel.png)\n\n![Remote pixel](https://example.com/pixel.png)\n\n<script>window.markdownExecuted = true</script>"),
+    },
+  ]);
+
+  await folder.locator(".folder-explorer__row").filter({ hasText: "README.md" }).dblclick();
+  const viewer = page.getByRole("dialog", { name: "Document & Media Viewer" });
+  const frame = viewer.frameLocator("iframe");
+  await expect(frame.getByLabel("Markdown preview")).toBeVisible({ timeout: 30_000 });
+  await expect(frame.locator("del")).toHaveText("complete");
+  await expect(frame.locator("table")).toContainText("README");
+  await expect(frame.locator('input[type="checkbox"]')).toBeChecked();
+  await expect(frame.getByAltText("Local pixel")).toHaveAttribute("src", /^blob:/);
+  await expect(frame.getByRole("group", { name: "External image from example.com blocked" })).toBeVisible();
+  await expect(frame.getByLabel("Markdown preview")).toContainText("<script>window.markdownExecuted = true</script>");
+  expect(await frame.locator("body").evaluate(() => "markdownExecuted" in window)).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(frame.getByLabel("Markdown preview")).toBeVisible();
+  await expect(frame.locator("table")).toBeVisible();
+});
+
 test("pastes clipboard URL text as a named Internet Shortcut", async ({ page, context }) => {
   await openLocalDesktop(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
@@ -1020,12 +1056,17 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await themeEditorFrame.getByRole("button", { name: "Grove" }).click();
   await expect(themeEditorFrame.getByText("Grove wallpaper applied.")).toBeVisible();
   await themeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
+  const discardThemeChanges = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
+  await discardThemeChanges.click();
+  await expect(themeEditor).toBeHidden();
   await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
   const reopenedThemeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const reopenedFrame = reopenedThemeEditor.frameLocator("iframe");
   await reopenedFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(reopenedFrame.getByRole("button", { name: "Grove" })).toHaveAttribute("aria-pressed", "true");
   await reopenedThemeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
+  await discardThemeChanges.click();
+  await expect(reopenedThemeEditor).toBeHidden();
   await settingsWindow.getByRole("button", { name: "Back to Desktop" }).click();
 
   await categories.getByRole("button", { name: "Files & apps" }).click();
@@ -1062,11 +1103,16 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await mobileThemesLauncher.click();
   await mobileSettings.getByRole("button", { name: "Open Theme Editor" }).click();
   const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
-  await mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Wallpaper" }).click();
-  await expect(mobileThemeEditor.frameLocator("iframe").getByRole("heading", { name: "Image treatment" })).toBeVisible();
-  await mobilePage.goBack();
-  await expect(mobileThemeEditor.frameLocator("iframe").getByRole("tab", { name: "Theme", exact: true })).toHaveAttribute("aria-selected", "true");
-  await mobilePage.goBack();
+  const mobileThemeEditorFrame = mobileThemeEditor.frameLocator("iframe");
+  await expect(mobileThemeEditorFrame.getByRole("option", { name: /Hiraya Dusk/ })).toBeVisible();
+  await mobileThemeEditorFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await expect(mobileThemeEditorFrame.getByRole("heading", { name: "Image treatment" })).toBeVisible();
+  const mobileThemeEditorBack = mobilePage.getByRole("button", { name: "Back from Theme Editor" });
+  await mobileThemeEditorBack.click();
+  await mobilePage.getByRole("alertdialog", { name: "Discard theme changes?" }).getByRole("button", { name: "Discard", exact: true }).click();
+  await mobileThemeEditorBack.click();
+  await expect(mobileThemeEditorFrame.getByRole("tab", { name: "Theme", exact: true })).toHaveAttribute("aria-selected", "true");
+  await mobileThemeEditorBack.click();
   await expect(mobileThemeEditor).toHaveCount(0);
   await mobileContext.close();
 });

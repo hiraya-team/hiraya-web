@@ -1,6 +1,6 @@
 import { parseAppCatalog, type AppCatalogRelease, type AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { InstalledApp } from "../apps/installed-apps";
-import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
+import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import type { DesktopIdentity, FileEntry } from "../types";
 import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { requireAuthenticatedResponse } from "./auth";
@@ -26,7 +26,7 @@ export function storeSearchMatches(query: string, ...values: Array<string | null
 export type InspectedStorePackage = Readonly<{ archive: Blob; inspection: AppPackageInspection }>;
 export type LoadedStorePackages = Readonly<{ packages: StorePackage[]; managed: boolean; descriptor: AppStoreDescriptor | null }>;
 
-const SYSTEM_APP_ID_SET = new Set<string>(Object.values(SYSTEM_APP_IDS));
+const SYSTEM_APP_ID_SET = RESERVED_SYSTEM_APP_IDS;
 
 function parseDescriptor(value: unknown): AppStoreDescriptor | null {
   if (!value || typeof value !== "object") return null;

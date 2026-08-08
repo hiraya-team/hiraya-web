@@ -11,6 +11,7 @@ import { RuntimeCommandContributions, type createAppCommandService } from "../..
 import type { InstalledApp } from "../../apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 import type { SystemAppTarget } from "../../apps/types";
+import { isMarkdownFile } from "../../apps/file-associations";
 import {
   type AppHostServices,
   type CapabilityStore,
@@ -108,10 +109,11 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
     const effectivePermissions = () => appPackage.manifest.permissions.filter((permission) => permission !== "files:write" || options.canMutate());
     options.capabilities.setInstanceMutationAllowed(id, options.canMutate());
     const entries = options.getEntries();
-    const relativeFolder = target && target !== "root" && target.kind === "file" && install.appId === SYSTEM_APP_IDS.markdownPreview && target.parentId
-      ? entries.find((entry): entry is FolderEntry => entry.id === target.parentId && entry.kind === "folder")
+    const markdownTarget = target && target !== "root" && target.kind === "file" && install.appId === SYSTEM_APP_IDS.mediaViewer && isMarkdownFile(target) ? target : null;
+    const relativeFolder = markdownTarget?.parentId
+      ? entries.find((entry): entry is FolderEntry => entry.id === markdownTarget.parentId && entry.kind === "folder")
       : undefined;
-    const markdownAtRoot = install.appId === SYSTEM_APP_IDS.markdownPreview && target && target !== "root" && target.kind === "file" && target.parentId === null;
+    const markdownAtRoot = markdownTarget?.parentId === null;
     const launchCapabilities = grantLaunchCapabilities(options.capabilities, id, appPackage.manifest.permissions, {
       files: target && target !== "root" && target.kind === "file" ? [target] : [],
       folders: target && target !== "root" && target.kind === "folder" ? [target] : relativeFolder ? [relativeFolder] : [],
@@ -167,7 +169,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
         // Keep protocol v1 apps operational while making the retired behavior explicit.
         setOfflinePinned: async () => { throw new HostServiceError("Offline pinning is no longer supported.", "UNAVAILABLE"); },
         setExternalEmbeddedPreviews: async ({ enabled }: { enabled: boolean }) => {
-          if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.markdownPreview) throw new HostServiceError("Only the bundled Markdown app can change this preference.", "PERMISSION_DENIED");
+          if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.mediaViewer) throw new HostServiceError("Only the bundled Document & Media Viewer can change this preference.", "PERMISSION_DENIED");
           await options.setExternalEmbeddedPreviews(enabled);
         },
       },

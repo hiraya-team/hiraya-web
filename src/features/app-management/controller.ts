@@ -3,6 +3,7 @@ import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import { parseFileAssociation, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
 import { SYSTEM_APP_CATALOG, systemInstallFromCatalog, type SystemAppCatalogItem } from "../../apps/system-apps";
+import { RETIRED_SYSTEM_APP_IDS, SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 import type { ThemeDefinition } from "../../domain/theme";
 import {
   clearAppStorage,
@@ -14,6 +15,7 @@ import {
   removeAppStorage,
   removeFileAssociation,
   removeQuarantinedApp,
+  retireMarkdownPreview,
   resetFileAssociations,
   setFileAssociation,
   uninstallApp,
@@ -96,17 +98,19 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
           try { await readApprovedPackageArchive(app.digest); return app; } catch { return null; }
         }))).filter((app): app is InstalledApp & { source: "system" } => app !== null);
         const byId = new Map([...storedApps.filter((app) => app.source !== "system"), ...retainedSystemApps].map((app) => [app.appId, app]));
-        const systemApps = await Promise.all(SYSTEM_APP_CATALOG.map(async (item) => {
+        const systemApps = await Promise.all(SYSTEM_APP_CATALOG.filter((item) => item.manifest.id !== RETIRED_SYSTEM_APP_IDS.markdownPreview).map(async (item) => {
           const current = byId.get(item.manifest.id);
           if (current?.source === "system" && systemInstallMatchesCatalog(current, item)) return current;
           const install = systemInstallFromCatalog(item, current);
           if (!current || !systemInstallMatchesCatalog(current, item)) await installApp(install);
           return install;
         }));
+        const retiredDigest = await retireMarkdownPreview();
+        if (retiredDigest) await releaseApprovedPackageArchive(retiredDigest);
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
-        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => !systemIds.has(app.appId)), ...systemApps]);
-        setLocalFileAssociations(associations);
+        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => app.appId !== RETIRED_SYSTEM_APP_IDS.markdownPreview && !systemIds.has(app.appId)), ...systemApps]);
+        setLocalFileAssociations(associations.map((association) => association.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? { ...association, appId: SYSTEM_APP_IDS.mediaViewer } : association));
         setQuarantinedApps(quarantined);
         setAppsLoaded(true);
       })
