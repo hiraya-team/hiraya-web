@@ -98,7 +98,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
         const byId = new Map([...storedApps.filter((app) => app.source !== "system"), ...retainedSystemApps].map((app) => [app.appId, app]));
         const systemApps = await Promise.all(SYSTEM_APP_CATALOG.map(async (item) => {
           const current = byId.get(item.manifest.id);
-          if (current?.source === "system") return current;
+          if (current?.source === "system" && systemInstallMatchesCatalog(current, item)) return current;
           const install = systemInstallFromCatalog(item, current);
           if (!current || !systemInstallMatchesCatalog(current, item)) await installApp(install);
           return install;

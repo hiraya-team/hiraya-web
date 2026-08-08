@@ -20,6 +20,7 @@ describe("bundled system app catalog", () => {
     expect(plugin).toContain('createHash("sha256")');
     expect(controller).not.toContain('import("@hiraya-team/app-cli")');
     expect(controller).not.toContain("systemAppArchiveUrl");
+    expect(controller).toContain('current?.source === "system" && systemInstallMatchesCatalog(current, item)');
     expect(launcher).toContain('import("@hiraya-team/app-cli")');
     expect(launcher).toContain("Only the bundled Theme Editor can manage desktop themes.");
   });
