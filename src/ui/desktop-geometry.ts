@@ -1,4 +1,4 @@
-import { DEFAULT_GRID_SIZE, type DesktopEntry, type EntryPosition } from "../types";
+import { DEFAULT_GRID_SIZE, type DesktopEntry, type EntryPosition, type RootEntryPositionUpdate } from "../types";
 import type { DesktopIconMetrics } from "../lib/themes";
 
 export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
@@ -73,6 +73,19 @@ function positionsOverlap(a: EntryPosition, b: EntryPosition, metrics: DesktopIc
 export function nextAvailableDesktopSlot(size: { width: number; height: number }, occupied: readonly EntryPosition[], reserveMinimap = false, fallbackIndex = 0, metrics = DEFAULT_ICON_METRICS) {
   const slots = desktopSlots(size, reserveMinimap, metrics);
   return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, slot, metrics))) ?? slots[fallbackIndex % slots.length];
+}
+
+export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS): RootEntryPositionUpdate[] | null {
+  const arranged = entries
+    .filter((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(segment))
+    .sort((left, right) => {
+      const a = projectLogicalPosition(left.position, size).local;
+      const b = projectLogicalPosition(right.position, size).local;
+      return a.x - b.x || a.y - b.y || left.id.localeCompare(right.id);
+    });
+  const slots = desktopSlots(size, false, metrics);
+  if (arranged.length > slots.length) return null;
+  return arranged.map((entry, index) => ({ entryId: entry.id, position: restoreLogicalPosition(slots[index], segment, size) }));
 }
 
 export function iconAreaSize(viewport: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE) {

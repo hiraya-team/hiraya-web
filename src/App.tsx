@@ -91,7 +91,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopSegment, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -674,12 +674,6 @@ function App({ session }: { session: AuthSession | null }) {
     const key = segmentKey(segment);
     return visibleSegmentsByKey.get(key) ?? { entries: [], key, segment };
   });
-  const minimapColumns = minimapSegments.map((candidate) => candidate.segment.column);
-  const minimapRows = minimapSegments.map((candidate) => candidate.segment.row);
-  const minimapMinColumn = Math.min(...minimapColumns);
-  const minimapMinRow = Math.min(...minimapRows);
-  const minimapColumnCount = Math.max(...minimapColumns) - minimapMinColumn + 1;
-  const minimapRowCount = Math.max(...minimapRows) - minimapMinRow + 1;
   const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, true);
   const minimapDetailed = minimapExpanded;
   const restingCamera = areaCameraPosition(activeSegment, desktopSize);
@@ -3006,6 +3000,30 @@ function App({ session }: { session: AuthSession | null }) {
     }
   }
 
+  async function autoArrangeDesktopIcons() {
+    if (!canMutate) return;
+    const arranged = arrangeDesktopSegment(entriesRef.current, activeSegment, iconArea, iconMetrics);
+    if (!arranged) {
+      setError("There is not enough room to auto-arrange every icon in this area.");
+      return;
+    }
+    const updates = arranged.filter(({ entryId, position }) => {
+      const current = entryIndex.byId.get(entryId)?.position;
+      return current?.x !== position.x || current.y !== position.y;
+    });
+    if (!updates.length) return;
+    const previous = new Map(updates.map(({ entryId }) => [entryId, entryIndex.byId.get(entryId)!.position]));
+    const positions = new Map(updates.map(({ entryId, position }) => [entryId, position]));
+    setError("");
+    setEntries((current) => current.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry));
+    try {
+      await updateRootEntryPositions(updates);
+    } catch {
+      setEntries((current) => current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry));
+      setError("The desktop icons could not be auto-arranged.");
+    }
+  }
+
   async function handleMoveToDesktop(items: readonly DesktopEntry[], anchor: DesktopEntry, clientX: number, clientY: number) {
     if (!canMutate) return false;
     const origin = restoreLogicalPosition(positionAtDesktopPoint(clientX, clientY), activeSegment, iconArea);
@@ -4476,6 +4494,7 @@ function App({ session }: { session: AuthSession | null }) {
     createFolder: () => openFileDialog({ type: "create-folder", parentId: null }),
     uploadFiles: () => chooseUpload(null),
     importFolder: () => chooseFolderImport(null),
+    autoArrange: autoArrangeDesktopIcons,
     openSettings: openSettingsWindow,
     openAreaMap,
     openPanel: setActivePanel,
@@ -4854,7 +4873,7 @@ function App({ session }: { session: AuthSession | null }) {
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-              : activeDesktopId && <span className="mobile-desktop-summary"><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></span>}
+              : activeDesktopId && <button className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
         </nav>
         <div className="menu-bar__actions">
           {focusedApp && <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />}
@@ -4895,6 +4914,7 @@ function App({ session }: { session: AuthSession | null }) {
           <DesktopClock />
         </div>
       </header>
+      <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { void activateDesktop(id); }} />
 
       <section
         className="desktop"
@@ -5467,7 +5487,6 @@ function App({ session }: { session: AuthSession | null }) {
         activeSegmentKey={activeSegmentKey}
         apps={runningApps}
         desktopName={activeDesktopName}
-        desktopRail={<DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { collapseAreaMap(); void activateDesktop(id); }} onDismiss={collapseAreaMap} />}
         desktopSize={iconArea}
         detailed={minimapDetailed}
         dirtyAppIds={dirtyAppIds}
@@ -5478,10 +5497,6 @@ function App({ session }: { session: AuthSession | null }) {
         positions={responsive.positions}
         rootRef={areaSwitcherRef}
         segments={minimapSegments}
-        minColumn={minimapMinColumn}
-        minRow={minimapMinRow}
-        columnCount={minimapColumnCount}
-        rowCount={minimapRowCount}
         swipePreview={swipePreview}
         windowLimit={minimapWindowLimit}
         getAppEntry={(app) => app.kind === "file" ? (entryIndex.byId.get(app.fileId) ?? null) : app.kind === "properties" ? (entryIndex.byId.get(app.entryId) ?? null) : app.kind === "explorer" && app.folderId ? (entryIndex.byId.get(app.folderId) ?? null) : null}

@@ -80,6 +80,7 @@ describe("app command contributions", () => {
       createFolder: () => calls.push("folder"),
       uploadFiles: () => calls.push("upload"),
       importFolder: () => calls.push("import-folder"),
+      autoArrange: () => calls.push("auto-arrange"),
       openSettings: () => calls.push("settings"),
       openAreaMap: () => calls.push("area-map"),
       openPanel: (panel) => calls.push(panel),
@@ -91,6 +92,7 @@ describe("app command contributions", () => {
       APP_COMMAND_IDS.newFolder,
       APP_COMMAND_IDS.upload,
       APP_COMMAND_IDS.importFolder,
+      APP_COMMAND_IDS.autoArrange,
       APP_COMMAND_IDS.trash,
       APP_COMMAND_IDS.areaMap,
       APP_COMMAND_IDS.connection,
@@ -99,6 +101,7 @@ describe("app command contributions", () => {
     ]);
     expect(await service.execute(APP_COMMAND_IDS.newFile, context)).toBe(false);
     expect(await service.execute(APP_COMMAND_IDS.trash, context)).toBe(false);
+    expect(await service.execute(APP_COMMAND_IDS.autoArrange, context)).toBe(false);
     expect(calls).toEqual([]);
 
     expect(await service.execute(APP_COMMAND_IDS.areaMap, context)).toBe(true);
@@ -106,7 +109,8 @@ describe("app command contributions", () => {
 
     context.canMutate = true;
     expect(await service.execute(APP_COMMAND_IDS.newFile, context)).toBe(true);
+    expect(await service.execute(APP_COMMAND_IDS.autoArrange, context)).toBe(true);
     expect(await service.execute(APP_COMMAND_IDS.trash, context)).toBe(true);
-    expect(calls).toEqual(["area-map", "file", "trash"]);
+    expect(calls).toEqual(["area-map", "file", "auto-arrange", "trash"]);
   });
 });
