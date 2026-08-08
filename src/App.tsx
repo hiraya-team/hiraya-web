@@ -596,6 +596,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
   const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
+  const copyDeepLinkEvent = useEffectEvent(copyDeepLink);
+
   useEffect(() => {
     let active = true;
     if (!showHiddenFiles || !activeDesktopId || loading) {
@@ -2103,7 +2105,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         const ids = (explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id)).filter((id) => !isProtectedShellEntry(id));
         event.preventDefault();
         replaceSelection(surface, ids);
-      } else if (modifier && key === "c" && selectedIdsRef.current.length) {
+      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && selectedIdsRef.current.length === 1) {
+        const entry = entryIndex.byId.get(selectedIdsRef.current[0]);
+        if (!entry) return;
+        event.preventDefault();
+        void copyDeepLinkEvent(entry);
+      } else if (modifier && !event.shiftKey && key === "c" && selectedIdsRef.current.length) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
@@ -2165,6 +2172,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
+    // copyDeepLinkEvent is a useEffectEvent and intentionally non-reactive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, pendingDevicePaste, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
 
   useEffect(() => {
@@ -4509,6 +4518,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
     { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
     { id: "copy", group: "Files", label: "Copy selected items", keys: ["Ctrl/⌘", "C"] },
+    { id: "copy-link", group: "Files", label: "Copy link to selected item", keys: ["Ctrl/⌘", "Shift", "C"] },
     { id: "paste", group: "Files", label: "Paste items", keys: ["Ctrl/⌘", "V"] },
     { id: "trash", group: "Files", label: "Move selected items to Trash", keys: ["Delete"] },
     { id: "save", group: "Editor", label: "Save the open file", keys: ["Ctrl/⌘", "S"] },
