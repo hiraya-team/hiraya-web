@@ -303,7 +303,7 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  await editor.frameLocator("iframe").getByRole("button", { name: "Open" }).click();
+  await editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true }).click();
 
   const picker = page.getByRole("dialog", { name: "Choose file" });
   const folder = picker.getByRole("button", { name: folderName });
