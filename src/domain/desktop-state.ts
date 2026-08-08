@@ -14,6 +14,7 @@ export type DesktopSyncState = {
 
 export type PersistedDesktopState = {
   entries: DesktopEntry[];
+  autoArrangeIcons: boolean;
   snapToGrid: boolean;
   gridSize: GridSize;
   wallpaper: Wallpaper;

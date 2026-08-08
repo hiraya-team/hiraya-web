@@ -25,7 +25,9 @@ describe("contracts", () => {
   });
 
   test("validates structured wallpaper and legacy persisted presets", () => {
-    expect(parseLayout({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toEqual({ snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER });
+    expect(parseLayout({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER });
+    expect(parseLayout({ autoArrangeIcons: false, snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }).autoArrangeIcons).toBe(false);
+    expect(() => parseLayout({ autoArrangeIcons: null, snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toThrow("auto-arrange");
     expect(parseLayout({ snapToGrid: true, gridSize: 48, wallpaper: DEFAULT_WALLPAPER }).gridSize).toBe(48);
     expect(() => parseLayout({ snapToGrid: true, gridSize: 20, wallpaper: DEFAULT_WALLPAPER })).toThrow("grid size");
     expect(() => parseLayout({ snapToGrid: true, gridSize: null, wallpaper: DEFAULT_WALLPAPER })).toThrow("grid size");

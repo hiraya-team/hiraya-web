@@ -361,7 +361,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
     case "layout": {
       const layout = parseLayout(operation.layout);
       assertWallpaperSource(entries, layout.wallpaper);
-      return { ...state, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper };
+      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper };
     }
     case "editor-settings":
       return { ...state, editorSettings: parseEditorSettings(operation.settings) };
@@ -382,7 +382,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
         : [...state.appearance.customThemes, theme];
       const appearance = parseThemeState({ selectedThemeId: theme.id, customThemes });
       const layout = parseLayout(operation.wallpaperKind === null ? operation.layout : { ...operation.layout, wallpaper: { ...operation.layout.wallpaper, source: `theme:${theme.id}` } });
-      return { ...state, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, appearance };
+      return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, appearance };
     }
     case "delete-theme": {
       if (!state.appearance.customThemes.some((theme) => theme.id === operation.themeId)) return state;
@@ -483,6 +483,7 @@ function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, re
   const base = operation.conflictBase;
   if (!base) return operation.layout;
   return parseLayout({
+    autoArrangeIcons: same(operation.layout.autoArrangeIcons, base.autoArrangeIcons) ? remote.autoArrangeIcons : operation.layout.autoArrangeIcons,
     snapToGrid: same(operation.layout.snapToGrid, base.snapToGrid) ? remote.snapToGrid : operation.layout.snapToGrid,
     gridSize: same(operation.layout.gridSize, base.gridSize) ? remote.gridSize : operation.layout.gridSize,
     wallpaper: same(operation.layout.wallpaper, base.wallpaper) ? remote.wallpaper : operation.layout.wallpaper,
@@ -520,8 +521,8 @@ export function resolveOutboxRevisionConflict(operation: OutboxOperation, confli
   }
   if (operation.kind === "layout") {
     if (!operation.conflictBase) return { kind: "blocked", fields: ["layout"] };
-    const fields = (["snapToGrid", "gridSize", "wallpaper"] as const).filter((key) => !same(operation.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.layout[key]));
-    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "snapToGrid" ? "grid snapping" : field === "gridSize" ? "grid size" : "wallpaper") } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, layout: mergeLayout(operation, remote.layout) } };
+    const fields = (["autoArrangeIcons", "snapToGrid", "gridSize", "wallpaper"] as const).filter((key) => !same(operation.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.conflictBase![key]) && !same(remote.layout[key], operation.layout[key]));
+    return fields.length ? { kind: "blocked", fields: fields.map((field) => field === "autoArrangeIcons" ? "icon auto-arrangement" : field === "snapToGrid" ? "grid snapping" : field === "gridSize" ? "grid size" : "wallpaper") } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, layout: mergeLayout(operation, remote.layout) } };
   }
   if (operation.kind === "editor-settings") {
     if (!operation.conflictBase) return { kind: "blocked", fields: ["editor settings"] };

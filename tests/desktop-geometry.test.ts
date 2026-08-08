@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
-import { arrangeDesktopSegment, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
+import { arrangeDesktopDrag, arrangeDesktopSegment, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -46,6 +46,30 @@ describe("responsive desktop geometry", () => {
   test("does not produce colliding positions when an area is over capacity", () => {
     const size = { width: 220, height: 260 };
     expect(arrangeDesktopSegment([file("one"), file("two"), file("three")], { column: 0, row: 0 }, size)).toBeNull();
+  });
+
+  test("cascades occupied icons into the nearest available slots", () => {
+    const entries = [file("moving", 230, 300), file("first", 22, 22), file("second", 126, 22)];
+    expect(arrangeDesktopDrag(entries, new Set(["moving"]), "moving", { x: 22, y: 22 }, { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([
+      { entryId: "first", position: { x: 126, y: 22 } },
+      { entryId: "moving", position: { x: 22, y: 22 } },
+      { entryId: "second", position: { x: 230, y: 22 } },
+    ]);
+  });
+
+  test("preserves a dragged group and leaves neighboring areas untouched", () => {
+    const entries = [file("a", 230, 300), file("b", 334, 300), file("occupied", 22, 22), file("neighbor", 522, 22)];
+    const updates = arrangeDesktopDrag(entries, new Set(["a", "b"]), "a", { x: 22, y: 22 }, { column: 0, row: 0 }, { width: 500, height: 500 });
+    const positions = new Map(updates?.map((update) => [update.entryId, update.position]));
+    expect(positions.get("a")).toEqual({ x: 22, y: 22 });
+    expect(positions.get("b")).toEqual({ x: 126, y: 22 });
+    expect(positions.has("neighbor")).toBe(false);
+  });
+
+  test("rejects a colliding drag when the area has no free slot", () => {
+    const size = { width: 220, height: 260 };
+    const entries = [file("moving", 22, 134), file("first", 22, 22), file("second", 22, 134)];
+    expect(arrangeDesktopDrag(entries, new Set(["moving"]), "moving", { x: 22, y: 22 }, { column: 0, row: 0 }, size)).toBeNull();
   });
 
   test("aligns icon areas to the selected sub-grid with only trailing remainders", () => {
