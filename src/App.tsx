@@ -122,12 +122,12 @@ import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
-import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
+import { isAppPackageName, TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
 import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
-import { HostServiceError, grantPickedFiles, grantPickedFolder, mapThemeTokens } from "./apps/host";
+import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
@@ -5525,7 +5525,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             const mergeConflicts: MergeTextConflict[] = mergeReview?.mode === "text" ? mergeReview.regions.flatMap((region, index) => region.kind === "unresolved" && !mergeReview.resolutions[String(index)] ? [{ id: String(index), label: `Overlapping edit ${index + 1}`, base: region.base, mine: region.mine, server: region.server, resolution: null }] : []) : [];
             return (
               <>
-                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_CSP : app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer && session ? trustedMediaCsp(session.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.markdownPreview ? TRUSTED_MARKDOWN_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? trustedDocumentMediaCsp(session?.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? TRUSTED_DOCUMENT_MEDIA_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
                         folder={folder}
@@ -6138,7 +6138,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
               return;
             }
             appCapabilities.setInstanceMutationAllowed(request.owner.instanceId, canMutateRef.current);
-            appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files));
+            const handles = running.install.source === "system" && running.install.appId === SYSTEM_APP_IDS.mediaViewer
+              ? grantPickedFilesWithParentScope(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files, entries)
+              : grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files);
+            appHostServices.dialogs.respond(request.id, handles);
           }}
           onOpenFolder={(folder) => {
             const request = appDialogRequests[0];

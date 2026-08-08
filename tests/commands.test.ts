@@ -69,12 +69,14 @@ describe("app command contributions", () => {
       { id: runtimeCommandId("window:1", "save"), title: "Save", shortcut: "Ctrl+S", enabled: true },
     ]);
     expect(await service.execute(runtimeCommandId("window:1", "format-document"), {})).toBe(true);
-    expect(invoked).toEqual(["format-document"]);
+    expect(contributions.execute(runtimeCommandId("window:1", "save"))).toBe(true);
+    expect(invoked).toEqual(["format-document", "save"]);
     expect(() => contributions.set([{ id: "duplicate", title: "One", promoted: true }, { id: "duplicate", title: "Two", promoted: true }])).toThrow("Duplicate app command");
     expect(contributions.getPromoted()).toEqual([]);
     contributions.set([{ id: "save-all", title: "Save all", enabled: false }]);
     expect(service.list({}).map(({ id, enabled }) => [id, enabled])).toEqual([[runtimeCommandId("window:1", "save-all"), false]]);
     expect(contributions.getPromoted()).toEqual([]);
+    expect(contributions.execute(runtimeCommandId("window:1", "save-all"))).toBe(false);
     contributions.close();
     expect(service.list({})).toEqual([]);
     expect(changes).toBe(3);

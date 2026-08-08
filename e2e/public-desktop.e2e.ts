@@ -102,6 +102,7 @@ test("fine pointers open draggable and resizable public windows", async ({ page 
   await expect(appWindow).toBeVisible();
   const editor = appWindow.frameLocator('iframe[title="Integrated Editor"]');
   await expect(editor.getByText("Read-only", { exact: true })).toBeVisible();
+  await expect(appWindow.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
   await expect(appWindow.locator("[data-window-drag-handle]")).toBeVisible();
   await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);
@@ -125,6 +126,7 @@ test("coarse-only public windows use the focused full-surface header", async ({ 
   await page.getByRole("button", { name: "Public document 1.txt, text/plain" }).dblclick();
   const appWindow = page.locator('[data-app-window="public-view"]');
   await expect(appWindow).toHaveAttribute("data-full-surface", "true");
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
   await expect(page.getByRole("button", { name: "Back to public desktop" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Close public window" })).toBeVisible();
   await expect(appWindow).toBeFocused();

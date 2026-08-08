@@ -16,12 +16,11 @@ const specimen = required<HTMLElement>("#specimen");
 const form = required<HTMLFormElement>("#theme-form");
 const nameInput = required<HTMLInputElement>("#theme-name");
 const status = required<HTMLElement>("#status");
-const saveButton = required<HirayaButton>("#save");
+const deleteButton = required<HirayaButton>("#delete");
 const wallpaperPanel = required<HTMLElement>("#wallpaper-panel");
 const themePanel = required<HTMLElement>("#theme-panel");
 const wallpaperFields = required<HTMLElement>("#wallpaper-fields");
 const wallpaperUpload = required<HTMLInputElement>("#wallpaper-upload");
-const managementButtons = ["edit", "duplicate", "delete"].map((id) => required<HirayaButton>(`#${id}`));
 let hiraya: HirayaClient;
 let state: ThemeEditorState | null = null;
 let wallpaperState: WallpaperEditorState | null = null;
@@ -34,6 +33,7 @@ let wallpaperImageUrl = "";
 let wallpaperImageSource = "";
 let wallpaperImageGeneration = 0;
 let wallpaperSaveGeneration = 0;
+let saveEnabled = false;
 
 const DEFAULT_WALLPAPER: WallpaperEditorWallpaper = { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#000000", overlayOpacity: 0 };
 
@@ -51,11 +51,8 @@ const advancedColors: Array<[ColorKey, string]> = [
 required("#simple-fields").innerHTML = `${simpleColors.map(([legend, first, firstLabel, second]) => `<fieldset><legend>${legend}</legend>${colorField(first, `${legend} ${firstLabel.toLowerCase()}`)}${colorField(second, `${legend} text`)}</fieldset>`).join("")}${colorField("border", "Border")}${numberField("shape.radius", "Corner radius", 0, 24, 1)}${numberField("effects.opacity", "Surface opacity", .65, 1, .01)}${selectField("typography.family", "Font family", [["system", "System"], ["humanist", "Humanist"], ["mono", "Monospace"]])}${numberField("density", "Interface density", .8, 1.2, .05)}`;
 required("#advanced-fields").innerHTML = `${advancedColors.map(([key, label]) => colorField(key, label)).join("")}${numberField("shape.borderWidth", "Border width", 0, 2, .25)}${numberField("effects.blur", "Surface blur", 0, 30, 1)}${numberField("effects.shadow", "Shadow strength", 0, 1, .05)}<fieldset><legend>Surface treatment</legend><label class="toggle"><input id="treatment-enabled" type="checkbox"> Enable treatment</label><div id="treatment-fields">${numberField("treatment.gradientStrength", "Gradient strength", 0, 1, .05)}${selectField("treatment.gradientAngle", "Gradient angle", [0, 45, 90, 135, 180, 225, 270, 315].map((value) => [String(value), `${value} degrees`]))}${selectField("treatment.texture", "Texture", [["none", "None"], ["halftone", "Halftone"], ["dither", "Dither"]])}${numberField("treatment.textureStrength", "Texture strength", 0, 1, .05)}${numberField("treatment.textureScale", "Texture scale", 2, 12, 1)}<label class="toggle"><input data-path="treatment.pixelated" type="checkbox"> Pixelated treatment</label></div></fieldset>${numberField("typography.scale", "Type scale", .85, 1.2, .05)}${numberField("typography.weight", "Type weight", 400, 700, 100)}${numberField("motion", "Motion", 0, 1.5, .1)}${numberField("iconSize", "Desktop icon size", 48, 72, 1)}`;
 
-required("#edit").addEventListener("click", () => void beginEdit());
-required("#duplicate").addEventListener("click", () => void duplicateTheme());
 required("#delete").addEventListener("click", () => void deleteTheme());
 required("#cancel").addEventListener("click", () => void cancelEdit());
-saveButton.addEventListener("click", () => void saveTheme());
 nameInput.addEventListener("input", () => { if (draft) { draft.name = nameInput.value; draftUpdated(); } });
 form.addEventListener("input", handleFieldInput);
 form.addEventListener("change", handleFieldInput);
@@ -120,7 +117,7 @@ async function start() {
       render();
       setStatus(draft ? "The theme library changed elsewhere. Your draft is preserved." : "Theme library updated.");
     });
-    hiraya.on("commands.invoked", ({ id }) => { if (id === "save" && draft) void saveTheme(); });
+    hiraya.on("commands.invoked", ({ id }) => id === "edit" ? void beginEdit() : id === "duplicate" ? void duplicateTheme() : id === "save" ? void saveTheme() : undefined);
     hiraya.on("wallpapers.changed", (incoming) => {
       const sourceChanged = incoming.wallpaper.source !== wallpaperState?.wallpaper.source;
       wallpaperState = incoming;
@@ -229,7 +226,7 @@ function renderInspector() {
   const empty = required<HTMLElement>("#inspector-empty");
   empty.hidden = Boolean(draft);
   form.hidden = !draft;
-  if (!draft) return;
+  if (!draft) { saveEnabled = false; return; }
   nameInput.value = draft.name;
   for (const input of form.querySelectorAll<HTMLInputElement>("[data-color]")) input.value = draft.definition.colors[input.dataset.color as ColorKey];
   for (const input of form.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-path]")) {
@@ -266,15 +263,17 @@ function renderWallpaper() {
 function renderControls() {
   const theme = selectedTheme();
   const canManage = Boolean(state?.canManage) && !busy;
-  required<HirayaButton>("#edit").disabled = !theme || !canManage || Boolean(draft);
-  required<HirayaButton>("#duplicate").disabled = !theme || !canManage;
-  required<HirayaButton>("#delete").disabled = !theme || theme.builtIn || !canManage || Boolean(draft);
-  for (const button of managementButtons) button.toggleAttribute("aria-busy", busy);
-  saveButton.toggleAttribute("aria-busy", busy);
-  if (busy) saveButton.disabled = true;
+  const editEnabled = Boolean(theme && canManage && !draft);
+  const duplicateEnabled = Boolean(theme && canManage);
+  deleteButton.disabled = !theme || theme.builtIn || !canManage || Boolean(draft);
+  deleteButton.toggleAttribute("aria-busy", busy);
   required("#mode-badge").textContent = draft ? "Editing" : "Library";
   required("#dirty-label").textContent = draft && draftChanged(draft) ? "Unsaved" : "";
-  void hiraya?.commands.set([{ id: "save", title: "Save and apply theme", shortcut: "Ctrl+S", enabled: Boolean(draft) && !saveButton.disabled }]);
+  void hiraya?.commands.set([
+    { id: "edit", title: "Edit", enabled: editEnabled, promoted: !draft },
+    { id: "duplicate", title: "Duplicate", enabled: duplicateEnabled, promoted: true },
+    { id: "save", title: "Save and Apply", shortcut: "Ctrl+S", enabled: Boolean(draft) && saveEnabled && !busy, promoted: Boolean(draft) },
+  ]);
 }
 
 function setInspectorMode(mode: "theme" | "wallpaper") {
@@ -339,7 +338,7 @@ async function cancelEdit() {
 }
 
 async function saveTheme() {
-  if (!draft || !state?.canManage || saveButton.disabled || busy) return;
+  if (!draft || !state?.canManage || !saveEnabled || busy) return;
   const saving = draft;
   await run("Saving theme...", async () => {
     state = await hiraya.themes.save({ id: saving.id, name: saving.name.trim(), definition: saving.definition });
@@ -409,7 +408,7 @@ function validateDraft() {
   const validation = required<HTMLElement>("#contrast-error");
   validation.hidden = issues.length === 0;
   validation.textContent = issues.length ? `Save is blocked. Improve contrast for: ${issues.join(", ")}.` : "";
-  saveButton.disabled = busy || !state?.canManage || !form.checkValidity() || !draft.name.trim() || draft.name.trim() !== draft.name || issues.length > 0;
+  saveEnabled = !busy && Boolean(state?.canManage) && form.checkValidity() && Boolean(draft.name.trim()) && draft.name.trim() === draft.name && issues.length === 0;
 }
 
 function wallpaperFieldChanged(event: Event) {

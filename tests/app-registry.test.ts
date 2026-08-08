@@ -21,6 +21,10 @@ describe("built-in app registry", () => {
     expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "folder", entryId: "folder" })).toEqual({ kind: "explorer", folderId: "folder" });
   });
 
+  test("normalizes retired Markdown Preview targets to Media Viewer", () => {
+    expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.markdown-preview", targetKind: "file", entryId: "file", source: "system", digest: "a".repeat(64), permissions: ["files:read"] })).toEqual({ kind: "system", appId: "app.hiraya.media-viewer", targetKind: "file", entryId: "file", source: "system", digest: "a".repeat(64), permissions: ["files:read"] });
+  });
+
   test("rejects unknown and malformed runtime targets", () => {
     for (const value of [null, [], { kind: "trash" }, { kind: "file", fileId: "" }, { kind: "file", fileId: "file", editMode: "yes" }, { kind: "explorer" }, { kind: "explorer", folderId: 4 }, { kind: "properties", entryId: "" }]) {
       expect(extractBuiltinAppTarget(value)).toBeNull();

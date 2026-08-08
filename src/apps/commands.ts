@@ -93,6 +93,7 @@ export type RuntimeChromeCommand = { id: CommandId; title: string; shortcut?: st
 export class RuntimeCommandContributions<Context> {
   readonly #disposals: Array<() => void> = [];
   readonly #listeners = new Set<() => void>();
+  readonly #localIds = new Map<CommandId, string>();
   #promoted: readonly RuntimeChromeCommand[] = [];
 
   constructor(
@@ -109,6 +110,7 @@ export class RuntimeCommandContributions<Context> {
         if (localIds.has(command.id)) throw new TypeError(`Duplicate app command: ${command.id}`);
         localIds.add(command.id);
         const id = runtimeCommandId(this.ownerId, command.id);
+        this.#localIds.set(id, command.id);
         this.#disposals.push(this.service.register({ id, label: command.title, detail: command.shortcut, promoted: command.promoted, enabled: () => command.enabled ?? true, execute: () => this.invoke(command.id) }));
       }
     } catch (error) {
@@ -130,9 +132,17 @@ export class RuntimeCommandContributions<Context> {
 
   readonly getPromoted = () => this.#promoted;
   readonly subscribe = (listener: () => void) => { this.#listeners.add(listener); return () => this.#listeners.delete(listener); };
+  readonly execute = (id: CommandId) => {
+    const command = this.#promoted.find((candidate) => candidate.id === id);
+    const localId = this.#localIds.get(id);
+    if (!command?.enabled || !localId) return false;
+    this.invoke(localId);
+    return true;
+  };
 
   #clearRegistrations(): void {
     for (const dispose of this.#disposals.splice(0)) dispose();
+    this.#localIds.clear();
   }
 
   #emit(): void { for (const listener of this.#listeners) listener(); }

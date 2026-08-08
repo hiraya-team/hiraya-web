@@ -11,6 +11,7 @@ import { parseAccountAppOperation, parseAccountAppOutboxRecord, projectAccountAp
 import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord, type RevisionConflictDetails } from "../../lib/outbox";
 import { EMPTY_WINDOW_SESSION, parseWindowSession, type WindowSession } from "../../lib/window-session";
 import { getActiveDesktopContext, getRoot, indexedDatabaseName } from "./namespace";
+import { RESERVED_SYSTEM_APP_IDS, RETIRED_SYSTEM_APP_IDS, SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 
 type StorageDbRequests = {
   listDesktops: undefined;
@@ -45,6 +46,7 @@ type StorageDbRequests = {
   pruneDesktops: { retainedDesktopIds: string[] };
   listInstalledApps: undefined;
   installApp: { install: InstalledApp };
+  retireMarkdownPreview: undefined;
   uninstallApp: { appId: string };
   listQuarantinedApps: undefined;
   removeQuarantinedApp: { appId: string };
@@ -98,6 +100,7 @@ type StorageDbResponses = {
   pruneDesktops: undefined;
   listInstalledApps: InstalledApp[];
   installApp: InstalledApp;
+  retireMarkdownPreview: string | null;
   uninstallApp: undefined;
   listQuarantinedApps: QuarantinedApp[];
   removeQuarantinedApp: undefined;
@@ -548,7 +551,23 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     case "listInstalledApps": return transact(STORES.installedApps, "readonly", async (tx) => (await request(tx.objectStore(STORES.installedApps).getAll()) as InstalledApp[]).map(parseInstalledApp).sort((a, b) => a.approvedAt - b.approvedAt || a.appId.localeCompare(b.appId))) as Promise<StorageDbResponses[M]>;
     case "installApp": {
       const install = parseInstalledApp((params as StorageDbRequests["installApp"]).install);
+      if (install.source !== "system" && RESERVED_SYSTEM_APP_IDS.has(install.appId)) throw new Error("That app ID is reserved for a trusted system app.");
       return transact(STORES.installedApps, "readwrite", async (tx) => { const store = tx.objectStore(STORES.installedApps); const current = await request(store.get(install.appId)) as InstalledApp | undefined; if (current?.source === "system" && install.source !== "system") throw new Error("Bundled system apps cannot be replaced."); await request(store.put(install)); return install; }) as Promise<StorageDbResponses[M]>;
+    }
+    case "retireMarkdownPreview": {
+      return transact([STORES.installedApps, STORES.appStorage, STORES.fileAssociations], "readwrite", async (tx) => {
+        const apps = tx.objectStore(STORES.installedApps);
+        const retired = await request(apps.get(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as InstalledApp | undefined;
+        if (!retired || retired.source !== "system") return null;
+        const replacement = await request(apps.get(SYSTEM_APP_IDS.mediaViewer)) as InstalledApp | undefined;
+        if (replacement?.source !== "system") throw new Error("Media Viewer must be installed before retiring Markdown Preview.");
+        await request(apps.delete(RETIRED_SYSTEM_APP_IDS.markdownPreview));
+        const storage = tx.objectStore(STORES.appStorage);
+        for (const record of await request(storage.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
+        const associations = tx.objectStore(STORES.fileAssociations);
+        for (const association of await request(associations.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as FileAssociation[]) await request(associations.put({ ...association, appId: SYSTEM_APP_IDS.mediaViewer }));
+        return retired.digest;
+      }) as Promise<StorageDbResponses[M]>;
     }
     case "uninstallApp": {
       const appId = (params as StorageDbRequests["uninstallApp"]).appId;

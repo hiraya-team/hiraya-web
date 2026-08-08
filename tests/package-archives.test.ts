@@ -4,7 +4,7 @@ import { sha256Blob } from "../src/lib/blob-transfer";
 import { deleteApprovedPackageArchive, readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../src/platform/storage/blobs";
 import { configureStorageNamespace, indexedDatabaseName } from "../src/platform/storage/namespace";
 import { initializeDatabase } from "../src/platform/storage/database-client";
-import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, readAccountApps, readAppStorage, reconcileAccountApps, retryAccountAppOperation } from "../src/platform/storage/repositories";
+import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, installApp, listFileAssociations, listInstalledApps, readAccountApps, readAppStorage, reconcileAccountApps, retireMarkdownPreview, retryAccountAppOperation, setFileAssociation, writeAppStorage } from "../src/platform/storage/repositories";
 
 class MemoryDirectory {
   readonly directories = new Map<string, MemoryDirectory>();
@@ -68,11 +68,30 @@ describe("approved package archives", () => {
         const storage = open.result.createObjectStore("app-storage", { keyPath: ["appId", "key"] });
         storage.createIndex("appId", "appId");
         open.result.createObjectStore("installed-apps", { keyPath: "appId" });
+        const associations = open.result.createObjectStore("file-associations", { keyPath: "matcher" });
+        associations.createIndex("appId", "appId");
       };
       open.onsuccess = () => { open.result.close(); resolve(); };
       open.onerror = () => reject(open.error);
     });
     await initializeDatabase();
+
+    const retiredArchive = new Blob(["retired package"]);
+    const retiredDigest = await sha256Blob(retiredArchive);
+    const systemManifest = (id: string, name: string) => ({ schemaVersion: 2 as const, uiRuntime: 1 as const, id, name, version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const, "files:read" as const], fileTypes: [".md"] });
+    await saveApprovedPackageArchive(retiredDigest, retiredArchive);
+    await installApp({ appId: "app.hiraya.media-viewer", source: "system", packageEntryId: null, archivePath: "system-apps/media-viewer.hiraya.app", digest: "b".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.media-viewer", "Media Viewer"), approvedAt: 2 });
+    await installApp({ appId: "app.hiraya.markdown-preview", source: "system", packageEntryId: null, archivePath: "system-apps/markdown-preview.hiraya.app", digest: retiredDigest, version: "1.0.0", manifest: systemManifest("app.hiraya.markdown-preview", "Markdown Preview"), approvedAt: 1 });
+    await writeAppStorage("app.hiraya.markdown-preview", "draft", { value: true }, 1024, 10);
+    await setFileAssociation({ matcher: ".md", appId: "app.hiraya.markdown-preview", createdAt: 42 });
+    expect(await retireMarkdownPreview()).toBe(retiredDigest);
+    expect(await retireMarkdownPreview()).toBeNull();
+    expect((await listInstalledApps()).map((app) => app.appId)).not.toContain("app.hiraya.markdown-preview");
+    expect(await readAppStorage("app.hiraya.markdown-preview", "draft")).toBeUndefined();
+    expect(await listFileAssociations()).toContainEqual({ matcher: ".md", appId: "app.hiraya.media-viewer", createdAt: 42 });
+    await releaseApprovedPackageArchive(retiredDigest);
+    await expect(readApprovedPackageArchive(retiredDigest)).rejects.toHaveProperty("name", "NotFoundError");
+    await expect(installApp({ appId: "app.hiraya.markdown-preview", source: "desktop", packageEntryId: "package", archivePath: null, digest: "c".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.markdown-preview", "Markdown Preview"), approvedAt: 3 })).rejects.toThrow("reserved");
 
     const appId = "dev.hiraya.notes";
     const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: appId, name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const], fileTypes: [] };

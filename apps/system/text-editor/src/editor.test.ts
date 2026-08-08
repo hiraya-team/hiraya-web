@@ -32,6 +32,14 @@ describe("Integrated Editor document behavior", () => {
     expect(css).not.toContain(".write-state");
   });
 
+  test("moves document actions into app commands", async () => {
+    const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    expect(html).not.toContain("<hiraya-toolbar");
+    expect(source).toContain('{ id: "save-as", title: "Save As"');
+    expect(source).toContain('id === "save-as" ? void save(true)');
+  });
+
   test("keeps settings in the sidebar and the filename in tabs", async () => {
     const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
     expect(html).toContain('id="settings-view"');

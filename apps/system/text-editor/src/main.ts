@@ -16,7 +16,6 @@ import { formatText, parseTextEditorSettings, textEditorControlState, textEditor
 import { editorFileKind, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries, type EditorFileKind } from "./workspace";
 import "./style.css";
 
-type HirayaButton = HTMLElement & { disabled: boolean };
 type DocumentTab = {
   id: string;
   handle: FileHandle | null;
@@ -98,14 +97,9 @@ const entries = new Map<string, DirectoryEntry>();
 const parents = new Map<string, FolderHandle | null>();
 const expanded = new Set<FolderHandle>();
 
-required("#open").addEventListener("click", () => void open());
-required("#save").addEventListener("click", () => void save(false));
-required("#save-as").addEventListener("click", () => void save(true));
-required("#format").addEventListener("click", applyFormatting);
-required("#toggle-sidebar").addEventListener("click", () => setSidebarOpen(!sidebarOpen));
 required("#close-sidebar").addEventListener("click", () => setSidebarOpen(false));
 required("#sidebar-backdrop").addEventListener("click", () => setSidebarOpen(false));
-required("#explorer-view").addEventListener("click", () => showSidebar("explorer"));
+required("#explorer-view").addEventListener("click", () => required("#explorer-view").getAttribute("aria-pressed") === "true" ? setSidebarOpen(!sidebarOpen) : showSidebar("explorer"));
 required("#search-view").addEventListener("click", () => showSidebar("search"));
 required("#settings-view").addEventListener("click", () => showSidebar("settings"));
 required("#open-workspace").addEventListener("click", () => void chooseWorkspace());
@@ -141,7 +135,7 @@ async function start() {
     applySettings();
     applyCapabilities(await hiraya.app.getCapabilities());
     hiraya.on("capabilities.changed", applyCapabilities);
-    hiraya.on("commands.invoked", ({ id }) => id === "save" ? void save(false) : id === "open" ? void open() : id === "workspace" ? void chooseWorkspace() : id === "search" ? showSidebar("search") : id === "format" ? applyFormatting() : undefined);
+    hiraya.on("commands.invoked", ({ id }) => id === "save" ? void save(false) : id === "save-as" ? void save(true) : id === "open" ? void open() : id === "workspace" ? void chooseWorkspace() : id === "search" ? showSidebar("search") : id === "format" ? applyFormatting() : undefined);
     hiraya.on("files.changed", ({ handles }) => void remoteChanged(handles));
     const launchFile = app.launch.files[0];
     if (launchFile) {
@@ -154,7 +148,6 @@ async function start() {
     setAppLoading(content, workbench, loading);
     renderControlState();
     renderDocumentState();
-    publishCommands();
     if (!launchFile) setStatus(canWrite ? "Ready. Open a workspace to browse and manage files." : writeRestrictionMessage(writeReason, false));
   } catch (error) {
     opening = false;
@@ -286,7 +279,6 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
   saving = true;
   clearTimeout(tab.autoSaveTimer);
   renderControlState();
-  publishCommands();
   try {
     let destination = saveAs ? null : tab.handle;
     const expected = saveAs ? null : state.revision;
@@ -315,7 +307,6 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
     tab.saving = false;
     saving = tabs.some((candidate) => candidate.saving);
     renderControlState();
-    publishCommands();
   }
 }
 
@@ -670,7 +661,7 @@ function renderTabs() {
   tabsElement.replaceChildren();
   for (const tab of tabs) {
     const wrapper = document.createElement("div"); wrapper.className = "editor-tab"; wrapper.setAttribute("role", "presentation");
-    const button = document.createElement("button"); button.type = "button"; button.setAttribute("role", "tab"); button.setAttribute("aria-selected", String(tab === activeTab)); button.title = tab.name;
+    const button = document.createElement("button"); button.type = "button"; button.setAttribute("aria-pressed", String(tab === activeTab)); button.title = tab.name;
     button.append(makeIcon(isEditableFile(tab.metadata ?? { handle: "" as FileHandle, name: tab.name, mimeType: "text/plain", size: 0, modifiedAt: 0, parent: null, contentRevision: 0 }) ? "code" : "file"));
     const label = document.createElement("span"); label.textContent = `${tabDirty(tab) ? "● " : ""}${tab.name}`; button.append(label);
     button.addEventListener("click", () => activateTab(tab));
@@ -679,7 +670,7 @@ function renderTabs() {
       event.preventDefault();
       const index = tabs.indexOf(tab);
       const next = tabs[(index + (event.key === "ArrowRight" ? 1 : -1) + tabs.length) % tabs.length];
-      if (next) { activateTab(next, false); tabsElement.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus(); }
+      if (next) { activateTab(next, false); tabsElement.querySelector<HTMLButtonElement>('button[aria-pressed="true"]')?.focus(); }
     });
     const close = document.createElement("button"); close.type = "button"; close.className = "tab-close"; close.setAttribute("aria-label", `Close ${tab.name}`); close.title = `Close ${tab.name}`; close.append(makeIcon("x")); close.addEventListener("click", () => void closeTab(tab));
     wrapper.append(button, close); tabsElement.append(wrapper);
@@ -733,7 +724,7 @@ function setSidebarOpen(open: boolean) {
   sidebar.classList.toggle("open", open);
   const mobile = matchMedia("(max-width: 700px)").matches;
   required<HTMLElement>("#sidebar-backdrop").hidden = !mobile || !open;
-  required("#toggle-sidebar").setAttribute("aria-expanded", String(open));
+  required("#explorer-view").setAttribute("aria-expanded", String(open));
 }
 
 function handleShortcut(event: KeyboardEvent) {
@@ -814,32 +805,33 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
   writeReason = capabilities.files.writeReason;
   if (!canWrite) for (const tab of tabs) clearTimeout(tab.autoSaveTimer);
   else for (const tab of tabs) scheduleAutoSave(tab);
-  renderControlState(); publishCommands();
+  renderControlState();
   if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, tabs.some(tabDirty)), !canWrite && tabs.some(tabDirty));
 }
 
 function renderControlState() {
   const controls = textEditorControlState(initialized, saving || opening, canWrite);
-  for (const id of ["open", "toggle-sidebar"]) required<HirayaButton>(`#${id}`).disabled = !controls.open;
+  required<HTMLButtonElement>("#explorer-view").disabled = !controls.open;
   required<HTMLButtonElement>("#open-workspace").disabled = !controls.open;
   for (const id of ["font-size", "line-wrap"]) required<HTMLInputElement | HTMLSelectElement>(`#${id}`).disabled = !controls.settings;
   const writableTab = controls.write && Boolean(activeTab?.state);
   editor.dispatch({ effects: editableConfig.reconfigure([EditorState.readOnly.of(!writableTab), EditorView.editable.of(writableTab)]) });
-  for (const id of ["save", "save-as", "format"]) required<HirayaButton>(`#${id}`).disabled = !writableTab;
   for (const id of ["auto-save", "auto-format"]) required<HTMLInputElement>(`#${id}`).disabled = !controls.write;
   for (const id of ["new-file", "new-folder"]) required<HTMLButtonElement>(`#${id}`).disabled = !controls.write || !workspace;
   for (const id of ["rename-entry", "delete-entry"]) required<HTMLButtonElement>(`#${id}`).disabled = !controls.write || !selectedHandle || !entries.has(selectedHandle);
   required<HTMLButtonElement>("#refresh-tree").disabled = !workspace || opening;
   required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
+  publishCommands();
 }
 
 function publishCommands() {
   void hiraya?.commands.set([
-    { id: "open", title: "Open file", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening },
+    { id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening, promoted: true },
+    { id: "format", title: "Format", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
+    { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
     { id: "workspace", title: "Open workspace", enabled: initialized && !opening },
     { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace) },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
-    { id: "format", title: "Format document", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state) },
   ]);
 }
 

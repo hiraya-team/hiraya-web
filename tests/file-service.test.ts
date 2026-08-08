@@ -4,7 +4,7 @@ import { CapabilityStore, type FileCapabilityOperation } from "../src/apps/host/
 import { FileService, FileServiceError, MAX_STAGED_WRITE_BYTES, MAX_STAGED_WRITE_SESSIONS, STAGED_WRITE_EXPIRY_MS, type FileSyncFunctions } from "../src/apps/host/file-service";
 import type { DesktopStateSnapshot } from "../src/domain/desktop-state";
 import { ContentRevisionConflictError } from "../src/domain/files";
-import { grantLaunchCapabilities, grantPickedFiles, grantPickedFolder } from "../src/apps/host/picker-grants";
+import { grantLaunchCapabilities, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder } from "../src/apps/host/picker-grants";
 import type { DesktopEntry, FileEntry, FolderEntry } from "../src/types";
 import { desktopStateSnapshot } from "./fixtures";
 
@@ -72,6 +72,17 @@ describe("app file authority", () => {
     await expectCode(h.service().write({ handle: file, data: new ArrayBuffer(0) }), "PERMISSION_DENIED");
     expect(await h.service().createFile({ parent: folder, name: "created.bin" })).toMatchObject({ name: "created.bin" });
     await expectCode(h.service("app-2").stat({ handle: file }), "NOT_FOUND");
+  });
+
+  test("resolves picker-selected file siblings only when parent scope is explicitly granted", async () => {
+    const h = fixture();
+    const ordinary = grantPickedFiles(h.capabilities, "app-1", ["files:read"], [h.nested])[0];
+    await expectCode(h.service().resolve({ handle: ordinary, path: "nested.bin" }), "PERMISSION_DENIED");
+    const scoped = grantPickedFilesWithParentScope(h.capabilities, "app-1", ["files:read"], [h.nested], [h.folder, h.nested, h.unrelated])[0];
+    const parent = (await h.service().stat({ handle: scoped })).metadata.parent!;
+    await expectCode(h.service().list({ folder: parent }), "PERMISSION_DENIED");
+    expect((await h.service().resolve({ handle: scoped, path: "nested.bin" })).metadata.name).toBe("nested.bin");
+    await expectCode(h.service().resolve({ handle: scoped, path: "../secret.txt" }), "NOT_FOUND");
   });
 
   test("defaults launch grants to read-only file and folder access", async () => {
