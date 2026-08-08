@@ -1,13 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import type { ThemeDefinition, ThemeEditorState, ThemeEditorTheme } from "@hiraya-team/apps-sdk";
-import { backAction, contrastIssues, contrastRatio, copyDraft, draftChanged, mergeThemeState, nextCopyName } from "./editor";
+import { backAction, contrastIssues, contrastRatio, copyDraft, draftChanged, editDraft, mergeThemeState, nextCopyName } from "./editor";
 
 const definition: ThemeDefinition = {
   colors: {
     shell: "#172329", chrome: "#202f34", chromeText: "#f4f6f1", window: "#f2f1eb", windowMuted: "#d8d9d3",
     text: "#192229", textMuted: "#4f5858", accent: "#8a5b00", accentText: "#ffffff", border: "#566166",
-    danger: "#8c1d18", dangerSurface: "#fff0ee", desktopText: "#ffffff", selection: "#8a5b00", editorBackground: "#172329",
-    editorText: "#f4f6f1", editorGutter: "#26383e", editorKeyword: "#ffc765", editorString: "#72d6a0", editorComment: "#b8c4c5",
+    danger: "#8c1d18", dangerSurface: "#fff0ee", desktopText: "#ffffff", selection: "#8a5b00",
   },
   shape: { radius: 12, borderWidth: 1 }, effects: { blur: 10, opacity: 1, shadow: 0.4 },
   treatment: { gradientStrength: 0, gradientAngle: 0, texture: "none", textureStrength: 0, textureScale: 4, pixelated: false },
@@ -27,6 +26,12 @@ describe("theme drafts", () => {
   test("creates bounded unique copy names", () => {
     expect(nextCopyName(["Custom", "Custom copy"], "Custom")).toBe("Custom copy 2");
     expect(nextCopyName([], "x".repeat(60))).toHaveLength(60);
+  });
+
+  test("edits custom themes in place and built-ins as new copies", () => {
+    expect(editDraft(theme, [], "unused")).toEqual(copyDraft(theme));
+    const builtIn = { ...theme, id: "hiraya-dusk", name: "Hiraya Dusk", builtIn: true };
+    expect(editDraft(builtIn, [builtIn.name], "new-id")).toMatchObject({ id: "new-id", name: "Hiraya Dusk copy", baseline: null });
   });
 });
 

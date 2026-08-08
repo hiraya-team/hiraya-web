@@ -1801,17 +1801,17 @@ export class SyncEngine {
       if (index < 0) throw new Error("That queued change no longer exists.");
       if (records[index].status !== "blocked") throw new Error("Only blocked changes can be retried manually.");
       try {
-        for (const [recordIndex, queued] of records.slice(0, index + 1).entries()) {
+        for (const [recordIndex, queued] of records.entries()) {
           let record = queued;
-          if (record.status === "blocked" && recordIndex !== index) throw new Error("Resolve the earlier blocked change first.");
-          if (recordIndex === index && isRevisionConflictRecord(record)) {
+          if (record.status === "blocked" && recordIndex < index) throw new Error("Resolve the earlier blocked change first.");
+          if (recordIndex >= index && isRevisionConflictRecord(record)) {
             const remote = toSnapshot(await this.fetchDesktop(record.desktopId));
             assertInitiatingSession();
             const operation = forceRebaseOutboxOperation(record.operation, currentConflict(record.conflictDetails!, remote), remote);
             if (!operation) throw new Error("This conflict cannot be safely rebased. Discard the local change and use the server version.");
             record = await this.storage.rebaseBlockedMutation(record.operationId, operation);
           }
-          await this.replayRecord(record, generation, recordIndex === index);
+          await this.replayRecord(record, generation, recordIndex >= index && queued.status === "blocked");
         }
         const remaining = [...await this.storage.readOutbox()];
         assertInitiatingSession();

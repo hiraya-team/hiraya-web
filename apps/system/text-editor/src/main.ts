@@ -838,7 +838,7 @@ function publishCommands() {
     { id: "open", title: "Open file", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening },
     { id: "workspace", title: "Open workspace", enabled: initialized && !opening },
     { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace) },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state) },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
     { id: "format", title: "Format document", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state) },
   ]);
 }

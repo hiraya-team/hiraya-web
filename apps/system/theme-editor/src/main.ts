@@ -1,6 +1,6 @@
 import type { FileHandle, HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
 import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
-import { backAction, contrastIssues, copyDraft, draftChanged, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
+import { backAction, contrastIssues, copyDraft, draftChanged, editDraft, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
@@ -39,14 +39,13 @@ const DEFAULT_WALLPAPER: WallpaperEditorWallpaper = { source: "dusk", fit: "cove
 
 const simpleColors: Array<[string, ColorKey, string, ColorKey]> = [
   ["Desktop", "shell", "Shell", "desktopText"],
-  ["Chrome", "chrome", "Surface", "chromeText"],
+  ["Chrome", "chromeText", "Surface", "chrome"],
   ["Window", "window", "Surface", "text"],
   ["Accent", "accent", "Fill", "accentText"],
 ];
 const advancedColors: Array<[ColorKey, string]> = [
   ["windowMuted", "Muted window"], ["textMuted", "Muted text"], ["danger", "Danger fill"], ["dangerSurface", "Danger surface"],
-  ["selection", "Selection"], ["editorBackground", "Editor background"], ["editorText", "Editor text"], ["editorGutter", "Editor gutter"],
-  ["editorKeyword", "Editor keyword"], ["editorString", "Editor string"], ["editorComment", "Editor comment"],
+  ["selection", "Selection"],
 ];
 
 required("#simple-fields").innerHTML = `${simpleColors.map(([legend, first, firstLabel, second]) => `<fieldset><legend>${legend}</legend>${colorField(first, `${legend} ${firstLabel.toLowerCase()}`)}${colorField(second, `${legend} text`)}</fieldset>`).join("")}${colorField("border", "Border")}${numberField("shape.radius", "Corner radius", 0, 24, 1)}${numberField("effects.opacity", "Surface opacity", .65, 1, .01)}${selectField("typography.family", "Font family", [["system", "System"], ["humanist", "Humanist"], ["mono", "Monospace"]])}${numberField("density", "Interface density", .8, 1.2, .05)}`;
@@ -54,7 +53,6 @@ required("#advanced-fields").innerHTML = `${advancedColors.map(([key, label]) =>
 
 required("#edit").addEventListener("click", () => void beginEdit());
 required("#duplicate").addEventListener("click", () => void duplicateTheme());
-required("#apply").addEventListener("click", () => void applyTheme());
 required("#delete").addEventListener("click", () => void deleteTheme());
 required("#cancel").addEventListener("click", () => void cancelEdit());
 saveButton.addEventListener("click", () => void saveTheme());
@@ -132,10 +130,13 @@ async function start() {
     });
     [state, wallpaperState] = await Promise.all([hiraya.themes.getState(), hiraya.wallpapers.getState()]);
     focusedThemeId = state.selectedThemeId || state.themes[0]?.id || "";
+    const theme = selectedTheme();
+    draft = theme && state.canManage ? editDraft(theme, state.themes.map((item) => item.name)) : null;
+    await setDirty(Boolean(draft && draftChanged(draft)));
     setAppLoading(content, workspace, loading);
     render();
     void refreshWallpaperImage();
-    setStatus(state.canManage ? "Choose a theme to inspect or customize." : state.restrictionReason || "Theme management is restricted.", !state.canManage);
+    setStatus(state.canManage ? "Edit the selected theme, then save and apply it." : state.restrictionReason || "Theme management is restricted.", !state.canManage);
   } catch (error) {
     setAppLoading(content, workspace, loading);
     workspace.classList.add("has-fatal");
@@ -265,11 +266,11 @@ function renderWallpaper() {
 function renderControls() {
   const theme = selectedTheme();
   const canManage = Boolean(state?.canManage) && !busy;
-  required<HirayaButton>("#edit").disabled = !theme || theme.builtIn || !canManage;
+  required<HirayaButton>("#edit").disabled = !theme || !canManage || Boolean(draft);
   required<HirayaButton>("#duplicate").disabled = !theme || !canManage;
-  required<HirayaButton>("#apply").disabled = !theme || theme.id === state?.selectedThemeId || !canManage || Boolean(draft);
   required<HirayaButton>("#delete").disabled = !theme || theme.builtIn || !canManage || Boolean(draft);
   for (const button of managementButtons) button.toggleAttribute("aria-busy", busy);
+  saveButton.toggleAttribute("aria-busy", busy);
   if (busy) saveButton.disabled = true;
   required("#mode-badge").textContent = draft ? "Editing" : "Library";
   required("#dirty-label").textContent = draft && draftChanged(draft) ? "Unsaved" : "";
@@ -303,17 +304,19 @@ async function confirmDiscard() {
 async function focusTheme(id: string) {
   if (id === focusedThemeId && !draft) return;
   if (!await confirmDiscard()) return;
-  draft = null;
   focusedThemeId = id;
-  await setDirty(false);
+  const theme = selectedTheme();
+  draft = theme && state?.canManage ? editDraft(theme, state.themes.map((item) => item.name)) : null;
+  await setDirty(Boolean(draft && draftChanged(draft)));
   render();
 }
 
 async function beginEdit() {
   const theme = selectedTheme();
-  if (!theme || theme.builtIn || !state?.canManage || !await confirmDiscard()) return;
-  draft = copyDraft(theme);
+  if (!theme || !state?.canManage || !await confirmDiscard()) return;
+  draft = editDraft(theme, state.themes.map((item) => item.name));
   render();
+  await setDirty(draftChanged(draft));
   nameInput.focus();
 }
 
@@ -335,23 +338,14 @@ async function cancelEdit() {
   setStatus("Draft discarded.");
 }
 
-async function applyTheme() {
-  const theme = selectedTheme();
-  if (!theme || !state?.canManage || busy) return;
-  await run("Applying theme...", async () => {
-    state = await hiraya.themes.select(theme.id);
-    focusedThemeId = theme.id;
-    setStatus(`${theme.name} applied.`);
-  }, "The theme could not be applied.");
-}
-
 async function saveTheme() {
   if (!draft || !state?.canManage || saveButton.disabled || busy) return;
   const saving = draft;
   await run("Saving theme...", async () => {
     state = await hiraya.themes.save({ id: saving.id, name: saving.name.trim(), definition: saving.definition });
     focusedThemeId = saving.id;
-    draft = null;
+    const saved = selectedTheme();
+    draft = saved ? editDraft(saved, state.themes.map((item) => item.name)) : null;
     await setDirty(false);
     setStatus(`${saving.name.trim()} saved and applied.`);
   }, "The theme could not be saved.");

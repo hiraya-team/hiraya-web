@@ -14,6 +14,8 @@ const baseProps = {
   updateBlocked: false,
   announcement: "",
   canViewActivity: false,
+  open: false,
+  onOpenChange: () => undefined,
   onRetrySyncIssue: () => undefined,
   onDiscardSyncIssue: () => undefined,
   onDismissMessage: () => undefined,

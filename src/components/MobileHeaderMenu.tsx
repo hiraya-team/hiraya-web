@@ -4,10 +4,11 @@ import { registerTransientDismiss } from "../ui/transient-dismiss";
 type Props = {
   label: string;
   icon: ReactNode;
+  onTriggerElement?: (element: HTMLButtonElement | null) => void;
   children: (dismiss: (restoreFocus?: boolean) => void) => ReactNode;
 };
 
-export function MobileHeaderMenu({ label, icon, children }: Props) {
+export function MobileHeaderMenu({ label, icon, onTriggerElement, children }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -92,7 +93,7 @@ export function MobileHeaderMenu({ label, icon, children }: Props) {
 
   return (
     <div className="mobile-header-menu" ref={menuRef}>
-      <button ref={triggerRef} className="mobile-header-menu__trigger" type="button" aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} onClick={() => {
+      <button ref={(element) => { triggerRef.current = element; onTriggerElement?.(element); }} className="mobile-header-menu__trigger" type="button" aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} onClick={() => {
         if (open) dismiss();
         else {
           positionPanel();

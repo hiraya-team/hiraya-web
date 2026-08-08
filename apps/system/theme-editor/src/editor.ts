@@ -20,6 +20,10 @@ export function copyDraft(theme: ThemeEditorTheme, id = theme.id, name = theme.n
   return { id, name, definition, baseline: unsaved ? null : snapshot(name, definition) };
 }
 
+export function editDraft(theme: ThemeEditorTheme, names: readonly string[], newID = crypto.randomUUID()) {
+  return theme.builtIn ? copyDraft(theme, newID, nextCopyName(names, theme.name), true) : copyDraft(theme);
+}
+
 export function draftChanged(draft: ThemeDraft) {
   return draft.baseline === null || draft.baseline !== snapshot(draft.name, draft.definition);
 }
@@ -90,9 +94,6 @@ export function contrastIssues(definition: ThemeDefinition) {
     ["read-only badge text / blended chrome", strongest(readOnlySurface, [accentOnChrome, c.chromeText, c.text]), readOnlySurface],
     ["danger foreground / danger", strongest(c.danger, [c.accentText, c.chromeText, c.text]), c.danger],
     ["danger text / danger surface", strongest(c.dangerSurface, [c.danger, c.text, c.chromeText]), c.dangerSurface],
-    ["editor text / editor background", c.editorText, c.editorBackground], ["editor comment / editor background", c.editorComment, c.editorBackground],
-    ["editor comment / editor gutter", c.editorComment, c.editorGutter], ["editor keyword / editor background", c.editorKeyword, c.editorBackground],
-    ["editor string / editor background", c.editorString, c.editorBackground],
   ];
   const indicatorPairs: Array<[string, string, string]> = [
     ["accent indicator / window", accentOnWindow, c.window], ["accent indicator / minimum-opacity window", accentOnWindow, minimumWindow],

@@ -56,6 +56,8 @@ describe("AppWindow adaptive presentation", () => {
     expect(markup).toContain('aria-label="Minimize Document"');
     expect(markup).toContain('aria-label="Maximize Document"');
     expect(markup).toContain('aria-label="Close Document"');
+    expect(markup.indexOf('aria-label="Close Document"')).toBeLessThan(markup.indexOf('aria-label="Minimize Document"'));
+    expect(markup.indexOf('aria-label="Minimize Document"')).toBeLessThan(markup.indexOf('aria-label="Maximize Document"'));
     expect(markup.match(/data-window-resize=/g)).toHaveLength(8);
   });
 

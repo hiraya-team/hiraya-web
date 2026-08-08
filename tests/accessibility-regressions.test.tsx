@@ -137,11 +137,14 @@ describe("accessibility regressions", () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 
     expect(app).toContain('className="mobile-global-actions"');
-    expect(windowLayer).toContain("externalHeaderElements={focusedAppId === app.id");
+    expect(windowLayer).toContain("externalHeaderElements={integrated && focusedAppId === app.id");
+    expect(windowLayer).toContain('className="runtime-app-actions"');
+    expect(windowLayer).toContain("useSyncExternalStore(app.commands.subscribe");
     expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
     expect(publicDesktop).toContain("externalHeaderElements={windowed ? undefined : { leading: null, actions: mobileHeaderActionsElement }}");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
+    expect(css).toContain(".runtime-app-action--secondary { display: none; }");
     expect(app).toContain("target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)");
     expect(app).toContain(".app-window, button, a[href], input, select, textarea");
   });

@@ -862,8 +862,22 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(appWindow.getByRole("button", { name: `Minimize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Maximize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
+  const closeBox = await appWindow.getByRole("button", { name: `Close ${windowTitle}` }).boundingBox();
+  const minimizeBox = await appWindow.getByRole("button", { name: `Minimize ${windowTitle}` }).boundingBox();
+  const maximizeBox = await appWindow.getByRole("button", { name: `Maximize ${windowTitle}` }).boundingBox();
+  expect(closeBox!.x).toBeLessThan(minimizeBox!.x);
+  expect(minimizeBox!.x).toBeLessThan(maximizeBox!.x);
   await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);
 
+  await appWindow.getByRole("button", { name: `Maximize ${windowTitle}` }).click();
+  await expect(appWindow.locator(".app-window__header")).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: `${windowTitle} window controls` }).getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
+  await expect(page.getByRole("button", { name: "System" })).toBeVisible();
+  const restore = page.getByRole("button", { name: `Restore ${windowTitle}` });
+  await expect(restore).toBeFocused();
+  await restore.click();
+  await expect(appWindow.locator(".app-window__header")).toBeVisible();
+  await expect(appWindow.getByRole("button", { name: `Maximize ${windowTitle}` })).toBeFocused();
   await appWindow.getByRole("button", { name: `Close ${windowTitle}` }).click();
   await icon.focus();
   const historyBefore = await page.evaluate(() => history.state?.hirayaActionSheet ?? null);
@@ -1191,7 +1205,21 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(appStore.getByText("Integrated Editor", { exact: true })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Administrator store unavailable" })).toBeVisible();
   await expect(appStore.getByText("The App Store requires a synchronized Hiraya account.")).toBeVisible();
-  await trigger.click();
+  await expect(start).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back from App Store" })).toBeVisible();
+  const system = page.getByRole("button", { name: "System" });
+  const openIntegratedSwitcher = async () => {
+    await system.click();
+    await page.getByRole("dialog", { name: "System" }).getByRole("button", { name: "Desktops and areas" }).click();
+  };
+  await system.click();
+  await page.getByRole("dialog", { name: "System" }).getByRole("button", { name: "Notifications" }).click();
+  await expect(page.getByRole("dialog", { name: "System" })).toHaveCount(0);
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toHaveCount(0);
+  await expect(system).toBeFocused();
+  await openIntegratedSwitcher();
   await expect(switcher.getByRole("button", { name: "Back to desktop" })).toBeVisible();
   await switcher.getByRole("button", { name: "Back to desktop" }).click();
   await expect(switcher).toHaveCount(0);
@@ -1200,7 +1228,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await switcher.getByRole("button", { name: "Switch to App Store" }).click();
   await expect(switcher).toHaveCount(0);
 
-  await trigger.click();
+  await openIntegratedSwitcher();
   await switcher.getByRole("button", { name: "Minimize App Store" }).click();
   await expect(switcher).toHaveCount(0);
 
@@ -1208,7 +1236,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await switcher.getByRole("button", { name: "Switch to App Store" }).click();
   await expect(switcher).toHaveCount(0);
 
-  await trigger.click();
+  await openIntegratedSwitcher();
   await switcher.getByRole("button", { name: "Close App Store" }).click();
   await expect(switcher).toHaveCount(0);
   await expect(appStore).toHaveCount(0);
