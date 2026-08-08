@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect
 import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
+import { ShellItemLayer } from "./components/ShellItems";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
 import { FolderExplorer } from "./components/FolderExplorer";
@@ -91,8 +92,8 @@ import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipb
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, SETTINGS_PAGE_TITLES, SETTINGS_PARENTS, type DesktopRoute, type SettingsPage } from "./lib/routes";
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
-import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, arrangeDesktopDrag, arrangeDesktopSegment, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
+import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type DesktopWidget, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
+import { GRID_ORIGIN, arrangeDesktopDrag, arrangeDesktopSegment, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -102,7 +103,7 @@ import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-di
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
-import { createSerialTaskQueue } from "./lib/serial-task";
+import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
 import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
 import type { AuthSession } from "./lib/auth";
@@ -114,7 +115,7 @@ import { ConfirmationDialog, type ConfirmationRequest } from "./components/Confi
 import { SharingDialog } from "./components/SharingDialog";
 import { PublishDialog } from "./components/PublishDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
-import { isRevisionConflictRecord, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
+import { iconGroupsAfterEntryChange, isRevisionConflictRecord, mergeDesktopLayout, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
 import { accountResources, downloadAccountResource } from "./lib/account-apps";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
@@ -204,7 +205,7 @@ type MergeReview = {
 const DESKTOP_LONG_PRESS_MS = 500;
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const WHEEL_SWIPE_END_MS = 160;
-const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
+const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .shell-item, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
 
 function isDesktopSurface(desktop: DesktopIdentity) {
@@ -342,7 +343,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [routeHistoryReady, setRouteHistoryReady] = useState(false);
   const [route, setRoute] = useState<DesktopRoute | null>(null);
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
-  const [layout, setLayout] = useState<DesktopLayout>(() => ({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }));
+  const [layout, setLayout] = useState<DesktopLayout>(() => ({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [] }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
   const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
@@ -413,6 +414,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
   const fileDialogResultIdRef = useRef<string | null>(null);
+  const groupCreatedFolderRef = useRef(false);
   const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
@@ -498,7 +500,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const mergeLoadGenerationsRef = useRef<Record<string, number>>({});
   const mergeLoadSequenceRef = useRef(0);
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
-  const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
+  const layoutSaveQueueRef = useRef(createLatestTaskQueue<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number }>(({ layout: next, baseLayout, baseRevision }) => saveDesktopLayout(next, { layout: baseLayout, revision: baseRevision })));
+  const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number } | null>(null);
   const wallpaperPreviewTimerRef = useRef<number | null>(null);
   const wallpaperPreviewRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const contentRevisionsRef = useRef<Record<string, number>>({});
@@ -644,27 +647,42 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (!failures.length) return undefined;
     return { message: `${failures.length === 1 && (activeSystemDocument || activeShellTrash) ? "The protected tree is incomplete. " : "The protected tree could not be loaded. "}${failures.join(" ")}`, error: true, onRetry: () => setProtectedRefreshToken((value) => value + 1) };
   })();
+  const activeShellItemObstacles = useMemo(() => desktopShellItemObstacles(layout.widgets, layout.iconGroups, entries, { column: activeSegment.column, row: activeSegment.row }, iconArea), [activeSegment.column, activeSegment.row, entries, iconArea, layout.iconGroups, layout.widgets]);
   const shellEntryList = useMemo(() => {
     const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable, activeSystemDocument?.entries, activeShellTrash?.items, showHiddenFiles, accountResourceList);
     if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
     const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
-    const position = nextAvailableDesktopSlot(iconArea, occupied, false, occupied.length, iconMetrics);
-    return projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry);
-  }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
+    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, activeShellItemObstacles);
+    return position ? projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry) : projected.filter((entry) => entry.id !== VIRTUAL_HIRAYA_ROOT_ID);
+  }, [accountResourceList, activeShellItemObstacles, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
   const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
-  const rootEntries = shellEntryIndex.roots;
-  const responsive = useMemo(() => responsiveDesktop(shellEntryList, iconArea, iconMetrics), [shellEntryList, iconArea, iconMetrics]);
+  const groupedFolderIds = useMemo(() => new Set(layout.iconGroups.map((group) => group.folderId)), [layout.iconGroups]);
+  const desktopEntryList = useMemo(() => shellEntryList.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, shellEntryList]);
+  const rootEntries = desktopEntryList.filter((entry) => entry.parentId === null);
+  const responsive = useMemo(() => responsiveDesktop(desktopEntryList, iconArea, iconMetrics), [desktopEntryList, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const actualActiveSegment = responsive.segments.find((candidate) => candidate.key === activeSegmentKey);
   const occupiedSegments = useMemo(() => {
     const byKey = new Map(responsive.segments.map((segment) => [segment.key, segment]));
+    for (const widget of layout.widgets) {
+      const segment = projectLogicalPosition(widget, iconArea).segment;
+      const key = segmentKey(segment);
+      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+    }
+    for (const group of layout.iconGroups) {
+      const folder = entries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+      if (!folder) continue;
+      const segment = projectLogicalPosition(folder.position, iconArea).segment;
+      const key = segmentKey(segment);
+      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+    }
     for (const app of runningApps) {
       const segment = projectLogicalPosition(app.bounds, desktopSize).segment;
       const key = segmentKey(segment);
       if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
     }
     return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
-  }, [desktopSize, responsive.segments, runningApps]);
+  }, [desktopSize, entries, iconArea, layout.iconGroups, layout.widgets, responsive.segments, runningApps]);
   const visibleSegments = (() => {
     const byKey = new Map(occupiedSegments.map((candidate) => [candidate.key, candidate]));
     const home: SurfaceSegment = { column: 0, row: 0 };
@@ -1413,6 +1431,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   useEffect(() => {
     let active = true;
+    const layoutSaveQueue = layoutSaveQueueRef.current;
     const transferPhases = transferPhasesRef.current;
     let sessionRestoreStarted = false;
     let savedWindowSession: Promise<{ session: WindowSession; loaded: true } | { session: null; loaded: false }> | null = null;
@@ -1449,9 +1468,22 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             ])
           : new Set<string>();
         contentRevisionsRef.current = synced.sync.contentRevisions;
-        layoutRef.current = synced.layout;
+        const draft = layoutDraftRef.current?.desktopId === activeDesktopIdRef.current ? layoutDraftRef.current : null;
+        const mergedDraftLayout = draft ? mergeDesktopLayout(draft.baseLayout, draft.layout, synced.layout) : null;
+        const draftIconGroups = mergedDraftLayout ? iconGroupsAfterEntryChange(synced.entries, mergedDraftLayout.iconGroups) : [];
+        const visibleLayout = mergedDraftLayout ? draftIconGroups.length === mergedDraftLayout.iconGroups.length ? mergedDraftLayout : { ...mergedDraftLayout, iconGroups: draftIconGroups } : synced.layout;
+        if (draft) {
+          const mergedDraft = { ...draft, layout: visibleLayout };
+          layoutDraftRef.current = mergedDraft;
+          if (visibleLayout !== draft.layout) {
+            const save = layoutSaveQueue.run(mergedDraft);
+            layoutSaveRef.current = save;
+            void save.catch(() => setError("The desktop area layout could not be saved."));
+          }
+        }
+        layoutRef.current = visibleLayout;
         entriesRef.current = synced.entries;
-        setLayout(synced.layout);
+        setLayout(visibleLayout);
         setEntries(synced.entries);
         setAppearance(synced.appearance);
         const syncedIds = new Set(synced.entries.map((entry) => entry.id));
@@ -1626,7 +1658,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
       const pendingWallpaper = wallpaperPreviewRef.current;
       wallpaperPreviewRef.current = null;
-      if (pendingWallpaper && pendingWallpaper.desktopId === activeDesktopIdRef.current && canSettingsRef.current) layoutSaveRef.current = layoutSaveRef.current.catch(() => undefined).then(() => saveDesktopLayout(pendingWallpaper.layout)).catch(() => undefined);
+      const pendingLayout = layoutDraftRef.current;
+      if (pendingWallpaper && pendingLayout?.desktopId === activeDesktopIdRef.current && canSettingsRef.current) layoutSaveRef.current = layoutSaveQueue.run(pendingLayout).catch(() => undefined);
       unsubscribe();
       unsubscribeOutbox();
       unsubscribeOffline();
@@ -2308,9 +2341,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function positionFor(parentId: string | null) {
     if (parentId === null) {
-      const segmentEntryCount = childrenCount(null);
       const occupied = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local);
-      const localPosition = nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, segmentEntryCount, iconMetrics);
+      const localPosition = nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, iconMetrics, activeShellItemObstacles);
+      if (!localPosition) throw new Error("There is no free space in this desktop area. Move an icon or shell item, or switch to another area and try again.");
       return restoreLogicalPosition(localPosition, activeSegment, iconArea);
     }
     const position = nextRootEntryPosition(childrenCount(parentId), window.innerHeight, undefined, iconMetrics);
@@ -2414,18 +2447,22 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function previewLayout(next: DesktopLayout, desktopId: string) {
     if (!canMutateRef.current || desktopId !== activeDesktopIdRef.current) return;
-    layoutDraftRef.current = { desktopId, layout: next };
+    const current = layoutDraftRef.current?.desktopId === desktopId ? layoutDraftRef.current : null;
+    layoutDraftRef.current = current
+      ? { ...current, layout: next }
+      : { desktopId, layout: next, baseLayout: appSnapshotRef.current?.layout ?? layoutRef.current, baseRevision: appSnapshotRef.current?.sync.layoutRevision ?? 0 };
     layoutRef.current = next;
     setLayout(next);
   }
 
   async function saveLayout(next: DesktopLayout, desktopId: string) {
-    if (layoutDraftRef.current?.desktopId === desktopId) layoutDraftRef.current = null;
-    layoutRef.current = next;
-    setLayout(next);
-    const save = saveDesktopLayout(next);
+    previewLayout(next, desktopId);
+    const draft = layoutDraftRef.current;
+    if (!draft || draft.desktopId !== desktopId) return;
+    const save = layoutSaveQueueRef.current.run(draft);
     layoutSaveRef.current = save;
     await save;
+    if (layoutDraftRef.current?.desktopId === desktopId && layoutDraftRef.current.layout === next) layoutDraftRef.current = null;
   }
 
   async function persistLayout(next: DesktopLayout, desktopId = activeDesktopIdRef.current) {
@@ -2434,6 +2471,46 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       await saveLayout(next, desktopId);
     } catch {
       setError("The desktop area layout could not be saved.");
+    }
+  }
+
+  function addWidget(kind: DesktopWidget["kind"], position: EntryPosition) {
+    const size = kind === "status" ? { width: 260, height: 150 } : { width: 220, height: 150 };
+    const widget: DesktopWidget = { id: `${kind}-${crypto.randomUUID()}`, kind, ...position, ...size };
+    void persistLayout({ ...layoutRef.current, widgets: [...layoutRef.current.widgets, widget] });
+    setContextMenu(null);
+  }
+
+  function updateWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    void persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.map((item) => item.id === widget.id ? { ...item, ...change } : item) });
+  }
+
+  function removeWidget(widget: DesktopWidget) {
+    void persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.filter((item) => item.id !== widget.id) });
+  }
+
+  function addIconGroup(folder: FolderEntry) {
+    if (folder.parentId !== null || layoutRef.current.iconGroups.some((group) => group.folderId === folder.id)) return;
+    void persistLayout({ ...layoutRef.current, iconGroups: [...layoutRef.current.iconGroups, { folderId: folder.id, width: 340, height: 260 }] });
+    setContextMenu(null);
+  }
+
+  function updateIconGroup(group: DesktopIconGroup, size: { width: number; height: number }) {
+    void persistLayout({ ...layoutRef.current, iconGroups: layoutRef.current.iconGroups.map((item) => item.folderId === group.folderId ? { ...item, ...size } : item) });
+  }
+
+  function ungroupIconGroup(group: DesktopIconGroup) {
+    void persistLayout({ ...layoutRef.current, iconGroups: layoutRef.current.iconGroups.filter((item) => item.folderId !== group.folderId) });
+  }
+
+  async function moveIconGroup(folder: FolderEntry, position: EntryPosition) {
+    const previous = folder.position;
+    setEntries((current) => current.map((entry) => entry.id === folder.id ? { ...entry, position } : entry));
+    try {
+      await updateEntryPosition(folder.id, position);
+    } catch {
+      setEntries((current) => current.map((entry) => entry.id === folder.id ? { ...entry, position: previous } : entry));
+      setError("The icon group position could not be saved.");
     }
   }
 
@@ -2469,7 +2546,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       return wallpaperEditorState(next, entriesRef.current, appearanceRef.current, true, "");
     } catch (saveError) {
       const persisted = appSnapshotRef.current?.layout;
-      if (persisted && desktopId === activeDesktopIdRef.current) {
+      if (persisted && desktopId === activeDesktopIdRef.current && layoutDraftRef.current?.layout === next) {
         layoutDraftRef.current = null;
         layoutRef.current = persisted;
         setLayout(persisted);
@@ -2828,6 +2905,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (dialog.type === "create-file" || dialog.type === "create-shortcut" || dialog.type === "create-folder") {
       const parentId = dialog.parentId;
       const position = dialog.position ?? positionFor(parentId);
+      if (parentId === null) {
+        const projected = projectLogicalPosition(position, iconArea);
+        const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
+        if (positionOverlapsObstacles(projected.local, iconMetrics, obstacles)) throw new Error("Icons cannot be created beneath a desktop widget or icon group. Choose a free area and try again.");
+      }
       if (dialog.type === "create-shortcut" && !name.toLowerCase().endsWith(".url")) throw new Error("A shortcut file name must end in .url.");
       const created = dialog.type === "create-file"
         ? await createTextFile(name, parentId, position)
@@ -2837,6 +2919,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);
+      if (created.kind === "folder" && parentId === null && groupCreatedFolderRef.current) addIconGroup(created);
+      groupCreatedFolderRef.current = false;
     } else if (dialog.type === "rename") {
       if (!dialogEntry) {
         setDialog(null);
@@ -2889,7 +2973,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const occupied = parentId === null ? activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local) : [];
       const positionForRoot = (index: number) => {
         if (parentId !== null) return nextRootEntryPosition(offset + index, window.innerHeight, base, iconMetrics);
-        const localPosition = base && index === 0 ? (layoutRef.current.snapToGrid ? snapPositionInView(base) : clampPositionInView(base)) : nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, offset + index, iconMetrics);
+        const localPosition = base && index === 0 ? (layoutRef.current.snapToGrid ? snapPositionInView(base) : clampPositionInView(base)) : nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, iconMetrics, activeShellItemObstacles);
+        if (!localPosition || positionOverlapsObstacles(localPosition, iconMetrics, activeShellItemObstacles)) throw new Error("There is no free space in this desktop area. Move an icon or shell item, or switch to another area and try again.");
         occupied.push(localPosition);
         return restoreLogicalPosition(localPosition, activeSegment, iconArea);
       };
@@ -2987,12 +3072,20 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
   }
 
+  function positionsOverlapShellItems(positions: readonly EntryPosition[]) {
+    return positions.some((position) => {
+      const projected = projectLogicalPosition(position, iconArea);
+      const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
+      return positionOverlapsObstacles(projected.local, iconMetrics, obstacles);
+    });
+  }
+
   function arrangedDesktopMove(entry: DesktopEntry, position: EntryPosition) {
     const { logicalPosition, targetSegment } = desktopMovePosition(entry, position);
     const group = desktopMoveGroup(entry);
     const sourceSegmentKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
     if (group.some((item) => segmentKey(projectLogicalPosition(item.position, iconArea).segment) !== sourceSegmentKey)) return undefined;
-    return arrangeDesktopDrag(entries, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics, layoutRef.current.gridSize);
+    return arrangeDesktopDrag(desktopEntryList, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics, layoutRef.current.gridSize, undefined, desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, targetSegment, iconArea));
   }
 
   function previewDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination | null) {
@@ -3037,6 +3130,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         return false;
       }
     }
+    const delta = { x: logicalPosition.x - entry.position.x, y: logicalPosition.y - entry.position.y };
+    const overlapsShellItem = positionsOverlapShellItems(group.map((item) => ({ x: item.position.x + delta.x, y: item.position.y + delta.y })));
+    if (overlapsShellItem) {
+      setError("Icons cannot be placed beneath a desktop widget or icon group. Move the shell item or drop into an icon group instead.");
+      return false;
+    }
     if (group.length > 1) {
       return moveDesktopGroup(group, entry, logicalPosition);
     }
@@ -3069,7 +3168,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   async function autoArrangeDesktopIcons() {
     if (!canMutate) return;
-    const arranged = arrangeDesktopSegment(entriesRef.current, activeSegment, iconArea, iconMetrics);
+    const arranged = arrangeDesktopSegment(desktopEntryList, activeSegment, iconArea, iconMetrics, activeShellItemObstacles);
     if (!arranged) {
       setError("There is not enough room to auto-arrange every icon in this area.");
       return;
@@ -3098,6 +3197,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       entryId: entry.id,
       position: { x: origin.x + entry.position.x - anchor.position.x, y: origin.y + entry.position.y - anchor.position.y },
     }));
+    if (!layoutRef.current.autoArrangeIcons && positionsOverlapShellItems(positions.map(({ position }) => position))) {
+      setError("Icons cannot be placed beneath a desktop widget or icon group. Move the shell item or drop into an icon group instead.");
+      return false;
+    }
     setError("");
     try {
       const moved = items.every((entry) => entry.parentId === null)
@@ -5012,10 +5115,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           event.stopPropagation();
         }}
         onClick={(event) => {
-          if (!(event.target as Element).closest(".file-icon, .empty-state__actions, .app-window")) replaceSelection("desktop", []);
+          if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) replaceSelection("desktop", []);
         }}
         onContextMenu={(event) => {
-          if ((event.target as Element).closest(".file-icon, .empty-state__actions, .app-window")) return;
+          if ((event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) return;
           event.preventDefault();
           const press = desktopPressRef.current;
           if (press) {
@@ -5139,6 +5242,26 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           })}
           </div>
         </div>
+        <div className="desktop-area-stage desktop-area-stage--shell-items">
+          <ShellItemLayer
+            widgets={layout.widgets}
+            groups={layout.iconGroups}
+            entries={shellEntryList}
+            activeSegment={activeSegment}
+            areaSize={iconArea}
+            status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
+            loadPreview={thumbnailFile}
+            onOpen={handleOpen}
+            onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
+            onMoveWidget={(widget, position) => updateWidget(widget, position)}
+            onResizeWidget={(widget, size) => updateWidget(widget, size)}
+            onRemoveWidget={removeWidget}
+            onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
+            onResizeGroup={updateIconGroup}
+            onUngroup={ungroupIconGroup}
+            readOnly={!canMutate}
+          />
+        </div>
         {marquee && (
           <div
             className="desktop-marquee"
@@ -5159,7 +5282,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             <span className="visually-hidden">Loading desktop...</span>
           </div>
         )}
-        {!loading && rootEntries.length === 0 && activeSegment.column === 0 && activeSegment.row === 0 && (
+        {!loading && rootEntries.length === 0 && layout.widgets.length === 0 && layout.iconGroups.length === 0 && activeSegment.column === 0 && activeSegment.row === 0 && (
           <div className="desktop-state empty-state">
             <span className="empty-state__icon">
               <HardDrive size={28} weight="duotone" />
@@ -5182,7 +5305,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             </div>
           </div>
         )}
-        {!loading && (rootEntries.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && activeDesktopSegment.entries.length === 0 && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
+        {!loading && (rootEntries.length > 0 || layout.widgets.length > 0 || layout.iconGroups.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && !occupiedSegments.some((segment) => segment.key === activeSegmentKey) && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
           <div className="desktop-state empty-state area-empty-state">
             <span className="empty-state__icon">
               <Desktop size={28} weight="duotone" />
@@ -5769,6 +5892,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                 }
               : undefined
           }
+          onGroup={contextMenuEntry.kind === "folder" && contextMenuEntry.parentId === null && !groupedFolderIds.has(contextMenuEntry.id) ? () => addIconGroup(contextMenuEntry) : undefined}
           onMove={() => {
             setMoveDialogSubmitting(false);
             setMoveDialogEntryIds(contextMenuEntries.map((entry) => entry.id));
@@ -5810,6 +5934,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             });
             setContextMenu(null);
           }}
+          onCreateIconGroup={contextMenu.parentId === null ? () => {
+            groupCreatedFolderRef.current = true;
+            openFileDialog({ type: "create-folder", parentId: null, position: restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) });
+            setContextMenu(null);
+          } : undefined}
+          onAddWidget={contextMenu.parentId === null ? (kind) => addWidget(kind, restoreLogicalPosition(contextMenu.position, activeSegment, iconArea)) : undefined}
           onUpload={() => {
             chooseUpload(contextMenu.parentId, contextMenu.position);
             setContextMenu(null);
@@ -5827,7 +5957,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           onClose={() => setContextMenu(null)}
         />
       )}
-      {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => setDialog(null)} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
+      {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => { groupCreatedFolderRef.current = false; setDialog(null); }} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
       {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
         <AppPickerDialog
           key={appDialogRequests[0].id}

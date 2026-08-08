@@ -12,7 +12,7 @@ import {
   parseDesktopState,
 } from "./desktop-state";
 import { normalizeDesktopName, parseDesktopIdentity, parseLayout, parsePosition, parseRootEntryPositionUpdates } from "./contracts";
-import { wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
+import { iconGroupsAfterEntryChange, wallpaperAfterEntryRemoval, type OutboxOperation, type OutboxRecord } from "./outbox";
 import { DEFAULT_THEME_STATE, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme, ThemeWallpaperPackage } from "../domain/theme";
 import type { WindowSession } from "./window-session";
@@ -83,6 +83,8 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
     snapToGrid: parsedSeeded.layout.snapToGrid,
     gridSize: parsedSeeded.layout.gridSize,
     wallpaper: parsedSeeded.layout.wallpaper,
+    widgets: parsedSeeded.layout.widgets,
+    iconGroups: parsedSeeded.layout.iconGroups,
     editorSettings: parsedSeeded.editorSettings,
     appearance: parsedSeeded.appearance,
     sync: emptySyncState(),
@@ -169,7 +171,7 @@ let desktopLoad: Promise<DesktopState> | null = null;
 let databaseInitialization: Promise<void> | null = null;
 
 function emptyDesktopState(): DesktopState {
-  return { entries: [], autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
+  return { entries: [], autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [], editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
 }
 
 async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
@@ -367,6 +369,8 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
     snapToGrid: snapshot.layout.snapToGrid,
     gridSize: snapshot.layout.gridSize,
     wallpaper: snapshot.layout.wallpaper,
+    widgets: snapshot.layout.widgets,
+    iconGroups: snapshot.layout.iconGroups,
     editorSettings: snapshot.editorSettings,
     appearance: snapshot.appearance,
     sync: snapshot.sync,
@@ -475,7 +479,7 @@ async function resolveContentConflictKeepBothUnsafe(operationId: string, remote:
   await stageOperationContents(reservation.operationId, new Map([[sibling.id, content]]));
   let committed = false;
   try {
-    const state: Manifest = { entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
+    const state: Manifest = { entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, widgets: remote.layout.widgets, iconGroups: remote.layout.iconGroups, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
     const result = await callDatabase("resolveContentConflictKeepBoth", { operationId, replacementOperationId: reservation.operationId, state, operation }, selected.desktopId);
     committed = true;
     const projected = parseDesktopState(result.state);
@@ -537,7 +541,7 @@ async function saveEditorSettingsUnsafe(settings: EditorSettings) {
 async function saveDesktopLayoutUnsafe(layout: DesktopLayout) {
   const manifest = await readManifest();
   const parsed = parseLayout(layout);
-  const next = { ...manifest, autoArrangeIcons: parsed.autoArrangeIcons, snapToGrid: parsed.snapToGrid, gridSize: parsed.gridSize, wallpaper: parsed.wallpaper };
+  const next = { ...manifest, autoArrangeIcons: parsed.autoArrangeIcons, snapToGrid: parsed.snapToGrid, gridSize: parsed.gridSize, wallpaper: parsed.wallpaper, widgets: parsed.widgets, iconGroups: parsed.iconGroups };
   assertValidManifest(next);
   await writeManifest(next, activityRecord("Changed desktop layout", [
     `Auto-arrange icons: ${parsed.autoArrangeIcons ? "On" : "Off"}`,
@@ -756,11 +760,13 @@ async function deleteEntryUnsafe(id: string): Promise<DesktopEntry[]> {
     }
   }
   const deleted = manifest.entries.filter((entry) => deletedIds.has(entry.id));
+  const entries = manifest.entries.filter((entry) => !deletedIds.has(entry.id));
   // Remove visible metadata first; failed blob cleanup can then only leave invisible orphans.
   await writeManifest({
     ...manifest,
-    entries: manifest.entries.filter((entry) => !deletedIds.has(entry.id)),
-    wallpaper: wallpaperAfterEntryRemoval(manifest.entries.filter((entry) => !deletedIds.has(entry.id)), manifest.wallpaper),
+    entries,
+    wallpaper: wallpaperAfterEntryRemoval(entries, manifest.wallpaper),
+    iconGroups: iconGroupsAfterEntryChange(entries, manifest.iconGroups),
   }, activityRecord(deleted.length === 1 ? `Deleted ${deleted[0].kind}` : "Deleted items", activityDetails(deleted)));
   try {
     const directory = await getFilesDirectory();
@@ -794,11 +800,13 @@ async function deleteEntriesUnsafe(ids: string[]): Promise<DesktopEntry[]> {
     }
   }
   const deleted = manifest.entries.filter((entry) => deletedIds.has(entry.id));
+  const entries = manifest.entries.filter((entry) => !deletedIds.has(entry.id));
   await writeManifest(
     {
       ...manifest,
-      entries: manifest.entries.filter((entry) => !deletedIds.has(entry.id)),
-      wallpaper: wallpaperAfterEntryRemoval(manifest.entries.filter((entry) => !deletedIds.has(entry.id)), manifest.wallpaper),
+      entries,
+      wallpaper: wallpaperAfterEntryRemoval(entries, manifest.wallpaper),
+      iconGroups: iconGroupsAfterEntryChange(entries, manifest.iconGroups),
     },
     activityRecord(deleted.length === 1 ? `Deleted ${deleted[0].kind}` : "Deleted items", activityDetails(deleted)),
   );
@@ -823,9 +831,11 @@ async function moveEntryUnsafe(id: string, parentId: string | null, position: En
   assertUniqueName(manifest.entries, existing.name, parentId, id);
 
   const moved: DesktopEntry = { ...existing, parentId, position: parsePosition(position), modifiedAt: Date.now() };
+  const entries = manifest.entries.map((entry) => (entry.id === id ? moved : entry));
   await writeManifest({
     ...manifest,
-    entries: manifest.entries.map((entry) => (entry.id === id ? moved : entry)),
+    entries,
+    iconGroups: iconGroupsAfterEntryChange(entries, manifest.iconGroups),
   }, activityRecord(`Moved ${existing.kind}`, [`${existing.kind === "file" ? "File" : "Folder"}: ${existing.name}`, locationDetail(manifest.entries, parentId)]));
   return moved;
 }
@@ -836,7 +846,8 @@ async function moveEntriesUnsafe(ids: string[], parentId: string | null) {
   const moving = new Set(ids);
   if (!ids.length || moving.size !== ids.length || ids.some((id) => !manifest.entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
   const modifiedAt = Date.now();
-  const next: Manifest = { ...manifest, entries: manifest.entries.map((entry) => moving.has(entry.id) ? { ...entry, parentId, modifiedAt } : entry) };
+  const entries = manifest.entries.map((entry) => moving.has(entry.id) ? { ...entry, parentId, modifiedAt } : entry);
+  const next: Manifest = { ...manifest, entries, iconGroups: iconGroupsAfterEntryChange(entries, manifest.iconGroups) };
   assertValidManifest(next);
   const moved = next.entries.filter((entry) => moving.has(entry.id));
   await writeManifest(next, activityRecord(moved.length === 1 ? `Moved ${moved[0].kind}` : "Moved items", [...activityDetails(moved), locationDetail(manifest.entries, parentId)]));

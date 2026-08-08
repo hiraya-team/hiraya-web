@@ -139,7 +139,9 @@ describe("public desktop", () => {
     const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     expect(source).toContain("themeIconMetrics(theme)");
     expect(source).toContain("iconAreaSize(desktopSize, desktop?.layout.gridSize)");
-    expect(source).toContain("responsiveDesktop(publicEntries, iconArea, iconMetrics)");
+    expect(source).toContain("responsiveDesktop(desktopEntries, iconArea, iconMetrics)");
+    expect(source).toContain("!groupedFolderIds.has(entry.id)");
+    expect(source).toContain("<ShellItemLayer");
     expect(source).toContain("<AreaSwitcher");
     expect(source).toContain("useMediaQuery(WINDOWED_DESKTOP_QUERY)");
     expect(source).toContain("open.runtime.app.bounds");

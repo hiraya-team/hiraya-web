@@ -6,13 +6,13 @@ import { DEFAULT_WALLPAPER } from "../src/types";
 
 function state() {
   const snapshot = desktopStateSnapshot();
-  return { entries: snapshot.entries, autoArrangeIcons: snapshot.layout.autoArrangeIcons, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
+  return { entries: snapshot.entries, autoArrangeIcons: snapshot.layout.autoArrangeIcons, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, widgets: snapshot.layout.widgets, iconGroups: snapshot.layout.iconGroups, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
 }
 
 describe("strict outbox", () => {
   test("requires operation schema version 1", () => {
     const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { snapToGrid: true, wallpaper: { ...DEFAULT_WALLPAPER } } };
-    expect(normalizeOutboxOperation(operation)).toEqual({ ...operation, layout: { ...operation.layout, autoArrangeIcons: true, gridSize: 24 } });
+    expect(normalizeOutboxOperation(operation)).toEqual({ ...operation, layout: { ...operation.layout, autoArrangeIcons: true, gridSize: 24, widgets: [], iconGroups: [] } });
     expect(applyOutboxOperation(state(), operation).snapToGrid).toBe(true);
     expect(() => normalizeOutboxOperation({ ...operation, schemaVersion: 2 } as never)).toThrow("schema version");
   });
@@ -61,7 +61,8 @@ describe("strict outbox", () => {
   test("atomically removes a replaced package wallpaper and its selected layout source", () => {
     const wallpaper = { assetId: "old-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
     const installed = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper };
-    const initial = { ...state(), wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const }, appearance: { selectedThemeId: installed.id, customThemes: [installed] } };
+    const widget = { id: "clock", kind: "clock" as const, x: 0, y: 0, width: 200, height: 100 };
+    const initial = { ...state(), widgets: [widget], wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" as const }, appearance: { selectedThemeId: installed.id, customThemes: [installed] } };
     const replacement = { id: installed.id, name: "Aurora Plain", definition: installed.definition };
     const operation = {
       schemaVersion: 1 as const,
@@ -75,6 +76,7 @@ describe("strict outbox", () => {
     const projected = applyOutboxOperation(initial, normalizeOutboxOperation(operation));
     expect(projected.appearance).toEqual({ selectedThemeId: replacement.id, customThemes: [replacement] });
     expect(projected.wallpaper).toEqual(DEFAULT_WALLPAPER);
+    expect(projected.widgets).toEqual([widget]);
   });
 
   test("projects operations on entries beneath an existing folder", () => {
@@ -164,6 +166,21 @@ describe("strict outbox", () => {
     expect(resolveOutboxRevisionConflict(operation, { resourceKind: "layout", resourceId: "desk", expectedRevision: 1, actualRevision: 2 }, { ...remote, layout: { ...remote.layout, autoArrangeIcons: false } })).toMatchObject({ kind: "rebase" });
   });
 
+  test("three-way merges layout items by stable ID and blocks the same item", () => {
+    const snapshot = desktopStateSnapshot();
+    const clock = { id: "clock", kind: "clock" as const, x: 0, y: 0, width: 200, height: 100 };
+    const calendar = { id: "calendar", kind: "calendar" as const, x: 220, y: 0, width: 240, height: 180 };
+    const base = { ...snapshot.layout, widgets: [clock], iconGroups: [{ folderId: "one", width: 200, height: 200 }] };
+    const operation = { schemaVersion: 1 as const, kind: "layout" as const, layout: { ...base, widgets: [{ ...clock, x: 20 }], iconGroups: [{ ...base.iconGroups[0], width: 240 }] }, baseRevision: 1, conflictBase: base };
+    const remote = { ...snapshot, layout: { ...base, widgets: [clock, calendar], iconGroups: [...base.iconGroups, { folderId: "two", width: 300, height: 220 }] }, sync: { ...snapshot.sync, layoutRevision: 2 } };
+    const conflict = { resourceKind: "layout" as const, resourceId: "desk", expectedRevision: 1, actualRevision: 2 };
+
+    expect(resolveOutboxRevisionConflict(operation, conflict, remote)).toMatchObject({ kind: "rebase", operation: { layout: { widgets: [{ id: "clock", x: 20 }, { id: "calendar" }], iconGroups: [{ folderId: "one", width: 240 }, { folderId: "two" }] } } });
+    expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, layout: { ...base, widgets: [{ ...clock, y: 20 }] } })).toEqual({ kind: "blocked", fields: ["widgets"] });
+    expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, layout: { ...base, iconGroups: [{ ...base.iconGroups[0], height: 240 }] } })).toEqual({ kind: "blocked", fields: ["icon groups"] });
+    expect(resolveOutboxRevisionConflict({ ...operation, layout: { ...base, widgets: [], iconGroups: [] } }, conflict, { ...remote, layout: { ...base, widgets: [], iconGroups: [] } })).toMatchObject({ kind: "rebase" });
+  });
+
   test("identifies pending changes waiting on an earlier causal conflict", () => {
     const blocked: OutboxRecord = { operationId: "1", sequence: 1, clientId: "client", catalogId: "catalog", desktopId: "desk", operation: { schemaVersion: 1, kind: "patch-entry", entryId: "file", changes: { name: "blocked.txt" } }, status: "blocked", error: "conflict" };
     const dependent: OutboxRecord = { ...blocked, operationId: "2", sequence: 2, operation: { schemaVersion: 1, kind: "patch-entry", entryId: "file", changes: { position: { x: 1, y: 2 } } }, status: "pending", error: null };
@@ -202,6 +219,18 @@ describe("strict outbox", () => {
     expect(deleted.sync.layoutRevision).toBe(8);
     expect(transferred.wallpaper).toEqual(DEFAULT_WALLPAPER);
     expect(transferred.sync.layoutRevision).toBe(8);
+  });
+
+  test("prunes icon groups after grouped folders are deleted, reparented, or transferred", () => {
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+    const parent = { ...folder, id: "parent", name: "Parent" };
+    const grouped = { ...state(), entries: [folder, parent], iconGroups: [{ folderId: folder.id, width: 320, height: 240 }], sync: { ...state().sync, catalogId: "catalog", catalogRevision: 8, layoutRevision: 3 } };
+    const destination = { ...state(), sync: { ...state().sync, catalogId: "catalog" } };
+
+    expect(applyOutboxOperation(grouped, { schemaVersion: 1, kind: "delete", entryId: folder.id }).iconGroups).toEqual([]);
+    expect(applyOutboxOperation(grouped, { schemaVersion: 1, kind: "patch-entry", entryId: folder.id, changes: { parentId: parent.id } }).iconGroups).toEqual([]);
+    expect(applyOutboxOperation(grouped, { schemaVersion: 1, kind: "move-entries", entryIds: [folder.id], parentId: parent.id }).iconGroups).toEqual([]);
+    expect(transferEntriesBetweenDesktopStates(grouped, destination, [folder.id], null).source.iconGroups).toEqual([]);
   });
 
   test("protects desktops owning or referenced by pending and blocked operations", () => {

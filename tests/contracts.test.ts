@@ -25,7 +25,7 @@ describe("contracts", () => {
   });
 
   test("validates structured wallpaper and legacy persisted presets", () => {
-    expect(parseLayout({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER });
+    expect(parseLayout({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [] });
     expect(parseLayout({ autoArrangeIcons: false, snapToGrid: false, wallpaper: DEFAULT_WALLPAPER }).autoArrangeIcons).toBe(false);
     expect(() => parseLayout({ autoArrangeIcons: null, snapToGrid: false, wallpaper: DEFAULT_WALLPAPER })).toThrow("auto-arrange");
     expect(parseLayout({ snapToGrid: true, gridSize: 48, wallpaper: DEFAULT_WALLPAPER }).gridSize).toBe(48);
@@ -41,6 +41,19 @@ describe("contracts", () => {
     expect(() => parseLayout({ snapToGrid: false, wallpaper: missingFit })).toThrow("wallpaper");
     expect(parseLayout({ snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:aurora" } }).wallpaper.source).toBe("theme:aurora");
     expect(() => parseLayout({ snapToGrid: false, wallpaper: { ...DEFAULT_WALLPAPER, source: "theme:../aurora" } })).toThrow("wallpaper");
+  });
+
+  test("validates widgets and icon groups as stable logical layout items", () => {
+    const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 12, y: 18 }, revision: 1, contentRevision: 1 };
+    const layout = parseLayout({ snapToGrid: false, wallpaper: DEFAULT_WALLPAPER, widgets: [{ id: "clock-1", kind: "clock", x: -20, y: 30, width: 240, height: 120 }], iconGroups: [{ folderId: folder.id, width: 320, height: 240 }] });
+    expect(layout).toMatchObject({ widgets: [{ id: "clock-1", x: -20 }], iconGroups: [{ folderId: folder.id, width: 320 }] });
+    const remote = remoteDesktopState();
+    expect(parseRemoteDesktopState({ ...remote, entries: [folder], layout })).toMatchObject({ layout });
+    expect(() => parseLayout({ ...layout, widgets: [...layout.widgets, layout.widgets[0]] })).toThrow("duplicate IDs");
+    expect(() => parseLayout({ ...layout, iconGroups: [{ ...layout.iconGroups[0], x: 1 }] })).toThrow("unsupported format");
+    expect(() => parseLayout({ ...layout, widgets: [{ ...layout.widgets[0], width: 4097 }] })).toThrow("invalid bounds");
+    expect(() => parseLayout({ ...layout, iconGroups: [{ ...layout.iconGroups[0], height: 4097 }] })).toThrow("invalid bounds");
+    expect(() => parseRemoteDesktopState({ ...remote, layout })).toThrow("root folder");
   });
 
   test("accepts remote packaged wallpaper state only when its theme exists", () => {

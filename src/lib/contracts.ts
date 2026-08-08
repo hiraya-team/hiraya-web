@@ -1,10 +1,13 @@
 import {
   DEFAULT_GRID_SIZE,
   GRID_SIZES,
+  MAX_LAYOUT_DIMENSION,
   WALLPAPERS,
   type DesktopEntry,
   type DesktopIdentity,
+  type DesktopIconGroup,
   type DesktopLayout,
+  type DesktopWidget,
   type RootEntryPositionUpdate,
   type EditorLanguage,
   type EditorSettings,
@@ -326,7 +329,48 @@ export function parseLayout(value: unknown, allowLegacyWallpaper = false): Deskt
   if (!GRID_SIZES.includes(gridSize as GridSize)) throw new Error("The desktop layout has an unsupported grid size.");
   const autoArrangeIcons = value.autoArrangeIcons === undefined ? true : value.autoArrangeIcons;
   if (typeof autoArrangeIcons !== "boolean") throw new Error("The desktop layout has an unsupported auto-arrange setting.");
-  return { autoArrangeIcons, snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper) };
+  const widgets = value.widgets === undefined ? [] : parseWidgets(value.widgets);
+  const iconGroups = value.iconGroups === undefined ? [] : parseIconGroups(value.iconGroups);
+  return { autoArrangeIcons, snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper), widgets, iconGroups };
+}
+
+function parseWidgets(value: unknown): DesktopWidget[] {
+  if (!Array.isArray(value)) throw new Error("The desktop widgets have an unsupported format.");
+  const ids = new Set<string>();
+  return value.map((candidate) => {
+    if (!isRecord(candidate) || Object.keys(candidate).length !== 6 || Object.keys(candidate).some((key) => !["id", "kind", "x", "y", "width", "height"].includes(key))) throw new Error("A desktop widget has an unsupported format.");
+    assertValidId(candidate.id, "A desktop widget has an invalid ID.");
+    if (ids.has(candidate.id)) throw new Error("The desktop widgets contain duplicate IDs.");
+    ids.add(candidate.id);
+    if (!(["clock", "calendar", "status"] as unknown[]).includes(candidate.kind)) throw new Error("A desktop widget has an unsupported kind.");
+    const x = readFiniteNumber(candidate.x, "A desktop widget has invalid bounds.");
+    const y = readFiniteNumber(candidate.y, "A desktop widget has invalid bounds.");
+    const width = readFiniteNumber(candidate.width, "A desktop widget has invalid bounds.");
+    const height = readFiniteNumber(candidate.height, "A desktop widget has invalid bounds.");
+    if (width <= 0 || width > MAX_LAYOUT_DIMENSION || height <= 0 || height > MAX_LAYOUT_DIMENSION) throw new Error("A desktop widget has invalid bounds.");
+    return { id: candidate.id, kind: candidate.kind as DesktopWidget["kind"], x, y, width, height };
+  });
+}
+
+function parseIconGroups(value: unknown): DesktopIconGroup[] {
+  if (!Array.isArray(value)) throw new Error("The desktop icon groups have an unsupported format.");
+  const ids = new Set<string>();
+  return value.map((candidate) => {
+    if (!isRecord(candidate) || Object.keys(candidate).length !== 3 || Object.keys(candidate).some((key) => !["folderId", "width", "height"].includes(key))) throw new Error("A desktop icon group has an unsupported format.");
+    assertValidId(candidate.folderId, "A desktop icon group has an invalid folder ID.");
+    if (ids.has(candidate.folderId)) throw new Error("The desktop icon groups contain duplicate folder IDs.");
+    ids.add(candidate.folderId);
+    const width = readFiniteNumber(candidate.width, "A desktop icon group has invalid bounds.");
+    const height = readFiniteNumber(candidate.height, "A desktop icon group has invalid bounds.");
+    if (width <= 0 || width > MAX_LAYOUT_DIMENSION || height <= 0 || height > MAX_LAYOUT_DIMENSION) throw new Error("A desktop icon group has invalid bounds.");
+    return { folderId: candidate.folderId, width, height };
+  });
+}
+
+export function assertIconGroupFolders(entries: readonly DesktopEntry[], layout: DesktopLayout) {
+  if (layout.iconGroups.some((group) => !entries.some((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null))) {
+    throw new Error("A desktop icon group must reference a root folder on the same desktop.");
+  }
 }
 
 export function parseRootEntryPositions(value: unknown): RootEntryPositionUpdate[] {
@@ -594,6 +638,7 @@ export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   };
   const entries = parseEntries(value.entries, true) as RemoteEntry[];
   const layout = parseLayout(value.layout);
+  assertIconGroupFolders(entries, layout);
   if (!isRecord(value.appearance) || !Array.isArray(value.appearance.customThemes)) throw new Error("The server appearance has an unsupported format.");
   const customThemes = value.appearance.customThemes.map((candidate) => {
     const theme = parseCustomTheme(candidate);
