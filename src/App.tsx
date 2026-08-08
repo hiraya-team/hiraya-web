@@ -97,6 +97,7 @@ import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
 import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isProtectedShellEntry, protectedShellSource, protectedWindowDisposition, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "./ui/shell-entries";
+import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-dismiss";
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
@@ -739,10 +740,14 @@ function App({ session }: { session: AuthSession | null }) {
 
   useEffect(() => {
     if (!minimapExpanded) return;
+    const unregisterDismiss = registerTransientDismiss(collapseAreaMap);
     const frame = window.requestAnimationFrame(() => {
       areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus();
     });
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      unregisterDismiss();
+      window.cancelAnimationFrame(frame);
+    };
   }, [minimapExpanded]);
 
   useEffect(() => {
@@ -4063,6 +4068,14 @@ function App({ session }: { session: AuthSession | null }) {
     }
     backInFlightRef.current = true;
     try {
+    if (dismissTopTransient()) {
+      resetQuitBack();
+      if (source === "history") {
+        restoreOnlyPopRef.current = true;
+        window.history.forward();
+      }
+      return "handled";
+    }
     const settingsParent = SETTINGS_PARENTS[settingsPage];
     if (settingsParent && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
       resetQuitBack();

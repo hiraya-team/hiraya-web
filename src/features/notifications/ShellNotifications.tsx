@@ -7,6 +7,7 @@ import { isRevisionConflictRecord, type OutboxRecord } from "../../lib/outbox";
 import type { TrashNotification } from "../../lib/trash-notifications";
 import type { FileTransferState } from "../../lib/sync";
 import { outboxRecordLabel } from "../../ui/panel-data";
+import { registerTransientDismiss } from "../../ui/transient-dismiss";
 import { nextNotificationOrder, nextUnreadNotificationIds } from "./controller";
 
 type ImportProgress = { folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" };
@@ -111,6 +112,10 @@ export function ShellNotifications(props: Props) {
 
   useEffect(() => {
     if (!open) return;
+    const unregisterDismiss = registerTransientDismiss(() => {
+      setOpen(false);
+      requestAnimationFrame(() => triggerRef.current?.focus());
+    });
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
     };
@@ -123,6 +128,7 @@ export function ShellNotifications(props: Props) {
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
+      unregisterDismiss();
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };

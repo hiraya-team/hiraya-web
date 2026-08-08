@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { registerTransientDismiss } from "../ui/transient-dismiss";
 
 type Props = {
   label: string;
@@ -67,12 +68,14 @@ export function MobileHeaderMenu({ label, icon, children }: Props) {
 
   useEffect(() => {
     if (!open) return;
+    const unregisterDismiss = registerTransientDismiss(dismiss);
     const reposition = () => positionPanel();
     window.addEventListener("resize", reposition);
     window.addEventListener("scroll", reposition, true);
     window.visualViewport?.addEventListener("resize", reposition);
     window.visualViewport?.addEventListener("scroll", reposition);
     return () => {
+      unregisterDismiss();
       window.removeEventListener("resize", reposition);
       window.removeEventListener("scroll", reposition, true);
       window.visualViewport?.removeEventListener("resize", reposition);
