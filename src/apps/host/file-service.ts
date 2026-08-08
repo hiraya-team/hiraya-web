@@ -159,11 +159,11 @@ export class FileService {
     return this.protect(() => {
       this.requirePermission("files:read");
       const source = this.requireHandle(params.handle, "read");
-      if (source.kind !== "folder") throw new FileServiceError("PERMISSION_DENIED", "Relative paths require access to a folder.");
-      const sourceEntry = source.entryId === null ? null : this.requireEntry(source, "folder") as FolderEntry;
+      const sourceEntry = source.entryId === null ? null : this.requireEntry(source, source.kind);
+      if (source.kind === "file" && source.scopeEntryId === source.entryId) throw new FileServiceError("PERMISSION_DENIED", "Relative paths require access to a folder.");
       const entries = this.snapshot().entries;
-      let parentId = sourceEntry?.id ?? null;
-      let target: DesktopEntry | undefined = sourceEntry ?? undefined;
+      let parentId = sourceEntry?.kind === "file" ? sourceEntry.parentId : sourceEntry?.id ?? null;
+      let target: DesktopEntry | undefined = sourceEntry?.kind === "folder" ? sourceEntry : undefined;
       const parts = params.path.split("/");
       for (const [index, part] of parts.entries()) {
         if (part === ".") {

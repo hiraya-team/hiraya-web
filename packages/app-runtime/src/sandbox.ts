@@ -46,10 +46,10 @@ export class ObjectUrlLease {
 // Apps have an opaque origin. Direct fetch sinks are blocked; navigation is also denied in
 // browsers that implement navigate-to and monitored by the host as a fallback.
 export const SANDBOX_CSP = "default-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'";
-export const TRUSTED_MARKDOWN_CSP = SANDBOX_CSP.replace("img-src data: blob:", "img-src data: blob: https: http:").replace("navigate-to 'none'", "navigate-to https: http: mailto:");
-export const trustedMediaCsp = (origin: string) => SANDBOX_CSP.replace("media-src data: blob:", `media-src data: blob: ${origin}`);
+export const TRUSTED_DOCUMENT_MEDIA_CSP = SANDBOX_CSP.replace("img-src data: blob:", "img-src data: blob: https: http:").replace("navigate-to 'none'", "navigate-to https: http: mailto:");
+export const trustedDocumentMediaCsp = (origin?: string) => origin ? TRUSTED_DOCUMENT_MEDIA_CSP.replace("media-src data: blob:", `media-src data: blob: ${origin}`) : TRUSTED_DOCUMENT_MEDIA_CSP;
 export const SANDBOX_FLAGS = "allow-scripts allow-downloads allow-forms";
-export const TRUSTED_MARKDOWN_FLAGS = `${SANDBOX_FLAGS} allow-popups allow-popups-to-escape-sandbox`;
+export const TRUSTED_DOCUMENT_MEDIA_FLAGS = `${SANDBOX_FLAGS} allow-popups allow-popups-to-escape-sandbox`;
 const MAX_MATERIALIZED_ASSET_CHARACTERS = 64 * 1024 * 1024;
 
 export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array>, entrypoint: string) {

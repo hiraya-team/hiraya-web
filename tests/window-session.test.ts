@@ -126,4 +126,9 @@ describe("window and browser sessions", () => {
     expect(session.apps.map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
     expect(restoreWindowSession(session, entries, { column: 0, row: 0 }, { width: 1000, height: 700 }).map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
   });
+
+  test("migrates saved Markdown Preview windows to Media Viewer", () => {
+    const bounds = { x: 0, y: 0, width: 700, height: 500 };
+    expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "system", appId: "app.hiraya.markdown-preview", targetKind: "file", entryId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "system", appId: "app.hiraya.media-viewer", targetKind: "file", entryId: "file" });
+  });
 });

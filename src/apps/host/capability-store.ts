@@ -27,6 +27,10 @@ export class CapabilityStore {
     return this.grant(appInstanceId, "file", entryId, entryId, operations) as FileHandle;
   }
 
+  grantScopedFile(appInstanceId: string, entryId: string, scopeEntryId: string | null, operations: Iterable<FileCapabilityOperation> = DEFAULT_FILE_OPERATIONS): FileHandle {
+    return this.grant(appInstanceId, "file", entryId, scopeEntryId, operations) as FileHandle;
+  }
+
   grantFolder(appInstanceId: string, entryId: string | null, operations: Iterable<FileCapabilityOperation> = DEFAULT_FOLDER_OPERATIONS): FolderHandle {
     return this.grant(appInstanceId, "folder", entryId, entryId, operations) as FolderHandle;
   }

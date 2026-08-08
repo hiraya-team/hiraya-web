@@ -1,6 +1,6 @@
 import { parseJsonValue, parseManifestV2, type HirayaAppManifestV2, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { InstalledApp } from "../apps/installed-apps";
-import { SYSTEM_APP_IDS } from "../apps/system-app-ids";
+import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { requireAuthenticatedResponse } from "./auth";
 import { responseBlobWithProgress, sha256Blob, uploadBlobDigests } from "./blob-transfer";
@@ -10,7 +10,6 @@ const SHA256 = /^[a-f0-9]{64}$/;
 const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 const MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
 const MAX_DATA_BYTES = 64 * 1024;
-const SYSTEM_APP_ID_SET = new Set<string>(Object.values(SYSTEM_APP_IDS));
 
 export type AccountAppGenerations = Readonly<{ installationGeneration: number; dataGeneration: number; itemRevision: number }>;
 export type AccountAppBlob = Readonly<{ blobId: string; revision: number; size: number; sha256: string }>;
@@ -114,7 +113,7 @@ function parseApp(value: unknown, withData: boolean): AccountApp | Omit<AccountA
   if (!isRecord(value)) throw new Error("An account app has an unsupported format.");
   exactKeys(value, withData ? ["appId", "manifest", "generations", "manifestResource", "package", "data"] : ["appId", "manifest", "generations", "manifestResource", "package"], "An account app has an unsupported shape.");
   const id = appId(value.appId);
-  if (SYSTEM_APP_ID_SET.has(id)) throw new Error("Trusted system apps cannot appear in synchronized account apps.");
+  if (RESERVED_SYSTEM_APP_IDS.has(id)) throw new Error("Trusted system apps cannot appear in synchronized account apps.");
   const manifest = parseManifestV2(value.manifest);
   if (manifest.id !== id) throw new Error("An account app manifest has a different app ID.");
   const base = { appId: id, manifest, generations: parseGenerations(value.generations), manifestResource: parseAccountResourceBlob(value.manifestResource, "manifest", id), package: parseAccountAppBlob(value.package) };

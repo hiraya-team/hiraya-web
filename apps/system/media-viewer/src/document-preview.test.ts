@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DOCX_MIME, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKind } from "./document-types";
+import { DOCX_MIME, isMarkdownDocument, MAX_PARSED_DOCUMENT_BYTES, normalizedMime, parsedDocumentKind } from "./document-types";
 import { renderParsedDocument } from "./document-preview";
 
 describe("document preview safeguards", () => {
@@ -9,6 +9,9 @@ describe("document preview safeguards", () => {
     expect(parsedDocumentKind("notes.RTF", "application/octet-stream")).toBe("rtf");
     expect(parsedDocumentKind("notes.bin", "text/rtf; charset=windows-1252")).toBe("rtf");
     expect(parsedDocumentKind("legacy.doc", "application/msword")).toBeNull();
+    expect(isMarkdownDocument("README.MD", "application/octet-stream")).toBeTrue();
+    expect(isMarkdownDocument("notes.txt", "text/markdown; charset=utf-8")).toBeTrue();
+    expect(isMarkdownDocument("notes.txt", "text/plain")).toBeTrue();
     expect(MAX_PARSED_DOCUMENT_BYTES).toBe(8 * 1024 * 1024);
   });
 

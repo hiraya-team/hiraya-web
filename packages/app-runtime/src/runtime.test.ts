@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_RPC_TIMEOUT_MS, LONG_RUNNING_FILE_MUTATION_METHODS, LONG_RUNNING_RPC_TIMEOUT_MS, RpcDispatcher, usesLongRunningRpcDeadline } from "./dispatcher";
 import type { AppPackageInspection, ServiceMethod } from "@hiraya-team/apps-contracts";
-import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "./sandbox";
+import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_DOCUMENT_MEDIA_CSP, TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "./sandbox";
 import { terminateSandboxNavigation } from "./navigation";
 
 function host() {
@@ -232,11 +232,13 @@ describe("app runtime", () => {
     expect(SANDBOX_FLAGS).toBe("allow-scripts allow-downloads allow-forms");
     expect(SANDBOX_FLAGS).not.toContain("allow-popups");
     expect(SANDBOX_FLAGS).not.toContain("allow-top-navigation");
-    expect(TRUSTED_MARKDOWN_CSP).toContain("img-src data: blob: https: http:");
-    expect(TRUSTED_MARKDOWN_CSP).toContain("connect-src 'none'");
-    expect(TRUSTED_MARKDOWN_FLAGS).toContain("allow-popups-to-escape-sandbox");
-    expect(trustedMediaCsp("https://objects.test")).toContain("media-src data: blob: https://objects.test");
-    expect(trustedMediaCsp("https://objects.test")).toContain("connect-src 'none'");
+    expect(TRUSTED_DOCUMENT_MEDIA_CSP).toContain("img-src data: blob: https: http:");
+    expect(TRUSTED_DOCUMENT_MEDIA_CSP).toContain("connect-src 'none'");
+    expect(TRUSTED_DOCUMENT_MEDIA_FLAGS).toContain("allow-popups-to-escape-sandbox");
+    expect(TRUSTED_DOCUMENT_MEDIA_FLAGS).not.toContain("allow-top-navigation");
+    expect(trustedDocumentMediaCsp("https://objects.test")).toContain("media-src data: blob: https://objects.test");
+    expect(trustedDocumentMediaCsp("https://objects.test")).toContain("img-src data: blob: https: http:");
+    expect(trustedDocumentMediaCsp("https://objects.test")).toContain("connect-src 'none'");
   });
 
   test("injects CSP, foundation styles, and the UI runtime before package scripts", () => {

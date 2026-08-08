@@ -528,6 +528,42 @@ test("opens an imported RTF document in the document viewer", async ({ page }) =
   expect(cycleErrors).toEqual([]);
 });
 
+test("opens GFM Markdown with safe relative and external images in the document viewer", async ({ page }) => {
+  await openLocalDesktop(page);
+  const actions = page.getByRole("toolbar", { name: "File actions" });
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill("Markdown preview");
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: "Markdown preview" }).dblclick();
+
+  const folder = page.getByRole("dialog", { name: "Markdown preview" });
+  const chooser = page.waitForEvent("filechooser");
+  await folder.getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles([
+    { name: "pixel.png", mimeType: "image/png", buffer: pngFile },
+    {
+      name: "README.md",
+      mimeType: "text/markdown",
+      buffer: Buffer.from("# GFM preview\n\n~~complete~~\n\n- [x] Safe task\n\n| File | State |\n| --- | --- |\n| README | ready |\n\n![Local pixel](pixel.png)\n\n![Remote pixel](https://example.com/pixel.png)\n\n<script>window.markdownExecuted = true</script>"),
+    },
+  ]);
+
+  await folder.locator(".folder-explorer__row").filter({ hasText: "README.md" }).dblclick();
+  const viewer = page.getByRole("dialog", { name: "Document & Media Viewer" });
+  const frame = viewer.frameLocator("iframe");
+  await expect(frame.getByLabel("Markdown preview")).toBeVisible({ timeout: 30_000 });
+  await expect(frame.locator("del")).toHaveText("complete");
+  await expect(frame.locator("table")).toContainText("README");
+  await expect(frame.locator('input[type="checkbox"]')).toBeChecked();
+  await expect(frame.getByAltText("Local pixel")).toHaveAttribute("src", /^blob:/);
+  await expect(frame.getByRole("group", { name: "External image from example.com blocked" })).toBeVisible();
+  await expect(frame.getByLabel("Markdown preview")).toContainText("<script>window.markdownExecuted = true</script>");
+  expect(await frame.locator("body").evaluate(() => "markdownExecuted" in window)).toBe(false);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(frame.getByLabel("Markdown preview")).toBeVisible();
+  await expect(frame.locator("table")).toBeVisible();
+});
+
 test("pastes clipboard URL text as a named Internet Shortcut", async ({ page, context }) => {
   await openLocalDesktop(page);
   await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
