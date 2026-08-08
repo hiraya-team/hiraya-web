@@ -194,7 +194,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open" });
+  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true });
   await expect(editor).toBeVisible();
   await expect(open).toBeVisible();
 
@@ -546,7 +546,12 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
   await app.getByRole("button", { name: "Close Integrated Editor" }).click();
+  const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
+  await expect.poll(async () => await app.isHidden() || await discard.isVisible()).toBe(true);
+  if (await discard.isVisible()) await discard.click();
+  await expect(app).toBeHidden();
 
   await icon.dblclick();
   app = page.getByRole("dialog", { name: "Integrated Editor" });

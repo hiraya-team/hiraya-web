@@ -78,7 +78,7 @@ test("public desktop preserves positions and navigates to a non-Home area", asyn
   await expect(navigator).toBeHidden();
   await expect(page.getByRole("button", { name: /Open public desktop area navigator/ })).toBeFocused();
   await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
-  await navigator.getByRole("button", { name: /1 right of Home/ }).click();
+  await navigator.getByRole("button", { name: "Go to Right area" }).click();
   await expect(page.getByRole("button", { name: "Public document 2.txt, text/plain" })).toBeVisible();
 });
 
