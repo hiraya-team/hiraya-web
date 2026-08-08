@@ -222,13 +222,14 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
         },
       },
     };
+    const commands = new RuntimeCommandContributions(options.commandService, id, (commandId) => dispatcher.emit("commands.invoked", { id: commandId }));
     const dispatcher = new RpcDispatcher({
       permissions: effectivePermissions,
       host: runtimeHost,
       files,
-      commands: new RuntimeCommandContributions(options.commandService, appPackage.manifest.id, (commandId) => dispatcher.emit("commands.invoked", { id: commandId })),
+      commands,
     });
-    const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, ...(systemTarget ? { systemTarget } : {}) };
+    const app: SandboxApp = { ...base, kind: "sandbox", packageEntryId: install.packageEntryId, title: appPackage.manifest.name, dirty: false, install, package: appPackage, dispatcher, files, commands, ...(systemTarget ? { systemTarget } : {}) };
     pendingInstanceId = null;
     pendingHost = null;
     return { kind: "created", app, shouldFocus, systemTarget };

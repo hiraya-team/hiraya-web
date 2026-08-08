@@ -8,7 +8,7 @@
     "test": "bun test src/editor.test.ts"
   },
   "dependencies": {
-    "@hiraya-team/apps-sdk": "2.0.0",
+    "@hiraya-team/apps-sdk": "2.1.0",
     "@hiraya/system-apps-shared": "workspace:*"
   },
   "devDependencies": {

@@ -10,7 +10,7 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@hiraya-team/apps-contracts": "2.0.0",
+    "@hiraya-team/apps-contracts": "2.1.0",
     "react": "^19.1.0"
   }
 }

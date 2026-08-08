@@ -206,7 +206,7 @@ export function AppWindow({
     style={style}
     onPointerDown={() => { if (!focused) onFocus(id); }}
   >
-    {(windowed || !hideFocusedHeader) && <header
+    {!hideFocusedHeader && <header
       className="app-window__header"
       data-window-drag-handle
       onDoubleClick={(event) => {
@@ -218,15 +218,19 @@ export function AppWindow({
       onPointerCancel={(event) => finishInteraction(event, true)}
       onLostPointerCapture={finishInteraction}
     >
-      {typeof children === "function" && <div ref={setHeaderLeadingElement} className="app-window__header-leading" data-window-no-drag />}
-      <div className="app-window__title-area">{titleArea ?? <h2 id={titleId} className="app-window__title">{title}</h2>}</div>
-      {(headerContent || typeof children === "function") && <div ref={setHeaderActionsElement} className="app-window__header-content" data-window-no-drag>{headerContent}</div>}
       <div className="app-window__controls" data-window-no-drag>
         {!windowed ? <>
           {onShowDesktop && <button className="app-window__control app-window__mobile-action" type="button" onClick={onShowDesktop}><ArrowLeft /> <span>{backLabel}</span></button>}
           {onSwitchWindow && <button className="app-window__control app-window__mobile-action" type="button" onClick={onSwitchWindow}><SquaresFour /> <span>Switch Window</span></button>}
           {onClose && <button className="app-window__control app-window__mobile-action app-window__control--close" type="button" onClick={() => onClose(id)}><X /> <span>Close</span></button>}
         </> : <>
+          {onClose && <button className="app-window__control app-window__control--close" type="button" onClick={() => onClose(id)} aria-label={`Close ${title}`}><X size={16} /></button>}
+          {onMinimize && <button className="app-window__control app-window__control--minimize" type="button" onClick={() => onMinimize(id)} aria-label={`Minimize ${title}`}><Minus size={16} /></button>}
+          {onToggleMaximize && <button className="app-window__control app-window__control--maximize" type="button" data-window-control={maximized ? "restore" : "maximize"} data-window-id={id} onClick={(event) => {
+            const restoreFocus = event.currentTarget === document.activeElement;
+            onToggleMaximize(id);
+            if (restoreFocus && !maximized) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-window-control="restore"][data-window-id="${CSS.escape(id)}"]`)?.focus());
+          }} aria-label={`${maximized ? "Restore" : "Maximize"} ${title}`}>{maximized ? <ArrowsIn size={16} /> : <ArrowsOut size={16} />}</button>}
           {canMoveArea && onMoveArea && <div className="app-window__menu-wrap">
             <button ref={windowMenuButtonRef} className="app-window__control" type="button" aria-label={`Window actions for ${title}`} aria-haspopup="menu" aria-expanded={windowMenuOpen} onClick={() => setWindowMenuOpen((open) => !open)}><CaretDown size={15} /></button>
             {windowMenuOpen && <div ref={windowMenuRef} className="app-window__menu" role="menu" onKeyDown={(event) => {
@@ -248,11 +252,11 @@ export function AppWindow({
               </>}
             </div>}
           </div>}
-          {onMinimize && <button className="app-window__control app-window__control--minimize" type="button" onClick={() => onMinimize(id)} aria-label={`Minimize ${title}`}><Minus size={16} /></button>}
-          {onToggleMaximize && <button className="app-window__control app-window__control--maximize" type="button" onClick={() => onToggleMaximize(id)} aria-label={`${maximized ? "Restore" : "Maximize"} ${title}`}>{maximized ? <ArrowsIn size={16} /> : <ArrowsOut size={16} />}</button>}
-          {onClose && <button className="app-window__control app-window__control--close" type="button" onClick={() => onClose(id)} aria-label={`Close ${title}`}><X size={16} /></button>}
         </>}
       </div>
+      {typeof children === "function" && <div ref={setHeaderLeadingElement} className="app-window__header-leading" data-window-no-drag />}
+      <div className="app-window__title-area">{titleArea ?? <h2 id={titleId} className="app-window__title">{title}</h2>}</div>
+      {(headerContent || typeof children === "function") && <div ref={setHeaderActionsElement} className="app-window__header-content" data-window-no-drag>{headerContent}</div>}
     </header>}
     <div className="app-window__content">{typeof children === "function" ? children(headerElements) : children}</div>
     {windowed && RESIZE_DIRECTIONS.map((direction) => <div

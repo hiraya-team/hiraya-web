@@ -3,7 +3,7 @@
   "uiRuntime": 1,
   "id": "app.hiraya.text-editor",
   "name": "Integrated Editor",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "entrypoint": "index.html",
   "description": "An integrated text editor and read-only preview for other files.",
   "permissions": ["files:read", "files:write", "dialogs", "window", "commands", "theme", "storage"],

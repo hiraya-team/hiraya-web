@@ -1,6 +1,10 @@
-import type { ReactNode, Ref } from "react";
+import { useSyncExternalStore, type ReactNode, type Ref } from "react";
+import { createPortal } from "react-dom";
+import { DotsThree } from "@phosphor-icons/react";
+import type { CommandId } from "../../apps/commands";
 import { builtinAppWindow } from "../../apps/registry";
 import { AppWindow, type AppWindowHeaderElements, type AppWindowProps } from "../../components/AppWindow";
+import { MobileHeaderMenu } from "../../components/MobileHeaderMenu";
 import { areaWorldOrigin } from "../../ui/area-camera";
 import { projectLogicalPosition, segmentKey, type SurfaceSegment } from "../../ui/desktop-geometry";
 import { MERGE_APP_WINDOW, type RunningApp } from "./model";
@@ -20,11 +24,12 @@ type WindowLayerProps = WindowCallbacks & {
   transitionSegmentKeys: ReadonlySet<string>;
   titleForApp: (app: RunningApp) => string;
   isMaximized: (app: RunningApp) => boolean;
+  onExecuteCommand: (id: CommandId) => void;
   onSwitchWindow: () => void;
   children: (app: RunningApp, headerElements: AppWindowHeaderElements) => ReactNode;
 };
 
-export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, windowed, mobileHeaderActionsElement, restingCamera, trackRef, transitionSegmentKeys, titleForApp, isMaximized, onSwitchWindow, children, ...windowCallbacks }: WindowLayerProps) {
+export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, windowed, mobileHeaderActionsElement, restingCamera, trackRef, transitionSegmentKeys, titleForApp, isMaximized, onExecuteCommand, onSwitchWindow, children, ...windowCallbacks }: WindowLayerProps) {
   return <div className="desktop-area-stage desktop-area-stage--windows">
     <div
       className={`app-window-layer${windowed ? " desktop-area-track" : ""}`}
@@ -41,6 +46,8 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
         const origin = areaWorldOrigin(projection.segment, desktopSize);
         const titleId = `running-app-title-${index}`;
         const title = titleForApp(app);
+        const maximized = isMaximized(app);
+        const integrated = !windowed || maximized;
         const appWindow = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
         return <div className="desktop-window-segment" key={app.id} style={windowed ? { left: origin.x, top: origin.y, width: desktopSize.width, height: desktopSize.height } : undefined}>
           <AppWindow
@@ -57,17 +64,39 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
             segmentActive={segmentActive}
             segmentVisible={windowed ? segmentVisible : segmentActive}
             windowed={windowed}
-            hideFocusedHeader
-            externalHeaderElements={focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
-            maximized={isMaximized(app)}
+            hideFocusedHeader={integrated}
+            externalHeaderElements={integrated && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
+            maximized={maximized}
             canMoveArea={windowed}
             onSwitchWindow={onSwitchWindow}
             titleArea={<h2 id={titleId}>{title}</h2>}
           >
-            {(headerElements) => children(app, headerElements)}
+            {(headerElements) => <>
+              {app.kind === "sandbox" && <RuntimeAppActions app={app} target={headerElements.actions} onExecute={onExecuteCommand} />}
+              {children(app, headerElements)}
+            </>}
           </AppWindow>
         </div>;
       })}
     </div>
   </div>;
+}
+
+function RuntimeAppActions({ app, target, onExecute }: { app: Extract<RunningApp, { kind: "sandbox" }>; target: HTMLDivElement | null; onExecute: (id: CommandId) => void }) {
+  const commands = useSyncExternalStore(app.commands.subscribe, app.commands.getPromoted, app.commands.getPromoted);
+  const primary = commands.at(-1);
+  if (!target || !primary) return null;
+  const secondary = commands.slice(Math.max(0, commands.length - 3), -1);
+  return createPortal(
+    <div className="runtime-app-actions" aria-label={`${app.title} actions`}>
+      {commands.length > 1 && <div className="runtime-app-actions__overflow" data-always={commands.length > 3 || undefined}>
+        <MobileHeaderMenu label={`More ${app.title} actions`} icon={<DotsThree size={18} />}>
+          {(dismiss) => commands.slice(0, -1).map((command) => <button type="button" key={command.id} disabled={!command.enabled} onClick={() => { dismiss(); onExecute(command.id); }}>{command.title}{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>)}
+        </MobileHeaderMenu>
+      </div>}
+      {secondary.map((command) => <button className="runtime-app-action runtime-app-action--secondary" type="button" key={command.id} disabled={!command.enabled} title={command.shortcut ? `${command.title} (${command.shortcut})` : command.title} onClick={() => onExecute(command.id)}>{command.title}</button>)}
+      <button className="runtime-app-action runtime-app-action--primary" type="button" disabled={!primary.enabled} title={primary.shortcut ? `${primary.title} (${primary.shortcut})` : primary.title} onClick={() => onExecute(primary.id)}>{primary.title}</button>
+    </div>,
+    target,
+  );
 }

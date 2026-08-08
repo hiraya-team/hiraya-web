@@ -59,15 +59,25 @@ describe("app command contributions", () => {
   test("namespaces runtime commands, emits local IDs, and disposes replacements", async () => {
     const service = new CommandService<object>();
     const invoked: string[] = [];
-    const contributions = new RuntimeCommandContributions(service, "test.editor", (id) => invoked.push(id));
-    contributions.set([{ id: "format-document", title: "Format" }]);
-    expect(service.list({}).map(({ id }) => id)).toEqual([runtimeCommandId("test.editor", "format-document")]);
-    expect(await service.execute(runtimeCommandId("test.editor", "format-document"), {})).toBe(true);
+    const contributions = new RuntimeCommandContributions(service, "window:1", (id) => invoked.push(id));
+    let changes = 0;
+    contributions.subscribe(() => { changes += 1; });
+    contributions.set([{ id: "format-document", title: "Format", promoted: true }, { id: "save", title: "Save", shortcut: "Ctrl+S", promoted: true }]);
+    expect(service.list({}).map(({ id }) => id)).toEqual([runtimeCommandId("window:1", "format-document"), runtimeCommandId("window:1", "save")]);
+    expect(contributions.getPromoted()).toEqual([
+      { id: runtimeCommandId("window:1", "format-document"), title: "Format", shortcut: undefined, enabled: true },
+      { id: runtimeCommandId("window:1", "save"), title: "Save", shortcut: "Ctrl+S", enabled: true },
+    ]);
+    expect(await service.execute(runtimeCommandId("window:1", "format-document"), {})).toBe(true);
     expect(invoked).toEqual(["format-document"]);
+    expect(() => contributions.set([{ id: "duplicate", title: "One", promoted: true }, { id: "duplicate", title: "Two", promoted: true }])).toThrow("Duplicate app command");
+    expect(contributions.getPromoted()).toEqual([]);
     contributions.set([{ id: "save-all", title: "Save all", enabled: false }]);
-    expect(service.list({}).map(({ id, enabled }) => [id, enabled])).toEqual([[runtimeCommandId("test.editor", "save-all"), false]]);
+    expect(service.list({}).map(({ id, enabled }) => [id, enabled])).toEqual([[runtimeCommandId("window:1", "save-all"), false]]);
+    expect(contributions.getPromoted()).toEqual([]);
     contributions.close();
     expect(service.list({})).toEqual([]);
+    expect(changes).toBe(3);
   });
 
   test("preserves palette order, visibility, and mutation permissions", async () => {

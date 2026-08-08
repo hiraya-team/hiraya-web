@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { ArrowsClockwise, Bell, ClockCounterClockwise, DownloadSimple, GitMerge, SpinnerGap, Trash, Tray, UploadSimple, WarningCircle } from "@phosphor-icons/react";
 import type { AppNotification } from "../../apps/host";
 import { NotificationCard } from "../../components/NotificationCard";
@@ -42,6 +42,10 @@ type Props = {
   updateBlocked: boolean;
   announcement: string;
   canViewActivity: boolean;
+  open: boolean;
+  hideTrigger?: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRestoreFocus?: () => void;
   onRetrySyncIssue: (record: OutboxRecord) => void;
   onDiscardSyncIssue: (record: OutboxRecord) => void;
   onDismissMessage: (id: number) => void;
@@ -77,7 +81,10 @@ export function ShellNotifications(props: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const [open, setOpen] = useState(false);
+  const open = props.open;
+  const setOpen = props.onOpenChange;
+  const { onRestoreFocus } = props;
+  const restoreFocus = useCallback(() => onRestoreFocus?.() ?? triggerRef.current?.focus(), [onRestoreFocus]);
   const [unread, setUnread] = useState<ReadonlySet<string>>(new Set());
   const knownItemsRef = useRef<ReadonlySet<string>>(new Set());
   const itemOrderRef = useRef<readonly string[]>([]);
@@ -113,8 +120,8 @@ export function ShellNotifications(props: Props) {
   useEffect(() => {
     if (!open) return;
     const unregisterDismiss = registerTransientDismiss(() => {
-      setOpen(false);
-      requestAnimationFrame(() => triggerRef.current?.focus());
+        setOpen(false);
+        requestAnimationFrame(restoreFocus);
     });
     const handlePointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
@@ -123,7 +130,7 @@ export function ShellNotifications(props: Props) {
       if (event.key !== "Escape") return;
       event.preventDefault();
       setOpen(false);
-      triggerRef.current?.focus();
+      restoreFocus();
     };
     document.addEventListener("pointerdown", handlePointerDown);
     document.addEventListener("keydown", handleKeyDown);
@@ -132,7 +139,7 @@ export function ShellNotifications(props: Props) {
       document.removeEventListener("pointerdown", handlePointerDown);
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [open]);
+  }, [open, restoreFocus, setOpen]);
 
   useEffect(() => {
     if (open) requestAnimationFrame(() => panelRef.current?.querySelector<HTMLElement>("button:not(:disabled)")?.focus());
@@ -151,7 +158,7 @@ export function ShellNotifications(props: Props) {
         <span>{copyLabel}</span>
         <progress max={Math.max(1, copyDownload?.totalBytes ?? 0)} value={copyAccessPending ? undefined : copyTransferredBytes} aria-label="Copy download progress" />
       </div>}
-      <button
+      {!props.hideTrigger && <button
         ref={triggerRef}
         className="notification-center__trigger"
         type="button"
@@ -164,11 +171,11 @@ export function ShellNotifications(props: Props) {
       >
         <Bell size={18} weight={unread.size ? "fill" : "regular"} aria-hidden="true" />
         {unread.size > 0 && <span className="notification-center__badge" aria-hidden="true">{unread.size > 99 ? "99+" : unread.size}</span>}
-      </button>
+      </button>}
       {open && <div ref={panelRef} id={panelId} className="notification-center__panel" role="dialog" aria-label="Notifications">
         <header className="notification-center__header">
           <div><strong>Notifications</strong><span>{total ? `${total} active` : "You're all caught up"}</span></div>
-          <button type="button" aria-label="Close notifications" onClick={() => { setOpen(false); requestAnimationFrame(() => triggerRef.current?.focus()); }}>Close</button>
+          <button type="button" aria-label="Close notifications" onClick={() => { setOpen(false); requestAnimationFrame(restoreFocus); }}>Close</button>
         </header>
         <div className="notification-center__list">
           {orderedItems.map((item) => {

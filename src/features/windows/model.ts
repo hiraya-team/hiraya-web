@@ -2,6 +2,7 @@ import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { RpcDispatcher } from "@hiraya/app-runtime";
 import type { FileService } from "../../apps/host";
 import type { InstalledApp } from "../../apps/installed-apps";
+import type { AppCommandContext, RuntimeCommandContributions } from "../../apps/commands";
 import { extractBuiltinAppTarget } from "../../apps/registry";
 import type { SystemAppTarget } from "../../apps/types";
 import type { BuiltinAppWindow } from "../../apps/types";
@@ -17,7 +18,7 @@ export type SettingsApp = BaseRunningApp & { kind: "settings" };
 export type StoreApp = BaseRunningApp & { kind: "store" };
 export type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
 export type MergeApp = BaseRunningApp & { kind: "merge"; operationId: string };
-export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; systemTarget?: SystemAppTarget };
+export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; commands: RuntimeCommandContributions<AppCommandContext>; systemTarget?: SystemAppTarget };
 export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | MergeApp | SandboxApp;
 
 export const MERGE_APP_WINDOW: BuiltinAppWindow = { width: 960, height: 700, minWidth: 420, minHeight: 360 };
