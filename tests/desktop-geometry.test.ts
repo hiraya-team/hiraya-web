@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
-import { arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis } from "../src/ui/desktop-geometry";
+import { arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis, snapShellItemBounds } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -64,6 +64,30 @@ describe("responsive desktop geometry", () => {
     expect(clampShellItemBounds({ x: 480, y: 480 }, 100, 100, { width: 500, height: 500 })).toEqual({ x: 400, y: 400, width: 100, height: 100 });
     const folder: DesktopEntry = { kind: "folder", id: "group", name: "Group", parentId: null, modifiedAt: 1, position: { x: 20, y: 30 } };
     expect(desktopShellItemObstacles([{ id: "clock", kind: "clock", x: 450, y: 20, width: 200, height: 120 }], [{ folderId: folder.id, width: 320, height: 240 }], [folder], { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([{ x: 300, y: 20, width: 200, height: 120 }, { x: 20, y: 30, width: 320, height: 240 }]);
+  });
+
+  test("snaps shell item positions and dimensions to the selected grid", () => {
+    expect(snapShellItemBounds({ x: 35, y: 35 }, 220, 150, { width: 500, height: 500 })).toEqual({ x: 46, y: 46, width: 216, height: 144 });
+    expect(snapShellItemBounds({ x: 480, y: 480 }, 220, 150, { width: 500, height: 500 })).toEqual({ x: 262, y: 334, width: 216, height: 144 });
+  });
+
+  test("cascades icons around a fixed multi-cell obstacle", () => {
+    const entries = [file("first", 22, 22), file("second", 22, 142), file("unrelated", 262, 22)];
+    expect(arrangeDesktopAroundObstacle(entries, { x: 22, y: 22, width: 98, height: 102 }, { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([
+      { entryId: "first", position: { x: 22, y: 142 } },
+      { entryId: "second", position: { x: 22, y: 262 } },
+    ]);
+    expect(arrangeDesktopAroundObstacle(entries, { x: 150, y: 300, width: 80, height: 80 }, { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([]);
+  });
+
+  test("rejects a fixed obstacle when displaced icons have nowhere to go", () => {
+    expect(arrangeDesktopAroundObstacle([file("blocked")], { x: 0, y: 0, width: 130, height: 250 }, { column: 0, row: 0 }, { width: 220, height: 260 })).toBeNull();
+  });
+
+  test("wraps displaced icons to free space earlier in the grid", () => {
+    expect(arrangeDesktopAroundObstacle([file("last", 382, 382)], { x: 360, y: 360, width: 140, height: 140 }, { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([
+      { entryId: "last", position: { x: 382, y: 22 } },
+    ]);
   });
 
   test("packs the current area in visual order without moving neighboring areas", () => {

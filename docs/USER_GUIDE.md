@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Arrange widgets with desktop icons.** Widgets now snap to the selected desktop grid, reserve their occupied space, and move nearby icons out of the way. Widget controls stay hidden until the widget is selected, leaving more room for its content.
 - **Keep app actions in the window chrome.** Store and bundled system apps now place important file and app-wide actions such as **Open**, **Save**, **Clear**, and **Fullscreen** in the window title bar or global header. Contextual editing, navigation, and destructive controls remain beside the content they affect.
 - **Preview Markdown with documents and media.** Markdown files now open in **Document & Media Viewer** with tables, task lists, strikethrough, automatic links, safe relative images, and the existing external-image controls. Existing **Markdown Preview** windows and file preferences move to the combined viewer automatically.
 - **Add widgets and icon groups to the desktop.** Right-click or long-press the desktop to add **Clock**, **Calendar**, or **Status** widgets, or create an icon group backed by a real folder. Widgets and groups can be moved, resized, removed without deleting folder contents, and viewed read-only on whole public desktops.

@@ -5,6 +5,7 @@ export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
 export const GRID_ORIGIN = { x: 22, y: 22 } as const;
 export const GRID_STEP = { x: 104, y: 112 } as const;
 export const DEFAULT_ICON_METRICS: DesktopIconMetrics = { ...FILE_ICON_SIZE, stepX: GRID_STEP.x, stepY: GRID_STEP.y };
+export const MIN_SHELL_ITEM_SIZE = { width: 180, height: 112 } as const;
 
 const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
 
@@ -172,6 +173,62 @@ export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntry
     .sort((a, b) => a.entryId.localeCompare(b.entryId));
 }
 
+export function arrangeDesktopAroundObstacle(entries: readonly DesktopEntry[], obstacle: DesktopObstacle, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
+  const roots = entries
+    .filter((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(targetSegment))
+    .sort((a, b) => {
+      const left = projectLogicalPosition(a.position, size).local;
+      const right = projectLogicalPosition(b.position, size).local;
+      return left.x - right.x || left.y - right.y || a.id.localeCompare(b.id);
+    });
+  const byId = new Map(roots.map((entry) => [entry.id, entry]));
+  const positions = new Map<string, EntryPosition>();
+  const settled = new Set<string>();
+  const queue = roots.filter((entry) => positionOverlapsObstacles(projectLogicalPosition(entry.position, size).local, metrics, [obstacle])).map((entry) => entry.id);
+  const queued = new Set(queue);
+  const allObstacles = [obstacle, ...obstacles];
+  const overlaps = (position: EntryPosition, otherPosition: EntryPosition) => positionsOverlap(position, metrics, otherPosition, metrics);
+
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (settled.has(id)) continue;
+    const entry = byId.get(id)!;
+    const origin = projectLogicalPosition(entry.position, size).local;
+    const maxX = size.width - metrics.width;
+    const maxY = size.height - metrics.height;
+    const startX = snapAxis(origin.x, GRID_ORIGIN.x, gridSize, maxX);
+    const startY = snapAxis(origin.y, GRID_ORIGIN.y, gridSize, maxY);
+    const columnStep = Math.ceil(metrics.width / gridSize) * gridSize;
+    let logical: EntryPosition | undefined;
+    const forwardColumns = [...Array(Math.floor((maxX - startX) / columnStep) + 1)].map((_, index) => startX + index * columnStep);
+    const wrappedColumns = [...Array(Math.max(0, Math.floor((startX - GRID_ORIGIN.x - 1) / columnStep) + 1))].map((_, index) => GRID_ORIGIN.x + index * columnStep);
+    const orderedColumns = [...forwardColumns, ...wrappedColumns];
+    for (const x of orderedColumns) {
+      if (logical) break;
+      const rows = [...Array(Math.floor((maxY - GRID_ORIGIN.y) / gridSize) + 1)].map((_, index) => GRID_ORIGIN.y + index * gridSize);
+      const orderedRows = x === startX ? [...rows.filter((y) => y > startY), ...rows.filter((y) => y <= startY)] : rows;
+      for (const y of orderedRows) {
+        const local = { x, y };
+        const candidate = restoreLogicalPosition(local, targetSegment, size);
+        if (allObstacles.every((item) => !positionsOverlap(local, metrics, item, item)) && [...settled].every((settledId) => !overlaps(candidate, positions.get(settledId)!))) {
+          logical = candidate;
+          break;
+        }
+      }
+    }
+    if (!logical) return null;
+    positions.set(id, logical);
+    settled.add(id);
+    for (const neighbor of roots) {
+      if (settled.has(neighbor.id) || queued.has(neighbor.id) || !overlaps(logical, neighbor.position)) continue;
+      queued.add(neighbor.id);
+      queue.push(neighbor.id);
+    }
+  }
+
+  return [...positions].map(([entryId, position]) => ({ entryId, position })).sort((a, b) => a.entryId.localeCompare(b.entryId));
+}
+
 export function clampShellItemBounds(position: EntryPosition, width: number, height: number, area: { width: number; height: number }): DesktopObstacle {
   const nextWidth = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, width, area.width));
   const nextHeight = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, height, area.height));
@@ -181,6 +238,16 @@ export function clampShellItemBounds(position: EntryPosition, width: number, hei
     width: nextWidth,
     height: nextHeight,
   };
+}
+
+export function snapShellItemBounds(position: EntryPosition, width: number, height: number, area: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE): DesktopObstacle {
+  const snappedWidth = Math.max(Math.ceil(MIN_SHELL_ITEM_SIZE.width / gridSize), Math.round(width / gridSize)) * gridSize;
+  const snappedHeight = Math.max(Math.ceil(MIN_SHELL_ITEM_SIZE.height / gridSize), Math.round(height / gridSize)) * gridSize;
+  const bounds = clampShellItemBounds(position, snappedWidth, snappedHeight, area);
+  return clampShellItemBounds({
+    x: snapAxis(bounds.x, GRID_ORIGIN.x, gridSize, Math.max(0, area.width - bounds.width)),
+    y: snapAxis(bounds.y, GRID_ORIGIN.y, gridSize, Math.max(0, area.height - bounds.height)),
+  }, bounds.width, bounds.height, area);
 }
 
 export function desktopShellItemObstacles(widgets: readonly DesktopWidget[], groups: readonly DesktopIconGroup[], entries: readonly DesktopEntry[], segment: SurfaceSegment, area: { width: number; height: number }) {

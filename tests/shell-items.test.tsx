@@ -14,6 +14,7 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
     activeSegment={{ column: 0, row: 0 }}
     areaSize={{ width: 1000, height: 700 }}
     status={{ syncStatus: "offline", isSyncing: false, outboxCount: 2, quota: null }}
+    selectedWidgetId="status"
     onOpen={() => undefined}
     onRemoveWidget={() => undefined}
     onUngroup={() => undefined}
@@ -22,6 +23,7 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
   expect(markup).toContain("2 queued changes");
   expect(markup).toContain("Open in Explorer");
   expect(markup).toContain('aria-label="Remove Status"');
+  expect(markup).not.toContain('<header class="shell-item__header"><button class="shell-item__drag" type="button" aria-label="Move Status"');
   expect(markup).toContain('aria-label="Ungroup Projects"');
   expect(markup).toContain('data-entry-drop-parent="folder"');
 });
