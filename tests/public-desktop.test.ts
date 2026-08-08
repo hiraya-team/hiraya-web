@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, publicAuthorityFromPath } from "../src/lib/public-desktop";
 import { resolvePublicLinkedEntry } from "../src/features/public-desktop/controller";
+import { remoteDesktopSnapshot } from "../src/lib/desktop-state";
 
 const file = {
   kind: "file" as const,
@@ -141,18 +142,54 @@ describe("public desktop", () => {
     expect(source).toContain("responsiveDesktop(publicEntries, iconArea, iconMetrics)");
     expect(source).toContain("<AreaSwitcher");
     expect(source).toContain("useMediaQuery(WINDOWED_DESKTOP_QUERY)");
-    expect(source).toContain("initialWindowBounds(desktopSize, options)");
+    expect(source).toContain("open.runtime.app.bounds");
     expect(source).toContain("windowed={windowed}");
     expect(source).toContain("const wholeDesktop = !authority.itemAlias;");
   });
 
-  test("guards public preview completion against a newer open request", async () => {
+  test("guards public app launch completion against a newer open request", async () => {
     const controller = await Bun.file(new URL("../src/features/public-desktop/controller.ts", import.meta.url)).text();
     expect(controller).toContain("const generation = downloadOnly ? null : ++fileLoadGenerationRef.current;");
-    expect(controller).toContain("fileLoadGenerationRef.current === generation");
     expect(controller).toContain("fileLoadGenerationRef.current !== generation");
     expect(controller).toContain("next.publishedRootId");
     expect(controller).toContain('setOpenState({ kind: "folder", folderId: root.id })');
+  });
+
+  test("launches only bundled defaults through a read-only public adapter", async () => {
+    const [runtime, publicSource] = await Promise.all([
+      Bun.file(new URL("../src/features/public-desktop/app-runtime.ts", import.meta.url)).text(),
+      Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text(),
+    ]);
+    expect(runtime).toContain("systemDefaultAppId(options.file)");
+    expect(runtime).toContain("SYSTEM_APP_CATALOG.find");
+    expect(runtime).toContain('credentials: "omit"');
+    expect(runtime).toContain("canMutate: () => false");
+    expect(runtime).toContain('writeReason: "read-only"');
+    expect(runtime).not.toContain("platform/storage");
+    expect(runtime).not.toContain('lib/sync');
+    expect(publicSource).toContain("<PublicAppFrame");
+    expect(publicSource).not.toContain("<FileWindow");
+  });
+
+  test("builds app snapshots from only the public shell projection", () => {
+    const remote = {
+      schemaVersion: 2,
+      id: "desktop",
+      name: "Public",
+      owner: { id: "owner", displayName: "Owner", avatar: null },
+      entries: [
+        { ...file, revision: 2, contentRevision: 3 },
+        { ...file, id: "hidden", name: ".hidden", revision: 4, contentRevision: 5 },
+      ],
+      layout: { snapToGrid: false, gridSize: 24, wallpaper: { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#000000", overlayOpacity: 0 } },
+      layoutRevision: 1,
+      editorSettings: { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true },
+      settingsRevision: 1,
+      appearance: { selectedThemeId: "hiraya-dusk", selectionRevision: 1, customThemes: [] },
+    } as Parameters<typeof remoteDesktopSnapshot>[0];
+    const snapshot = remoteDesktopSnapshot(remote, new Set([file.id]));
+    expect(snapshot.entries.map((entry) => entry.id)).toEqual([file.id]);
+    expect(snapshot.sync.contentRevisions).toEqual({ [file.id]: 3 });
   });
 
   test("resolves linked files within the public desktop only", () => {

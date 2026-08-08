@@ -58,6 +58,13 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       manifest: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("/node_modules/") && (id.includes("/@codemirror/") || id.includes("/codemirror/") || id.includes("/@lezer/"))) return "editor-runtime";
+          },
+        },
+      },
     },
   };
 });

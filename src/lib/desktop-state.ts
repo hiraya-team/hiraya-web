@@ -1,6 +1,6 @@
-import type { DesktopLayout, EditorSettings } from "../types";
-import type { DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
-import { assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision } from "./contracts";
+import type { DesktopEntry, DesktopLayout, EditorSettings } from "../types";
+import type { DesktopStateSnapshot, DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
+import { assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision, type RemoteDesktopState, type RemoteEntry } from "./contracts";
 import { parseThemeState } from "./themes";
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true };
@@ -51,4 +51,42 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
 
 export function desktopStateLayout(state: PersistedDesktopState): DesktopLayout {
   return { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper };
+}
+
+function localEntry(entry: RemoteEntry): DesktopEntry {
+  const { revision: _revision, contentRevision: _contentRevision, ...local } = entry;
+  void _revision;
+  void _contentRevision;
+  return local;
+}
+
+export function remoteDesktopSnapshot(remote: RemoteDesktopState, includedEntryIds?: ReadonlySet<string>): DesktopStateSnapshot {
+  const entries = includedEntryIds ? remote.entries.filter((entry) => includedEntryIds.has(entry.id)) : remote.entries;
+  const entryRevisions: Record<string, number> = {};
+  const contentRevisions: Record<string, number> = {};
+  const themeRevisions: Record<string, number> = {};
+  for (const entry of entries) {
+    entryRevisions[entry.id] = entry.revision;
+    if (entry.kind === "file") contentRevisions[entry.id] = entry.contentRevision;
+  }
+  for (const theme of remote.appearance.customThemes) themeRevisions[theme.id] = theme.revision;
+  return {
+    entries: entries.map(localEntry),
+    layout: remote.layout,
+    editorSettings: remote.editorSettings,
+    appearance: {
+      selectedThemeId: remote.appearance.selectedThemeId,
+      customThemes: remote.appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, ...(wallpaper ? { wallpaper } : {}) })),
+    },
+    sync: {
+      catalogId: remote.catalogId,
+      catalogRevision: remote.catalogRevision,
+      entryRevisions,
+      contentRevisions,
+      layoutRevision: remote.layoutRevision,
+      settingsRevision: remote.settingsRevision,
+      themeSelectionRevision: remote.appearance.selectionRevision,
+      themeRevisions,
+    },
+  };
 }

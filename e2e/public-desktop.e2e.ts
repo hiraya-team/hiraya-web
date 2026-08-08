@@ -16,8 +16,8 @@ const publicDesktop = {
     position: index === 0 ? { x: 120, y: 84 } : index === 1 ? { x: 1400, y: 84 } : { x: 120, y: 84 + index * 100 },
     mimeType: "text/plain",
     size: 4,
-    revision: 0,
-    contentRevision: 0,
+    revision: 1,
+    contentRevision: 1,
   })),
   layout: { snapToGrid: false, wallpaper: { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#172329", overlayOpacity: 0 } },
   layoutRevision: 0,
@@ -28,7 +28,18 @@ const publicDesktop = {
 
 async function mockPublicDesktop(page: Page) {
 	await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: publicDesktop }));
-	await page.route("**/api/public/desktops/e2e-desk/entries/*/content", (route) => route.fulfill({ body: "test", headers: { "content-type": "text/plain" } }));
+	await page.route("**/api/public/desktops/e2e-desk/entries/*/content?*", (route) => {
+    const requestUrl = new URL(route.request().url());
+    const entryId = requestUrl.pathname.split("/").at(-2)!;
+    return route.fulfill({ json: {
+      entryId,
+      contentRevision: 1,
+      size: 4,
+      sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+      access: { url: `${requestUrl.origin}/__public-content/${entryId}`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+    } });
+  });
+  await page.route("**/__public-content/*", (route) => route.fulfill({ body: "test", headers: { "content-type": "text/plain" } }));
 }
 
 async function overflow(page: Page) {
@@ -89,6 +100,8 @@ test("fine pointers open draggable and resizable public windows", async ({ page 
   await page.getByRole("button", { name: "Public document 1.txt, text/plain" }).dblclick();
   const appWindow = page.locator('[data-app-window="public-view"]');
   await expect(appWindow).toBeVisible();
+  const editor = appWindow.frameLocator('iframe[title="Integrated Editor"]');
+  await expect(editor.getByText("Read-only", { exact: true })).toBeVisible();
   await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
   await expect(appWindow.locator("[data-window-drag-handle]")).toBeVisible();
   await expect(appWindow.locator("[data-window-resize]")).toHaveCount(8);

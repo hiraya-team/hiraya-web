@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Open public files in familiar apps.** Public desktops now use the same bundled default app for each file type as signed-in desktops, while file access and controls remain read-only. Folders continue to open in Explorer, safe internet shortcuts open in a new tab, and public app packages remain download-only.
 - **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Overlapping icons shift down along the selected grid, wrapping to the next column when needed, and the arrangement follows the desktop across devices.
 - **Copy item links from the keyboard.** Select one file or folder on the desktop or in Explorer, then press **Ctrl/⌘ Shift C** to copy its link.
 - **Open cached desktops immediately.** After the first visit, Hiraya now opens the desktop saved in this browser without a loading screen while account checks and server synchronization continue in the background.
@@ -138,7 +139,7 @@ Review installed apps and their permission names in **Applications**. **Uninstal
 
 If an older user-installed app used an ID later reserved for a trusted system app, migration moves the original approval, manifest, digest, and every app-storage record into **Settings > Files & apps > Recovered app data**. Download its JSON export before removing the recovered copy.
 
-Anonymous public read-only desktops continue to use Hiraya's host previews rather than launching sandbox apps. Public sessions do not have the authenticated, account-local app installation and capability context needed to restore app windows safely.
+Anonymous public desktops launch only Hiraya's bundled, verified default apps. They do not load account-installed apps or personal file associations, and their file handles remain scoped to the published entries with every write operation disabled.
 
 ## Export, operator backup, and recovery {#export-backup-and-recovery}
 

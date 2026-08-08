@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { fetchPublicDesktop, fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
-import { fileCapabilities } from "../../ui/file-capabilities";
 import type { DesktopEntry, FileEntry } from "../../types";
+import { reservedFileHandler } from "../../apps/file-associations";
+import { parseInternetShortcut } from "../../lib/internet-shortcut";
+import { withoutDotEntries } from "../../ui/hidden-entries";
+import type { PublicAppRuntime } from "./app-runtime";
 
-export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; blob?: File; error?: string };
+export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: "app-package" | "internet-shortcut"; error?: string };
 
 export function usePublicDesktop(authority: PublicAuthority) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
   const [error, setError] = useState("");
   const [open, setOpenState] = useState<PublicOpenView | null>(null);
   const fileLoadGenerationRef = useRef(0);
+  const runtimeRef = useRef<PublicAppRuntime | null>(null);
   const [downloadGate, setDownloadGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
 	const [wallpaperFailed, setWallpaperFailed] = useState(false);
@@ -35,6 +39,8 @@ export function usePublicDesktop(authority: PublicAuthority) {
     // useEffectEvent callbacks are intentionally non-reactive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authority.desktopAlias, authority.itemAlias]);
+
+  useEffect(() => () => runtimeRef.current?.close(), []);
 
   useEffect(() => {
     setWallpaperUrl("");
@@ -62,23 +68,43 @@ export function usePublicDesktop(authority: PublicAuthority) {
 
 	async function loadFile(file: FileEntry, downloadOnly = false, desktopOverride = desktop) {
     const generation = downloadOnly ? null : ++fileLoadGenerationRef.current;
-    if (!downloadOnly && fileCapabilities(file).preview === "none") {
+    if (!downloadOnly) {
+      runtimeRef.current?.close();
+      runtimeRef.current = null;
+      const reserved = reservedFileHandler(file);
+      if (reserved) {
+        setOpenState({ kind: "file", file, reserved });
+        return;
+      }
       setOpenState({ kind: "file", file });
-      return;
     }
-    if (!downloadOnly) setOpenState({ kind: "file", file });
     try {
 		const contentRevision = desktopOverride?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
-		const mediaPreview = !downloadOnly && /^(?:image|audio|video)\//i.test(file.mimeType);
-		const blob = await fetchPublicFile(authority, file, contentRevision, undefined, mediaPreview ? "preview" : undefined);
       if (downloadOnly) {
+        const blob = await fetchPublicFile(authority, file, contentRevision);
         const url = URL.createObjectURL(blob);
         const anchor = document.createElement("a");
         anchor.href = url;
         anchor.download = file.name;
         anchor.click();
         window.setTimeout(() => URL.revokeObjectURL(url), 0);
-      } else if (fileLoadGenerationRef.current === generation) setOpenState({ kind: "file", file, blob });
+      } else if (desktopOverride) {
+        const { launchPublicFileApp } = await import("./app-runtime");
+        const runtime = await launchPublicFileApp({
+          authority,
+          desktop: desktopOverride,
+          entries: withoutDotEntries(desktopOverride.entries),
+          file,
+          onClose: () => setOpen(null),
+          onOpenEntry: (entry) => entry.kind === "folder" ? setOpen({ kind: "folder", folderId: entry.id }) : void loadFile(entry),
+          onLargeDownload: (reason, gatedFile) => setDownloadGate({ loginUrl: reason.loginUrl, fileName: gatedFile.name }),
+        });
+        if (fileLoadGenerationRef.current !== generation) runtime.close();
+        else {
+          runtimeRef.current = runtime;
+          setOpenState({ kind: "file", file, runtime });
+        }
+      }
     } catch (reason) {
       if (!downloadOnly && fileLoadGenerationRef.current !== generation) return;
       if (reason instanceof LargeDownloadAuthRequiredError) setDownloadGate({ loginUrl: reason.loginUrl, fileName: file.name });
@@ -89,7 +115,26 @@ export function usePublicDesktop(authority: PublicAuthority) {
 
   function setOpen(next: PublicOpenView | null) {
     fileLoadGenerationRef.current += 1;
+    runtimeRef.current?.close();
+    runtimeRef.current = null;
     setOpenState(next);
+  }
+
+  async function openInternetShortcut(file: FileEntry, popup: Window | null) {
+    if (!popup) {
+      setError("The link was blocked by the browser. Allow pop-ups for Hiraya and try again.");
+      return;
+    }
+    popup.opener = null;
+    try {
+      const contentRevision = desktop?.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;
+      const shortcut = parseInternetShortcut(await (await fetchPublicFile(authority, file, contentRevision)).text());
+      popup.location.replace(shortcut.url);
+    } catch (reason) {
+      popup.close();
+      if (reason instanceof LargeDownloadAuthRequiredError) setDownloadGate({ loginUrl: reason.loginUrl, fileName: file.name });
+      else setError(reason instanceof Error ? reason.message : "The internet shortcut could not be opened.");
+    }
   }
 
   async function resolveLinkedFile(from: FileEntry, relativePath: string) {
@@ -118,6 +163,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
     loadFile,
     loadThumbnail,
     resolveLinkedFile,
+    openInternetShortcut,
   };
 }
 
