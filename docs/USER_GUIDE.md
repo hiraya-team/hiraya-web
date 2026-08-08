@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Use Back to move up one level.** On mobile, the system and Hiraya **Back** actions now return to an app's parent page, close an app from its home page, return another desktop area to Home, and require three quick presses before leaving Hiraya from Home.
+- **Use Back to move up one level.** On mobile, the system **Back** action returns to an app's parent page, closes an app from its home page, returns another desktop area to Home, and reliably requires three quick presses before leaving Hiraya from Home, including after reopening Hiraya.
 - **Link directly to every Settings page.** Settings now uses stable addresses for each category and detail page, with embedded sharing and connection controls, direct theme and wallpaper choices, and reliable Back and Forward navigation.
 - **Switch desktops from the full row.** In the desktop and area switcher, the entire desktop row now opens that desktop instead of requiring a click directly on its name.
 - **Keep context-menu actions in place offline.** When a synchronized session loses its connection, **Publish...** remains visible for managers and is greyed out until the connection returns.
