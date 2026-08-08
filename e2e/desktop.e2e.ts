@@ -73,6 +73,23 @@ test("close-window shortcut closes the focused window without claiming the empty
   await expect(settings).toBeHidden();
 });
 
+test("copy-link shortcut copies a deep link for the selected item", async ({ page, context }) => {
+  await openLocalDesktop(page);
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], { origin: new URL(page.url()).origin });
+  const name = `copy-link-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  const entryId = await icon.getAttribute("data-entry-id");
+  await icon.click();
+
+  await page.keyboard.press("Control+Shift+c");
+
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toContain(`/file/${entryId}`);
+  await expect(page.getByText(`Link to ${name} copied`)).toBeVisible();
+});
+
 test("search launches installed apps", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
@@ -245,7 +262,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   await search.locator("input").fill("Integrated Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
   const editor = page.getByRole("dialog", { name: "Integrated Editor" });
-  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open" });
+  const open = editor.frameLocator("iframe").getByRole("button", { name: "Open", exact: true });
   await expect(editor).toBeVisible();
   await expect(open).toBeVisible();
 
@@ -597,7 +614,12 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
   await editor.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
   await app.getByRole("button", { name: "Close Integrated Editor" }).click();
+  const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
+  await expect.poll(async () => await app.isHidden() || await discard.isVisible()).toBe(true);
+  if (await discard.isVisible()) await discard.click();
+  await expect(app).toBeHidden();
 
   await icon.dblclick();
   app = page.getByRole("dialog", { name: "Integrated Editor" });
