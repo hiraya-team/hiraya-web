@@ -1180,8 +1180,9 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
     await trigger.click();
     await expect(trigger).toHaveAttribute("aria-expanded", "true");
     await expect(switcher).toHaveAttribute("data-expanded", "true");
+    await expect(switcher.locator(".desktop-minimap__area")).toHaveCount(5);
     await expect(switcher.locator(".desktop-minimap__direction")).toHaveCount(4);
-    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(260);
+    await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().height)).toBeLessThan(340);
     await expect(switcher).toHaveCSS("animation-name", "notification-panel-in");
     await expect(page.locator(".desktop-minimap__body")).toHaveCSS("pointer-events", "auto");
     await expect.poll(() => switcher.evaluate((element) => element.getBoundingClientRect().top)).toBeGreaterThan(44);
