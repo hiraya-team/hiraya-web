@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import { ArrowsLeftRight, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
 import { FileDialog } from "./components/FileDialog";
@@ -539,6 +539,7 @@ function App({ session }: { session: AuthSession | null }) {
   const restoringHistoryRef = useRef(false);
   const restoreOnlyPopRef = useRef(false);
   const backInFlightRef = useRef(false);
+  const rootBackGuardInstalledRef = useRef(false);
   const quitBackRef = useRef<QuitBackState>({ count: 0, lastAt: 0 });
   const quitBackTimerRef = useRef<number | null>(null);
   const navigateBackEvent = useEffectEvent((source: "ui" | "history", historyState?: unknown) => navigateBack(source, historyState));
@@ -1787,9 +1788,15 @@ function App({ session }: { session: AuthSession | null }) {
   }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
 
   useEffect(() => {
-    if (!navigationReadyRef.current || !routeHistoryReady || focusedAppId || route?.column !== 0 || route.row !== 0 || route.explorerFolderId !== undefined || route.fileId || route.propertiesEntryId || route.settings) return;
+    const atHome = navigationReadyRef.current && routeHistoryReady && !focusedAppId && route?.column === 0 && route.row === 0 && route.explorerFolderId === undefined && !route.fileId && !route.propertiesEntryId && !route.settings;
+    if (!atHome) {
+      rootBackGuardInstalledRef.current = false;
+      return;
+    }
+    if (rootBackGuardInstalledRef.current) return;
     const current = window.history.state as Partial<RouteHistoryState> | null;
-    if (!current?.hiraya || current.rootBackGuard) return;
+    if (!current?.hiraya) return;
+    rootBackGuardInstalledRef.current = true;
     window.history.replaceState({ ...current, rootBackGuard: undefined }, "", window.location.href);
     window.history.pushState({ ...current, rootBackGuard: true }, "", window.location.href);
   }, [focusedAppId, route, routeHistoryReady]);
@@ -4831,9 +4838,8 @@ function App({ session }: { session: AuthSession | null }) {
   return (
     <main className="desktop-shell" data-windowed={windowed || undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
-        <nav className="mobile-window-nav" data-back={!windowed || undefined} aria-label="Desktop navigation">
-            <div className="mobile-window-nav__leading" data-back={!windowed || undefined}>
-              {!windowed && <button className="mobile-shell-back" type="button" aria-label="Back" title="Back" onClick={() => { void navigateBack(); }}><ArrowLeft size={20} /></button>}
+        <nav className="mobile-window-nav" aria-label="Desktop navigation">
+            <div className="mobile-window-nav__leading">
               <MobileHeaderMenu
                 label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
                 icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
