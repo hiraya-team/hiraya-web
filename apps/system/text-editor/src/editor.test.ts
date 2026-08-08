@@ -6,9 +6,9 @@ describe("Text Editor document behavior", () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     expect(source).toContain("await load(launchFile, generation, true)");
 
-    const load = source.slice(source.indexOf("async function load("), source.indexOf("async function remoteChanged("));
-    expect(load.indexOf("setName(entry.name)")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
-    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("setName(entry.name)"));
+    const load = source.slice(source.indexOf("async function load("), source.indexOf("async function statFile("));
+    expect(load.indexOf("setWindowIdentity(entry.name, false)")).toBeGreaterThan(load.indexOf("const entry = await statFile(next)"));
+    expect(load.indexOf("const loaded = await read(next, entry)")).toBeGreaterThan(load.indexOf("setWindowIdentity(entry.name, false)"));
   });
 
   test("does not replace the current document identity before an interactive file opens", async () => {
@@ -20,7 +20,7 @@ describe("Text Editor document behavior", () => {
   test("keeps primary mobile actions at Hiraya's touch target size", async () => {
     const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
     expect(css).toContain("@media (max-width: 700px)");
-    expect(css).toContain(":is(#open, #format, #save-as, #save) { min-width: 44px; min-height: 44px; }");
+    expect(css).toContain("min-width: 44px; min-height: 44px;");
   });
 
   test("uses the shared read-only badge without bespoke pill styles", async () => {

@@ -193,6 +193,67 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   await expect(picker.getByRole("button", { name: "Choose file" })).toBeEnabled();
 });
 
+test("Text Editor browses and manages a selected workspace", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const folderName = `editor-workspace-${stamp}`;
+  const firstName = `first-${stamp}.txt`;
+  const secondName = `second-${stamp}.ts`;
+  const renamedName = `renamed-${stamp}.txt`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: folderName }).dblclick();
+  await page.getByRole("dialog", { name: folderName }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(firstName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  const launcher = page.getByRole("dialog", { name: /Search/ });
+  await launcher.locator("input").fill("Text Editor");
+  await page.keyboard.press("Enter");
+  const app = page.getByRole("dialog", { name: /Text Editor/ });
+  const frame = app.frameLocator("iframe");
+
+  await frame.getByRole("button", { name: "Open workspace" }).click();
+  const picker = page.getByRole("dialog", { name: "Choose folder" });
+  await picker.getByRole("radio", { name: folderName }).check();
+  await picker.getByRole("button", { name: "Choose folder" }).click();
+  await expect(frame.getByRole("tree", { name: "Workspace files" }).getByRole("treeitem", { name: new RegExp(firstName) })).toBeVisible();
+
+  await frame.getByRole("treeitem", { name: new RegExp(firstName) }).click();
+  await frame.getByRole("button", { name: "New file" }).click();
+  const create = frame.getByRole("dialog", { name: "New file" });
+  await create.getByLabel("File name").fill(secondName);
+  await create.getByRole("button", { name: "Create" }).click();
+  const firstRow = frame.getByRole("tree", { name: "Workspace files" }).getByRole("treeitem", { name: firstName, exact: true });
+  const secondRow = frame.getByRole("tree", { name: "Workspace files" }).getByRole("treeitem", { name: secondName, exact: true });
+  await firstRow.press("ArrowDown");
+  await expect(secondRow).toHaveAttribute("aria-selected", "true");
+  await frame.getByLabel("Workspace sidebar").getByRole("button", { name: folderName, exact: true }).click();
+  await expect(frame.getByRole("button", { name: "Rename selected item" })).toBeDisabled();
+  await secondRow.click();
+  await expect(frame.getByRole("tab", { name: new RegExp(firstName) })).toBeVisible();
+  await expect(frame.getByRole("tab", { name: new RegExp(secondName) })).toHaveAttribute("aria-selected", "true");
+
+  await frame.getByRole("button", { name: "Search workspace" }).click();
+  await frame.getByRole("searchbox", { name: "Search files by name" }).fill("first-");
+  await expect(frame.getByRole("option", { name: new RegExp(firstName) })).toBeVisible();
+  await frame.getByRole("button", { name: "Explorer" }).click();
+
+  await frame.getByRole("button", { name: "Rename selected item" }).click();
+  const rename = frame.getByRole("dialog", { name: "Rename item" });
+  await rename.getByLabel("Name").fill(renamedName);
+  await rename.getByRole("button", { name: "Rename" }).click();
+  const tree = frame.getByRole("tree", { name: "Workspace files" });
+  await expect(tree.getByRole("treeitem", { name: renamedName, exact: true })).toBeVisible();
+  await frame.getByRole("button", { name: "Delete selected item" }).click();
+  await page.getByRole("button", { name: "Delete", exact: true }).click();
+  await expect(tree.getByRole("treeitem", { name: renamedName, exact: true })).toHaveCount(0);
+});
+
 test("app save picker creates and selects a folder", async ({ page }) => {
   await openLocalDesktop(page);
   const parentName = `picker-parent-${Date.now()}`;

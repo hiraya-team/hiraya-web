@@ -1,1 +1,94 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Text Editor</title></head><body><main class="app-shell"><hiraya-toolbar label="Text editor" wrap><span class="title" id="title">Untitled.txt</span><hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge><hiraya-button slot="actions" id="open" disabled>Open</hiraya-button><hiraya-button slot="actions" id="format" disabled>Format</hiraya-button><label slot="actions" class="compact-control">Size <select id="font-size" aria-label="Editor font size" disabled><option>11</option><option>13</option><option>15</option><option>18</option><option>22</option></select></label><label slot="actions" class="compact-control"><input id="line-wrap" type="checkbox" disabled> Wrap</label><label slot="actions" class="compact-control"><input id="auto-save" type="checkbox" disabled> Auto-save</label><label slot="actions" class="compact-control"><input id="auto-format" type="checkbox" disabled> Format on save</label><hiraya-button slot="actions" id="save-as" disabled>Save as</hiraya-button><hiraya-button slot="actions" id="save" variant="primary" disabled>Save</hiraya-button></hiraya-toolbar><div id="content" class="app-content" aria-busy="true"><hiraya-loading-state id="loading"><strong slot="title">Starting Text Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state><div id="editor" inert aria-hidden="true"></div></div><hiraya-status-bar id="status" live="polite">Connecting...</hiraya-status-bar></main><script type="module" src="/src/main.ts"></script></body></html>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Text Editor</title>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 4v16" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M3.5 18.5l2.2-8h15.1l-2.3 8H3.5Zm.5 0V6.2h6l2 2.3h7v2" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6V3.5Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M14 3.5v4h4" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24"><path d="m9 8-4 4 4 4m6-8 4 4-4 4m-2.5-10-2 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-save" viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4V4Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M8 4v6h8V4M8 20v-6h8v6" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-save-as" viewBox="0 0 24 24"><path d="M4 4h12l3 3v4M4 4v16h8M8 4v6h7V4M8 20v-6h4" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="m14 18 5-5 2 2-5 5-3 1 1-3Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-format" viewBox="0 0 24 24"><path d="M4 6h10M4 10h7M4 14h5M4 18h8m5-8 .7 2.3L20 13l-2.3.7L17 16l-.7-2.3L14 13l2.3-.7L17 10Z" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-plus-file" viewBox="0 0 24 24"><path d="M5 3.5h8l4 4V12M13 3.5v4h4M5 3.5V20h7" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-plus-folder" viewBox="0 0 24 24"><path d="M3.5 19V5.5h6l2 2h9V12" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L19 8l-3-3L5 16Zm9-9 3 3" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    </svg>
+    <main class="app-shell">
+      <hiraya-toolbar label="Text editor">
+        <hiraya-button class="icon-button" id="toggle-sidebar" variant="quiet" aria-label="Toggle sidebar" title="Toggle sidebar (Ctrl+B)" disabled><svg slot="icon-start"><use href="#icon-sidebar"></use></svg></hiraya-button>
+        <span class="title" id="title">Untitled.txt</span>
+        <hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge>
+        <hiraya-button class="icon-button" slot="actions" id="open" aria-label="Open" title="Open file (Ctrl+O)" disabled><svg slot="icon-start"><use href="#icon-folder-open"></use></svg></hiraya-button>
+        <hiraya-button class="icon-button" slot="actions" id="format" aria-label="Format document" title="Format document" disabled><svg slot="icon-start"><use href="#icon-format"></use></svg></hiraya-button>
+        <hiraya-button class="icon-button" slot="actions" id="save-as" aria-label="Save as" title="Save as (Ctrl+Shift+S)" disabled><svg slot="icon-start"><use href="#icon-save-as"></use></svg></hiraya-button>
+        <hiraya-button class="icon-button" slot="actions" id="save" variant="primary" aria-label="Save" title="Save (Ctrl+S)" disabled><svg slot="icon-start"><use href="#icon-save"></use></svg></hiraya-button>
+        <hiraya-button class="icon-button" slot="actions" id="settings-button" popovertarget="settings-panel" aria-label="Editor settings" title="Editor settings" disabled><svg slot="icon-start"><use href="#icon-settings"></use></svg></hiraya-button>
+      </hiraya-toolbar>
+      <section id="settings-panel" class="settings-panel" popover aria-labelledby="settings-title">
+        <strong id="settings-title">Editor settings</strong>
+        <label>Font size <select id="font-size" aria-label="Editor font size" disabled><option>11</option><option>13</option><option>15</option><option>18</option><option>22</option></select></label>
+        <label><input id="line-wrap" type="checkbox" disabled> Wrap long lines</label>
+        <label><input id="auto-save" type="checkbox" disabled> Auto-save changes</label>
+        <label><input id="auto-format" type="checkbox" disabled> Format on save</label>
+      </section>
+      <div id="content" class="app-content" aria-busy="true">
+        <hiraya-loading-state id="loading"><strong slot="title">Starting Text Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state>
+        <div id="workbench" class="workbench" inert aria-hidden="true">
+          <nav class="activity-bar" aria-label="Editor views">
+            <button id="explorer-view" class="activity-button" type="button" aria-label="Explorer" title="Explorer (Ctrl+Shift+E)" aria-pressed="true"><svg><use href="#icon-sidebar"></use></svg></button>
+            <button id="search-view" class="activity-button" type="button" aria-label="Search workspace" title="Search workspace (Ctrl+P)" aria-pressed="false"><svg><use href="#icon-search"></use></svg></button>
+          </nav>
+          <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Close sidebar" hidden></button>
+          <aside id="sidebar" class="sidebar" aria-label="Workspace sidebar">
+            <header class="sidebar-header">
+              <strong id="sidebar-title">Explorer</strong>
+              <div class="sidebar-actions" id="explorer-actions">
+                <button id="new-file" type="button" aria-label="New file" title="New file" disabled><svg><use href="#icon-plus-file"></use></svg></button>
+                <button id="new-folder" type="button" aria-label="New folder" title="New folder" disabled><svg><use href="#icon-plus-folder"></use></svg></button>
+                <button id="rename-entry" type="button" aria-label="Rename selected item" title="Rename selected item (F2)" disabled><svg><use href="#icon-pencil"></use></svg></button>
+                <button id="delete-entry" type="button" aria-label="Delete selected item" title="Delete selected item" disabled><svg><use href="#icon-trash"></use></svg></button>
+                <button id="refresh-tree" type="button" aria-label="Refresh explorer" title="Refresh explorer" disabled><svg><use href="#icon-refresh"></use></svg></button>
+              </div>
+              <button id="close-sidebar" type="button" aria-label="Close sidebar" title="Close sidebar"><svg><use href="#icon-x"></use></svg></button>
+            </header>
+            <section id="explorer-panel" class="sidebar-panel">
+              <button id="open-workspace" class="workspace-picker" type="button" disabled><svg><use href="#icon-folder-open"></use></svg><span>Open workspace</span></button>
+              <button id="workspace-heading" class="workspace-heading" type="button" hidden></button>
+              <div id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></div>
+            </section>
+            <section id="search-panel" class="sidebar-panel search-panel" hidden>
+              <label class="search-box"><svg><use href="#icon-search"></use></svg><input id="workspace-search" type="search" placeholder="Search files by name" aria-label="Search files by name" autocomplete="off" spellcheck="false"></label>
+              <div id="search-results" class="search-results" role="listbox" aria-label="Matching workspace files"></div>
+            </section>
+          </aside>
+          <section class="editor-stage">
+            <div id="tabs" class="editor-tabs" role="tablist" aria-label="Open files"></div>
+            <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current file path"></nav>
+            <div id="editor"></div>
+          </section>
+        </div>
+      </div>
+      <hiraya-status-bar id="status" live="polite">Connecting...</hiraya-status-bar>
+    </main>
+    <dialog id="entry-dialog" class="entry-dialog" aria-labelledby="entry-dialog-title">
+      <form method="dialog">
+        <strong id="entry-dialog-title">New file</strong>
+        <label><span id="entry-dialog-label">File name</span><input id="entry-name" required autocomplete="off" spellcheck="false"></label>
+        <p id="entry-dialog-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button value="cancel">Cancel</button><button id="entry-submit" value="confirm">Create</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
