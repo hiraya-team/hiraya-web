@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { linearNavigationIndex } from "./keyboard-navigation";
+import { registerTransientDismiss } from "./transient-dismiss";
 
 const FOCUSABLE = "button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex='-1'])";
 type ModalEntry = { backdrop: HTMLElement; dialog: HTMLElement; previousFocus: HTMLElement | null };
@@ -53,6 +54,9 @@ export function useModalDialog(
     if (!backdrop || !dialog) return;
     const entry: ModalEntry = { backdrop, dialog, previousFocus: invokerRef.current };
     modalStack.push(entry);
+    const unregisterDismiss = registerTransientDismiss(() => {
+      if (!dismissDisabledRef.current) onCloseRef.current();
+    });
     observeModalSiblings();
     refreshModalIsolation();
 
@@ -91,6 +95,7 @@ export function useModalDialog(
     document.addEventListener("keydown", onKeyDown, true);
     return () => {
       document.removeEventListener("keydown", onKeyDown, true);
+      unregisterDismiss();
       const wasTop = modalStack.at(-1) === entry;
       const index = modalStack.indexOf(entry);
       if (index >= 0) modalStack.splice(index, 1);

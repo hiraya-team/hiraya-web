@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as R
 import { ArrowLeft, ArrowsIn, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
 import { clampWindowBounds, resizeWindowBounds, type ResizeDirection, type WindowBounds } from "../ui/window-manager";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
+import { registerTransientDismiss } from "../ui/transient-dismiss";
 
 export type AppWindowProps = {
   id: string;
@@ -163,6 +164,7 @@ export function AppWindow({
 
   useEffect(() => {
     if (!windowMenuOpen) return;
+    const unregisterDismiss = registerTransientDismiss(closeWindowMenu);
     windowMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus();
     const dismissOutside = (event: PointerEvent | FocusEvent) => {
       const target = event.target as Node | null;
@@ -172,6 +174,7 @@ export function AppWindow({
     document.addEventListener("pointerdown", dismissOutside, true);
     document.addEventListener("focusin", dismissOutside, true);
     return () => {
+      unregisterDismiss();
       document.removeEventListener("pointerdown", dismissOutside, true);
       document.removeEventListener("focusin", dismissOutside, true);
     };

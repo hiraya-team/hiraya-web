@@ -1033,6 +1033,40 @@ test("mobile Back climbs Settings before closing it", async ({ browser }) => {
   await context.close();
 });
 
+test("mobile Back dismisses transient surfaces before navigating", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  const url = page.url();
+
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  await expect(page.getByRole("dialog", { name: "Search" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: "Search" })).toHaveCount(0);
+  await expect(page).toHaveURL(url);
+
+  const start = page.getByRole("button", { name: /Start; account, system, and applications/ });
+  await start.click();
+  await expect(page.getByRole("dialog", { name: /Start; account, system, and applications/ })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: /Start; account, system, and applications/ })).toHaveCount(0);
+
+  const areaSwitcher = page.locator(".mobile-area-switcher-trigger");
+  await areaSwitcher.click();
+  await expect(page.locator(".desktop-minimap")).toBeVisible();
+  await page.goBack();
+  await expect(page.locator(".desktop-minimap")).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("dialog", { name: "Notifications" })).toHaveCount(0);
+  await expect(page).toHaveURL(url);
+  await expect(page.getByRole("status").filter({ hasText: "Press Back" })).toHaveCount(0);
+
+  await context.close();
+});
+
 test("mobile root Back requires two additional presses and resets", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();
