@@ -52,19 +52,19 @@ function editorTheme(theme: ThemeDefinition): Extension {
   const { colors } = theme;
   return [
     EditorView.theme({
-      "&": { color: colors.editorText, backgroundColor: colors.editorBackground },
+      "&": { color: colors.text, backgroundColor: colors.window },
       ".cm-content": { caretColor: colors.accent },
       ".cm-cursor, .cm-dropCursor": { borderLeftColor: colors.accent },
-      ".cm-gutters": { color: colors.textMuted, backgroundColor: colors.editorGutter, borderColor: colors.border },
+      ".cm-gutters": { color: colors.textMuted, backgroundColor: colors.windowMuted, borderColor: colors.border },
       ".cm-activeLine, .cm-activeLineGutter": { backgroundColor: `${colors.selection}1f` },
       "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection": { backgroundColor: `${colors.selection}45` },
     }),
     syntaxHighlighting(HighlightStyle.define([
-      { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: colors.editorKeyword },
-      { tag: [tags.string, tags.special(tags.string)], color: colors.editorString },
-      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: colors.editorComment, fontStyle: "italic" },
+      { tag: [tags.keyword, tags.operatorKeyword, tags.modifier], color: `color-mix(in srgb, ${colors.text} 64%, ${colors.accent})` },
+      { tag: [tags.string, tags.special(tags.string)], color: `color-mix(in srgb, ${colors.text} 72%, #3d9b6d)` },
+      { tag: [tags.comment, tags.lineComment, tags.blockComment], color: colors.textMuted, fontStyle: "italic" },
       { tag: [tags.number, tags.bool, tags.null], color: colors.accent },
-      { tag: [tags.heading, tags.strong], color: colors.editorKeyword, fontWeight: "700" },
+      { tag: [tags.heading, tags.strong], color: `color-mix(in srgb, ${colors.text} 64%, ${colors.accent})`, fontWeight: "700" },
       { tag: [tags.link, tags.url], color: colors.accent, textDecoration: "underline" },
     ])),
   ];

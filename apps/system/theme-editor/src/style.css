@@ -1,13 +1,16 @@
 @import "@hiraya/system-apps-shared/styles.css";
 
 :root { --rail-width: 14rem; --inspector-width: 19rem; }
+html, body { overflow: hidden; }
+.app-shell { height: 100vh; min-height: 0; overflow: hidden; }
 h1, h2, h3, p { margin: 0; }
 button, input, select, summary { touch-action: manipulation; }
 .workspace { display: grid; grid-template-columns: var(--rail-width) minmax(18rem, 1fr) var(--inspector-width); min-height: 0; overflow: hidden; background: var(--hiraya-background); }
 .library, .inspector, .stage { min-width: 0; min-height: 0; }
-.library, .inspector { display: flex; flex-direction: column; gap: .75rem; padding: .85rem; overflow: auto; background: var(--hiraya-surface); }
+.library, .inspector { gap: .75rem; padding: .85rem; background: var(--hiraya-surface); }
+.library { display: flex; flex-direction: column; overflow: auto; }
 .library { border-right: 1px solid var(--hiraya-border); }
-.inspector { border-left: 1px solid var(--hiraya-border); }
+.inspector { display: grid; grid-template-rows: auto auto minmax(0, 1fr); overflow: hidden; border-left: 1px solid var(--hiraya-border); }
 .stage { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: .75rem; padding: .85rem; overflow: hidden; }
 .section-heading { display: flex; align-items: baseline; justify-content: space-between; gap: .75rem; min-height: 1.5rem; }
 .section-heading h1, .section-heading h2 { font-size: .82rem; font-weight: 700; letter-spacing: .01em; }
@@ -48,7 +51,7 @@ button, input, select, summary { touch-action: manipulation; }
 .inspector-tabs { display: grid; grid-template-columns: 1fr 1fr; padding: .2rem; border: 1px solid var(--hiraya-border); border-radius: .5rem; background: var(--hiraya-background); }
 .inspector-tabs button { min-height: 2.25rem; border: 0; border-radius: .35rem; color: var(--hiraya-text-muted); background: transparent; font-weight: 650; }
 .inspector-tabs button[aria-selected="true"] { color: var(--hiraya-text); background: color-mix(in srgb, var(--hiraya-accent) 14%, var(--hiraya-surface)); }
-#theme-panel, #wallpaper-panel { min-height: 0; }
+#theme-panel, #wallpaper-panel { min-height: 0; overflow: auto; }
 #wallpaper-panel { display: flex; flex-direction: column; gap: 1rem; }
 #wallpaper-panel[hidden] { display: none; }
 .wallpaper-source, #wallpaper-panel > section { display: grid; gap: .65rem; }
@@ -81,13 +84,13 @@ details > .field-stack { padding-bottom: .25rem; }
 .toggle { display: flex; align-items: center; gap: .5rem; min-height: 2.25rem; color: var(--hiraya-text-muted); font-size: .72rem; }
 .toggle input { width: 1.1rem; height: 1.1rem; }
 #treatment-fields { display: contents; }
-.form-actions { position: sticky; bottom: -.85rem; display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 0 .85rem; background: var(--hiraya-surface); }
+.form-actions { display: flex; justify-content: flex-end; gap: .5rem; padding-top: .75rem; }
 .has-fatal > :not(.fatal-state) { display: none; }
 .fatal-state { grid-column: 1 / -1; }
 
 @media (max-width: 760px) {
-  .workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(16rem, 45vh) auto; overflow: auto; }
-  .library, .inspector, .stage { overflow: visible; }
+  .workspace { grid-template-columns: 1fr; grid-template-rows: auto minmax(12rem, 40vh) minmax(10rem, 1fr); overflow: hidden; }
+  .library, .stage { overflow: visible; }
   .library { border-right: 0; border-bottom: 1px solid var(--hiraya-border); }
   .inspector { border-top: 1px solid var(--hiraya-border); border-left: 0; }
   .theme-list { flex-direction: row; overflow-x: auto; padding-bottom: .2rem; }

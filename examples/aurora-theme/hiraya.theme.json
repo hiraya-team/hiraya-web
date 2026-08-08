@@ -17,13 +17,7 @@
       "danger": "#913B36",
       "dangerSurface": "#F1DDD9",
       "desktopText": "#FFFFFF",
-      "selection": "#876221",
-      "editorBackground": "#F5F8F5",
-      "editorText": "#21302A",
-      "editorGutter": "#DFE8E2",
-      "editorKeyword": "#795617",
-      "editorString": "#386D57",
-      "editorComment": "#586961"
+      "selection": "#876221"
     },
     "shape": { "radius": 16, "borderWidth": 1 },
     "effects": { "blur": 24, "opacity": 0.9, "shadow": 0.55 },
