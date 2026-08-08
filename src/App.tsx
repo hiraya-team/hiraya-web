@@ -119,7 +119,7 @@ import { accountResources, downloadAccountResource } from "./lib/account-apps";
 import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
-import { createAppCommandService, type AppCommandContext, type CommandId } from "./apps/commands";
+import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
 import { isAppPackageName, TRUSTED_MARKDOWN_CSP, TRUSTED_MARKDOWN_FLAGS, trustedMediaCsp } from "@hiraya/app-runtime";
 import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
@@ -4485,6 +4485,7 @@ function App({ session }: { session: AuthSession | null }) {
     return { id: app.id, title: runningAppLabel(app), areaId: segmentKey(area), areaLabel: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}`, minimized: app.minimized };
   });
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
+  const desktopChoices = desktops.filter(isDesktopSurface);
   const commandContext: AppCommandContext = {
     canMutate,
     canOpenTrash,
@@ -4498,7 +4499,7 @@ function App({ session }: { session: AuthSession | null }) {
     openAreaMap,
     openPanel: setActivePanel,
   };
-  const searchCommands = commandService.list(commandContext);
+  const searchCommands = [...commandService.list(commandContext), ...createDesktopSwitchCommands(desktopChoices, activeDesktopId)];
   const keyboardShortcuts: KeyboardShortcut[] = [
     { id: "search", group: "Navigation", label: "Open search", keys: ["Ctrl/⌘", "K"] },
     { id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] },
@@ -4519,6 +4520,11 @@ function App({ session }: { session: AuthSession | null }) {
   ];
 
   function runSearchCommand(commandId: CommandId) {
+    const desktop = desktopChoices.find(({ id }) => desktopSwitchCommandId(id) === commandId);
+    if (desktop) {
+      void activateDesktop(desktop.id);
+      return;
+    }
     void commandService.execute(commandId, commandContext);
   }
 
@@ -4849,7 +4855,6 @@ function App({ session }: { session: AuthSession | null }) {
     const installed = view.appId ? installedApps.find((app) => app.appId === view.appId) : installedApps.find((app) => app.source === "store" && app.packageEntryId === view.item.entry.id);
     return Boolean(installed && !storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
   }).length;
-  const desktopChoices = desktops.filter(isDesktopSurface);
   const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
   const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));

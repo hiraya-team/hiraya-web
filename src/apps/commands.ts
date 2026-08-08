@@ -16,6 +16,7 @@ export type CommandItem<Id extends CommandId = CommandId> = Pick<CommandDescript
 };
 
 const COMMAND_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/;
+const encodeCommandSegment = (value: string) => Array.from(new TextEncoder().encode(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
 
 export class CommandService<Context, Id extends CommandId = CommandId> {
   readonly #commands = new Map<Id, CommandDescriptor<Context, Id>>();
@@ -118,8 +119,21 @@ export class RuntimeCommandContributions<Context> {
 
 export function runtimeCommandId(appId: string, commandId: string): CommandId {
   if (!appId || !commandId) throw new TypeError("App command ID is invalid.");
-  const encode = (value: string) => Array.from(new TextEncoder().encode(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
-  return `app.a-${encode(appId)}.c-${encode(commandId)}`;
+  return `app.a-${encodeCommandSegment(appId)}.c-${encodeCommandSegment(commandId)}`;
+}
+
+export function desktopSwitchCommandId(desktopId: string): CommandId {
+  if (!desktopId) throw new TypeError("Desktop command ID is invalid.");
+  return `desktop.switch-${encodeCommandSegment(desktopId)}`;
+}
+
+export function createDesktopSwitchCommands(desktops: readonly { id: string; name: string }[], activeDesktopId: string): CommandItem[] {
+  return desktops.filter(({ id }) => id !== activeDesktopId).map((desktop) => ({
+    id: desktopSwitchCommandId(desktop.id),
+    label: `Switch to ${desktop.name}`,
+    keywords: ["switch desktop", desktop.name],
+    enabled: true,
+  }));
 }
 
 export function createAppCommandService(): CommandService<AppCommandContext> {
