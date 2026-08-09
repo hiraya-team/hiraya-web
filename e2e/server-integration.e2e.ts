@@ -219,7 +219,7 @@ async function replaceEditorText(page: Page, text: string) {
   await editor.click();
   await page.keyboard.press("Control+A");
   await page.keyboard.insertText(text);
-  await frame.locator("#save").click();
+  await page.getByRole("dialog", { name: "Integrated Editor" }).getByRole("button", { name: "Save", exact: true }).click();
   await expect(frame.locator("#status")).toContainText("Saved", { timeout: 10_000 });
 }
 
@@ -305,13 +305,10 @@ async function primary(browser: Browser) {
   await expect(first.getByRole("dialog", { name: "Integrated Editor" })).toBeVisible();
   const appFrame = first.frameLocator("iframe.sandbox-app-frame");
   await expect(appFrame.locator("#status")).toContainText(new RegExp(`^(Opened|Reloaded) ${sandboxRuntimeFile}`));
-  await expect.poll(() => appFrame.locator("hiraya-toolbar").evaluate((toolbar) => ({
-    foundation: document.body.classList.contains("hiraya-app"),
-    toolbarDefined: Boolean(customElements.get("hiraya-toolbar")),
-    toolbarShadow: Boolean(toolbar.shadowRoot),
-    buttonDefined: Boolean(customElements.get("hiraya-button")),
-    buttonShadow: Boolean(document.querySelector("hiraya-button")?.shadowRoot),
-  }))).toEqual({ foundation: true, toolbarDefined: true, toolbarShadow: true, buttonDefined: true, buttonShadow: true });
+  await expect.poll(() => appFrame.locator("body").evaluate((body) => body.classList.contains("hiraya-app"))).toBe(true);
+  const editorWindow = first.getByRole("dialog", { name: "Integrated Editor" });
+  await expect(editorWindow.getByRole("button", { name: "More Integrated Editor actions" })).toBeVisible();
+  await expect(editorWindow.getByRole("button", { name: "Save", exact: true })).toBeVisible();
   await first.getByRole("button", { name: "Close Integrated Editor" }).click();
 
   await createTextFile(first, mergeFile);
