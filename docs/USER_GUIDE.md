@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use clearer Integrated Editor controls.** Open-file tabs now show their active and hover states correctly, status errors use the warning color, and editor controls are easier to tap on mobile.
 - **Arrange desktop items without false conflicts.** Rapid icon moves and automatic arrangement now use the latest synchronized desktop state instead of reporting a conflict with your own preceding change.
 - **Slide widgets between areas.** Widgets and icon groups now move with desktop icons when switching areas, keeping the desktop layout together throughout the transition.
 - **Tap widgets without moving them.** Clock, Calendar, and Status widgets now stay still when a finger shifts slightly during a tap, while deliberate dragging continues to move them.

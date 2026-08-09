@@ -360,7 +360,9 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await frame.getByRole("treeitem", { name: new RegExp(firstName) }).click();
   await expect(app).toHaveAccessibleName("Integrated Editor");
   const openFiles = frame.getByRole("toolbar", { name: "Open files" });
-  await expect(openFiles.getByRole("button", { name: firstName, exact: true })).toHaveAttribute("aria-pressed", "true");
+  const firstTab = openFiles.getByRole("button", { name: firstName, exact: true });
+  await expect(firstTab).toHaveAttribute("aria-pressed", "true");
+  const activeTabBackground = await firstTab.evaluate((element) => getComputedStyle(element).backgroundColor);
   await expect(frame.locator("#breadcrumbs")).not.toContainText(firstName);
   await frame.getByRole("button", { name: "New file" }).click();
   const create = frame.getByRole("dialog", { name: "New file" });
@@ -373,8 +375,9 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await frame.getByLabel("Workspace sidebar").getByRole("button", { name: folderName, exact: true }).click();
   await expect(frame.getByRole("button", { name: "Rename selected item" })).toBeDisabled();
   await secondRow.click();
-  await expect(openFiles.getByRole("button", { name: firstName, exact: true })).toBeVisible();
+  await expect(firstTab).toBeVisible();
   await expect(openFiles.getByRole("button", { name: secondName, exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(() => firstTab.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe(activeTabBackground);
 
   await frame.getByRole("button", { name: "Search workspace" }).click();
   await frame.getByRole("searchbox", { name: "Search files by name" }).fill("first-");
@@ -663,6 +666,9 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   app = page.getByRole("dialog", { name: "Integrated Editor" });
   editor = app.frameLocator("iframe");
   await expect(editor.locator(".cm-content")).toHaveText(contents);
+  await expect(editor.getByRole("button", { name: "Explorer" })).toHaveAttribute("aria-expanded", "false");
+  await expect.poll(async () => (await editor.getByRole("toolbar", { name: "Open files" }).getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await editor.getByRole("button", { name: `Close ${name}` }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await editor.locator(".cm-content").focus();
   await page.keyboard.press("Control+z");
   await expect(editor.locator(".cm-content")).toHaveText(contents);

@@ -57,9 +57,10 @@ svg { width: 1.1rem; height: 1.1rem; pointer-events: none; }
 .editor-stage { display: grid; min-width: 0; min-height: 0; grid-template-rows: auto auto minmax(0, 1fr); background: var(--hiraya-background); }
 .editor-tabs { display: flex; min-height: 2.3rem; overflow-x: auto; border-bottom: 1px solid var(--hiraya-border); background: color-mix(in srgb, var(--hiraya-surface) 78%, var(--hiraya-background)); scrollbar-width: thin; }
 .editor-tab { position: relative; display: flex; flex: 0 0 auto; min-width: 7rem; max-width: 13rem; border-right: 1px solid var(--hiraya-border); }
-.editor-tab > [role="tab"] { display: flex; min-width: 0; min-height: 2.3rem; flex: 1; align-items: center; gap: .4rem; padding: .35rem 2rem .35rem .65rem; border: 0; border-radius: 0; color: var(--hiraya-text-muted); background: transparent; font-size: .8rem; }
-.editor-tab > [role="tab"] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.editor-tab > [role="tab"][aria-selected="true"] { color: var(--hiraya-text); background: var(--hiraya-background); box-shadow: inset 0 2px var(--hiraya-accent); }
+.editor-tab > button[aria-pressed] { display: flex; min-width: 0; min-height: 2.3rem; flex: 1; align-items: center; gap: .4rem; padding: .35rem 2rem .35rem .65rem; border: 0; border-radius: 0; color: var(--hiraya-text-muted); background: transparent; font-size: .8rem; }
+.editor-tab > button[aria-pressed] span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-tab > button[aria-pressed="false"]:hover { color: var(--hiraya-text); background: var(--hiraya-surface-hover); }
+.editor-tab > button[aria-pressed="true"] { color: var(--hiraya-text); background: var(--hiraya-background); box-shadow: inset 0 2px var(--hiraya-accent); }
 .tab-close { position: absolute; inset-block-start: .45rem; inset-inline-end: .35rem; display: grid; width: 1.35rem; height: 1.35rem; place-items: center; color: var(--hiraya-text-muted); border-radius: .25rem; }
 .tab-close:hover { color: var(--hiraya-text); background: var(--hiraya-surface-hover); }
 .tab-close svg { width: .8rem; height: .8rem; }
@@ -107,14 +108,17 @@ svg { width: 1.1rem; height: 1.1rem; pointer-events: none; }
   .sidebar.open { visibility: visible; transform: translateX(0); }
   .sidebar-backdrop { position: absolute; z-index: 1; inset: 0 0 0 2.75rem; display: block; width: auto; height: auto; min-height: 0; padding: 0; border: 0; border-radius: 0; background: color-mix(in srgb, #000 36%, transparent); }
   #close-sidebar { display: grid; }
-  :is(.activity-button, #close-sidebar, .sidebar-actions button) { min-width: 44px; min-height: 44px; }
+  :is(.activity-button, #close-sidebar, .sidebar-actions button, .workspace-picker, .workspace-heading, .tree-row, .search-box, .search-results button, .editor-tab > button, .breadcrumbs button, .settings-group label, .dialog-actions button) { min-width: 44px; min-height: 44px; }
   .activity-button { height: 44px; }
   .sidebar-header { min-height: 88px; flex-wrap: wrap; align-content: center; padding-block: 0; }
   .sidebar-header strong { order: 1; }
   #close-sidebar { order: 2; }
   .sidebar-actions { order: 3; width: 100%; overflow-x: auto; }
+  .editor-tabs, .editor-tab { min-height: 44px; }
   .editor-tab { min-width: 8rem; }
-  .breadcrumbs { min-height: 2rem; }
+  .editor-tab > button[aria-pressed] { padding-inline-end: 3.1rem; }
+  .tab-close { inset-block-start: 0; width: 44px; height: 44px; }
+  .breadcrumbs { min-height: 44px; padding-block: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
