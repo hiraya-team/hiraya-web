@@ -92,6 +92,7 @@ let initialized = false;
 let canWrite = false;
 let sidebarOpen = true;
 let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
+let windowTitle = "";
 const children = new Map<FolderHandle, DirectoryEntry[]>();
 const entries = new Map<string, DirectoryEntry>();
 const parents = new Map<string, FolderHandle | null>();
@@ -125,7 +126,7 @@ async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
-    await hiraya.window.setTitle("Integrated Editor");
+    publishWindowTitle("Integrated Editor");
     app.onDispose(() => { initialized = false; operations.invalidate(); for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); } editor.destroy(); });
     let copiedSettings: unknown;
     try { copiedSettings = app.launch.arguments[0] ? JSON.parse(app.launch.arguments[0]) : undefined; } catch { copiedSettings = undefined; }
@@ -653,8 +654,15 @@ function promptName(titleText: string, labelText: string, initial: string, submi
 function renderDocumentState() {
   renderTabs(); renderBreadcrumbs();
   const dirty = tabs.some(tabDirty);
+  publishWindowTitle(activeTab ? `${tabDirty(activeTab) ? "*" : ""}${activeTab.name} - Integrated Editor` : "Integrated Editor");
   void hiraya?.window.setDirty(dirty);
   renderControlState();
+}
+
+function publishWindowTitle(title: string) {
+  if (title === windowTitle) return;
+  windowTitle = title;
+  void hiraya?.window.setTitle(title);
 }
 
 function renderTabs() {
@@ -825,11 +833,14 @@ function renderControlState() {
 }
 
 function publishCommands() {
+  const documentCommands = canWrite && activeTab?.state ? [
+    { id: "format", title: "Format", enabled: initialized && !saving && !opening, promoted: true },
+    { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !opening, promoted: true },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening, promoted: true },
+  ] : [];
   void hiraya?.commands.set([
     { id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening, promoted: true },
-    { id: "format", title: "Format", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
-    { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening && canWrite && Boolean(activeTab?.state), promoted: true },
+    ...documentCommands,
     { id: "workspace", title: "Open workspace", enabled: initialized && !opening },
     { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace) },
   ]);

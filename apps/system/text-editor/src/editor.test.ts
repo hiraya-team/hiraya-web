@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Integrated Editor document behavior", () => {
-  test("keeps a stable app title while opening a launch file", async () => {
+  test("leads the window title with the active document", async () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
-    expect(source).toContain('await hiraya.window.setTitle("Integrated Editor")');
+    expect(source).toContain('publishWindowTitle(activeTab ? `${tabDirty(activeTab) ? "*" : ""}${activeTab.name} - Integrated Editor` : "Integrated Editor")');
     expect(source).toContain("await load(launchFile, generation)");
     expect(source).toContain("if (!launchFile) setStatus(");
 
@@ -48,6 +48,7 @@ describe("Integrated Editor document behavior", () => {
     expect(html).not.toContain("<hiraya-toolbar");
     expect(source).toContain('{ id: "save-as", title: "Save As"');
     expect(source).toContain('id === "save-as" ? void save(true)');
+    expect(source).toContain("const documentCommands = canWrite && activeTab?.state");
   });
 
   test("keeps settings in the sidebar and the filename in tabs", async () => {

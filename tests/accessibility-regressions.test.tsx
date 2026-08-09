@@ -140,11 +140,16 @@ describe("accessibility regressions", () => {
     expect(windowLayer).toContain("externalHeaderElements={integrated && focusedAppId === app.id");
     expect(windowLayer).toContain('className="runtime-app-actions"');
     expect(windowLayer).toContain("useSyncExternalStore(app.commands.subscribe");
+    expect(windowLayer).toContain('data-direct={directCommandIds.has(command.id) || undefined}');
+    expect(windowLayer).toContain('<span className="chrome-menu-label">More</span>');
+    expect(app).toContain('<span className="chrome-menu-label">System</span>');
     expect(publicDesktop).toContain('className="mobile-global-actions public-menu__window-actions"');
     expect(publicDesktop).toContain("externalHeaderElements={windowed ? undefined : { leading: null, actions: mobileHeaderActionsElement }}");
     expect(css).toContain("grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target)");
     expect(css).toContain(".mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }");
     expect(css).toContain(".runtime-app-action--secondary { display: none; }");
+    expect(css).toContain(".runtime-app-actions__overflow [data-direct] { display: none; }");
+    expect(css).toContain(".runtime-app-actions__overflow [data-direct] { display: flex; }");
     expect(app).toContain("target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)");
     expect(app).toContain(".app-window, button, a[href], input, select, textarea");
   });

@@ -86,16 +86,18 @@ export function RuntimeAppActions({ app, target, onExecute }: { app: Extract<Run
   const commands = useSyncExternalStore(app.commands.subscribe, app.commands.getPromoted, app.commands.getPromoted);
   const primary = commands.at(-1);
   if (!target || !primary) return null;
+  const appName = app.package.manifest.name;
   const secondary = commands.slice(Math.max(0, commands.length - 3), -1);
+  const directCommandIds = new Set(secondary.map(({ id }) => id));
   return createPortal(
-    <div className="runtime-app-actions" aria-label={`${app.title} actions`}>
-      {commands.length > 1 && <div className="runtime-app-actions__overflow" data-always={commands.length > 3 || undefined}>
-        <MobileHeaderMenu label={`More ${app.title} actions`} icon={<DotsThree size={18} />}>
-          {(dismiss) => commands.slice(0, -1).map((command) => <button type="button" key={command.id} disabled={!command.enabled} onClick={() => { dismiss(); onExecute(command.id); }}>{command.title}{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>)}
-        </MobileHeaderMenu>
-      </div>}
+    <div className="runtime-app-actions" aria-label={`${appName} actions`}>
       {secondary.map((command) => <button className="runtime-app-action runtime-app-action--secondary" type="button" key={command.id} disabled={!command.enabled} title={command.shortcut ? `${command.title} (${command.shortcut})` : command.title} onClick={() => onExecute(command.id)}>{command.title}</button>)}
       <button className="runtime-app-action runtime-app-action--primary" type="button" disabled={!primary.enabled} title={primary.shortcut ? `${primary.title} (${primary.shortcut})` : primary.title} onClick={() => onExecute(primary.id)}>{primary.title}</button>
+      {commands.length > 1 && <div className="runtime-app-actions__overflow" data-always={commands.length > 3 || undefined}>
+        <MobileHeaderMenu label={`More ${appName} actions`} icon={<><DotsThree size={18} /><span className="chrome-menu-label">More</span></>}>
+          {(dismiss) => commands.slice(0, -1).map((command) => <button type="button" key={command.id} data-direct={directCommandIds.has(command.id) || undefined} disabled={!command.enabled} onClick={() => { dismiss(); onExecute(command.id); }}>{command.title}{command.shortcut && <kbd>{command.shortcut}</kbd>}</button>)}
+        </MobileHeaderMenu>
+      </div>}
     </div>,
     target,
   );
