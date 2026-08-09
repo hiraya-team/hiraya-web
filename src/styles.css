@@ -1083,7 +1083,8 @@
   .desktop-edge-dwell__rail > span { animation: none !important; opacity: 0.72; }
 }
 
-.file-icon-snap-preview {
+.file-icon-snap-preview,
+.shell-item-snap-preview {
   position: absolute;
   z-index: 1;
   display: none;
@@ -1096,7 +1097,8 @@
   pointer-events: none;
 }
 
-.file-icon-snap-preview[data-grid]::before {
+.file-icon-snap-preview[data-grid]::before,
+.shell-item-snap-preview[data-grid]::before {
   position: absolute;
   z-index: -1;
   inset: calc(var(--snap-grid-size, 24px) * -2);
@@ -1110,7 +1112,8 @@
   mask-image: radial-gradient(closest-side, black 64%, transparent 100%);
 }
 
-.file-icon-snap-preview[data-visible] {
+.file-icon-snap-preview[data-visible],
+.shell-item-snap-preview[data-visible] {
   display: block;
 }
 
@@ -3200,7 +3203,8 @@
   background: color-mix(in srgb, var(--theme-accent) 34%, transparent);
   box-shadow: 0 0 0 calc(2px + var(--theme-border-width)) color-mix(in srgb, var(--theme-accent) 18%, transparent);
 }
-.file-icon-snap-preview {
+.file-icon-snap-preview,
+.shell-item-snap-preview {
   width: var(--theme-icon-footprint-width);
   min-height: var(--theme-icon-footprint-height);
   border: var(--theme-border-width) dashed var(--theme-accent);
@@ -3208,6 +3212,7 @@
   background: color-mix(in srgb, var(--theme-accent) 11%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent) 8%, transparent);
 }
+.shell-item-snap-preview { min-width: 180px; min-height: 112px; border-radius: var(--theme-radius); }
 .file-icon__art { width: var(--theme-icon-size); height: var(--theme-icon-size); color: var(--theme-desktop-text); filter: drop-shadow(0 3px 5px var(--theme-shadow-soft)); }
 .file-icon__art svg { width: calc(var(--theme-icon-size) * 0.72); height: calc(var(--theme-icon-size) * 0.72); }
 .file-icon__name { color: var(--theme-desktop-text); font-size: max(12px, calc(11px * var(--theme-type-scale))); font-weight: var(--theme-weight); }
@@ -6151,6 +6156,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .desktop-area-stage--shell-items .desktop-area-track { will-change: auto; }
 .shell-item-layer { position: absolute; inset: 0; pointer-events: none; }
 .shell-item { position: absolute; left: var(--shell-x); top: var(--shell-y); display: flex; min-width: 180px; min-height: 112px; flex-direction: column; overflow: hidden; border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 19%, transparent); border-radius: var(--theme-radius); color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome) 82%, transparent); box-shadow: 0 14px 38px rgb(4 12 13 / 22%), inset 0 1px 0 rgb(255 255 255 / 13%); backdrop-filter: blur(16px) saturate(112%); pointer-events: auto; }
+.shell-item[data-dragging] { z-index: 2; }
 .shell-item[data-drop-active] { border-color: var(--theme-selection); box-shadow: 0 14px 38px rgb(4 12 13 / 22%), inset 0 0 0 2px var(--theme-selection); }
 .shell-item__header { display: flex; min-height: 38px; flex: 0 0 auto; align-items: center; border-bottom: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 13%, transparent); }
 .shell-item__header button { border: 0; color: inherit; background: transparent; }

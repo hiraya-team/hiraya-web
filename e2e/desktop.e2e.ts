@@ -986,7 +986,9 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().left)).toBeGreaterThan(initialLeft);
   const initialWidth = await clock.evaluate((element) => element.getBoundingClientRect().width);
-  await clock.getByRole("button", { name: "Resize Clock", exact: true }).focus();
+  const resizeClock = clock.getByRole("button", { name: "Resize Clock", exact: true });
+  await expect(resizeClock).toBeEnabled();
+  await resizeClock.focus();
   await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialWidth);
 
@@ -1148,6 +1150,75 @@ test("icon groups reserve space, follow the grid, and persist arranged icons", a
       reloadedGroup.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y"), element.getBoundingClientRect().width, element.getBoundingClientRect().height]),
     ]);
   }).toEqual(saved);
+});
+
+test("widgets and icon groups preview snapped pointer placement", async ({ page }) => {
+  await openLocalDesktop(page);
+  const openLayoutSettings = async () => {
+    await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+    await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+    const settings = page.getByRole("dialog", { name: "Settings" });
+    await settings.getByRole("button", { name: "Desktop", exact: true }).click();
+    return settings;
+  };
+  let settings = await openLayoutSettings();
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  const desktop = page.locator(".desktop");
+  await desktop.click({ button: "right", position: { x: 700, y: 180 } });
+  let desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await desktopMenu.getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
+  const clock = page.locator(".shell-item--widget", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  const moveClock = clock.getByRole("button", { name: "Move Clock", exact: true });
+  await expect(moveClock).toBeEnabled();
+  const moveBounds = await moveClock.boundingBox();
+  if (!moveBounds) throw new Error("The clock move control is not visible.");
+  await beginDragPointerTo(page, moveClock, moveBounds.x + moveBounds.width / 2 + 35, moveBounds.y + moveBounds.height / 2 + 17);
+  const placeholder = page.locator(".shell-item-snap-preview[data-visible]");
+  await expect(placeholder).toHaveCount(1);
+  await expect(placeholder).toHaveAttribute("data-grid", "24");
+  const clockTarget = await placeholder.evaluate((element) => [parseFloat(element.style.left), parseFloat(element.style.top), parseFloat(element.style.width), parseFloat(element.style.height)]);
+  expect((clockTarget[0] - 22) % 24).toBe(0);
+  expect((clockTarget[1] - 22) % 24).toBe(0);
+  expect(clockTarget[2] % 24).toBe(0);
+  expect(clockTarget[3] % 24).toBe(0);
+  await page.mouse.up();
+  await expect(placeholder).toHaveCount(0);
+
+  await desktop.click({ button: "right", position: { x: 120, y: 380 } });
+  desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await desktopMenu.getByRole("menuitem", { name: "New icon group" }).click();
+  const groupName = `Preview group ${Date.now()}`;
+  await page.getByLabel("Folder name").fill(groupName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  const resizeGroup = group.getByRole("button", { name: `Resize ${groupName}` });
+  await expect(resizeGroup).toBeEnabled();
+  const resizeBounds = await resizeGroup.boundingBox();
+  const groupBounds = await group.boundingBox();
+  if (!resizeBounds || !groupBounds) throw new Error("The icon group resize control is not visible.");
+  await beginDragPointerTo(page, resizeGroup, resizeBounds.x + resizeBounds.width / 2 + 31, resizeBounds.y + resizeBounds.height / 2 + 19);
+  await expect(placeholder).toHaveCount(1);
+  const resizedTarget = await placeholder.boundingBox();
+  if (!resizedTarget) throw new Error("The icon group placeholder is not visible.");
+  expect(Math.round(resizedTarget.width) % 24).toBe(0);
+  expect(Math.round(resizedTarget.height) % 24).toBe(0);
+  expect(resizedTarget.width).toBeGreaterThan(groupBounds.width);
+  await resizeGroup.dispatchEvent("pointercancel", { pointerId: 1, clientX: resizeBounds.x + resizeBounds.width / 2 + 31, clientY: resizeBounds.y + resizeBounds.height / 2 + 19 });
+  await expect(placeholder).toHaveCount(0);
+  await expect(group).not.toHaveAttribute("data-dragging", "true");
+  await page.mouse.up();
+
+  settings = await openLayoutSettings();
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).uncheck();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+  const unsnappedMoveBounds = await moveClock.boundingBox();
+  if (!unsnappedMoveBounds) throw new Error("The clock move control is not visible.");
+  await beginDragPointerTo(page, moveClock, unsnappedMoveBounds.x + unsnappedMoveBounds.width / 2 + 31, unsnappedMoveBounds.y + unsnappedMoveBounds.height / 2 + 13);
+  await expect(placeholder).toHaveCount(0);
+  await page.mouse.up();
 });
 
 test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {

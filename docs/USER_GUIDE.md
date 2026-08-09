@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Understand app controls at a glance.** Focused apps now keep their primary and secondary actions together, label **More** and **System** distinctly, avoid repeating visible actions in menus, and lead the title with the current file or project. Actions that cannot apply, such as saving a read-only preview, stay out of the header.
+- **Preview widget and icon group placement.** When **Snap to grid** is on, moving or resizing a widget or icon group now shows the same grid placeholder used by desktop icons before the change is placed.
 - **Arrange icon groups with desktop items.** Folder icon groups now reserve their full desktop space, move nearby icons out of the way, and follow the selected grid when created, moved, or resized.
 - **Use clearer Integrated Editor controls.** Open-file tabs now show their active and hover states correctly, status errors use the warning color, and editor controls are easier to tap on mobile.
 - **Keep widget contents stable after refresh.** Clock, Calendar, and Status widgets now keep their content and height visually stable when the desktop reloads, without requiring a tap.
