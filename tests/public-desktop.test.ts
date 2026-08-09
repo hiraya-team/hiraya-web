@@ -106,8 +106,17 @@ describe("public desktop", () => {
     expect(source).not.toContain("multiSelect");
     expect(source).not.toContain("onLongPressSelect=");
     expect(source).toContain("const closePublicView = () => {\n    setSelectedIds(new Set());");
-    expect(source).toContain("const backPublicView = () => {");
-    expect(source).toContain("setSelectedIds(new Set());\n    setOpen({");
+    expect(source).toContain("const backPublicView = async () => {");
+    expect(source).toContain("setSelectedIds(new Set());\n      setOpen({");
+  });
+
+  test("delegates public Back to the open app before returning to the desktop", async () => {
+    const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    expect(source).toContain("await runtime.lifecycle.requestBack(");
+    expect(source).toContain('runtime.app.dispatcher.emit("app.backRequested", { requestId })');
+    expect(source).toContain('outcome === "home" || outcome === "unsupported"');
+    expect(source).toContain("if (backInFlightRef.current) return;");
+    expect(source).toContain("openRef.current.runtime === runtime");
   });
 
   test("filters descendants of public dot folders through the ancestor-aware shell projection", async () => {

@@ -130,6 +130,8 @@ test("coarse-only public windows use the focused full-surface header", async ({ 
   await expect(page.getByRole("button", { name: "Back to public desktop" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Close public window" })).toBeVisible();
   await expect(appWindow).toBeFocused();
+  await page.getByRole("button", { name: "Back to public desktop" }).click();
+  await expect(appWindow).toBeHidden();
   const results = await new AxeBuilder({ page }).analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 });
