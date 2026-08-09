@@ -905,6 +905,7 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await expect(appWindow.getByRole("button", { name: `Minimize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Maximize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
+  await expect(appWindow.getByRole("button", { name: `Window actions for ${windowTitle}` })).toHaveCount(0);
   const moreActions = appWindow.getByRole("button", { name: "More Integrated Editor actions" });
   await expect(moreActions).toContainText("More");
   await moreActions.click();

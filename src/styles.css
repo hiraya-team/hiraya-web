@@ -5722,28 +5722,6 @@ button.app-picker__disclosure { cursor: pointer; }
 .app-window__resize-handle--se { right: 0; bottom: 0; cursor: nwse-resize; }
 .app-window__resize-handle--sw { bottom: 0; left: 0; cursor: nesw-resize; }
 
-.app-window__menu-wrap { position: relative; }
-.app-window__menu {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 5px);
-  left: 0;
-  display: grid;
-  width: 245px;
-  padding: 6px;
-  border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 24%, transparent);
-  border-radius: var(--theme-radius-small);
-  color: var(--theme-chrome-text);
-  background: var(--theme-chrome);
-  box-shadow: var(--theme-elevation-3);
-  max-height: min(70dvh, 420px);
-  overflow-y: auto;
-}
-.app-window__menu button { display: flex; min-height: 34px; align-items: center; gap: 8px; padding: 6px 8px; border: 0; border-radius: calc(var(--theme-radius-small) * .75); color: inherit; background: transparent; font: inherit; font-size: max(12px, calc(9px * var(--theme-type-scale))); text-align: left; cursor: pointer; }
-.app-window__menu button:hover,
-.app-window__menu button:focus-visible { background: color-mix(in srgb, var(--theme-chrome-text) 13%, transparent); outline-color: var(--theme-focus-chrome); }
-.app-window__menu kbd { margin-left: auto; color: color-mix(in srgb, var(--theme-chrome-text) 72%, transparent); font-size: 9px; }
-
 .desktop-shell[data-windowed] .folder-explorer__breadcrumbs { display: flex; }
 .desktop-shell[data-windowed] .folder-explorer__toolbar { flex-wrap: nowrap; padding: 9px 12px; }
 .desktop-shell[data-windowed] .folder-explorer__search { min-width: 150px; }
@@ -6018,7 +5996,7 @@ button.app-picker__disclosure { cursor: pointer; }
 }
 
 /* Optional theme treatments stay on desktop chrome and controls so content remains crisp. */
-.desktop-shell :is(.menu-bar, .context-menu, .app-window__menu, .action-sheet) {
+.desktop-shell :is(.menu-bar, .context-menu, .action-sheet) {
   background-image: var(--theme-chrome-texture), var(--theme-chrome-gradient);
   background-size: var(--theme-texture-scale), auto;
 }
