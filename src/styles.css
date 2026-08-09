@@ -6156,7 +6156,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .shell-item__resize { position: absolute; right: 0; bottom: 0; width: 32px; height: 32px; border: 0; background: linear-gradient(135deg, transparent 0 48%, color-mix(in srgb, var(--theme-chrome-text) 60%, transparent) 49% 55%, transparent 56% 66%, color-mix(in srgb, var(--theme-chrome-text) 60%, transparent) 67% 73%, transparent 74%); touch-action: none; cursor: nwse-resize; }
 .shell-item--widget { overflow: visible; border-color: transparent; background: transparent; box-shadow: none; backdrop-filter: none; }
 .shell-item--widget[data-selected] { outline: 2px solid var(--theme-selection); outline-offset: 2px; }
-.shell-item--widget .shell-item__content { overflow: hidden; pointer-events: none; }
+.shell-item--widget .shell-item__content { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .shell-item__widget-drag { position: absolute; z-index: 1; inset: 0; border: 0; border-radius: inherit; background: transparent; touch-action: none; cursor: grab; }
 .shell-item__widget-drag:active { cursor: grabbing; }
 .shell-item__widget-drag:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
