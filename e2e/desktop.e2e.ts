@@ -1021,16 +1021,19 @@ test("adding a widget rearranges overlapping icons and persists both positions",
     return moved ? Math.round(moved.y - iconTarget.y) : 0;
   }).toBeGreaterThan(0);
 
-  const saved = await Promise.all([icon.boundingBox(), clock.boundingBox()]);
+  const saved = await Promise.all([
+    icon.evaluate((element) => [element.style.getPropertyValue("--file-x"), element.style.getPropertyValue("--file-y")]),
+    clock.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y")]),
+  ]);
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect.poll(async () => {
     const reloadedClock = page.locator(".shell-item--widget", { hasText: /\d/ });
-    const [nextIcon, nextClock] = await Promise.all([icon.boundingBox(), reloadedClock.boundingBox()]);
-    return nextIcon && nextClock && saved[0] && saved[1]
-      ? [Math.round(nextIcon.x - saved[0].x), Math.round(nextIcon.y - saved[0].y), Math.round(nextClock.x - saved[1].x), Math.round(nextClock.y - saved[1].y)]
-      : null;
-  }).toEqual([0, 0, 0, 0]);
+    return Promise.all([
+      icon.evaluate((element) => [element.style.getPropertyValue("--file-x"), element.style.getPropertyValue("--file-y")]),
+      reloadedClock.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y")]),
+    ]);
+  }).toEqual(saved);
 });
 
 test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {
