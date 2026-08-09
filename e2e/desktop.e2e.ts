@@ -1021,6 +1021,8 @@ test("adding a widget rearranges overlapping icons and persists both positions",
     return moved ? Math.round(moved.y - iconTarget.y) : 0;
   }).toBeGreaterThan(0);
 
+  await page.waitForTimeout(200);
+  await expect(clock.getByRole("button", { name: "Move Clock", exact: true })).toBeEnabled();
   const saved = await Promise.all([
     icon.evaluate((element) => [element.style.getPropertyValue("--file-x"), element.style.getPropertyValue("--file-y")]),
     clock.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y")]),
