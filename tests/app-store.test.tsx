@@ -33,6 +33,8 @@ const base = {
   installingPackageKey: null,
   onRetry: () => undefined,
   onInstall: () => undefined,
+  canAddToDesktop: true,
+  onAddToDesktop: () => undefined,
   onLaunch: () => undefined,
   onReset: () => undefined,
   onUninstall: () => undefined,
@@ -81,8 +83,17 @@ describe("App Store", () => {
     expect(markup).toContain("Trusted system app");
     expect(markup).toContain("Trusted by Hiraya");
     expect(markup).toContain("Reset data");
+    expect(markup).toContain("Add to desktop");
     expect(markup).toContain("Administrator store unavailable");
     expect(markup).not.toContain("Uninstall");
+  });
+
+  test("disables desktop shortcuts when the desktop is read only", () => {
+    const markup = renderToStaticMarkup(<AppStoreWindow {...base} canAddToDesktop={false} />);
+    expect(markup).toContain("Add to desktop");
+    expect(markup).toContain('title="This desktop is read only"');
+    expect(markup).toContain("Application shortcuts cannot be added here");
+    expect(markup).toContain('aria-describedby="app-shortcut-restriction"');
   });
 
   test("disables opening an unavailable desktop package and allows uninstall", () => {

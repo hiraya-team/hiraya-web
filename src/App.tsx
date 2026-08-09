@@ -103,6 +103,7 @@ import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-di
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
+import { APP_SHORTCUT_MAX_BYTES, APP_SHORTCUT_MIME_TYPE, availableAppShortcutName, createAppShortcut, parseAppShortcut } from "./lib/app-shortcut";
 import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
 import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
@@ -122,7 +123,7 @@ import type { KeyboardShortcut } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
-import { isAppPackageName, TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
+import { TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
 import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
@@ -130,7 +131,7 @@ import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
-import { associationCandidates, matchingInstalledApps, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
+import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
 import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
@@ -656,9 +657,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable, activeSystemDocument?.entries, activeShellTrash?.items, showHiddenFiles, accountResourceList);
     if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
     const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
-    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, activeShellItemObstacles);
+    const homeObstacles = desktopShellItemObstacles(layout.widgets, layout.iconGroups, entries, { column: 0, row: 0 }, iconArea);
+    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, homeObstacles);
     return position ? projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry) : projected.filter((entry) => entry.id !== VIRTUAL_HIRAYA_ROOT_ID);
-  }, [accountResourceList, activeShellItemObstacles, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
+  }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, showHiddenFiles, thumbnailHierarchyAvailable]);
   const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
   const groupedFolderIds = useMemo(() => new Set(layout.iconGroups.map((group) => group.folderId)), [layout.iconGroups]);
   const desktopEntryList = useMemo(() => shellEntryList.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, shellEntryList]);
@@ -3760,6 +3762,28 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     }
   }
 
+  async function addAppShortcut(app: InstalledApp) {
+    if (!canMutate) throw new Error("This desktop is read only.");
+    const name = availableAppShortcutName(app.manifest.name, entriesRef.current.filter((entry) => entry.parentId === null).map((entry) => entry.name));
+    const content = new Blob([createAppShortcut(app.appId)], { type: APP_SHORTCUT_MIME_TYPE });
+    const created = await createFile(name, null, positionFor(null), content);
+    setEntries((current) => current.some((entry) => entry.id === created.id) ? current : [...current, created]);
+    replaceSelection("desktop", [created.id]);
+    setNotice(`${app.manifest.name} added to the desktop`);
+  }
+
+  async function openAppShortcut(file: FileEntry) {
+    try {
+      if (file.size > APP_SHORTCUT_MAX_BYTES) throw new Error("This application shortcut is too large.");
+      const shortcut = parseAppShortcut(await (await readFile(file.id)).text());
+      const app = installedAppsRef.current.find((candidate) => candidate.appId === shortcut.appId);
+      if (!app || !installedAppIsAvailable(app, entriesRef.current)) throw new Error(`The app ${shortcut.appId} is not installed or available. Open Applications to install or synchronize it.`);
+      launchApp(app);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "The application shortcut could not be opened.");
+    }
+  }
+
   async function openFileWithApp(app: InstalledApp, file: FileEntry) {
     setContextMenu(null);
     const currentRoute = routeRef.current;
@@ -3957,14 +3981,21 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       else openProtectedFile(entry);
       return;
     }
-    if (entry.kind === "file" && isAppPackageName(entry.name)) {
-      void openHirayaPackage(entry);
-      return;
-    }
-    if (entry.kind === "file" && fileCapabilities(entry).preview === "url") {
-      setError("");
-      void openInternetShortcut(entry, window.open("about:blank", "_blank"));
-      return;
+    if (entry.kind === "file") {
+      const reserved = reservedFileHandler(entry);
+      if (reserved === "app-shortcut") {
+        void openAppShortcut(entry);
+        return;
+      }
+      if (reserved === "app-package") {
+        void openHirayaPackage(entry);
+        return;
+      }
+      if (reserved === "internet-shortcut") {
+        setError("");
+        void openInternetShortcut(entry, window.open("about:blank", "_blank"));
+        return;
+      }
     }
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
@@ -4265,7 +4296,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function setAreaTransitionDepth(depth: number) {
     const clamped = Math.min(1, Math.max(0, depth));
-    desktopRef.current?.style.setProperty("--area-stage-scale", String(1 - clamped * 0.055));
     desktopRef.current?.style.setProperty("--area-frame-opacity", String(clamped));
   }
 
@@ -4279,7 +4309,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     areaTransitionTimerRef.current = null;
     setAreaTransition(null);
     resetAreaTrackTransform();
-    desktopRef.current?.style.removeProperty("--area-stage-scale");
     desktopRef.current?.style.removeProperty("--area-frame-opacity");
   }
   completeAreaTransitionRef.current = completeAreaTransition;
@@ -4316,7 +4345,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     areaTransitionTimerRef.current = window.setTimeout(() => {
       if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
     }, AREA_TRANSITION_WATCHDOG_MS);
-    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-stage, .desktop-area-frame") ?? [];
+    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-frame") ?? [];
     let completedSynchronously = false;
     const stop = waitForAnimations([...hosts], () => {
       completedSynchronously = true;
@@ -5878,7 +5907,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                         canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online" || syncStatus === "blocked"}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} canAddToDesktop={canMutate} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onAddToDesktop={(installed) => void addAppShortcut(installed).catch((reason) => setError(reason instanceof Error ? reason.message : "The application shortcut could not be created."))} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
                       void requestConfirmation({
                         title: `Reset ${installed.manifest.name}?`,
                         message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",

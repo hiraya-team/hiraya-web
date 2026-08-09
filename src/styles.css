@@ -394,10 +394,6 @@
 .desktop-area-stage {
   position: absolute;
   inset: 0;
-  transform: scale(var(--area-stage-scale, 1));
-  transform-origin: center;
-  transition: transform calc(360ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
-  will-change: transform;
 }
 
 .desktop-area-stage--icons { z-index: 1; }
@@ -431,9 +427,7 @@
   transition: opacity calc(360ms * var(--theme-motion)) cubic-bezier(0.22, 0.75, 0.24, 1);
 }
 
-.desktop[data-area-transition-phase="preparing"] .desktop-area-stage,
 .desktop[data-area-transition-phase="preparing"] .desktop-area-track,
-.desktop[data-area-transition-phase="interactive"] .desktop-area-stage,
 .desktop[data-area-transition-phase="interactive"] .desktop-area-track { transition: none; }
 
 .desktop[data-area-transition-phase="preparing"] .desktop-area-frame::after,
@@ -443,17 +437,8 @@
 .desktop[data-area-transitioning] .file-icon,
 .desktop[data-area-transitioning] .shell-item { pointer-events: none; }
 
-.desktop[data-area-transition-kind="programmatic"][data-area-transition-phase="settling"] .desktop-area-stage {
-  animation: area-stage-switch calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
-}
-
 .desktop[data-area-transition-kind="programmatic"][data-area-transition-phase="settling"] .desktop-area-frame::after {
   animation: area-frame-switch calc(420ms * var(--theme-motion)) ease-out;
-}
-
-@keyframes area-stage-switch {
-  0%, 100% { transform: scale(1); }
-  46% { transform: scale(0.945); }
 }
 
 @keyframes area-frame-switch {
@@ -5816,6 +5801,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .app-store__offline .app-store__actions { margin-inline-start: auto; }
 
 .app-store__section > h3 { margin: 0; padding: 24px clamp(20px, 4vw, 36px) 8px; font-size: .84rem; letter-spacing: .04em; text-transform: uppercase; }
+.app-store__section-note { margin: 0; padding: 0 clamp(20px, 4vw, 36px) 8px; color: var(--theme-text-muted); font-size: .84rem; }
 
 .app-store__list {
   padding: 0 clamp(20px, 4vw, 36px) 32px;
@@ -5964,7 +5950,7 @@ button.app-picker__disclosure { cursor: pointer; }
     width: 100%;
   }
 
-  .app-store__actions { grid-column: 1 / -1; }
+  .app-store__actions { grid-column: 1 / -1; flex-wrap: wrap; }
   .app-store__actions .button { flex: 1; }
 }
 

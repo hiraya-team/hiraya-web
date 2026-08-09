@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "../src/apps/file-associations";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
+import { APP_SHORTCUT_MIME_TYPE } from "../src/lib/app-shortcut";
 
 function app(appId: string, fileTypes: string[]): InstalledApp {
   return { appId, source: "system", packageEntryId: null, archivePath: `system-apps/${appId.split(".").at(-1)}.hiraya.app`, digest: "a".repeat(64), version: "1.0.0", approvedAt: 1, manifest: { schemaVersion: 2, uiRuntime: 1, id: appId, name: appId, version: "1.0.0", entrypoint: "index.html", permissions: ["files:read"], fileTypes } };
@@ -45,11 +46,11 @@ describe("file association resolution", () => {
     expect(resolveRestoredFileApp(file, [text, user, generic], entries, [{ matcher: "text/plain", appId: user.appId, createdAt: 1 }], { appId: user.appId, source: user.source, digest: "d".repeat(64), permissions: user.manifest.permissions })).toBeNull();
   });
 
-  test("reserves app packages and internet shortcuts ahead of user mappings", () => {
+  test("reserves app packages and shortcuts ahead of user mappings", () => {
     const apps = [text, generic];
-    for (const file of [{ name: "editor.hiraya.app", mimeType: "application/zip" }, { name: "website.URL", mimeType: "text/plain" }]) {
+    for (const file of [{ name: "editor.hiraya.app", mimeType: "application/zip" }, { name: "Integrated Editor", mimeType: APP_SHORTCUT_MIME_TYPE }, { name: "website.URL", mimeType: "text/plain" }]) {
       expect(reservedFileHandler(file)).not.toBeNull();
-      expect(resolveFileApp(file, apps, [], [{ matcher: file.name.endsWith("app") ? ".app" : ".url", appId: text.appId, createdAt: 1 }])).toBeNull();
+      expect(resolveFileApp(file, apps, [], [{ matcher: file.name.endsWith("app") ? ".app" : file.name.endsWith("URL") ? ".url" : APP_SHORTCUT_MIME_TYPE, appId: text.appId, createdAt: 1 }])).toBeNull();
       expect(matchingInstalledApps(apps, [], file)).toEqual([]);
     }
   });

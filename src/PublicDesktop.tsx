@@ -450,6 +450,10 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                     <p>This internet shortcut opens in a new browser tab.</p>
                     <button className="button button--primary" type="button" onClick={() => void openInternetShortcut(open.file, window.open("about:blank", "_blank"))}>Open link</button>
                   </div>
+                ) : open.reserved === "app-shortcut" ? (
+                  <div className="no-preview">
+                    <p>Application shortcuts can only open for signed-in viewers who have the referenced app installed.</p>
+                  </div>
                 ) : open.reserved === "app-package" ? (
                   <div className="no-preview">
                     <p>Public app packages can be downloaded, but cannot be installed or run.</p>

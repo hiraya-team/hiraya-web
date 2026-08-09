@@ -256,6 +256,7 @@ describe("accessibility regressions", () => {
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
     const shellItemStage = app.slice(app.indexOf('<div className="desktop-area-stage desktop-area-stage--shell-items">'), app.indexOf("{marquee &&"));
+    const virtualRootPlacement = app.slice(app.indexOf("const shellEntryList"), app.indexOf("const shellEntryIndex"));
 
     expect(app).toContain('style.setProperty("--area-track-x"');
     expect(app).toContain('style.setProperty("--icon-area-track-x"');
@@ -284,6 +285,11 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".desktop-area-stage--shell-items .desktop-area-track { will-change: auto; }");
     expect(css).toContain(".shell-item--widget .shell-item__content { position: absolute; inset: 0;");
     expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
+    expect(app).not.toContain('"--area-stage-scale"');
+    expect(css).not.toContain("transform: scale(var(--area-stage-scale");
+    expect(css).not.toContain("@keyframes area-stage-switch");
+    expect(virtualRootPlacement).toContain("{ column: 0, row: 0 }");
+    expect(virtualRootPlacement).not.toContain("activeShellItemObstacles");
   });
 
   test("viewport resize preserves the signed route and pre-resize window area", async () => {
