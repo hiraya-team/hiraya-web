@@ -37,7 +37,7 @@ type Props = {
   onUngroup?: (group: DesktopIconGroup) => void;
 };
 
-type Interaction = { pointerId: number; startX: number; startY: number; width: number; height: number; moved: boolean };
+type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
 function ShellItem({ label, position, width, height, areaSize, readOnly, widget = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
@@ -89,7 +89,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     if (readOnly || busy || event.button !== 0) return;
     event.preventDefault();
     onSelect?.();
-    target.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
+    target.current = { pointerId: event.pointerId, pointerType: event.pointerType, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
   };
   const move = (event: ReactPointerEvent, target: typeof drag) => {
@@ -97,7 +97,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     if (!current || current.pointerId !== event.pointerId) return;
     const x = event.clientX - current.startX;
     const y = event.clientY - current.startY;
-    if (!current.moved && Math.hypot(x, y) < 4) return;
+    if (!current.moved && Math.hypot(x, y) < (current.pointerType === "touch" ? 12 : 4)) return;
     current.moved = true;
     const next = adjustedBounds(target, current, x, y);
     if (target === drag) {
@@ -134,10 +134,10 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     const x = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
     const y = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
     if (mode === "move") {
-      const next = adjustedBounds(drag, { pointerId: 0, startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
+      const next = adjustedBounds(drag, { pointerId: 0, pointerType: "keyboard", startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
       onMove?.({ x: next.x, y: next.y });
     } else {
-      const next = adjustedBounds(resize, { pointerId: 0, startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
+      const next = adjustedBounds(resize, { pointerId: 0, pointerType: "keyboard", startX: 0, startY: 0, width: bounds.width, height: bounds.height, moved: true }, x, y);
       onResize?.({ width: next.width, height: next.height });
     }
   };
