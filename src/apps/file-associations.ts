@@ -3,10 +3,11 @@ import type { FileAssociation, InstalledApp } from "./installed-apps";
 import { installedAppAcceptsFile, installedAppAcceptsMatcher, installedAppIsAvailable, installedAppMatchesSavedIdentity } from "./installed-apps";
 import { SYSTEM_APP_IDS } from "./system-app-ids";
 import type { SystemAppTarget } from "./types";
+import { APP_SHORTCUT_MIME_TYPE } from "../lib/app-shortcut";
 
 export type AssociationResolution = Readonly<{ app: InstalledApp; preferredUnavailable?: { appId: string; matcher: string } }>;
 
-export type ReservedFileHandler = "app-package" | "internet-shortcut";
+export type ReservedFileHandler = "app-package" | "app-shortcut" | "internet-shortcut";
 
 export const SYSTEM_FILE_DEFAULTS = [
   { label: "Shell scripts", matcher: ".hsh, text/x-hiraya-shell", appId: SYSTEM_APP_IDS.terminal },
@@ -17,8 +18,9 @@ export const SYSTEM_FILE_DEFAULTS = [
   { label: "Other files", matcher: "fallback", appId: SYSTEM_APP_IDS.fileViewer },
 ] as const;
 
-export function reservedFileHandler(file: Pick<FileEntry, "name">): ReservedFileHandler | null {
+export function reservedFileHandler(file: Pick<FileEntry, "name" | "mimeType">): ReservedFileHandler | null {
   const name = file.name.toLowerCase();
+  if (file.mimeType.split(";", 1)[0].trim().toLowerCase() === APP_SHORTCUT_MIME_TYPE) return "app-shortcut";
   if (name.endsWith(".hiraya.app")) return "app-package";
   if (name.endsWith(".url")) return "internet-shortcut";
   return null;

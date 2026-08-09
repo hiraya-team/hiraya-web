@@ -5821,6 +5821,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .app-store__offline .app-store__actions { margin-inline-start: auto; }
 
 .app-store__section > h3 { margin: 0; padding: 24px clamp(20px, 4vw, 36px) 8px; font-size: .84rem; letter-spacing: .04em; text-transform: uppercase; }
+.app-store__section-note { margin: 0; padding: 0 clamp(20px, 4vw, 36px) 8px; color: var(--theme-text-muted); font-size: .84rem; }
 
 .app-store__list {
   padding: 0 clamp(20px, 4vw, 36px) 32px;
@@ -5969,7 +5970,7 @@ button.app-picker__disclosure { cursor: pointer; }
     width: 100%;
   }
 
-  .app-store__actions { grid-column: 1 / -1; }
+  .app-store__actions { grid-column: 1 / -1; flex-wrap: wrap; }
   .app-store__actions .button { flex: 1; }
 }
 
