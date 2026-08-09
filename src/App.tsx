@@ -5400,32 +5400,48 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           </div>
         </div>
         <div className="desktop-area-stage desktop-area-stage--shell-items">
-          <ShellItemLayer
-            widgets={layout.widgets}
-            groups={layout.iconGroups}
-            entries={shellEntryList}
-            activeSegment={activeSegment}
-            areaSize={iconArea}
-            status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
-            loadPreview={thumbnailFile}
-            onOpen={handleOpen}
-            onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
-            onMoveWidget={(widget, position) => updateWidget(widget, position)}
-            onResizeWidget={(widget, size) => updateWidget(widget, size)}
-            onPreviewWidget={previewWidgetChange}
-            onRemoveWidget={removeWidget}
-            onSelectWidget={(widget) => {
-              replaceSelection("desktop", []);
-              setSelectedWidgetId(widget.id);
+          <div
+            className="desktop-canvas desktop-area-track"
+            style={{
+              width: iconArea.width,
+              height: iconArea.height,
+              transform: `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)`,
             }}
-            selectedWidgetId={selectedWidgetId}
-            widgetBusy={widgetMutationPending}
-            gridSize={layout.snapToGrid ? layout.gridSize : undefined}
-            onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
-            onResizeGroup={updateIconGroup}
-            onUngroup={ungroupIconGroup}
-            readOnly={!canMutate}
-          />
+          >
+            {visibleSegments.map((shellSegment) => {
+              const origin = areaWorldOrigin(shellSegment.segment, iconArea);
+              const segmentInteractive = shellSegment.key === activeSegmentKey;
+              const segmentVisible = segmentInteractive || transitionSegmentKeys.has(shellSegment.key);
+              return <div className="desktop-area-segment" key={shellSegment.key} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
+                <ShellItemLayer
+                  widgets={layout.widgets}
+                  groups={layout.iconGroups}
+                  entries={shellEntryList}
+                  activeSegment={shellSegment.segment}
+                  areaSize={iconArea}
+                  status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
+                  loadPreview={thumbnailFile}
+                  onOpen={handleOpen}
+                  onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
+                  onMoveWidget={(widget, position) => updateWidget(widget, position)}
+                  onResizeWidget={(widget, size) => updateWidget(widget, size)}
+                  onPreviewWidget={previewWidgetChange}
+                  onRemoveWidget={removeWidget}
+                  onSelectWidget={(widget) => {
+                    replaceSelection("desktop", []);
+                    setSelectedWidgetId(widget.id);
+                  }}
+                  selectedWidgetId={selectedWidgetId}
+                  widgetBusy={widgetMutationPending}
+                  gridSize={layout.snapToGrid ? layout.gridSize : undefined}
+                  onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
+                  onResizeGroup={updateIconGroup}
+                  onUngroup={ungroupIconGroup}
+                  readOnly={!canMutate}
+                />
+              </div>;
+            })}
+          </div>
         </div>
         {marquee && (
           <div

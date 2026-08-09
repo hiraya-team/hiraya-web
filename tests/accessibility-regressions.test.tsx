@@ -241,6 +241,7 @@ describe("accessibility regressions", () => {
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    const shellItemStage = app.slice(app.indexOf('<div className="desktop-area-stage desktop-area-stage--shell-items">'), app.indexOf("{marquee &&"));
 
     expect(app).toContain('style.setProperty("--area-track-x"');
     expect(app).toContain('style.setProperty("--icon-area-track-x"');
@@ -255,8 +256,15 @@ describe("accessibility regressions", () => {
     expect(windowLayer).toContain("areaWorldOrigin(projection.segment, desktopSize)");
     expect(appWindow).toContain('inset: 0, width: "100%", height: "100%"');
     expect(appWindow).toContain('left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height');
+    expect(shellItemStage).toContain('className="desktop-canvas desktop-area-track"');
+    expect(shellItemStage).toContain("visibleSegments.map((shellSegment)");
+    expect(shellItemStage).toContain("areaWorldOrigin(shellSegment.segment, iconArea)");
+    expect(shellItemStage).toContain("translate3d(var(--icon-area-track-x");
+    expect(shellItemStage).toContain("transitionSegmentKeys.has(shellSegment.key)");
+    expect(shellItemStage).toContain("inert={!segmentInteractive}");
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
+    expect(css).toContain(".desktop[data-area-transitioning] .shell-item { pointer-events: none; }");
     expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
   });
 

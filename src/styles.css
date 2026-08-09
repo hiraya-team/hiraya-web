@@ -440,7 +440,8 @@
 .desktop[data-area-transition-phase="interactive"] .desktop-area-frame::after { transition: none; }
 
 .desktop[data-area-transitioning] .app-window,
-.desktop[data-area-transitioning] .file-icon { pointer-events: none; }
+.desktop[data-area-transitioning] .file-icon,
+.desktop[data-area-transitioning] .shell-item { pointer-events: none; }
 
 .desktop[data-area-transition-kind="programmatic"][data-area-transition-phase="settling"] .desktop-area-stage {
   animation: area-stage-switch calc(420ms * var(--theme-motion)) cubic-bezier(0.2, 0.78, 0.22, 1);
