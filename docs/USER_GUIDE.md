@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Tap widgets without moving them.** Clock, Calendar, and Status widgets now stay still when a finger shifts slightly during a tap, while deliberate dragging continues to move them.
 - **Navigate public apps with Back.** On a public desktop, **Back** now moves through an open app before returning to the desktop, matching the signed-in desktop behavior.
 - **Arrange widgets with desktop icons.** Widgets now snap to the selected desktop grid, reserve their occupied space, and move nearby icons out of the way. Widget controls stay hidden until the widget is selected, leaving more room for its content.
 - **Keep app actions in the window chrome.** Store and bundled system apps now place important file and app-wide actions such as **Open**, **Save**, **Clear**, and **Fullscreen** in the window title bar or global header. Contextual editing, navigation, and destructive controls remain beside the content they affect.
