@@ -500,7 +500,6 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         onShowDesktop={() => undefined}
         onMinimizeApp={() => undefined}
         onCloseApp={() => undefined}
-        onShowAllWindows={() => undefined}
       />}
       {downloadGate && <LargeDownloadGate gate={downloadGate} onClose={dismissDownloadGate} />}
     </main>

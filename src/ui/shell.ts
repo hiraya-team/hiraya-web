@@ -18,7 +18,7 @@ export function minimapWindows<T extends MinimapWindow>(windows: readonly T[], c
     const rightRank = right.focused ? 0 : right.areaId === currentAreaId ? 1 : 2;
     return leftRank - rightRank;
   });
-  return { visible: ordered.slice(0, limit), overflow: ordered.slice(limit) };
+  return ordered.slice(0, limit);
 }
 
 export function minimapWindowCapacity(viewportWidth: number, compact: boolean) {

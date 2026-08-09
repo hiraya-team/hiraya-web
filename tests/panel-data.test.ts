@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { OutboxRecord } from "../src/lib/outbox";
-import { filterAndGroupSearchItems, filterAndGroupShortcuts, groupWindowsByArea, outboxRecordLabel, partitionSyncRecords, selectedRenderedItem } from "../src/ui/panel-data";
+import { filterAndGroupSearchItems, filterAndGroupShortcuts, outboxRecordLabel, partitionSyncRecords, selectedRenderedItem } from "../src/ui/panel-data";
 
 describe("panel data helpers", () => {
   test("filters search items across metadata and preserves category order", () => {
@@ -43,18 +43,6 @@ describe("panel data helpers", () => {
     ];
     expect(filterAndGroupShortcuts(shortcuts, "files ctrl")).toEqual([{ label: "Files", shortcuts: [shortcuts[0]] }]);
     expect(filterAndGroupShortcuts(shortcuts, "missing")).toEqual([]);
-  });
-
-  test("groups windows by area in encounter order", () => {
-    const windows = [
-      { id: "a", title: "Notes", areaId: "one", areaLabel: "Area 1" },
-      { id: "b", title: "Image", areaId: "two", areaLabel: "Area 2" },
-      { id: "c", title: "Tasks", areaId: "one", areaLabel: "Area 1" },
-    ];
-    expect(groupWindowsByArea(windows)).toEqual([
-      { id: "one", label: "Area 1", windows: [windows[0], windows[2]] },
-      { id: "two", label: "Area 2", windows: [windows[1]] },
-    ]);
   });
 
   test("partitions and labels queued sync records", () => {

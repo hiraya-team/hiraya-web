@@ -2,19 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, minimapWindows, swipeAxis, swipePreviewReady } from "../src/ui/shell";
 
 describe("cohesive shell view models", () => {
-  test("prioritizes the focused window, then windows in the current region, with explicit overflow", () => {
+  test("prioritizes the focused window, then windows in the current region", () => {
     const windows = [
       { id: "other-a", areaId: "1:0" },
       { id: "current-a", areaId: "0:0" },
       { id: "focused", areaId: "1:0", focused: true },
       { id: "current-b", areaId: "0:0" },
     ];
-    const model = minimapWindows(windows, "0:0", 3);
-    expect(model.visible.map((window) => window.id)).toEqual(["focused", "current-a", "current-b"]);
-    expect(model.overflow.map((window) => window.id)).toEqual(["other-a"]);
+    expect(minimapWindows(windows, "0:0", 3).map((window) => window.id)).toEqual(["focused", "current-a", "current-b"]);
   });
 
-  test("adapts minimap window capacity while reserving the overflow model", () => {
+  test("adapts minimap window capacity", () => {
     expect(minimapWindowCapacity(621, true)).toBe(2);
     expect(minimapWindowCapacity(768, true)).toBe(5);
     expect(minimapWindowCapacity(1024, false)).toBe(5);

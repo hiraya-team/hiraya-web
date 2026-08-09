@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowsIn, ArrowsOut, Minus, SquaresFour, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsOut, Minus, X } from "@phosphor-icons/react";
 import { clampWindowBounds, resizeWindowBounds, type ResizeDirection, type WindowBounds } from "../ui/window-manager";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
 
@@ -27,7 +27,6 @@ export type AppWindowProps = {
   maximized?: boolean;
   onToggleMaximize?: (id: string) => void;
   onShowDesktop?: () => void;
-  onSwitchWindow?: () => void;
   backLabel?: string;
   hideFocusedHeader?: boolean;
   externalHeaderElements?: AppWindowHeaderElements;
@@ -62,7 +61,7 @@ export function AppWindow({
   segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, dragEdgeAt, onDragAtEdge, onEdgeDwellChange,
   onDragEnd,
   onMinimize, onClose, maximized = false, onToggleMaximize,
-  onShowDesktop, onSwitchWindow, backLabel = "Back", hideFocusedHeader = false,
+  onShowDesktop, backLabel = "Back", hideFocusedHeader = false,
   externalHeaderElements, children, titleArea, headerContent,
 }: AppWindowProps) {
   const windowRef = useRef<HTMLElement>(null);
@@ -187,7 +186,6 @@ export function AppWindow({
       <div className="app-window__controls" data-window-no-drag>
         {!windowed ? <>
           {onShowDesktop && <button className="app-window__control app-window__mobile-action" type="button" onClick={onShowDesktop}><ArrowLeft /> <span>{backLabel}</span></button>}
-          {onSwitchWindow && <button className="app-window__control app-window__mobile-action" type="button" onClick={onSwitchWindow}><SquaresFour /> <span>Switch Window</span></button>}
           {onClose && <button className="app-window__control app-window__mobile-action app-window__control--close" type="button" onClick={() => onClose(id)}><X /> <span>Close</span></button>}
         </> : <>
           {onClose && <button className="app-window__control app-window__control--close" type="button" onClick={() => onClose(id)} aria-label={`Close ${title}`}><X size={16} /></button>}

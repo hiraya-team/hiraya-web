@@ -40,10 +40,9 @@ describe("AppWindow adaptive presentation", () => {
   });
 
   test("renders header navigation actions only when callbacks exist", () => {
-    const markup = renderToStaticMarkup(<AppWindow {...base} onShowDesktop={() => undefined} onSwitchWindow={() => undefined} onClose={() => undefined} />);
+    const markup = renderToStaticMarkup(<AppWindow {...base} onShowDesktop={() => undefined} onClose={() => undefined} />);
 
     expect(markup).toContain(">Back<");
-    expect(markup).toContain("Switch Window");
     expect(markup).toContain(">Close<");
   });
 

@@ -2968,7 +2968,6 @@
   background: color-mix(in srgb, var(--theme-chrome-text) 7%, transparent);
   cursor: pointer;
 }
-.desktop-minimap__app--overflow { font-size: 11px; font-weight: 800; }
 .desktop-minimap__grid-viewport { container-type: size; display: grid; min-width: 0; min-height: 0; overflow: hidden; place-items: center; touch-action: none; }
 .desktop-minimap__grid {
   display: grid;
@@ -4495,40 +4494,25 @@ button.app-picker__disclosure { cursor: pointer; }
 .utility-panel-dialog > .window-header { position: sticky; z-index: 3; top: 0; flex: 0 0 auto; }
 
 .sync-issues-panel,
-.all-windows-panel,
 .keyboard-shortcuts-panel { padding: 22px; }
 .sync-issues-panel__status,
-.all-windows-panel > header,
 .keyboard-shortcuts-panel > header { display: flex; align-items: flex-start; gap: 11px; padding-right: 36px; }
 .sync-issues-panel h2,
-.all-windows-panel h2,
 .keyboard-shortcuts-panel h2 { margin: 0; font-size: max(18px, calc(15px * var(--theme-type-scale))); }
 .sync-issues-panel p,
-.all-windows-panel header p,
 .keyboard-shortcuts-panel header p { margin: 3px 0 0; color: var(--theme-text-muted); font-size: max(12px, calc(9px * var(--theme-type-scale))); }
 .sync-issues-panel__empty,
-.all-windows-panel__empty,
 .keyboard-shortcuts-panel__empty,
 .command-palette__empty { display: grid; min-height: 220px; place-content: center; justify-items: center; gap: 5px; color: var(--theme-text-muted); text-align: center; }
 .sync-issues-panel__empty strong,
-.all-windows-panel__empty strong,
 .keyboard-shortcuts-panel__empty strong,
 .command-palette__empty strong { color: var(--theme-text); }
 .sync-issues-panel__group { margin-top: 20px; }
 .sync-issues-panel__group h3,
 .keyboard-shortcuts-panel__groups h3 { color: var(--theme-text-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.sync-issues-panel__group ul,
-.all-windows-panel ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.sync-issues-panel__group ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .sync-issues-panel__record { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); background: var(--theme-window-muted); }
 .sync-issues-panel__actions { display: flex; gap: 6px; }
-
-.all-windows-panel__groups { display: grid; gap: 18px; margin-top: 20px; }
-.all-windows-panel__groups section > header { display: flex; align-items: center; justify-content: space-between; }
-.all-windows-panel__groups h3 { margin: 0; }
-.all-windows-panel li > button { display: flex; width: 100%; min-height: 46px; align-items: center; gap: 9px; padding: 8px 10px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); color: var(--theme-text); background: var(--theme-window-muted); text-align: left; cursor: pointer; }
-.all-windows-panel li > button[aria-current="true"] { border-color: var(--theme-selection); background: var(--theme-selected); box-shadow: 0 0 0 var(--theme-border-width) var(--theme-focus); }
-.all-windows-panel li > button > span { display: grid; min-width: 0; flex: 1; }
-.all-windows-panel li small { color: var(--theme-text-muted); }
 
 .keyboard-shortcuts-panel__search { margin: 18px 0; }
 .keyboard-shortcuts-panel__groups { display: grid; gap: 18px; }
@@ -4575,7 +4559,6 @@ button.app-picker__disclosure { cursor: pointer; }
   .utility-panel-dialog,
   .command-palette { width: calc(100vw - 16px); max-height: calc(100dvh - 20px); }
   .sync-issues-panel,
-  .all-windows-panel,
   .keyboard-shortcuts-panel { padding: 18px 14px; }
   .sync-issues-panel__record { align-items: stretch; flex-direction: column; }
   .properties-window__offline { align-items: stretch; flex-direction: column; }
@@ -4635,7 +4618,6 @@ button.app-picker__disclosure { cursor: pointer; }
 .command-palette__results { overscroll-behavior: contain; }
 
 @media (hover: hover) and (pointer: fine) {
-  .all-windows-panel li > button:hover { background: var(--theme-hover); }
   .file-icon:hover {
     border-color: color-mix(in srgb, var(--theme-desktop-text) 28%, transparent);
     background: color-mix(in srgb, var(--theme-selection) 15%, transparent);
@@ -4737,7 +4719,6 @@ button.app-picker__disclosure { cursor: pointer; }
   .onboarding-dialog__grid article { min-height: 0; }
   .onboarding-dialog__content > footer { align-items: stretch; flex-direction: column; padding-bottom: max(18px, env(safe-area-inset-bottom)); }
   .sync-issues-panel__empty,
-  .all-windows-panel__empty,
   .keyboard-shortcuts-panel__empty,
   .command-palette__empty { min-height: 150px; }
   .folder-explorer__empty { min-height: 180px; }
@@ -5185,7 +5166,6 @@ button.app-picker__disclosure { cursor: pointer; }
   background: var(--theme-accent);
   content: "";
 }
-.desktop-minimap__app--overflow { font-size: 10px; font-weight: 800; }
 .desktop-minimap__grid-viewport { min-height: 0; overflow: hidden; }
 .desktop-minimap__grid {
   width: clamp(56px, calc(var(--minimap-columns) * 28px), 196px);
