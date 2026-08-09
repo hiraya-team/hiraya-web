@@ -1197,7 +1197,14 @@ export function readDesktopEntries(desktopId: string) { return serializeStorage(
 export function transferEntries(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => transferEntriesUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
 export function readWindowSession(desktopId: string) { return serializeStorage(() => repositories.readWindowSession(desktopId)); }
 export function saveWindowSession(desktopId: string, session: WindowSession) { return serializeStorage(() => repositories.saveWindowSession(desktopId, session)); }
-export function enqueueMutation(operation: OutboxOperation, contents?: Map<string, Blob>) { return serializeStorage(() => enqueueMutationUnsafe(operation, contents)); }
+export function enqueueMutation(operation: OutboxOperation | ((current: DesktopStateSnapshot) => OutboxOperation), contents?: Map<string, Blob>) {
+  return serializeStorage(async () => {
+    if (typeof operation !== "function") return enqueueMutationUnsafe(operation, contents);
+    const desktopId = getActiveDesktopContext();
+    if (!desktopId) throw new Error("No desktop is active.");
+    return enqueueMutationUnsafe(operation(await readDesktopStateUnsafe(desktopId)), contents);
+  });
+}
 export function enqueueDesktopCreate(name: string) { return serializeStorage(() => enqueueDesktopCreateUnsafe(name)); }
 export function enqueueDesktopRename(desktopId: string, name: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopRenameUnsafe(desktopId, name, baseRevision)); }
 export function enqueueDesktopDelete(ownerDesktopId: string, desktopId: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopDeleteUnsafe(ownerDesktopId, desktopId, baseRevision)); }

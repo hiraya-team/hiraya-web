@@ -10,6 +10,7 @@ import type { DesktopEntry, DesktopIdentity, DesktopLayout, EditorSettings, Entr
 
 type DesktopRegistry = { desktops: DesktopIdentity[]; activeDesktopId: string | null };
 type QueuedMutation = { desktop: DesktopStateSnapshot; record: OutboxRecord };
+export type OutboxOperationFactory = (current: DesktopStateSnapshot) => OutboxOperation;
 
 export interface SyncStorage {
   loadDesktop(viewport: EntryPosition, seeded?: SeededManifest | null): Promise<DesktopStateSnapshot>;
@@ -52,7 +53,7 @@ export interface SyncStorage {
   renameDesktop(desktopId: string, name: string): Promise<DesktopIdentity>;
   deleteDesktop(desktopId: string): Promise<unknown>;
 
-  enqueueMutation(operation: OutboxOperation, contents?: Map<string, Blob>): Promise<QueuedMutation>;
+  enqueueMutation(operation: OutboxOperation | OutboxOperationFactory, contents?: Map<string, Blob>): Promise<QueuedMutation>;
   enqueueDesktopCreate(name: string): Promise<{ desktop: DesktopIdentity; record: OutboxRecord }>;
   enqueueDesktopRename(desktopId: string, name: string, baseRevision: number): Promise<{ desktop: DesktopIdentity; record: OutboxRecord }>;
   enqueueDesktopDelete(ownerDesktopId: string, desktopId: string, baseRevision: number): Promise<{ record: OutboxRecord }>;
