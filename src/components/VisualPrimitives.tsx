@@ -28,6 +28,7 @@ export function EntryIcon({ entry, size = 24 }: { entry: DesktopEntry; size?: nu
   if (entry.kind === "folder") return <Folder size={size} weight="duotone" aria-hidden="true" />;
   const { icon } = fileCapabilities(entry);
   const props = { size, weight: "duotone" as const, "aria-hidden": true };
+  if (icon === "app") return <Package {...props} />;
   if (icon === "image") return <FileImage {...props} />;
   if (icon === "video") return <FileVideo {...props} />;
   if (icon === "audio") return <FileAudio {...props} />;

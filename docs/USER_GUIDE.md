@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Add application shortcuts to the desktop.** In **Applications**, choose **Add to desktop** for any available installed app. The new icon synchronizes with the desktop and explains when the referenced app is unavailable to another viewer.
 - **Open Theme Editor directly.** Choose **Settings > Desktop > Theme Editor** to create or apply themes and customize the current desktop's wallpaper without an extra Appearance page.
 - **Keep floating window chrome focused.** The redundant window-actions dropdown has been removed. Keyboard shortcuts for moving and resizing focused windows remain available under **Shortcuts**.
 - **Understand app controls at a glance.** Focused apps now keep their primary and secondary actions together, label **More** and **System** distinctly, avoid repeating visible actions in menus, and lead the title with the current file or project. Actions that cannot apply, such as saving a read-only preview, stay out of the header.

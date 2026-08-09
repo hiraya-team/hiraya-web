@@ -110,6 +110,12 @@ describe("public desktop", () => {
     expect(source).toContain("setSelectedIds(new Set());\n      setOpen({");
   });
 
+  test("explains why application shortcuts cannot launch publicly", async () => {
+    const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
+    expect(source).toContain('open.reserved === "app-shortcut"');
+    expect(source).toContain("Application shortcuts can only open for signed-in viewers");
+  });
+
   test("delegates public Back to the open app before returning to the desktop", async () => {
     const source = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     expect(source).toContain("await runtime.lifecycle.requestBack(");
