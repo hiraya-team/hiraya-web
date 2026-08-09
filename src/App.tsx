@@ -657,9 +657,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable, activeSystemDocument?.entries, activeShellTrash?.items, showHiddenFiles, accountResourceList);
     if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
     const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
-    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, activeShellItemObstacles);
+    const homeObstacles = desktopShellItemObstacles(layout.widgets, layout.iconGroups, entries, { column: 0, row: 0 }, iconArea);
+    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, homeObstacles);
     return position ? projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry) : projected.filter((entry) => entry.id !== VIRTUAL_HIRAYA_ROOT_ID);
-  }, [accountResourceList, activeShellItemObstacles, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, showHiddenFiles, thumbnailHierarchyAvailable]);
+  }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, showHiddenFiles, thumbnailHierarchyAvailable]);
   const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
   const groupedFolderIds = useMemo(() => new Set(layout.iconGroups.map((group) => group.folderId)), [layout.iconGroups]);
   const desktopEntryList = useMemo(() => shellEntryList.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, shellEntryList]);
@@ -4266,7 +4267,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function setAreaTransitionDepth(depth: number) {
     const clamped = Math.min(1, Math.max(0, depth));
-    desktopRef.current?.style.setProperty("--area-stage-scale", String(1 - clamped * 0.055));
     desktopRef.current?.style.setProperty("--area-frame-opacity", String(clamped));
   }
 
@@ -4280,7 +4280,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     areaTransitionTimerRef.current = null;
     setAreaTransition(null);
     resetAreaTrackTransform();
-    desktopRef.current?.style.removeProperty("--area-stage-scale");
     desktopRef.current?.style.removeProperty("--area-frame-opacity");
   }
   completeAreaTransitionRef.current = completeAreaTransition;
@@ -4317,7 +4316,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     areaTransitionTimerRef.current = window.setTimeout(() => {
       if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
     }, AREA_TRANSITION_WATCHDOG_MS);
-    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-stage, .desktop-area-frame") ?? [];
+    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-frame") ?? [];
     let completedSynchronously = false;
     const stop = waitForAnimations([...hosts], () => {
       completedSynchronously = true;
