@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CaretRight, DotsThreeVertical, FilePlus, Folder, FolderOpen, FolderPlus, ListBullets, MagnifyingGlass, SortAscending, SortDescending, SquaresFour, UploadSimple, X } from "@phosphor-icons/react";
-import type { DesktopEntry, EntryPosition, FolderEntry, GridSize } from "../types";
+import type { DesktopEntry, EntryPosition, FolderEntry } from "../types";
 import type { ExplorerView } from "../domain/preferences";
 import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary, type FolderSortKey, type SortDirection } from "../ui/folder-explorer";
 import type { AppWindowHeaderElements } from "./AppWindow";
@@ -33,7 +33,6 @@ export interface FolderExplorerProps {
   mobileMultiSelect?: boolean;
   onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
   getDesktopDropPreview?: (clientX: number, clientY: number) => EntryPosition;
-  gridSize?: GridSize;
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
   offlineAvailability?: Readonly<Record<string, OfflineEntryAvailability>>;
@@ -63,7 +62,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
   const suppressClick = useRef(false);
   const lastTap = useRef<TouchTap | null>(null);
@@ -144,10 +143,6 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       current.snapPreview.className = "file-icon-snap-preview entry-drop-preview";
       current.snapPreview.ariaHidden = "true";
       current.snapPreview.dataset.visible = "true";
-      if (gridSize) {
-        current.snapPreview.dataset.grid = `${gridSize}`;
-        current.snapPreview.style.setProperty("--snap-grid-size", `${gridSize}px`);
-      }
       if (!current.snapPreview.isConnected) dropTarget.element.append(current.snapPreview);
       const position = getDesktopDropPreview(event.clientX, event.clientY);
       current.snapPreview.style.left = `${position.x}px`;

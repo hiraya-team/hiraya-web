@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **See quieter placement previews.** Moving desktop items with **Snap to grid** enabled now highlights the exact destination without covering nearby work in a decorative grid.
 - **Simplify open-window switching.** The separate **All windows** dialog has been removed. Use **Search** to find and focus any open window.
 - **Keep desktop items steady between areas.** Icons, widgets, and icon groups now retain their exact size and arrangement while sliding between desktop areas.
 - **Add application shortcuts to the desktop.** In **Applications**, choose **Add to desktop** for any available installed app. The new icon synchronizes with the desktop and explains when the referenced app is unavailable to another viewer.

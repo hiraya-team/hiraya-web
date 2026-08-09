@@ -27,7 +27,8 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
   expect(markup).not.toContain('<header class="shell-item__header"><button class="shell-item__drag" type="button" aria-label="Move Status"');
   expect(markup).toContain('aria-label="Ungroup Projects"');
   expect(markup).toContain('data-entry-drop-parent="folder"');
-  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true" data-grid="24"');
+  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true"');
+  expect(markup).not.toContain("data-grid");
 });
 
 test("keeps public status generic and only renders the active logical area", () => {
