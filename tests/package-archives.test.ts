@@ -118,6 +118,18 @@ describe("approved package archives", () => {
     expect((await readAccountApps()).outbox).toEqual([]);
     expect(await readAppStorage(appId, "draft")).toBeUndefined();
 
+    const clear = await enqueueAccountAppOperation({ schemaVersion: 1, kind: "clear-data", appId, dataGeneration: 3 }, { kind: "clear", appId });
+    const afterClear = await enqueueAccountAppOperation({ ...operation, dataGeneration: 3 }, { kind: "put", appId, key: "draft", value: operation.value });
+    expect(afterClear.record.operation).toMatchObject({ kind: "put-data", dataGeneration: 4 });
+    const baseline = (await readAccountApps()).state.baseline!;
+    const advanced = {
+      ...baseline,
+      apps: baseline.apps.map((app) => ({ ...app, generations: { ...app.generations, dataGeneration: 4 } })),
+      installation: { apps: baseline.installation.apps.map((app) => ({ ...app, generations: { ...app.generations, dataGeneration: 4 } })) },
+    };
+    await reconcileAccountApps(advanced, clear.record.operationId);
+    await reconcileAccountApps(advanced, afterClear.record.operationId);
+
     const oversized = { schemaVersion: 1 as const, kind: "put-data" as const, appId, key: "large", dataGeneration: 3, value: "x".repeat(70_000) };
     await expect(enqueueAccountAppOperation(oversized, { kind: "put", appId, key: "large", value: oversized.value })).rejects.toThrow("quota");
     expect((await readAccountApps()).outbox).toEqual([]);

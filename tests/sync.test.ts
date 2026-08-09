@@ -325,6 +325,48 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
+  test("captures layout revisions and conflict bases after serialized reconciliation", async () => {
+    const storage = remoteStorage();
+    const enqueue = storage.enqueueMutation.bind(storage);
+    let releaseEnqueue!: () => void;
+    let markEnqueueStarted!: () => void;
+    const enqueueGate = new Promise<void>((resolve) => { releaseEnqueue = resolve; });
+    const enqueueStarted = new Promise<void>((resolve) => { markEnqueueStarted = resolve; });
+    storage.enqueueMutation = async (operation, contents) => {
+      markEnqueueStarted();
+      await enqueueGate;
+      return enqueue(operation, contents);
+    };
+    const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    const initial = desktopStateSnapshot();
+    const widget = { id: "clock", kind: "clock" as const, x: 20, y: 30, width: 220, height: 150 };
+
+    const mutation = engine.saveDesktopLayout({ ...initial.layout, widgets: [{ ...widget, width: 280 }] }, { revision: initial.sync.layoutRevision, layout: initial.layout });
+    await enqueueStarted;
+    await storage.applyRemoteDesktop({
+      ...initial,
+      layout: { ...initial.layout, widgets: [widget], wallpaper: { ...initial.layout.wallpaper, dim: 0.8 } },
+      sync: { ...initial.sync, catalogRevision: 2, layoutRevision: 2 },
+    }, new Map());
+    releaseEnqueue();
+    await mutation;
+
+    expect((await engine.getOutboxStatus()).records[0]?.operation).toMatchObject({
+      kind: "layout",
+      baseRevision: 2,
+      conflictBase: { widgets: [widget] },
+      layout: { widgets: [{ ...widget, width: 280 }], wallpaper: { dim: 0.8 } },
+    });
+    blocked.release();
+    await blocked.pending;
+    await engine.stop();
+  });
+
   test("stops immediately and starts a new generation while stale replay transport is blocked", async () => {
     const storage = remoteStorage();
     const remote = remoteDesktopState();

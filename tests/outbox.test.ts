@@ -123,10 +123,11 @@ describe("strict outbox", () => {
   });
 
   test("rebases only causally acknowledged resource revisions", () => {
-    const snapshot = { ...state(), sync: { ...state().sync, catalogRevision: 5, entryRevisions: { "own-change": 5, concurrent: 6 } } };
-    const own = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "own-change", baseRevision: 2, changes: { name: "next" } }, 5);
+    const changed = { ...state().entries[0], id: "own-change", name: "first", position: { x: 20, y: 30 } };
+    const snapshot = { ...state(), entries: [changed], sync: { ...state().sync, catalogRevision: 5, entryRevisions: { "own-change": 5, concurrent: 6 } } };
+    const own = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "own-change", baseRevision: 2, conflictBase: { name: "old", parentId: null, position: { x: 0, y: 0 } }, changes: { name: "next" } }, 5);
     const concurrent = rebaseOutboxOperationAfterAcknowledgement(snapshot, { schemaVersion: 1, kind: "patch-entry", entryId: "concurrent", baseRevision: 2, changes: { name: "stale" } }, 5);
-    expect(own).toMatchObject({ baseRevision: 5 });
+    expect(own).toMatchObject({ baseRevision: 5, conflictBase: { name: "first", position: { x: 20, y: 30 } } });
     expect(concurrent).toMatchObject({ baseRevision: 2 });
   });
 

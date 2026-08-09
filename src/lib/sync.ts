@@ -5,7 +5,7 @@ import { assertValidId, isRecord, parseContentAccessDescriptor, parseEntries, pa
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import { DEFAULT_WALLPAPER } from "../types";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
-import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, forceRebaseOutboxOperation, isAccessRevocationRecord, isRevisionConflictRecord, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, resolveOutboxRevisionConflict, type EntryConflictBase, type RevisionConflictDetails } from "./outbox";
+import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, forceRebaseOutboxOperation, isAccessRevocationRecord, isRevisionConflictRecord, mergeDesktopLayout, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, resolveOutboxRevisionConflict, type EntryConflictBase, type RevisionConflictDetails } from "./outbox";
 import { parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
 import type { ClipboardEntrySnapshot } from "./clipboard";
@@ -978,12 +978,9 @@ export class SyncEngine {
     }
   }
 
-  private async mutate<T>(operation: OutboxOperationInput | ((current: DesktopStateSnapshot) => OutboxOperationInput), select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void, replay = true) {
+  private async mutate<T>(operation: (current: DesktopStateSnapshot) => OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, replay = true) {
     return this.queue(async () => {
-      validate?.();
-      const queued = await this.storage.enqueueMutation(typeof operation === "function"
-        ? (current) => ({ ...operation(current), schemaVersion: 1 } as OutboxOperation)
-        : { ...operation, schemaVersion: 1 } as OutboxOperation, contents);
+      const queued = await this.storage.enqueueMutation((current) => ({ ...operation(current), schemaVersion: 1 } as OutboxOperation), contents);
       this.publish(queued.desktop);
       await this.publishOutbox();
       if (replay) this.requestReplay();
@@ -1016,7 +1013,7 @@ export class SyncEngine {
     assertUniqueName(this.current().entries, name, parentId);
     const now = Date.now();
     const entry: FileEntry = { kind: "file", id: crypto.randomUUID(), name, parentId, mimeType: "text/plain", size: 0, createdAt: now, modifiedAt: now, position: parsedPosition };
-    return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, new Blob([], { type: entry.mimeType })]]));
+    return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, new Blob([], { type: entry.mimeType })]]));
   }
 
   createFile(nameValue: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string, deferReplay = false) {
@@ -1031,7 +1028,7 @@ export class SyncEngine {
       mimeType: mimeType ?? (content.type || "application/octet-stream"), size: content.size,
       createdAt: now, modifiedAt: now, position: parsedPosition,
     };
-    return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, content.slice(0, content.size, entry.mimeType)]]), undefined, !deferReplay);
+    return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, content.slice(0, content.size, entry.mimeType)]]), !deferReplay);
   }
 
   createFolder(nameValue: string, parentId: string | null, position: EntryPosition) {
@@ -1042,7 +1039,7 @@ export class SyncEngine {
     assertUniqueName(this.current().entries, name, parentId);
     const now = Date.now();
     const entry: FolderEntry = { kind: "folder", id: crypto.randomUUID(), name, parentId, createdAt: now, modifiedAt: now, position: parsedPosition };
-    return this.mutate({ kind: "create", entries: [entry] }, (next) => next.entries.find((item) => item.id === entry.id) as FolderEntry);
+    return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FolderEntry);
   }
 
   importFiles(files: File[], parentId: string | null, positions: EntryPosition[]) {
@@ -1057,7 +1054,7 @@ export class SyncEngine {
     }
     const createdAt = Date.now();
     const entries: FileEntry[] = files.map((file, index) => ({ kind: "file", id: crypto.randomUUID(), name: names[index], parentId, mimeType: file.type || "application/octet-stream", size: file.size, createdAt, modifiedAt: file.lastModified || createdAt, position: parsedPositions[index] }));
-    return this.mutate({ kind: "create", entries }, (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id) as FileEntry), new Map(entries.map((entry, index) => [entry.id, files[index]])));
+    return this.mutate(() => ({ kind: "create", entries }), (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id) as FileEntry), new Map(entries.map((entry, index) => [entry.id, files[index]])));
   }
 
   createEntries(entriesValue: DesktopEntry[], contentsValue: Map<string, Blob>) {
@@ -1068,7 +1065,7 @@ export class SyncEngine {
     }
     const contents = new Map(files.map((entry) => [entry.id, contentsValue.get(entry.id)!.slice(0, entry.size, entry.mimeType)]));
     if (this.frontendOnly) return this.localMutation(() => this.storage.createEntries(entries, contents));
-    return this.mutate({ kind: "create", entries }, (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id)!), contents);
+    return this.mutate(() => ({ kind: "create", entries }), (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id)!), contents);
   }
 
   renameEntry(id: string, nameValue: string) {
@@ -1077,14 +1074,23 @@ export class SyncEngine {
     if (!existing) throw new Error("That entry no longer exists.");
     const name = validateEntryName(nameValue);
     assertUniqueName(this.current().entries, name, existing.parentId, id);
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { name, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    const modifiedAt = Date.now();
+    return this.mutate((current) => {
+      const entry = current.entries.find((candidate) => candidate.id === id);
+      if (!entry) throw new Error("That entry no longer exists.");
+      assertUniqueName(current.entries, name, entry.parentId, id);
+      return { kind: "patch-entry", entryId: id, baseRevision: current.sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(entry), changes: { name, modifiedAt } };
+    }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   deleteEntry(id: string) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.deleteEntry(id));
     const before = this.current().entries;
     if (!before.some((entry) => entry.id === id)) throw new Error("That entry no longer exists.");
-    return this.mutate({ kind: "delete", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0 }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
+    return this.mutate((current) => {
+      if (!current.entries.some((entry) => entry.id === id)) throw new Error("That entry no longer exists.");
+      return { kind: "delete", entryId: id, baseRevision: current.sync.entryRevisions[id] ?? 0 };
+    }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
   }
 
   deleteEntries(ids: string[]) {
@@ -1092,7 +1098,10 @@ export class SyncEngine {
     const unique = [...new Set(ids)];
     const before = this.current().entries;
     if (!unique.length || unique.length !== ids.length || unique.some((id) => !before.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
-    return this.mutate({ kind: "delete-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, this.current().sync.entryRevisions[id] ?? 0])) }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
+    return this.mutate((current) => {
+      if (unique.some((id) => !current.entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
+      return { kind: "delete-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, current.sync.entryRevisions[id] ?? 0])) };
+    }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
   }
 
   moveEntry(id: string, parentId: string | null, position: EntryPosition) {
@@ -1101,7 +1110,13 @@ export class SyncEngine {
     const existing = this.current().entries.find((entry) => entry.id === id);
     if (!existing) throw new Error("That entry no longer exists.");
     this.assertParent(parentId);
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { parentId, position: parsedPosition, modifiedAt: Date.now() } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    const modifiedAt = Date.now();
+    return this.mutate((current) => {
+      const entry = current.entries.find((candidate) => candidate.id === id);
+      if (!entry) throw new Error("That entry no longer exists.");
+      if (parentId !== null && !current.entries.some((candidate) => candidate.id === parentId && candidate.kind === "folder")) throw new Error("That parent folder no longer exists.");
+      return { kind: "patch-entry", entryId: id, baseRevision: current.sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(entry), changes: { parentId, position: parsedPosition, modifiedAt } };
+    }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   moveEntries(ids: string[], parentId: string | null) {
@@ -1109,8 +1124,13 @@ export class SyncEngine {
     const unique = [...new Set(ids)];
     if (!unique.length || unique.length !== ids.length || unique.some((id) => !this.current().entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
     this.assertParent(parentId);
-    const entries = new Map(this.current().entries.map((entry) => [entry.id, entry]));
-    return this.mutate({ kind: "move-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, this.current().sync.entryRevisions[id] ?? 0])), conflictBases: Object.fromEntries(unique.map((id) => [id, conflictBase(entries.get(id)!)])), parentId, modifiedAt: Date.now() }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
+    const modifiedAt = Date.now();
+    return this.mutate((current) => {
+      const entries = new Map(current.entries.map((entry) => [entry.id, entry]));
+      if (unique.some((id) => !entries.has(id))) throw new Error("An entry no longer exists.");
+      if (parentId !== null && !current.entries.some((entry) => entry.id === parentId && entry.kind === "folder")) throw new Error("That parent folder no longer exists.");
+      return { kind: "move-entries", entryIds: unique, baseRevisions: Object.fromEntries(unique.map((id) => [id, current.sync.entryRevisions[id] ?? 0])), conflictBases: Object.fromEntries(unique.map((id) => [id, conflictBase(entries.get(id)!)])), parentId, modifiedAt };
+    }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
   }
 
   transferEntries(destinationDesktopId: string, ids: string[], parentId: string | null) {
@@ -1315,15 +1335,15 @@ export class SyncEngine {
     if (!existing) throw new Error("That file no longer exists.");
     const entry = { ...existing, mimeType: options.mimeType ?? existing.mimeType, size: content.size, modifiedAt: Date.now() };
     return this.mutate(
-      { kind: "save-content", entryId: id, mimeType: entry.mimeType, size: entry.size, modifiedAt: entry.modifiedAt, baseContentRevision: options.unconditional ? undefined : this.current().sync.contentRevisions[id] },
+      (current) => {
+        const actualRevision = current.sync.contentRevisions[id] ?? 0;
+        if (options.expectedContentRevision !== undefined && options.expectedContentRevision !== actualRevision) throw new ContentRevisionConflictError(options.expectedContentRevision, actualRevision);
+        const currentEntry = current.entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
+        if (!currentEntry) throw new Error("That file no longer exists.");
+        return { kind: "save-content", entryId: id, mimeType: options.mimeType ?? currentEntry.mimeType, size: content.size, modifiedAt: entry.modifiedAt, baseContentRevision: options.unconditional ? undefined : current.sync.contentRevisions[id] };
+      },
       (next) => next.entries.find((item) => item.id === id) as FileEntry,
       new Map([[id, content.slice(0, content.size, entry.mimeType)]]),
-      () => {
-        const actualRevision = this.current().sync.contentRevisions[id] ?? 0;
-        if (options.expectedContentRevision !== undefined && options.expectedContentRevision !== actualRevision) {
-          throw new ContentRevisionConflictError(options.expectedContentRevision, actualRevision);
-        }
-      },
     );
   }
 
@@ -1337,33 +1357,35 @@ export class SyncEngine {
   saveDesktopLayout(layout: DesktopLayout, base?: { revision: number; layout: DesktopLayout }) {
     const parsed = parseLayout(layout);
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveDesktopLayout(parsed), false);
-    return this.mutate({ kind: "layout", layout: parsed, baseRevision: base?.revision ?? this.current().sync.layoutRevision, conflictBase: base?.layout ?? this.current().layout }, () => undefined);
+    return this.mutate((current) => ({ kind: "layout", layout: base ? mergeDesktopLayout(base.layout, parsed, current.layout) : parsed, baseRevision: current.sync.layoutRevision, conflictBase: current.layout }), () => undefined);
   }
 
   saveEditorSettings(settings: EditorSettings) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveEditorSettings(settings), false);
-    return this.mutate({ kind: "editor-settings", settings, baseRevision: this.current().sync.settingsRevision, conflictBase: this.current().editorSettings }, () => undefined);
+    return this.mutate((current) => ({ kind: "editor-settings", settings, baseRevision: current.sync.settingsRevision, conflictBase: current.editorSettings }), () => undefined);
   }
 
   selectTheme(themeId: string) {
     parseThemeState({ ...this.current().appearance, selectedThemeId: themeId });
     if (this.frontendOnly) return this.localMutation(() => this.storage.selectTheme(themeId));
-    return this.mutate({ kind: "select-theme", themeId, baseRevision: this.current().sync.themeSelectionRevision }, (next) => next.appearance);
+    return this.mutate((current) => {
+      parseThemeState({ ...current.appearance, selectedThemeId: themeId });
+      return { kind: "select-theme", themeId, baseRevision: current.sync.themeSelectionRevision };
+    }, (next) => next.appearance);
   }
 
   saveCustomTheme(value: CustomTheme) {
     const parsed = parseCustomTheme(value);
-    const existing = this.current().appearance.customThemes.find((item) => item.id === parsed.id);
-    const theme = parseCustomTheme({ ...parsed, wallpaper: parsed.wallpaper ?? existing?.wallpaper });
-    const exists = existing !== undefined;
-    parseThemeState({
-      ...this.current().appearance,
-      customThemes: exists
-        ? this.current().appearance.customThemes.map((item) => item.id === theme.id ? theme : item)
-        : [...this.current().appearance.customThemes, theme],
-    });
-    if (this.frontendOnly) return this.localMutation(() => this.storage.saveCustomTheme(theme));
-    return this.mutate({ kind: "upsert-theme", theme, baseRevision: this.current().sync.themeRevisions[theme.id] ?? 0 }, (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!);
+    if (this.frontendOnly) {
+      const existing = this.current().appearance.customThemes.find((item) => item.id === parsed.id);
+      return this.localMutation(() => this.storage.saveCustomTheme(parseCustomTheme({ ...parsed, wallpaper: parsed.wallpaper ?? existing?.wallpaper })));
+    }
+    return this.mutate((current) => {
+      const existing = current.appearance.customThemes.find((item) => item.id === parsed.id);
+      const theme = parseCustomTheme({ ...parsed, wallpaper: parsed.wallpaper ?? existing?.wallpaper });
+      parseThemeState({ ...current.appearance, customThemes: existing ? current.appearance.customThemes.map((item) => item.id === theme.id ? theme : item) : [...current.appearance.customThemes, theme] });
+      return { kind: "upsert-theme", theme, baseRevision: current.sync.themeRevisions[theme.id] ?? 0 };
+    }, (next) => next.appearance.customThemes.find((item) => item.id === parsed.id)!);
   }
 
   installThemePackage(value: CustomTheme, wallpaperKind: "static" | "animated" | "scene" | null, archive: Blob, layout: DesktopLayout) {
@@ -1371,25 +1393,26 @@ export class SyncEngine {
     const theme = parseCustomTheme(value);
     const assetId = crypto.randomUUID();
     const packaged = parseCustomTheme(wallpaperKind === null ? theme : { ...theme, wallpaper: { assetId, kind: wallpaperKind, size: archive.size, sha256: "0".repeat(64), revision: 0 } });
-    const current = this.current();
-    const parsedLayout = parseLayout({ ...(wallpaperKind === null && layout.wallpaper.source === `theme:${theme.id}` ? { ...layout, wallpaper: DEFAULT_WALLPAPER } : layout), widgets: current.layout.widgets, iconGroups: current.layout.iconGroups });
-    return this.mutate({
+    return this.mutate((current) => ({
       kind: "install-theme-package",
       theme: packaged,
       assetId,
       wallpaperKind,
       size: wallpaperKind === null ? 0 : archive.size,
-      layout: parsedLayout,
+      layout: parseLayout({ ...(wallpaperKind === null && layout.wallpaper.source === `theme:${theme.id}` ? { ...layout, wallpaper: DEFAULT_WALLPAPER } : layout), widgets: current.layout.widgets, iconGroups: current.layout.iconGroups }),
       baseThemeRevision: current.sync.themeRevisions[theme.id] ?? 0,
       baseSelectionRevision: current.sync.themeSelectionRevision,
       baseLayoutRevision: current.sync.layoutRevision,
-    }, (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!, wallpaperKind === null ? new Map() : new Map([[assetId, archive]]));
+    }), (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!, wallpaperKind === null ? new Map() : new Map([[assetId, archive]]));
   }
 
   deleteCustomTheme(themeId: string) {
     if (!this.current().appearance.customThemes.some((theme) => theme.id === themeId)) throw new Error("That custom theme no longer exists.");
     if (this.frontendOnly) return this.localMutation(() => this.storage.deleteCustomTheme(themeId));
-    return this.mutate({ kind: "delete-theme", themeId, baseRevision: this.current().sync.themeRevisions[themeId] ?? 0 }, (next) => next.appearance);
+    return this.mutate((current) => {
+      if (!current.appearance.customThemes.some((theme) => theme.id === themeId)) throw new Error("That custom theme no longer exists.");
+      return { kind: "delete-theme", themeId, baseRevision: current.sync.themeRevisions[themeId] ?? 0 };
+    }, (next) => next.appearance);
   }
 
   async readFile(id: FileEntry["id"]): Promise<File> {

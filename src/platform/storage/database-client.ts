@@ -602,10 +602,19 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
     case "enqueueAccountAppOperation": {
       const input = params as StorageDbRequests["enqueueAccountAppOperation"];
       return transact([...ACCOUNT_APP_ATOMIC_STORES], "readwrite", async (tx) => {
-        const operation = parseAccountAppOperation(input.operation);
+        let operation = parseAccountAppOperation(input.operation);
         const outboxStore = tx.objectStore(STORES.accountAppOutbox);
         const outbox = await readAccountAppOutbox(outboxStore);
         const current = await accountAppState(tx.objectStore(STORES.accountApps), outbox);
+        if (operation.kind !== "install" && operation.kind !== "handlers") {
+          const operationAppId = operation.appId;
+          const app = current.projection.apps.find((candidate) => candidate.appId === operationAppId);
+          if (!app) throw new Error("That app is not installed for this account.");
+          if (operation.kind === "uninstall") {
+            if (app.installationGeneration === null) throw new Error("Wait for this app to finish installing before uninstalling it.");
+            operation = { ...operation, installationGeneration: app.installationGeneration };
+          } else operation = { ...operation, dataGeneration: app.dataGeneration };
+        }
         const reserved = await reserveAccountAppOperation(tx.objectStore(STORES.accountAppClientState));
         const record = parseAccountAppOutboxRecord({ ...reserved, operation, status: "pending", error: null, errorCode: null, attemptCount: 0, lastAttemptAt: null });
         if (input.localData) await writeLocalAccountAppData(tx, input.localData);
