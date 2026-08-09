@@ -19,10 +19,20 @@ describe("Integrated Editor document behavior", () => {
     expect(source).not.toContain("await load(selected[0], generation, true)");
   });
 
-  test("keeps primary mobile actions at Hiraya's touch target size", async () => {
+  test("keeps mobile editor controls at Hiraya's touch target size", async () => {
     const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
     expect(css).toContain("@media (max-width: 700px)");
+    expect(css).toContain(".workspace-picker, .workspace-heading, .tree-row, .search-box, .search-results button, .editor-tab > button, .breadcrumbs button, .settings-group label, .dialog-actions button");
     expect(css).toContain("min-width: 44px; min-height: 44px;");
+  });
+
+  test("keeps editor chrome selectors aligned with its runtime states", async () => {
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    const css = await Bun.file(new URL("./style.css", import.meta.url)).text();
+    expect(css).toContain('button[aria-pressed="true"]');
+    expect(css).not.toContain('[role="tab"]');
+    expect(source).toContain('status.closest("hiraya-status-bar")?.classList.toggle("error", error)');
+    expect(source).toContain('setSidebarOpen(!matchMedia("(max-width: 700px)").matches)');
   });
 
   test("uses the shared read-only badge without bespoke pill styles", async () => {

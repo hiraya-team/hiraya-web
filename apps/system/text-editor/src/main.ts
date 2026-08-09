@@ -924,6 +924,7 @@ function replaceEditorText(text: string) {
   if (editorText() === text) return;
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
 }
-function setStatus(message: string, error = false) { status.textContent = message; status.classList.toggle("error", error); }
+function setStatus(message: string, error = false) { status.textContent = message; status.closest("hiraya-status-bar")?.classList.toggle("error", error); }
 
 renderWorkspace();
+setSidebarOpen(!matchMedia("(max-width: 700px)").matches);
