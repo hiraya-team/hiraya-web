@@ -37,7 +37,6 @@ type AreaSwitcherProps = {
   onShowDesktop: () => void;
   onMinimizeApp: (id: string) => void;
   onCloseApp: (id: string) => void;
-  onShowAllWindows: () => void;
 };
 
 export function AreaSwitcher({
@@ -69,9 +68,8 @@ export function AreaSwitcher({
   onShowDesktop,
   onMinimizeApp,
   onCloseApp,
-  onShowAllWindows,
 }: AreaSwitcherProps) {
-  const windowModel = minimapWindows(
+  const visibleWindows = minimapWindows(
     apps.map((app) => ({ app, id: app.id, areaId: segmentKey(getAppSegment(app)), focused: focusedAppId === app.id })),
     activeSegmentKey,
     windowLimit,
@@ -96,11 +94,10 @@ export function AreaSwitcher({
         {apps.length > 0 && <header className="desktop-minimap__header">
           <div className="desktop-minimap__header-tools">
             <div className="desktop-minimap__apps" role="group" aria-label="Open apps">
-              {windowModel.visible.map(({ app }) => {
+              {visibleWindows.map(({ app }) => {
                 const label = getAppLabel(app);
                 return <button className="desktop-minimap__app" data-active={(focusedAppId === app.id && !app.minimized) || undefined} data-minimized={app.minimized || undefined} data-dirty={dirtyAppIds.has(app.id) || undefined} data-other-area={segmentKey(getAppSegment(app)) !== activeSegmentKey || undefined} type="button" key={app.id} title={label} aria-label={`Switch to ${label}`} aria-pressed={focusedAppId === app.id && !app.minimized} onClick={() => onFocusApp(app.id)}><AppIcon kind={app.kind} entry={getAppEntry(app)} size={22} /></button>;
               })}
-              {windowModel.overflow.length > 0 && <button className="desktop-minimap__app desktop-minimap__app--overflow" type="button" title="All open apps" onClick={onShowAllWindows} aria-label={`${windowModel.overflow.length} more open apps`}>+{windowModel.overflow.length}</button>}
             </div>
             {focusedApp && !focusedApp.minimized && <div className="desktop-minimap__window-controls" role="group" aria-label={`Window controls for ${focusedLabel}`}>
               <span className="desktop-minimap__window-target" title={focusedLabel}><AppIcon kind={focusedApp.kind} entry={getAppEntry(focusedApp)} size={18} /><span>{focusedLabel}</span></span>

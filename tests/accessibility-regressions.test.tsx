@@ -156,7 +156,9 @@ describe("accessibility regressions", () => {
 
   test("the universal header uses one desktop and area switcher", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
+    const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const desktopSwitcher = await Bun.file(new URL("../src/components/DesktopSwitcher.tsx", import.meta.url)).text();
     const desktopSettings = await Bun.file(new URL("../src/components/DesktopSettings.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
@@ -184,6 +186,13 @@ describe("accessibility regressions", () => {
     expect(app).toContain('label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}');
     expect(app).toContain('className="mobile-start-applications"');
     expect(app).not.toContain("<SquaresFour /> Switch Window");
+    expect(app).not.toContain('setActivePanel("windows")');
+    expect(app).not.toContain("AllWindowsPanel");
+    expect(app).not.toContain("All windows");
+    expect(appWindow).not.toContain("onSwitchWindow");
+    expect(areaSwitcher).not.toContain("onShowAllWindows");
+    expect(areaSwitcher).not.toContain("All open apps");
+    expect(windowLayer).not.toContain("onSwitchWindow");
     expect(app).not.toContain("<Desktop /> Back to Desktop");
     expect(app).not.toContain('className="menu-bar__store"');
     expect(app).toContain('className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}');

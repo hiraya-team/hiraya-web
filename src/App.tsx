@@ -118,7 +118,7 @@ import { canOpenActivity } from "./ui/activity-navigation";
 import { iconGroupsAfterEntryChange, isRevisionConflictRecord, mergeDesktopLayout, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
 import { accountResources, downloadAccountResource } from "./lib/account-apps";
-import type { KeyboardShortcut, WindowListItem } from "./ui/panel-data";
+import type { KeyboardShortcut } from "./ui/panel-data";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
@@ -144,7 +144,6 @@ import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHand
 import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
 import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
-import { AllWindowsPanel } from "./components/AllWindowsPanel";
 import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
@@ -370,7 +369,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(() => restoreClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage));
   const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
   const [edgeDwell, setEdgeDwell] = useState<{ direction: EdgeDirection; id: number } | null>(null);
-  const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "windows" | "help" | "shortcuts" | "trash" | null>(null);
+  const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "help" | "shortcuts" | "trash" | null>(null);
   const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
   const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
   const [mergeReviews, setMergeReviews] = useState<Record<string, MergeReview>>({});
@@ -4858,9 +4857,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
   }
 
-  const windowItems: WindowListItem[] = runningApps.map((app) => {
+  const windowSearchItems = runningApps.map((app) => {
     const area = segmentForApp(app);
-    return { id: app.id, title: runningAppLabel(app), areaId: segmentKey(area), areaLabel: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}`, minimized: app.minimized };
+    return { id: app.id, title: runningAppLabel(app), detail: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}` };
   });
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
   const desktopChoices = desktops.filter(isDesktopSurface);
@@ -5303,7 +5302,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             <MobileHeaderMenu label="System" icon={<><GearSix size={18} /><span className="chrome-menu-label">System</span></>} onTriggerElement={(element) => { areaSwitcherTriggerRef.current = element; }}>
               {(dismiss) => <>
                 <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("search"))}><MagnifyingGlass size={17} /> Search</button>
-                <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}><SquaresFour size={17} /> All windows</button>
                 <button type="button" onClick={() => launchMobileDestination(dismiss, toggleAreaSwitcher)}><Desktop size={17} /> Desktops and areas</button>
                 <button type="button" onClick={() => { dismiss(false); setNotificationsOpen(true); }}><Bell size={17} /> Notifications</button>
                 <span className="mobile-header-menu__separator" />
@@ -5617,7 +5615,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           onClose={requestCloseApp}
           onToggleMaximize={toggleMaximizeApp}
           onShowDesktop={navigateBack}
-          onSwitchWindow={() => setActivePanel("windows")}
         >
           {(app, headerElements) => {
             const folderEntry = app.kind === "explorer" && app.folderId ? (shellEntryIndex.byId.get(app.folderId) ?? entryIndex.byId.get(app.folderId)) : null;
@@ -5976,7 +5973,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         onShowDesktop={() => { collapseAreaMap(false); showDesktop(); }}
         onMinimizeApp={(id) => { collapseAreaMap(false); minimizeApp(id); }}
         onCloseApp={(id) => { collapseAreaMap(false); void requestCloseApp(id); }}
-        onShowAllWindows={() => { collapseAreaMap(false); setActivePanel("windows"); }}
       />}
       {backPrompt && <div className="shell-back-prompt" role="status" aria-live="polite" aria-atomic="true">{backPrompt}</div>}
       <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
@@ -6344,11 +6340,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             fileTypes: app.manifest.fileTypes,
             available: installedAppIsAvailable(app, entries),
           }))}
-          windows={windowItems.map((window) => ({
-            id: window.id,
-            title: window.title,
-            detail: window.areaLabel,
-          }))}
+          windows={windowSearchItems}
           commands={searchCommands}
           onOpenEntry={(result) => void openSearchResult(result)}
           onLaunchApp={(appId) => {
@@ -6377,23 +6369,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
             onReleaseAll={() => void removeDownloadedCopies()}
             onOpenHelp={() => openHelp("offline")}
-          />
-        </PanelDialog>
-      )}
-      {activePanel === "windows" && (
-        <PanelDialog title="All windows" onClose={() => setActivePanel(null)} restoreFocus={restoreMobileDestinationFocus}>
-          <AllWindowsPanel
-            windows={windowItems}
-            activeAreaId={activeSegmentKey}
-            focusedWindowId={focusedAppId ?? undefined}
-            onFocusWindow={(id) => {
-              focusApp(id);
-              setActivePanel(null);
-            }}
-            onNavigateArea={(areaId) => {
-              const target = occupiedSegments.find((area) => area.key === areaId);
-              if (target) goToSegment(target.segment);
-            }}
           />
         </PanelDialog>
       )}

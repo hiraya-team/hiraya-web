@@ -25,11 +25,10 @@ type WindowLayerProps = WindowCallbacks & {
   titleForApp: (app: RunningApp) => string;
   isMaximized: (app: RunningApp) => boolean;
   onExecuteCommand: (id: CommandId) => void;
-  onSwitchWindow: () => void;
   children: (app: RunningApp, headerElements: AppWindowHeaderElements) => ReactNode;
 };
 
-export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, windowed, mobileHeaderActionsElement, restingCamera, trackRef, transitionSegmentKeys, titleForApp, isMaximized, onExecuteCommand, onSwitchWindow, children, ...windowCallbacks }: WindowLayerProps) {
+export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, windowed, mobileHeaderActionsElement, restingCamera, trackRef, transitionSegmentKeys, titleForApp, isMaximized, onExecuteCommand, children, ...windowCallbacks }: WindowLayerProps) {
   return <div className="desktop-area-stage desktop-area-stage--windows">
     <div
       className={`app-window-layer${windowed ? " desktop-area-track" : ""}`}
@@ -67,7 +66,6 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
             hideFocusedHeader={integrated}
             externalHeaderElements={integrated && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
             maximized={maximized}
-            onSwitchWindow={onSwitchWindow}
             titleArea={<h2 id={titleId}>{title}</h2>}
           >
             {(headerElements) => <>

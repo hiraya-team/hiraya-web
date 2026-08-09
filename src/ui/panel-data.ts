@@ -64,26 +64,6 @@ export function filterAndGroupShortcuts(shortcuts: readonly KeyboardShortcut[], 
   return Array.from(groups, ([label, groupedShortcuts]) => ({ label, shortcuts: groupedShortcuts }));
 }
 
-export type WindowListItem = {
-  id: string;
-  title: string;
-  areaId: string;
-  areaLabel: string;
-  minimized?: boolean;
-};
-
-export type WindowAreaGroup = { id: string; label: string; windows: WindowListItem[] };
-
-export function groupWindowsByArea(windows: readonly WindowListItem[]): WindowAreaGroup[] {
-  const groups = new Map<string, WindowAreaGroup>();
-  for (const window of windows) {
-    const group = groups.get(window.areaId);
-    if (group) group.windows.push(window);
-    else groups.set(window.areaId, { id: window.areaId, label: window.areaLabel, windows: [window] });
-  }
-  return Array.from(groups.values());
-}
-
 const OPERATION_LABELS: Record<OutboxOperation["kind"], string> = {
   "create-desktop": "Create desktop",
   "rename-desktop": "Rename desktop",
