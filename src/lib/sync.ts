@@ -978,10 +978,12 @@ export class SyncEngine {
     }
   }
 
-  private async mutate<T>(operation: OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void, replay = true) {
+  private async mutate<T>(operation: OutboxOperationInput | ((current: DesktopStateSnapshot) => OutboxOperationInput), select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, validate?: () => void, replay = true) {
     return this.queue(async () => {
       validate?.();
-      const queued = await this.storage.enqueueMutation({ ...operation, schemaVersion: 1 } as OutboxOperation, contents);
+      const queued = await this.storage.enqueueMutation(typeof operation === "function"
+        ? (current) => ({ ...operation(current), schemaVersion: 1 } as OutboxOperation)
+        : { ...operation, schemaVersion: 1 } as OutboxOperation, contents);
       this.publish(queued.desktop);
       await this.publishOutbox();
       if (replay) this.requestReplay();
@@ -1289,16 +1291,22 @@ export class SyncEngine {
   updateEntryPosition(id: string, position: EntryPosition) {
     const parsedPosition = parsePosition(position);
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateEntryPosition(id, position));
-    const existing = this.current().entries.find((entry) => entry.id === id);
-    if (!existing) throw new Error("That entry no longer exists.");
-    return this.mutate({ kind: "patch-entry", entryId: id, baseRevision: this.current().sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { position: parsedPosition } }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
+    if (!this.current().entries.some((entry) => entry.id === id)) throw new Error("That entry no longer exists.");
+    return this.mutate((current) => {
+      const existing = current.entries.find((entry) => entry.id === id);
+      if (!existing) throw new Error("That entry no longer exists.");
+      return { kind: "patch-entry", entryId: id, baseRevision: current.sync.entryRevisions[id] ?? 0, conflictBase: conflictBase(existing), changes: { position: parsedPosition } };
+    }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
   updateRootEntryPositions(positionValues: RootEntryPositionUpdate[]) {
     const positions = parseRootEntryPositionUpdates(positionValues, this.current().entries);
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateRootEntryPositions(positions));
-    const entries = new Map(this.current().entries.map((entry) => [entry.id, entry]));
-    return this.mutate({ kind: "root-entry-positions", positions, baseRevisions: Object.fromEntries(positions.map(({ entryId }) => [entryId, this.current().sync.entryRevisions[entryId] ?? 0])), conflictBases: Object.fromEntries(positions.map(({ entryId }) => [entryId, conflictBase(entries.get(entryId)!)])) }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
+    return this.mutate((current) => {
+      const currentPositions = parseRootEntryPositionUpdates(positions, current.entries);
+      const entries = new Map(current.entries.map((entry) => [entry.id, entry]));
+      return { kind: "root-entry-positions", positions: currentPositions, baseRevisions: Object.fromEntries(currentPositions.map(({ entryId }) => [entryId, current.sync.entryRevisions[entryId] ?? 0])), conflictBases: Object.fromEntries(currentPositions.map(({ entryId }) => [entryId, conflictBase(entries.get(entryId)!)])) };
+    }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
   }
 
   saveFile(id: string, content: Blob, options: SaveFileOptions = {}) {

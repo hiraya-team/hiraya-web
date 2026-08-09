@@ -137,7 +137,8 @@ function remoteStorage(initial = desktopStateSnapshot()) {
       return { releasedBytes, releasedFiles, skippedFiles: 0 };
     },
     readOutbox: async () => outbox,
-    enqueueMutation: async (operation: OutboxOperation, contents = new Map<string, Blob>()) => {
+    enqueueMutation: async (operation: OutboxOperation | ((current: typeof current) => OutboxOperation), contents = new Map<string, Blob>()) => {
+      if (typeof operation === "function") operation = operation(current);
       const state = applyOutboxOperation({ entries: current.entries, autoArrangeIcons: current.layout.autoArrangeIcons, snapToGrid: current.layout.snapToGrid, gridSize: current.layout.gridSize, wallpaper: current.layout.wallpaper, widgets: current.layout.widgets, iconGroups: current.layout.iconGroups, editorSettings: current.editorSettings, appearance: current.appearance, sync: current.sync }, operation);
       current = { entries: state.entries, layout: { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper, widgets: state.widgets, iconGroups: state.iconGroups }, editorSettings: state.editorSettings, appearance: state.appearance, sync: state.sync };
       const record: OutboxRecord = { operationId: String(++sequence), sequence, clientId: "client", catalogId: current.sync.catalogId!, desktopId: "desk", operation, status: "pending", error: null, attemptCount: 0, lastAttemptAt: null };
@@ -275,6 +276,52 @@ describe("canonical synchronization", () => {
     releasePosition();
     await waitForOutboxDrain(engine);
     expect(requests.filter((request) => request === "POST /api/desktops/desk/entries/transactions")).toHaveLength(2);
+    await engine.stop();
+  });
+
+  test("captures position revisions after serialized reconciliation", async () => {
+    const storage = remoteStorage();
+    const enqueue = storage.enqueueMutation.bind(storage);
+    let releaseEnqueue!: () => void;
+    let markEnqueueStarted!: () => void;
+    const enqueueGate = new Promise<void>((resolve) => { releaseEnqueue = resolve; });
+    const enqueueStarted = new Promise<void>((resolve) => { markEnqueueStarted = resolve; });
+    storage.enqueueMutation = async (operation, contents) => {
+      markEnqueueStarted();
+      await enqueueGate;
+      return enqueue(operation, contents);
+    };
+    const engine = new SyncEngine({ storage, fetch: (async (input: RequestInfo | URL) => {
+      if (String(input) === "/api/desktops/desk?projection=web") return Response.json(remoteDesktopState());
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+
+    const mutation = engine.updateRootEntryPositions([{ entryId: "file-1", position: { x: 20, y: 30 } }]);
+    await enqueueStarted;
+    const reconciled = remoteDesktopState();
+    reconciled.catalogRevision = 2;
+    reconciled.entries[0] = { ...reconciled.entries[0], position: { x: 10, y: 15 }, revision: 2 };
+    await storage.applyRemoteDesktop({
+      ...desktopStateSnapshot(),
+      entries: reconciled.entries.map(({ revision, contentRevision, ...entry }) => {
+        void revision;
+        void contentRevision;
+        return entry;
+      }),
+      sync: { ...desktopStateSnapshot().sync, catalogRevision: 2, entryRevisions: { "file-1": 2 } },
+    }, new Map());
+    releaseEnqueue();
+    await mutation;
+
+    expect((await engine.getOutboxStatus()).records[0]?.operation).toMatchObject({
+      kind: "root-entry-positions",
+      baseRevisions: { "file-1": 2 },
+      conflictBases: { "file-1": { position: { x: 10, y: 15 } } },
+    });
+    blocked.release();
+    await blocked.pending;
     await engine.stop();
   });
 
