@@ -1236,8 +1236,7 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
   const settings = page.locator('[data-app-window="settings"]');
-  await settings.getByRole("button", { name: /Appearance/ }).click();
-  await settings.getByRole("button", { name: "Open Theme Editor" }).click();
+  await settings.getByRole("button", { name: /Theme Editor/ }).click();
   const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const frame = themeEditor.frameLocator("iframe");
   await frame.getByRole("tab", { name: "Wallpaper" }).click();
@@ -1261,8 +1260,7 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await openLocalDesktop(mobilePage);
   await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
-  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Appearance/ }).click();
-  await mobilePage.getByRole("dialog", { name: "Appearance" }).getByRole("button", { name: "Open Theme Editor" }).click();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Theme Editor/ }).click();
   const mobileFrame = mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
   await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
@@ -1297,10 +1295,9 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await settingsWindow.getByRole("button", { name: "Back to Desktop" }).click();
   await expect(desktopsLauncher).toBeFocused();
 
-  const themesLauncher = settingsWindow.getByRole("button", { name: /Appearance/ });
+  const themesLauncher = settingsWindow.getByRole("button", { name: /Theme Editor/ });
   await themesLauncher.focus();
   await page.keyboard.press("Enter");
-  await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
   const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const themeEditorFrame = themeEditor.frameLocator("iframe");
   await expect(themeEditorFrame.getByRole("heading", { name: "Theme library" })).toBeVisible();
@@ -1313,7 +1310,7 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const discardThemeChanges = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
   await discardThemeChanges.click();
   await expect(themeEditor).toBeHidden();
-  await settingsWindow.getByRole("button", { name: "Open Theme Editor" }).click();
+  await themesLauncher.click();
   const reopenedThemeEditor = page.getByRole("dialog", { name: "Theme Editor" });
   const reopenedFrame = reopenedThemeEditor.frameLocator("iframe");
   await reopenedFrame.getByRole("tab", { name: "Wallpaper" }).click();
@@ -1321,8 +1318,6 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await reopenedThemeEditor.getByRole("button", { name: "Close Theme Editor" }).click();
   await discardThemeChanges.click();
   await expect(reopenedThemeEditor).toBeHidden();
-  await settingsWindow.getByRole("button", { name: "Back to Desktop" }).click();
-
   await categories.getByRole("button", { name: "Files & apps" }).click();
   const appsLauncher = settingsWindow.getByRole("button", { name: /File type defaults/ });
   await appsLauncher.click();
@@ -1353,9 +1348,8 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await expect.poll(() => mobileSettings.locator(".settings-window__content").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await mobilePage.goBack();
   await expect(mobileDesktopsLauncher).toBeFocused();
-  const mobileThemesLauncher = mobileSettings.getByRole("button", { name: /Appearance/ });
+  const mobileThemesLauncher = mobileSettings.getByRole("button", { name: /Theme Editor/ });
   await mobileThemesLauncher.click();
-  await mobileSettings.getByRole("button", { name: "Open Theme Editor" }).click();
   const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
   const mobileThemeEditorFrame = mobileThemeEditor.frameLocator("iframe");
   await expect(mobileThemeEditorFrame.getByRole("option", { name: /Hiraya Dusk/ })).toBeVisible();

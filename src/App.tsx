@@ -5773,7 +5773,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                         quotaStale={syncStatus === "offline"}
                         desktopArrangementDisabled={Boolean(session && syncStatus !== "online" && syncStatus !== "blocked")}
                         entries={entries}
-                        appearance={appearance}
                         canMutate={canSettings}
                         canViewActivity={canViewActivity}
                         activityScope={activityScope}
@@ -5864,7 +5863,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                           if (install) void launchInstalledAppRef.current(install);
                           else setError("Theme Editor is still being installed. Try again in a moment.");
                         }}
-                        onThemeChange={(themeId) => void changeTheme(themeId).catch(() => undefined)}
                         onLayoutChange={persistLayout}
                         onExport={() => void handleExport()}
                         onToggleFullscreen={() => void toggleFullscreen()}

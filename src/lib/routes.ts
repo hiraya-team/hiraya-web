@@ -13,7 +13,7 @@ export type DesktopRoute = {
 };
 
 export const SETTINGS_PAGES = [
-  "desktop", "desktop/appearance", "desktop/desktops",
+  "desktop", "desktop/desktops",
   "files-apps", "files-apps/file-types", "files-apps/recovered-data",
   "sharing", "sharing/desktop", "sharing/short-links",
   "sync-storage", "sync-storage/connection", "sync-storage/activity", "sync-storage/export",
@@ -21,14 +21,14 @@ export const SETTINGS_PAGES = [
 ] as const;
 export type SettingsPage = typeof SETTINGS_PAGES[number];
 export const SETTINGS_PAGE_TITLES: Record<SettingsPage, string> = {
-  desktop: "Desktop", "desktop/appearance": "Appearance", "desktop/desktops": "Desktops",
+  desktop: "Desktop", "desktop/desktops": "Desktops",
   "files-apps": "Files & apps", "files-apps/file-types": "File type defaults", "files-apps/recovered-data": "Recovered app data",
   sharing: "Sharing", "sharing/desktop": "Desktop sharing", "sharing/short-links": "Short Links",
   "sync-storage": "Sync & storage", "sync-storage/connection": "Connection & Offline", "sync-storage/activity": "Activity", "sync-storage/export": "Export",
   system: "System", "system/updates": "Updates", "system/about": "About",
 };
 export const SETTINGS_PARENTS: Partial<Record<SettingsPage, SettingsPage>> = {
-  "desktop/appearance": "desktop", "desktop/desktops": "desktop",
+  "desktop/desktops": "desktop",
   "files-apps/file-types": "files-apps", "files-apps/recovered-data": "files-apps",
   "sharing/desktop": "sharing", "sharing/short-links": "sharing",
   "sync-storage/connection": "sync-storage", "sync-storage/activity": "sync-storage", "sync-storage/export": "sync-storage",
@@ -82,7 +82,8 @@ function parseSuffix(parts: string[], route: DesktopRoute, startIndex: number) {
   }
   if (parts[index] === "settings") {
     if (next.explorerFolderId !== undefined || next.fileId || next.propertiesEntryId) return null;
-    const page = parts.slice(index + 1).join("/") || "desktop";
+    const requestedPage = parts.slice(index + 1).join("/") || "desktop";
+    const page = requestedPage === "desktop/appearance" ? "desktop" : requestedPage;
     if (!(SETTINGS_PAGES as readonly string[]).includes(page)) return null;
     next.settings = page as SettingsPage;
     index = parts.length;
