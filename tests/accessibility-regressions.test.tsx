@@ -260,6 +260,8 @@ describe("accessibility regressions", () => {
     expect(shellItemStage).toContain("visibleSegments.map((shellSegment)");
     expect(shellItemStage).toContain("areaWorldOrigin(shellSegment.segment, iconArea)");
     expect(shellItemStage).toContain("translate3d(var(--icon-area-track-x");
+    expect(shellItemStage).toContain("left: areaTransition ? 0 : iconRestingCamera.x");
+    expect(shellItemStage).toContain('transform: areaTransition ? `translate3d');
     expect(shellItemStage).toContain("transitionSegmentKeys.has(shellSegment.key)");
     expect(shellItemStage).toContain("inert={!segmentInteractive}");
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
