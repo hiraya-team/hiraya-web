@@ -34,6 +34,7 @@ type Props = {
   gridSize?: GridSize;
   onMoveGroup?: (folder: FolderEntry, position: EntryPosition) => void;
   onResizeGroup?: (group: DesktopIconGroup, size: { width: number; height: number }) => void;
+  onPreviewGroup?: (folder: FolderEntry, group: DesktopIconGroup, change: { x: number; y: number; width: number; height: number }) => readonly { entryId: string; delta: EntryPosition }[] | null;
   onUngroup?: (group: DesktopIconGroup) => void;
 };
 
@@ -154,12 +155,12 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     onDrop={onDrop && !readOnly ? (event) => { event.preventDefault(); delete event.currentTarget.dataset.dropActive; onDrop(event.dataTransfer); } : undefined}
   >
     {!widget && <header className="shell-item__header">
-      <button className="shell-item__drag" type="button" disabled={readOnly} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)}>{label}</button>
-      {!readOnly && onRemove && <button className="shell-item__remove" type="button" aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
+      <button className="shell-item__drag" type="button" disabled={readOnly || busy} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)}>{label}</button>
+      {!readOnly && onRemove && <button className="shell-item__remove" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
     </header>}
     {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={`Move ${label}`} aria-pressed={selected} title="Drag to move; use arrow keys for precise movement" onClick={onSelect} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} />}
     <div className="shell-item__content">{children}</div>
-    {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={widget && busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} />}
+    {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} />}
     {widget && selected && onRemove && <button className="shell-item__remove shell-item__remove--widget" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
   </article>;
 }
@@ -181,7 +182,7 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const activeKey = segmentKey(activeSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === activeKey);
@@ -202,7 +203,7 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSi
     {visibleGroups.map(({ group, folder }) => {
       const position = projectLogicalPosition(folder.position, areaSize).local;
       const children = entries.filter((entry) => entry.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
-      return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} onMove={(local) => onMoveGroup?.(folder, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
+      return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
         <div className="icon-group__grid">
           {children.map((entry) => <button type="button" key={entry.id} aria-label={`Open ${entry.name}`} onClick={() => onOpen(entry)}><EntryArtwork entry={entry} size={32} loadPreview={loadPreview} /><span>{entry.name}</span></button>)}
           <button className="icon-group__open" type="button" onClick={() => onOpen(folder)}><span><FolderOpen size={28} weight="duotone" /><ArrowSquareOut size={13} /></span><strong>Open in Explorer</strong></button>

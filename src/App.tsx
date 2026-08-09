@@ -93,7 +93,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type DesktopWidget, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type DesktopObstacle, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -2491,6 +2491,25 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return { ...changed, ...restoreLogicalPosition(bounds, projection.segment, iconArea), width: bounds.width, height: bounds.height };
   }
 
+  function shellItemPlacementPlan(proposed: DesktopObstacle, segment: SurfaceSegment, nextLayout: DesktopLayout, excludedWidgetId?: string, excludedGroupId?: string) {
+    const otherObstacles = desktopShellItemObstacles(nextLayout.widgets.filter((item) => item.id !== excludedWidgetId), nextLayout.iconGroups.filter((item) => item.folderId !== excludedGroupId), entriesRef.current, segment, iconArea);
+    const persistedIds = new Set(entriesRef.current.map((entry) => entry.id));
+    otherObstacles.push(...desktopEntryList.flatMap((entry) => {
+      const entryProjection = projectLogicalPosition(entry.position, iconArea);
+      return !persistedIds.has(entry.id) && entry.parentId === null && segmentKey(entryProjection.segment) === segmentKey(segment)
+        ? [{ ...entryProjection.local, width: iconMetrics.width, height: iconMetrics.height }]
+        : [];
+    }));
+    if (positionOverlapsObstacles(proposed, proposed, otherObstacles)) return null;
+    const grouped = new Set(nextLayout.iconGroups.map((group) => group.folderId));
+    const desktopEntries = entriesRef.current.filter((entry) => !grouped.has(entry.id));
+    if (!nextLayout.autoArrangeIcons) {
+      const overlap = desktopEntries.some((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, iconArea).segment) === segmentKey(segment) && positionOverlapsObstacles(projectLogicalPosition(entry.position, iconArea).local, iconMetrics, [proposed]));
+      return overlap ? null : [];
+    }
+    return arrangeDesktopAroundObstacle(desktopEntries, proposed, segment, iconArea, iconMetrics, nextLayout.gridSize, otherObstacles);
+  }
+
   function widgetChangePlan(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
     const nextWidget = normalizeWidget(widget, change);
     const currentLayout = layoutRef.current;
@@ -2500,23 +2519,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const nextLayout = { ...currentLayout, widgets };
     const projection = projectLogicalPosition(nextWidget, iconArea);
     const proposed = clampShellItemBounds(projection.local, nextWidget.width, nextWidget.height, iconArea);
-    const otherObstacles = desktopShellItemObstacles(widgets.filter((item) => item.id !== widget.id), nextLayout.iconGroups, entriesRef.current, projection.segment, iconArea);
-    const grouped = new Set(nextLayout.iconGroups.map((group) => group.folderId));
-    const persistedIds = new Set(entriesRef.current.map((entry) => entry.id));
-    const fixedIconObstacles = desktopEntryList.flatMap((entry) => {
-      const entryProjection = projectLogicalPosition(entry.position, iconArea);
-      return !persistedIds.has(entry.id) && entry.parentId === null && segmentKey(entryProjection.segment) === segmentKey(projection.segment)
-        ? [{ ...entryProjection.local, width: iconMetrics.width, height: iconMetrics.height }]
-        : [];
-    });
-    otherObstacles.push(...fixedIconObstacles);
-    if (positionOverlapsObstacles(proposed, proposed, otherObstacles)) return null;
-    const desktopEntries = entriesRef.current.filter((entry) => !grouped.has(entry.id));
-    if (!currentLayout.autoArrangeIcons) {
-      const overlap = desktopEntries.some((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, iconArea).segment) === segmentKey(projection.segment) && positionOverlapsObstacles(projectLogicalPosition(entry.position, iconArea).local, iconMetrics, [proposed]));
-      return overlap ? null : { currentLayout, nextLayout, nextWidget, updates: [] };
-    }
-    const updates = arrangeDesktopAroundObstacle(desktopEntries, proposed, projection.segment, iconArea, iconMetrics, currentLayout.gridSize, otherObstacles);
+    const updates = shellItemPlacementPlan(proposed, projection.segment, nextLayout, widget.id);
     return updates ? { currentLayout, nextLayout, nextWidget, updates } : null;
   }
 
@@ -2610,29 +2613,111 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     }
   }
 
+  function iconGroupChangePlan(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    const currentLayout = layoutRef.current;
+    const position = { x: change.x ?? folder.position.x, y: change.y ?? folder.position.y };
+    const projection = projectLogicalPosition(position, iconArea);
+    const bounds = currentLayout.snapToGrid
+      ? snapShellItemBounds(projection.local, change.width ?? group.width, change.height ?? group.height, iconArea, currentLayout.gridSize)
+      : clampShellItemBounds(projection.local, change.width ?? group.width, change.height ?? group.height, iconArea);
+    const nextFolder = { ...folder, position: restoreLogicalPosition(bounds, projection.segment, iconArea) };
+    const nextGroup = { ...group, width: bounds.width, height: bounds.height };
+    const iconGroups = currentLayout.iconGroups.some((item) => item.folderId === folder.id)
+      ? currentLayout.iconGroups.map((item) => item.folderId === folder.id ? nextGroup : item)
+      : [...currentLayout.iconGroups, nextGroup];
+    const nextLayout = { ...currentLayout, iconGroups };
+    const updates = shellItemPlacementPlan(bounds, projection.segment, nextLayout, undefined, folder.id);
+    return updates ? { currentLayout, nextLayout, nextFolder, nextGroup, updates } : null;
+  }
+
+  function previewIconGroupChange(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    if (!layoutRef.current.autoArrangeIcons) return null;
+    const plan = iconGroupChangePlan(folder, group, change);
+    return plan ? plan.updates.flatMap(({ entryId, position }) => {
+      const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
+      return current ? [{ entryId, delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+    }) : [];
+  }
+
+  async function commitIconGroupChange(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    if (widgetMutationPendingRef.current) return false;
+    const plan = iconGroupChangePlan(folder, group, change);
+    if (!plan) {
+      setError(layoutRef.current.autoArrangeIcons ? "There is not enough room to place the icon group without overlaps." : "Icon groups cannot overlap desktop icons, widgets, or other icon groups.");
+      return false;
+    }
+    const desktopId = activeDesktopIdRef.current;
+    const positionUpdates = [...plan.updates];
+    if (plan.nextFolder.position.x !== folder.position.x || plan.nextFolder.position.y !== folder.position.y) positionUpdates.push({ entryId: folder.id, position: plan.nextFolder.position });
+    const currentEntries = entriesRef.current.some((entry) => entry.id === folder.id) ? entriesRef.current : [...entriesRef.current, folder];
+    const previous = new Map(positionUpdates.map(({ entryId }) => [entryId, currentEntries.find((entry) => entry.id === entryId)!.position]));
+    const positions = new Map(positionUpdates.map(({ entryId, position }) => [entryId, position]));
+    const previousGroup = plan.currentLayout.iconGroups.find((item) => item.folderId === folder.id);
+    const layoutChanged = !previousGroup || previousGroup.width !== plan.nextGroup.width || previousGroup.height !== plan.nextGroup.height;
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    if (layoutChanged) previewLayout(plan.nextLayout, desktopId);
+    entriesRef.current = currentEntries.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let positionsSaved = false;
+    try {
+      if (positionUpdates.length) {
+        await updateRootEntryPositions(positionUpdates);
+        positionsSaved = true;
+      }
+      if (layoutChanged) {
+        const latestLayout = layoutRef.current;
+        await saveLayout({
+          ...latestLayout,
+          iconGroups: latestLayout.iconGroups.some((item) => item.folderId === folder.id)
+            ? latestLayout.iconGroups.map((item) => item.folderId === folder.id ? plan.nextGroup : item)
+            : [...latestLayout.iconGroups, plan.nextGroup],
+        }, desktopId);
+      }
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let positionsRestored = !positionsSaved;
+      if (positionsSaved && previous.size) {
+        try {
+          await updateRootEntryPositions([...previous].map(([entryId, position]) => ({ entryId, position })));
+          positionsRestored = true;
+        } catch {
+          // Keep successfully persisted positions rather than showing stale coordinates.
+        }
+      }
+      if (layoutChanged) previewLayout({ ...layoutRef.current, iconGroups: plan.currentLayout.iconGroups }, desktopId);
+      if (positionsRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(positionsRestored ? "The icon group change could not be saved." : "The icon group change failed after nearby icons moved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+    return true;
+  }
+
   function addIconGroup(folder: FolderEntry) {
     if (folder.parentId !== null || layoutRef.current.iconGroups.some((group) => group.folderId === folder.id)) return;
-    void persistLayout({ ...layoutRef.current, iconGroups: [...layoutRef.current.iconGroups, { folderId: folder.id, width: 340, height: 260 }] });
+    void commitIconGroupChange(folder, { folderId: folder.id, width: 340, height: 260 }, {});
     setContextMenu(null);
   }
 
   function updateIconGroup(group: DesktopIconGroup, size: { width: number; height: number }) {
-    void persistLayout({ ...layoutRef.current, iconGroups: layoutRef.current.iconGroups.map((item) => item.folderId === group.folderId ? { ...item, ...size } : item) });
+    const folder = entriesRef.current.find((entry): entry is FolderEntry => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+    if (folder) void commitIconGroupChange(folder, group, size);
   }
 
   function ungroupIconGroup(group: DesktopIconGroup) {
     void persistLayout({ ...layoutRef.current, iconGroups: layoutRef.current.iconGroups.filter((item) => item.folderId !== group.folderId) });
   }
 
-  async function moveIconGroup(folder: FolderEntry, position: EntryPosition) {
-    const previous = folder.position;
-    setEntries((current) => current.map((entry) => entry.id === folder.id ? { ...entry, position } : entry));
-    try {
-      await updateEntryPosition(folder.id, position);
-    } catch {
-      setEntries((current) => current.map((entry) => entry.id === folder.id ? { ...entry, position: previous } : entry));
-      setError("The icon group position could not be saved.");
-    }
+  function moveIconGroup(folder: FolderEntry, position: EntryPosition) {
+    const group = layoutRef.current.iconGroups.find((item) => item.folderId === folder.id);
+    if (group) void commitIconGroupChange(folder, group, position);
   }
 
   async function flushLayoutDraft(desktopId: string) {
@@ -5438,6 +5523,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                   onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
                   onResizeGroup={updateIconGroup}
+                  onPreviewGroup={previewIconGroupChange}
                   onUngroup={ungroupIconGroup}
                   readOnly={!canMutate}
                 />

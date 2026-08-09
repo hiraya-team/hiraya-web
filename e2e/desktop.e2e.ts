@@ -1067,6 +1067,75 @@ test("adding a widget rearranges overlapping icons and persists both positions",
   }).toEqual(saved);
 });
 
+test("icon groups reserve space, follow the grid, and persist arranged icons", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Desktop", exact: true }).click();
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  const name = `group-arrange-${Date.now()}.txt`;
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const desktop = page.locator(".desktop");
+  const desktopBounds = await desktop.boundingBox();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  if (!desktopBounds) throw new Error("The desktop is not visible.");
+  await dragPointerTo(page, icon, desktopBounds.x + 420, desktopBounds.y + 260);
+  const before = await icon.boundingBox();
+  if (!before) throw new Error("The test icon is not visible.");
+
+  await desktop.click({ button: "right", position: { x: before.x - desktopBounds.x - 10, y: before.y - desktopBounds.y + before.height / 2 } });
+  await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "New icon group" }).click();
+  const groupName = `Grid group ${Date.now()}`;
+  await page.getByLabel("Folder name").fill(groupName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  await expect(group).toBeVisible();
+  await expect.poll(async () => {
+    const moved = await icon.boundingBox();
+    return moved ? Math.round(moved.y - before.y) : 0;
+  }).toBeGreaterThan(0);
+
+  const alignedBounds = await group.boundingBox();
+  if (!alignedBounds) throw new Error("The icon group is not visible.");
+  const alignedPosition = await group.evaluate((element) => [parseFloat(element.style.getPropertyValue("--shell-x")), parseFloat(element.style.getPropertyValue("--shell-y"))]);
+  expect((alignedPosition[0] - 22) % 24).toBe(0);
+  expect((alignedPosition[1] - 22) % 24).toBe(0);
+  expect(Math.round(alignedBounds.width) % 24).toBe(0);
+  expect(Math.round(alignedBounds.height) % 24).toBe(0);
+  const initialLeft = alignedBounds.x;
+  const moveGroup = group.getByRole("button", { name: `Move ${groupName}` });
+  await expect(moveGroup).toBeEnabled();
+  await moveGroup.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => Math.round((await group.boundingBox())?.x ?? 0) - Math.round(initialLeft)).toBe(24);
+  const initialWidth = (await group.boundingBox())?.width ?? 0;
+  const resizeGroup = group.getByRole("button", { name: `Resize ${groupName}` });
+  await expect(resizeGroup).toBeEnabled();
+  await resizeGroup.focus();
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(async () => Math.round((await group.boundingBox())?.width ?? 0) - Math.round(initialWidth)).toBe(24);
+
+  await page.waitForTimeout(200);
+  const saved = await Promise.all([
+    icon.evaluate((element) => [element.style.getPropertyValue("--file-x"), element.style.getPropertyValue("--file-y")]),
+    group.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y"), element.getBoundingClientRect().width, element.getBoundingClientRect().height]),
+  ]);
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(async () => {
+    const reloadedGroup = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+    return Promise.all([
+      icon.evaluate((element) => [element.style.getPropertyValue("--file-x"), element.style.getPropertyValue("--file-y")]),
+      reloadedGroup.evaluate((element) => [element.style.getPropertyValue("--shell-x"), element.style.getPropertyValue("--shell-y"), element.getBoundingClientRect().width, element.getBoundingClientRect().height]),
+    ]);
+  }).toEqual(saved);
+});
+
 test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ page, browser }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
