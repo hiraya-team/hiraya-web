@@ -997,10 +997,13 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   const reloadedWidgetTrack = reloadedClock.locator("xpath=ancestor::div[contains(@class, 'desktop-area-track')]");
   await expect(reloadedWidgetTrack).toHaveCSS("transform", "none");
   await expect(reloadedWidgetTrack).toHaveCSS("will-change", "auto");
+  const reloadedClockContent = reloadedClock.locator(".shell-item__content");
+  await expect(reloadedClockContent).toHaveCSS("position", "absolute");
+  await expect(reloadedClockContent).toHaveCSS("inset", "0px");
   await page.addStyleTag({ content: ".shell-item--widget[data-selected], .shell-item__widget-drag:focus-visible { outline: 0 !important; } .shell-item__remove--widget, .shell-item--widget .shell-item__resize { display: none !important; }" });
-  const beforeSelection = await reloadedClock.locator(".shell-item__content").screenshot();
+  const beforeSelection = await reloadedClockContent.screenshot();
   await reloadedClock.getByRole("button", { name: "Move Clock", exact: true }).focus();
-  const afterSelection = await reloadedClock.locator(".shell-item__content").screenshot();
+  const afterSelection = await reloadedClockContent.screenshot();
   expect(afterSelection.equals(beforeSelection)).toBe(true);
   await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) })).toBeVisible();
 
