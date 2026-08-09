@@ -5403,9 +5403,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           <div
             className="desktop-canvas desktop-area-track"
             style={{
+              left: areaTransition ? 0 : iconRestingCamera.x,
+              top: areaTransition ? 0 : iconRestingCamera.y,
               width: iconArea.width,
               height: iconArea.height,
-              transform: `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)`,
+              transform: areaTransition ? `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)` : "none",
             }}
           >
             {visibleSegments.map((shellSegment) => {
