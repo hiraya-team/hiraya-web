@@ -3,6 +3,7 @@ import { assertIconGroupFolders, assertWallpaperSource, isValidId, parseDesktopI
 import type { DesktopStateSnapshot, PersistedDesktopState } from "../domain/desktop-state";
 import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
+import { desktopStateLayout } from "./desktop-state";
 
 export type OutboxOperation = ({ schemaVersion: 1 } & (
   | { kind: "create-desktop"; desktop: DesktopIdentity }
@@ -405,20 +406,40 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
 export function rebaseOutboxOperationAfterAcknowledgement(state: PersistedDesktopState, operation: OutboxOperation, acknowledgedRevision: number): OutboxOperation {
   const entryRevision = (id: string, base?: number) => state.sync.entryRevisions[id] === acknowledgedRevision ? acknowledgedRevision : base;
   switch (operation.kind) {
-    case "patch-entry":
+    case "patch-entry": {
+      const entry = state.entries.find((candidate) => candidate.id === operation.entryId);
+      return state.sync.entryRevisions[operation.entryId] === acknowledgedRevision
+        ? { ...operation, baseRevision: acknowledgedRevision, ...(entry ? { conflictBase: entryBase(entry) } : {}) }
+        : operation;
+    }
     case "delete":
       return { ...operation, baseRevision: entryRevision(operation.entryId, operation.baseRevision) };
     case "delete-entries":
-    case "move-entries":
       return { ...operation, baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.entryIds.map((id) => [id, entryRevision(id, operation.baseRevisions![id])!])) };
+    case "move-entries":
+      return {
+        ...operation,
+        baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.entryIds.map((id) => [id, entryRevision(id, operation.baseRevisions![id])!])),
+        conflictBases: operation.conflictBases === undefined ? undefined : Object.fromEntries(operation.entryIds.map((id) => {
+          const entry = state.entries.find((candidate) => candidate.id === id);
+          return [id, state.sync.entryRevisions[id] === acknowledgedRevision && entry ? entryBase(entry) : operation.conflictBases![id]];
+        })),
+      };
     case "root-entry-positions":
-      return { ...operation, baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.positions.map(({ entryId }) => [entryId, entryRevision(entryId, operation.baseRevisions![entryId])!])) };
+      return {
+        ...operation,
+        baseRevisions: operation.baseRevisions === undefined ? undefined : Object.fromEntries(operation.positions.map(({ entryId }) => [entryId, entryRevision(entryId, operation.baseRevisions![entryId])!])),
+        conflictBases: operation.conflictBases === undefined ? undefined : Object.fromEntries(operation.positions.map(({ entryId }) => {
+          const entry = state.entries.find((candidate) => candidate.id === entryId);
+          return [entryId, state.sync.entryRevisions[entryId] === acknowledgedRevision && entry ? entryBase(entry) : operation.conflictBases![entryId]];
+        })),
+      };
     case "save-content":
       return { ...operation, baseContentRevision: state.sync.contentRevisions[operation.entryId] === acknowledgedRevision ? acknowledgedRevision : operation.baseContentRevision };
     case "layout":
-      return { ...operation, baseRevision: state.sync.layoutRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+      return state.sync.layoutRevision === acknowledgedRevision ? { ...operation, baseRevision: acknowledgedRevision, conflictBase: desktopStateLayout(state) } : operation;
     case "editor-settings":
-      return { ...operation, baseRevision: state.sync.settingsRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
+      return state.sync.settingsRevision === acknowledgedRevision ? { ...operation, baseRevision: acknowledgedRevision, conflictBase: state.editorSettings } : operation;
     case "select-theme":
       return { ...operation, baseRevision: state.sync.themeSelectionRevision === acknowledgedRevision ? acknowledgedRevision : operation.baseRevision };
     case "upsert-theme":

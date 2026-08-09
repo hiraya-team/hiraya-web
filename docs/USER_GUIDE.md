@@ -23,7 +23,7 @@ New user-facing features are listed newest first.
 - **Arrange icon groups with desktop items.** Folder icon groups now reserve their full desktop space, move nearby icons out of the way, and follow the selected grid when created, moved, or resized.
 - **Use clearer Integrated Editor controls.** Open-file tabs now show their active and hover states correctly, status errors use the warning color, and editor controls are easier to tap on mobile.
 - **Keep widget contents stable after refresh.** Clock, Calendar, and Status widgets now keep their content and height visually stable when the desktop reloads, without requiring a tap.
-- **Arrange desktop items without false conflicts.** Rapid icon moves and automatic arrangement now use the latest synchronized desktop state instead of reporting a conflict with your own preceding change.
+- **Work quickly without false sync conflicts.** Rapid file, layout, theme, and app-data changes now use the latest synchronized state instead of reporting a conflict with your own preceding change.
 - **Slide widgets between areas.** Widgets and icon groups now move with desktop icons when switching areas, keeping the desktop layout together throughout the transition.
 - **Tap widgets without moving them.** Clock, Calendar, and Status widgets now stay still when a finger shifts slightly during a tap, while deliberate dragging continues to move them.
 - **Navigate public apps with Back.** On a public desktop, **Back** now moves through an open app before returning to the desktop, matching the signed-in desktop behavior.
