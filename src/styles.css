@@ -6141,6 +6141,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .theme-field--toggle input { width: 20px; height: 20px; }
 
 .desktop-area-stage--shell-items { z-index: 2; pointer-events: none; }
+.desktop-area-stage--shell-items .desktop-area-track { will-change: auto; }
 .shell-item-layer { position: absolute; inset: 0; pointer-events: none; }
 .shell-item { position: absolute; left: var(--shell-x); top: var(--shell-y); display: flex; min-width: 180px; min-height: 112px; flex-direction: column; overflow: hidden; border: var(--theme-border-width) solid color-mix(in srgb, var(--theme-chrome-text) 19%, transparent); border-radius: var(--theme-radius); color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome) 82%, transparent); box-shadow: 0 14px 38px rgb(4 12 13 / 22%), inset 0 1px 0 rgb(255 255 255 / 13%); backdrop-filter: blur(16px) saturate(112%); pointer-events: auto; }
 .shell-item[data-drop-active] { border-color: var(--theme-selection); box-shadow: 0 14px 38px rgb(4 12 13 / 22%), inset 0 0 0 2px var(--theme-selection); }

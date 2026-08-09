@@ -992,7 +992,14 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
 
   await page.waitForTimeout(200);
   await page.reload();
-  await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) })).toBeVisible();
+  const reloadedClock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  await expect(reloadedClock).toBeVisible();
+  await expect(reloadedClock.locator("xpath=ancestor::div[contains(@class, 'desktop-area-track')]")).toHaveCSS("will-change", "auto");
+  await page.addStyleTag({ content: ".shell-item--widget[data-selected], .shell-item__widget-drag:focus-visible { outline: 0 !important; } .shell-item__remove--widget, .shell-item--widget .shell-item__resize { display: none !important; }" });
+  const beforeSelection = await reloadedClock.locator(".shell-item__content").screenshot();
+  await reloadedClock.getByRole("button", { name: "Move Clock", exact: true }).focus();
+  const afterSelection = await reloadedClock.locator(".shell-item__content").screenshot();
+  expect(afterSelection.equals(beforeSelection)).toBe(true);
   await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) })).toBeVisible();
 
   await page.setViewportSize({ width: 390, height: 844 });
