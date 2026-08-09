@@ -117,8 +117,11 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     const x = event.clientX - current.startX;
     const y = event.clientY - current.startY;
-    ref.current?.style.removeProperty(target === drag ? "transform" : "width");
-    ref.current?.style.removeProperty("height");
+    if (target === drag) ref.current?.style.removeProperty("transform");
+    else {
+      ref.current?.style.removeProperty("width");
+      ref.current?.style.removeProperty("height");
+    }
     applyIconTransforms(null);
     if (cancelled || !current.moved) return;
     const next = adjustedBounds(target, current, x, y);

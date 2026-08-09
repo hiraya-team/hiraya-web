@@ -1002,7 +1002,13 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await expect(reloadedClockContent).toHaveCSS("inset", "0px");
   await page.addStyleTag({ content: ".shell-item--widget[data-selected], .shell-item__widget-drag:focus-visible { outline: 0 !important; } .shell-item__remove--widget, .shell-item--widget .shell-item__resize { display: none !important; }" });
   const beforeSelection = await reloadedClockContent.screenshot();
-  await reloadedClock.getByRole("button", { name: "Move Clock", exact: true }).focus();
+  const reloadedMoveBounds = await reloadedClock.getByRole("button", { name: "Move Clock", exact: true }).boundingBox();
+  const beforeTapBounds = await reloadedClock.boundingBox();
+  if (!reloadedMoveBounds || !beforeTapBounds) throw new Error("The reloaded clock is not visible.");
+  const reloadedTouchPoint = { x: reloadedMoveBounds.x + reloadedMoveBounds.width / 2, y: reloadedMoveBounds.y + reloadedMoveBounds.height / 2, id: 0 };
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [reloadedTouchPoint] });
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect.poll(async () => (await reloadedClock.boundingBox())?.height).toBe(beforeTapBounds.height);
   const afterSelection = await reloadedClockContent.screenshot();
   expect(afterSelection.equals(beforeSelection)).toBe(true);
   await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) })).toBeVisible();
