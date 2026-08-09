@@ -7,7 +7,7 @@ import { navigationFallbackDenylist } from "./build/navigation";
 import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "HIRAYA_");
+  const env = { ...loadEnv(mode, process.cwd(), "HIRAYA_"), ...process.env };
   const historyLimit = env.HIRAYA_HISTORY_LIMIT ? Number(env.HIRAYA_HISTORY_LIMIT) : 1000;
   if (!Number.isSafeInteger(historyLimit) || historyLimit <= 0) throw new Error("HIRAYA_HISTORY_LIMIT must be a positive integer.");
   const base = env.HIRAYA_BASE_PATH || "/";
