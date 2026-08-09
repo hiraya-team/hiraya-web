@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { fetchPublicDesktop, fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
 import type { DesktopEntry, FileEntry } from "../../types";
-import { reservedFileHandler } from "../../apps/file-associations";
+import { reservedFileHandler, type ReservedFileHandler } from "../../apps/file-associations";
 import { parseInternetShortcut } from "../../lib/internet-shortcut";
 import { withoutDotEntries } from "../../ui/hidden-entries";
 import type { PublicAppRuntime } from "./app-runtime";
 
-export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: "app-package" | "internet-shortcut"; error?: string };
+export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: ReservedFileHandler; error?: string };
 
 export function usePublicDesktop(authority: PublicAuthority) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);

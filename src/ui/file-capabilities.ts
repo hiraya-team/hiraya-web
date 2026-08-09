@@ -1,7 +1,8 @@
 import type { EditorLanguage, FileEntry } from "../types";
+import { APP_SHORTCUT_MIME_TYPE } from "../lib/app-shortcut";
 
 export type FilePreviewKind = "text" | "markdown" | "url" | "image" | "pdf" | "video" | "audio" | "none";
-export type FileIconKind = "code" | "text" | "url" | "image" | "pdf" | "video" | "audio" | "archive" | "file";
+export type FileIconKind = "app" | "code" | "text" | "url" | "image" | "pdf" | "video" | "audio" | "archive" | "file";
 
 const EXTENSION_LANGUAGES: Readonly<Record<string, EditorLanguage>> = {
   css: "css",
@@ -33,9 +34,10 @@ export function editorLanguageFor(fileName: string, language: EditorLanguage) {
 export function fileCapabilities(file: FileEntry) {
   const extension = fileExtension(file.name);
   const mimeType = file.mimeType.toLowerCase();
+  const appShortcut = mimeType.split(";", 1)[0].trim() === APP_SHORTCUT_MIME_TYPE;
   const urlShortcut = extension === "url";
   const markdown = extension === "md" || extension === "markdown" || mimeType.split(";", 1)[0].trim() === "text/markdown";
-  const editable = urlShortcut || mimeType.startsWith("text/") || mimeType.includes("json") || TEXT_EXTENSIONS.has(extension);
+  const editable = !appShortcut && (urlShortcut || mimeType.startsWith("text/") || mimeType.includes("json") || TEXT_EXTENSIONS.has(extension));
   const preview: FilePreviewKind = urlShortcut ? "url"
     : markdown ? "markdown"
     : editable ? "text"
@@ -44,7 +46,8 @@ export function fileCapabilities(file: FileEntry) {
         : mimeType.startsWith("video/") ? "video"
           : mimeType.startsWith("audio/") ? "audio"
             : "none";
-  const icon: FileIconKind = urlShortcut ? "url"
+  const icon: FileIconKind = appShortcut ? "app"
+    : urlShortcut ? "url"
     : mimeType.startsWith("image/") ? "image"
     : mimeType.startsWith("video/") ? "video"
       : mimeType.startsWith("audio/") ? "audio"

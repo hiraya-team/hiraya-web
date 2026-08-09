@@ -103,6 +103,26 @@ test("search launches installed apps", async ({ page }) => {
   await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
 
+test("application shortcuts launch from the desktop and persist", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  const startMenu = page.getByRole("dialog", { name: /Start; account, system, and applications/ });
+  await startMenu.locator(".mobile-start-applications > summary").click();
+  await startMenu.getByRole("button", { name: "App Store" }).click();
+  const appStore = page.locator('[data-app-window="store"]');
+  const editorRow = appStore.getByRole("listitem").filter({ hasText: "Integrated Editor" });
+  await editorRow.getByRole("button", { name: "Add to desktop" }).click();
+  await expect(page.getByText("Integrated Editor added to the desktop")).toBeVisible();
+  await page.getByRole("button", { name: "Close App Store" }).click();
+
+  const shortcut = page.locator('.file-icon[data-entry-id]').filter({ hasText: "Integrated Editor" });
+  await expect(shortcut).toBeVisible();
+  await page.reload();
+  await expect(shortcut).toBeVisible();
+  await shortcut.dblclick();
+  await expect(page.getByRole("dialog", { name: /Integrated Editor/ })).toBeVisible();
+});
+
 test("terminal runs pipelines against Hiraya files and stops foreground work", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page, 30_000);
@@ -1498,6 +1518,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(appStore.getByRole("heading", { name: "Applications" })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Installed" })).toBeVisible();
   await expect(appStore.getByText("Integrated Editor", { exact: true })).toBeVisible();
+  await expect(appStore.getByRole("button", { name: "Add to desktop" }).first()).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Administrator store unavailable" })).toBeVisible();
   await expect(appStore.getByText("The App Store requires a synchronized Hiraya account.")).toBeVisible();
   await expect(start).toHaveCount(0);
