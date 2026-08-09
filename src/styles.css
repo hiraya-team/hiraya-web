@@ -5460,6 +5460,9 @@ button.app-picker__disclosure { cursor: pointer; }
 .mobile-global-actions:empty { display: none; }
 .runtime-app-actions { display: flex; min-width: 0; align-items: center; gap: 5px; }
 .runtime-app-actions__overflow:not([data-always]) { display: none; }
+.runtime-app-actions__overflow [data-direct] { display: none; }
+.runtime-app-actions__overflow .mobile-header-menu__trigger { display: flex; width: auto; min-width: 34px; gap: 5px; padding-inline: 8px; color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome-text) 11%, transparent); }
+.runtime-app-actions__overflow .mobile-header-menu__trigger:hover { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
 .runtime-app-action { min-height: 31px; padding: 0 10px; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome-text) 11%, transparent); font: inherit; font-size: 12px; font-weight: 650; white-space: nowrap; }
 .runtime-app-action:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
 .runtime-app-action--primary { color: var(--theme-accent-text); background: var(--theme-accent); }
@@ -5472,8 +5475,9 @@ button.app-picker__disclosure { cursor: pointer; }
 .integrated-window-control:hover { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
 .integrated-window-control--close:hover { color: #fff; background: #984137; }
 .integrated-window-control--back { width: 44px; height: 44px; border-radius: 0; background: transparent; }
-.desktop-shell[data-integrated-app] .menu-bar__actions > .mobile-header-menu { flex: 0 0 44px; }
-.desktop-shell[data-integrated-app] .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger { width: 44px; height: 44px; border-radius: 0; color: var(--theme-chrome-text); background: transparent; }
+.desktop-shell[data-integrated-app] .menu-bar__actions > .mobile-header-menu { flex: 0 0 auto; border-inline-start: 1px solid color-mix(in srgb, var(--theme-chrome-text) 16%, transparent); }
+.desktop-shell[data-integrated-app] .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger { display: flex; width: auto; min-width: 44px; height: 44px; gap: 6px; padding-inline: 10px; border-radius: 0; color: var(--theme-chrome-text); background: transparent; }
+.chrome-menu-label { font-size: 11px; font-weight: 700; }
 
 @media (max-width: 620px) {
   .mobile-window-nav { min-width: 0; flex: 1 1 auto; }
@@ -5488,8 +5492,11 @@ button.app-picker__disclosure { cursor: pointer; }
   .mobile-global-actions .icon-button { width: var(--touch-target); height: var(--touch-target); padding: 0; color: var(--theme-chrome-text); background: transparent; }
   .mobile-global-actions .image-zoom-control select { min-width: var(--touch-target); height: var(--touch-target); }
   .runtime-app-actions__overflow { display: block !important; }
+  .runtime-app-actions__overflow [data-direct] { display: flex; }
   .runtime-app-action--secondary { display: none; }
   .runtime-app-action { min-height: var(--touch-target); padding-inline: 11px; }
+  .desktop-shell[data-integrated-app] .menu-bar__actions > .mobile-header-menu > .mobile-header-menu__trigger { width: var(--touch-target); padding: 0; }
+  .chrome-menu-label { display: none; }
   .public-menu:has(.public-menu__context) { grid-template-columns: var(--touch-target) minmax(0, 1fr) auto var(--touch-target); }
   .public-menu__back { grid-column: 1; width: var(--touch-target); min-width: var(--touch-target); justify-content: center; padding: 0; }
   .public-menu__context { grid-column: 2; }

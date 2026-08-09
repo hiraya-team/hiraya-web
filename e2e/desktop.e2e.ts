@@ -98,7 +98,7 @@ test("search launches installed apps", async ({ page }) => {
   await expect(search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ })).toBeVisible();
   await page.keyboard.press("Enter");
   await expect(search).toBeHidden();
-  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ });
   await expect(editor).toBeVisible();
   await expect.poll(() => editor.locator("iframe").evaluate((frame) => ({ width: frame.clientWidth, height: frame.clientHeight }))).toEqual({ width: 818, height: 572 });
 });
@@ -262,7 +262,7 @@ test("clicking inside a sandbox app focuses and raises its window", async ({ pag
   let search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Integrated Editor");
   await search.getByRole("group", { name: "Apps" }).getByRole("option", { name: /Integrated Editor/ }).click();
-  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ });
   await expect(editor).toBeVisible();
   await expect(editor.getByRole("button", { name: "Save", exact: true })).toBeVisible();
 
@@ -302,7 +302,7 @@ test("app file picker expands folders and keeps hidden selections", async ({ pag
   const search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
-  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ });
   await editor.getByRole("button", { name: "More Integrated Editor actions" }).click();
   await editor.getByRole("dialog", { name: "More Integrated Editor actions" }).getByRole("button", { name: /^Open/ }).click();
 
@@ -358,7 +358,7 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await expect(frame.getByRole("tree", { name: "Workspace files" }).getByRole("treeitem", { name: new RegExp(firstName) })).toBeVisible();
 
   await frame.getByRole("treeitem", { name: new RegExp(firstName) }).click();
-  await expect(app).toHaveAccessibleName("Integrated Editor");
+  await expect(app).toHaveAccessibleName(`${firstName} - Integrated Editor`);
   const openFiles = frame.getByRole("toolbar", { name: "Open files" });
   const firstTab = openFiles.getByRole("button", { name: firstName, exact: true });
   await expect(firstTab).toHaveAttribute("aria-pressed", "true");
@@ -395,7 +395,7 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await expect(tree.getByRole("treeitem", { name: renamedName, exact: true })).toHaveCount(0);
   await tree.getByRole("treeitem", { name: imageName, exact: true }).click();
   await expect(frame.locator(`img[alt="Preview of ${imageName}"]`)).toBeVisible();
-  await expect(app.getByRole("button", { name: "Save", exact: true })).toBeDisabled();
+  await expect(app.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
 });
 
 test("app save picker creates and selects a folder", async ({ page }) => {
@@ -411,7 +411,7 @@ test("app save picker creates and selects a folder", async ({ page }) => {
   const search = page.getByRole("dialog", { name: /Search/ });
   await search.locator("input").fill("Integrated Editor");
   await page.keyboard.press("Enter");
-  const editor = page.getByRole("dialog", { name: "Integrated Editor" });
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ });
   const saveAs = editor.getByRole("button", { name: "Save As", exact: true });
   await expect(saveAs).toBeEnabled();
   await saveAs.click();
@@ -651,19 +651,19 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   const icon = page.locator(".file-icon").filter({ hasText: name });
   await icon.dblclick();
 
-  let app = page.getByRole("dialog", { name: "Integrated Editor" });
+  let app = page.getByRole("dialog", { name: /Integrated Editor/ });
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
   await app.getByRole("button", { name: "Save", exact: true }).click();
   await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
-  await app.getByRole("button", { name: "Close Integrated Editor" }).click();
+  await app.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
   const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
   await expect.poll(async () => await app.isHidden() || await discard.isVisible()).toBe(true);
   if (await discard.isVisible()) await discard.click();
   await expect(app).toBeHidden();
 
   await icon.dblclick();
-  app = page.getByRole("dialog", { name: "Integrated Editor" });
+  app = page.getByRole("dialog", { name: /Integrated Editor/ });
   editor = app.frameLocator("iframe");
   await expect(editor.locator(".cm-content")).toHaveText(contents);
   await expect(editor.getByRole("button", { name: "Explorer" })).toHaveAttribute("aria-expanded", "false");
@@ -898,13 +898,21 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   const icon = page.locator(".file-icon").filter({ hasText: name });
   await icon.dblclick();
 
-  const windowTitle = "Integrated Editor";
+  const windowTitle = `${name} - Integrated Editor`;
   const appWindow = page.getByRole("dialog", { name: windowTitle });
   await expect(appWindow).toBeVisible();
   await expect(appWindow).not.toHaveAttribute("data-full-surface", "true");
   await expect(appWindow.getByRole("button", { name: `Minimize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Maximize ${windowTitle}` })).toBeVisible();
   await expect(appWindow.getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
+  const moreActions = appWindow.getByRole("button", { name: "More Integrated Editor actions" });
+  await expect(moreActions).toContainText("More");
+  await moreActions.click();
+  const appActions = appWindow.getByRole("dialog", { name: "More Integrated Editor actions" });
+  await expect(appActions.getByRole("button", { name: /^Open/ })).toBeVisible();
+  await expect(appActions.getByRole("button", { name: "Format", exact: true })).toBeHidden();
+  await expect(appActions.getByRole("button", { name: /^Save As/ })).toBeHidden();
+  await page.keyboard.press("Escape");
   const closeBox = await appWindow.getByRole("button", { name: `Close ${windowTitle}` }).boundingBox();
   const minimizeBox = await appWindow.getByRole("button", { name: `Minimize ${windowTitle}` }).boundingBox();
   const maximizeBox = await appWindow.getByRole("button", { name: `Maximize ${windowTitle}` }).boundingBox();
@@ -915,7 +923,7 @@ test("fine pointers use overlapping window chrome and positioned context menus",
   await appWindow.getByRole("button", { name: `Maximize ${windowTitle}` }).click();
   await expect(appWindow.locator(".app-window__header")).toHaveCount(0);
   await expect(page.getByRole("navigation", { name: `${windowTitle} window controls` }).getByRole("button", { name: `Close ${windowTitle}` })).toBeVisible();
-  await expect(page.getByRole("button", { name: "System" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "System" })).toContainText("System");
   const restore = page.getByRole("button", { name: `Restore ${windowTitle}` });
   await expect(restore).toBeFocused();
   await restore.click();

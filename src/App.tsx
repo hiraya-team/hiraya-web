@@ -5299,7 +5299,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         </nav>
         <div className="menu-bar__actions">
           {focusedIntegratedApp ? <>
-            <MobileHeaderMenu label="System" icon={<DotsThree size={20} />} onTriggerElement={(element) => { areaSwitcherTriggerRef.current = element; }}>
+            <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />
+            <MobileHeaderMenu label="System" icon={<><GearSix size={18} /><span className="chrome-menu-label">System</span></>} onTriggerElement={(element) => { areaSwitcherTriggerRef.current = element; }}>
               {(dismiss) => <>
                 <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("search"))}><MagnifyingGlass size={17} /> Search</button>
                 <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("windows"))}><SquaresFour size={17} /> All windows</button>
@@ -5310,7 +5311,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
               </>}
             </MobileHeaderMenu>
             {shellNotifications}
-            <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />
           </> : <>
             <button type="button" aria-label="Search apps, files, windows, and commands" title="Search" onClick={() => setActivePanel("search")}>
               <MagnifyingGlass size={17} />
