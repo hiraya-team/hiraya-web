@@ -317,7 +317,6 @@ describe("accessibility regressions", () => {
       onDragAtEdge={() => null}
       onEdgeDwellChange={() => undefined}
       onDragEnd={() => undefined}
-      gridSize={36}
       onContextMenu={() => undefined}
       onContextMenuAt={() => undefined}
     />);
@@ -329,7 +328,13 @@ describe("accessibility regressions", () => {
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain('inert=""');
-    expect(markup).toContain('--snap-grid-size:36px');
+  });
+
+  test("keeps placement previews and Markdown quotes visually restrained", async () => {
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    expect(css).not.toContain("snap-preview[data-grid]");
+    expect(css).not.toContain("border-left: 3px solid");
+    expect(css).toContain("border-inline-start: var(--theme-border-width, 1px) solid");
   });
 
   test("programmatically activated file inputs are not hidden keyboard stops", async () => {

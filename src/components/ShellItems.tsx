@@ -200,7 +200,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
   };
 
   return <>
-    {gridSize && <span ref={previewRef} className="shell-item-snap-preview" aria-hidden="true" data-grid={gridSize} style={{ "--snap-grid-size": `${gridSize}px` } as CSSProperties} />}
+    {gridSize && <span ref={previewRef} className="shell-item-snap-preview" aria-hidden="true" />}
     <article
       ref={ref}
       className={`shell-item${widget ? " shell-item--widget" : ""}`}

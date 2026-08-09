@@ -5491,7 +5491,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                     const snapped = snapRootEntryPosition(world);
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
-                  gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                   onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
                   onContextMenu={(event) => {
                     event.preventDefault();
@@ -5688,7 +5687,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                             : handleMoveTo(items, destination.parentId));
                         }}
                         getDesktopDropPreview={positionAtDesktopPoint}
-                        gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                         onContextMenu={(entry, x, y, presentation) => {
                           if (isProtectedShellEntry(entry)) return;
                           if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
