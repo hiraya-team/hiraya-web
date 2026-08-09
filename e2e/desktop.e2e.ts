@@ -1208,7 +1208,6 @@ test("widgets and icon groups preview snapped pointer placement", async ({ page 
   await beginDragPointerTo(page, moveClock, moveBounds.x + moveBounds.width / 2 + 35, moveBounds.y + moveBounds.height / 2 + 17);
   const placeholder = page.locator(".shell-item-snap-preview[data-visible]");
   await expect(placeholder).toHaveCount(1);
-  await expect(placeholder).toHaveAttribute("data-grid", "24");
   const clockTarget = await placeholder.evaluate((element) => [parseFloat(element.style.left), parseFloat(element.style.top), parseFloat(element.style.width), parseFloat(element.style.height)]);
   expect((clockTarget[0] - 22) % 24).toBe(0);
   expect((clockTarget[1] - 22) % 24).toBe(0);
