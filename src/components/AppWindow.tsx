@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowLeft, ArrowsIn, ArrowsOut, CaretDown, Minus, SquaresFour, X } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowsIn, ArrowsOut, Minus, SquaresFour, X } from "@phosphor-icons/react";
 import { clampWindowBounds, resizeWindowBounds, type ResizeDirection, type WindowBounds } from "../ui/window-manager";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
-import { registerTransientDismiss } from "../ui/transient-dismiss";
 
 export type AppWindowProps = {
   id: string;
@@ -26,10 +25,7 @@ export type AppWindowProps = {
   onMinimize?: (id: string) => void;
   onClose?: (id: string) => void;
   maximized?: boolean;
-  canMoveArea?: boolean;
   onToggleMaximize?: (id: string) => void;
-  onMoveArea?: (id: string, direction: "left" | "right" | "up" | "down") => void;
-  onAdjustBounds?: (id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") => void;
   onShowDesktop?: () => void;
   onSwitchWindow?: () => void;
   backLabel?: string;
@@ -65,26 +61,18 @@ export function AppWindow({
   id, title, titleId, bounds, minWidth, minHeight, zIndex, focused, minimized, segmentActive,
   segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, dragEdgeAt, onDragAtEdge, onEdgeDwellChange,
   onDragEnd,
-  onMinimize, onClose, maximized = false, canMoveArea = false, onToggleMaximize, onMoveArea, onAdjustBounds,
+  onMinimize, onClose, maximized = false, onToggleMaximize,
   onShowDesktop, onSwitchWindow, backLabel = "Back", hideFocusedHeader = false,
   externalHeaderElements, children, titleArea, headerContent,
 }: AppWindowProps) {
   const windowRef = useRef<HTMLElement>(null);
   const [headerLeadingElement, setHeaderLeadingElement] = useState<HTMLDivElement | null>(null);
   const [headerActionsElement, setHeaderActionsElement] = useState<HTMLDivElement | null>(null);
-  const [windowMenuOpen, setWindowMenuOpen] = useState(false);
-  const windowMenuButtonRef = useRef<HTMLButtonElement>(null);
-  const windowMenuRef = useRef<HTMLDivElement>(null);
   const interactionRef = useRef<Interaction | null>(null);
   const onBoundsChangeRef = useRef(onBoundsChange);
   const onEdgeDwellChangeRef = useRef(onEdgeDwellChange);
   onBoundsChangeRef.current = onBoundsChange;
   onEdgeDwellChangeRef.current = onEdgeDwellChange;
-
-  function closeWindowMenu() {
-    setWindowMenuOpen(false);
-    requestAnimationFrame(() => windowMenuButtonRef.current?.focus());
-  }
 
   function viewport() {
     const parent = windowRef.current?.parentElement;
@@ -158,28 +146,6 @@ export function AppWindow({
     windowRef.current?.focus();
   }, [focused, minimized, segmentActive]);
 
-  useEffect(() => {
-    if (!windowed) setWindowMenuOpen(false);
-  }, [windowed]);
-
-  useEffect(() => {
-    if (!windowMenuOpen) return;
-    const unregisterDismiss = registerTransientDismiss(closeWindowMenu);
-    windowMenuRef.current?.querySelector<HTMLButtonElement>("[role='menuitem']")?.focus();
-    const dismissOutside = (event: PointerEvent | FocusEvent) => {
-      const target = event.target as Node | null;
-      if (!target || windowMenuRef.current?.contains(target) || windowMenuButtonRef.current?.contains(target)) return;
-      setWindowMenuOpen(false);
-    };
-    document.addEventListener("pointerdown", dismissOutside, true);
-    document.addEventListener("focusin", dismissOutside, true);
-    return () => {
-      unregisterDismiss();
-      document.removeEventListener("pointerdown", dismissOutside, true);
-      document.removeEventListener("focusin", dismissOutside, true);
-    };
-  }, [windowMenuOpen]);
-
   const style: CSSProperties = windowed
     ? { position: "absolute", left: bounds.x, top: bounds.y, width: bounds.width, height: bounds.height, zIndex }
     : { position: "absolute", inset: 0, width: "100%", height: "100%", zIndex };
@@ -231,27 +197,6 @@ export function AppWindow({
             onToggleMaximize(id);
             if (restoreFocus && !maximized) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-window-control="restore"][data-window-id="${CSS.escape(id)}"]`)?.focus());
           }} aria-label={`${maximized ? "Restore" : "Maximize"} ${title}`}>{maximized ? <ArrowsIn size={16} /> : <ArrowsOut size={16} />}</button>}
-          {canMoveArea && onMoveArea && <div className="app-window__menu-wrap">
-            <button ref={windowMenuButtonRef} className="app-window__control" type="button" aria-label={`Window actions for ${title}`} aria-haspopup="menu" aria-expanded={windowMenuOpen} onClick={() => setWindowMenuOpen((open) => !open)}><CaretDown size={15} /></button>
-            {windowMenuOpen && <div ref={windowMenuRef} className="app-window__menu" role="menu" onKeyDown={(event) => {
-              const items = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("[role='menuitem']:not(:disabled)"));
-              const current = items.indexOf(document.activeElement as HTMLButtonElement);
-              if (event.key === "Escape") {
-                event.preventDefault(); event.stopPropagation(); event.nativeEvent.stopImmediatePropagation();
-                setWindowMenuOpen(false); windowMenuButtonRef.current?.focus();
-              } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
-                event.preventDefault();
-                const index = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : event.key === "ArrowDown" ? (current + 1) % items.length : (current - 1 + items.length) % items.length;
-                items[index]?.focus();
-              }
-            }}>
-              {(["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={direction} onClick={() => { onMoveArea(id, direction); closeWindowMenu(); }}>Move to area {direction}<kbd>Alt {direction}</kbd></button>)}
-              {onAdjustBounds && <>
-                {(["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={`nudge-${direction}`} disabled={maximized} onClick={() => { onAdjustBounds(id, "move", direction); closeWindowMenu(); }}>Move window {direction}<kbd>Alt Shift {direction}</kbd></button>)}
-                {(["left", "right", "up", "down"] as const).map((direction) => <button type="button" role="menuitem" key={`resize-${direction}`} disabled={maximized} onClick={() => { onAdjustBounds(id, "resize", direction); closeWindowMenu(); }}>{direction === "left" ? "Make window narrower" : direction === "right" ? "Make window wider" : direction === "up" ? "Make window shorter" : "Make window taller"}<kbd>Alt Ctrl {direction}</kbd></button>)}
-              </>}
-            </div>}
-          </div>}
         </>}
       </div>
       {typeof children === "function" && <div ref={setHeaderLeadingElement} className="app-window__header-leading" data-window-no-drag />}

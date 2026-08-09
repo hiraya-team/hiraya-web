@@ -247,7 +247,7 @@ async function decodeLegacyConflictText(content: Blob) {
 }
 
 function transientMenuOpen() {
-  return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel, .app-window__menu"));
+  return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel"));
 }
 
 function themeEditorState(appearance: ThemeState, canManage: boolean, restrictionReason: string): ThemeEditorState {
@@ -5616,8 +5616,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           onMinimize={minimizeApp}
           onClose={requestCloseApp}
           onToggleMaximize={toggleMaximizeApp}
-          onMoveArea={moveAppToArea}
-          onAdjustBounds={adjustAppWindow}
           onShowDesktop={navigateBack}
           onSwitchWindow={() => setActivePanel("windows")}
         >

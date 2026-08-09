@@ -10,7 +10,7 @@ import { projectLogicalPosition, segmentKey, type SurfaceSegment } from "../../u
 import { MERGE_APP_WINDOW, type RunningApp } from "./model";
 
 type DesktopSize = { width: number; height: number };
-type WindowCallbacks = Pick<AppWindowProps, "onFocus" | "onBoundsChange" | "dragEdgeAt" | "onDragAtEdge" | "onEdgeDwellChange" | "onDragEnd" | "onMinimize" | "onClose" | "onToggleMaximize" | "onMoveArea" | "onAdjustBounds" | "onShowDesktop">;
+type WindowCallbacks = Pick<AppWindowProps, "onFocus" | "onBoundsChange" | "dragEdgeAt" | "onDragAtEdge" | "onEdgeDwellChange" | "onDragEnd" | "onMinimize" | "onClose" | "onToggleMaximize" | "onShowDesktop">;
 
 type WindowLayerProps = WindowCallbacks & {
   apps: readonly RunningApp[];
@@ -67,7 +67,6 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
             hideFocusedHeader={integrated}
             externalHeaderElements={integrated && focusedAppId === app.id ? { leading: null, actions: mobileHeaderActionsElement } : undefined}
             maximized={maximized}
-            canMoveArea={windowed}
             onSwitchWindow={onSwitchWindow}
             titleArea={<h2 id={titleId}>{title}</h2>}
           >
