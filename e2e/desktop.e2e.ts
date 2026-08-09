@@ -116,7 +116,7 @@ test("terminal runs pipelines against Hiraya files and stops foreground work", a
   const command = frame.locator("#command");
   await expect(frame.getByText("Hiraya Terminal 1.0")).toBeVisible();
   await expect(command).toHaveAccessibleName("Command");
-  await expect.poll(async () => (await frame.getByRole("button", { name: "Help" }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+  await expect.poll(async () => (await terminal.getByRole("button", { name: "More Terminal actions" }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await command.fill("mkdir work; echo beta > work/list.txt; echo alpha >> work/list.txt; cat work/list.txt | sort | uniq");
   await command.press("Enter");
   await expect(frame.getByRole("log")).toContainText("alpha\nbeta");
@@ -124,7 +124,7 @@ test("terminal runs pipelines against Hiraya files and stops foreground work", a
 
   await command.fill("sleep 30");
   await command.press("Enter");
-  await frame.getByRole("button", { name: "Stop" }).click();
+  await terminal.getByRole("button", { name: "Stop", exact: true }).click();
   await expect(frame.getByRole("log")).toContainText("^C");
   await expect(frame.locator("#status")).toContainText("status 130");
   await expect.poll(async () => (await frame.getByRole("button", { name: "Run command" }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
