@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep widget contents stable after refresh.** Clock, Calendar, and Status widgets now keep their content and height visually stable when the desktop reloads, without requiring a tap.
 - **Slide widgets between areas.** Widgets and icon groups now move with desktop icons when switching areas, keeping the desktop layout together throughout the transition.
 - **Tap widgets without moving them.** Clock, Calendar, and Status widgets now stay still when a finger shifts slightly during a tap, while deliberate dragging continues to move them.
 - **Navigate public apps with Back.** On a public desktop, **Back** now moves through an open app before returning to the desktop, matching the signed-in desktop behavior.
