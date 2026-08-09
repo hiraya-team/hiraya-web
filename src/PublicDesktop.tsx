@@ -144,6 +144,9 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const desktopRef = useRef<HTMLElement>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const openRef = useRef(open);
+  const backInFlightRef = useRef(false);
+  openRef.current = open;
   const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
   const publicEntries = useMemo(() => withoutDotEntries(desktop?.entries ?? []), [desktop?.entries]);
   const index = useMemo(() => createEntryIndex(publicEntries), [publicEntries]);
@@ -235,16 +238,31 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
     setSelectedIds(new Set());
     setOpen(null);
   };
-  const backPublicView = () => {
-    if (open?.kind !== "folder" || !open.folderId) {
+  const backPublicView = async () => {
+    if (open?.kind === "folder" && open.folderId) {
+      setSelectedIds(new Set());
+      setOpen({
+        kind: "folder",
+        folderId: publicFolderBackTarget(desktop?.entries ?? [], open.folderId) ?? null,
+      });
+      return;
+    }
+    const runtime = open?.kind === "file" ? open.runtime : undefined;
+    if (!runtime) {
       closePublicView();
       return;
     }
-    setSelectedIds(new Set());
-    setOpen({
-      kind: "folder",
-      folderId: publicFolderBackTarget(desktop?.entries ?? [], open.folderId) ?? null,
-    });
+    if (backInFlightRef.current) return;
+    backInFlightRef.current = true;
+    try {
+      const outcome = await runtime.lifecycle.requestBack(
+        { appId: runtime.app.package.manifest.id, instanceId: runtime.app.id },
+        (requestId) => runtime.app.dispatcher.emit("app.backRequested", { requestId }),
+      );
+      if ((outcome === "home" || outcome === "unsupported") && openRef.current?.kind === "file" && openRef.current.runtime === runtime) closePublicView();
+    } finally {
+      backInFlightRef.current = false;
+    }
   };
 
   return (
@@ -252,7 +270,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
       <header className="menu-bar public-menu">
         {open && !windowed ? (
           <>
-            <button className="public-menu__back" type="button" onClick={backPublicView} aria-label={open.kind === "folder" && open.folderId ? "Back to parent folder" : "Back to public desktop"}>
+            <button className="public-menu__back" type="button" onClick={() => void backPublicView()} aria-label={open.kind === "folder" && open.folderId ? "Back to parent folder" : "Back to public desktop"}>
               <ArrowLeft />
               <span>Back</span>
             </button>
@@ -376,7 +394,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                  if (open.kind === "file" && open.runtime) open.runtime.lifecycle.setHostState({ appId: open.runtime.app.package.manifest.id, instanceId: open.runtime.app.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
                }}
               onClose={closePublicView}
-              onShowDesktop={backPublicView}
+              onShowDesktop={() => void backPublicView()}
               backLabel={open.kind === "folder" && open.folderId ? "Back to parent" : "Back to desktop"}
               titleArea={
                 <div>
