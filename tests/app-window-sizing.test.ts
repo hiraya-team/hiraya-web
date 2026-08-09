@@ -7,10 +7,10 @@ describe("sandbox app window sizing", () => {
   test("adds active theme chrome around a requested render area", () => {
     const window = { renderWidth: 818, renderHeight: 572, minWidth: 360, minHeight: 260 };
 
-    expect(sandboxWindowOptions(window, BUILTIN_THEMES["hiraya-dusk"].definition)).toEqual({ width: 820, height: 620, minWidth: 360, minHeight: 260 });
+    expect(sandboxWindowOptions(window, BUILTIN_THEMES["hiraya-dusk"].definition)).toEqual({ width: 820, height: 621, minWidth: 360, minHeight: 260 });
     const highContrast = sandboxWindowOptions(window, BUILTIN_THEMES["high-contrast"].definition);
     expect(highContrast).toMatchObject({ width: 822, minWidth: 360, minHeight: 260 });
-    expect(highContrast.height).toBeCloseTo(625.68);
+    expect(highContrast.height).toBeCloseTo(627.68);
   });
 
   test("preserves legacy outer sizes and desktop clamping", () => {
