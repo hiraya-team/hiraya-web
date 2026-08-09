@@ -105,8 +105,8 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
   const resetVisuals = (target: typeof drag) => {
     if (target === drag) ref.current?.style.removeProperty("transform");
     else {
-      ref.current?.style.removeProperty("width");
-      ref.current?.style.removeProperty("height");
+      ref.current?.style.setProperty("width", `${bounds.width}px`);
+      ref.current?.style.setProperty("height", `${bounds.height}px`);
     }
     if (ref.current) delete ref.current.dataset.dragging;
     updateSnapPreview(null);

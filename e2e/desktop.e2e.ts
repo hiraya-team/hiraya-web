@@ -991,6 +991,14 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await resizeClock.focus();
   await page.keyboard.press("Shift+ArrowRight");
   await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(initialWidth);
+  const beforeVerticalResize = await clock.boundingBox();
+  const resizeBounds = await resizeClock.boundingBox();
+  if (!beforeVerticalResize || !resizeBounds) throw new Error("The clock resize control is not visible.");
+  await dragPointerTo(page, resizeClock, resizeBounds.x + resizeBounds.width / 2, resizeBounds.y + resizeBounds.height / 2 + 48);
+  await expect.poll(async () => (await clock.boundingBox())?.width).toBe(beforeVerticalResize.width);
+  await expect.poll(async () => (await clock.boundingBox())?.height ?? 0).toBeGreaterThan(beforeVerticalResize.height);
+  const resizedClockBounds = await clock.boundingBox();
+  if (!resizedClockBounds) throw new Error("The resized clock is not visible.");
 
   await desktop.click({ button: "right", position: { x: 120, y: 420 } });
   await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "New icon group" }).click();
@@ -1004,6 +1012,7 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await page.reload();
   const reloadedClock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
   await expect(reloadedClock).toBeVisible();
+  await expect.poll(async () => await reloadedClock.boundingBox()).toMatchObject({ width: resizedClockBounds.width, height: resizedClockBounds.height });
   const reloadedWidgetTrack = reloadedClock.locator("xpath=ancestor::div[contains(@class, 'desktop-area-track')]");
   await expect(reloadedWidgetTrack).toHaveCSS("transform", "none");
   await expect(reloadedWidgetTrack).toHaveCSS("will-change", "auto");
