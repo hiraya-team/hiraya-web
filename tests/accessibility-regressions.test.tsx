@@ -282,7 +282,7 @@ describe("accessibility regressions", () => {
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
     expect(css).toContain(".desktop[data-area-transitioning] .shell-item { pointer-events: none; }");
-    expect(css).toContain(".desktop-area-stage--shell-items .desktop-area-track { will-change: auto; }");
+    expect(css).toContain(".desktop-area-stage--shell-items .desktop-area-track { transition: none; will-change: auto; }");
     expect(css).toContain(".shell-item--widget .shell-item__content { position: absolute; inset: 0;");
     expect(css).not.toContain("left calc(260ms * var(--theme-motion))");
     expect(app).not.toContain('"--area-stage-scale"');
