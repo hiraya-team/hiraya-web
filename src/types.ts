@@ -27,14 +27,18 @@ export const DEFAULT_WALLPAPER: Wallpaper = {
   overlayOpacity: 0,
 };
 
-export type DesktopWidget = {
+type DesktopWidgetBounds = {
   id: string;
-  kind: "clock" | "calendar" | "status";
   x: number;
   y: number;
   width: number;
   height: number;
 };
+
+export type DesktopWidget = DesktopWidgetBounds & (
+  | { kind: "clock" | "calendar" | "status" }
+  | { kind: "todo"; fileId: string }
+);
 
 export type DesktopIconGroup = {
   folderId: string;

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ArrowsLeftRight, CalendarBlank, Check, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
+import { ArrowsLeftRight, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, Info, LinkSimple, Package, PencilSimple, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { useModalDialog } from "../ui/modal-dialog";
@@ -195,7 +195,7 @@ type DesktopProps = {
   onImportFolder: () => void;
   onSettings?: () => void;
   onPaste?: () => void;
-  onAddWidget?: (kind: "clock" | "calendar" | "status") => void;
+  onAddWidget?: (kind: "clock" | "calendar" | "status" | "todo") => void;
   onCreateIconGroup?: () => void;
   readOnly?: boolean;
   onClose: () => void;
@@ -217,6 +217,7 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
         { id: "clock", label: "Clock", icon: <Clock size={16} />, onSelect: () => onAddWidget("clock") },
         { id: "calendar", label: "Calendar", icon: <CalendarBlank size={16} />, onSelect: () => onAddWidget("calendar") },
         { id: "status", label: "Status", icon: <Gauge size={16} />, onSelect: () => onAddWidget("status") },
+        { id: "todo", label: "Todo list", icon: <CheckSquare size={16} />, onSelect: () => onAddWidget("todo") },
       ]} />}
       <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onUpload}>
         <UploadSimple size={17} /> Upload files

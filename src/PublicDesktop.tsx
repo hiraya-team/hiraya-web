@@ -5,7 +5,7 @@ import { FolderExplorer } from "./components/FolderExplorer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
 import { loginUrl } from "./lib/auth";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
-import type { DesktopEntry, FolderEntry } from "./types";
+import type { DesktopEntry, FileEntry, FolderEntry } from "./types";
 import { builtinAppWindow } from "./apps/registry";
 import { createEntryIndex } from "./ui/entry-index";
 import { useModalDialog } from "./ui/modal-dialog";
@@ -16,7 +16,8 @@ import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
 import { API_ROUTES } from "./lib/api-routes";
-import type { PublicAuthority } from "./lib/public-desktop";
+import { fetchPublicFile, type PublicAuthority } from "./lib/public-desktop";
+import { TodoWidget } from "./features/widgets/TodoWidget";
 import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
 import { iconAreaSize, projectLogicalPosition, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
@@ -371,7 +372,12 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             </div>
           </div>
         )}
-        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} onOpen={openEntry} /></div>}
+        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} onOpen={openEntry} renderWidget={(widget) => {
+          if (widget.kind !== "todo") return null;
+          const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+          const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;
+          return <TodoWidget file={file} contentRevision={contentRevision} readOnly readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} onOpen={openEntry} />;
+        }} /></div>}
         {open && (
           <div className="app-window-layer">
             <AppWindow

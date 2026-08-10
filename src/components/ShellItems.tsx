@@ -21,6 +21,7 @@ type Props = {
   areaSize: { width: number; height: number };
   readOnly?: boolean;
   status?: StatusModel;
+  renderWidget?: (widget: DesktopWidget) => ReactNode;
   loadPreview?: (id: string) => Promise<EntryPreviewSource>;
   onOpen: (entry: DesktopEntry) => void;
   onDrop?: (dataTransfer: DataTransfer, folderId: string) => void;
@@ -40,7 +41,7 @@ type Props = {
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, widget = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ label, position, width, height, areaSize, readOnly, widget = false, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
   position: EntryPosition;
   width: number;
@@ -48,6 +49,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
   areaSize: { width: number; height: number };
   readOnly: boolean;
   widget?: boolean;
+  interactive?: boolean;
   selected?: boolean;
   busy?: boolean;
   gridSize?: GridSize;
@@ -203,7 +205,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
     {gridSize && <span ref={previewRef} className="shell-item-snap-preview" aria-hidden="true" />}
     <article
       ref={ref}
-      className={`shell-item${widget ? " shell-item--widget" : ""}`}
+      className={`shell-item${widget ? " shell-item--widget" : ""}${interactive ? " shell-item--interactive" : ""}`}
       style={{ "--shell-x": `${bounds.x}px`, "--shell-y": `${bounds.y}px`, width: bounds.width, height: bounds.height } as CSSProperties}
       aria-label={label}
       data-selected={selected || undefined}
@@ -241,7 +243,7 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const activeKey = segmentKey(activeSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === activeKey);
@@ -254,9 +256,9 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSi
   return <div className="shell-item-layer">
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
-      const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : "Status";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} widget selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
-        {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : <StatusWidget status={status} />}
+      const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : "Todo list";
+      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} widget interactive={widget.kind === "todo"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
+        {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : widget.kind === "status" ? <StatusWidget status={status} /> : renderWidget?.(widget)}
       </ShellItem>;
     })}
     {visibleGroups.map(({ group, folder }) => {

@@ -9,7 +9,7 @@ import { FileDialog } from "./FileDialog";
 import { EntryIcon } from "./VisualPrimitives";
 
 type Props = {
-  request: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }>;
+  request: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }> | { kind: "pickFile"; params: { mimeTypes: string[]; title: string; actionLabel: string } };
   entries: DesktopEntry[];
   onCancel: () => void;
   onOpenFiles: (files: FileEntry[]) => void;
@@ -21,6 +21,7 @@ type Props = {
 const ROOT_ID = "desktop-root";
 
 export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpenFolder, onSave, onCreateFolder }: Props) {
+  const pickingFile = request.kind === "openFile" || request.kind === "pickFile";
   const backdropRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -34,23 +35,23 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
 
   const index = useMemo(() => createEntryIndex(entries), [entries]);
   const files = useMemo(() => entries.filter((entry): entry is FileEntry => entry.kind === "file" && (
-    request.kind !== "openFile" || !request.params.mimeTypes?.length || request.params.mimeTypes.some((matcher) => matchingFileType(entry, matcher))
-  )), [entries, request]);
+    !pickingFile || !request.params.mimeTypes?.length || request.params.mimeTypes.some((matcher) => matchingFileType(entry, matcher))
+  )), [entries, pickingFile, request.params]);
   const fileIds = useMemo(() => new Set(files.map((file) => file.id)), [files]);
   const children = useMemo(() => {
     const result = new Map<string | null, DesktopEntry[]>();
     for (const [parentId, items] of index.children) {
       result.set(parentId, items
-        .filter((entry) => entry.kind === "folder" || request.kind === "openFile" && fileIds.has(entry.id))
+        .filter((entry) => entry.kind === "folder" || pickingFile && fileIds.has(entry.id))
         .toSorted((a, b) => Number(b.kind === "folder") - Number(a.kind === "folder") || a.name.localeCompare(b.name)));
     }
     return result;
-  }, [fileIds, index, request.kind]);
+  }, [fileIds, index, pickingFile]);
   const selectedFiles = files.filter((file) => selected.includes(file.id));
   const selectedFolder = folderId ? index.byId.get(folderId) : null;
   const folderIsMissing = Boolean(folderId && selectedFolder?.kind !== "folder");
   const multiple = request.kind === "openFile" && request.params.multiple === true;
-  const title = request.kind === "openFile" ? multiple ? "Choose files" : "Choose file" : request.kind === "openFolder" ? "Choose folder" : "Save file";
+  const title = request.kind === "pickFile" ? request.params.title : request.kind === "openFile" ? multiple ? "Choose files" : "Choose file" : request.kind === "openFolder" ? "Choose folder" : "Save file";
 
   function toggleExpanded(id: string) {
     setExpanded((current) => {
@@ -70,7 +71,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
   function folderRow(id: string, label: string, icon: ReactNode, depth: number, hasChildren: boolean) {
     const isExpanded = expanded.has(id);
     const style = { "--picker-depth": depth } as CSSProperties;
-    if (request.kind === "openFile") {
+    if (pickingFile) {
       return hasChildren ? <button className="app-picker__folder-toggle" type="button" style={style} aria-expanded={isExpanded} onClick={() => toggleExpanded(id)}>
         <CaretRight className="app-picker__caret" size={16} aria-hidden="true" />{icon}<span title={label}>{label}</span>
       </button> : <div className="app-picker__folder-toggle" style={style}>
@@ -105,7 +106,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
   }
 
   async function submit() {
-    if (request.kind === "openFile") {
+    if (pickingFile) {
       onOpenFiles(selectedFiles);
       return;
     }
@@ -129,32 +130,32 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
     setCreatingFolder(false);
   }
 
-  const selectionStatus = request.kind === "openFile"
+  const selectionStatus = pickingFile
     ? multiple ? `${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"} selected` : selectedFiles[0]?.name ?? "Select a file"
     : `${selectedFolder?.name ?? "Desktop"} selected`;
-  const actionLabel = request.kind === "saveFile" ? "Save" : request.kind === "openFolder" ? "Choose folder" : multiple ? selectedFiles.length ? `Choose ${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"}` : "Choose files" : "Choose file";
+  const actionLabel = request.kind === "pickFile" ? request.params.actionLabel : request.kind === "saveFile" ? "Save" : request.kind === "openFolder" ? "Choose folder" : multiple ? selectedFiles.length ? `Choose ${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"}` : "Choose files" : "Choose file";
 
   return <><div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
     <section ref={dialogRef} className="file-dialog app-picker" role="dialog" aria-modal="true" aria-labelledby="app-picker-title" tabIndex={-1}>
       <header className="window-header"><div><span className="window-kicker">Hiraya</span><h2 id="app-picker-title">{title}</h2></div><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
       <div className="app-picker__content">
         {request.kind === "saveFile" && <label>File name<input autoFocus value={name} maxLength={180} onChange={(event) => setName(event.target.value)} /></label>}
-        <div className="app-picker__tree" role="group" aria-label={request.kind === "openFile" ? "Files" : "Folders"}>
+        <div className="app-picker__tree" role="group" aria-label={pickingFile ? "Files" : "Folders"}>
           <ul className="app-picker__branch">
             <li>
               {folderRow(ROOT_ID, "Desktop", <Desktop size={20} weight="duotone" aria-hidden="true" />, 0, Boolean(children.get(null)?.length))}
               {expanded.has(ROOT_ID) && <ul className="app-picker__branch">{renderChildren(null, 1)}</ul>}
             </li>
           </ul>
-          {request.kind === "openFile" && files.length === 0 && <p className="app-picker__empty" role="status">No matching files are available.</p>}
+          {pickingFile && files.length === 0 && <p className="app-picker__empty" role="status">No matching files are available.</p>}
         </div>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="app-picker__footer">
           <div className="app-picker__footer-context">
-            {request.kind !== "openFile" && onCreateFolder && <button className="button button--quiet" type="button" disabled={busy} aria-label={`New folder in ${selectedFolder?.name ?? "Desktop"}`} onClick={() => setCreatingFolder(true)}><FolderPlus size={17} /> New folder</button>}
+            {!pickingFile && onCreateFolder && <button className="button button--quiet" type="button" disabled={busy} aria-label={`New folder in ${selectedFolder?.name ?? "Desktop"}`} onClick={() => setCreatingFolder(true)}><FolderPlus size={17} /> New folder</button>}
             <span className="app-picker__selection-status" aria-live="polite">{selectionStatus}</span>
           </div>
-          <div className="dialog-actions"><button className="button button--quiet" type="button" onClick={onCancel} disabled={busy}>Cancel</button><button className="button button--primary" type="button" disabled={busy || folderIsMissing || request.kind === "openFile" && selectedFiles.length === 0 || request.kind === "saveFile" && !name.trim()} onClick={() => void submit()}>{busy ? "Saving..." : actionLabel}</button></div>
+          <div className="dialog-actions"><button className="button button--quiet" type="button" onClick={onCancel} disabled={busy}>Cancel</button><button className="button button--primary" type="button" disabled={busy || folderIsMissing || pickingFile && selectedFiles.length === 0 || request.kind === "saveFile" && !name.trim()} onClick={() => void submit()}>{busy ? "Saving..." : actionLabel}</button></div>
         </div>
       </div>
     </section>
