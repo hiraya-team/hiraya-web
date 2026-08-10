@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use full file actions in icon groups.** Files and folders inside desktop icon groups now support selection, keyboard opening, context menus, and dragging between the desktop and folders just like items in Explorer.
 - **Use consistent item lists.** Lists across Explorer, Settings, Applications, sharing, Trash, Theme Editor, and Integrated Editor now share predictable sorting, keyboard movement, touch actions, and drag ordering where ordering is available.
 - **Swipe areas from unselected items.** On mobile, dragging a selected desktop item moves it, while dragging from an unselected item switches desktop areas instead.
 - **See quieter placement previews.** Moving desktop items with **Snap to grid** enabled now highlights the exact destination without covering nearby work in a decorative grid.

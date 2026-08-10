@@ -16,7 +16,11 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
     status={{ syncStatus: "offline", isSyncing: false, outboxCount: 2, quota: null }}
     gridSize={24}
     selectedWidgetId="status"
+    selectedIds={new Set([child.id])}
     onOpen={() => undefined}
+    onSelectEntry={() => undefined}
+    onEntryContextMenu={() => undefined}
+    onMoveEntry={() => undefined}
     onRemoveWidget={() => undefined}
     onUngroup={() => undefined}
   />);
@@ -27,6 +31,10 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
   expect(markup).not.toContain('<header class="shell-item__header"><button class="shell-item__drag" type="button" aria-label="Move Status"');
   expect(markup).toContain('aria-label="Ungroup Projects"');
   expect(markup).toContain('data-entry-drop-parent="folder"');
+  expect(markup).toContain('data-item-select=""');
+  expect(markup).toContain('data-item-activate=""');
+  expect(markup).toContain('data-item-context=""');
+  expect(markup).toContain('aria-selected="true"');
   expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true"');
   expect(markup).not.toContain("data-grid");
 });

@@ -6118,8 +6118,11 @@ button.app-picker__disclosure { cursor: pointer; }
 .shell-widget--calendar strong { grid-row: 1 / span 2; grid-column: 3; align-self: center; color: var(--theme-accent); font-size: 42px; }
 .shell-widget--calendar small { grid-column: 2; }
 .icon-group__grid { display: grid; min-height: 100%; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); align-content: start; gap: 4px; padding: 8px 8px 28px; }
+.icon-group__list, .icon-group__list .item-list__items { display: contents; }
 .icon-group__grid button { display: grid; min-width: 0; min-height: 72px; place-content: center; justify-items: center; gap: 5px; padding: 7px 4px; border: 0; border-radius: var(--theme-radius-small); color: inherit; background: transparent; cursor: pointer; }
 .icon-group__grid button:hover, .icon-group__grid button:focus-visible { background: color-mix(in srgb, var(--theme-chrome-text) 12%, transparent); }
+.icon-group__entry { touch-action: pan-y; }
+.icon-group__entry[data-selected] { background: var(--theme-selected); touch-action: none; }
 .icon-group__grid button > svg { color: var(--theme-accent); }
 .icon-group__grid button > span, .icon-group__grid button > strong { width: 100%; overflow: hidden; font-size: 9px; font-weight: 650; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .icon-group__open > span { position: relative; display: grid; width: 32px !important; overflow: visible !important; place-items: center; color: var(--theme-accent); }

@@ -1162,6 +1162,75 @@ test("adding a widget rearranges overlapping icons and persists both positions",
   }).toEqual(saved);
 });
 
+test("folder icon group children inherit explorer interactions", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const groupName = `group-actions-${stamp}`;
+  const fileName = `inside-${stamp}.txt`;
+  const outsideName = `outside-${stamp}.txt`;
+  const renamedName = `renamed-${stamp}.txt`;
+  const desktop = page.locator(".desktop");
+
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(outsideName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  await desktop.click({ button: "right", position: { x: 180, y: 360 } });
+  await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "New icon group" }).click();
+  await page.getByLabel("Folder name").fill(groupName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+
+  const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  await group.getByRole("button", { name: "Open in Explorer" }).click();
+  const explorer = page.getByRole("dialog", { name: groupName });
+  await explorer.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+  await explorer.getByRole("button", { name: `Close ${groupName}` }).click();
+
+  const child = group.getByRole("option", { name: `${fileName}, text/plain` });
+  const outside = page.locator(".file-icon").filter({ hasText: outsideName });
+  await outside.click();
+  await child.click({ modifiers: ["Control"] });
+  await expect(outside).toHaveAttribute("aria-pressed", "false");
+  await expect(child).toHaveAttribute("aria-selected", "true");
+  await child.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(page.getByRole("menu", { name: `Actions for ${fileName}` })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  await expect(page.getByRole("button", { name: "Select multiple items; 1 selected item" })).toBeVisible();
+  const childBounds = await child.boundingBox();
+  if (!childBounds) throw new Error("The icon group child is not visible on mobile.");
+  const touch = await page.context().newCDPSession(page);
+  const touchPoint = { x: childBounds.x + childBounds.width / 2, y: childBounds.y + childBounds.height / 2, id: 0 };
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint] });
+  await page.waitForTimeout(550);
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const actionSheet = page.getByRole("dialog", { name: `Actions for ${fileName}` });
+  await expect(actionSheet).toBeVisible();
+  await actionSheet.getByRole("menuitem", { name: /Rename/ }).click();
+  const rename = page.getByRole("dialog", { name: "Rename file" });
+  await rename.getByLabel("File name").fill(renamedName);
+  await rename.getByRole("button", { name: "Rename" }).click();
+
+  const renamed = page.locator(".icon-group__entry").filter({ hasText: renamedName });
+  const desktopBounds = await desktop.boundingBox();
+  const renamedBounds = await renamed.boundingBox();
+  if (!desktopBounds || !renamedBounds) throw new Error("The desktop item is not visible.");
+  const dragStart = { x: renamedBounds.x + renamedBounds.width / 2, y: renamedBounds.y + renamedBounds.height / 2, id: 0 };
+  const dragEnd = { x: desktopBounds.x + 40, y: desktopBounds.y + 120, id: 0 };
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [dragStart] });
+  await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [dragEnd] });
+  await expect(page.locator(".entry-drag-preview")).toBeVisible();
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(renamed).toHaveCount(0);
+  await expect(page.locator(".file-icon").filter({ hasText: renamedName })).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".file-icon").filter({ hasText: renamedName })).toBeVisible();
+});
+
 test("icon groups reserve space, follow the grid, and persist arranged icons", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();

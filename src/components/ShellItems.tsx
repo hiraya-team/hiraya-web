@@ -3,7 +3,10 @@ import { ArrowSquareOut, CalendarBlank, Clock, CloudCheck, FolderOpen, Gauge, X 
 import type { CatalogQuota } from "../lib/desktop-catalog";
 import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, FolderEntry, GridSize } from "../types";
 import { MIN_SHELL_ITEM_SIZE, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
+import type { EntryDropDestination } from "../ui/entry-drop-target";
+import { useEntryPointerDrag } from "../ui/use-entry-pointer-drag";
 import { useTickingDate } from "../ui/use-ticking-date";
+import { ItemList } from "./ItemList";
 import { EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
 
 type StatusModel = {
@@ -22,7 +25,13 @@ type Props = {
   readOnly?: boolean;
   status?: StatusModel;
   loadPreview?: (id: string) => Promise<EntryPreviewSource>;
+  selectedIds?: ReadonlySet<string>;
   onOpen: (entry: DesktopEntry) => void;
+  onSelectEntry?: (folderId: string, entry: DesktopEntry, options: { toggle: boolean; range: boolean; orderedIds: string[]; presentation: "menu" | "sheet" }) => void;
+  onEntryContextMenu?: (folderId: string, entry: DesktopEntry, x: number, y: number, presentation: "menu" | "sheet") => void;
+  onMoveEntry?: (folderId: string, entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
+  getDesktopDropPreview?: (clientX: number, clientY: number) => EntryPosition;
+  isEntryReadOnly?: (entry: DesktopEntry) => boolean;
   onDrop?: (dataTransfer: DataTransfer, folderId: string) => void;
   onMoveWidget?: (widget: DesktopWidget, position: EntryPosition) => void;
   onResizeWidget?: (widget: DesktopWidget, size: { width: number; height: number }) => void;
@@ -241,7 +250,61 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, onOpen, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
+function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds, onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly, onDrop }: {
+  folder: FolderEntry;
+  entries: readonly DesktopEntry[];
+  readOnly: boolean;
+  loadPreview?: (id: string) => Promise<EntryPreviewSource>;
+  selectedIds: ReadonlySet<string>;
+  onOpen: (entry: DesktopEntry) => void;
+  onSelectEntry?: Props["onSelectEntry"];
+  onEntryContextMenu?: Props["onEntryContextMenu"];
+  onMoveEntry?: Props["onMoveEntry"];
+  getDesktopDropPreview?: Props["getDesktopDropPreview"];
+  isEntryReadOnly: (entry: DesktopEntry) => boolean;
+  onDrop?: Props["onDrop"];
+}) {
+  const orderedIds = entries.map((entry) => entry.id);
+  const entryDrag = useEntryPointerDrag({
+    disabled: (entry) => readOnly || !onMoveEntry || isEntryReadOnly(entry),
+    onMove: (entry, destination, point) => onMoveEntry?.(folder.id, entry, destination, point),
+    getDesktopDropPreview,
+  });
+
+  return <div className="icon-group__grid">
+    <ItemList items={entries} getId={(entry) => entry.id} label={`Contents of ${folder.name}`} role="listbox" multiselectable={!readOnly} layout="grid" className="icon-group__list" onSelect={onSelectEntry ? (entry, detail) => onSelectEntry(folder.id, entry, { toggle: detail.toggle, range: detail.range, orderedIds, presentation: detail.presentation }) : undefined} onActivate={onOpen} onContextMenu={!readOnly && onEntryContextMenu ? (entry, detail) => {
+      if (!isEntryReadOnly(entry)) onEntryContextMenu(folder.id, entry, detail.clientX, detail.clientY, detail.presentation);
+    } : undefined} renderItem={(entry, { itemProps }) => {
+      const entryReadOnly = isEntryReadOnly(entry);
+      const folderTarget = entry.kind === "folder" && !readOnly && !entryReadOnly;
+      return <button
+        {...itemProps}
+        className="icon-group__entry"
+        key={entry.id}
+        type="button"
+        role="option"
+        aria-selected={selectedIds.has(entry.id)}
+        aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}`}
+        data-selected={selectedIds.has(entry.id) || undefined}
+        data-entry-id={entry.id}
+        data-folder-target={entry.kind === "folder" ? entry.id : undefined}
+        data-entry-drop-parent={folderTarget ? entry.id : undefined}
+        data-item-context={entryReadOnly ? undefined : itemProps["data-item-context"]}
+        onDragOver={folderTarget ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropTarget = "true"; } : undefined}
+        onDragLeave={folderTarget ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropTarget; } : undefined}
+        onDrop={folderTarget && onDrop ? (event) => { event.preventDefault(); event.stopPropagation(); delete event.currentTarget.dataset.dropTarget; onDrop(event.dataTransfer, entry.id); } : undefined}
+        onPointerDown={(event) => entryDrag.onPointerDown(event, entry)}
+        onPointerMove={entryDrag.onPointerMove}
+        onPointerUp={(event) => entryDrag.finishPointer(event)}
+        onPointerCancel={(event) => entryDrag.finishPointer(event, true)}
+        onLostPointerCapture={(event) => entryDrag.finishPointer(event, true)}
+      ><EntryArtwork entry={entry} size={32} loadPreview={loadPreview} /><span>{entry.name}</span></button>;
+    }} />
+    <button className="icon-group__open" type="button" onClick={() => onOpen(folder)}><span><FolderOpen size={28} weight="duotone" /><ArrowSquareOut size={13} /></span><strong>Open in Explorer</strong></button>
+  </div>;
+}
+
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const activeKey = segmentKey(activeSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === activeKey);
@@ -263,10 +326,7 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSi
       const position = projectLogicalPosition(folder.position, areaSize).local;
       const children = entries.filter((entry) => entry.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
       return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
-        <div className="icon-group__grid">
-          {children.map((entry) => <button type="button" key={entry.id} aria-label={`Open ${entry.name}`} onClick={() => onOpen(entry)}><EntryArtwork entry={entry} size={32} loadPreview={loadPreview} /><span>{entry.name}</span></button>)}
-          <button className="icon-group__open" type="button" onClick={() => onOpen(folder)}><span><FolderOpen size={28} weight="duotone" /><ArrowSquareOut size={13} /></span><strong>Open in Explorer</strong></button>
-        </div>
+        <IconGroupContents folder={folder} entries={children} readOnly={readOnly} loadPreview={loadPreview} selectedIds={selectedIds} onOpen={onOpen} onSelectEntry={onSelectEntry} onEntryContextMenu={onEntryContextMenu} onMoveEntry={onMoveEntry} getDesktopDropPreview={getDesktopDropPreview} isEntryReadOnly={isEntryReadOnly} onDrop={onDrop} />
       </ShellItem>;
     })}
   </div>;
