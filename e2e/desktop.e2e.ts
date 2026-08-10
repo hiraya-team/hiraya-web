@@ -271,6 +271,37 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   }).toEqual([0, 0, 0, 0]);
 });
 
+test("auto-arrange keeps folders available as desktop drop targets", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const folderName = `arrange-drop-folder-${stamp}`;
+  const fileName = `arrange-drop-file-${stamp}.txt`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".desktop").click({ position: { x: 600, y: 300 } });
+  await fileActions.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  const folder = page.locator(".file-icon").filter({ hasText: folderName });
+  const file = page.locator(".file-icon").filter({ hasText: fileName });
+  const folderBounds = await folder.boundingBox();
+  if (!folderBounds) throw new Error("The destination folder is not visible.");
+  await beginDragPointerTo(page, file, folderBounds.x + folderBounds.width / 2, folderBounds.y + folderBounds.height / 2);
+  await expect(folder).toHaveAttribute("data-internal-drop-target", "true");
+  await page.mouse.up();
+  await expect(file).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await folder.dblclick();
+  await expect(page.getByRole("dialog", { name: folderName }).locator(".folder-explorer__row").filter({ hasText: fileName })).toBeVisible();
+});
+
 test("auto-arrange while dragging defaults on and persists an opt-out", async ({ page }) => {
   await openLocalDesktop(page);
   const openDesktopSettings = async () => {
