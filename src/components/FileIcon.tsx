@@ -67,6 +67,7 @@ type DragState = {
   edgeDwell: EdgeDwellState;
   preview?: PointerDragPreview | null;
   readOnly: boolean;
+  canDrag: boolean;
 };
 
 export const EntryTypeIcon = EntryIcon;
@@ -179,6 +180,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
     if (event.pointerType !== "touch" || !allowBrowserPinchZoom) event.preventDefault();
     const bounds = surface.getBoundingClientRect();
+    const canDrag = !readOnly && (event.pointerType !== "touch" || selected);
     drag.current = {
       pointerX: event.clientX,
       pointerY: event.clientY,
@@ -203,6 +205,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       pointerType: event.pointerType,
       longPressed: false,
       readOnly,
+      canDrag,
       edgeDwell: { direction: null, latched: false, timer: null },
     };
     if (event.pointerType === "touch" && !readOnly) {
@@ -215,7 +218,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onContextMenuAt(event.clientX, event.clientY, "sheet");
       }, 500);
     }
-    if (readOnly) {
+    if (!canDrag) {
       if (event.pointerType !== "touch") onSelect(event);
       return;
     }
@@ -226,9 +229,13 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     if (!drag.current || !iconRef.current) return;
-    if (drag.current.readOnly) {
+    if (!drag.current.canDrag) {
       const threshold = drag.current.pointerType === "touch" ? 12 : 4;
-      if (Math.hypot(event.clientX - drag.current.pointerX, event.clientY - drag.current.pointerY) >= threshold) drag.current.moved = true;
+      if (Math.hypot(event.clientX - drag.current.pointerX, event.clientY - drag.current.pointerY) >= threshold) {
+        if (drag.current.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
+        drag.current.longPressTimer = undefined;
+        drag.current.moved = true;
+      }
       return;
     }
     const deltaX = event.clientX - drag.current.pointerX;
@@ -296,7 +303,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     } catch {
       // Pointer capture may be released implicitly between the check and call.
     }
-    const dropTarget = !completed.readOnly && completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
+    const dropTarget = completed.canDrag && completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
     const committedPosition = preview && dropTarget?.desktop ? preview(position) : position;
