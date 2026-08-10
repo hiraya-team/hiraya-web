@@ -1121,6 +1121,10 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await page.getByRole("button", { name: "Create folder" }).click();
   const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
   await expect(group.getByRole("button", { name: "Open in Explorer" })).toBeVisible();
+  const resizeGroup = group.getByRole("button", { name: `Resize ${groupName}` });
+  const resizeGroupBounds = await resizeGroup.boundingBox();
+  if (!resizeGroupBounds) throw new Error("The icon group resize control is not visible.");
+  await dragPointerTo(page, resizeGroup, resizeGroupBounds.x + resizeGroupBounds.width / 2 + 480, resizeGroupBounds.y + resizeGroupBounds.height / 2);
 
   await page.waitForTimeout(200);
   await page.reload();
@@ -1150,6 +1154,15 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => reloadedClock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y"), width: element.style.width, height: element.style.height }))).toEqual(desktopGeometry);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await page.locator(".mobile-area-switcher-trigger").click();
+  const overlapArea = page.locator(".desktop-minimap").getByRole("button", { name: /1 right of Home, area/ });
+  await expect(overlapArea).toBeVisible();
+  await overlapArea.click();
+  await expect(reloadedClock).toBeVisible();
+  await expect(reloadedClock.getByRole("button", { name: "Move Clock", exact: true })).toBeEnabled();
+  const overlappingGroup = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  await expect(overlappingGroup).toBeVisible();
+  await expect(overlappingGroup.getByRole("button", { name: `Move ${groupName}` })).toBeEnabled();
   const results = await new AxeBuilder({ page }).include(".desktop").analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 });

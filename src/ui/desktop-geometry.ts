@@ -15,6 +15,7 @@ export type DesktopObstacle = EntryPosition & { width: number; height: number };
 
 export type DesktopSegment = {
   entries: DesktopEntry[];
+  itemCount?: number;
   key: string;
   segment: SurfaceSegment;
 };
@@ -251,17 +252,16 @@ export function snapShellItemBounds(position: EntryPosition, width: number, heig
 }
 
 export function desktopShellItemObstacles(widgets: readonly DesktopWidget[], groups: readonly DesktopIconGroup[], entries: readonly DesktopEntry[], segment: SurfaceSegment, area: { width: number; height: number }) {
-  const key = segmentKey(segment);
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const obstacles = widgets.flatMap((widget) => {
-    const projection = projectLogicalPosition(widget, area);
-    return segmentKey(projection.segment) === key ? [clampShellItemBounds(projection.local, widget.width, widget.height, area)] : [];
+    if (!boundsIntersectSegment(widget, widget, segment, area)) return [];
+    return [{ x: widget.x - segment.column * area.width, y: widget.y - segment.row * area.height, width: widget.width, height: widget.height }];
   });
   for (const group of groups) {
     const folder = index.get(group.folderId);
     if (folder?.kind !== "folder" || folder.parentId !== null) continue;
-    const projection = projectLogicalPosition(folder.position, area);
-    if (segmentKey(projection.segment) === key) obstacles.push(clampShellItemBounds(projection.local, group.width, group.height, area));
+    if (!boundsIntersectSegment(folder.position, group, segment, area)) continue;
+    obstacles.push({ x: folder.position.x - segment.column * area.width, y: folder.position.y - segment.row * area.height, width: group.width, height: group.height });
   }
   return obstacles;
 }
@@ -286,6 +286,27 @@ export function projectLogicalPosition(position: EntryPosition, size: { width: n
     segment: { column: x.segment, row: y.segment },
     local: { x: x.local, y: y.local },
   };
+}
+
+export function boundsIntersectSegment(position: EntryPosition, footprint: { width: number; height: number }, segment: SurfaceSegment, size: { width: number; height: number }) {
+  const left = segment.column * size.width;
+  const top = segment.row * size.height;
+  return position.x < left + size.width
+    && position.x + footprint.width > left
+    && position.y < top + size.height
+    && position.y + footprint.height > top;
+}
+
+export function intersectingSegments(position: EntryPosition, footprint: { width: number; height: number }, size: { width: number; height: number }) {
+  const minColumn = Math.floor(position.x / size.width);
+  const maxColumn = Math.ceil((position.x + footprint.width) / size.width) - 1;
+  const minRow = Math.floor(position.y / size.height);
+  const maxRow = Math.ceil((position.y + footprint.height) / size.height) - 1;
+  const segments: SurfaceSegment[] = [];
+  for (let row = minRow; row <= maxRow; row += 1) {
+    for (let column = minColumn; column <= maxColumn; column += 1) segments.push({ column, row });
+  }
+  return segments;
 }
 
 export function restoreLogicalPosition(position: EntryPosition, segment: SurfaceSegment, size: { width: number; height: number }) {

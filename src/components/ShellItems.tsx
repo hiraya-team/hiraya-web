@@ -2,7 +2,7 @@ import { useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointe
 import { ArrowSquareOut, CalendarBlank, Clock, CloudCheck, FolderOpen, Gauge, X } from "@phosphor-icons/react";
 import type { CatalogQuota } from "../lib/desktop-catalog";
 import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, FolderEntry, GridSize } from "../types";
-import { MIN_SHELL_ITEM_SIZE, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
+import { MIN_SHELL_ITEM_SIZE, boundsIntersectSegment, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
 import type { EntryDropDestination } from "../ui/entry-drop-target";
 import { useEntryPointerDrag } from "../ui/use-entry-pointer-drag";
 import { useTickingDate } from "../ui/use-ticking-date";
@@ -21,6 +21,7 @@ type Props = {
   groups: readonly DesktopIconGroup[];
   entries: readonly DesktopEntry[];
   activeSegment: SurfaceSegment;
+  ownerSegment?: SurfaceSegment;
   areaSize: { width: number; height: number };
   readOnly?: boolean;
   status?: StatusModel;
@@ -50,13 +51,14 @@ type Props = {
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, widget = false, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
   position: EntryPosition;
   width: number;
   height: number;
   areaSize: { width: number; height: number };
   readOnly: boolean;
+  areaInteractive?: boolean;
   widget?: boolean;
   interactive?: boolean;
   selected?: boolean;
@@ -217,6 +219,8 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
       className={`shell-item${widget ? " shell-item--widget" : ""}${interactive ? " shell-item--interactive" : ""}`}
       style={{ "--shell-x": `${bounds.x}px`, "--shell-y": `${bounds.y}px`, width: bounds.width, height: bounds.height } as CSSProperties}
       aria-label={label}
+      aria-hidden={!areaInteractive || undefined}
+      inert={!areaInteractive || undefined}
       data-selected={selected || undefined}
       data-entry-drop-parent={readOnly ? undefined : dropParentId}
       onDragOver={onDrop && !readOnly ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropActive = "true"; } : undefined}
@@ -306,13 +310,13 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
   </div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
-  const activeKey = segmentKey(activeSegment);
-  const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === activeKey);
+  const ownerKey = segmentKey(ownerSegment);
+  const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === ownerKey);
   const visibleGroups = groups.flatMap((group) => {
     const folder = index.get(group.folderId);
-    return folder?.kind === "folder" && folder.parentId === null && segmentKey(projectLogicalPosition(folder.position, areaSize).segment) === activeKey ? [{ group, folder }] : [];
+    return folder?.kind === "folder" && folder.parentId === null && segmentKey(projectLogicalPosition(folder.position, areaSize).segment) === ownerKey ? [{ group, folder }] : [];
   });
   if (!visibleWidgets.length && !visibleGroups.length) return null;
 
@@ -320,14 +324,14 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, areaSi
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
       const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : "Todo list";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} widget interactive={widget.kind === "todo"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
+      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget interactive={widget.kind === "todo"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
         {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : widget.kind === "status" ? <StatusWidget status={status} /> : renderWidget?.(widget)}
       </ShellItem>;
     })}
     {visibleGroups.map(({ group, folder }) => {
       const position = projectLogicalPosition(folder.position, areaSize).local;
       const children = entries.filter((entry) => entry.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
-      return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: activeSegment.column * areaSize.width + local.x, y: activeSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: activeSegment.column * areaSize.width + bounds.x, y: activeSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
+      return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(folder.position, group, activeSegment, areaSize)} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
         <IconGroupContents folder={folder} entries={children} readOnly={readOnly} loadPreview={loadPreview} selectedIds={selectedIds} onOpen={onOpen} onSelectEntry={onSelectEntry} onEntryContextMenu={onEntryContextMenu} onMoveEntry={onMoveEntry} getDesktopDropPreview={getDesktopDropPreview} isEntryReadOnly={isEntryReadOnly} onDrop={onDrop} />
       </ShellItem>;
     })}

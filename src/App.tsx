@@ -95,7 +95,7 @@ import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOp
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { CustomTheme, ThemeState } from "./domain/theme";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type DesktopWidget, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
-import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type DesktopObstacle, type SurfaceSegment } from "./ui/desktop-geometry";
+import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, boundsIntersectSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, intersectingSegments, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type DesktopObstacle, type SurfaceSegment } from "./ui/desktop-geometry";
 import type { EntryDropDestination } from "./ui/entry-drop-target";
 import { fileCapabilities } from "./ui/file-capabilities";
 import { createEntryIndex } from "./ui/entry-index";
@@ -673,33 +673,44 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const rootEntries = desktopEntryList.filter((entry) => entry.parentId === null);
   const responsive = useMemo(() => responsiveDesktop(desktopEntryList, iconArea, iconMetrics), [desktopEntryList, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
+  const activeShellItemOverlap = layout.widgets.some((widget) => boundsIntersectSegment(widget, widget, activeSegment, iconArea))
+    || layout.iconGroups.some((group) => {
+      const folder = entries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+      return Boolean(folder && boundsIntersectSegment(folder.position, group, activeSegment, iconArea));
+    });
   const actualActiveSegment = responsive.segments.find((candidate) => candidate.key === activeSegmentKey);
   const occupiedSegments = useMemo(() => {
-    const byKey = new Map(responsive.segments.map((segment) => [segment.key, segment]));
-    for (const widget of layout.widgets) {
-      const segment = projectLogicalPosition(widget, iconArea).segment;
+    const byKey = new Map(responsive.segments.map((segment) => [segment.key, { ...segment, itemCount: segment.entries.length }]));
+    const occupy = (segment: SurfaceSegment) => {
       const key = segmentKey(segment);
-      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+      const current = byKey.get(key) ?? { entries: [], itemCount: 0, key, segment };
+      byKey.set(key, { ...current, itemCount: (current.itemCount ?? current.entries.length) + 1 });
+    };
+    for (const entry of rootEntries) {
+      const ownerKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
+      for (const segment of intersectingSegments(entry.position, iconMetrics, iconArea)) {
+        if (segmentKey(segment) !== ownerKey) occupy(segment);
+      }
+    }
+    for (const widget of layout.widgets) {
+      for (const segment of intersectingSegments(widget, widget, iconArea)) occupy(segment);
     }
     for (const group of layout.iconGroups) {
       const folder = entries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
       if (!folder) continue;
-      const segment = projectLogicalPosition(folder.position, iconArea).segment;
-      const key = segmentKey(segment);
-      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+      for (const segment of intersectingSegments(folder.position, group, iconArea)) occupy(segment);
     }
     for (const app of runningApps) {
       const segment = projectLogicalPosition(app.bounds, desktopSize).segment;
-      const key = segmentKey(segment);
-      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+      occupy(segment);
     }
     return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
-  }, [desktopSize, entries, iconArea, layout.iconGroups, layout.widgets, responsive.segments, runningApps]);
+  }, [desktopSize, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, responsive.segments, rootEntries, runningApps]);
   const visibleSegments = (() => {
     const byKey = new Map(occupiedSegments.map((candidate) => [candidate.key, candidate]));
     const home: SurfaceSegment = { column: 0, row: 0 };
-    if (!byKey.has(segmentKey(home))) byKey.set(segmentKey(home), { entries: [], key: segmentKey(home), segment: home });
-    if (!byKey.has(activeSegmentKey)) byKey.set(activeSegmentKey, { entries: [], key: activeSegmentKey, segment: activeSegment });
+    if (!byKey.has(segmentKey(home))) byKey.set(segmentKey(home), { entries: [], itemCount: 0, key: segmentKey(home), segment: home });
+    if (!byKey.has(activeSegmentKey)) byKey.set(activeSegmentKey, { entries: [], itemCount: 0, key: activeSegmentKey, segment: activeSegment });
     return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
   })();
   const visibleSegmentsByKey = new Map(visibleSegments.map((segment) => [segment.key, segment]));
@@ -5484,20 +5495,21 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
             const segmentActive = desktopSegment.key === activeSegmentKey;
             const segmentDragging = desktopSegment.entries.some((entry) => entry.id === edgeNavigationRef.current?.draftEntryId);
-            const segmentInteractive = segmentActive || segmentDragging;
+            const segmentInteractive = segmentDragging || desktopSegment.entries.some((entry) => boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea));
             const segmentVisible = segmentInteractive || transitionSegmentKeys.has(desktopSegment.key);
             return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
             {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
               const renderedEntry = { ...entry, position: projectedPosition };
+              const entryInteractive = segmentDragging || boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea);
               return (
                 <FileIcon
                   allowBrowserPinchZoom={allowBrowserPinchZoom}
                   key={entry.id}
                   entry={renderedEntry}
                   readOnly={isProtectedShellEntry(entry)}
-                  interactive={segmentInteractive}
-                  loadPreview={segmentInteractive ? thumbnailFile : undefined}
+                  interactive={entryInteractive}
+                  loadPreview={entryInteractive ? thumbnailFile : undefined}
                   offlineAvailability={offlineModel.entries[entry.id]}
                   selected={selectedIdSet.has(entry.id)}
                   onSelect={(event) =>
@@ -5557,14 +5569,13 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           >
             {visibleSegments.map((shellSegment) => {
               const origin = areaWorldOrigin(shellSegment.segment, iconArea);
-              const segmentInteractive = shellSegment.key === activeSegmentKey;
-              const segmentVisible = segmentInteractive || transitionSegmentKeys.has(shellSegment.key);
-              return <div className="desktop-area-segment" key={shellSegment.key} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
+              return <div className="desktop-area-segment" key={shellSegment.key} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height }}>
                 <ShellItemLayer
                   widgets={layout.widgets}
                   groups={layout.iconGroups}
                   entries={shellEntryList}
-                  activeSegment={shellSegment.segment}
+                  activeSegment={activeSegment}
+                  ownerSegment={shellSegment.segment}
                   areaSize={iconArea}
                   status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
                   renderWidget={(widget) => {
@@ -5663,7 +5674,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             </div>
           </div>
         )}
-        {!loading && (rootEntries.length > 0 || layout.widgets.length > 0 || layout.iconGroups.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && !occupiedSegments.some((segment) => segment.key === activeSegmentKey) && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
+        {!loading && (rootEntries.length > 0 || layout.widgets.length > 0 || layout.iconGroups.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && !occupiedSegments.some((segment) => segment.key === activeSegmentKey) && !activeShellItemOverlap && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
           <div className="desktop-state empty-state area-empty-state">
             <span className="empty-state__icon">
               <Desktop size={28} weight="duotone" />

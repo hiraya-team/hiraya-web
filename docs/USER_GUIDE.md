@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use items across desktop area edges.** Icons, widgets, and icon groups now remain visible and usable in every desktop area they overlap, including whole public desktops.
 - **Edit every text file by default.** Files identified with a text media type now open as editable text in **Integrated Editor**, including Markdown, RTF, and Hiraya shell text. Specialized viewers remain available through **Open With** and for matching extensions without a text media type.
 - **Keep icon group images contained.** Image and video thumbnails inside icon groups now remain within their item instead of covering the group.
 - **Keep widgets fixed on the desktop.** Widgets and icon groups now retain their exact position and dimensions when the browser changes size. Move to an adjacent desktop area to see any portion outside the current view.
