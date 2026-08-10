@@ -31,6 +31,22 @@ async function dragPointerTo(page: Page, source: Locator, clientX: number, clien
   await page.mouse.up();
 }
 
+async function dragTouch(page: Page, source: Locator, deltaX: number, deltaY: number) {
+  const bounds = await source.boundingBox();
+  if (!bounds) throw new Error("The touch source is not visible.");
+  const session = await page.context().newCDPSession(page);
+  const start = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+  await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ ...start, id: 1 }] });
+  for (let step = 1; step <= 6; step += 1) {
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchMove",
+      touchPoints: [{ x: start.x + deltaX * step / 6, y: start.y + deltaY * step / 6, id: 1 }],
+    });
+  }
+  await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await session.detach();
+}
+
 const pngFile = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
@@ -1692,6 +1708,39 @@ test("mobile taps select the full desktop icon footprint", async ({ browser }) =
   expect(bounds).not.toBeNull();
   await page.touchscreen.tap(bounds!.x + bounds!.width / 2, bounds!.y + 3);
   await expect(icon).toHaveAttribute("aria-pressed", "true");
+
+  await context.close();
+});
+
+test("mobile touch drags selected items and swipes areas from unselected items", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+
+  await page.getByRole("region", { name: "Desktop desktop" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill("touch-drag.txt");
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  const icon = page.locator('.file-icon[data-entry-id]').filter({ hasText: "touch-drag.txt" });
+  await page.locator(".desktop").tap({ position: { x: 350, y: 400 } });
+  await expect(icon).toHaveAttribute("aria-pressed", "false");
+  const initialBounds = await icon.boundingBox();
+  expect(initialBounds).not.toBeNull();
+  const initialPosition = await icon.evaluate((element) => ({ x: element.style.getPropertyValue("--file-x"), y: element.style.getPropertyValue("--file-y") }));
+  await dragTouch(page, icon, 180, 0);
+  await expect(page).toHaveURL(/\/areas\/-1\/0$/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await expect(icon).toBeVisible();
+  await expect(icon).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => icon.evaluate((element) => ({ x: element.style.getPropertyValue("--file-x"), y: element.style.getPropertyValue("--file-y") }))).toEqual(initialPosition);
+
+  await icon.tap();
+  await expect(icon).toHaveAttribute("aria-pressed", "true");
+  await dragTouch(page, icon, 0, 72);
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await expect.poll(async () => (await icon.boundingBox())?.y).toBeGreaterThan(initialBounds!.y + 40);
 
   await context.close();
 });
