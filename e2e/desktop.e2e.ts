@@ -625,6 +625,22 @@ test("opens an imported RTF document in the document viewer", async ({ page }) =
   expect(cycleErrors).toEqual([]);
 });
 
+test("opens text MIME as editable text in Integrated Editor", async ({ page }) => {
+  await openLocalDesktop(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: "README.md", mimeType: "text/markdown", buffer: Buffer.from("# Editable Markdown") });
+
+  await page.locator(".file-icon").filter({ hasText: "README.md" }).dblclick();
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ }).frameLocator("iframe").locator(".cm-content");
+  await expect(editor).toHaveText("# Editable Markdown");
+  await editor.fill("# Updated Markdown");
+  await expect(editor).toHaveText("# Updated Markdown");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await editor.fill("# Mobile Markdown");
+  await expect(editor).toHaveText("# Mobile Markdown");
+});
+
 test("opens GFM Markdown with safe relative and external images in the document viewer", async ({ page }) => {
   await openLocalDesktop(page);
   const actions = page.getByRole("toolbar", { name: "File actions" });
@@ -640,7 +656,7 @@ test("opens GFM Markdown with safe relative and external images in the document 
     { name: "pixel.png", mimeType: "image/png", buffer: pngFile },
     {
       name: "README.md",
-      mimeType: "text/markdown",
+      mimeType: "application/octet-stream",
       buffer: Buffer.from("# GFM preview\n\n~~complete~~\n\n- [x] Safe task\n\n| File | State |\n| --- | --- |\n| README | ready |\n\n![Local pixel](pixel.png)\n\n![Remote pixel](https://example.com/pixel.png)\n\n<script>window.markdownExecuted = true</script>"),
     },
   ]);
