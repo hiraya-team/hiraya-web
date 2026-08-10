@@ -17,6 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Drop files into folders while arranging icons.** Desktop folders now stay available as drop targets while **Auto-arrange while dragging** moves nearby files out of the way.
+- **Apply themes when selected.** Choosing a theme in **Theme Editor** now applies it to the desktop immediately and preserves the choice after reload while keeping its controls ready for editing.
 - **Use consistent item lists.** Lists across Explorer, Settings, Applications, sharing, Trash, Theme Editor, and Integrated Editor now share predictable sorting, keyboard movement, touch actions, and drag ordering where ordering is available.
 - **Swipe areas from unselected items.** On mobile, dragging a selected desktop item moves it, while dragging from an unselected item switches desktop areas instead.
 - **See quieter placement previews.** Moving desktop items with **Snap to grid** enabled now highlights the exact destination without covering nearby work in a decorative grid.

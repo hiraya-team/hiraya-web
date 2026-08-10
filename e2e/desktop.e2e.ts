@@ -1367,6 +1367,30 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await mobileContext.close();
 });
 
+test("Theme Editor applies a selected theme and preserves it after reload", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Theme Editor/ }).click();
+
+  const frame = page.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
+  await frame.getByRole("option", { name: /Warm Paper/ }).click();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).tap();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).tap();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Theme Editor/ }).tap();
+  await mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe").getByRole("option", { name: /Midnight Glass/ }).tap();
+  await expect(mobilePage.locator(".desktop-shell")).toHaveAttribute("data-theme", "midnight-glass");
+  await mobileContext.close();
+});
+
 test("Settings adapts to its window and preserves subpage navigation", async ({ page, browser }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
