@@ -7,6 +7,7 @@
     ".": "./src/index.ts",
     "./elements": "./src/elements/index.ts",
     "./elements/image-viewer": "./src/elements/image-viewer.ts",
+    "./elements/item-list": "./src/elements/item-list.ts",
     "./elements/primitives": "./src/elements/primitives.ts",
     "./elements/system-app": "./src/elements/system-app.ts",
     "./styles.css": "./src/styles.css"

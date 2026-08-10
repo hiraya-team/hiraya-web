@@ -3,6 +3,7 @@ import type { DesktopEntry } from "../types";
 import type { OfflineStorageInventory } from "../lib/offline-availability";
 import type { OfflineOperationProgress } from "../lib/sync";
 import { StatusBadge } from "./VisualPrimitives";
+import { ItemList } from "./ItemList";
 
 type Props = {
   entries: readonly DesktopEntry[];
@@ -43,7 +44,7 @@ export function OfflineStoragePanel({ entries, inventory, progress, online, onRe
       <div><ArrowClockwise size={18} aria-hidden="true" /><StatusBadge tone={progress.phase === "error" ? "danger" : progress.phase === "complete" ? "success" : "progress"}>{progress.phase === "error" ? "Failed" : progress.phase === "complete" ? "Complete" : "Updating"}</StatusBadge><strong>{progress.phase === "error" ? "Some downloads failed" : progress.phase === "complete" ? "Offline update complete" : "Updating offline copies"}</strong></div>
       <progress max={progress.total || 1} value={progress.completed} aria-label="Offline download progress" />
       <span>{progress.completed} of {progress.total} files, {formatOfflineBytes(progress.bytesCompleted)} of {formatOfflineBytes(progress.totalBytes)}{progress.failed ? `, ${progress.failed} failed` : ""}</span>
-      {progress.errors.size > 0 && <ul className="offline-storage-failures">{[...progress.errors].map(([id, message]) => <li key={id}><strong>{entries.find((entry) => entry.id === id)?.name ?? id}</strong><span>{message}</span></li>)}</ul>}
+      {progress.errors.size > 0 && <ItemList items={[...progress.errors]} getId={([id]) => id} label="Offline download failures" className="offline-storage-failures" renderItem={([id, message], { itemProps }) => <li {...itemProps} key={id}><strong>{entries.find((entry) => entry.id === id)?.name ?? id}</strong><span>{message}</span></li>} />}
       {progress.phase === "error" && <button className="button button--quiet" type="button" disabled={!online || busy} onClick={onRetry}><ArrowClockwise size={15} /> Retry failed downloads</button>}
     </section>}
     <section className="offline-storage-release" aria-labelledby="offline-release-heading"><div><h3 id="offline-release-heading">Release downloaded copies</h3><p>Removes releasable cache, including stale copies found during this explicit cleanup. Server files, pending operations, and browser-local authoritative files are never deleted.</p></div><button className="button button--quiet" type="button" disabled={busy || !inventory?.releasableBytes} onClick={onReleaseAll}><CloudSlash size={15} /> Release downloaded copies</button></section>

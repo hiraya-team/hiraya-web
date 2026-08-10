@@ -3,6 +3,7 @@ import { ArrowsClockwise, CloudCheck, CloudSlash, GitMerge, Trash, WarningCircle
 import { isRevisionConflictRecord, outboxBlockingRecord, type OutboxRecord } from "../lib/outbox";
 import type { SyncStatus } from "../lib/sync";
 import { outboxRecordLabel, partitionSyncRecords } from "../ui/panel-data";
+import { ItemList } from "./ItemList";
 
 export type SyncIssuesPanelProps = {
   status: SyncStatus;
@@ -37,19 +38,19 @@ export function SyncIssuesPanel({ status, records, lastSyncedAt, affectedLabels,
       ["pending", groups.pending],
     ] as const).map(([label, group]) => group.length > 0 && <section className="sync-issues-panel__group" key={label} aria-labelledby={`${titleId}-${label}`}>
       <h3 id={`${titleId}-${label}`}>{label === "blocked" ? "Needs attention" : "Waiting to sync"} <span>{group.length}</span></h3>
-      <ul>{group.map((record) => {
+      <ItemList items={group} getId={(record) => record.operationId} label={label === "blocked" ? "Sync issues needing attention" : "Changes waiting to sync"} className="sync-issues-panel__records" renderItem={(record, { itemProps }) => {
         const labels = affectedLabels?.(record) ?? [];
         const conflict = isRevisionConflictRecord(record) ? record.conflictDetails! : null;
         const contentConflict = conflict?.resourceKind === "content" && record.operation.kind === "save-content";
         const blocker = record.status === "pending" ? outboxBlockingRecord(records, record) : null;
-        return <li className="sync-issues-panel__record" key={record.operationId}>
+        return <li {...itemProps} className="sync-issues-panel__record" key={record.operationId}>
           <div><strong>{outboxRecordLabel(record)}</strong>{labels.length > 0 && <p>{labels.join(", ")}</p>}{record.attemptCount > 0 && <p>{record.attemptCount === 1 ? "1 sync attempt" : `${record.attemptCount} sync attempts`}{record.lastAttemptAt ? `, last tried ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(record.lastAttemptAt)}` : ""}</p>}{record.error && <p className="form-error">{record.error}</p>}{conflict && <p>Your change remains saved locally. Keep your change applies it over the latest server state; use server state discards this queued change.</p>}{blocker && <p>Waiting for {outboxRecordLabel(blocker)} to be resolved.</p>}</div>
           {record.status === "blocked" && <div className="sync-issues-panel__actions">
             <button className="button button--quiet" type="button" onClick={() => onRetry(record)}>{conflict ? <GitMerge size={16} /> : <ArrowsClockwise size={16} />}{contentConflict ? "Review versions" : conflict ? "Keep my change" : "Retry"}</button>
             <button className="button button--quiet" type="button" onClick={() => onDiscard(record)}><Trash size={16} /> {conflict ? "Use server state" : "Discard"}</button>
           </div>}
         </li>;
-      })}</ul>
+      }} />
     </section>)}
     {onOpenHelp && <button className="inline-help-link" type="button" onClick={onOpenHelp}>Sync and offline troubleshooting</button>}
   </section>;

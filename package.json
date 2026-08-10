@@ -27,6 +27,7 @@
     "@hiraya-team/apps-sdk": "2.1.0",
     "@hiraya-team/app-cli": "2.1.0",
     "@hiraya/app-runtime": "workspace:*",
+    "@hiraya/apps-ui": "workspace:*",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
     "@codemirror/lang-javascript": "^6.2.5",

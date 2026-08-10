@@ -6,6 +6,7 @@ import type { DesktopEntry } from "../types";
 import { StatusBadge } from "./VisualPrimitives";
 import type { AccountApp } from "../lib/account-apps";
 import type { AccountAppOutboxRecord } from "../lib/account-app-outbox";
+import { ItemList } from "./ItemList";
 
 const LEGACY_HIRAYA_STORE_CATALOG_ID = "hiraya-app-store";
 
@@ -69,11 +70,9 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
   const availablePackages = packages
     .filter((view) => !installedForView(view))
     .filter((view) => !accountApps.some((app) => app.appId === view.appId))
-    .filter((view) => storeSearchMatches(deferredQuery, view.name, view.description, view.appId, view.version, view.item.source, "Administrator App Store"))
-    .toSorted((a, b) => a.name.localeCompare(b.name));
+    .filter((view) => storeSearchMatches(deferredQuery, view.name, view.description, view.appId, view.version, view.item.source, "Administrator App Store"));
   const installedForDisplay = installedApps
-    .filter((app) => storeSearchMatches(deferredQuery, app.manifest.name, app.manifest.description, app.appId, app.version, installedSource(app)))
-    .toSorted((a, b) => a.manifest.name.localeCompare(b.manifest.name));
+    .filter((app) => storeSearchMatches(deferredQuery, app.manifest.name, app.manifest.description, app.appId, app.version, installedSource(app)));
   const availableAccountApps = accountApps.filter((app) => storeSearchMatches(deferredQuery, app.manifest.name, app.manifest.description, app.appId, app.manifest.version, "account"));
   const resultCount = installedForDisplay.length + availableAccountApps.length + (!loading && !error ? availablePackages.length : 0);
   const noMatches = searching && !loading && !error && resultCount === 0;
@@ -100,8 +99,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
     {!noMatches && (!searching || installedForDisplay.length > 0) && <section className="app-store__section" aria-labelledby="installed-apps-heading">
       <h3 id="installed-apps-heading">Installed</h3>
       {!canAddToDesktop && <p className="app-store__section-note" id="app-shortcut-restriction">This desktop is read only. Application shortcuts cannot be added here.</p>}
-      {installedForDisplay.length > 0 ? <div className="app-store__list" role="list">
-        {installedForDisplay.map((app) => {
+      {installedForDisplay.length > 0 ? <ItemList items={installedForDisplay} getId={(app) => app.appId} label="Installed applications" className="app-store__list" sort={{ compare: (left, right) => left.manifest.name.localeCompare(right.manifest.name), direction: "asc" }} renderItem={(app, { itemProps }) => {
           const available = installedAppIsAvailable(app, entries);
           const view = packages.find((candidate) => app.source === "store" && candidate.item.catalogId === app.sourceCatalogId && candidate.item.desktopId === app.sourceDesktopId && candidate.item.entry.id === app.packageEntryId)
             ?? packages.find((candidate) => candidate.appId === app.appId);
@@ -109,7 +107,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
           const hasUpdate = Boolean(view && !current);
           const installing = Boolean(view && installingPackageKey === storePackageKey(view.item));
           const canUpdate = Boolean(hasUpdate && view && !view.loading && !view.error && !offline && installingPackageKey === null);
-          return <article className="app-store__row app-store__row--installed" role="listitem" key={app.appId}>
+          return <article {...itemProps} className="app-store__row app-store__row--installed" role="listitem" key={app.appId}>
             <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
             <div className="app-store__copy">
               <div><h4>{app.manifest.name}</h4><StatusBadge tone={available ? "neutral" : "danger"}>{available ? `v${app.version}` : "Unavailable"}</StatusBadge></div>
@@ -119,24 +117,22 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
             </div>
             <div className="app-store__actions"><button className="button button--quiet" type="button" disabled={!available} onClick={() => onLaunch(app)}><Play size={16} weight="fill" /> Open</button><button className="button button--quiet" type="button" disabled={!available || !canAddToDesktop} aria-describedby={available && !canAddToDesktop ? "app-shortcut-restriction" : undefined} title={!available ? `${app.manifest.name} is unavailable` : !canAddToDesktop ? "This desktop is read only" : undefined} onClick={() => onAddToDesktop(app)}><Desktop size={16} /> Add to desktop</button>{hasUpdate && view && <button className="button button--primary" type="button" disabled={!canUpdate} aria-busy={installing || undefined} title={offline ? "Reconnect to update this app" : view.loading ? "Inspecting this update" : view.error || undefined} onClick={() => onInstall(view.item)}>{installing ? <SpinnerGap className="activity-spinner" size={16} /> : <DownloadSimple size={16} />} {installing ? "Updating..." : "Update"}</button>}</div>
           </article>;
-        })}
-      </div> : <div className="app-store__state app-store__state--compact"><Package size={26} weight="duotone" /><h4>No applications installed</h4><p>Install an application below or open a <code>.hiraya.app</code> package from the desktop.</p></div>}
+        }} /> : <div className="app-store__state app-store__state--compact"><Package size={26} weight="duotone" /><h4>No applications installed</h4><p>Install an application below or open a <code>.hiraya.app</code> package from the desktop.</p></div>}
     </section>}
     {!noMatches && availableAccountApps.length > 0 && <section className="app-store__section" aria-labelledby="account-apps-heading">
       <h3 id="account-apps-heading">Syncing to this device</h3>
-      <div className="app-store__list" role="list">{availableAccountApps.map((app) => <article className="app-store__row" role="listitem" key={app.appId}>
+      <ItemList items={availableAccountApps} getId={(app) => app.appId} label="Applications syncing to this device" className="app-store__list" renderItem={(app, { itemProps }) => <article {...itemProps} className="app-store__row" role="listitem" key={app.appId}>
         <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
         <div className="app-store__copy"><div><h4>{app.manifest.name}</h4><span>v{app.manifest.version}</span></div><p>{app.manifest.description ?? "No description provided."}</p><small>Approved for this account · Downloading and verifying locally</small></div>
         <div className="app-store__actions"><button className="button button--primary" type="button" disabled={offline} title={offline ? "Reconnect to finish synchronizing this app" : undefined} onClick={() => onSyncAccount(app)}><ArrowClockwise size={16} /> Retry sync</button><button className="button button--quiet button--danger" type="button" disabled={offline} onClick={() => onUninstallAccount(app.appId)}><Trash size={16} /> Uninstall</button></div>
-      </article>)}</div>
+      </article>} />
     </section>}
     {!noMatches && (!searching || availablePackages.length > 0 || loading || error) && <section className="app-store__section" aria-labelledby="available-apps-heading">
       <h3 id="available-apps-heading">Available from App Store</h3>
       {loading && <div className="app-store__loading" role="status"><span /><span /><span /><span className="visually-hidden">Loading the app store...</span></div>}
       {!loading && error && <div className="app-store__state app-store__state--compact" role="alert"><WarningCircle size={28} weight="duotone" /><h4>Administrator store unavailable</h4><p>{error}</p><button className="button button--quiet" type="button" onClick={onRetry}><ArrowClockwise size={16} /> Try again</button></div>}
       {!loading && !error && availablePackages.length === 0 && <div className="app-store__state app-store__state--compact"><Package size={30} weight="duotone" /><h4>{packages.length > 0 ? "All published apps are installed" : "No apps published yet"}</h4><p>{packages.length > 0 ? "New applications and updates will appear here when your administrator publishes them." : "Your administrator's published apps and available updates will appear here."}</p></div>}
-      {!loading && !error && availablePackages.length > 0 && <div className="app-store__list" role="list">
-      {availablePackages.map((view) => {
+      {!loading && !error && availablePackages.length > 0 && <ItemList items={availablePackages} getId={(view) => view.item.entry.id} label="Applications available from App Store" className="app-store__list" sort={{ compare: (left, right) => left.name.localeCompare(right.name), direction: "asc" }} renderItem={(view, { itemProps }) => {
         const installed = installedForView(view);
         const current = Boolean(installed && storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
         const launchApproved = Boolean(installed && (current || view.loading || view.error || offline));
@@ -144,7 +140,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
         const installing = installingPackageKey === storePackageKey(view.item);
         const action = installing ? installed ? "Updating..." : "Installing..." : launchApproved ? "Open" : retry ? "Retry" : installed ? "Update" : "Install";
         const actionDisabled = !launchApproved && (installingPackageKey !== null || !retry && (view.loading || offline));
-        return <article className="app-store__row" role="listitem" key={view.item.entry.id}>
+        return <article {...itemProps} className="app-store__row" role="listitem" key={view.item.entry.id}>
           <span className="app-store__icon"><Package size={25} weight="duotone" /></span>
           <div className="app-store__copy">
             <div><h4>{view.name}</h4>{view.version && <span>v{view.version}</span>}</div>
@@ -155,8 +151,7 @@ export function AppStoreWindow({ packages, installedApps, entries, loading, erro
             {installing ? <SpinnerGap className="activity-spinner" size={16} /> : launchApproved ? <Play size={16} weight="fill" /> : retry ? <ArrowClockwise size={16} /> : <DownloadSimple size={16} />}{action}
           </button>
         </article>;
-      })}
-    </div>}
+      }} />}
     </section>}
   </section>;
 }

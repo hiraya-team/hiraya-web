@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowCounterClockwise, File, Folder, SpinnerGap, Trash } from "@phosphor-icons/react";
 import type { TrashDocument, TrashItem } from "../lib/contracts";
+import { ItemList } from "./ItemList";
 
 export type TrashWindowProps = {
   onListTrash: () => Promise<TrashDocument>;
@@ -63,11 +64,11 @@ export function TrashWindow({ onListTrash, onRestore, onPermanentlyDelete, onReq
     {error && <div className="trash-window__error" role="alert"><span>{error}</span>{items.length === 0 && <button className="button button--quiet" type="button" onClick={() => setRefreshToken((value) => value + 1)}>Retry</button>}</div>}
     {loading ? <div className="trash-window__state" role="status"><SpinnerGap className="trash-window__spinner" size={20} /> Loading Trash...</div>
       : items.length === 0 && !error ? <div className="trash-window__state" role="status"><Trash size={34} weight="duotone" /><strong>Trash is empty</strong><span>Items moved to Trash will appear here.</span></div>
-      : items.length > 0 && <ul className="trash-window__list" aria-label="Deleted items">{items.map((item) => {
+      : items.length > 0 && <ItemList items={items} getId={(item) => item.entry.id} label="Deleted items" className="trash-window__list" renderItem={(item, { itemProps }) => {
         const busy = busyId === item.entry.id;
         const count = item.descendantCount;
         const timestamp = deletedAt(item.deletedAt);
-        return <li className="trash-window__item" key={item.entry.id}>
+        return <li {...itemProps} className="trash-window__item" key={item.entry.id}>
           <span className="trash-window__icon" aria-hidden="true">{item.entry.kind === "folder" ? <Folder size={28} weight="duotone" /> : <File size={28} weight="duotone" />}</span>
           <div className="trash-window__details"><strong>{item.entry.name}</strong><span>{item.entry.kind === "folder" ? "Folder" : item.entry.mimeType}{count > 0 ? ` · ${count} ${count === 1 ? "descendant" : "descendants"}` : ""}</span><time dateTime={timestamp.iso}>{timestamp.label}</time></div>
           {!readOnly && <div className="trash-window__actions">
@@ -83,6 +84,6 @@ export function TrashWindow({ onListTrash, onRestore, onPermanentlyDelete, onReq
             }}><Trash size={15} /> Delete permanently</button>
           </div>}
         </li>;
-      })}</ul>}
+      }} />}
   </section>;
 }

@@ -117,8 +117,7 @@ for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], [
 searchInput.addEventListener("input", () => void searchWorkspace(searchInput.value));
 fileTree.addEventListener("click", (event) => void activateTreeTarget(event.target));
 fileTree.addEventListener("keydown", (event) => void handleTreeKey(event));
-searchResults.addEventListener("click", (event) => void activateSearchTarget(event.target));
-searchResults.addEventListener("keydown", handleSearchKey);
+searchResults.addEventListener("hiraya-item-select", (event) => void activateSearchResult((event as CustomEvent<{ id: string }>).detail.id));
 addEventListener("keydown", handleShortcut);
 void start();
 
@@ -511,7 +510,7 @@ async function searchWorkspace(query: string) {
     if (!matches.length) { pending.textContent = `No files match “${query}”.`; searchResults.append(pending); return; }
     for (const entry of matches) {
       const button = document.createElement("button");
-      button.type = "button"; button.dataset.handle = entry.metadata.handle; button.setAttribute("role", "option");
+      button.type = "button"; button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = ""; button.setAttribute("role", "option");
       button.append(makeIcon(isEditableFile((entry as Extract<DirectoryEntry, { kind: "file" }>).metadata) ? "code" : "file"));
       const text = document.createElement("span"); text.textContent = entry.metadata.name;
       const path = document.createElement("small"); path.textContent = workspaceParentPath(entry);
@@ -528,19 +527,9 @@ async function indexFolder(folder: FolderHandle, seen: Set<FolderHandle>) {
   for (const entry of listed) if (entry.kind === "folder") await indexFolder(entry.metadata.handle, seen);
 }
 
-async function activateSearchTarget(target: EventTarget | null) {
-  const button = target instanceof Element ? target.closest<HTMLButtonElement>("button[data-handle]") : null;
-  const entry = button ? entries.get(button.dataset.handle ?? "") : null;
+async function activateSearchResult(id: string) {
+  const entry = entries.get(id);
   if (entry?.kind === "file") await openWorkspaceFile(entry);
-}
-
-function handleSearchKey(event: KeyboardEvent) {
-  if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
-  const options = Array.from(searchResults.querySelectorAll<HTMLButtonElement>('[role="option"]'));
-  const index = options.indexOf(event.target as HTMLButtonElement);
-  if (index < 0) return;
-  event.preventDefault();
-  options[Math.max(0, Math.min(options.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]?.focus();
 }
 
 function workspaceParentPath(entry: DirectoryEntry) {

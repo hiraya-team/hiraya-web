@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowSquareOut, Check, Copy, LinkSimple, PencilSimple, Plus, Trash, X } from "@phosphor-icons/react";
 import { resolveShortLinkUrl, type ShortLink } from "../lib/short-links";
+import { ItemList } from "./ItemList";
 
 type Props = {
   headingRef?: React.RefObject<HTMLHeadingElement | null>;
@@ -76,12 +77,11 @@ export function ShortLinksSettings({ headingRef, embedded = false, baseUrl, onBa
         ) : links?.length === 0 ? (
           <div className="short-links-empty"><LinkSimple size={24} /><strong>No short links yet</strong><span>Create one above to get a compact URL you can share.</span></div>
         ) : links && (
-          <div className="short-links-list">
-            {links.map((link) => {
+          <ItemList items={links} getId={(link) => link.slug} label="Your short links" className="short-links-list" renderItem={(link, { itemProps }) => {
               const editing = editingSlug === link.slug;
               const busy = busySlug === link.slug;
               const publicUrl = resolveShortLinkUrl(link.url, window.location.origin);
-              return <article className="short-link-item" data-disabled={!link.enabled || undefined} key={link.slug}>
+              return <article {...itemProps} className="short-link-item" data-disabled={!link.enabled || undefined} key={link.slug}>
                 <div className="short-link-item__heading"><div><strong>{link.slug}</strong><a href={publicUrl} target="_blank" rel="noreferrer">{publicUrl}<ArrowSquareOut size={13} /></a></div><label className="short-link-toggle"><span>{link.enabled ? "Enabled" : "Disabled"}</span><input type="checkbox" checked={link.enabled} disabled={busy} onChange={(event) => void mutate(link.slug, async () => replace(await onUpdate(link.slug, { enabled: event.target.checked })))} /></label></div>
                 {editing ? <form className="short-link-edit" onSubmit={(event) => { event.preventDefault(); const destinationUrl = editDestination.trim(); void mutate(link.slug, async () => { replace(await onUpdate(link.slug, { destinationUrl })); setEditingSlug(null); }); }}>
                   <label htmlFor={`short-link-${link.slug}`}>Destination URL</label><input id={`short-link-${link.slug}`} type="url" required autoFocus value={editDestination} disabled={busy} onChange={(event) => setEditDestination(event.target.value)} />
@@ -94,8 +94,7 @@ export function ShortLinksSettings({ headingRef, embedded = false, baseUrl, onBa
                   <button className="button button--quiet short-link-item__delete" type="button" disabled={busy} onClick={() => void onConfirmDelete(link).then((confirmed) => { if (confirmed) return mutate(link.slug, async () => { await onDelete(link.slug); setLinks((current) => current?.filter((candidate) => candidate.slug !== link.slug) ?? current); }); })}><Trash size={15} />Delete</button>
                 </div>
               </article>;
-            })}
-          </div>
+            }} />
         )}
       </section>
     </div>
