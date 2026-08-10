@@ -237,8 +237,17 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   const first = page.locator(".file-icon").filter({ hasText: names[0] });
   const second = page.locator(".file-icon").filter({ hasText: names[1] });
   const target = await second.boundingBox();
-  if (!target) throw new Error("The target icon is not visible.");
+  const firstBounds = await first.boundingBox();
+  if (!target || !firstBounds) throw new Error("The target icons are not visible.");
   const originalSecond = { x: target.x, y: target.y };
+
+  await beginDragPointerTo(page, first, target.x + target.width + 6 + firstBounds.width / 2, target.y + target.height / 2);
+  await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
+  await page.mouse.up();
+  await expect.poll(async () => {
+    const [placed, stationary] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    return placed && stationary ? { gap: Math.round(placed.x - stationary.x - stationary.width), y: Math.round(placed.y - stationary.y) } : null;
+  }).toEqual({ gap: 6, y: 0 });
 
   await beginDragPointerTo(page, first, target.x + target.width / 2, target.y + target.height / 2);
   await expect(second).toHaveAttribute("data-auto-arrange-dragging", "true");
