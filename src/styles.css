@@ -6142,6 +6142,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .icon-group__grid button:hover, .icon-group__grid button:focus-visible { background: color-mix(in srgb, var(--theme-chrome-text) 12%, transparent); }
 .icon-group__entry { touch-action: pan-y; }
 .icon-group__entry[data-selected] { background: var(--theme-selected); touch-action: none; }
+.icon-group__art { position: relative; display: grid; width: 32px !important; height: 32px; place-items: center; color: var(--theme-accent); }
 .icon-group__grid button > svg { color: var(--theme-accent); }
 .icon-group__grid button > span, .icon-group__grid button > strong { width: 100%; overflow: hidden; font-size: 9px; font-weight: 650; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
 .icon-group__open > span { position: relative; display: grid; width: 32px !important; overflow: visible !important; place-items: center; color: var(--theme-accent); }

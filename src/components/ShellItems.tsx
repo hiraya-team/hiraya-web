@@ -300,7 +300,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
         onPointerUp={(event) => entryDrag.finishPointer(event)}
         onPointerCancel={(event) => entryDrag.finishPointer(event, true)}
         onLostPointerCapture={(event) => entryDrag.finishPointer(event, true)}
-      ><EntryArtwork entry={entry} size={32} loadPreview={loadPreview} /><span>{entry.name}</span></button>;
+      ><span className="icon-group__art"><EntryArtwork entry={entry} size={32} loadPreview={loadPreview} /></span><span>{entry.name}</span></button>;
     }} />
     <button className="icon-group__open" type="button" onClick={() => onOpen(folder)}><span><FolderOpen size={28} weight="duotone" /><ArrowSquareOut size={13} /></span><strong>Open in Explorer</strong></button>
   </div>;

@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep icon group images contained.** Image and video thumbnails inside icon groups now remain within their item instead of covering the group.
 - **Keep widgets fixed on the desktop.** Widgets and icon groups now retain their exact position and dimensions when the browser changes size. Move to an adjacent desktop area to see any portion outside the current view.
 - **Keep a Todo list on the desktop.** Choose **Add widget > Todo list** to link an existing Todo file, check off tasks without opening a window, or open the full list in Todo. Whole public desktops show linked lists read-only.
 - **Use full file actions in icon groups.** Files and folders inside desktop icon groups now support selection, keyboard opening, context menus, and dragging between the desktop and folders just like items in Explorer.

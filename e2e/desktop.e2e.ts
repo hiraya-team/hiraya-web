@@ -578,6 +578,23 @@ test("shows image thumbnails on the desktop and in folders", async ({ page }) =>
   await expect(folderRow).toBeVisible();
   await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("src", /^blob:/, { timeout: 15_000 });
   await expect(folderRow.locator(".entry-thumbnail")).toHaveAttribute("data-loaded", "true");
+
+  await folder.getByRole("button", { name: "Close Pictures" }).click();
+  const folderIcon = page.locator(".file-icon").filter({ hasText: "Pictures" });
+  await folderIcon.click({ button: "right" });
+  await page.getByRole("menu", { name: "Actions for Pictures" }).getByRole("menuitem", { name: "Show as icon group" }).click();
+  const groupThumbnail = page.getByRole("option", { name: `${folderName}, image/png` }).locator(".entry-thumbnail");
+  await expect(groupThumbnail).toHaveAttribute("data-loaded", "true");
+  await expect.poll(async () => {
+    const bounds = await groupThumbnail.boundingBox();
+    return bounds && [Math.round(bounds.width), Math.round(bounds.height)];
+  }).toEqual([32, 32]);
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  await expect.poll(async () => {
+    const bounds = await groupThumbnail.boundingBox();
+    return bounds && [Math.round(bounds.width), Math.round(bounds.height)];
+  }).toEqual([32, 32]);
 });
 
 test("opens an imported RTF document in the document viewer", async ({ page }) => {
