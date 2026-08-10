@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Recover layout synchronization automatically.** Concurrent desktop layout changes now reconcile instead of repeatedly showing the same **Sync Issue**, and wallpaper previews no longer create duplicate saves.
 - **Use consistent item lists.** Lists across Explorer, Settings, Applications, sharing, Trash, Theme Editor, and Integrated Editor now share predictable sorting, keyboard movement, touch actions, and drag ordering where ordering is available.
 - **Swipe areas from unselected items.** On mobile, dragging a selected desktop item moves it, while dragging from an unselected item switches desktop areas instead.
 - **See quieter placement previews.** Moving desktop items with **Snap to grid** enabled now highlights the exact destination without covering nearby work in a decorative grid.

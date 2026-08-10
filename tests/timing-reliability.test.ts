@@ -162,6 +162,7 @@ describe("desktop timing reliability", () => {
     expect(fileIcon).toContain("current.moveSucceeded");
     expect(search).toContain("searchGenerationRef.current === generation");
     expect(app).toContain("const pendingWallpaper = wallpaperPreviewRef.current");
+    expect(app).not.toContain("wallpaperPreviewTimerRef");
     expect(app).toContain("layoutSaveQueue.run(pendingLayout)");
     expect(app).toContain("mergeDesktopLayout(draft.baseLayout, draft.layout, synced.layout)");
     expect(app).toContain("layoutDraftRef.current.layout === next");
