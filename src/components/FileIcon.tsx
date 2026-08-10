@@ -161,7 +161,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const byId = new Map(transforms.map((transform) => [transform.entryId, transform.delta]));
     current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]").forEach((icon) => {
       const delta = byId.get(icon.dataset.entryId ?? "");
-      if (!delta || icon === iconRef.current || icon.dataset.groupDragging) return;
+      if (!delta || icon === iconRef.current || icon.dataset.groupDragging || icon.dataset.entryDropParent) return;
       icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
       icon.dataset.autoArrangeDragging = "true";
     });

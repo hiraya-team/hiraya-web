@@ -68,8 +68,9 @@ export function parseRevisionConflictDetails(value: unknown): RevisionConflictDe
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
   const kinds = new Set<RevisionConflictDetails["resourceKind"]>(["desktop", "entry", "content", "layout", "editor-settings", "theme-selection", "theme"]);
+  const singletonKinds = new Set(["layout", "editor-settings", "theme-selection"]);
   if (Object.keys(item).some((key) => !["resourceKind", "resourceId", "expectedRevision", "actualRevision"].includes(key))) return null;
-  if (typeof item.resourceKind !== "string" || !kinds.has(item.resourceKind as RevisionConflictDetails["resourceKind"]) || !isValidId(item.resourceId)) return null;
+  if (typeof item.resourceKind !== "string" || !kinds.has(item.resourceKind as RevisionConflictDetails["resourceKind"]) || !isValidId(item.resourceId) && !(item.resourceId === "" && singletonKinds.has(item.resourceKind))) return null;
   if (!validBaseRevision(item.expectedRevision) || !validBaseRevision(item.actualRevision)) return null;
   return item as RevisionConflictDetails;
 }

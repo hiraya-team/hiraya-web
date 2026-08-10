@@ -17,6 +17,9 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Use full file actions in icon groups.** Files and folders inside desktop icon groups now support selection, keyboard opening, context menus, and dragging between the desktop and folders just like items in Explorer.
+- **Recover layout synchronization automatically.** Concurrent desktop layout changes now reconcile instead of repeatedly showing the same **Sync Issue**, and wallpaper previews no longer create duplicate saves.
+- **Drop files into folders while arranging icons.** Desktop folders now stay available as drop targets while **Auto-arrange while dragging** moves nearby files out of the way.
+- **Apply themes when selected.** Choosing a theme in **Theme Editor** now applies it to the desktop immediately and preserves the choice after reload while keeping its controls ready for editing.
 - **Use consistent item lists.** Lists across Explorer, Settings, Applications, sharing, Trash, Theme Editor, and Integrated Editor now share predictable sorting, keyboard movement, touch actions, and drag ordering where ordering is available.
 - **Swipe areas from unselected items.** On mobile, dragging a selected desktop item moves it, while dragging from an unselected item switches desktop areas instead.
 - **See quieter placement previews.** Moving desktop items with **Snap to grid** enabled now highlights the exact destination without covering nearby work in a decorative grid.
@@ -42,7 +45,7 @@ New user-facing features are listed newest first.
 - **Edit themes with clearer controls.** Theme Editor now opens ready to edit, keeps **Save and Apply** at the top, and scrolls only the controls when space is limited. Editor syntax colors are owned by each editor rather than desktop themes.
 - **Retry queued changes in one step.** In **Sync status**, selecting **Retry** now retries that blocked change and every later queued change in order, stopping if another change still needs attention.
 - **Open public files in familiar apps.** Public desktops now use the same bundled default app for each file type as signed-in desktops, while file access and controls remain read-only. Folders continue to open in Explorer, safe internet shortcuts open in a new tab, and public app packages remain download-only.
-- **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Overlapping icons shift down along the selected grid, wrapping to the next column when needed, and the arrangement follows the desktop across devices.
+- **Prevent overlapping icons while dragging.** **Auto-arrange while dragging** is enabled by default under **Settings > Desktop > Layout**. Icons can remain side by side without touching, while overlapping icons shift down along the selected grid and the arrangement follows the desktop across devices.
 - **Copy item links from the keyboard.** Select one file or folder on the desktop or in Explorer, then press **Ctrl/⌘ Shift C** to copy its link.
 - **Open cached desktops immediately.** After the first visit, Hiraya now opens the desktop saved in this browser without a loading screen while account checks and server synchronization continue in the background.
 - **Switch desktops from Search.** Open **Search** and run **Switch to [desktop name]** to move directly to another desktop without opening the desktop switcher.
