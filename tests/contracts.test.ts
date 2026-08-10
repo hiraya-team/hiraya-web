@@ -52,6 +52,9 @@ describe("contracts", () => {
     expect(() => parseLayout({ ...layout, widgets: [...layout.widgets, layout.widgets[0]] })).toThrow("duplicate IDs");
     expect(() => parseLayout({ ...layout, iconGroups: [{ ...layout.iconGroups[0], x: 1 }] })).toThrow("unsupported format");
     expect(() => parseLayout({ ...layout, widgets: [{ ...layout.widgets[0], width: 4097 }] })).toThrow("invalid bounds");
+    expect(parseLayout({ ...layout, widgets: [{ id: "todo-1", kind: "todo", fileId: "list-1", x: 10, y: 20, width: 340, height: 300 }] }).widgets[0]).toMatchObject({ kind: "todo", fileId: "list-1" });
+    expect(() => parseLayout({ ...layout, widgets: [{ id: "todo-1", kind: "todo", x: 10, y: 20, width: 340, height: 300 }] })).toThrow("file ID");
+    expect(() => parseLayout({ ...layout, widgets: [{ ...layout.widgets[0], fileId: "list-1" }] })).toThrow("unsupported format");
     expect(() => parseLayout({ ...layout, iconGroups: [{ ...layout.iconGroups[0], height: 4097 }] })).toThrow("invalid bounds");
     expect(() => parseRemoteDesktopState({ ...remote, layout })).toThrow("root folder");
   });

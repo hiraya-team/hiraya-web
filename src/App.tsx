@@ -16,6 +16,8 @@ import { PropertiesWindow } from "./components/PropertiesWindow";
 import { SettingsWindow } from "./components/SettingsWindow";
 import { GettingStartedDialog } from "./components/GettingStartedDialog";
 import { AppPickerDialog } from "./components/AppPickerDialog";
+import { TodoWidget } from "./features/widgets/TodoWidget";
+import { TODO_EXTENSION, TODO_MIME_TYPE } from "./features/widgets/todo-document";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
@@ -337,6 +339,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
   const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const [todoWidgetPosition, setTodoWidgetPosition] = useState<EntryPosition | null>(null);
   const [widgetMutationPending, setWidgetMutationPending] = useState(false);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -2593,10 +2596,22 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function addWidget(kind: DesktopWidget["kind"], position: EntryPosition) {
+    if (kind === "todo") {
+      setTodoWidgetPosition(position);
+      setContextMenu(null);
+      return;
+    }
     const size = kind === "status" ? { width: 260, height: 150 } : { width: 220, height: 150 };
     const widget: DesktopWidget = { id: `${kind}-${crypto.randomUUID()}`, kind, ...position, ...size };
     void commitWidgetChange(widget, {});
     setContextMenu(null);
+  }
+
+  function addTodoWidget(file: FileEntry) {
+    if (!todoWidgetPosition) return;
+    const widget: DesktopWidget = { id: `todo-${crypto.randomUUID()}`, kind: "todo", fileId: file.id, ...todoWidgetPosition, width: 340, height: 300 };
+    setTodoWidgetPosition(null);
+    void commitWidgetChange(widget, {});
   }
 
   function updateWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
@@ -5552,6 +5567,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   activeSegment={shellSegment.segment}
                   areaSize={iconArea}
                   status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
+                  renderWidget={(widget) => {
+                    if (widget.kind !== "todo") return null;
+                    const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                    return <TodoWidget file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readOnly={!canMutate} readContent={(entry) => readFile(entry.id)} writeContent={(entry, content, expectedContentRevision) => saveAppFile(entry.id, content, { expectedContentRevision })} onOpen={handleOpen} />;
+                  }}
                   loadPreview={thumbnailFile}
                   selectedIds={selectionScope.startsWith("icon-group:") ? selectedIdSet : undefined}
                   onOpen={(entry) => {
@@ -6290,6 +6310,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         />
       )}
       {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => { groupCreatedFolderRef.current = false; setDialog(null); }} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
+      {todoWidgetPosition && <AppPickerDialog request={{ kind: "pickFile", params: { mimeTypes: [TODO_EXTENSION, TODO_MIME_TYPE], title: "Choose a Todo list", actionLabel: "Add widget" } }} entries={entries} onCancel={() => setTodoWidgetPosition(null)} onOpenFiles={(files) => files[0] && addTodoWidget(files[0])} onOpenFolder={() => undefined} onSave={async () => undefined} />}
       {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
         <AppPickerDialog
           key={appDialogRequests[0].id}

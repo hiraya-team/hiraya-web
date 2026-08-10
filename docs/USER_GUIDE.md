@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep a Todo list on the desktop.** Choose **Add widget > Todo list** to link an existing Todo file, check off tasks without opening a window, or open the full list in Todo. Whole public desktops show linked lists read-only.
 - **Use full file actions in icon groups.** Files and folders inside desktop icon groups now support selection, keyboard opening, context menus, and dragging between the desktop and folders just like items in Explorer.
 - **Recover layout synchronization automatically.** Concurrent desktop layout changes now reconcile instead of repeatedly showing the same **Sync Issue**, and wallpaper previews no longer create duplicate saves.
 - **Drop files into folders while arranging icons.** Desktop folders now stay available as drop targets while **Auto-arrange while dragging** moves nearby files out of the way.

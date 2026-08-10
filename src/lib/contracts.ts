@@ -338,17 +338,21 @@ function parseWidgets(value: unknown): DesktopWidget[] {
   if (!Array.isArray(value)) throw new Error("The desktop widgets have an unsupported format.");
   const ids = new Set<string>();
   return value.map((candidate) => {
-    if (!isRecord(candidate) || Object.keys(candidate).length !== 6 || Object.keys(candidate).some((key) => !["id", "kind", "x", "y", "width", "height"].includes(key))) throw new Error("A desktop widget has an unsupported format.");
+    if (!isRecord(candidate) || Object.keys(candidate).some((key) => !["id", "kind", "fileId", "x", "y", "width", "height"].includes(key))) throw new Error("A desktop widget has an unsupported format.");
     assertValidId(candidate.id, "A desktop widget has an invalid ID.");
     if (ids.has(candidate.id)) throw new Error("The desktop widgets contain duplicate IDs.");
     ids.add(candidate.id);
-    if (!(["clock", "calendar", "status"] as unknown[]).includes(candidate.kind)) throw new Error("A desktop widget has an unsupported kind.");
+    if (!(["clock", "calendar", "status", "todo"] as unknown[]).includes(candidate.kind)) throw new Error("A desktop widget has an unsupported kind.");
+    if (candidate.kind === "todo") assertValidId(candidate.fileId, "A Todo widget has an invalid file ID.");
+    else if (candidate.fileId !== undefined) throw new Error("A desktop widget has an unsupported format.");
     const x = readFiniteNumber(candidate.x, "A desktop widget has invalid bounds.");
     const y = readFiniteNumber(candidate.y, "A desktop widget has invalid bounds.");
     const width = readFiniteNumber(candidate.width, "A desktop widget has invalid bounds.");
     const height = readFiniteNumber(candidate.height, "A desktop widget has invalid bounds.");
     if (width <= 0 || width > MAX_LAYOUT_DIMENSION || height <= 0 || height > MAX_LAYOUT_DIMENSION) throw new Error("A desktop widget has invalid bounds.");
-    return { id: candidate.id, kind: candidate.kind as DesktopWidget["kind"], x, y, width, height };
+    return candidate.kind === "todo"
+      ? { id: candidate.id, kind: "todo", fileId: candidate.fileId as string, x, y, width, height }
+      : { id: candidate.id, kind: candidate.kind as "clock" | "calendar" | "status", x, y, width, height };
   });
 }
 

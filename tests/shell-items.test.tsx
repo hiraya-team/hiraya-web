@@ -48,3 +48,10 @@ test("keeps public status generic and only renders the active logical area", () 
   expect(status).not.toContain("queued");
   expect(status).not.toContain("data-entry-drop-parent");
 });
+
+test("gives Todo widgets interactive content without changing built-in widgets", () => {
+  const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "todo", kind: "todo", fileId: "list", x: 20, y: 20, width: 340, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} renderWidget={() => <button type="button">Open list</button>} />);
+  expect(markup).toContain("shell-item--interactive");
+  expect(markup).toContain("Open list");
+  expect(markup).toContain('aria-label="Move Todo list"');
+});

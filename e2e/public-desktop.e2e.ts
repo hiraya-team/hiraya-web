@@ -1,5 +1,6 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
+import { createHash } from "node:crypto";
 
 const publicDesktop = {
   schemaVersion: 2,
@@ -176,4 +177,26 @@ test("whole public desktops render widgets and folder-backed groups read only", 
   await expect(group.getByRole("button", { name: "Open in Explorer" })).toBeVisible();
   await expect(group.getByRole("button", { name: "Move Reference" })).toBeDisabled();
   await expect(group.getByRole("button", { name: "Resize Reference" })).toHaveCount(0);
+});
+
+test("whole public desktops render linked Todo widgets read only", async ({ page }) => {
+  const body = JSON.stringify({ schemaVersion: 2, tasks: [{ id: "public-task", title: "Read public notes", completed: false, priority: "normal", subitems: [] }] });
+  const file = { ...publicDesktop.entries[0], id: "public-todo", name: "Shared.hiraya.todo", mimeType: "application/vnd.hiraya.todo+json", size: new TextEncoder().encode(body).byteLength };
+  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+    ...publicDesktop,
+    entries: [file],
+    layout: { ...publicDesktop.layout, widgets: [{ id: "todo", kind: "todo", fileId: file.id, x: 90, y: 90, width: 340, height: 300 }], iconGroups: [] },
+  } }));
+  await page.route("**/api/public/desktops/e2e-desk/entries/public-todo/content?*", (route) => route.fulfill({ json: {
+    entryId: file.id,
+    contentRevision: 1,
+    size: file.size,
+    sha256: createHash("sha256").update(body).digest("hex"),
+    access: { url: `${new URL(route.request().url()).origin}/__public-todo`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+  } }));
+  await page.route("**/__public-todo", (route) => route.fulfill({ body, headers: { "content-type": file.mimeType } }));
+  await page.goto("/published/e2e-desk");
+
+  await expect(page.getByText("Read public notes", { exact: true })).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: "Read public notes" })).toBeDisabled();
 });
