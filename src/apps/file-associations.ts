@@ -10,10 +10,10 @@ export type AssociationResolution = Readonly<{ app: InstalledApp; preferredUnava
 export type ReservedFileHandler = "app-package" | "app-shortcut" | "internet-shortcut";
 
 export const SYSTEM_FILE_DEFAULTS = [
-  { label: "Shell scripts", matcher: ".hsh, text/x-hiraya-shell", appId: SYSTEM_APP_IDS.terminal },
-  { label: "Markdown", matcher: ".md, .markdown, text/markdown", appId: SYSTEM_APP_IDS.mediaViewer },
-  { label: "Documents and media", matcher: ".docx, .rtf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/rtf, text/rtf, application/pdf, audio/*, video/*", appId: SYSTEM_APP_IDS.mediaViewer },
   { label: "Text and source files", matcher: "text/*", appId: SYSTEM_APP_IDS.textEditor },
+  { label: "Shell scripts", matcher: ".hsh", appId: SYSTEM_APP_IDS.terminal },
+  { label: "Markdown", matcher: ".md, .markdown", appId: SYSTEM_APP_IDS.mediaViewer },
+  { label: "Documents and media", matcher: ".docx, .rtf, application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/rtf, application/pdf, audio/*, video/*", appId: SYSTEM_APP_IDS.mediaViewer },
   { label: "Images", matcher: "image/*", appId: SYSTEM_APP_IDS.imageViewer },
   { label: "Other files", matcher: "fallback", appId: SYSTEM_APP_IDS.fileViewer },
 ] as const;
@@ -56,10 +56,10 @@ export function isMarkdownFile(file: Pick<FileEntry, "name" | "mimeType">): bool
 export function systemDefaultAppId(file: Pick<FileEntry, "name" | "mimeType">): string {
   const mime = file.mimeType.split(";", 1)[0].trim().toLowerCase();
   const name = file.name.toLowerCase();
-  if (name.endsWith(".hsh") || mime === "text/x-hiraya-shell") return SYSTEM_APP_IDS.terminal;
-  if (isMarkdownFile(file)) return SYSTEM_APP_IDS.mediaViewer;
-  if (name.endsWith(".docx") || name.endsWith(".rtf") || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mime === "application/rtf" || mime === "text/rtf") return SYSTEM_APP_IDS.mediaViewer;
   if (mime.startsWith("text/")) return SYSTEM_APP_IDS.textEditor;
+  if (name.endsWith(".hsh")) return SYSTEM_APP_IDS.terminal;
+  if (isMarkdownFile(file)) return SYSTEM_APP_IDS.mediaViewer;
+  if (name.endsWith(".docx") || name.endsWith(".rtf") || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mime === "application/rtf") return SYSTEM_APP_IDS.mediaViewer;
   if (mime.startsWith("image/")) return SYSTEM_APP_IDS.imageViewer;
   if (mime === "application/pdf" || mime.startsWith("audio/") || mime.startsWith("video/")) return SYSTEM_APP_IDS.mediaViewer;
   return SYSTEM_APP_IDS.fileViewer;

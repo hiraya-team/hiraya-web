@@ -20,10 +20,10 @@ describe("file association resolution", () => {
 
   test("uses only compatible extension, exact MIME, wildcard MIME, then system defaults", () => {
     const file = { name: "notes.md", mimeType: "text/markdown" };
-    expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: ".md", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(media.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: ".md", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(text.appId);
     expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: "text/markdown", appId: generic.appId, createdAt: 1 }])?.app.appId).toBe(generic.appId);
     expect(resolveFileApp(file, [media, text, generic], [], [{ matcher: "text/*", appId: text.appId, createdAt: 1 }])?.app.appId).toBe(text.appId);
-    expect(resolveFileApp(file, [media, text, generic], [], [])?.app.appId).toBe(media.appId);
+    expect(resolveFileApp(file, [media, text, generic], [], [])?.app.appId).toBe(text.appId);
     expect(systemDefaultAppId({ name: "README.markdown", mimeType: "application/octet-stream" })).toBe(media.appId);
   });
 
@@ -55,21 +55,24 @@ describe("file association resolution", () => {
     }
   });
 
-  test("routes DOCX and RTF to the document viewer without claiming legacy DOC", () => {
+  test("routes application documents to the document viewer without overriding text MIME", () => {
     for (const file of [
       { name: "report.bin", mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document; charset=binary" },
       { name: "report.DOCX", mimeType: "application/octet-stream" },
-      { name: "notes.bin", mimeType: "text/rtf; charset=windows-1252" },
       { name: "notes.RTF", mimeType: "application/octet-stream" },
     ]) expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.mediaViewer);
+    expect(systemDefaultAppId({ name: "notes.RTF", mimeType: "TEXT/RTF; charset=windows-1252" })).toBe(SYSTEM_APP_IDS.textEditor);
     expect(systemDefaultAppId({ name: "legacy.doc", mimeType: "application/msword" })).toBe(SYSTEM_APP_IDS.fileViewer);
   });
 
-  test("opens shell scripts in Terminal without reserving the file type", () => {
+  test("uses Terminal as an extension fallback without overriding text MIME", () => {
+    const fallback = { name: "build.HSH", mimeType: "application/octet-stream" };
+    expect(reservedFileHandler(fallback)).toBeNull();
+    expect(systemDefaultAppId(fallback)).toBe(SYSTEM_APP_IDS.terminal);
+    expect(resolveFileApp(fallback, [terminal, text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.terminal);
     for (const file of [{ name: "build.HSH", mimeType: "text/plain" }, { name: "build.txt", mimeType: "text/x-hiraya-shell" }]) {
-      expect(reservedFileHandler(file)).toBeNull();
-      expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.terminal);
-      expect(resolveFileApp(file, [terminal, text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.terminal);
+      expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.textEditor);
+      expect(resolveFileApp(file, [terminal, text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.textEditor);
     }
   });
 });
