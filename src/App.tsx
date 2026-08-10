@@ -507,7 +507,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutSaveQueueRef = useRef(createLatestTaskQueue<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number }>(({ layout: next, baseLayout, baseRevision }) => saveDesktopLayout(next, { layout: baseLayout, revision: baseRevision })));
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number } | null>(null);
-  const wallpaperPreviewTimerRef = useRef<number | null>(null);
   const wallpaperPreviewRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const contentRevisionsRef = useRef<Record<string, number>>({});
   const activeDesktopIdRef = useRef("");
@@ -1662,7 +1661,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       });
     return () => {
       active = false;
-      if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
       const pendingWallpaper = wallpaperPreviewRef.current;
       wallpaperPreviewRef.current = null;
       const pendingLayout = layoutDraftRef.current;
@@ -2738,8 +2736,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function clearWallpaperPreview() {
-    if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
-    wallpaperPreviewTimerRef.current = null;
     const pending = wallpaperPreviewRef.current;
     wallpaperPreviewRef.current = null;
     return pending;
@@ -2770,10 +2766,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     clearWallpaperPreview();
     wallpaperPreviewRef.current = { desktopId, layout: next };
     previewLayout(next, desktopId);
-    wallpaperPreviewTimerRef.current = window.setTimeout(() => {
-      const pending = clearWallpaperPreview();
-      if (pending) void persistWallpaperLayout(pending.layout, pending.desktopId).catch(() => undefined);
-    }, 400);
   }
 
   async function saveWallpaper(wallpaper: WallpaperEditorWallpaper) {
