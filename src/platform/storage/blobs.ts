@@ -7,6 +7,7 @@ export type ContentCacheMarker = { catalogId: string; contentRevision: number; s
 const SHA256_HEX = /^[a-f0-9]{64}$/;
 const CONFLICT_SERVER = ".content-conflict-server";
 let packageArchiveWork = Promise.resolve();
+let contentWriteWork = Promise.resolve();
 
 function serializePackageArchives<T>(operation: () => Promise<T>) {
   const locked = () => typeof navigator !== "undefined" && typeof navigator.locks?.request === "function"
@@ -14,6 +15,15 @@ function serializePackageArchives<T>(operation: () => Promise<T>) {
     : operation();
   const next = packageArchiveWork.then(locked, locked);
   packageArchiveWork = next.then(() => undefined, () => undefined);
+  return next;
+}
+
+function serializeContentWrites<T>(operation: () => Promise<T>) {
+  const locked = () => typeof navigator !== "undefined" && typeof navigator.locks?.request === "function"
+    ? navigator.locks.request("hiraya-opfs-writes", operation)
+    : operation();
+  const next = contentWriteWork.then(locked, locked);
+  contentWriteWork = next.then(() => undefined, () => undefined);
   return next;
 }
 
@@ -54,13 +64,12 @@ async function getApprovedPackageArchivesDirectory() {
 }
 
 async function writeHandleContent(directory: FileSystemDirectoryHandle, name: string, content: Blob | string) {
-  const handle = await directory.getFileHandle(name, { create: true });
-  const writable = await handle.createWritable();
-  try {
+  await serializeContentWrites(async () => {
+    const handle = await directory.getFileHandle(name, { create: true });
+    const writable = await handle.createWritable();
     await writable.write(content);
-  } finally {
     await writable.close();
-  }
+  });
 }
 
 export async function readContentCacheMarker(id: string): Promise<ContentCacheMarker | null> {
