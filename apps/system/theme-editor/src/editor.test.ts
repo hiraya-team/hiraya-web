@@ -63,7 +63,7 @@ test("uses the shared item list for the theme library", async () => {
   const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
   const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
   const manifest = await Bun.file(new URL("../public/hiraya.app.json", import.meta.url)).json();
-  expect(manifest.version).toBe("1.0.1");
+  expect(manifest.version).toBe("1.0.2");
   expect(html).toContain('<hiraya-item-list id="theme-list" class="theme-list" list-role="listbox" label="Available themes">');
   expect(source).toContain('button.dataset.itemId = theme.id;');
   expect(source).toContain('themeList.addEventListener("hiraya-item-select"');

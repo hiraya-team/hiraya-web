@@ -25,6 +25,7 @@ let hiraya: HirayaClient;
 let state: ThemeEditorState | null = null;
 let wallpaperState: WallpaperEditorState | null = null;
 let draft: ThemeDraft | null = null;
+let draftNeedsDiscard = false;
 let focusedThemeId = "";
 let busy = false;
 let wallpaperBusy = false;
@@ -124,6 +125,7 @@ async function start() {
       const merged = mergeThemeState(incoming, draft);
       state = merged.state;
       draft = merged.draft;
+      if (!draft) draftNeedsDiscard = false;
       if (!draft && !state.themes.some((theme) => theme.id === focusedThemeId)) focusedThemeId = state.selectedThemeId || state.themes[0]?.id || "";
       render();
       setStatus(draft ? "The theme library changed elsewhere. Your draft is preserved." : "Theme library updated.");
@@ -298,15 +300,30 @@ function setInspectorMode(mode: "theme" | "wallpaper") {
 }
 
 async function confirmDiscard() {
-  return !draft || !draftChanged(draft) || hiraya.dialogs.confirm({ title: "Discard theme changes?", message: "This draft has changes that have not been saved.", confirmLabel: "Discard", destructive: true });
+  return !draft || !draftNeedsDiscard || !draftChanged(draft) || hiraya.dialogs.confirm({ title: "Discard theme changes?", message: "This draft has changes that have not been saved.", confirmLabel: "Discard", destructive: true });
 }
 
 async function focusTheme(id: string) {
   if (id === focusedThemeId && !draft) return;
   if (!await confirmDiscard()) return;
+  const theme = state?.themes.find((candidate) => candidate.id === id);
+  if (!theme) return;
+  draftNeedsDiscard = false;
+  if (state?.canManage && id !== state.selectedThemeId) {
+    draft = null;
+    await setDirty(false);
+    await run("Applying theme...", async () => {
+      state = await hiraya.themes.select(id);
+      focusedThemeId = id;
+      const selected = selectedTheme();
+      draft = selected ? editDraft(selected, state.themes.map((item) => item.name)) : null;
+      await setDirty(Boolean(draft && draftChanged(draft)));
+      setStatus(`${theme.name} applied. Edit it, then save and apply your changes.`);
+    }, "The theme could not be applied.");
+    return;
+  }
   focusedThemeId = id;
-  const theme = selectedTheme();
-  draft = theme && state?.canManage ? editDraft(theme, state.themes.map((item) => item.name)) : null;
+  draft = state?.canManage ? editDraft(theme, state.themes.map((item) => item.name)) : null;
   await setDirty(Boolean(draft && draftChanged(draft)));
   render();
 }
@@ -315,6 +332,7 @@ async function beginEdit() {
   const theme = selectedTheme();
   if (!theme || !state?.canManage || !await confirmDiscard()) return;
   draft = editDraft(theme, state.themes.map((item) => item.name));
+  draftNeedsDiscard = false;
   render();
   await setDirty(draftChanged(draft));
   nameInput.focus();
@@ -325,6 +343,7 @@ async function duplicateTheme() {
   if (!theme || !state?.canManage || !await confirmDiscard()) return;
   const names = state.themes.map((item) => item.name);
   draft = copyDraft(theme, crypto.randomUUID(), nextCopyName(names, theme.name), true);
+  draftNeedsDiscard = true;
   render();
   await setDirty(true);
   nameInput.select();
@@ -333,6 +352,7 @@ async function duplicateTheme() {
 async function cancelEdit() {
   if (!await confirmDiscard()) return;
   draft = null;
+  draftNeedsDiscard = false;
   await setDirty(false);
   render();
   setStatus("Draft discarded.");
@@ -346,6 +366,7 @@ async function saveTheme() {
     focusedThemeId = saving.id;
     const saved = selectedTheme();
     draft = saved ? editDraft(saved, state.themes.map((item) => item.name)) : null;
+    draftNeedsDiscard = false;
     await setDirty(false);
     setStatus(`${saving.name.trim()} saved and applied.`);
   }, "The theme could not be saved.");
@@ -396,6 +417,7 @@ function toggleTreatment(event: Event) {
 }
 
 function draftUpdated() {
+  draftNeedsDiscard = true;
   renderPreview();
   validateDraft();
   renderControls();
