@@ -1075,6 +1075,39 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 });
 
+test("mobile non-home widgets stop moving when the area transition settles", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  const desktop = page.locator(".desktop");
+  const trigger = page.locator(".mobile-area-switcher-trigger");
+  const switcher = page.locator(".desktop-minimap");
+
+  await trigger.tap();
+  await switcher.getByRole("button", { name: "Add Right area" }).tap();
+  await expect(page).toHaveURL(/\/areas\/1\/0$/);
+  await desktop.click({ button: "right", position: { x: 150, y: 250 } });
+  const desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await desktopMenu.getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
+  const clock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  await expect(clock).toBeVisible();
+
+  await trigger.tap();
+  await switcher.getByRole("button", { name: /^Home, area/ }).tap();
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await trigger.tap();
+  await switcher.getByRole("button", { name: /1 right of Home, area/ }).tap();
+  const widgetTrack = page.locator(".desktop-area-stage--shell-items .desktop-area-track");
+  await expect(desktop).toHaveAttribute("data-area-transition-phase", "settling");
+  await expect(widgetTrack).toHaveCSS("transition-duration", "0.42s");
+  await expect(desktop).not.toHaveAttribute("data-area-transitioning", "");
+  await expect(clock).toBeVisible();
+  await expect(widgetTrack).toHaveCSS("transition-duration", "0s");
+  await expect(widgetTrack).toHaveCSS("transform", "none");
+  await context.close();
+});
+
 test("adding a widget rearranges overlapping icons and persists both positions", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `widget-arrange-${Date.now()}.txt`;
