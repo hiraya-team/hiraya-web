@@ -4599,7 +4599,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
     const target = event.target as Element;
-    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
+    const unselectedTouchIcon = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected])");
+    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchIcon) return;
     setSelectedWidgetId(null);
     if (event.pointerType !== "touch") {
       event.preventDefault();
@@ -4625,7 +4626,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (!allowBrowserPinchZoom) event.preventDefault();
     swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
     if (event.pointerType !== "touch") return;
-    if (!allowBrowserPinchZoom) event.currentTarget.setPointerCapture(event.pointerId);
+    if (!allowBrowserPinchZoom && !unselectedTouchIcon) event.currentTarget.setPointerCapture(event.pointerId);
+    if (unselectedTouchIcon) return;
     const press = {
       activated: false,
       pointerId: event.pointerId,
