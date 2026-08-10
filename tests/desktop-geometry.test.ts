@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
-import { arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis, snapShellItemBounds } from "../src/ui/desktop-geometry";
+import { arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, boundsIntersectSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, intersectingSegments, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis, snapShellItemBounds } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
 function file(id: string, x = 22, y = 22): DesktopEntry {
@@ -63,7 +63,20 @@ describe("responsive desktop geometry", () => {
     expect(clampShellItemBounds({ x: 350, y: -20 }, 5000, 200, { width: 390, height: 600 })).toEqual({ x: 0, y: 0, width: 390, height: 200 });
     expect(clampShellItemBounds({ x: 480, y: 480 }, 100, 100, { width: 500, height: 500 })).toEqual({ x: 400, y: 400, width: 100, height: 100 });
     const folder: DesktopEntry = { kind: "folder", id: "group", name: "Group", parentId: null, modifiedAt: 1, position: { x: 20, y: 30 } };
-    expect(desktopShellItemObstacles([{ id: "clock", kind: "clock", x: 450, y: 20, width: 200, height: 120 }], [{ folderId: folder.id, width: 320, height: 240 }], [folder], { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([{ x: 300, y: 20, width: 200, height: 120 }, { x: 20, y: 30, width: 320, height: 240 }]);
+    expect(desktopShellItemObstacles([{ id: "clock", kind: "clock", x: 450, y: 20, width: 200, height: 120 }], [{ folderId: folder.id, width: 320, height: 240 }], [folder], { column: 0, row: 0 }, { width: 500, height: 500 })).toEqual([{ x: 450, y: 20, width: 200, height: 120 }, { x: 20, y: 30, width: 320, height: 240 }]);
+    expect(desktopShellItemObstacles([{ id: "clock", kind: "clock", x: 450, y: 20, width: 200, height: 120 }], [], [], { column: 1, row: 0 }, { width: 500, height: 500 })).toEqual([{ x: -50, y: 20, width: 200, height: 120 }]);
+  });
+
+  test("finds every area intersected by item bounds", () => {
+    const size = { width: 500, height: 500 };
+    expect(intersectingSegments({ x: 450, y: 450 }, { width: 100, height: 100 }, size)).toEqual([
+      { column: 0, row: 0 },
+      { column: 1, row: 0 },
+      { column: 0, row: 1 },
+      { column: 1, row: 1 },
+    ]);
+    expect(boundsIntersectSegment({ x: -50, y: 20 }, { width: 100, height: 100 }, { column: 0, row: 0 }, size)).toBe(true);
+    expect(intersectingSegments({ x: 400, y: 20 }, { width: 100, height: 100 }, size)).toEqual([{ column: 0, row: 0 }]);
   });
 
   test("snaps shell item positions and dimensions to the selected grid", () => {

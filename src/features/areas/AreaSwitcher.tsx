@@ -114,10 +114,11 @@ export function AreaSwitcher({
                 const currentSegmentKey = desktopSegment.key;
                 const isActive = currentSegmentKey === activeSegmentKey;
                 const isOccupied = occupiedSegmentKeys.has(currentSegmentKey);
-                const hiddenEntryCount = Math.max(0, desktopSegment.entries.length - 6);
+                const itemCount = desktopSegment.itemCount ?? desktopSegment.entries.length;
+                const hiddenEntryCount = Math.max(0, itemCount - Math.min(6, desktopSegment.entries.length));
                 return <div className="desktop-minimap__slot" data-segment-key={isOccupied ? currentSegmentKey : undefined} key={currentSegmentKey} style={{ gridColumn: desktopSegment.segment.column - minColumn + 1, gridRow: desktopSegment.segment.row - minRow + 1 }}>
                   <button className="desktop-minimap__area" data-active={isActive || undefined} data-preview={(currentSegmentKey === segmentKey(swipePreview ?? activeSegment) && !isActive) || undefined} data-home={currentSegmentKey === segmentKey({ column: 0, row: 0 }) || undefined} data-occupied={isOccupied || undefined} type="button" aria-label={`${homeRelativeAreaLabel(desktopSegment.segment)}, area ${visibleIndex + 1} of ${segments.length}${isActive ? ", current area" : ""}${isOccupied ? "" : ", empty"}`} aria-current={isActive ? "true" : undefined} onClick={(event) => onSelectArea(desktopSegment.segment, event)} onContextMenu={(event) => event.preventDefault()}>
-                    <span className="desktop-minimap__area-title"><strong>{areaDirectionalLabel(desktopSegment.segment, activeSegment)}</strong><small>{desktopSegment.entries.length || "Empty"}</small></span>
+                    <span className="desktop-minimap__area-title"><strong>{areaDirectionalLabel(desktopSegment.segment, activeSegment)}</strong><small>{itemCount || "Empty"}</small></span>
                     {desktopSegment.entries.slice(0, 6).map((entry) => {
                       const position = positions.get(entry.id) ?? entry.position;
                       return <span className="desktop-minimap__file" key={entry.id} title={entry.name} style={{ left: `${Math.min(92, Math.max(8, position.x / desktopSize.width * 100))}%`, top: `${Math.min(78, Math.max(24, position.y / desktopSize.height * 100))}%` }}><EntryIcon entry={entry} size={18} /></span>;

@@ -19,7 +19,7 @@ import { API_ROUTES } from "./lib/api-routes";
 import { fetchPublicFile, type PublicAuthority } from "./lib/public-desktop";
 import { TodoWidget } from "./features/widgets/TodoWidget";
 import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
-import { iconAreaSize, projectLogicalPosition, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
+import { boundsIntersectSegment, iconAreaSize, intersectingSegments, projectLogicalPosition, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { homeRelativeAreaLabel } from "./ui/shell";
 import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
@@ -160,21 +160,29 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const responsive = useMemo(() => responsiveDesktop(desktopEntries, iconArea, iconMetrics), [desktopEntries, iconArea, iconMetrics]);
   const activeSegmentKey = segmentKey(activeSegment);
   const occupiedSegments = useMemo(() => {
-    const byKey = new Map(responsive.segments.map((segment) => [segment.key, segment]));
-    for (const widget of desktop?.layout.widgets ?? []) {
-      const segment = projectLogicalPosition(widget, iconArea).segment;
+    const byKey = new Map(responsive.segments.map((segment) => [segment.key, { ...segment, itemCount: segment.entries.length }]));
+    const occupy = (segment: SurfaceSegment) => {
       const key = segmentKey(segment);
-      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+      const current = byKey.get(key) ?? { entries: [], itemCount: 0, key, segment };
+      byKey.set(key, { ...current, itemCount: (current.itemCount ?? current.entries.length) + 1 });
+    };
+    for (const entry of desktopEntries) {
+      if (entry.parentId !== null) continue;
+      const ownerKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
+      for (const segment of intersectingSegments(entry.position, iconMetrics, iconArea)) {
+        if (segmentKey(segment) !== ownerKey) occupy(segment);
+      }
+    }
+    for (const widget of desktop?.layout.widgets ?? []) {
+      for (const segment of intersectingSegments(widget, widget, iconArea)) occupy(segment);
     }
     for (const group of desktop?.layout.iconGroups ?? []) {
       const folder = publicEntries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
       if (!folder) continue;
-      const segment = projectLogicalPosition(folder.position, iconArea).segment;
-      const key = segmentKey(segment);
-      if (!byKey.has(key)) byKey.set(key, { entries: [], key, segment });
+      for (const segment of intersectingSegments(folder.position, group, iconArea)) occupy(segment);
     }
     return [...byKey.values()];
-  }, [desktop?.layout.iconGroups, desktop?.layout.widgets, iconArea, publicEntries, responsive.segments]);
+  }, [desktop?.layout.iconGroups, desktop?.layout.widgets, desktopEntries, iconArea, iconMetrics, publicEntries, responsive.segments]);
   const minimapSegments = useMemo(() => publicAreaMapSegments(occupiedSegments, activeSegment), [activeSegment, occupiedSegments]);
   const wholeDesktop = !authority.itemAlias;
 
@@ -364,20 +372,32 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             <div className="desktop-canvas desktop-area-track public-icon-grid" style={{ width: iconArea.width, height: iconArea.height, transform: `translate3d(${areaCameraPosition(activeSegment, iconArea).x}px, ${areaCameraPosition(activeSegment, iconArea).y}px, 0)` }}>
               {responsive.segments.map((desktopSegment) => {
                 const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
-                const interactive = desktopSegment.key === activeSegmentKey;
+                const interactive = desktopSegment.entries.some((entry) => boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea));
                 return <div className="desktop-area-segment" key={desktopSegment.key} data-active={interactive || undefined} aria-hidden={!interactive || undefined} inert={!interactive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: interactive ? "visible" : "hidden" }}>
-                  {desktopSegment.entries.map((entry) => <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={interactive} loadThumbnail={desktop.thumbnailProfile ? loadThumbnail : undefined} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />)}
+                  {desktopSegment.entries.map((entry) => {
+                    const entryInteractive = boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea);
+                    return <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={entryInteractive} loadThumbnail={entryInteractive && desktop.thumbnailProfile ? loadThumbnail : undefined} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />;
+                  })}
                 </div>;
               })}
             </div>
           </div>
         )}
-        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} selectedIds={selectedIds} onSelectEntry={(_folderId, entry) => selectEntry(entry)} onOpen={openEntry} renderWidget={(widget) => {
-          if (widget.kind !== "todo") return null;
-          const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
-          const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;
-          return <TodoWidget file={file} contentRevision={contentRevision} readOnly readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} onOpen={openEntry} />;
-        }} /></div>}
+        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items">
+          <div className="desktop-canvas desktop-area-track" style={{ width: iconArea.width, height: iconArea.height, transform: `translate3d(${areaCameraPosition(activeSegment, iconArea).x}px, ${areaCameraPosition(activeSegment, iconArea).y}px, 0)` }}>
+            {occupiedSegments.map((owner) => {
+              const origin = areaWorldOrigin(owner.segment, iconArea);
+              return <div className="desktop-area-segment" key={owner.key} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height }}>
+                <ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} ownerSegment={owner.segment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} selectedIds={selectedIds} onSelectEntry={(_folderId, entry) => selectEntry(entry)} onOpen={openEntry} renderWidget={(widget) => {
+                  if (widget.kind !== "todo") return null;
+                  const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                  const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;
+                  return <TodoWidget file={file} contentRevision={contentRevision} readOnly readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} onOpen={openEntry} />;
+                }} />
+              </div>;
+            })}
+          </div>
+        </div>}
         {open && (
           <div className="app-window-layer">
             <AppWindow

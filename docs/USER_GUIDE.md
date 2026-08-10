@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use items across desktop area edges.** Icons, widgets, and icon groups now remain visible and usable in every desktop area they overlap, including whole public desktops.
 - **Keep icon group images contained.** Image and video thumbnails inside icon groups now remain within their item instead of covering the group.
 - **Keep widgets fixed on the desktop.** Widgets and icon groups now retain their exact position and dimensions when the browser changes size. Move to an adjacent desktop area to see any portion outside the current view.
 - **Keep a Todo list on the desktop.** Choose **Add widget > Todo list** to link an existing Todo file, check off tasks without opening a window, or open the full list in Todo. Whole public desktops show linked lists read-only.

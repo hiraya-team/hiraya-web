@@ -278,8 +278,8 @@ describe("accessibility regressions", () => {
     expect(shellItemStage).toContain("translate3d(var(--icon-area-track-x");
     expect(shellItemStage).toContain("left: areaTransition ? 0 : iconRestingCamera.x");
     expect(shellItemStage).toContain('transform: areaTransition ? `translate3d');
-    expect(shellItemStage).toContain("transitionSegmentKeys.has(shellSegment.key)");
-    expect(shellItemStage).toContain("inert={!segmentInteractive}");
+    expect(shellItemStage).toContain("ownerSegment={shellSegment.segment}");
+    expect(shellItemStage).toContain("activeSegment={activeSegment}");
     expect(css).toContain(".app-window-layer.desktop-area-track { right: auto; bottom: auto; overflow: visible; }");
     expect(css).toContain('.desktop[data-area-transition-phase="settling"] .desktop-area-track {');
     expect(css).toContain(".desktop[data-area-transitioning] .shell-item { pointer-events: none; }");
@@ -304,7 +304,7 @@ describe("accessibility regressions", () => {
     expect(resizeEffect).not.toContain("selectedEntry");
   });
 
-  test("only the active or actively dragged desktop icon segment is reachable", async () => {
+  test("only desktop icons intersecting the active area are reachable", async () => {
     const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
     const markup = renderToStaticMarkup(<FileIcon
       entry={{ kind: "folder", id: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }}
@@ -323,9 +323,10 @@ describe("accessibility regressions", () => {
     />);
 
     expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
-    expect(app).toContain("const segmentInteractive = segmentActive || segmentDragging;");
+    expect(app).toContain("const segmentInteractive = segmentDragging || desktopSegment.entries.some((entry) => boundsIntersectSegment");
     expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive}');
-    expect(app).toContain("interactive={segmentInteractive}");
+    expect(app).toContain("const entryInteractive = segmentDragging || boundsIntersectSegment");
+    expect(app).toContain("interactive={entryInteractive}");
     expect(markup).toContain('tabindex="-1"');
     expect(markup).toContain('aria-hidden="true"');
     expect(markup).toContain('inert=""');

@@ -179,6 +179,36 @@ test("whole public desktops render widgets and folder-backed groups read only", 
   await expect(group.getByRole("button", { name: "Resize Reference" })).toHaveCount(0);
 });
 
+test("public desktop keeps overlapping icons and shell items usable in each area", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  const folder = { kind: "folder", id: "overlap-group", name: "Cross-area reference", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 350, y: 360 }, revision: 1, contentRevision: 0 };
+  const child = { ...publicDesktop.entries[0], id: "overlap-child", name: "Inside overlap.txt", parentId: folder.id, position: { x: 0, y: 0 } };
+  const icon = { ...publicDesktop.entries[0], id: "overlap-icon", name: "Cross-area.txt", position: { x: 350, y: 84 } };
+  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+    ...publicDesktop,
+    entries: [folder, child, icon],
+    layout: {
+      ...publicDesktop.layout,
+      widgets: [{ id: "status", kind: "status", x: 250, y: 160, width: 300, height: 150 }],
+      iconGroups: [{ folderId: folder.id, width: 500, height: 240 }],
+    },
+  } }));
+  await page.goto("/published/e2e-desk");
+  await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
+  const navigator = page.getByRole("navigation", { name: "Published work public desktop areas" });
+  await navigator.getByRole("button", { name: "Go to Right area" }).click();
+
+  await expect(page.getByRole("button", { name: "Cross-area.txt, text/plain" })).toBeVisible();
+  await page.getByRole("button", { name: "Cross-area.txt, text/plain" }).click();
+  await expect(page.getByText("Shared desktop", { exact: true })).toBeVisible();
+  const group = page.locator(".shell-item", { hasText: "Cross-area reference" });
+  const childOption = group.getByRole("option", { name: "Inside overlap.txt, text/plain" });
+  await expect(childOption).toBeVisible();
+  await childOption.click();
+  await expect(childOption).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByText("This area is empty.")).toHaveCount(0);
+});
+
 test("whole public desktops render linked Todo widgets read only", async ({ page }) => {
   const body = JSON.stringify({ schemaVersion: 2, tasks: [{ id: "public-task", title: "Read public notes", completed: false, priority: "normal", subitems: [] }] });
   const file = { ...publicDesktop.entries[0], id: "public-todo", name: "Shared.hiraya.todo", mimeType: "application/vnd.hiraya.todo+json", size: new TextEncoder().encode(body).byteLength };
