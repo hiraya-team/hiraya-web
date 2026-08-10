@@ -1558,7 +1558,6 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   await expect(mobileThemeEditorFrame.getByRole("heading", { name: "Image treatment" })).toBeVisible();
   const mobileThemeEditorBack = mobilePage.getByRole("button", { name: "Back from Theme Editor" });
   await mobileThemeEditorBack.click();
-  await mobilePage.getByRole("alertdialog", { name: "Discard theme changes?" }).getByRole("button", { name: "Discard", exact: true }).click();
   await mobileThemeEditorBack.click();
   await expect(mobileThemeEditorFrame.getByRole("tab", { name: "Theme", exact: true })).toHaveAttribute("aria-selected", "true");
   await mobileThemeEditorBack.click();
