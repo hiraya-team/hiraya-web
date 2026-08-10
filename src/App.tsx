@@ -218,6 +218,10 @@ function fileDialogEntryElement(id: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
 }
 
+function iconGroupSelectionScope(folderId: string) {
+  return `icon-group:${folderId}`;
+}
+
 function formatImportBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
@@ -510,7 +514,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
   const layoutSaveQueueRef = useRef(createLatestTaskQueue<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number }>(({ layout: next, baseLayout, baseRevision }) => saveDesktopLayout(next, { layout: baseLayout, revision: baseRevision })));
   const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number } | null>(null);
-  const wallpaperPreviewTimerRef = useRef<number | null>(null);
   const wallpaperPreviewRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
   const contentRevisionsRef = useRef<Record<string, number>>({});
   const activeDesktopIdRef = useRef("");
@@ -722,7 +725,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const hasVirtualSelection = selectedIds.some(isProtectedShellEntry);
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
-  const mobileFileSurface = focusedExplorer?.id ?? "desktop";
+  const mobileFileSurface = focusedExplorer?.id ?? (selectionScope.startsWith("icon-group:") ? selectionScope : "desktop");
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
   const mobileSelectionMode = mobileMultiSelectScope === mobileFileSurface && selectionScope === mobileFileSurface;
   const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !focusedExplorer?.transient && !hasVirtualSelection && !contextMenu && Boolean(activeDesktopId);
@@ -1665,7 +1668,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       });
     return () => {
       active = false;
-      if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
       const pendingWallpaper = wallpaperPreviewRef.current;
       wallpaperPreviewRef.current = null;
       const pendingLayout = layoutDraftRef.current;
@@ -2753,8 +2755,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function clearWallpaperPreview() {
-    if (wallpaperPreviewTimerRef.current !== null) window.clearTimeout(wallpaperPreviewTimerRef.current);
-    wallpaperPreviewTimerRef.current = null;
     const pending = wallpaperPreviewRef.current;
     wallpaperPreviewRef.current = null;
     return pending;
@@ -2785,10 +2785,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     clearWallpaperPreview();
     wallpaperPreviewRef.current = { desktopId, layout: next };
     previewLayout(next, desktopId);
-    wallpaperPreviewTimerRef.current = window.setTimeout(() => {
-      const pending = clearWallpaperPreview();
-      if (pending) void persistWallpaperLayout(pending.layout, pending.desktopId).catch(() => undefined);
-    }, 400);
   }
 
   async function saveWallpaper(wallpaper: WallpaperEditorWallpaper) {
@@ -3280,12 +3276,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
     const sourceOrigin = areaWorldOrigin(sourceSegment, iconArea);
     const worldPosition = { x: sourceOrigin.x + position.x, y: sourceOrigin.y + position.y };
-    const logicalCanvasPosition = layoutRef.current.snapToGrid ? snapRootEntryPosition(worldPosition) : worldPosition;
-    const projected = projectLogicalPosition(logicalCanvasPosition, iconArea);
+    const projected = projectLogicalPosition(worldPosition, iconArea);
     const targetSegment = edgeNavigationRef.current?.targetSegment ?? projected.segment;
     const localPosition = {
-      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, logicalCanvasPosition.x - targetSegment.column * iconArea.width)),
-      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, logicalCanvasPosition.y - targetSegment.row * iconArea.height)),
+      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, worldPosition.x - targetSegment.column * iconArea.width)),
+      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, worldPosition.y - targetSegment.row * iconArea.height)),
     };
     return { logicalPosition: restoreLogicalPosition(localPosition, targetSegment, iconArea), targetSegment };
   }
@@ -3300,6 +3295,29 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
       return positionOverlapsObstacles(projected.local, iconMetrics, obstacles);
     });
+  }
+
+  function desktopMoveOverlaps(entry: DesktopEntry, anchorPosition: EntryPosition) {
+    const group = desktopMoveGroup(entry);
+    const movingIds = new Set(group.map((item) => item.id));
+    const delta = { x: anchorPosition.x - entry.position.x, y: anchorPosition.y - entry.position.y };
+    return group.some((item) => {
+      const position = { x: item.position.x + delta.x, y: item.position.y + delta.y };
+      const projected = projectLogicalPosition(position, iconArea);
+      const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
+      for (const other of desktopEntryList) {
+        if (other.parentId !== null || movingIds.has(other.id)) continue;
+        const otherPosition = projectLogicalPosition(other.position, iconArea);
+        if (segmentKey(otherPosition.segment) === segmentKey(projected.segment)) obstacles.push({ ...otherPosition.local, width: iconMetrics.width, height: iconMetrics.height });
+      }
+      return positionOverlapsObstacles(projected.local, iconMetrics, obstacles);
+    });
+  }
+
+  function snapDesktopMovePosition(entry: DesktopEntry, position: EntryPosition) {
+    const raw = desktopMovePosition(entry, position).logicalPosition;
+    const snapped = snapRootEntryPosition(raw);
+    return layoutRef.current.autoArrangeIcons && !desktopMoveOverlaps(entry, raw) && desktopMoveOverlaps(entry, snapped) ? raw : snapped;
   }
 
   function arrangedDesktopMove(entry: DesktopEntry, position: EntryPosition) {
@@ -5504,8 +5522,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   onEdgeDwellChange={handleEdgeDwellChange}
                   onDragEnd={finishEdgeNavigation}
                   getSnapPreview={layout.snapToGrid ? (position) => {
-                    const world = { x: origin.x + position.x, y: origin.y + position.y };
-                    const snapped = snapRootEntryPosition(world);
+                    const snapped = snapDesktopMovePosition(entry, position);
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
                   onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
@@ -5556,7 +5573,31 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                     return <TodoWidget file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readOnly={!canMutate} readContent={(entry) => readFile(entry.id)} writeContent={(entry, content, expectedContentRevision) => saveAppFile(entry.id, content, { expectedContentRevision })} onOpen={handleOpen} />;
                   }}
                   loadPreview={thumbnailFile}
-                  onOpen={handleOpen}
+                  selectedIds={selectionScope.startsWith("icon-group:") ? selectedIdSet : undefined}
+                  onOpen={(entry) => {
+                    replaceSelection("desktop", []);
+                    handleOpen(entry);
+                  }}
+                  onSelectEntry={(folderId, entry, options) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    const { presentation, ...selectionOptions } = options;
+                    selectEntry(scope, entry, { ...selectionOptions, toggle: presentation === "sheet" ? mobileMultiSelectScope === scope : selectionOptions.toggle });
+                  }}
+                  onEntryContextMenu={(folderId, entry, x, y, presentation) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    if (selectionScope !== scope || !selectedIdSet.has(entry.id)) replaceSelection(scope, [entry.id]);
+                    openEntryContextMenu(entry.id, x, y, presentation);
+                  }}
+                  onMoveEntry={(folderId, entry, destination, point) => {
+                    if (!canMutateShellDrop(entry, destination.parentId)) return;
+                    const scope = iconGroupSelectionScope(folderId);
+                    const items = selectionScope === scope && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
+                    void (destination.desktop
+                      ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
+                      : handleMoveTo(items, destination.parentId));
+                  }}
+                  getDesktopDropPreview={positionAtDesktopPoint}
+                  isEntryReadOnly={isProtectedShellEntry}
                   onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
                   onMoveWidget={(widget, position) => updateWidget(widget, position)}
                   onResizeWidget={(widget, size) => updateWidget(widget, size)}

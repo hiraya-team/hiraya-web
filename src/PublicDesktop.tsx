@@ -372,7 +372,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             </div>
           </div>
         )}
-        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} onOpen={openEntry} renderWidget={(widget) => {
+        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} selectedIds={selectedIds} onSelectEntry={(_folderId, entry) => selectEntry(entry)} onOpen={openEntry} renderWidget={(widget) => {
           if (widget.kind !== "todo") return null;
           const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
           const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;

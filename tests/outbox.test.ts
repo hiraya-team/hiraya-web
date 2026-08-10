@@ -138,6 +138,8 @@ describe("strict outbox", () => {
     expect(rebaseOutboxOperationForConflict({ schemaVersion: 1, kind: "patch-entry", entryId: "other", baseRevision: 2, changes: { name: "local.txt" } }, conflict!)).toBeNull();
     expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: -1, actualRevision: 7 })).toBeNull();
     expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "file", expectedRevision: 2, actualRevision: Number.MAX_SAFE_INTEGER + 1 })).toBeNull();
+    expect(parseRevisionConflictDetails({ resourceKind: "layout", resourceId: "", expectedRevision: 2, actualRevision: 7 })).not.toBeNull();
+    expect(parseRevisionConflictDetails({ resourceKind: "entry", resourceId: "", expectedRevision: 2, actualRevision: 7 })).toBeNull();
   });
 
   test("automatically rebases disjoint entry changes and blocks same-field changes", () => {

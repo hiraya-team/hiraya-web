@@ -237,8 +237,17 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   const first = page.locator(".file-icon").filter({ hasText: names[0] });
   const second = page.locator(".file-icon").filter({ hasText: names[1] });
   const target = await second.boundingBox();
-  if (!target) throw new Error("The target icon is not visible.");
+  const firstBounds = await first.boundingBox();
+  if (!target || !firstBounds) throw new Error("The target icons are not visible.");
   const originalSecond = { x: target.x, y: target.y };
+
+  await beginDragPointerTo(page, first, target.x + target.width + 6 + firstBounds.width / 2, target.y + target.height / 2);
+  await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
+  await page.mouse.up();
+  await expect.poll(async () => {
+    const [placed, stationary] = await Promise.all([first.boundingBox(), second.boundingBox()]);
+    return placed && stationary ? { gap: Math.round(placed.x - stationary.x - stationary.width), y: Math.round(placed.y - stationary.y) } : null;
+  }).toEqual({ gap: 6, y: 0 });
 
   await beginDragPointerTo(page, first, target.x + target.width / 2, target.y + target.height / 2);
   await expect(second).toHaveAttribute("data-auto-arrange-dragging", "true");
@@ -269,6 +278,37 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
       ? [Math.round(a.x - beforeReload[0].x), Math.round(a.y - beforeReload[0].y), Math.round(b.x - beforeReload[1].x), Math.round(b.y - beforeReload[1].y)]
       : null;
   }).toEqual([0, 0, 0, 0]);
+});
+
+test("auto-arrange keeps folders available as desktop drop targets", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const folderName = `arrange-drop-folder-${stamp}`;
+  const fileName = `arrange-drop-file-${stamp}.txt`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".desktop").click({ position: { x: 600, y: 300 } });
+  await fileActions.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  const folder = page.locator(".file-icon").filter({ hasText: folderName });
+  const file = page.locator(".file-icon").filter({ hasText: fileName });
+  const folderBounds = await folder.boundingBox();
+  if (!folderBounds) throw new Error("The destination folder is not visible.");
+  await beginDragPointerTo(page, file, folderBounds.x + folderBounds.width / 2, folderBounds.y + folderBounds.height / 2);
+  await expect(folder).toHaveAttribute("data-internal-drop-target", "true");
+  await page.mouse.up();
+  await expect(file).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await folder.dblclick();
+  await expect(page.getByRole("dialog", { name: folderName }).locator(".folder-explorer__row").filter({ hasText: fileName })).toBeVisible();
 });
 
 test("auto-arrange while dragging defaults on and persists an opt-out", async ({ page }) => {
@@ -1162,6 +1202,75 @@ test("adding a widget rearranges overlapping icons and persists both positions",
   }).toEqual(saved);
 });
 
+test("folder icon group children inherit explorer interactions", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const groupName = `group-actions-${stamp}`;
+  const fileName = `inside-${stamp}.txt`;
+  const outsideName = `outside-${stamp}.txt`;
+  const renamedName = `renamed-${stamp}.txt`;
+  const desktop = page.locator(".desktop");
+
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(outsideName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  await desktop.click({ button: "right", position: { x: 180, y: 360 } });
+  await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "New icon group" }).click();
+  await page.getByLabel("Folder name").fill(groupName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+
+  const group = page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) });
+  await group.getByRole("button", { name: "Open in Explorer" }).click();
+  const explorer = page.getByRole("dialog", { name: groupName });
+  await explorer.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+  await explorer.getByRole("button", { name: `Close ${groupName}` }).click();
+
+  const child = group.getByRole("option", { name: `${fileName}, text/plain` });
+  const outside = page.locator(".file-icon").filter({ hasText: outsideName });
+  await outside.click();
+  await child.click({ modifiers: ["Control"] });
+  await expect(outside).toHaveAttribute("aria-pressed", "false");
+  await expect(child).toHaveAttribute("aria-selected", "true");
+  await child.focus();
+  await page.keyboard.press("Shift+F10");
+  await expect(page.getByRole("menu", { name: `Actions for ${fileName}` })).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  await expect(page.getByRole("button", { name: "Select multiple items; 1 selected item" })).toBeVisible();
+  const childBounds = await child.boundingBox();
+  if (!childBounds) throw new Error("The icon group child is not visible on mobile.");
+  const touch = await page.context().newCDPSession(page);
+  const touchPoint = { x: childBounds.x + childBounds.width / 2, y: childBounds.y + childBounds.height / 2, id: 0 };
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [touchPoint] });
+  await page.waitForTimeout(550);
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  const actionSheet = page.getByRole("dialog", { name: `Actions for ${fileName}` });
+  await expect(actionSheet).toBeVisible();
+  await actionSheet.getByRole("menuitem", { name: /Rename/ }).click();
+  const rename = page.getByRole("dialog", { name: "Rename file" });
+  await rename.getByLabel("File name").fill(renamedName);
+  await rename.getByRole("button", { name: "Rename" }).click();
+
+  const renamed = page.locator(".icon-group__entry").filter({ hasText: renamedName });
+  const desktopBounds = await desktop.boundingBox();
+  const renamedBounds = await renamed.boundingBox();
+  if (!desktopBounds || !renamedBounds) throw new Error("The desktop item is not visible.");
+  const dragStart = { x: renamedBounds.x + renamedBounds.width / 2, y: renamedBounds.y + renamedBounds.height / 2, id: 0 };
+  const dragEnd = { x: desktopBounds.x + 40, y: desktopBounds.y + 120, id: 0 };
+  await touch.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [dragStart] });
+  await touch.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [dragEnd] });
+  await expect(page.locator(".entry-drag-preview")).toBeVisible();
+  await touch.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(renamed).toHaveCount(0);
+  await expect(page.locator(".file-icon").filter({ hasText: renamedName })).toBeVisible();
+  await page.reload();
+  await expect(page.locator(".file-icon").filter({ hasText: renamedName })).toBeVisible();
+});
+
 test("icon groups reserve space, follow the grid, and persist arranged icons", async ({ page }) => {
   await openLocalDesktop(page);
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
@@ -1333,6 +1442,30 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
   await expect.poll(() => mobileFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mobileContext.close();
+});
+
+test("Theme Editor applies a selected theme and preserves it after reload", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Theme Editor/ }).click();
+
+  const frame = page.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
+  await frame.getByRole("option", { name: /Warm Paper/ }).click();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).tap();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).tap();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Theme Editor/ }).tap();
+  await mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe").getByRole("option", { name: /Midnight Glass/ }).tap();
+  await expect(mobilePage.locator(".desktop-shell")).toHaveAttribute("data-theme", "midnight-glass");
   await mobileContext.close();
 });
 
