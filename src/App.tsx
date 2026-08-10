@@ -532,6 +532,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const persistenceRequestedRef = useRef(false);
   const restoredWindowBoundsRef = useRef(new Map<string, WindowBounds>());
   const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
+  const pendingSandboxLaunchIdsRef = useRef(new Set<string>());
   const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
   const canMutateRef = useRef(false);
   const canSettingsRef = useRef(false);
@@ -3576,9 +3577,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
+    const launchTarget = target ?? (install.source === "system" && install.appId === SYSTEM_APP_IDS.themeEditor ? "root" : undefined);
+    const pendingId = launchTarget ? builtinAppTargetId({ kind: "system", appId: install.appId, targetKind: launchTarget === "root" ? "root" : launchTarget.kind, entryId: launchTarget === "root" ? null : launchTarget.id }) : null;
+    if (pendingId && pendingSandboxLaunchIdsRef.current.has(pendingId)) return;
+    if (pendingId) pendingSandboxLaunchIdsRef.current.add(pendingId);
     setError("");
     try {
-      const launchTarget = target ?? (install.source === "system" && install.appId === SYSTEM_APP_IDS.themeEditor ? "root" : undefined);
       const result = await launchSandboxApp({
         install,
         target: launchTarget,
@@ -3657,6 +3661,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       }
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    } finally {
+      if (pendingId) pendingSandboxLaunchIdsRef.current.delete(pendingId);
     }
   }
   launchInstalledAppRef.current = launchInstalledApp;

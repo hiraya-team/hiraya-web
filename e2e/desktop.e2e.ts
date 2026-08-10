@@ -747,7 +747,7 @@ test("opens imported audio from a local Blob preview source", async ({ page }) =
   await expect(audio).toHaveAttribute("src", /^blob:/);
 });
 
-test("undo after opening a text file preserves its loaded contents", async ({ page }) => {
+test("opening and restoring a text file preserves its loaded contents", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await openLocalDesktop(page);
   const name = `undo-open-${Date.now()}.txt`;
@@ -778,6 +778,12 @@ test("undo after opening a text file preserves its loaded contents", async ({ pa
   await expect(editor.getByRole("button", { name: "Explorer" })).toHaveAttribute("aria-expanded", "false");
   await expect.poll(async () => (await editor.getByRole("toolbar", { name: "Open files" }).getByRole("button", { name, exact: true }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   await expect.poll(async () => (await editor.getByRole("button", { name: `Close ${name}` }).boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
+
+  await page.reload();
+  app = page.getByRole("dialog", { name: /Integrated Editor/ });
+  editor = app.frameLocator("iframe");
+  await expect(editor.locator(".cm-content")).toHaveText(contents);
+
   await editor.locator(".cm-content").focus();
   await page.keyboard.press("Control+z");
   await expect(editor.locator(".cm-content")).toHaveText(contents);
