@@ -63,6 +63,8 @@ describe("Integrated Editor document behavior", () => {
   test("uses the shared item list for workspace search results", async () => {
     const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    const manifest = await Bun.file(new URL("../public/hiraya.app.json", import.meta.url)).json();
+    expect(manifest.version).toBe("1.4.4");
     expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
     expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
     expect(source).toContain('searchResults.addEventListener("hiraya-item-select"');
