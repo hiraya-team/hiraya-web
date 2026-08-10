@@ -49,6 +49,20 @@ test("keeps public status generic and only renders the active logical area", () 
   expect(status).not.toContain("data-entry-drop-parent");
 });
 
+test("renders permanent widget and icon group geometry outside the current area", () => {
+  const markup = renderToStaticMarkup(<ShellItemLayer
+    widgets={[{ id: "clock", kind: "clock", x: 350, y: 30, width: 500, height: 200 }]}
+    groups={[{ folderId: folder.id, width: 480, height: 240 }]}
+    entries={[{ ...folder, position: { x: 360, y: 280 } }]}
+    activeSegment={{ column: 0, row: 0 }}
+    areaSize={{ width: 390, height: 600 }}
+    readOnly
+    onOpen={() => undefined}
+  />);
+  expect(markup).toContain("--shell-x:350px;--shell-y:30px;width:500px;height:200px");
+  expect(markup).toContain("--shell-x:360px;--shell-y:280px;width:480px;height:240px");
+});
+
 test("gives Todo widgets interactive content without changing built-in widgets", () => {
   const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "todo", kind: "todo", fileId: "list", x: 20, y: 20, width: 340, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} renderWidget={() => <button type="button">Open list</button>} />);
   expect(markup).toContain("shell-item--interactive");

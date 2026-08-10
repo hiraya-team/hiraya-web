@@ -6149,7 +6149,6 @@ button.app-picker__disclosure { cursor: pointer; }
 .public-shell-items .shell-item { background: color-mix(in srgb, var(--theme-chrome) 76%, transparent); }
 
 @media (max-width: 620px) {
-  .shell-item { max-width: calc(100vw - 16px); max-height: calc(100dvh - 68px); }
   .shell-item__header { min-height: 44px; }
   .shell-item__drag, .shell-item__remove { min-height: 44px; }
   .shell-item__remove { width: 44px; height: 44px; }
