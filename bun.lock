@@ -19,6 +19,7 @@
         "@hiraya-team/apps-contracts": "2.1.0",
         "@hiraya-team/apps-sdk": "2.1.0",
         "@hiraya/app-runtime": "workspace:*",
+        "@hiraya/apps-ui": "workspace:*",
         "@lezer/highlight": "^1.2.3",
         "@noble/hashes": "^2.2.0",
         "@phosphor-icons/react": "^2.1.10",

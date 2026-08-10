@@ -60,6 +60,15 @@ describe("Integrated Editor document behavior", () => {
     expect(html).toContain('id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden');
   });
 
+  test("uses the shared item list for workspace search results", async () => {
+    const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
+    expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
+    expect(source).toContain('searchResults.addEventListener("hiraya-item-select"');
+    expect(source).not.toContain("handleSearchKey");
+  });
+
   test("reloads a clean document after a remote change", () => {
     const state = new TextDocumentState();
     state.load("one", 1);

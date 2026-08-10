@@ -49,6 +49,15 @@ button {
   color: inherit;
 }
 
+hiraya-item-list {
+  display: grid;
+  min-width: 0;
+}
+
+.item-list__items {
+  display: contents;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,

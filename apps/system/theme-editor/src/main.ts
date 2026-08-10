@@ -53,6 +53,17 @@ required("#advanced-fields").innerHTML = `${advancedColors.map(([key, label]) =>
 
 required("#delete").addEventListener("click", () => void deleteTheme());
 required("#cancel").addEventListener("click", () => void cancelEdit());
+themeList.addEventListener("hiraya-item-select", (event) => void focusTheme((event as CustomEvent<{ id: string }>).detail.id));
+themeList.addEventListener("keydown", (event) => {
+  if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
+  const items = Array.from(themeList.querySelectorAll<HTMLElement>("[data-item-id]"));
+  const current = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-item-id]") : null;
+  if (event.key === "ArrowUp" && current === items[0]) { event.preventDefault(); items.at(-1)?.focus(); }
+  if (event.key === "ArrowDown" && current === items.at(-1)) { event.preventDefault(); items[0]?.focus(); }
+  const item = document.activeElement instanceof Element ? document.activeElement.closest<HTMLElement>("[data-item-id]") : null;
+  if (!item || item.dataset.itemId === focusedThemeId) return;
+  void focusTheme(item.dataset.itemId!).then(() => themeList.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(focusedThemeId)}"]`)?.focus());
+});
 nameInput.addEventListener("input", () => { if (draft) { draft.name = nameInput.value; draftUpdated(); } });
 form.addEventListener("input", handleFieldInput);
 form.addEventListener("change", handleFieldInput);
@@ -170,7 +181,8 @@ function renderLibrary() {
     button.className = "theme-item";
     button.setAttribute("role", "option");
     button.setAttribute("aria-selected", String(theme.id === focusedThemeId));
-    button.dataset.themeId = theme.id;
+    button.dataset.itemId = theme.id;
+    button.dataset.itemSelect = "";
     button.tabIndex = theme.id === focusedThemeId ? 0 : -1;
     if (theme.id === focusedThemeId) button.classList.add("focused");
     button.innerHTML = `<span class="theme-swatch" aria-hidden="true"></span><span><strong></strong><small></small></span><span class="selected-mark"></span>`;
@@ -179,8 +191,6 @@ function renderLibrary() {
     button.querySelector("strong")!.textContent = theme.name;
     button.querySelector("small")!.textContent = theme.builtIn ? "Built-in" : "Custom";
     button.querySelector(".selected-mark")!.textContent = theme.id === current.selectedThemeId ? "Applied" : "";
-    button.addEventListener("click", () => void focusTheme(theme.id));
-    button.addEventListener("keydown", (event) => { if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) { event.preventDefault(); void moveThemeFocus(event.key); } });
     return button;
   }));
   const restriction = required<HTMLElement>("#restriction");
@@ -285,15 +295,6 @@ function setInspectorMode(mode: "theme" | "wallpaper") {
   required<HTMLElement>("#theme-tab").tabIndex = wallpaper ? -1 : 0;
   required<HTMLElement>("#wallpaper-tab").tabIndex = wallpaper ? 0 : -1;
   if (wallpaper) void refreshWallpaperImage();
-}
-
-async function moveThemeFocus(key: string) {
-  if (!state?.themes.length) return;
-  const current = Math.max(0, state.themes.findIndex((theme) => theme.id === focusedThemeId));
-  const index = key === "Home" ? 0 : key === "End" ? state.themes.length - 1 : (current + (key === "ArrowDown" ? 1 : -1) + state.themes.length) % state.themes.length;
-  const id = state.themes[index].id;
-  await focusTheme(id);
-  themeList.querySelector<HTMLElement>(`[data-theme-id="${CSS.escape(id)}"]`)?.focus();
 }
 
 async function confirmDiscard() {

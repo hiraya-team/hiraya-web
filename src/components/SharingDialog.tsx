@@ -29,6 +29,7 @@ import type { DesktopIdentity } from "../types";
 import { useModalDialog } from "../ui/modal-dialog";
 import { writeClipboardText } from "../ui/clipboard-copy";
 import { RoleBadge } from "./VisualPrimitives";
+import { ItemList } from "./ItemList";
 
 const ROLES: SharingRole[] = ["reader", "writer", "manager"];
 
@@ -157,6 +158,11 @@ export function SharingDialog({
     copiedTimerRef.current = timer;
   }
   const publicationUrl = sharing ? publicUrl(sharing.publication) : "";
+  const people = sharing ? [
+    ...(sharing.audience ? [{ type: "audience" as const, value: sharing.audience }] : []),
+    ...sharing.members.map((value) => ({ type: "member" as const, value })),
+    ...sharing.pending.map((value) => ({ type: "invite" as const, value })),
+  ] : [];
 
   return (
     <div
@@ -296,21 +302,19 @@ export function SharingDialog({
             {!sharing ? (
               <div className="sharing-loading">Loading people...</div>
             ) : (
-              <div className="sharing-members">
-                {sharing.audience && (
-                  <div className="sharing-member">
+              <ItemList items={people} getId={(person) => person.type === "audience" ? "audience" : person.type === "member" ? person.value.userId : person.value.id} label="People with access" className="sharing-members" renderItem={(person, { itemProps }) => person.type === "audience" ? (
+                  <div {...itemProps} className="sharing-member" key="audience">
                     <span className="sharing-avatar">
                       <Globe size={16} />
                     </span>
                     <div>
                       <strong>All authenticated users</strong>
-                      <span>Deployment access · {sharing.audience.role}</span>
+                      <span>Deployment access · {person.value.role}</span>
                     </div>
                     <RoleBadge>Default</RoleBadge>
                   </div>
-                )}
-                {sharing.members.map((member) => (
-                  <div className="sharing-member" key={member.userId}>
+                ) : person.type === "member" ? (() => { const member = person.value; return (
+                  <div {...itemProps} className="sharing-member" key={member.userId}>
                     <span className="sharing-avatar">
                       {member.avatar &&
                       !member.avatar.startsWith("identicon:") ? (
@@ -368,9 +372,9 @@ export function SharingDialog({
                       </>
                     )}
                   </div>
-                ))}
-                {sharing.pending.map((invite) => (
+                ); })() : (() => { const invite = person.value; return (
                   <div
+                    {...itemProps}
                     className="sharing-member sharing-member--pending"
                     key={invite.id}
                   >
@@ -418,8 +422,7 @@ export function SharingDialog({
                       <Trash size={16} />
                     </button>
                   </div>
-                ))}
-              </div>
+                ); })()} />
             )}
           </section>
           <section className="sharing-section">
@@ -555,8 +558,8 @@ export function SharingDialog({
             {sharing && sharing.publication.items.length > 0 && (
               <div className="published-items">
                 <strong>Published items</strong>
-                {sharing.publication.items.map((item) => (
-                  <div className="sharing-member" key={item.entryId}>
+                <ItemList items={sharing.publication.items} getId={(item) => item.entryId} label="Published items" className="published-items__list" renderItem={(item, { itemProps }) => (
+                  <div {...itemProps} className="sharing-member" key={item.entryId}>
                     <span className="sharing-avatar">
                       <LinkSimple size={16} />
                     </span>
@@ -607,7 +610,7 @@ export function SharingDialog({
                       <Trash size={16} />
                     </button>
                   </div>
-                ))}
+                )} />
               </div>
             )}
           </section>

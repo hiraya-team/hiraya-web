@@ -58,3 +58,12 @@ test("Back cancels drafts before leaving wallpaper or the app", () => {
   expect(backAction(false, true)).toBe("theme");
   expect(backAction(false, false)).toBe("home");
 });
+
+test("uses the shared item list for the theme library", async () => {
+  const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+  const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+  expect(html).toContain('<hiraya-item-list id="theme-list" class="theme-list" list-role="listbox" label="Available themes">');
+  expect(source).toContain('button.dataset.itemId = theme.id;');
+  expect(source).toContain('themeList.addEventListener("hiraya-item-select"');
+  expect(source).not.toContain("moveThemeFocus");
+});

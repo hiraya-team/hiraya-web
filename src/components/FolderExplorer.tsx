@@ -8,9 +8,9 @@ import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
-import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
+import { ItemList } from "./ItemList";
 
 export interface FolderExplorerProps {
   folder: FolderEntry | null;
@@ -50,12 +50,8 @@ type DragState = {
   startX: number;
   startY: number;
   moved: boolean;
-  pointerType: string;
-  longPressed: boolean;
-  longPressTimer?: number;
   preview?: PointerDragPreview | null;
   snapPreview?: HTMLElement | null;
-  readOnly: boolean;
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
@@ -64,8 +60,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 
 export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
   const drag = useRef<DragState | null>(null);
-  const suppressClick = useRef(false);
-  const lastTap = useRef<TouchTap | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -76,7 +70,6 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
 
   useEffect(
     () => () => {
-      if (drag.current?.longPressTimer) window.clearTimeout(drag.current.longPressTimer);
       removePointerDragPreview(drag.current?.preview);
       drag.current?.snapPreview?.remove();
     },
@@ -97,41 +90,21 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, entry: DesktopEntry) {
-    if (event.button !== 0) return;
+    if (event.button !== 0 || readOnly || isEntryReadOnly(entry)) return;
     drag.current = {
       entry,
       pointerId: event.pointerId,
       startX: event.clientX,
       startY: event.clientY,
       moved: false,
-      pointerType: event.pointerType,
-      longPressed: false,
-      readOnly: readOnly || isEntryReadOnly(entry),
     };
-    if (event.pointerType === "touch" && !isEntryReadOnly(entry)) {
-      drag.current.longPressTimer = window.setTimeout(() => {
-        const current = drag.current;
-        if (!current || current.pointerId !== event.pointerId || current.moved) return;
-        current.longPressTimer = undefined;
-        current.longPressed = true;
-        lastTap.current = null;
-        onContextMenu(entry, event.clientX, event.clientY, "sheet");
-      }, 500);
-    }
-    if (drag.current.readOnly) return;
     event.currentTarget.setPointerCapture(event.pointerId);
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
-    if (current.readOnly) {
-      if (Math.hypot(event.clientX - current.startX, event.clientY - current.startY) >= 5) current.moved = true;
-      return;
-    }
     if (!current.moved && Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
-    if (current.longPressTimer) window.clearTimeout(current.longPressTimer);
-    current.longPressTimer = undefined;
     current.moved = true;
     event.currentTarget.dataset.dragging = "true";
     current.preview ??= createPointerDragPreview(event.currentTarget, event.clientX, event.clientY);
@@ -157,46 +130,14 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
     const current = drag.current;
     if (!current || current.pointerId !== event.pointerId) return;
     drag.current = null;
-    if (current.longPressTimer) window.clearTimeout(current.longPressTimer);
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
     delete event.currentTarget.dataset.dragging;
     removePointerDragPreview(current.preview);
     current.snapPreview?.remove();
 
-    if (current.readOnly && current.pointerType !== "touch") return;
-    if (current.moved && !current.readOnly) {
-      suppressClick.current = true;
-      window.setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
+    if (current.moved) {
       const target = cancelled ? null : entryDropTargetAt(event.clientX, event.clientY, current.entry.id);
       if (target) onMove(current.entry, target, { clientX: event.clientX, clientY: event.clientY });
-    } else if (current.pointerType === "touch") {
-      suppressClick.current = true;
-      window.setTimeout(() => {
-        suppressClick.current = false;
-      }, 0);
-      const releasedAt = performance.now();
-      const tap = {
-        id: current.entry.id,
-        x: event.clientX,
-        y: event.clientY,
-        at: releasedAt,
-      };
-      const { action, nextTap } = resolveTouchRelease(lastTap.current, tap, {
-        cancelled,
-        moved: current.moved,
-        longPressed: current.longPressed,
-        releasedOnIcon: event.currentTarget.contains(document.elementFromPoint(event.clientX, event.clientY)),
-      });
-      lastTap.current = nextTap;
-      if (action === "select")
-        onSelect(current.entry, {
-          toggle: mobileMultiSelect,
-          range: false,
-          orderedIds,
-        });
-      else if (action === "open") open(current.entry);
     }
     highlightEntryDropTarget(null);
   }
@@ -360,8 +301,15 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
             </button>
           </div>
         ) : (
-          <div className="folder-explorer__list" data-view={view} aria-label={`Contents of ${folder?.name ?? rootLabel}`}>
-            {view === "list" && (
+          <ItemList items={orderedChildren} getId={(entry) => entry.id} label={`Contents of ${folder?.name ?? rootLabel}`} role="listbox" multiselectable layout={view} className="folder-explorer__list" onSelect={(entry, detail) => onSelect(entry, {
+            toggle: detail.presentation === "sheet" ? mobileMultiSelect : detail.toggle,
+            range: detail.range,
+            orderedIds,
+          })} onActivate={open} onContextMenu={(entry, detail) => {
+            if (isEntryReadOnly(entry)) return;
+            if (!selectedIds.has(entry.id)) onSelect(entry, { toggle: false, range: false, orderedIds });
+            onContextMenu(entry, detail.clientX, detail.clientY, detail.presentation);
+          }} leading={view === "list" && (
               <div className="folder-explorer__columns">
                 <span aria-hidden="true" />
                 <button type="button" aria-label={sortActionLabel("name", sortKey, sortDirection)} data-active={sortKey === "name" || undefined} data-direction={sortKey === "name" ? sortDirection : undefined} onClick={() => chooseSort("name")}>
@@ -377,78 +325,20 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                   Size
                 </button>
               </div>
-            )}
-            {orderedChildren.map((entry) => (
+            )} renderItem={(entry, { itemProps }) => (
               <button
+                {...itemProps}
                 className="folder-explorer__row"
                 data-entry-id={entry.id}
                 key={entry.id}
                 type="button"
-                aria-pressed={selectedIds.has(entry.id)}
+                role="option"
+                aria-selected={selectedIds.has(entry.id)}
                 aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability[entry.id] ? `, ${offlineStatusLabel(offlineAvailability[entry.id])}` : ""}`}
                 data-selected={selectedIds.has(entry.id) || undefined}
                 data-folder-target={entry.kind === "folder" ? entry.id : undefined}
                 data-entry-drop-parent={entry.kind === "folder" && !isEntryReadOnly(entry) ? entry.id : undefined}
-                onClick={(event) => {
-                  if (suppressClick.current) {
-                    suppressClick.current = false;
-                    return;
-                  }
-                  onSelect(entry, {
-                    toggle: event.metaKey || event.ctrlKey,
-                    range: event.shiftKey,
-                    orderedIds,
-                  });
-                }}
-                onDoubleClick={() => {
-                  if (allowsMouseDoubleClick(performance.now())) open(entry);
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") open(entry);
-                  else if (["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-                    const rows = Array.from(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(".folder-explorer__row") ?? []);
-                    const index = rows.indexOf(event.currentTarget);
-                    const target = event.key === "Home" ? rows[0] : event.key === "End" ? rows.at(-1) : rows[index + (event.key === "ArrowUp" ? -1 : 1)];
-                    if (target) {
-                      event.preventDefault();
-                      target.focus();
-                    }
-                  } else if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
-                    event.preventDefault();
-                    if (!selectedIds.has(entry.id))
-                      onSelect(entry, {
-                        toggle: false,
-                        range: false,
-                        orderedIds,
-                      });
-                    const bounds = event.currentTarget.getBoundingClientRect();
-                    if (!isEntryReadOnly(entry)) onContextMenu(entry, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2, "menu");
-                  }
-                }}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  if (isEntryReadOnly(entry)) return;
-                  const current = drag.current;
-                  const action = contextMenuPressAction(current);
-                  if (action !== "open") {
-                    if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
-                    if (current) current.longPressTimer = undefined;
-                    return;
-                  }
-                  if (current?.longPressTimer) window.clearTimeout(current.longPressTimer);
-                  if (current) {
-                    current.longPressTimer = undefined;
-                    current.longPressed = true;
-                    lastTap.current = null;
-                  }
-                  if (!selectedIds.has(entry.id))
-                    onSelect(entry, {
-                      toggle: false,
-                      range: false,
-                      orderedIds,
-                    });
-                  onContextMenu(entry, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
-                }}
+                data-item-context={isEntryReadOnly(entry) ? undefined : ""}
                 onDragOver={
                   entry.kind === "folder" && !readOnly && !isEntryReadOnly(entry)
                     ? (event) => {
@@ -494,8 +384,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                 </time>}
                 <span className="folder-explorer__size">{formatEntrySize(entry)}</span>
               </button>
-            ))}
-          </div>
+            )} />
         )}
       </div>
     </div>

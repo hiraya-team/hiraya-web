@@ -71,6 +71,26 @@
   background: var(--hiraya-surface, #1b3029);
 }
 
+:where(hiraya-item-list) {
+  display: grid;
+  min-inline-size: 0;
+  gap: var(--hiraya-item-list-gap, 0);
+}
+
+:where(hiraya-item-list [data-item-id]) {
+  min-inline-size: 0;
+}
+
+:where(hiraya-item-list [data-item-reorder-handle]) {
+  touch-action: none;
+}
+
+:where(hiraya-item-list [data-item-dragging]) {
+  position: relative;
+  z-index: 1;
+  will-change: transform;
+}
+
 :where(.hiraya-sr-only) {
   position: absolute;
   width: 1px;

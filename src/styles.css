@@ -197,6 +197,7 @@
 .publication-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .published-items { display: grid; gap: 8px; }
 .published-items > strong { font-size: 12px; }
+.published-items__list { gap: 8px; }
 .publication-warning, .publication-preview { margin: 0; padding: 10px; border: 1px solid color-mix(in srgb, var(--theme-accent, #dca846) 34%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--theme-accent, #dca846) 9%, transparent); }
 .publication-warning { color: var(--theme-text, #17211f); font-size: 12px; line-height: 1.45; }
 .publication-preview { display: grid; min-width: 0; gap: 4px; }
@@ -1525,6 +1526,10 @@
 }
 
 .settings-row + .settings-row {
+  border-top: 1px solid #d1d3cc;
+}
+
+.settings-list > hiraya-item-list + hiraya-item-list {
   border-top: 1px solid #d1d3cc;
 }
 
@@ -3556,7 +3561,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .desktop-settings__row { display: grid; min-height: 68px; grid-template-columns: 38px minmax(0, 1fr) auto auto; align-items: center; gap: 7px; padding: 8px 10px 8px 6px; }
 .desktop-settings__row + .desktop-settings__row { border-top: var(--theme-border-width) solid var(--theme-border); }
 .desktop-settings__row[data-active] { background: var(--theme-selected); }
-.desktop-settings__row[data-dragging] { position: relative; z-index: 1; background: color-mix(in srgb, var(--theme-accent) 13%, var(--theme-window)); box-shadow: var(--theme-elevation-1); }
+.desktop-settings__row[data-item-dragging] { position: relative; z-index: 1; background: color-mix(in srgb, var(--theme-accent) 13%, var(--theme-window)); box-shadow: var(--theme-elevation-1); }
 .desktop-settings__drag { display: grid; width: 38px; height: 44px; place-items: center; padding: 0; border: 0; color: var(--theme-text-muted); background: transparent; cursor: grab; touch-action: none; }
 .desktop-settings__drag:active { cursor: grabbing; }
 .desktop-settings__drag:disabled { cursor: default; opacity: .35; }
@@ -4495,7 +4500,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .sync-issues-panel__group { margin-top: 20px; }
 .sync-issues-panel__group h3,
 .keyboard-shortcuts-panel__groups h3 { color: var(--theme-text-muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; }
-.sync-issues-panel__group ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.sync-issues-panel__records { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .sync-issues-panel__record { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px; border: var(--theme-border-width) solid var(--theme-border); border-radius: var(--theme-radius-small); background: var(--theme-window-muted); }
 .sync-issues-panel__actions { display: flex; gap: 6px; }
 

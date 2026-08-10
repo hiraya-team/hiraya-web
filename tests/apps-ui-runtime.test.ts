@@ -23,7 +23,7 @@ describe("host apps UI runtime", () => {
     expect(defined).toEqual([
       "hiraya-button", "hiraya-badge", "hiraya-toolbar", "hiraya-panel", "hiraya-status-bar", "hiraya-empty-state", "hiraya-loading-state",
       "hiraya-notice", "hiraya-dialog", "hiraya-confirm-dialog", "hiraya-popover", "hiraya-menu-item", "hiraya-menu",
-      "hiraya-submenu", "hiraya-action-sheet", "hiraya-selection-toolbar", "hiraya-image-viewer",
+      "hiraya-submenu", "hiraya-action-sheet", "hiraya-selection-toolbar", "hiraya-image-viewer", "hiraya-item-list",
     ]);
     expect(runtime.script).not.toMatch(/\b(?:fetch|XMLHttpRequest|WebSocket|EventSource)\b/);
     expect(runtime.script).toContain("hiraya-app");
