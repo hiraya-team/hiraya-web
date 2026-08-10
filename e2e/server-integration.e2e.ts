@@ -158,9 +158,9 @@ async function inspectProtectedLayout(page: Page) {
   await settings.getByRole("checkbox", { name: /Show hidden files/ }).check();
   await settings.getByRole("button", { name: "Close Settings" }).click();
   await page.getByRole("button", { name: ".hiraya, folder", exact: true }).dblclick();
-  await page.getByRole("dialog", { name: ".hiraya" }).getByRole("button", { name: "desktop, folder" }).dblclick();
-  await page.getByRole("dialog", { name: "desktop" }).getByRole("button", { name: "settings, folder" }).dblclick();
-  await page.getByRole("dialog", { name: "settings" }).getByRole("button", { name: "layout.json, application/json" }).dblclick();
+  await page.getByRole("dialog", { name: ".hiraya" }).getByRole("option", { name: "desktop, folder" }).dblclick();
+  await page.getByRole("dialog", { name: "desktop" }).getByRole("option", { name: "settings, folder" }).dblclick();
+  await page.getByRole("dialog", { name: "settings" }).getByRole("option", { name: "layout.json, application/json" }).dblclick();
   const layout = page.getByRole("dialog", { name: "layout.json" });
   await expect(layout.locator(".cm-content")).toContainText("gridSize");
   await expect(layout.locator(".cm-content")).toHaveAttribute("contenteditable", "false");
