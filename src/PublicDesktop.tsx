@@ -371,7 +371,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
             </div>
           </div>
         )}
-        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} onOpen={openEntry} /></div>}
+        {desktop && wholeDesktop && <div className="desktop-area-stage desktop-area-stage--shell-items public-shell-items"><ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} selectedIds={selectedIds} onSelectEntry={(_folderId, entry) => selectEntry(entry)} onOpen={openEntry} /></div>}
         {open && (
           <div className="app-window-layer">
             <AppWindow

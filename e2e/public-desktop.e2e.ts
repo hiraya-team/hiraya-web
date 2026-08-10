@@ -168,7 +168,11 @@ test("whole public desktops render widgets and folder-backed groups read only", 
   await expect(page.getByText("Shared desktop", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Published work public desktop").getByText("Read only", { exact: true })).toBeVisible();
   const group = page.locator(".shell-item", { hasText: "Reference" });
-  await expect(group.getByRole("button", { name: "Open Inside.txt" })).toBeVisible();
+  await expect(group.getByRole("listbox", { name: "Contents of Reference" })).not.toHaveAttribute("aria-multiselectable");
+  const childOption = group.getByRole("option", { name: "Inside.txt, text/plain" });
+  await expect(childOption).toBeVisible();
+  await childOption.click();
+  await expect(childOption).toHaveAttribute("aria-selected", "true");
   await expect(group.getByRole("button", { name: "Open in Explorer" })).toBeVisible();
   await expect(group.getByRole("button", { name: "Move Reference" })).toBeDisabled();
   await expect(group.getByRole("button", { name: "Resize Reference" })).toHaveCount(0);

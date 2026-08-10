@@ -216,6 +216,10 @@ function fileDialogEntryElement(id: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
 }
 
+function iconGroupSelectionScope(folderId: string) {
+  return `icon-group:${folderId}`;
+}
+
 function formatImportBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
@@ -718,7 +722,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const hasVirtualSelection = selectedIds.some(isProtectedShellEntry);
   const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
-  const mobileFileSurface = focusedExplorer?.id ?? "desktop";
+  const mobileFileSurface = focusedExplorer?.id ?? (selectionScope.startsWith("icon-group:") ? selectionScope : "desktop");
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
   const mobileSelectionMode = mobileMultiSelectScope === mobileFileSurface && selectionScope === mobileFileSurface;
   const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !focusedExplorer?.transient && !hasVirtualSelection && !contextMenu && Boolean(activeDesktopId);
@@ -5549,7 +5553,31 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   areaSize={iconArea}
                   status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
                   loadPreview={thumbnailFile}
-                  onOpen={handleOpen}
+                  selectedIds={selectionScope.startsWith("icon-group:") ? selectedIdSet : undefined}
+                  onOpen={(entry) => {
+                    replaceSelection("desktop", []);
+                    handleOpen(entry);
+                  }}
+                  onSelectEntry={(folderId, entry, options) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    const { presentation, ...selectionOptions } = options;
+                    selectEntry(scope, entry, { ...selectionOptions, toggle: presentation === "sheet" ? mobileMultiSelectScope === scope : selectionOptions.toggle });
+                  }}
+                  onEntryContextMenu={(folderId, entry, x, y, presentation) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    if (selectionScope !== scope || !selectedIdSet.has(entry.id)) replaceSelection(scope, [entry.id]);
+                    openEntryContextMenu(entry.id, x, y, presentation);
+                  }}
+                  onMoveEntry={(folderId, entry, destination, point) => {
+                    if (!canMutateShellDrop(entry, destination.parentId)) return;
+                    const scope = iconGroupSelectionScope(folderId);
+                    const items = selectionScope === scope && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
+                    void (destination.desktop
+                      ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
+                      : handleMoveTo(items, destination.parentId));
+                  }}
+                  getDesktopDropPreview={positionAtDesktopPoint}
+                  isEntryReadOnly={isProtectedShellEntry}
                   onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
                   onMoveWidget={(widget, position) => updateWidget(widget, position)}
                   onResizeWidget={(widget, size) => updateWidget(widget, size)}

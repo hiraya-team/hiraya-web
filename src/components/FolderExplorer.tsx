@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CaretRight, DotsThreeVertical, FilePlus, Folder, FolderOpen, FolderPlus, ListBullets, MagnifyingGlass, SortAscending, SortDescending, SquaresFour, UploadSimple, X } from "@phosphor-icons/react";
 import type { DesktopEntry, EntryPosition, FolderEntry } from "../types";
@@ -8,8 +8,8 @@ import type { AppWindowHeaderElements } from "./AppWindow";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { AvailabilityBadge, EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
-import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
-import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
+import type { EntryDropDestination } from "../ui/entry-drop-target";
+import { useEntryPointerDrag } from "../ui/use-entry-pointer-drag";
 import { ItemList } from "./ItemList";
 
 export interface FolderExplorerProps {
@@ -44,22 +44,11 @@ export interface FolderExplorerProps {
   protectedStatus?: { message: string; error?: boolean; onRetry?: () => void };
 }
 
-type DragState = {
-  entry: DesktopEntry;
-  pointerId: number;
-  startX: number;
-  startY: number;
-  moved: boolean;
-  preview?: PointerDragPreview | null;
-  snapPreview?: HTMLElement | null;
-};
-
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
 export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
-  const drag = useRef<DragState | null>(null);
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -68,13 +57,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
   const orderedIds = orderedChildren.map((item) => item.id);
   const trail = folder && breadcrumbs.at(-1)?.id !== folder.id ? [...breadcrumbs, folder] : breadcrumbs;
 
-  useEffect(
-    () => () => {
-      removePointerDragPreview(drag.current?.preview);
-      drag.current?.snapPreview?.remove();
-    },
-    [],
-  );
+  const entryDrag = useEntryPointerDrag({ disabled: (entry) => readOnly || isEntryReadOnly(entry), onMove, getDesktopDropPreview });
 
   function open(entry: DesktopEntry) {
     if (entry.kind === "folder") onNavigate(entry);
@@ -87,59 +70,6 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
       setSortKey(key);
       setSortDirection("asc");
     }
-  }
-
-  function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>, entry: DesktopEntry) {
-    if (event.button !== 0 || readOnly || isEntryReadOnly(entry)) return;
-    drag.current = {
-      entry,
-      pointerId: event.pointerId,
-      startX: event.clientX,
-      startY: event.clientY,
-      moved: false,
-    };
-    event.currentTarget.setPointerCapture(event.pointerId);
-  }
-
-  function handlePointerMove(event: React.PointerEvent<HTMLButtonElement>) {
-    const current = drag.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    if (!current.moved && Math.hypot(event.clientX - current.startX, event.clientY - current.startY) < 5) return;
-    current.moved = true;
-    event.currentTarget.dataset.dragging = "true";
-    current.preview ??= createPointerDragPreview(event.currentTarget, event.clientX, event.clientY);
-    if (current.preview) movePointerDragPreview(current.preview, event.clientX, event.clientY);
-    const dropTarget = entryDropTargetAt(event.clientX, event.clientY, current.entry.id);
-    highlightEntryDropTarget(dropTarget?.element ?? null);
-    if (dropTarget?.desktop && getDesktopDropPreview) {
-      current.snapPreview ??= document.createElement("span");
-      current.snapPreview.className = "file-icon-snap-preview entry-drop-preview";
-      current.snapPreview.ariaHidden = "true";
-      current.snapPreview.dataset.visible = "true";
-      if (!current.snapPreview.isConnected) dropTarget.element.append(current.snapPreview);
-      const position = getDesktopDropPreview(event.clientX, event.clientY);
-      current.snapPreview.style.left = `${position.x}px`;
-      current.snapPreview.style.top = `${position.y}px`;
-    } else {
-      current.snapPreview?.remove();
-      current.snapPreview = null;
-    }
-  }
-
-  function finishPointer(event: React.PointerEvent<HTMLButtonElement>, cancelled = false) {
-    const current = drag.current;
-    if (!current || current.pointerId !== event.pointerId) return;
-    drag.current = null;
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    delete event.currentTarget.dataset.dragging;
-    removePointerDragPreview(current.preview);
-    current.snapPreview?.remove();
-
-    if (current.moved) {
-      const target = cancelled ? null : entryDropTargetAt(event.clientX, event.clientY, current.entry.id);
-      if (target) onMove(current.entry, target, { clientX: event.clientX, clientY: event.clientY });
-    }
-    highlightEntryDropTarget(null);
   }
 
   const previousFolder = trail.length > 1 ? trail.at(-2)! : null;
@@ -364,11 +294,11 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
                       }
                     : undefined
                 }
-                onPointerDown={(event) => handlePointerDown(event, entry)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={(event) => finishPointer(event)}
-                onPointerCancel={(event) => finishPointer(event, true)}
-                onLostPointerCapture={(event) => finishPointer(event, true)}
+                onPointerDown={(event) => entryDrag.onPointerDown(event, entry)}
+                onPointerMove={entryDrag.onPointerMove}
+                onPointerUp={(event) => entryDrag.finishPointer(event)}
+                onPointerCancel={(event) => entryDrag.finishPointer(event, true)}
+                onLostPointerCapture={(event) => entryDrag.finishPointer(event, true)}
               >
                 <span className="folder-explorer__entry-icon">
                   <EntryArtwork entry={entry} size={24} loadPreview={loadPreview} />
