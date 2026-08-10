@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Recover layout synchronization automatically.** Concurrent desktop layout changes now reconcile instead of repeatedly showing the same **Sync Issue**, and wallpaper previews no longer create duplicate saves.
 - **Drop files into folders while arranging icons.** Desktop folders now stay available as drop targets while **Auto-arrange while dragging** moves nearby files out of the way.
 - **Apply themes when selected.** Choosing a theme in **Theme Editor** now applies it to the desktop immediately and preserves the choice after reload while keeping its controls ready for editing.
 - **Use consistent item lists.** Lists across Explorer, Settings, Applications, sharing, Trash, Theme Editor, and Integrated Editor now share predictable sorting, keyboard movement, touch actions, and drag ordering where ordering is available.
