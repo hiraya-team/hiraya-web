@@ -27,6 +27,7 @@ export type InspectedStorePackage = Readonly<{ archive: Blob; inspection: AppPac
 export type LoadedStorePackages = Readonly<{ packages: StorePackage[]; managed: boolean; descriptor: AppStoreDescriptor | null }>;
 
 const SYSTEM_APP_ID_SET = RESERVED_SYSTEM_APP_IDS;
+let cachedCatalog: { key: string; value: Promise<ReturnType<typeof parseAppCatalog>> } | null = null;
 
 function parseDescriptor(value: unknown): AppStoreDescriptor | null {
   if (!value || typeof value !== "object") return null;
@@ -64,13 +65,23 @@ export async function loadStorePackages(desktop: DesktopIdentity, directBlobOrig
   if (!catalogEntry) return { managed: false, descriptor, packages: files
     .filter((entry) => entry.name.toLowerCase().endsWith(".hiraya.app"))
     .map((entry) => ({ source: "remote", kind: "store", entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id })) };
-  const catalog = parseAppCatalog(JSON.parse(await (await downloadRemoteEntry(state.id, catalogEntry, directBlobOrigin)).text()));
+  const catalog = await loadAppCatalog(state.catalogId, state.id, catalogEntry, directBlobOrigin);
   if (catalog.releases.some((release) => release.kind === "system" && !SYSTEM_APP_ID_SET.has(release.manifest.id))) throw new Error("The app catalog contains an unsupported trusted system app.");
   return { managed: true, descriptor, packages: catalog.releases.map((release) => {
     const entry = files.find((entry) => entry.parentId === null && entry.name === release.fileName);
     if (!entry || entry.size !== release.size) throw new Error(`The app catalog release ${release.fileName} is unavailable.`);
     return { source: "remote" as const, kind: release.kind, release, entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id };
   }) };
+}
+
+function loadAppCatalog(catalogId: string, desktopId: string, entry: RemoteEntry & FileEntry, directBlobOrigin: string) {
+  const key = JSON.stringify([catalogId, desktopId, entry.id, entry.contentRevision, entry.size, directBlobOrigin]);
+  if (cachedCatalog?.key === key) return cachedCatalog.value;
+  const value = downloadRemoteEntry(desktopId, entry, directBlobOrigin)
+    .then(async (content) => parseAppCatalog(JSON.parse(await content.text())));
+  cachedCatalog = { key, value };
+  void value.catch(() => { if (cachedCatalog?.value === value) cachedCatalog = null; });
+  return value;
 }
 
 export async function appStoreDescriptorIsCurrent(expected: AppStoreDescriptor) {
