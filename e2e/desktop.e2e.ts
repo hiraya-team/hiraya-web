@@ -271,6 +271,37 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   }).toEqual([0, 0, 0, 0]);
 });
 
+test("auto-arrange keeps folders available as desktop drop targets", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const folderName = `arrange-drop-folder-${stamp}`;
+  const fileName = `arrange-drop-file-${stamp}.txt`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".desktop").click({ position: { x: 600, y: 300 } });
+  await fileActions.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  const folder = page.locator(".file-icon").filter({ hasText: folderName });
+  const file = page.locator(".file-icon").filter({ hasText: fileName });
+  const folderBounds = await folder.boundingBox();
+  if (!folderBounds) throw new Error("The destination folder is not visible.");
+  await beginDragPointerTo(page, file, folderBounds.x + folderBounds.width / 2, folderBounds.y + folderBounds.height / 2);
+  await expect(folder).toHaveAttribute("data-internal-drop-target", "true");
+  await page.mouse.up();
+  await expect(file).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden();
+  await folder.dblclick();
+  await expect(page.getByRole("dialog", { name: folderName }).locator(".folder-explorer__row").filter({ hasText: fileName })).toBeVisible();
+});
+
 test("auto-arrange while dragging defaults on and persists an opt-out", async ({ page }) => {
   await openLocalDesktop(page);
   const openDesktopSettings = async () => {
@@ -1333,6 +1364,30 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
   await expect.poll(() => mobileFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await mobileContext.close();
+});
+
+test("Theme Editor applies a selected theme and preserves it after reload", async ({ page, browser }) => {
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Theme Editor/ }).click();
+
+  const frame = page.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
+  await frame.getByRole("option", { name: /Warm Paper/ }).click();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "warm-paper");
+
+  const mobileContext = await browser.newContext({ ...devices["Pixel 7"] });
+  const mobilePage = await mobileContext.newPage();
+  await openLocalDesktop(mobilePage);
+  await mobilePage.getByRole("button", { name: /Start; account, system, and applications/ }).tap();
+  await mobilePage.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).tap();
+  await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Theme Editor/ }).tap();
+  await mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe").getByRole("option", { name: /Midnight Glass/ }).tap();
+  await expect(mobilePage.locator(".desktop-shell")).toHaveAttribute("data-theme", "midnight-glass");
   await mobileContext.close();
 });
 
