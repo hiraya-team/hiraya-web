@@ -1034,7 +1034,7 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await openLocalDesktop(page);
   const desktop = page.locator(".desktop");
 
-  await desktop.click({ button: "right", position: { x: 420, y: 220 } });
+  await desktop.click({ button: "right", position: { x: 260, y: 220 } });
   const desktopMenu = page.getByRole("menu", { name: "Create and desktop actions" });
   await desktopMenu.getByRole("menuitem", { name: "Add widget" }).click();
   await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
@@ -1074,6 +1074,10 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await dragPointerTo(page, resizeClock, resizeBounds.x + resizeBounds.width / 2, resizeBounds.y + resizeBounds.height / 2 + 48);
   await expect.poll(async () => (await clock.boundingBox())?.width).toBe(beforeVerticalResize.width);
   await expect.poll(async () => (await clock.boundingBox())?.height ?? 0).toBeGreaterThan(beforeVerticalResize.height);
+  const horizontalResizeBounds = await resizeClock.boundingBox();
+  if (!horizontalResizeBounds) throw new Error("The clock resize control is not visible.");
+  await dragPointerTo(page, resizeClock, horizontalResizeBounds.x + horizontalResizeBounds.width / 2 + 280, horizontalResizeBounds.y + horizontalResizeBounds.height / 2);
+  await expect.poll(async () => (await clock.boundingBox())?.width ?? 0).toBeGreaterThan(beforeVerticalResize.width + 200);
   const resizedClockBounds = await clock.boundingBox();
   if (!resizedClockBounds) throw new Error("The resized clock is not visible.");
 
@@ -1108,8 +1112,10 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   const afterSelection = await reloadedClockContent.screenshot();
   expect(afterSelection.equals(beforeSelection)).toBe(true);
   await expect(page.locator(".shell-item", { has: page.getByRole("button", { name: `Move ${groupName}` }) })).toBeVisible();
+  const desktopGeometry = await reloadedClock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y"), width: element.style.width, height: element.style.height }));
 
   await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => reloadedClock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y"), width: element.style.width, height: element.style.height }))).toEqual(desktopGeometry);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   const results = await new AxeBuilder({ page }).include(".desktop").analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
@@ -1132,6 +1138,7 @@ test("mobile non-home widgets stop moving when the area transition settles", asy
   await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
   const clock = page.locator(".shell-item", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
   await expect(clock).toBeVisible();
+  const widgetGeometry = await clock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y"), width: element.style.width, height: element.style.height }));
 
   await trigger.tap();
   await switcher.getByRole("button", { name: /^Home, area/ }).tap();
@@ -1145,6 +1152,7 @@ test("mobile non-home widgets stop moving when the area transition settles", asy
   await expect(clock).toBeVisible();
   await expect(widgetTrack).toHaveCSS("transition-duration", "0s");
   await expect(widgetTrack).toHaveCSS("transform", "none");
+  await expect(clock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y"), width: element.style.width, height: element.style.height }))).resolves.toEqual(widgetGeometry);
   await context.close();
 });
 

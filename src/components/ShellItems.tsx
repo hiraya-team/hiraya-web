@@ -72,7 +72,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, widget 
   children: ReactNode;
   onDrop?: (dataTransfer: DataTransfer) => void;
 }) {
-  const bounds = clampShellItemBounds(position, width, height, areaSize);
+  const bounds = { x: position.x, y: position.y, width, height };
   const ref = useRef<HTMLElement>(null);
   const previewRef = useRef<HTMLSpanElement>(null);
   const desktopRef = useRef<HTMLElement | null>(null);
