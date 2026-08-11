@@ -4,6 +4,7 @@ import { API_ROUTES, authenticatedHeaders } from "./api-routes";
 import { assertValidId, isRecord, parseContentAccessDescriptor, parseEntries, parseLayout, parsePosition, parseRemoteDesktopState, parseRootEntryPositionUpdates, parseSystemEntriesDocument, parseSystemEntryDocument, parseTrashDeleteResult, parseTrashDocument, parseTrashRestoreResult, systemEntryPath, type ContentAccessExpectations, type RemoteDesktopState, type RemoteEntry, type SystemEntriesDocument, type SystemEntry, type SystemRole, type TrashDeleteResult, type TrashDocument, type TrashEntry, type TrashRestoreResult } from "./contracts";
 import type { DesktopEntry, DesktopIdentity, DesktopLayout, RootEntryPositionUpdate, EditorSettings, EntryPosition, FileEntry, FolderEntry } from "../types";
 import { DEFAULT_WALLPAPER } from "../types";
+import { importedFileMimeType } from "../domain/scene";
 import type { OutboxOperation, OutboxRecord } from "./outbox";
 import { ACCESS_REVOKED_ERROR, desktopPendingOperationProtection, forceRebaseOutboxOperation, isAccessRevocationRecord, isRevisionConflictRecord, mergeDesktopLayout, outboxCausalKeys, outboxDesktopRetentionIds, outboxOperationDesktopIds, resolveOutboxRevisionConflict, type EntryConflictBase, type RevisionConflictDetails } from "./outbox";
 import { parseCustomTheme, parseThemeState } from "./themes";
@@ -1064,7 +1065,7 @@ export class SyncEngine {
       if (names.slice(0, index).some((candidate) => namesMatch(candidate, name))) throw new Error(`The upload contains more than one file named “${name}”.`);
     }
     const createdAt = Date.now();
-    const entries: FileEntry[] = files.map((file, index) => ({ kind: "file", id: crypto.randomUUID(), name: names[index], parentId, mimeType: file.type || "application/octet-stream", size: file.size, createdAt, modifiedAt: file.lastModified || createdAt, position: parsedPositions[index] }));
+    const entries: FileEntry[] = files.map((file, index) => ({ kind: "file", id: crypto.randomUUID(), name: names[index], parentId, mimeType: importedFileMimeType(file), size: file.size, createdAt, modifiedAt: file.lastModified || createdAt, position: parsedPositions[index] }));
     return this.mutate(() => ({ kind: "create", entries }), (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id) as FileEntry), new Map(entries.map((entry, index) => [entry.id, files[index]])));
   }
 

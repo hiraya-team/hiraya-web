@@ -26,9 +26,11 @@ import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/
 import { withoutDotEntries } from "./ui/hidden-entries";
 import { reservedFileHandler } from "./apps/file-associations";
 import { RuntimeAppActions } from "./features/windows/WindowLayer";
+import { isSceneFile } from "./domain/scene";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
+const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -198,6 +200,8 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   }, [desktop?.layout.iconGroups, desktop?.layout.widgets, desktopEntries, iconArea, iconMetrics, publicEntries, responsive.segments]);
   const minimapSegments = useMemo(() => publicAreaMapSegments(occupiedSegments, activeSegment), [activeSegment, occupiedSegments]);
   const wholeDesktop = !authority.itemAlias;
+  const wallpaperCandidate = desktop?.layout.wallpaper.source.startsWith("file:") ? desktop.entries.find((entry) => entry.id === desktop.layout.wallpaper.source.slice(5)) : null;
+  const wallpaperFile = wallpaperCandidate?.kind === "file" ? wallpaperCandidate : null;
 
   useEffect(() => {
     const surface = desktopRef.current;
@@ -325,7 +329,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         className="desktop public-desktop__surface"
         ref={desktopRef}
         data-loading={!desktop || undefined}
-        data-wallpaper={wallpaper?.source.startsWith("file:") ? "file" : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
+        data-wallpaper={wholeDesktop && wallpaperFile && isSceneFile(wallpaperFile) ? "scene" : wallpaper?.source.startsWith("file:") ? "file" : wallpaper?.source.startsWith("theme:") ? "theme" : (wallpaper?.source ?? "dusk")}
         data-custom-loaded={wallpaperUrl || undefined}
         data-custom-failed={wallpaperFailed || undefined}
         style={
@@ -342,6 +346,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
           const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
           return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicDesktopContent(authority.desktopAlias, undefined, selected.wallpaper.assetId, selected.wallpaper.revision)} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
+        {wholeDesktop && wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperFile.contentRevision} readContent={(file) => fetchPublicFile(authority, file, wallpaperFile.contentRevision)} mode="wallpaper" /></div></Suspense>}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />
         <div
@@ -402,6 +407,11 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               const origin = areaWorldOrigin(owner.segment, iconArea);
               return <div className="desktop-area-segment" key={owner.key} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height }}>
                 <ShellItemLayer widgets={desktop.layout.widgets} groups={desktop.layout.iconGroups} entries={publicEntries} activeSegment={activeSegment} ownerSegment={owner.segment} areaSize={iconArea} readOnly loadPreview={desktop.thumbnailProfile ? loadThumbnail : undefined} selectedIds={selectedIds} onSelectEntry={(_folderId, entry) => selectEntry(entry)} onOpen={openEntry} renderWidget={(widget) => {
+                  if (widget.kind === "scene") {
+                    const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                    const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;
+                    return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={contentRevision} readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} mode="widget" /></Suspense>;
+                  }
                   if (widget.kind !== "todo") return null;
                   const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
                   const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;

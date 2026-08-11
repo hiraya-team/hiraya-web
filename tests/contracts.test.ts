@@ -3,6 +3,7 @@ import { parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, pars
 import { remoteDesktopState } from "./fixtures";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import { BUILTIN_THEMES } from "../src/lib/themes";
+import { HIRAYA_SCENE_MIME_TYPE, MAX_SCENE_BYTES } from "../src/domain/scene";
 
 describe("contracts", () => {
   test("requires createdAt", () => {
@@ -55,6 +56,8 @@ describe("contracts", () => {
     expect(parseLayout({ ...layout, widgets: [{ id: "todo-1", kind: "todo", fileId: "list-1", x: 10, y: 20, width: 340, height: 300 }] }).widgets[0]).toMatchObject({ kind: "todo", fileId: "list-1" });
     expect(() => parseLayout({ ...layout, widgets: [{ id: "todo-1", kind: "todo", x: 10, y: 20, width: 340, height: 300 }] })).toThrow("file ID");
     expect(() => parseLayout({ ...layout, widgets: [{ ...layout.widgets[0], fileId: "list-1" }] })).toThrow("unsupported format");
+    expect(parseLayout({ ...layout, widgets: [{ id: "scene-1", kind: "scene", fileId: "scene-file", x: 10, y: 20, width: 420, height: 300 }] }).widgets[0]).toMatchObject({ kind: "scene", fileId: "scene-file" });
+    expect(() => parseLayout({ ...layout, widgets: [{ id: "scene-1", kind: "scene", fileId: "../scene", x: 10, y: 20, width: 420, height: 300 }] })).toThrow("Scene widget");
     expect(() => parseLayout({ ...layout, iconGroups: [{ ...layout.iconGroups[0], height: 4097 }] })).toThrow("invalid bounds");
     expect(() => parseRemoteDesktopState({ ...remote, layout })).toThrow("root folder");
   });
@@ -71,12 +74,30 @@ describe("contracts", () => {
   test("requires a custom wallpaper to resolve to an eligible file on the same desktop", () => {
     const remote = remoteDesktopState();
     const wallpaper = { ...DEFAULT_WALLPAPER, source: "file:file-1" as const };
-    expect(() => parseRemoteDesktopState({ ...remote, layout: { ...remote.layout, wallpaper } })).toThrow("JPEG, PNG, or WebP");
+    expect(() => parseRemoteDesktopState({ ...remote, layout: { ...remote.layout, wallpaper } })).toThrow("JPEG, PNG, WebP, or Scene");
     expect(parseRemoteDesktopState({
       ...remote,
       entries: remote.entries.map((entry) => ({ ...entry, name: "wallpaper.webp", mimeType: "image/webp; variant=lossless", size: 4 })),
       layout: { ...remote.layout, wallpaper },
     }).layout.wallpaper).toEqual(wallpaper);
+    expect(parseRemoteDesktopState({
+      ...remote,
+      entries: remote.entries.map((entry) => ({ ...entry, name: "ambient.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE, size: MAX_SCENE_BYTES })),
+      layout: { ...remote.layout, wallpaper },
+    }).layout.wallpaper).toEqual(wallpaper);
+    expect(() => parseRemoteDesktopState({
+      ...remote,
+      entries: remote.entries.map((entry) => ({ ...entry, name: "ambient.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE, size: MAX_SCENE_BYTES + 1 })),
+      layout: { ...remote.layout, wallpaper },
+    })).toThrow("within its size limit");
+  });
+
+  test("requires remote Scene widgets to reference compatible Scene files", () => {
+    const remote = remoteDesktopState();
+    const widget = { id: "scene-1", kind: "scene", fileId: remote.entries[0].id, x: 10, y: 20, width: 420, height: 300 };
+    expect(() => parseRemoteDesktopState({ ...remote, layout: { ...remote.layout, widgets: [widget] } })).toThrow("Scene widget must reference");
+    expect(parseRemoteDesktopState({ ...remote, entries: remote.entries.map((entry) => ({ ...entry, name: "demo.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE, size: 12 })), layout: { ...remote.layout, widgets: [widget] } }).layout.widgets[0]).toMatchObject(widget);
+    expect(parseRemoteDesktopState({ ...remote, layout: { ...remote.layout, widgets: [{ ...widget, fileId: "missing-scene" }] } }).layout.widgets[0]).toMatchObject({ fileId: "missing-scene" });
   });
 
   test("accepts positions only for root entries", () => {

@@ -1,6 +1,7 @@
 import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus, ServiceMethods, ThemeEditorState, WallpaperEditorState } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
+import { isSceneFile } from "../../domain/scene";
 import type { ThemeDefinition } from "../../domain/theme";
 import type { DesktopEntry, EntryPosition, FileEntry, FolderEntry } from "../../types";
 import { projectLogicalPosition, restoreLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";
@@ -219,6 +220,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
           const fileId = source.slice(5);
           const entry = options.getEntries().find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
           if (!entry) throw new HostServiceError("The current wallpaper image is unavailable.", "NOT_FOUND");
+          if (isSceneFile(entry)) return null;
           const blob = await options.fileSync.readFile(fileId);
           return { data: await blob.arrayBuffer(), mimeType: blob.type || entry.mimeType };
         },

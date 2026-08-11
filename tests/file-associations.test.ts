@@ -13,6 +13,7 @@ describe("file association resolution", () => {
   const text = app(SYSTEM_APP_IDS.textEditor, ["text/*"]);
   const generic = app(SYSTEM_APP_IDS.fileViewer, ["application/*", "text/*"]);
   const terminal = app(SYSTEM_APP_IDS.terminal, [".hsh", "text/x-hiraya-shell"]);
+  const scene = app(SYSTEM_APP_IDS.sceneEditor, [".hiraya.scene", "application/vnd.hiraya.scene+zip"]);
 
   test("orders longest compound extension before exact and wildcard MIME", () => {
     expect(associationCandidates({ name: "notes.test.md", mimeType: "text/markdown; charset=utf-8" })).toEqual([".test.md", ".md", "text/markdown", "text/*"]);
@@ -74,5 +75,11 @@ describe("file association resolution", () => {
       expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.textEditor);
       expect(resolveFileApp(file, [terminal, text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.textEditor);
     }
+  });
+
+  test("opens Scene packages in Scene Studio", () => {
+    const file = { name: "ambient.HIRAYA.SCENE", mimeType: "application/vnd.hiraya.scene+zip" };
+    expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.sceneEditor);
+    expect(resolveFileApp(file, [scene, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.sceneEditor);
   });
 });

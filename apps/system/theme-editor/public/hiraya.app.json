@@ -3,7 +3,7 @@
   "uiRuntime": 1,
   "id": "app.hiraya.theme-editor",
   "name": "Theme Editor",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "entrypoint": "index.html",
   "description": "Create, inspect, and apply Hiraya desktop themes.",
   "permissions": ["dialogs", "window", "commands", "theme", "themes:manage"],

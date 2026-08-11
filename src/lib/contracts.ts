@@ -18,6 +18,7 @@ import {
 import { localDesktopIdentity, READ_ONLY_CAPABILITIES } from "./permissions";
 import { isBuiltinThemeId, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme, ThemeState } from "../domain/theme";
+import { HIRAYA_SCENE_MIME_TYPE, isSceneFile, MAX_SCENE_BYTES } from "../domain/scene";
 import { parseAuthorityIdentity } from "./wire-authority";
 
 const EDITOR_LANGUAGES = new Set<EditorLanguage>(["auto", "plain", "markdown", "json", "javascript", "typescript", "jsx", "tsx", "css", "html", "xml", "yaml"]);
@@ -316,8 +317,8 @@ export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpape
   }
   if (!wallpaper.source.startsWith("file:")) return;
   const file = entries.find((entry) => entry.id === wallpaper.source.slice(5));
-  if (!file || file.kind !== "file" || !WALLPAPER_IMAGE_TYPES.has(file.mimeType.split(";", 1)[0].trim().toLowerCase()) || file.size > MAX_WALLPAPER_BYTES) {
-    throw new Error("The custom wallpaper must reference a JPEG, PNG, or WebP file on this desktop no larger than 20 MiB.");
+  if (!file || file.kind !== "file" || !(isSceneFile(file) || WALLPAPER_IMAGE_TYPES.has(file.mimeType.split(";", 1)[0].trim().toLowerCase()) && file.size <= MAX_WALLPAPER_BYTES)) {
+    throw new Error("The custom wallpaper must reference a JPEG, PNG, WebP, or Scene file on this desktop within its size limit.");
   }
 }
 
@@ -342,16 +343,16 @@ function parseWidgets(value: unknown): DesktopWidget[] {
     assertValidId(candidate.id, "A desktop widget has an invalid ID.");
     if (ids.has(candidate.id)) throw new Error("The desktop widgets contain duplicate IDs.");
     ids.add(candidate.id);
-    if (!(["clock", "calendar", "status", "todo"] as unknown[]).includes(candidate.kind)) throw new Error("A desktop widget has an unsupported kind.");
-    if (candidate.kind === "todo") assertValidId(candidate.fileId, "A Todo widget has an invalid file ID.");
+    if (!(["clock", "calendar", "status", "todo", "scene"] as unknown[]).includes(candidate.kind)) throw new Error("A desktop widget has an unsupported kind.");
+    if (candidate.kind === "todo" || candidate.kind === "scene") assertValidId(candidate.fileId, `A ${candidate.kind === "scene" ? "Scene" : "Todo"} widget has an invalid file ID.`);
     else if (candidate.fileId !== undefined) throw new Error("A desktop widget has an unsupported format.");
     const x = readFiniteNumber(candidate.x, "A desktop widget has invalid bounds.");
     const y = readFiniteNumber(candidate.y, "A desktop widget has invalid bounds.");
     const width = readFiniteNumber(candidate.width, "A desktop widget has invalid bounds.");
     const height = readFiniteNumber(candidate.height, "A desktop widget has invalid bounds.");
     if (width <= 0 || width > MAX_LAYOUT_DIMENSION || height <= 0 || height > MAX_LAYOUT_DIMENSION) throw new Error("A desktop widget has invalid bounds.");
-    return candidate.kind === "todo"
-      ? { id: candidate.id, kind: "todo", fileId: candidate.fileId as string, x, y, width, height }
+    return candidate.kind === "todo" || candidate.kind === "scene"
+      ? { id: candidate.id, kind: candidate.kind, fileId: candidate.fileId as string, x, y, width, height }
       : { id: candidate.id, kind: candidate.kind as "clock" | "calendar" | "status", x, y, width, height };
   });
 }
@@ -374,6 +375,14 @@ function parseIconGroups(value: unknown): DesktopIconGroup[] {
 export function assertIconGroupFolders(entries: readonly DesktopEntry[], layout: DesktopLayout) {
   if (layout.iconGroups.some((group) => !entries.some((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null))) {
     throw new Error("A desktop icon group must reference a root folder on the same desktop.");
+  }
+}
+
+export function assertSceneFiles(entries: readonly DesktopEntry[], layout: DesktopLayout) {
+  for (const widget of layout.widgets) {
+    if (widget.kind !== "scene") continue;
+    const file = entries.find((entry) => entry.id === widget.fileId);
+    if (file && (file.kind !== "file" || !isSceneFile(file))) throw new Error(`A Scene widget must reference a ${HIRAYA_SCENE_MIME_TYPE} file on the same desktop no larger than ${MAX_SCENE_BYTES / 1024 / 1024} MiB.`);
   }
 }
 
@@ -643,6 +652,7 @@ export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   const entries = parseEntries(value.entries, true) as RemoteEntry[];
   const layout = parseLayout(value.layout);
   assertIconGroupFolders(entries, layout);
+  assertSceneFiles(entries, layout);
   if (!isRecord(value.appearance) || !Array.isArray(value.appearance.customThemes)) throw new Error("The server appearance has an unsupported format.");
   const customThemes = value.appearance.customThemes.map((candidate) => {
     const theme = parseCustomTheme(candidate);

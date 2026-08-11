@@ -2,6 +2,7 @@ import { strToU8, unzip, zip, type Zippable } from "fflate";
 import type { DesktopEntry } from "../types";
 import { isRecord, isValidId, parseEntries } from "./contracts";
 import { fileFromEntry, readAllDirectoryEntries } from "./file-system-entry";
+import { importedFileMimeType } from "../domain/scene";
 
 export const CLIPBOARD_ARCHIVE_VERSION = 1 as const;
 export const CLIPBOARD_ARCHIVE_MIME_TYPE = "application/vnd.hiraya.entry-archive-v1+zip";
@@ -171,7 +172,7 @@ export async function snapshotFromClipboardItems(items: DataTransferItemList): P
     }
     if (!source.isFile) throw new Error("The clipboard contains an unsupported filesystem item.");
     const file = await fileFromEntry(source as FileSystemFileEntry);
-    entries.push({ kind: "file", id, name: source.name || file.name, parentId, mimeType: file.type || "application/octet-stream", size: file.size, createdAt, modifiedAt: file.lastModified || createdAt, position });
+    entries.push({ kind: "file", id, name: source.name || file.name, parentId, mimeType: importedFileMimeType({ name: source.name || file.name, type: file.type }), size: file.size, createdAt, modifiedAt: file.lastModified || createdAt, position });
     contents.set(id, file);
   }
 

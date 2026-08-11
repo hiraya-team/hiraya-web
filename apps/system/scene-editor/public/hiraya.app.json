@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 2,
+  "uiRuntime": 1,
+  "id": "app.hiraya.scene-editor",
+  "name": "Scene Studio",
+  "version": "1.0.0",
+  "entrypoint": "index.html",
+  "description": "Create, inspect, preview, and edit Hiraya Scene packages.",
+  "permissions": ["files:read", "files:write", "dialogs", "window", "commands"],
+  "fileTypes": [".hiraya.scene", "application/vnd.hiraya.scene+zip"],
+  "window": { "renderWidth": 1080, "renderHeight": 720, "minWidth": 360, "minHeight": 420 }
+}

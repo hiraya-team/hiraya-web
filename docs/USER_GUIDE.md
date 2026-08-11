@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Create and place interactive Scenes.** Open `.hiraya.scene` files in **Scene Studio** to edit packaged HTML, CSS, JavaScript, and assets with an unsaved live preview. Choose **Add widget > Scene...** or **Theme Editor > Choose Hiraya file** to place a Scene as a widget or interactive wallpaper; whole public desktops run the same Scene, while reduced-motion wallpaper falls back to Hiraya Dusk and widgets wait for **Run Scene**.
 - **Avoid false synchronization conflicts.** Rapid queued changes now use their latest saved revision, and changes already matched by the server resolve automatically instead of repeatedly showing a **Sync Issue**.
 - **Edit themes comfortably on mobile.** **Theme Editor** now uses one natural vertical scroll on narrow screens, keeps its theme picker compact, and brings the live preview and touch-friendly controls into reach without nested scrolling.
 - **Close Explorer with Back on mobile.** The upper-left **Back** action and the phone's system Back action now close Explorer instead of opening the desktop root, and another Back action no longer reopens the folder you left.
@@ -172,6 +173,21 @@ Ordinary file and folder opens use these apps by default. `.hiraya.app` remains 
 A file ending in `.hiraya.app` can contain a Hiraya app or an importable desktop theme. Open an app package to review its name, version, and requested permissions. Open a theme package to review and apply its colors, metrics, and optional wallpaper. Unsupported, ambiguous, or malformed packages are rejected.
 
 Theme wallpapers may be static media, looping animation or video, or a sandboxed HTML scene. Hiraya stores packaged wallpaper as a hidden synchronized asset owned by the custom theme; the original package file can be moved or deleted independently. Scene code receives no Hiraya host API, file access, network access, or pointer input, but it can still consume processor and memory resources. Animated and scene wallpapers are replaced by Hiraya Dusk when reduced motion is requested. Public desktops run their selected scene, so published scene source is downloadable and executes for anonymous visitors.
+
+## Authoring Hiraya Scenes {#authoring-scenes}
+
+A `.hiraya.scene` file is a ZIP archive with `hiraya.scene.json` at its root. The manifest uses schema version 1 and names one packaged HTML entrypoint:
+
+```json
+{
+  "schemaVersion": 1,
+  "entrypoint": "index.html"
+}
+```
+
+Open an existing Scene with **Scene Studio**, or launch **Scene Studio** without a file to create a starter package. The file tree can add, rename, or remove text files and import binary assets. The live preview always uses the unsaved in-memory package. Strict validation errors disable the preview but do not prevent saving the draft, so malformed work remains recoverable. If the synchronized file changes while local edits are unsaved, use **Save As** to preserve both versions.
+
+Scene HTML may reference packaged scripts, styles, images, fonts, and media with relative paths. Scene execution has an opaque origin, no network, frames, workers, forms, navigation, Hiraya host APIs, or file access. Scene widgets receive pointer and keyboard input. A Scene wallpaper receives input only in empty desktop space; icons, widgets, windows, and desktop chrome remain above it. The source example under `examples/scene` can be packaged with App CLI 2.2 or opened as a starting reference.
 
 Apps run in opaque-origin sandboxed frames. Hiraya rejects static remote package references, blocks direct network APIs, forms, and top navigation with sandbox and Content Security Policy controls, strips ordinary app links, and terminates an app if its frame loads a different document after boot. Apps can interact with the host only through approved SDK services; there is currently no SDK service for opening an external URL. Browser enforcement is layered rather than perfect network isolation: embedded CSP enforcement and `navigate-to` are not supported by every browser, and a dynamically initiated self-navigation request can begin before the host receives the load event and removes the frame. Permissions can include reading or writing only files and folders you grant, opening pickers, managing the app window, adding command-palette commands, showing notifications, reading the current theme, and using app-specific storage. Account approval is tied to the exact installation generation, package digest, and ordered permission list. Each device independently verifies those values before enabling the app, and approving an update closes every running instance of the old digest before the approval is replaced.
 

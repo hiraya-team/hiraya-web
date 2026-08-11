@@ -2,6 +2,7 @@ import type { DesktopEntry, EntryPosition, FileEntry } from "../types";
 import { parseEntries } from "./contracts";
 import { namesMatch, validateEntryName } from "./entry-validation";
 import { fileFromEntry, readAllDirectoryEntries } from "./file-system-entry";
+import { importedFileMimeType } from "../domain/scene";
 
 export type ImportSource = {
   relativePath: string;
@@ -184,7 +185,7 @@ export function buildImportPlan(
     const position = node.segments.length === 1 ? options.positionForRoot(rootIndex.get(key)!) : { x: 8, y: 8 + siblingIndex * 88 };
     const common = { id: ids.get(key)!, name: node.segments.at(-1)!, parentId, createdAt: now, modifiedAt: node.file?.lastModified || now, position };
     return node.file
-      ? { ...common, kind: "file", mimeType: node.file.type || "application/octet-stream", size: node.file.size }
+      ? { ...common, kind: "file", mimeType: importedFileMimeType(node.file), size: node.file.size }
       : { ...common, kind: "folder" };
   });
   parseEntries([...existing, ...entries]);

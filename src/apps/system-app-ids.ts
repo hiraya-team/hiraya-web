@@ -6,6 +6,7 @@ export const SYSTEM_APP_IDS = {
   fileViewer: "app.hiraya.file-viewer",
   terminal: "app.hiraya.terminal",
   themeEditor: "app.hiraya.theme-editor",
+  sceneEditor: "app.hiraya.scene-editor",
 } as const;
 
 export const RETIRED_SYSTEM_APP_IDS = {
@@ -19,6 +20,7 @@ export const ACTIVE_SYSTEM_APP_IDS = {
   fileViewer: SYSTEM_APP_IDS.fileViewer,
   terminal: SYSTEM_APP_IDS.terminal,
   themeEditor: SYSTEM_APP_IDS.themeEditor,
+  sceneEditor: SYSTEM_APP_IDS.sceneEditor,
 } as const;
 
 export const RESERVED_SYSTEM_APP_IDS: ReadonlySet<string> = new Set([

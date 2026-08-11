@@ -5,6 +5,7 @@ import { reservedFileHandler, type ReservedFileHandler } from "../../apps/file-a
 import { parseInternetShortcut } from "../../lib/internet-shortcut";
 import { withoutDotEntries } from "../../ui/hidden-entries";
 import type { PublicAppRuntime } from "./app-runtime";
+import { isSceneFile } from "../../domain/scene";
 
 export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: ReservedFileHandler; error?: string };
 
@@ -49,6 +50,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
     if (!desktop || !source?.startsWith("file:")) return;
     const file = desktop.entries.find((entry) => entry.id === source.slice(5));
     if (!file || file.kind !== "file") return;
+    if (isSceneFile(file)) return;
     let disposed = false;
     let objectUrl = "";
     const contentRevision = desktop.entries.find((entry) => entry.id === file.id)?.contentRevision ?? 0;

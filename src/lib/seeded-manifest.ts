@@ -1,5 +1,5 @@
 import type { DesktopEntry, DesktopLayout, EditorSettings, FileEntry, FolderEntry } from "../types";
-import { assertIconGroupFolders, assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout } from "./contracts";
+import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout } from "./contracts";
 import { parseThemeState } from "./themes";
 import type { ThemeState } from "../domain/theme";
 
@@ -55,6 +55,7 @@ function readSeeded(value: unknown, portable: boolean): PortableSeededManifest {
   }, true);
   assertWallpaperSource(parsedEntries, layout.wallpaper);
   assertIconGroupFolders(parsedEntries, layout);
+  assertSceneFiles(parsedEntries, layout);
   const entries = parsedEntries.map((entry) => entry.kind === "file"
     ? { ...entry, contentUrl: contentUrls.get(entry.id) as string }
     : entry) as Array<FolderEntry | PortableSeededFileEntry>;

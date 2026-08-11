@@ -18,6 +18,7 @@ import { GettingStartedDialog } from "./components/GettingStartedDialog";
 import { AppPickerDialog } from "./components/AppPickerDialog";
 import { TodoWidget } from "./features/widgets/TodoWidget";
 import { TODO_EXTENSION, TODO_MIME_TYPE } from "./features/widgets/todo-document";
+import { HIRAYA_SCENE_EXTENSION, HIRAYA_SCENE_MIME_TYPE, isSceneFile } from "./domain/scene";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
   createFolder,
@@ -182,6 +183,7 @@ import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE
 import { assertWallpaperSource, parseLayout } from "./lib/contracts";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
+const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type PendingDevicePaste = { parentId: string | null; position?: EntryPosition; error?: string };
@@ -276,7 +278,7 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   const theme = source.startsWith("theme:") ? appearance.customThemes.find((candidate) => candidate.id === source.slice(6) && candidate.wallpaper) : null;
   return {
     wallpaper: layout.wallpaper,
-    currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom image",
+    currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom wallpaper",
     canManage,
     restrictionReason: canManage ? "" : restrictionReason,
   };
@@ -340,6 +342,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
   const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
   const [todoWidgetPosition, setTodoWidgetPosition] = useState<EntryPosition | null>(null);
+  const [sceneWidgetPosition, setSceneWidgetPosition] = useState<EntryPosition | null>(null);
   const [widgetMutationPending, setWidgetMutationPending] = useState(false);
   const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
   const [dialog, setDialog] = useState<DialogState>(null);
@@ -2336,7 +2339,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   useEffect(() => {
     let active = true;
-    if (!wallpaperKey || !wallpaperFileId || !wallpaperFileExists || !wallpaperLoadReady) return;
+    if (!wallpaperKey || !wallpaperFileId || !wallpaperFileExists || !wallpaperLoadReady || wallpaperFile && isSceneFile(wallpaperFile)) return;
     void readFile(wallpaperFileId)
       .then((file) => {
         if (!active) return;
@@ -2350,7 +2353,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return () => {
       active = false;
     };
-  }, [wallpaperFileExists, wallpaperFileId, wallpaperKey, wallpaperLoadReady]);
+  }, [wallpaperFile, wallpaperFileExists, wallpaperFileId, wallpaperKey, wallpaperLoadReady]);
 
   useEffect(
     () => () => {
@@ -2608,8 +2611,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function addWidget(kind: DesktopWidget["kind"], position: EntryPosition) {
-    if (kind === "todo") {
-      setTodoWidgetPosition(position);
+    if (kind === "todo" || kind === "scene") {
+      if (kind === "todo") setTodoWidgetPosition(position);
+      else setSceneWidgetPosition(position);
       setContextMenu(null);
       return;
     }
@@ -2623,6 +2627,13 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (!todoWidgetPosition) return;
     const widget: DesktopWidget = { id: `todo-${crypto.randomUUID()}`, kind: "todo", fileId: file.id, ...todoWidgetPosition, width: 340, height: 300 };
     setTodoWidgetPosition(null);
+    void commitWidgetChange(widget, {});
+  }
+
+  function addSceneWidget(file: FileEntry) {
+    if (!sceneWidgetPosition) return;
+    const widget: DesktopWidget = { id: `scene-${crypto.randomUUID()}`, kind: "scene", fileId: file.id, ...sceneWidgetPosition, width: 420, height: 300 };
+    setSceneWidgetPosition(null);
     void commitWidgetChange(widget, {});
   }
 
@@ -3276,9 +3287,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   async function selectWallpaperFile(fileId: string, nextLayout: DesktopLayout, desktopId: string) {
     requireWallpaperManagement();
     if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
+    if (!entry) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
     const file = await readFile(fileId);
-    await validateWallpaperImage(file);
-    if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((entry) => entry.id === fileId && entry.kind === "file")) throw new HostServiceError("The wallpaper image is no longer available.", "NOT_FOUND");
+    if (!isSceneFile(entry)) await validateWallpaperImage(file);
+    if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((candidate) => candidate.id === fileId && candidate.kind === "file")) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
     const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` as const } };
     await persistWallpaperLayout(layoutWithImage, desktopId);
     return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
@@ -3741,6 +3754,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         await openAppPackage(file, undefined, appPackage);
         return;
       }
+      if (inspection.kind !== "theme") throw new Error("Open Scene files with Scene Studio.");
       if (!canSettings) throw new Error(settingsRestrictionReason(activeDesktop, syncStatus));
       const wallpaper = inspection.manifest.wallpaper;
       const replacedTheme = appearance.customThemes.find((theme) => theme.id === inspection.manifest.id);
@@ -5382,7 +5396,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         data-area-transition-phase={areaTransition?.phase}
         data-area-transition-kind={areaTransition?.kind}
         data-loading={loading && !warmStart || undefined}
-        data-wallpaper={layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
+        data-wallpaper={wallpaperFile && isSceneFile(wallpaperFile) ? "scene" : layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         data-custom-failed={wallpaperFailed || undefined}
         style={
@@ -5447,6 +5461,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
           return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
+        {wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperContentRevision} readContent={(file) => readFile(file.id)} mode="wallpaper" /></div></Suspense>}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div
           className="wallpaper-color-overlay"
@@ -5555,6 +5570,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   areaSize={iconArea}
                   status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
                   renderWidget={(widget) => {
+                    if (widget.kind === "scene") {
+                      const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                      return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readContent={(entry) => readFile(entry.id)} mode="widget" /></Suspense>;
+                    }
                     if (widget.kind !== "todo") return null;
                     const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
                     return <TodoWidget file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readOnly={!canMutate} readContent={(entry) => readFile(entry.id)} writeContent={(entry, content, expectedContentRevision) => saveAppFile(entry.id, content, { expectedContentRevision })} onOpen={handleOpen} />;
@@ -6298,6 +6317,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       )}
       {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => { groupCreatedFolderRef.current = false; setDialog(null); }} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
       {todoWidgetPosition && <AppPickerDialog request={{ kind: "pickFile", params: { mimeTypes: [TODO_EXTENSION, TODO_MIME_TYPE], title: "Choose a Todo list", actionLabel: "Add widget" } }} entries={entries} onCancel={() => setTodoWidgetPosition(null)} onOpenFiles={(files) => files[0] && addTodoWidget(files[0])} onOpenFolder={() => undefined} onSave={async () => undefined} />}
+      {sceneWidgetPosition && <AppPickerDialog request={{ kind: "pickFile", params: { mimeTypes: [HIRAYA_SCENE_EXTENSION, HIRAYA_SCENE_MIME_TYPE], title: "Choose a Scene", actionLabel: "Add widget" } }} entries={entries} onCancel={() => setSceneWidgetPosition(null)} onOpenFiles={(files) => files[0] && addSceneWidget(files[0])} onOpenFolder={() => undefined} onSave={async () => undefined} />}
       {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
         <AppPickerDialog
           key={appDialogRequests[0].id}
