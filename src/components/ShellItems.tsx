@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
-import { ArrowSquareOut, CalendarBlank, Clock, CloudCheck, FolderOpen, Gauge, X } from "@phosphor-icons/react";
+import { ArrowSquareOut, CalendarBlank, Clock, CloudCheck, DotsSix, FolderOpen, Gauge, X } from "@phosphor-icons/react";
 import type { CatalogQuota } from "../lib/desktop-catalog";
 import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, FolderEntry, GridSize } from "../types";
 import { MIN_SHELL_ITEM_SIZE, boundsIntersectSegment, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
@@ -219,7 +219,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   };
 
   return <>
-    {gridSize && <span ref={previewRef} className="shell-item-snap-preview" aria-hidden="true" />}
+    {gridSize && <span ref={previewRef} className="shell-item-snap-preview" aria-hidden="true" data-grid={gridSize} style={{ "--snap-grid-size": `${gridSize}px` } as CSSProperties} />}
     <article
       ref={ref}
       className={`shell-item${widget ? " shell-item--widget" : ""}${interactive ? " shell-item--interactive" : ""}`}
@@ -238,7 +238,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       <button className="shell-item__drag" type="button" disabled={readOnly || busy} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{label}</button>
       {!readOnly && onRemove && <button className="shell-item__remove" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
     </header>}
-    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={`Move ${label}`} aria-pressed={selected} title="Drag to move; use arrow keys for precise movement" onClick={onSelect} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)} />}
+    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={widgetKind === "scene" && !selected ? `Select ${label}` : `Move ${label}`} aria-pressed={selected} title={widgetKind === "scene" && !selected ? `Select ${label}` : "Drag to move; use arrow keys for precise movement"} onClick={onSelect} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{widgetKind === "scene" && <DotsSix className="shell-item__widget-grip-icon" size={20} weight="bold" aria-hidden="true" />}</button>}
     <div className="shell-item__content">{children}</div>
     {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} onLostPointerCapture={(event) => finish(event, resize, true)} />}
     {widget && selected && onRemove && <button className="shell-item__remove shell-item__remove--widget" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
@@ -263,7 +263,7 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
-function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds, onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly, onDrop }: {
+function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds, onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, gridSize, isEntryReadOnly, onDrop }: {
   folder: FolderEntry;
   entries: readonly DesktopEntry[];
   readOnly: boolean;
@@ -274,6 +274,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
   onEntryContextMenu?: Props["onEntryContextMenu"];
   onMoveEntry?: Props["onMoveEntry"];
   getDesktopDropPreview?: Props["getDesktopDropPreview"];
+  gridSize?: GridSize;
   isEntryReadOnly: (entry: DesktopEntry) => boolean;
   onDrop?: Props["onDrop"];
 }) {
@@ -282,6 +283,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
     disabled: (entry) => readOnly || !onMoveEntry || isEntryReadOnly(entry),
     onMove: (entry, destination, point) => onMoveEntry?.(folder.id, entry, destination, point),
     getDesktopDropPreview,
+    gridSize,
   });
 
   return <div className="icon-group__grid">
@@ -339,7 +341,7 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerS
       const position = projectLogicalPosition(folder.position, areaSize).local;
       const children = entries.filter((entry) => entry.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
       return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(folder.position, group, activeSegment, areaSize)} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
-        <IconGroupContents folder={folder} entries={children} readOnly={readOnly} loadPreview={loadPreview} selectedIds={selectedIds} onOpen={onOpen} onSelectEntry={onSelectEntry} onEntryContextMenu={onEntryContextMenu} onMoveEntry={onMoveEntry} getDesktopDropPreview={getDesktopDropPreview} isEntryReadOnly={isEntryReadOnly} onDrop={onDrop} />
+        <IconGroupContents folder={folder} entries={children} readOnly={readOnly} loadPreview={loadPreview} selectedIds={selectedIds} onOpen={onOpen} onSelectEntry={onSelectEntry} onEntryContextMenu={onEntryContextMenu} onMoveEntry={onMoveEntry} getDesktopDropPreview={getDesktopDropPreview} gridSize={gridSize} isEntryReadOnly={isEntryReadOnly} onDrop={onDrop} />
       </ShellItem>;
     })}
   </div>;

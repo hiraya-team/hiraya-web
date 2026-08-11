@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryArtwork, EntryIcon, type EntryPreviewSource } from "./VisualPrimitives";
-import type { DesktopEntry, EntryPosition } from "../types";
+import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
@@ -27,6 +27,7 @@ type Props = {
   onEdgeDwellChange: (direction: EdgeDirection | null) => void;
   onDragEnd: (cancelled: boolean) => void;
   getSnapPreview?: (position: EntryPosition) => EntryPosition;
+  gridSize?: GridSize;
   onContextMenu: (event: React.MouseEvent) => void;
   onContextMenuAt: (x: number, y: number, presentation: "menu" | "sheet") => void;
   onExternalDrop?: (dataTransfer: DataTransfer) => void;
@@ -72,7 +73,7 @@ type DragState = {
 
 export const EntryTypeIcon = EntryIcon;
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -356,14 +357,16 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   return (
     <>
-      <span ref={snapPreviewRef} className="file-icon-snap-preview" aria-hidden="true" />
+      <span ref={snapPreviewRef} className="file-icon-snap-preview" aria-hidden="true" data-grid={gridSize || undefined} style={gridSize ? { "--snap-grid-size": `${gridSize}px` } as React.CSSProperties : undefined} />
       <button
         ref={iconRef}
         className="file-icon"
         style={{
           "--file-x": `${entry.position.x}px`,
           "--file-y": `${entry.position.y}px`,
+          "--snap-grid-size": gridSize ? `${gridSize}px` : undefined,
         } as React.CSSProperties}
+        data-grid={gridSize || undefined}
         data-selected={selected || undefined}
         data-entry-id={entry.id}
         data-folder-id={entry.kind === "folder" ? entry.id : undefined}

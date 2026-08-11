@@ -1111,6 +1111,23 @@
   pointer-events: none;
 }
 
+.file-icon-snap-preview[data-grid]::before,
+.shell-item-snap-preview[data-grid]::before,
+.file-icon[data-auto-arrange-dragging][data-grid]::after {
+  position: absolute;
+  z-index: -1;
+  inset: calc(var(--snap-grid-size, 24px) * -2);
+  border-radius: 14px;
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--theme-accent, #e7b964) 32%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--theme-accent, #e7b964) 32%, transparent) 1px, transparent 1px);
+  background-size: var(--snap-grid-size, 24px) var(--snap-grid-size, 24px);
+  content: "";
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(closest-side, black 64%, transparent 100%);
+  mask-image: radial-gradient(closest-side, black 64%, transparent 100%);
+}
+
 .file-icon-snap-preview[data-visible],
 .shell-item-snap-preview[data-visible] {
   display: block;
@@ -6141,7 +6158,8 @@ button.app-picker__disclosure { cursor: pointer; }
 .shell-item--interactive .shell-item__content { pointer-events: auto; }
 .shell-item__widget-drag { position: absolute; z-index: 1; inset: 0; border: 0; border-radius: inherit; background: transparent; touch-action: none; cursor: grab; }
 .shell-item--interactive .shell-item__widget-drag { right: 52px; bottom: auto; height: 44px; border-radius: var(--theme-radius) var(--theme-radius) 0 0; }
-.shell-item[data-widget-kind="scene"] .shell-item__widget-drag { right: 44px; left: auto; bottom: auto; width: 44px; height: 44px; border-radius: 0; }
+.shell-item[data-widget-kind="scene"] .shell-item__widget-drag { right: 44px; left: auto; bottom: auto; display: grid; width: 44px; height: 44px; place-items: center; border: 1px solid color-mix(in srgb, var(--theme-chrome-text) 22%, transparent); border-radius: 999px; color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome) 88%, transparent); box-shadow: 0 5px 16px rgb(4 12 13 / 24%); }
+.shell-item[data-widget-kind="scene"] .shell-item__widget-drag:hover { background: color-mix(in srgb, var(--theme-selection) 32%, var(--theme-chrome)); }
 .shell-item__widget-drag:active { cursor: grabbing; }
 .shell-item__widget-drag:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
 .shell-item--widget .shell-item__resize { z-index: 2; border-radius: 0 0 var(--theme-radius) 0; background-color: color-mix(in srgb, var(--theme-chrome) 82%, transparent); }

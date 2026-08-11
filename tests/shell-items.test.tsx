@@ -35,8 +35,8 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
   expect(markup).toContain('data-item-activate=""');
   expect(markup).toContain('data-item-context=""');
   expect(markup).toContain('aria-selected="true"');
-  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true"');
-  expect(markup).not.toContain("data-grid");
+  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true" data-grid="24"');
+  expect(markup).toContain("--snap-grid-size:24px");
 });
 
 test("keeps public status generic and only renders the active logical area", () => {
@@ -68,4 +68,11 @@ test("gives Todo widgets interactive content without changing built-in widgets",
   expect(markup).toContain("shell-item--interactive");
   expect(markup).toContain("Open list");
   expect(markup).toContain('aria-label="Move Todo list"');
+});
+
+test("gives an unselected Scene a visible selection grip", () => {
+  const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "scene", kind: "scene", fileId: "scene-file", x: 20, y: 20, width: 420, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} renderWidget={() => <iframe title="Scene widget" />} />);
+  expect(markup).toContain('aria-label="Select Scene"');
+  expect(markup).toContain('class="shell-item__widget-grip-icon"');
+  expect(markup).toContain('aria-pressed="false"');
 });
