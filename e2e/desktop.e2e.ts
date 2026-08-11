@@ -280,6 +280,43 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   }).toEqual([0, 0, 0, 0]);
 });
 
+test("snap to grid remains active beside another icon", async ({ page }) => {
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Desktop", exact: true }).click();
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  const names = [`grid-adjacent-first-${Date.now()}.txt`, `grid-adjacent-second-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 300, y: 500 } });
+  }
+  const moving = page.locator(".file-icon").filter({ hasText: names[0] });
+  const stationary = page.locator(".file-icon").filter({ hasText: names[1] });
+  const movingBounds = await moving.boundingBox();
+  const stationaryBounds = await stationary.boundingBox();
+  if (!movingBounds || !stationaryBounds) throw new Error("The target icons are not visible.");
+
+  await dragPointerTo(page, moving, stationaryBounds.x + stationaryBounds.width + 6 + movingBounds.width / 2, stationaryBounds.y + stationaryBounds.height / 2);
+  const position = async () => moving.evaluate((element) => [parseFloat(element.style.getPropertyValue("--file-x")), parseFloat(element.style.getPropertyValue("--file-y"))]);
+  await expect.poll(async () => {
+    const [x, y] = await position();
+    return { x: (x - 22) % 24, y: (y - 22) % 24 };
+  }).toEqual({ x: 0, y: 0 });
+
+  const saved = await position();
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(position).toEqual(saved);
+});
+
 test("auto-arrange keeps folders available as desktop drop targets", async ({ page }) => {
   await openLocalDesktop(page);
   const stamp = Date.now();
