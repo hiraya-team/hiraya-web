@@ -69,3 +69,10 @@ test("gives Todo widgets interactive content without changing built-in widgets",
   expect(markup).toContain("Open list");
   expect(markup).toContain('aria-label="Move Todo list"');
 });
+
+test("gives an unselected Scene a visible selection grip", () => {
+  const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "scene", kind: "scene", fileId: "scene-file", x: 20, y: 20, width: 420, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} renderWidget={() => <iframe title="Scene widget" />} />);
+  expect(markup).toContain('aria-label="Select Scene"');
+  expect(markup).toContain('class="shell-item__widget-grip-icon"');
+  expect(markup).toContain('aria-pressed="false"');
+});
