@@ -1659,6 +1659,10 @@ test("Settings adapts to its window and preserves subpage navigation", async ({ 
   const mobileThemeEditor = mobilePage.getByRole("dialog", { name: "Theme Editor" });
   const mobileThemeEditorFrame = mobileThemeEditor.frameLocator("iframe");
   await expect(mobileThemeEditorFrame.getByRole("option", { name: /Hiraya Dusk/ })).toBeVisible();
+  await expect.poll(() => mobileThemeEditorFrame.locator("body").evaluate((element) => getComputedStyle(element).overflowY)).toBe("auto");
+  await expect.poll(() => mobileThemeEditorFrame.locator(".inspector").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+  await expect.poll(() => mobileThemeEditorFrame.locator("#theme-panel").evaluate((element) => getComputedStyle(element).overflowY)).toBe("visible");
+  await expect(mobileThemeEditorFrame.locator(".library-actions")).toBeHidden();
   await mobileThemeEditorFrame.getByRole("tab", { name: "Wallpaper" }).click();
   await expect(mobileThemeEditorFrame.getByRole("heading", { name: "Image treatment" })).toBeVisible();
   const mobileThemeEditorBack = mobilePage.getByRole("button", { name: "Back from Theme Editor" });
