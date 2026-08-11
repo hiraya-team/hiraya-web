@@ -61,6 +61,7 @@ export interface SyncStorage {
   readOutbox(): Promise<OutboxRecord[]>;
   bindOutboxCatalog(catalogId: string): Promise<unknown>;
   acknowledgeMutation(operationId: string): Promise<unknown>;
+  resolveSatisfiedMutation(snapshot: DesktopStateSnapshot, operationId: string, acknowledgedRevision: number, desktopId?: string): Promise<DesktopStateSnapshot>;
   blockMutation(operationId: string, error: string, errorCode?: string | null, conflictDetails?: RevisionConflictDetails | null): Promise<unknown>;
   rebaseBlockedMutation(operationId: string, operation: OutboxOperation): Promise<OutboxRecord>;
   recordMutationAttempt?(operationId: string, attemptedAt: number): Promise<unknown>;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { SyncEngine, type SyncEngineOptions } from "../src/lib/sync";
 import type { OutboxOperation, OutboxRecord } from "../src/lib/outbox";
-import { applyOutboxOperation, transferEntriesBetweenDesktopStates } from "../src/lib/outbox";
+import { applyOutboxOperation, rebaseOutboxOperationAfterAcknowledgement, transferEntriesBetweenDesktopStates } from "../src/lib/outbox";
 import { desktopStateSnapshot, remoteDesktopIdentity, remoteDesktopState } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
@@ -155,6 +155,14 @@ function remoteStorage(initial = desktopStateSnapshot()) {
       return { desktop: current, record };
     },
     acknowledgeMutation: async (operationId: string) => { outbox = outbox.filter((record) => record.operationId !== operationId); pending.delete(operationId); },
+    resolveSatisfiedMutation: async (remote: typeof current, operationId: string, acknowledgedRevision: number) => {
+      outbox = outbox.filter((record) => record.operationId !== operationId).map((record) => ({ ...record, operation: rebaseOutboxOperationAfterAcknowledgement({ entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, widgets: remote.layout.widgets, iconGroups: remote.layout.iconGroups, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync }, record.operation, acknowledgedRevision) }));
+      pending.delete(operationId);
+      let projected = { entries: remote.entries, autoArrangeIcons: remote.layout.autoArrangeIcons, snapToGrid: remote.layout.snapToGrid, gridSize: remote.layout.gridSize, wallpaper: remote.layout.wallpaper, widgets: remote.layout.widgets, iconGroups: remote.layout.iconGroups, editorSettings: remote.editorSettings, appearance: remote.appearance, sync: remote.sync };
+      for (const record of outbox) projected = applyOutboxOperation(projected, record.operation);
+      current = { entries: projected.entries, layout: { autoArrangeIcons: projected.autoArrangeIcons, snapToGrid: projected.snapToGrid, gridSize: projected.gridSize, wallpaper: projected.wallpaper, widgets: projected.widgets, iconGroups: projected.iconGroups }, editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
+      return current;
+    },
     readPendingContent: async (operationId: string, entryId: string) => pending.get(operationId)?.get(entryId) ?? (() => { throw new Error("missing pending content"); })(),
     readContentConflict: async (operationId: string, entryId: string) => ({ mine: pending.get(operationId)?.get(entryId) ?? (() => { throw new Error("missing pending content"); })(), ...(conflictContents.get(operationId) ?? { base: null, server: null }) }),
     retainContentConflictBase: async (operationId: string, _revision: number, content: Blob) => { conflictContents.set(operationId, { base: content, server: conflictContents.get(operationId)?.server ?? null }); },
@@ -1416,6 +1424,63 @@ describe("canonical synchronization", () => {
 
     expect(requests).toHaveLength(2);
     expect(requests[1]).toMatchObject({ baseRevision: 2, content: { snapToGrid: true, wallpaper: { dim: 0.8 } } });
+    await engine.stop();
+  });
+
+  test("replays the durable rebased operation instead of a stale queue snapshot", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    const bases: Array<number | undefined> = [];
+    const acknowledge = storage.acknowledgeMutation.bind(storage);
+    storage.acknowledgeMutation = async (operationId) => {
+      await acknowledge(operationId);
+      const records = await storage.readOutbox();
+      if (records[0]?.operation.kind === "select-theme") storage.seedOutbox([{ ...records[0], operation: { ...records[0].operation, baseRevision: 2 } }]);
+    };
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
+        const operation = JSON.parse(String(init?.body)).operations[0] as { baseRevision?: number; content: { themeId: string } };
+        bases.push(operation.baseRevision);
+        remote = { ...remote, catalogRevision: remote.catalogRevision + 1, appearance: { ...remote.appearance, selectedThemeId: operation.content.themeId, selectionRevision: remote.catalogRevision + 1 } };
+        return Response.json({ state: "committed", catalogRevision: remote.catalogRevision });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    const blocked = await blockEngineQueue(engine);
+    await engine.selectTheme("warm-paper");
+    await engine.selectTheme(DEFAULT_THEME_ID);
+    blocked.release();
+    await blocked.pending;
+    await waitForOutboxDrain(engine);
+
+    expect(bases).toEqual([1, 2]);
+    await engine.stop();
+  });
+
+  test("removes a theme selection already satisfied by the server without rewriting it", async () => {
+    const storage = remoteStorage();
+    let remote = remoteDesktopState();
+    let writes = 0;
+    const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
+      if (String(input) === "/api/desktops/desk/entries/transactions") {
+        writes += 1;
+        remote = { ...remote, catalogRevision: 2, appearance: { ...remote.appearance, selectedThemeId: "warm-paper", selectionRevision: 2 } };
+        return Response.json({ error: "The theme selection changed.", code: "revision_conflict", conflict: { resourceKind: "theme-selection", resourceId: "desk", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
+      }
+      throw new Error(`Unexpected request: ${String(input)}`);
+    }) as typeof fetch;
+    const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource });
+    await engine.start("desk", { x: 0, y: 0 });
+    await engine.selectTheme("warm-paper");
+    await waitForOutboxDrain(engine);
+
+    expect(writes).toBe(1);
+    expect(storage.stats.blockWrites).toBe(0);
+    expect((await storage.readDesktopState()).appearance.selectedThemeId).toBe("warm-paper");
     await engine.stop();
   });
 
