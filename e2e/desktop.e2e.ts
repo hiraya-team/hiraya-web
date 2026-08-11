@@ -1581,7 +1581,24 @@ test("Scene widgets and wallpaper receive input without covering desktop chrome"
   const widgetFrame = page.frameLocator('iframe[title="interactive.hiraya.scene widget"]');
   await widgetFrame.getByRole("button", { name: "Run Scene" }).click();
   await expect(widgetFrame.getByRole("button", { name: "Scene received input" })).toBeVisible();
-  await page.getByRole("button", { name: "Remove Scene" }).click();
+  const sceneWidget = page.locator('.shell-item[data-widget-kind="scene"]');
+  await desktop.click({ position: { x: 1100, y: 600 } });
+  await expect(sceneWidget.getByRole("button", { name: "Remove Scene" })).toHaveCount(0);
+  const selectScene = sceneWidget.getByRole("button", { name: "Select Scene" });
+  await expect(selectScene.locator("svg")).toBeVisible();
+  await expect(selectScene).toHaveCSS("width", "44px");
+  const beforeSelection = await sceneWidget.boundingBox();
+  if (!beforeSelection) throw new Error("The Scene widget is not visible.");
+  await selectScene.click();
+  await expect(sceneWidget).toHaveAttribute("data-selected", "true");
+  await expect.poll(async () => (await sceneWidget.boundingBox())?.x).toBe(beforeSelection.x);
+  const moveScene = sceneWidget.getByRole("button", { name: "Move Scene", exact: true });
+  const moveBounds = await moveScene.boundingBox();
+  if (!moveBounds) throw new Error("The Scene move grip is not visible.");
+  await dragPointerTo(page, moveScene, moveBounds.x - 48, moveBounds.y + moveBounds.height / 2);
+  await expect.poll(async () => (await sceneWidget.boundingBox())?.x).toBeLessThan(beforeSelection.x);
+  await expect(widgetFrame.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  await sceneWidget.getByRole("button", { name: "Remove Scene" }).click();
 
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
