@@ -3,14 +3,14 @@
   "uiRuntime": 1,
   "id": "app.hiraya.text-editor",
   "name": "Integrated Editor",
-  "version": "1.4.4",
+  "version": "1.5.0",
   "entrypoint": "index.html",
-  "description": "An integrated text editor and read-only preview for other files.",
+  "description": "Edit text, browse workspaces, preview files, and author Hiraya Scenes.",
   "permissions": ["files:read", "files:write", "dialogs", "window", "commands", "theme", "storage"],
-  "fileTypes": ["application/*", "audio/*", "font/*", "image/*", "message/*", "model/*", "text/*", "video/*", ".txt", ".log", ".csv", ".css", ".html", ".js", ".json", ".ts", ".xml", ".yaml", ".yml"],
+  "fileTypes": ["application/*", "audio/*", "font/*", "image/*", "message/*", "model/*", "text/*", "video/*", ".hiraya.scene", ".txt", ".log", ".csv", ".css", ".html", ".js", ".json", ".ts", ".xml", ".yaml", ".yml"],
   "window": {
-    "renderWidth": 818,
-    "renderHeight": 572,
+    "renderWidth": 1080,
+    "renderHeight": 720,
     "minWidth": 360,
     "minHeight": 260
   }

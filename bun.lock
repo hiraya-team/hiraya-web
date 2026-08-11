@@ -93,28 +93,6 @@
         "vite": "^7.0.4",
       },
     },
-    "apps/system/scene-editor": {
-      "name": "@hiraya/system-scene-editor",
-      "version": "1.0.0",
-      "dependencies": {
-        "@codemirror/lang-css": "^6.3.1",
-        "@codemirror/lang-html": "^6.4.11",
-        "@codemirror/lang-javascript": "^6.2.5",
-        "@codemirror/lang-json": "^6.0.2",
-        "@codemirror/state": "^6.7.1",
-        "@codemirror/view": "^6.43.6",
-        "@hiraya-team/app-cli": "2.2.0",
-        "@hiraya-team/apps-contracts": "2.2.0",
-        "@hiraya-team/apps-sdk": "2.2.0",
-        "@hiraya/app-runtime": "workspace:*",
-        "@hiraya/system-apps-shared": "workspace:*",
-        "codemirror": "^6.0.2",
-      },
-      "devDependencies": {
-        "typescript": "~5.8.3",
-        "vite": "^7.0.4",
-      },
-    },
     "apps/system/shared": {
       "name": "@hiraya/system-apps-shared",
       "version": "0.1.0",
@@ -148,7 +126,10 @@
         "@codemirror/language": "^6.12.4",
         "@codemirror/state": "^6.7.1",
         "@codemirror/view": "^6.43.6",
+        "@hiraya-team/app-cli": "2.2.0",
+        "@hiraya-team/apps-contracts": "2.2.0",
         "@hiraya-team/apps-sdk": "2.2.0",
+        "@hiraya/app-runtime": "workspace:*",
         "@hiraya/system-apps-shared": "workspace:*",
         "@lezer/highlight": "^1.2.3",
         "codemirror": "^6.0.2",
@@ -492,8 +473,6 @@
     "@hiraya/system-image-viewer": ["@hiraya/system-image-viewer@workspace:apps/system/image-viewer"],
 
     "@hiraya/system-media-viewer": ["@hiraya/system-media-viewer@workspace:apps/system/media-viewer"],
-
-    "@hiraya/system-scene-editor": ["@hiraya/system-scene-editor@workspace:apps/system/scene-editor"],
 
     "@hiraya/system-terminal": ["@hiraya/system-terminal@workspace:apps/system/terminal"],
 

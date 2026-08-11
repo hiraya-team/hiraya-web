@@ -7,7 +7,7 @@ import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 
 const PUBLIC_ID = "virtual:hiraya-system-apps";
 const RESOLVED_ID = `\0${PUBLIC_ID}`;
-export const SYSTEM_APP_SLUGS = ["text-editor", "image-viewer", "media-viewer", "file-viewer", "terminal", "theme-editor", "scene-editor"] as const;
+export const SYSTEM_APP_SLUGS = ["text-editor", "image-viewer", "media-viewer", "file-viewer", "terminal", "theme-editor"] as const;
 
 export function systemAppsPlugin(projectRoot: string): Plugin {
   let catalog = "";

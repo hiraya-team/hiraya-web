@@ -4,7 +4,9 @@ import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, text
 describe("Integrated Editor document behavior", () => {
   test("leads the window title with the active document", async () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
-    expect(source).toContain('publishWindowTitle(activeTab ? `${tabDirty(activeTab) ? "*" : ""}${activeTab.name} - Integrated Editor` : "Integrated Editor")');
+    expect(source).toContain('const title = scene?.metadata?.name ?? (scene ? "Untitled Scene" : activeTab?.name)');
+    expect(source).toContain('const titleDirty = scene?.archive.dirty ?? (activeTab ? tabDirty(activeTab) : false)');
+    expect(source).toContain('publishWindowTitle(title ? `${titleDirty ? "*" : ""}${title} - Integrated Editor` : "Integrated Editor")');
     expect(source).toContain("await load(launchFile, generation)");
     expect(source).toContain("if (!launchFile) setStatus(");
 
@@ -17,6 +19,8 @@ describe("Integrated Editor document behavior", () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     expect(source).toContain("await load(selected[0], generation)");
     expect(source).not.toContain("await load(selected[0], generation, true)");
+    expect(source).toContain("if (scene?.handle === next) return");
+    expect(source).toContain("if (!operations.isForegroundCurrent(generation)) return");
   });
 
   test("keeps mobile editor controls at Hiraya's touch target size", async () => {
@@ -33,6 +37,8 @@ describe("Integrated Editor document behavior", () => {
     expect(css).not.toContain('[role="tab"]');
     expect(source).toContain('status.closest("hiraya-status-bar")?.classList.toggle("error", error)');
     expect(source).toContain('setSidebarOpen(!matchMedia("(max-width: 700px)").matches)');
+    expect(source).toContain("selectedPath = row.dataset.scenePath");
+    expect(source).toContain('required<HTMLElement>("#scene-conflict").hidden = !scene?.archive.conflict');
   });
 
   test("uses the shared read-only badge without bespoke pill styles", async () => {
@@ -48,7 +54,9 @@ describe("Integrated Editor document behavior", () => {
     expect(html).not.toContain("<hiraya-toolbar");
     expect(source).toContain('{ id: "save-as", title: "Save As"');
     expect(source).toContain('id === "save-as" ? void save(true)');
-    expect(source).toContain("const documentCommands = canWrite && activeTab?.state");
+    expect(source).toContain("const documentCommands = canWrite && savable");
+    expect(source).toContain("if (signature === commandSignature) return");
+    expect(source).toContain("if (dirty !== windowDirty)");
   });
 
   test("keeps settings in the sidebar and the filename in tabs", async () => {
@@ -64,7 +72,7 @@ describe("Integrated Editor document behavior", () => {
     const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     const manifest = await Bun.file(new URL("../public/hiraya.app.json", import.meta.url)).json();
-    expect(manifest.version).toBe("1.4.4");
+    expect(manifest.version).toBe("1.5.0");
     expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
     expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
     expect(source).toContain('searchResults.addEventListener("hiraya-item-select"');

@@ -5,7 +5,7 @@ const IMAGE_EXTENSIONS = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
 const AUDIO_EXTENSIONS = /\.(?:aac|flac|m4a|mp3|oga|ogg|wav|weba)$/i;
 const VIDEO_EXTENSIONS = /\.(?:m4v|mov|mp4|ogv|webm)$/i;
 
-export type EditorFileKind = "text" | "image" | "pdf" | "audio" | "video" | "metadata";
+export type EditorFileKind = "text" | "image" | "pdf" | "audio" | "video" | "scene" | "metadata";
 
 export function sortWorkspaceEntries(entries: readonly DirectoryEntry[]): DirectoryEntry[] {
   return [...entries].sort((left, right) => {
@@ -26,6 +26,7 @@ export function isEditableFile(file: FileMetadata): boolean {
 
 export function editorFileKind(file: FileMetadata): EditorFileKind {
   const mimeType = file.mimeType.split(";", 1)[0].trim().toLowerCase();
+  if (mimeType === "application/vnd.hiraya.scene+zip" || file.name.toLowerCase().endsWith(".hiraya.scene")) return "scene";
   if (isEditableFile({ ...file, mimeType })) return "text";
   if (mimeType.startsWith("image/") || IMAGE_EXTENSIONS.test(file.name)) return "image";
   if (mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf")) return "pdf";

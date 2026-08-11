@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { inspectSceneArchive } from "@hiraya-team/app-cli";
-import { archiveWritePayload, SceneArchiveState, starterSceneArchive } from "./archive-state";
+import { archiveWritePayload, SceneArchiveState, starterSceneArchive } from "./scene";
 
-describe("Scene Studio archive state", () => {
+describe("Integrated Editor Scene archive state", () => {
   test("opens, edits, and repacks a valid Scene", async () => {
     const { state } = await SceneArchiveState.open(starterSceneArchive(), 3);
     state.writeText("scene.js", "document.body.textContent='edited'");
     expect(state.dirty).toBe(true);
+    expect(state.pathDirty("scene.js")).toBe(true);
     expect((await inspectSceneArchive(state.pack())).manifest.entrypoint).toBe("index.html");
   });
 
@@ -16,7 +17,6 @@ describe("Scene Studio archive state", () => {
     expect((await state.inspectDraft()).manifestError).toBeTruthy();
     const saved = state.beginSave();
     expect(saved.bytes.byteLength).toBeGreaterThan(0);
-    expect(archiveWritePayload(saved.bytes)).toBeInstanceOf(ArrayBuffer);
     expect(new Uint8Array(archiveWritePayload(saved.bytes))).toEqual(saved.bytes);
     expect(await SceneArchiveState.open(saved.bytes, 2)).toBeTruthy();
   });

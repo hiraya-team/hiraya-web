@@ -47,6 +47,7 @@ type StorageDbRequests = {
   listInstalledApps: undefined;
   installApp: { install: InstalledApp };
   retireMarkdownPreview: undefined;
+  retireSceneEditor: undefined;
   uninstallApp: { appId: string };
   listQuarantinedApps: undefined;
   removeQuarantinedApp: { appId: string };
@@ -101,6 +102,7 @@ type StorageDbResponses = {
   listInstalledApps: InstalledApp[];
   installApp: InstalledApp;
   retireMarkdownPreview: string | null;
+  retireSceneEditor: string | null;
   uninstallApp: undefined;
   listQuarantinedApps: QuarantinedApp[];
   removeQuarantinedApp: undefined;
@@ -566,6 +568,21 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         for (const record of await request(storage.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
         const associations = tx.objectStore(STORES.fileAssociations);
         for (const association of await request(associations.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as FileAssociation[]) await request(associations.put({ ...association, appId: SYSTEM_APP_IDS.mediaViewer }));
+        return retired.digest;
+      }) as Promise<StorageDbResponses[M]>;
+    }
+    case "retireSceneEditor": {
+      return transact([STORES.installedApps, STORES.appStorage, STORES.fileAssociations], "readwrite", async (tx) => {
+        const apps = tx.objectStore(STORES.installedApps);
+        const retired = await request(apps.get(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as InstalledApp | undefined;
+        if (!retired || retired.source !== "system") return null;
+        const replacement = await request(apps.get(SYSTEM_APP_IDS.textEditor)) as InstalledApp | undefined;
+        if (replacement?.source !== "system") throw new Error("Integrated Editor must be installed before retiring Scene Studio.");
+        await request(apps.delete(RETIRED_SYSTEM_APP_IDS.sceneEditor));
+        const storage = tx.objectStore(STORES.appStorage);
+        for (const record of await request(storage.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
+        const associations = tx.objectStore(STORES.fileAssociations);
+        for (const association of await request(associations.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as FileAssociation[]) await request(associations.put({ ...association, appId: SYSTEM_APP_IDS.textEditor }));
         return retired.digest;
       }) as Promise<StorageDbResponses[M]>;
     }

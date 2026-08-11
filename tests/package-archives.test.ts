@@ -4,7 +4,7 @@ import { sha256Blob } from "../src/lib/blob-transfer";
 import { deleteApprovedPackageArchive, readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../src/platform/storage/blobs";
 import { configureStorageNamespace, indexedDatabaseName } from "../src/platform/storage/namespace";
 import { initializeDatabase } from "../src/platform/storage/database-client";
-import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, installApp, listFileAssociations, listInstalledApps, readAccountApps, readAppStorage, reconcileAccountApps, retireMarkdownPreview, retryAccountAppOperation, setFileAssociation, writeAppStorage } from "../src/platform/storage/repositories";
+import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, installApp, listFileAssociations, listInstalledApps, readAccountApps, readAppStorage, reconcileAccountApps, retireMarkdownPreview, retireSceneEditor, retryAccountAppOperation, setFileAssociation, writeAppStorage } from "../src/platform/storage/repositories";
 
 class MemoryDirectory {
   readonly directories = new Map<string, MemoryDirectory>();
@@ -92,6 +92,21 @@ describe("approved package archives", () => {
     await releaseApprovedPackageArchive(retiredDigest);
     await expect(readApprovedPackageArchive(retiredDigest)).rejects.toHaveProperty("name", "NotFoundError");
     await expect(installApp({ appId: "app.hiraya.markdown-preview", source: "desktop", packageEntryId: "package", archivePath: null, digest: "c".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.markdown-preview", "Markdown Preview"), approvedAt: 3 })).rejects.toThrow("reserved");
+
+    const sceneArchive = new Blob(["scene editor package"]);
+    const sceneDigest = await sha256Blob(sceneArchive);
+    await saveApprovedPackageArchive(sceneDigest, sceneArchive);
+    await installApp({ appId: "app.hiraya.text-editor", source: "system", packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app", digest: "d".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.text-editor", "Integrated Editor"), approvedAt: 4 });
+    await installApp({ appId: "app.hiraya.scene-editor", source: "system", packageEntryId: null, archivePath: "system-apps/scene-editor.hiraya.app", digest: sceneDigest, version: "1.0.0", manifest: systemManifest("app.hiraya.scene-editor", "Scene Studio"), approvedAt: 5 });
+    await writeAppStorage("app.hiraya.scene-editor", "draft", { value: true }, 1024, 10);
+    await setFileAssociation({ matcher: ".hiraya.scene", appId: "app.hiraya.scene-editor", createdAt: 43 });
+    expect(await retireSceneEditor()).toBe(sceneDigest);
+    expect(await retireSceneEditor()).toBeNull();
+    expect((await listInstalledApps()).map((app) => app.appId)).not.toContain("app.hiraya.scene-editor");
+    expect(await readAppStorage("app.hiraya.scene-editor", "draft")).toBeUndefined();
+    expect(await listFileAssociations()).toContainEqual({ matcher: ".hiraya.scene", appId: "app.hiraya.text-editor", createdAt: 43 });
+    await releaseApprovedPackageArchive(sceneDigest);
+    await expect(readApprovedPackageArchive(sceneDigest)).rejects.toHaveProperty("name", "NotFoundError");
 
     const appId = "dev.hiraya.notes";
     const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: appId, name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const], fileTypes: [] };

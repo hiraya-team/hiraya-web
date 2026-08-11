@@ -3754,7 +3754,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         await openAppPackage(file, undefined, appPackage);
         return;
       }
-      if (inspection.kind !== "theme") throw new Error("Open Scene files with Scene Studio.");
+      if (inspection.kind !== "theme") throw new Error("Open Scene files with Integrated Editor.");
       if (!canSettings) throw new Error(settingsRestrictionReason(activeDesktop, syncStatus));
       const wallpaper = inspection.manifest.wallpaper;
       const replacedTheme = appearance.customThemes.find((theme) => theme.id === inspection.manifest.id);

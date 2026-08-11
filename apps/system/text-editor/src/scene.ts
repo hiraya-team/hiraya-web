@@ -7,9 +7,10 @@ const TEXT_FILE = /\.(?:css|html?|js|json|mjs|svg|txt)$/i;
 
 function cloneFiles(files: ReadonlyMap<string, Uint8Array>) { return new Map([...files].map(([path, bytes]) => [path, bytes.slice()])); }
 export function archiveWritePayload(bytes: Uint8Array) { return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer; }
+function sameBytes(left: Uint8Array | undefined, right: Uint8Array | undefined) { return left === right || Boolean(left && right && left.length === right.length && left.every((byte, index) => byte === right[index])); }
 function sameFiles(left: ReadonlyMap<string, Uint8Array>, right: ReadonlyMap<string, Uint8Array>) {
   if (left.size !== right.size) return false;
-  return [...left].every(([path, bytes]) => { const other = right.get(path); return other?.length === bytes.length && bytes.every((byte, index) => byte === other[index]); });
+  return [...left].every(([path, bytes]) => sameBytes(bytes, right.get(path)));
 }
 
 export function starterSceneArchive() {
@@ -38,12 +39,13 @@ export class SceneArchiveState {
 
   get dirty() { return !sameFiles(this.files, this.persisted); }
   paths() { return [...this.files.keys()].sort((a, b) => a.localeCompare(b)); }
+  pathDirty(path: string) { return !sameBytes(this.files.get(path), this.persisted.get(path)); }
   isText(path: string) { return path === HIRAYA_SCENE_MANIFEST_PATH || TEXT_FILE.test(path); }
   readText(path: string) { const bytes = this.files.get(path); if (!bytes || !this.isText(path)) return null; return decoder.decode(bytes); }
   writeText(path: string, text: string) { if (!this.isText(path)) throw new Error("Binary assets cannot be edited as text."); this.files.set(path, encoder.encode(text)); }
-  createText(path: string) { const next = normalizeArchivePath(path); if (this.files.has(next) || !TEXT_FILE.test(next)) throw new Error("Choose a new text file name."); this.files.set(next, new Uint8Array()); }
-  import(path: string, bytes: Uint8Array) { const next = normalizeArchivePath(path); if (this.files.has(next)) throw new Error(`“${next}” already exists.`); this.files.set(next, bytes.slice()); }
-  rename(path: string, next: string) { const bytes = this.files.get(path); const normalized = normalizeArchivePath(next); if (!bytes || path === HIRAYA_SCENE_MANIFEST_PATH || this.files.has(normalized)) throw new Error("Choose an unused file name. The Scene manifest cannot be renamed."); this.files.delete(path); this.files.set(normalized, bytes); }
+  createText(path: string) { const next = normalizeArchivePath(path); if (this.files.has(next) || !TEXT_FILE.test(next)) throw new Error("Choose a new text file name."); this.files.set(next, new Uint8Array()); return next; }
+  import(path: string, bytes: Uint8Array) { const next = normalizeArchivePath(path); if (this.files.has(next)) throw new Error(`“${next}” already exists.`); this.files.set(next, bytes.slice()); return next; }
+  rename(path: string, next: string) { const bytes = this.files.get(path); const normalized = normalizeArchivePath(next); if (!bytes || path === HIRAYA_SCENE_MANIFEST_PATH || this.files.has(normalized)) throw new Error("Choose an unused file name. The Scene manifest cannot be renamed."); this.files.delete(path); this.files.set(normalized, bytes); return normalized; }
   delete(path: string) { if (path === HIRAYA_SCENE_MANIFEST_PATH) throw new Error("The Scene manifest cannot be deleted."); this.files.delete(path); }
   pack() { return repackSceneArchive({ files: this.files }); }
   beginSave() { return { bytes: this.pack(), files: cloneFiles(this.files) }; }
@@ -55,6 +57,7 @@ export class SceneArchiveState {
     this.files = opened.state.files;
     this.persisted = opened.state.persisted;
     this.revision = revision;
+    this.conflict = false;
     return true;
   }
   async inspectDraft(): Promise<SceneDraftInspection> { return openSceneArchive(this.pack()); }

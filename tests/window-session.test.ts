@@ -131,4 +131,9 @@ describe("window and browser sessions", () => {
     const bounds = { x: 0, y: 0, width: 700, height: 500 };
     expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "system", appId: "app.hiraya.markdown-preview", targetKind: "file", entryId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "system", appId: "app.hiraya.media-viewer", targetKind: "file", entryId: "file" });
   });
+
+  test("migrates saved Scene Studio windows to Integrated Editor", () => {
+    const bounds = { x: 0, y: 0, width: 900, height: 650 };
+    expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "system", appId: "app.hiraya.scene-editor", targetKind: "file", entryId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "system", appId: "app.hiraya.text-editor", targetKind: "file", entryId: "file" });
+  });
 });

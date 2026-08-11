@@ -23,6 +23,8 @@ describe("app release catalog", () => {
       { kind: "system" as const, slug: "media-viewer", fileName: "media-viewer.hiraya.app", digest: "b".repeat(64), size: 1, manifest: active },
     ] };
     expect(catalogWithoutRetiredSystemRelease(catalog, "markdown-preview").releases).toEqual([catalog.releases[1]]);
+    const scene = parseManifestV2({ ...manifest, id: "app.hiraya.scene-editor", name: "Scene Studio" });
+    expect(catalogWithoutRetiredSystemRelease({ ...catalog, releases: [{ ...catalog.releases[0], slug: "scene-editor", manifest: scene }] }, "scene-editor").releases).toEqual([]);
     expect(() => catalogWithoutRetiredSystemRelease(catalog, "media-viewer")).toThrow("not an active retired system app");
   });
 });

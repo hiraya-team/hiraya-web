@@ -10,10 +10,9 @@ function app(appId: string, fileTypes: string[]): InstalledApp {
 
 describe("file association resolution", () => {
   const media = app(SYSTEM_APP_IDS.mediaViewer, [".md", ".markdown", "text/markdown", "application/pdf", "audio/*", "video/*"]);
-  const text = app(SYSTEM_APP_IDS.textEditor, ["text/*"]);
+  const text = app(SYSTEM_APP_IDS.textEditor, ["text/*", ".hiraya.scene", "application/vnd.hiraya.scene+zip"]);
   const generic = app(SYSTEM_APP_IDS.fileViewer, ["application/*", "text/*"]);
   const terminal = app(SYSTEM_APP_IDS.terminal, [".hsh", "text/x-hiraya-shell"]);
-  const scene = app(SYSTEM_APP_IDS.sceneEditor, [".hiraya.scene", "application/vnd.hiraya.scene+zip"]);
 
   test("orders longest compound extension before exact and wildcard MIME", () => {
     expect(associationCandidates({ name: "notes.test.md", mimeType: "text/markdown; charset=utf-8" })).toEqual([".test.md", ".md", "text/markdown", "text/*"]);
@@ -77,9 +76,9 @@ describe("file association resolution", () => {
     }
   });
 
-  test("opens Scene packages in Scene Studio", () => {
+  test("opens Scene packages in Integrated Editor", () => {
     const file = { name: "ambient.HIRAYA.SCENE", mimeType: "application/vnd.hiraya.scene+zip" };
-    expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.sceneEditor);
-    expect(resolveFileApp(file, [scene, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.sceneEditor);
+    expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.textEditor);
+    expect(resolveFileApp(file, [text, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.textEditor);
   });
 });
