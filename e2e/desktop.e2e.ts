@@ -280,6 +280,43 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   }).toEqual([0, 0, 0, 0]);
 });
 
+test("snap to grid remains active beside another icon", async ({ page }) => {
+  await page.setViewportSize({ width: 1080, height: 720 });
+  await openLocalDesktop(page);
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  const settings = page.getByRole("dialog", { name: "Settings" });
+  await settings.getByRole("button", { name: "Desktop", exact: true }).click();
+  await settings.getByRole("checkbox", { name: /Snap to grid/ }).check();
+  await settings.getByRole("button", { name: "Close Settings" }).click();
+
+  const names = [`grid-adjacent-first-${Date.now()}.txt`, `grid-adjacent-second-${Date.now()}.txt`];
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+  for (const name of names) {
+    await fileActions.getByRole("button", { name: "New text file" }).click();
+    await page.getByLabel("File name").fill(name);
+    await page.getByRole("button", { name: "Create file" }).click();
+    await page.locator(".desktop").click({ position: { x: 300, y: 500 } });
+  }
+  const moving = page.locator(".file-icon").filter({ hasText: names[0] });
+  const stationary = page.locator(".file-icon").filter({ hasText: names[1] });
+  const movingBounds = await moving.boundingBox();
+  const stationaryBounds = await stationary.boundingBox();
+  if (!movingBounds || !stationaryBounds) throw new Error("The target icons are not visible.");
+
+  await dragPointerTo(page, moving, stationaryBounds.x + stationaryBounds.width + 6 + movingBounds.width / 2, stationaryBounds.y + stationaryBounds.height / 2);
+  const position = async () => moving.evaluate((element) => [parseFloat(element.style.getPropertyValue("--file-x")), parseFloat(element.style.getPropertyValue("--file-y"))]);
+  await expect.poll(async () => {
+    const [x, y] = await position();
+    return { x: (x - 22) % 24, y: (y - 22) % 24 };
+  }).toEqual({ x: 0, y: 0 });
+
+  const saved = await position();
+  await page.reload();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(position).toEqual(saved);
+});
+
 test("auto-arrange keeps folders available as desktop drop targets", async ({ page }) => {
   await openLocalDesktop(page);
   const stamp = Date.now();
@@ -1939,6 +1976,44 @@ test("mobile taps select the full desktop icon footprint", async ({ browser }) =
   await page.touchscreen.tap(bounds!.x + bounds!.width / 2, bounds!.y + 3);
   await expect(icon).toHaveAttribute("aria-pressed", "true");
 
+  await context.close();
+});
+
+test("mobile folder double taps cannot activate newly mounted contents", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  const folderName = `touch-folder-${Date.now()}`;
+  const childName = "nested-folder";
+  const actions = page.getByRole("toolbar", { name: "File actions" });
+
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const icon = page.locator('.file-icon[data-entry-id]').filter({ hasText: folderName });
+  await page.locator(".desktop").click({ position: { x: 350, y: 500 } });
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(childName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const childIcon = page.locator('.file-icon[data-entry-id]').filter({ hasText: childName });
+  const target = await icon.boundingBox();
+  expect(target).not.toBeNull();
+  await dragPointerTo(page, childIcon, target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await expect(childIcon).toHaveCount(0);
+
+  const bounds = await icon.boundingBox();
+  expect(bounds).not.toBeNull();
+  const point = { clientX: bounds!.x + bounds!.width / 2, clientY: bounds!.y + bounds!.height / 2, pointerType: "touch", button: 0 };
+  await page.touchscreen.tap(point.clientX, point.clientY);
+  await expect(icon).toHaveAttribute("aria-pressed", "true");
+  await page.touchscreen.tap(point.clientX, point.clientY);
+
+  const explorer = page.getByRole("dialog", { name: folderName });
+  const child = explorer.getByRole("option", { name: `${childName}, folder` });
+  await expect(child).toBeVisible();
+  await child.dispatchEvent("dblclick", point);
+  await expect(child).toBeVisible();
+  await expect(page.getByRole("button", { name: `Back from ${folderName}` })).toBeVisible();
   await context.close();
 });
 
