@@ -3309,29 +3309,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     });
   }
 
-  function desktopMoveOverlaps(entry: DesktopEntry, anchorPosition: EntryPosition) {
-    const group = desktopMoveGroup(entry);
-    const movingIds = new Set(group.map((item) => item.id));
-    const delta = { x: anchorPosition.x - entry.position.x, y: anchorPosition.y - entry.position.y };
-    return group.some((item) => {
-      const position = { x: item.position.x + delta.x, y: item.position.y + delta.y };
-      const projected = projectLogicalPosition(position, iconArea);
-      const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
-      for (const other of desktopEntryList) {
-        if (other.parentId !== null || movingIds.has(other.id)) continue;
-        const otherPosition = projectLogicalPosition(other.position, iconArea);
-        if (segmentKey(otherPosition.segment) === segmentKey(projected.segment)) obstacles.push({ ...otherPosition.local, width: iconMetrics.width, height: iconMetrics.height });
-      }
-      return positionOverlapsObstacles(projected.local, iconMetrics, obstacles);
-    });
-  }
-
-  function snapDesktopMovePosition(entry: DesktopEntry, position: EntryPosition) {
-    const raw = desktopMovePosition(entry, position).logicalPosition;
-    const snapped = snapRootEntryPosition(raw);
-    return layoutRef.current.autoArrangeIcons && !desktopMoveOverlaps(entry, raw) && desktopMoveOverlaps(entry, snapped) ? raw : snapped;
-  }
-
   function arrangedDesktopMove(entry: DesktopEntry, position: EntryPosition) {
     const { logicalPosition, targetSegment } = desktopMovePosition(entry, position);
     const group = desktopMoveGroup(entry);
@@ -5540,7 +5517,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   onEdgeDwellChange={handleEdgeDwellChange}
                   onDragEnd={finishEdgeNavigation}
                   getSnapPreview={layout.snapToGrid ? (position) => {
-                    const snapped = snapDesktopMovePosition(entry, position);
+                    const snapped = snapRootEntryPosition(desktopMovePosition(entry, position).logicalPosition);
                     return { x: snapped.x - origin.x, y: snapped.y - origin.y };
                   } : undefined}
                   onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
