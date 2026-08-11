@@ -35,7 +35,7 @@ type StorageDbRequests = {
   enqueueDesktopDelete: { operationId: string; catalogId: string | null; ownerDesktopId: string; desktopId: string; baseRevision: number };
   readOutbox: undefined;
   bindOutboxCatalog: { catalogId: string };
-  applyRemoteWithOutbox: { state: PersistedDesktopState; acknowledgedOperationId?: string; acknowledgedRevision?: number };
+  applyRemoteWithOutbox: { state: PersistedDesktopState; acknowledgedOperationId?: string; acknowledgedRevision?: number; removeAcknowledged?: boolean };
   acknowledgeMutation: { operationId: string };
   blockMutation: { operationId: string; error: string; errorCode: string | null; conflictDetails: RevisionConflictDetails | null };
   rebaseBlockedMutation: { operationId: string; operation: OutboxOperation };
@@ -501,7 +501,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
       return transact([STORES.desktops, STORES.outbox], "readwrite", async (tx) => {
         const desktops = tx.objectStore(STORES.desktops); const current = await readDesktop(desktops, desktopId); const outbox = tx.objectStore(STORES.outbox); let state = parseDesktopState(input.state); const blocked: OutboxRecord[] = [];
         for (const record of await readOutbox(outbox, desktopId)) {
-          if (record.operationId === input.acknowledgedOperationId) continue;
+          if (record.operationId === input.acknowledgedOperationId) { if (input.removeAcknowledged) await request(outbox.delete(record.sequence)); continue; }
           if (record.catalogId !== state.sync.catalogId) { const changed = { ...record, status: "blocked" as const, error: "Pending changes belong to a different catalog.", errorCode: null, conflictDetails: null }; await request(outbox.put(changed)); blocked.push(changed); continue; }
           try { const operation = input.acknowledgedRevision === undefined ? record.operation : rebaseOutboxOperationAfterAcknowledgement(state, record.operation, input.acknowledgedRevision); if (operation !== record.operation) await request(outbox.put({ ...record, operation })); state = parseDesktopState(applyOutboxOperation(state, operation)); }
           catch (error) { const changed = { ...record, status: "blocked" as const, error: error instanceof Error ? error.message : String(error), errorCode: null, conflictDetails: null }; await request(outbox.put(changed)); blocked.push(changed); }

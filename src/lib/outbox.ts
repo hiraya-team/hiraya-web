@@ -503,6 +503,7 @@ export function rebaseOutboxOperationForConflict(operation: OutboxOperation, con
 }
 
 export type OutboxConflictResolution =
+  | { kind: "satisfied" }
   | { kind: "rebase"; operation: OutboxOperation }
   | { kind: "blocked"; fields: string[] };
 
@@ -550,9 +551,41 @@ function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor
   return parseEditorSettings(Object.fromEntries((Object.keys(base) as Array<keyof EditorSettings>).map((key) => [key, same(operation.settings[key], base[key]) ? remote[key] : operation.settings[key]])));
 }
 
+function operationIntentIsSatisfied(operation: OutboxOperation, remote: DesktopStateSnapshot) {
+  switch (operation.kind) {
+    case "patch-entry": {
+      const entry = remote.entries.find((candidate) => candidate.id === operation.entryId);
+      return entry ? (["name", "parentId", "position"] as const).every((key) => operation.changes[key] === undefined || same(entry[key], operation.changes[key])) : false;
+    }
+    case "delete":
+      return !remote.entries.some((entry) => entry.id === operation.entryId);
+    case "delete-entries":
+      return operation.entryIds.every((id) => !remote.entries.some((entry) => entry.id === id));
+    case "move-entries":
+      return operation.entryIds.every((id) => remote.entries.some((entry) => entry.id === id && entry.parentId === operation.parentId));
+    case "root-entry-positions":
+      return operation.positions.every(({ entryId, position }) => remote.entries.some((entry) => entry.id === entryId && entry.parentId === null && same(entry.position, position)));
+    case "layout":
+      return same(operation.layout, remote.layout);
+    case "editor-settings":
+      return same(operation.settings, remote.editorSettings);
+    case "select-theme":
+      return operation.themeId === remote.appearance.selectedThemeId;
+    case "upsert-theme": {
+      const theme = remote.appearance.customThemes.find((candidate) => candidate.id === operation.theme.id);
+      return theme ? theme.name === operation.theme.name && same(theme.definition, operation.theme.definition) : false;
+    }
+    case "delete-theme":
+      return !remote.appearance.customThemes.some((theme) => theme.id === operation.themeId);
+    default:
+      return false;
+  }
+}
+
 export function resolveOutboxRevisionConflict(operation: OutboxOperation, conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): OutboxConflictResolution {
   const rebased = rebaseOutboxOperationForConflict(operation, conflict);
   if (!rebased) return { kind: "blocked", fields: [conflict.resourceKind] };
+  if (operationIntentIsSatisfied(operation, remote)) return { kind: "satisfied" };
   if (operation.kind === "patch-entry") {
     const current = remote.entries.find((entry) => entry.id === operation.entryId);
     if (!operation.conflictBase || !current) return { kind: "blocked", fields: ["item"] };

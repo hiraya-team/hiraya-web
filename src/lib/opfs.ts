@@ -357,7 +357,7 @@ async function loadDesktopUnsafe(_viewport: EntryPosition, seeded: SeededManifes
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
-async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true, acknowledgedRevision?: number) {
+async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true, acknowledgedRevision?: number, removeAcknowledged = false) {
   if (!desktopId) throw new Error("No desktop is active.");
   const current = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   if (!force && current.sync.catalogId === snapshot.sync.catalogId && current.sync.catalogRevision >= snapshot.sync.catalogRevision) {
@@ -402,7 +402,7 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
     // Reconciliation content can originate in the local outbox. Only direct
     // downloads accompanied by a verified server descriptor publish a cache marker.
   }
-  const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId, acknowledgedRevision }, desktopId);
+  const reconciled = await callDatabase("applyRemoteWithOutbox", { state: next, acknowledgedOperationId, acknowledgedRevision, removeAcknowledged }, desktopId);
   const projected = parseDesktopState(reconciled.state);
   if (desktopId === getActiveDesktopContext()) desktopLoad = Promise.resolve(projected);
   if (acknowledgedTheme?.wallpaper && acknowledgedThemeContent) {
@@ -426,6 +426,12 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
     await removeUnretainedCachedContent(retained);
   }
   return { entries: projected.entries, layout: manifestLayout(projected), editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
+}
+
+async function resolveSatisfiedMutationUnsafe(snapshot: DesktopStateSnapshot, operationId: string, acknowledgedRevision: number, desktopId = getActiveDesktopContext()) {
+  const resolved = await applyRemoteDesktopUnsafe(snapshot, new Map(), operationId, desktopId, true, false, acknowledgedRevision, true);
+  await removeStagedOperation(operationId);
+  return resolved;
 }
 
 async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<string, Blob> = new Map()) {
@@ -1212,6 +1218,7 @@ export function enqueueTransfer(sourceDesktopId: string, destinationDesktopId: s
 export function readOutbox() { return serializeStorage(() => callDatabase("readOutbox", undefined)); }
 export function bindOutboxCatalog(catalogId: string) { return serializeStorage(() => callDatabase("bindOutboxCatalog", { catalogId }, null)); }
 export function acknowledgeMutation(operationId: string) { return serializeStorage(() => acknowledgeMutationUnsafe(operationId)); }
+export function resolveSatisfiedMutation(snapshot: DesktopStateSnapshot, operationId: string, acknowledgedRevision: number, desktopId?: string) { return serializeStorage(() => resolveSatisfiedMutationUnsafe(snapshot, operationId, acknowledgedRevision, desktopId)); }
 export function blockMutation(operationId: string, error: string, errorCode: string | null = null, conflictDetails: import("./outbox").RevisionConflictDetails | null = null) { return serializeStorage(() => callDatabase("blockMutation", { operationId, error, errorCode, conflictDetails })); }
 export function rebaseBlockedMutation(operationId: string, operation: OutboxOperation) { return serializeStorage(() => callDatabase("rebaseBlockedMutation", { operationId, operation })); }
 export function recordMutationAttempt(operationId: string, attemptedAt: number) { return serializeStorage(() => callDatabase("recordMutationAttempt", { operationId, attemptedAt })); }

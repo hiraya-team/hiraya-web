@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Avoid false synchronization conflicts.** Rapid queued changes now use their latest saved revision, and changes already matched by the server resolve automatically instead of repeatedly showing a **Sync Issue**.
 - **Edit themes comfortably on mobile.** **Theme Editor** now uses one natural vertical scroll on narrow screens, keeps its theme picker compact, and brings the live preview and touch-friendly controls into reach without nested scrolling.
 - **Close Explorer with Back on mobile.** The upper-left **Back** action and the phone's system Back action now close Explorer instead of opening the desktop root, and another Back action no longer reopens the folder you left.
 - **Select widgets before arranging them.** Moving, resizing, or removing a widget now requires selecting it first, preventing an initial click or drag from changing the desktop unexpectedly.

@@ -152,6 +152,16 @@ describe("strict outbox", () => {
     expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, entries: [{ ...base, name: "remote.txt" }] })).toEqual({ kind: "blocked", fields: ["name"] });
   });
 
+  test("recognizes revision conflicts whose intent is already authoritative", () => {
+    const snapshot = desktopStateSnapshot();
+    const remote = { ...snapshot, appearance: { ...snapshot.appearance, selectedThemeId: "warm-paper" }, sync: { ...snapshot.sync, themeSelectionRevision: 2 } };
+    const operation = { schemaVersion: 1 as const, kind: "select-theme" as const, themeId: "warm-paper", baseRevision: 1 };
+    const conflict = { resourceKind: "theme-selection" as const, resourceId: "desk", expectedRevision: 1, actualRevision: 2 };
+
+    expect(resolveOutboxRevisionConflict(operation, conflict, remote)).toEqual({ kind: "satisfied" });
+    expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, appearance: { ...remote.appearance, selectedThemeId: DEFAULT_THEME_ID } })).toEqual({ kind: "blocked", fields: ["theme-selection"] });
+  });
+
   test("leaves content conflicts for durable blob resolution", () => {
     const snapshot = desktopStateSnapshot();
     const operation = { schemaVersion: 1 as const, kind: "save-content" as const, entryId: "file", mimeType: "text/plain", size: 5, modifiedAt: 2, baseContentRevision: 1 };
@@ -181,7 +191,7 @@ describe("strict outbox", () => {
     expect(resolveOutboxRevisionConflict(operation, conflict, remote)).toMatchObject({ kind: "rebase", operation: { layout: { widgets: [{ id: "clock", x: 20 }, { id: "calendar" }], iconGroups: [{ folderId: "one", width: 240 }, { folderId: "two" }] } } });
     expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, layout: { ...base, widgets: [{ ...clock, y: 20 }] } })).toEqual({ kind: "blocked", fields: ["widgets"] });
     expect(resolveOutboxRevisionConflict(operation, conflict, { ...remote, layout: { ...base, iconGroups: [{ ...base.iconGroups[0], height: 240 }] } })).toEqual({ kind: "blocked", fields: ["icon groups"] });
-    expect(resolveOutboxRevisionConflict({ ...operation, layout: { ...base, widgets: [], iconGroups: [] } }, conflict, { ...remote, layout: { ...base, widgets: [], iconGroups: [] } })).toMatchObject({ kind: "rebase" });
+    expect(resolveOutboxRevisionConflict({ ...operation, layout: { ...base, widgets: [], iconGroups: [] } }, conflict, { ...remote, layout: { ...base, widgets: [], iconGroups: [] } })).toEqual({ kind: "satisfied" });
   });
 
   test("identifies pending changes waiting on an earlier causal conflict", () => {

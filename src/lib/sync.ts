@@ -744,6 +744,9 @@ export class SyncEngine {
 
   private async replayRecord(record: OutboxRecord, generation: number, retryBlocked = false, autoResolveConflict = true) {
     this.assertActive(generation);
+    const durable = (await this.storage.readOutbox()).find((candidate) => candidate.operationId === record.operationId);
+    if (!durable) return;
+    record = durable;
     if (record.status === "blocked" && !retryBlocked) throw new SyncRequestError(record.error ?? "A pending change is blocked.", 409, true);
     if (!this.catalogId || record.catalogId !== this.catalogId) {
       const message = "Pending changes belong to a different catalog.";
@@ -796,6 +799,14 @@ export class SyncEngine {
           this.assertActive(generation);
           const latestConflict = currentConflict(conflict, remote);
           const resolution = resolveOutboxRevisionConflict(record.operation, latestConflict, remote);
+          if (resolution.kind === "satisfied") {
+            const applied = await this.storage.resolveSatisfiedMutation(remote, record.operationId, latestConflict.actualRevision, record.desktopId);
+            this.assertActive(generation);
+            if (record.desktopId === this.desktopId) this.publish(applied);
+            this.publishActivityChange();
+            await this.publishOutbox();
+            return;
+          }
           if (resolution.kind === "rebase") {
             await this.storage.blockMutation(record.operationId, error.message, error.code, latestConflict);
             const rebased = await this.storage.rebaseBlockedMutation(record.operationId, resolution.operation);
