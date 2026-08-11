@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import { ArrowLeft, CaretRight, DotsThreeVertical, FilePlus, Folder, FolderOpen, FolderPlus, ListBullets, MagnifyingGlass, SortAscending, SortDescending, SquaresFour, UploadSimple, X } from "@phosphor-icons/react";
-import type { DesktopEntry, EntryPosition, FolderEntry } from "../types";
+import type { DesktopEntry, EntryPosition, FolderEntry, GridSize } from "../types";
 import type { ExplorerView } from "../domain/preferences";
 import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary, type FolderSortKey, type SortDirection } from "../ui/folder-explorer";
 import type { AppWindowHeaderElements } from "./AppWindow";
@@ -33,6 +33,7 @@ export interface FolderExplorerProps {
   mobileMultiSelect?: boolean;
   onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
   getDesktopDropPreview?: (clientX: number, clientY: number) => EntryPosition;
+  gridSize?: GridSize;
   readOnly?: boolean;
   headerElements?: AppWindowHeaderElements;
   offlineAvailability?: Readonly<Record<string, OfflineEntryAvailability>>;
@@ -48,7 +49,7 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
-export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
+export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
@@ -57,7 +58,7 @@ export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNav
   const orderedIds = orderedChildren.map((item) => item.id);
   const trail = folder && breadcrumbs.at(-1)?.id !== folder.id ? [...breadcrumbs, folder] : breadcrumbs;
 
-  const entryDrag = useEntryPointerDrag({ disabled: (entry) => readOnly || isEntryReadOnly(entry), onMove, getDesktopDropPreview });
+  const entryDrag = useEntryPointerDrag({ disabled: (entry) => readOnly || isEntryReadOnly(entry), onMove, getDesktopDropPreview, gridSize });
 
   function open(entry: DesktopEntry) {
     if (entry.kind === "folder") onNavigate(entry);

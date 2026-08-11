@@ -17,7 +17,7 @@ New user-facing features are listed newest first.
 ### August 2026
 
 - **Find and select Scene widgets.** Scene widgets now keep a visible corner grip for selection and movement while leaving the Scene itself interactive. Select the grip first, then drag it to move the widget.
-- **Preview nearby icon placement.** While **Auto-arrange while dragging** shifts nearby icons, dashed placeholders now show exactly where those icons will be placed.
+- **Preview desktop placement.** While **Auto-arrange while dragging** shifts nearby icons, dashed placeholders show exactly where those icons will be placed. With **Snap to grid** enabled, a softly faded grid surrounds every icon, widget, icon group, or Explorer drop preview.
 - **Create and place interactive Scenes.** Open `.hiraya.scene` files in **Scene Studio** to edit packaged HTML, CSS, JavaScript, and assets with an unsaved live preview. Choose **Add widget > Scene...** or **Theme Editor > Choose Hiraya file** to place a Scene as a widget or interactive wallpaper; whole public desktops run the same Scene, while reduced-motion wallpaper falls back to Hiraya Dusk and widgets wait for **Run Scene**.
 - **Avoid false synchronization conflicts.** Rapid queued changes now use their latest saved revision, and changes already matched by the server resolve automatically instead of repeatedly showing a **Sync Issue**.
 - **Edit themes comfortably on mobile.** **Theme Editor** now uses one natural vertical scroll on narrow screens, keeps its theme picker compact, and brings the live preview and touch-friendly controls into reach without nested scrolling.

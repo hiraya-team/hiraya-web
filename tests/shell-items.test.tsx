@@ -35,8 +35,8 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
   expect(markup).toContain('data-item-activate=""');
   expect(markup).toContain('data-item-context=""');
   expect(markup).toContain('aria-selected="true"');
-  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true"');
-  expect(markup).not.toContain("data-grid");
+  expect(markup).toContain('class="shell-item-snap-preview" aria-hidden="true" data-grid="24"');
+  expect(markup).toContain("--snap-grid-size:24px");
 });
 
 test("keeps public status generic and only renders the active logical area", () => {

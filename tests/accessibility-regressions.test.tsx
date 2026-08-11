@@ -332,9 +332,10 @@ describe("accessibility regressions", () => {
     expect(markup).toContain('inert=""');
   });
 
-  test("keeps placement previews and Markdown quotes visually restrained", async () => {
+  test("keeps placement grids faded and Markdown quotes visually restrained", async () => {
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
-    expect(css).not.toContain("snap-preview[data-grid]");
+    expect(css).toContain("snap-preview[data-grid]::before");
+    expect(css).toContain("mask-image: radial-gradient(closest-side, black 64%, transparent 100%)");
     expect(css).not.toContain("border-left: 3px solid");
     expect(css).toContain("border-inline-start: var(--theme-border-width, 1px) solid");
   });

@@ -306,6 +306,16 @@ test("snap to grid remains active beside another icon", async ({ page }) => {
   const stationaryBounds = await stationary.boundingBox();
   if (!movingBounds || !stationaryBounds) throw new Error("The target icons are not visible.");
 
+  await beginDragPointerTo(page, moving, stationaryBounds.x + stationaryBounds.width / 2, stationaryBounds.y + stationaryBounds.height / 2);
+  const snapPreview = page.locator(".file-icon-snap-preview[data-visible]");
+  await expect(snapPreview).toHaveAttribute("data-grid", "24");
+  await expect.poll(() => snapPreview.evaluate((element) => getComputedStyle(element, "::before").maskImage)).toContain("radial-gradient");
+  await expect(stationary).toHaveAttribute("data-auto-arrange-dragging", "true");
+  await expect(stationary).toHaveAttribute("data-grid", "24");
+  await expect.poll(() => stationary.evaluate((element) => getComputedStyle(element, "::after").maskImage)).toContain("radial-gradient");
+  await moving.dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", clientX: stationaryBounds.x + stationaryBounds.width / 2, clientY: stationaryBounds.y + stationaryBounds.height / 2 });
+  await page.mouse.up();
+
   await dragPointerTo(page, moving, stationaryBounds.x + stationaryBounds.width + 6 + movingBounds.width / 2, stationaryBounds.y + stationaryBounds.height / 2);
   const position = async () => moving.evaluate((element) => [parseFloat(element.style.getPropertyValue("--file-x")), parseFloat(element.style.getPropertyValue("--file-y"))]);
   await expect.poll(async () => {
@@ -1473,6 +1483,8 @@ test("widgets and icon groups preview snapped pointer placement", async ({ page 
   await beginDragPointerTo(page, moveClock, moveBounds.x + moveBounds.width / 2 + 35, moveBounds.y + moveBounds.height / 2 + 17);
   const placeholder = page.locator(".shell-item-snap-preview[data-visible]");
   await expect(placeholder).toHaveCount(1);
+  await expect(placeholder).toHaveAttribute("data-grid", "24");
+  await expect.poll(() => placeholder.evaluate((element) => getComputedStyle(element, "::before").maskImage)).toContain("radial-gradient");
   const clockTarget = await placeholder.evaluate((element) => [parseFloat(element.style.left), parseFloat(element.style.top), parseFloat(element.style.width), parseFloat(element.style.height)]);
   expect((clockTarget[0] - 22) % 24).toBe(0);
   expect((clockTarget[1] - 22) % 24).toBe(0);

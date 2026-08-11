@@ -1,5 +1,5 @@
 import { useEffect, useRef, type PointerEvent as ReactPointerEvent } from "react";
-import type { DesktopEntry, EntryPosition } from "../types";
+import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "./entry-drop-target";
 import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "./pointer-drag-preview";
 
@@ -13,10 +13,11 @@ type DragState = {
   snapPreview?: HTMLElement | null;
 };
 
-export function useEntryPointerDrag({ disabled, onMove, getDesktopDropPreview }: {
+export function useEntryPointerDrag({ disabled, onMove, getDesktopDropPreview, gridSize }: {
   disabled: (entry: DesktopEntry) => boolean;
   onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;
   getDesktopDropPreview?: (clientX: number, clientY: number) => EntryPosition;
+  gridSize?: GridSize;
 }) {
   const drag = useRef<DragState | null>(null);
 
@@ -46,6 +47,10 @@ export function useEntryPointerDrag({ disabled, onMove, getDesktopDropPreview }:
       current.snapPreview.className = "file-icon-snap-preview entry-drop-preview";
       current.snapPreview.ariaHidden = "true";
       current.snapPreview.dataset.visible = "true";
+      if (gridSize) {
+        current.snapPreview.dataset.grid = `${gridSize}`;
+        current.snapPreview.style.setProperty("--snap-grid-size", `${gridSize}px`);
+      }
       if (!current.snapPreview.isConnected) dropTarget.element.append(current.snapPreview);
       const position = getDesktopDropPreview(event.clientX, event.clientY);
       current.snapPreview.style.left = `${position.x}px`;
