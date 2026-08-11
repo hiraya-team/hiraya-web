@@ -19,6 +19,14 @@ describe("style ownership", () => {
     expect(desktop).not.toContain(":root {");
   });
 
+  test("limits file icon hover styling to hover-capable pointers", async () => {
+    const desktop = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    const finePointerIndex = desktop.indexOf("@media (hover: hover) and (pointer: fine)");
+
+    expect(finePointerIndex).toBeGreaterThanOrEqual(0);
+    expect(desktop.indexOf(".file-icon:hover")).toBeGreaterThan(finePointerIndex);
+  });
+
   test("documents the legacy cascade and centralizes systemic interaction tokens", async () => {
     const ownership = await Bun.file(new URL("../src/styles/OWNERSHIP.md", import.meta.url)).text();
     const foundation = await Bun.file(new URL("../src/styles/foundation.css", import.meta.url)).text();
