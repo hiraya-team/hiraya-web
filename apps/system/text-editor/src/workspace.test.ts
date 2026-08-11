@@ -25,6 +25,7 @@ describe("Integrated Editor workspace", () => {
     expect(editorFileKind((file("report.bin", "application/pdf") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("pdf");
     expect(editorFileKind((file("song.mp3") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("audio");
     expect(editorFileKind((file("clip.webm") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("video");
+    expect(editorFileKind((file("ambient.hiraya.scene") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("scene");
     expect(editorFileKind((file("archive.zip", "application/zip") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("metadata");
   });
 

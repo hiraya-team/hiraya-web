@@ -46,7 +46,7 @@ export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null
     const hasIdentity = identityFields.some((part) => part !== undefined);
     if (hasIdentity && (value.source !== "system" && value.source !== "desktop" && value.source !== "store" && value.source !== "account" || typeof value.digest !== "string" || !/^[a-f0-9]{64}$/.test(value.digest) || !Array.isArray(value.permissions) || value.permissions.some((permission) => typeof permission !== "string") || new Set(value.permissions).size !== value.permissions.length)) return null;
     return {
-      kind: "system", appId: value.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? SYSTEM_APP_IDS.mediaViewer : value.appId, targetKind: value.targetKind, entryId: value.entryId,
+      kind: "system", appId: value.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? SYSTEM_APP_IDS.mediaViewer : value.appId === RETIRED_SYSTEM_APP_IDS.sceneEditor ? SYSTEM_APP_IDS.textEditor : value.appId, targetKind: value.targetKind, entryId: value.entryId,
       ...(hasIdentity ? { source: value.source, digest: value.digest, permissions: [...value.permissions as string[]] } : {}),
     } as SystemAppTarget;
   }

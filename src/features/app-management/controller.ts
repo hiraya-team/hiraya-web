@@ -16,6 +16,7 @@ import {
   removeFileAssociation,
   removeQuarantinedApp,
   retireMarkdownPreview,
+  retireSceneEditor,
   resetFileAssociations,
   setFileAssociation,
   uninstallApp,
@@ -105,12 +106,12 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
           if (!current || !systemInstallMatchesCatalog(current, item)) await installApp(install);
           return install;
         }));
-        const retiredDigest = await retireMarkdownPreview();
-        if (retiredDigest) await releaseApprovedPackageArchive(retiredDigest);
+        const retiredDigests = await Promise.all([retireMarkdownPreview(), retireSceneEditor()]);
+        for (const retiredDigest of retiredDigests) if (retiredDigest) await releaseApprovedPackageArchive(retiredDigest);
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
-        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => app.appId !== RETIRED_SYSTEM_APP_IDS.markdownPreview && !systemIds.has(app.appId)), ...systemApps]);
-        setLocalFileAssociations(associations.map((association) => association.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? { ...association, appId: SYSTEM_APP_IDS.mediaViewer } : association));
+        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => app.appId !== RETIRED_SYSTEM_APP_IDS.markdownPreview && app.appId !== RETIRED_SYSTEM_APP_IDS.sceneEditor && !systemIds.has(app.appId)), ...systemApps]);
+        setLocalFileAssociations(associations.map((association) => association.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? { ...association, appId: SYSTEM_APP_IDS.mediaViewer } : association.appId === RETIRED_SYSTEM_APP_IDS.sceneEditor ? { ...association, appId: SYSTEM_APP_IDS.textEditor } : association));
         setQuarantinedApps(quarantined);
         setAppsLoaded(true);
       })

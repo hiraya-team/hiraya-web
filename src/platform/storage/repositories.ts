@@ -39,6 +39,11 @@ export async function retireMarkdownPreview() {
   return callDatabase("retireMarkdownPreview", undefined, null);
 }
 
+export async function retireSceneEditor() {
+  await initializeDatabase();
+  return callDatabase("retireSceneEditor", undefined, null);
+}
+
 export async function uninstallApp(appId: string) {
   await initializeDatabase();
   return callDatabase("uninstallApp", { appId }, null);

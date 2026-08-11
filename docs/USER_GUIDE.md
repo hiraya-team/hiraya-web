@@ -16,8 +16,9 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Author Scenes in Integrated Editor.** Opening a `.hiraya.scene` file now turns **Integrated Editor** into a Scene workspace with package files, source tabs, asset tools, and a live preview side by side. The separate **Scene Studio** app has been removed.
 - **Preview nearby icon placement.** While **Auto-arrange while dragging** shifts nearby icons, dashed placeholders now show exactly where those icons will be placed.
-- **Create and place interactive Scenes.** Open `.hiraya.scene` files in **Scene Studio** to edit packaged HTML, CSS, JavaScript, and assets with an unsaved live preview. Choose **Add widget > Scene...** or **Theme Editor > Choose Hiraya file** to place a Scene as a widget or interactive wallpaper; whole public desktops run the same Scene, while reduced-motion wallpaper falls back to Hiraya Dusk and widgets wait for **Run Scene**.
+- **Create and place interactive Scenes.** Open `.hiraya.scene` files in **Integrated Editor** to edit packaged HTML, CSS, JavaScript, and assets with an unsaved live preview. Choose **Add widget > Scene...** or **Theme Editor > Choose Hiraya file** to place a Scene as a widget or interactive wallpaper; whole public desktops run the same Scene, while reduced-motion wallpaper falls back to Hiraya Dusk and widgets wait for **Run Scene**.
 - **Avoid false synchronization conflicts.** Rapid queued changes now use their latest saved revision, and changes already matched by the server resolve automatically instead of repeatedly showing a **Sync Issue**.
 - **Edit themes comfortably on mobile.** **Theme Editor** now uses one natural vertical scroll on narrow screens, keeps its theme picker compact, and brings the live preview and touch-friendly controls into reach without nested scrolling.
 - **Close Explorer with Back on mobile.** The upper-left **Back** action and the phone's system Back action now close Explorer instead of opening the desktop root, and another Back action no longer reopens the folder you left.
@@ -186,7 +187,7 @@ A `.hiraya.scene` file is a ZIP archive with `hiraya.scene.json` at its root. Th
 }
 ```
 
-Open an existing Scene with **Scene Studio**, or launch **Scene Studio** without a file to create a starter package. The file tree can add, rename, or remove text files and import binary assets. The live preview always uses the unsaved in-memory package. Strict validation errors disable the preview but do not prevent saving the draft, so malformed work remains recoverable. If the synchronized file changes while local edits are unsaved, use **Save As** to preserve both versions.
+Open an existing Scene with **Integrated Editor**, or choose **New Scene** from its actions to create a starter package. A Scene replaces the current editor workspace after you confirm any unsaved work. The Explorer can add, rename, or remove text files and import binary assets, while the source editor and live preview remain side by side. The preview always uses the unsaved in-memory package. Strict validation errors disable the preview but do not prevent saving the draft, so malformed work remains recoverable. If the synchronized file changes while local edits are unsaved, use **Save As** to preserve both versions.
 
 Scene HTML may reference packaged scripts, styles, images, fonts, and media with relative paths. Scene execution has an opaque origin, no network, frames, workers, forms, navigation, Hiraya host APIs, or file access. Scene widgets receive pointer and keyboard input. A Scene wallpaper receives input only in empty desktop space; icons, widgets, windows, and desktop chrome remain above it. The source example under `examples/scene` can be packaged with App CLI 2.2 or opened as a starting reference.
 

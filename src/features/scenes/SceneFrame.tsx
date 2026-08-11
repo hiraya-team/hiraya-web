@@ -42,7 +42,7 @@ export function SceneFrame({ file, contentRevision, readContent, mode }: Props) 
 
   const fail = useCallback(() => setState((current) => {
     if (current.status === "ready") current.revoke();
-    return { status: "error", message: "The Scene stopped unexpectedly. Check the package in Scene Studio." };
+    return { status: "error", message: "The Scene stopped unexpectedly. Check the package in Integrated Editor." };
   }), []);
   useEffect(() => {
     if (state.status !== "ready") return;

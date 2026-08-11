@@ -25,6 +25,10 @@ describe("built-in app registry", () => {
     expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.markdown-preview", targetKind: "file", entryId: "file", source: "system", digest: "a".repeat(64), permissions: ["files:read"] })).toEqual({ kind: "system", appId: "app.hiraya.media-viewer", targetKind: "file", entryId: "file", source: "system", digest: "a".repeat(64), permissions: ["files:read"] });
   });
 
+  test("normalizes retired Scene Studio targets to Integrated Editor", () => {
+    expect(extractBuiltinAppTarget({ kind: "system", appId: "app.hiraya.scene-editor", targetKind: "file", entryId: "file" })).toEqual({ kind: "system", appId: "app.hiraya.text-editor", targetKind: "file", entryId: "file" });
+  });
+
   test("rejects unknown and malformed runtime targets", () => {
     for (const value of [null, [], { kind: "trash" }, { kind: "file", fileId: "" }, { kind: "file", fileId: "file", editMode: "yes" }, { kind: "explorer" }, { kind: "explorer", folderId: 4 }, { kind: "properties", entryId: "" }]) {
       expect(extractBuiltinAppTarget(value)).toBeNull();

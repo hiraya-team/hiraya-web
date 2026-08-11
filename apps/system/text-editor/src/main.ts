@@ -1,4 +1,9 @@
+import { inspectSceneArchive } from "@hiraya-team/app-cli";
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
+import { HIRAYA_SCENE_MIME_TYPE } from "@hiraya-team/apps-contracts/scene";
 import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FileMetadata, type FolderHandle, type FolderMetadata, type HirayaClient } from "@hiraya-team/apps-sdk";
+import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
+import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
 import { connectSystemApp, describeError, formatBytes, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
@@ -13,6 +18,7 @@ import { EditorView, placeholder } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { minimalSetup } from "codemirror";
 import { formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorLanguage, type TextEditorSettings } from "./editor";
+import { archiveWritePayload, SceneArchiveState, starterSceneArchive } from "./scene";
 import { editorFileKind, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries, type EditorFileKind } from "./workspace";
 import "./style.css";
 
@@ -29,7 +35,10 @@ type DocumentTab = {
   previewObjectUrl: string | null;
   previewExpiresAt: number;
   previewRefreshAttempted: boolean;
+  scenePath: string | null;
 };
+
+type SceneWorkspace = { archive: SceneArchiveState; handle: FileHandle | null; metadata: FileMetadata | null };
 
 const APP_ID = "app.hiraya.text-editor";
 const SETTINGS_KEY = "editor-settings";
@@ -38,6 +47,9 @@ const content = required<HTMLElement>("#content");
 const workbench = required<HTMLElement>("#workbench");
 const editorElement = required<HTMLElement>("#editor");
 const previewElement = required<HTMLElement>("#preview");
+const stageContent = required<HTMLElement>("#stage-content");
+const scenePreview = required<HTMLElement>("#scene-preview");
+const sceneValidation = required<HTMLElement>("#scene-validation");
 const loading = required<HTMLElement>("#loading");
 const tabsElement = required<HTMLElement>("#tabs");
 const breadcrumbs = required<HTMLElement>("#breadcrumbs");
@@ -71,9 +83,14 @@ const editorExtensions: Extension = [
   ])),
   EditorView.updateListener.of((update) => {
     if (!update.docChanged || switchingDocument || !activeTab) return;
-    activeTab.state?.edit(update.state.doc.toString());
+    const text = update.state.doc.toString();
+    activeTab.state?.edit(text);
+    if (scene && activeTab.scenePath) {
+      scene.archive.writeText(activeTab.scenePath, text);
+      scheduleScenePreview();
+    }
     renderDocumentState();
-    scheduleAutoSave(activeTab);
+    if (!activeTab.scenePath) scheduleAutoSave(activeTab);
   }),
 ];
 const editor = new EditorView({ parent: editorElement, extensions: editorExtensions });
@@ -83,6 +100,7 @@ let settings = parseTextEditorSettings(undefined);
 let tabs: DocumentTab[] = [];
 let activeTab: DocumentTab | null = null;
 let workspace: FolderMetadata | null = null;
+let scene: SceneWorkspace | null = null;
 let workspaceGeneration = 0;
 let selectedHandle: string | null = null;
 let selectedPath: string | null = null;
@@ -93,6 +111,11 @@ let canWrite = false;
 let sidebarOpen = true;
 let writeReason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable" = "temporarily-unavailable";
 let windowTitle = "";
+let windowDirty: boolean | null = null;
+let commandSignature = "";
+let scenePreviewResource: MaterializedApp | null = null;
+let stopScenePreview: (() => void) | null = null;
+let scenePreviewTimer = 0;
 const children = new Map<FolderHandle, DirectoryEntry[]>();
 const entries = new Map<string, DirectoryEntry>();
 const parents = new Map<string, FolderHandle | null>();
@@ -104,10 +127,11 @@ required("#explorer-view").addEventListener("click", () => required("#explorer-v
 required("#search-view").addEventListener("click", () => showSidebar("search"));
 required("#settings-view").addEventListener("click", () => showSidebar("settings"));
 required("#open-workspace").addEventListener("click", () => void chooseWorkspace());
-workspaceHeading.addEventListener("click", () => { if (workspace) { selectedHandle = workspace.handle; selectedPath = ""; renderWorkspace(); renderControlState(); } });
+workspaceHeading.addEventListener("click", () => { if (scene) { selectedPath = ""; renderWorkspace(); renderControlState(); } else if (workspace) { selectedHandle = workspace.handle; selectedPath = ""; renderWorkspace(); renderControlState(); } });
 required("#refresh-tree").addEventListener("click", () => void refreshWorkspace());
 required("#new-file").addEventListener("click", () => void createEntry("file"));
 required("#new-folder").addEventListener("click", () => void createEntry("folder"));
+required("#import-assets").addEventListener("click", () => void importSceneAssets());
 required("#rename-entry").addEventListener("click", () => void renameEntry());
 required("#delete-entry").addEventListener("click", () => void deleteEntry());
 required<HTMLSelectElement>("#font-size").addEventListener("change", (event) => void changeSettings({ ...settings, fontSize: Number((event.target as HTMLSelectElement).value) }));
@@ -126,7 +150,7 @@ async function start() {
     const app = await connectSystemApp(APP_ID);
     hiraya = app.hiraya;
     publishWindowTitle("Integrated Editor");
-    app.onDispose(() => { initialized = false; operations.invalidate(); for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); } editor.destroy(); });
+    app.onDispose(() => { initialized = false; operations.invalidate(); clearTimeout(scenePreviewTimer); stopScenePreview?.(); scenePreviewResource?.revoke(); for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); } editor.destroy(); });
     let copiedSettings: unknown;
     try { copiedSettings = app.launch.arguments[0] ? JSON.parse(app.launch.arguments[0]) : undefined; } catch { copiedSettings = undefined; }
     const stored = await hiraya.storage.get(SETTINGS_KEY);
@@ -135,7 +159,7 @@ async function start() {
     applySettings();
     applyCapabilities(await hiraya.app.getCapabilities());
     hiraya.on("capabilities.changed", applyCapabilities);
-    hiraya.on("commands.invoked", ({ id }) => id === "save" ? void save(false) : id === "save-as" ? void save(true) : id === "open" ? void open() : id === "workspace" ? void chooseWorkspace() : id === "search" ? showSidebar("search") : id === "format" ? applyFormatting() : undefined);
+    hiraya.on("commands.invoked", ({ id }) => id === "save" ? void save(false) : id === "save-as" ? void save(true) : id === "open" ? void open() : id === "new-scene" ? void newScene() : id === "workspace" ? void chooseWorkspace() : id === "search" ? showSidebar("search") : id === "format" ? applyFormatting() : undefined);
     hiraya.on("files.changed", ({ handles }) => void remoteChanged(handles));
     const launchFile = app.launch.files[0];
     if (launchFile) {
@@ -160,7 +184,7 @@ async function start() {
 function createUntitled() {
   const state = new TextDocumentState();
   state.load("", 0);
-  const tab: DocumentTab = { id: crypto.randomUUID(), handle: null, metadata: null, name: "Untitled.txt", kind: "text", state, saving: false, autoSaveTimer: 0, previewSource: null, previewObjectUrl: null, previewExpiresAt: 0, previewRefreshAttempted: false };
+  const tab: DocumentTab = { id: crypto.randomUUID(), handle: null, metadata: null, name: "Untitled.txt", kind: "text", state, saving: false, autoSaveTimer: 0, previewSource: null, previewObjectUrl: null, previewExpiresAt: 0, previewRefreshAttempted: false, scenePath: null };
   tabs.push(tab);
   activateTab(tab, false);
 }
@@ -176,14 +200,20 @@ async function open() {
 }
 
 async function load(next: FileHandle, generation: number) {
+  const entry = await statFile(next);
+  if (!operations.isForegroundCurrent(generation)) return;
+  if (editorFileKind(entry) === "scene") {
+    if (scene?.handle === next) return;
+    await loadScene(next, entry, generation);
+    return;
+  }
+  if (scene && !await leaveScene("Open another file?")) return;
   const existing = tabs.find((tab) => tab.handle === next);
   if (existing) { activateTab(existing); return; }
   opening = true;
   setAppLoading(content, workbench, loading, "Opening file...");
   renderControlState();
   try {
-    const entry = await statFile(next);
-    if (!operations.isForegroundCurrent(generation)) return;
     const kind = editorFileKind(entry);
     const loaded = kind === "text" ? await readText(next, entry) : null;
     const preview = kind === "text" ? emptyPreview() : await createPreview(next, entry, kind);
@@ -191,7 +221,7 @@ async function load(next: FileHandle, generation: number) {
     const state = loaded ? new TextDocumentState() : null;
     if (state && loaded) state.load(loaded.text, loaded.entry.contentRevision);
     const metadata = loaded?.entry ?? entry;
-    const tab: DocumentTab = { id: crypto.randomUUID(), handle: next, metadata, name: metadata.name, kind, state, saving: false, autoSaveTimer: 0, ...preview };
+    const tab: DocumentTab = { id: crypto.randomUUID(), handle: next, metadata, name: metadata.name, kind, state, saving: false, autoSaveTimer: 0, ...preview, scenePath: null };
     const cleanUntitled = tabs.length === 1 && tabs[0]?.handle === null && !tabDirty(tabs[0]);
     if (cleanUntitled) tabs = [];
     tabs.push(tab);
@@ -210,6 +240,91 @@ async function statFile(next: FileHandle) {
   const entry = await hiraya.files.stat(next);
   if (entry.kind !== "file") throw new Error("The selected item is not a file.");
   return entry.metadata;
+}
+
+async function leaveScene(title: string) {
+  if (!scene) return true;
+  if (scene.archive.dirty && !await hiraya.dialogs.confirm({ title, message: "The Scene has changes that have not been saved.", confirmLabel: "Discard changes", destructive: true })) return false;
+  clearSceneWorkspace();
+  return true;
+}
+
+function clearSceneWorkspace() {
+  clearTimeout(scenePreviewTimer);
+  stopScenePreview?.(); stopScenePreview = null;
+  scenePreviewResource?.revoke(); scenePreviewResource = null;
+  scenePreview.replaceChildren();
+  scene = null;
+  tabs = tabs.filter((tab) => !tab.scenePath);
+  activeTab = tabs[0] ?? null;
+  if (activeTab) activateTab(activeTab, false);
+  else { editorElement.hidden = true; previewElement.hidden = true; }
+  stageContent.classList.remove("scene-mode");
+  required<HTMLElement>("#scene-preview-pane").hidden = true;
+  required<HTMLElement>("#scene-conflict").hidden = true;
+}
+
+async function loadScene(handle: FileHandle, metadata: FileMetadata, generation: number) {
+  if (scene && !await leaveScene("Open another Scene?")) return;
+  if (!scene && tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Open Scene?", message: "Open tabs have unsaved changes. Opening a Scene will close them.", confirmLabel: "Open Scene", destructive: true })) return;
+  opening = true;
+  setAppLoading(content, workbench, loading, "Opening Scene...");
+  renderControlState();
+  try {
+    const { data } = await hiraya.files.readAll(handle);
+    const opened = await SceneArchiveState.open(new Uint8Array(data), metadata.contentRevision);
+    if (!operations.isForegroundCurrent(generation)) return;
+    openSceneWorkspace(opened.state, handle, metadata, opened.draft.manifest?.entrypoint ?? "hiraya.scene.json");
+    setStatus(opened.draft.manifestError ? "Opened an invalid Scene draft. Fix validation errors when ready." : `Opened ${metadata.name}.`);
+  } finally {
+    if (operations.isForegroundCurrent(generation)) {
+      opening = false;
+      setAppLoading(content, workbench, loading);
+      renderControlState();
+    }
+  }
+}
+
+function openSceneWorkspace(archive: SceneArchiveState, handle: FileHandle | null, metadata: FileMetadata | null, initialPath: string) {
+  for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); }
+  tabs = [];
+  activeTab = null;
+  workspace = null;
+  selectedHandle = null;
+  selectedPath = null;
+  children.clear(); entries.clear(); parents.clear(); expanded.clear();
+  scene = { archive, handle, metadata };
+  workspaceHeading.textContent = metadata?.name ?? "Untitled Scene";
+  workspaceHeading.hidden = false;
+  stageContent.classList.add("scene-mode");
+  required<HTMLElement>("#scene-preview-pane").hidden = false;
+  openScenePath(archive.files.has(initialPath) ? initialPath : archive.paths()[0] ?? "");
+  renderWorkspace();
+  renderControlState();
+  scheduleScenePreview();
+}
+
+async function newScene() {
+  if (!await leaveScene("Create a new Scene?")) return;
+  if (tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Create a new Scene?", message: "Open tabs have unsaved changes. Creating a Scene will close them.", confirmLabel: "Create Scene", destructive: true })) return;
+  const opened = await SceneArchiveState.open(starterSceneArchive(), null);
+  openSceneWorkspace(opened.state, null, null, "index.html");
+  setStatus("Starter Scene ready. Use Save As to store it.");
+}
+
+function openScenePath(path: string) {
+  if (!scene || !path) return;
+  selectedPath = path;
+  let tab = tabs.find((candidate) => candidate.scenePath === path);
+  if (!tab) {
+    const text = scene.archive.readText(path);
+    const state = text === null ? null : new TextDocumentState();
+    state?.load(text ?? "", scene.archive.revision ?? 0);
+    tab = { id: crypto.randomUUID(), handle: null, metadata: null, name: path, kind: text === null ? "metadata" : "text", state, saving: false, autoSaveTimer: 0, ...emptyPreview(), scenePath: path };
+    tabs.push(tab);
+  }
+  activateTab(tab);
+  renderWorkspace();
 }
 
 async function readText(next: FileHandle, entry?: FileMetadata) {
@@ -255,7 +370,7 @@ function activateTab(tab: DocumentTab, focus = true) {
 }
 
 async function closeTab(tab: DocumentTab, confirm = true) {
-  if (confirm && tabDirty(tab) && !await hiraya.dialogs.confirm({ title: `Close ${tab.name}?`, message: "This tab has changes that have not been saved.", confirmLabel: "Close without saving", destructive: true })) return false;
+  if (confirm && !tab.scenePath && tabDirty(tab) && !await hiraya.dialogs.confirm({ title: `Close ${tab.name}?`, message: "This tab has changes that have not been saved.", confirmLabel: "Close without saving", destructive: true })) return false;
   clearTimeout(tab.autoSaveTimer);
   releasePreview(tab);
   const index = tabs.indexOf(tab);
@@ -263,16 +378,22 @@ async function closeTab(tab: DocumentTab, confirm = true) {
   if (activeTab === tab) {
     activeTab = tabs[Math.min(index, tabs.length - 1)] ?? null;
     if (activeTab) activateTab(activeTab, false);
-    else createUntitled();
+    else if (scene) {
+      editorElement.hidden = true;
+      previewElement.hidden = true;
+      renderDocumentState();
+    } else createUntitled();
   } else renderDocumentState();
   return true;
 }
 
 async function save(saveAs: boolean) {
-  if (activeTab) await saveTab(activeTab, saveAs);
+  if (scene) await saveScene(saveAs);
+  else if (activeTab) await saveTab(activeTab, saveAs);
 }
 
 async function saveTab(tab: DocumentTab, saveAs: boolean) {
+  if (tab.scenePath) { await saveScene(saveAs); return; }
   if (!initialized || !tab.state || tab.saving || opening || !canWrite) return;
   const state = tab.state;
   tab.saving = true;
@@ -310,11 +431,57 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
   }
 }
 
+async function saveScene(saveAs: boolean) {
+  if (!initialized || !scene || saving || opening || !canWrite) return;
+  saving = true;
+  renderControlState();
+  const current = scene;
+  try {
+    let destination = saveAs ? null : current.handle;
+    if (!destination) destination = await hiraya.dialogs.saveFile({ suggestedName: current.metadata?.name ?? "Untitled.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE });
+    if (!destination) return;
+    const pending = current.archive.beginSave();
+    const saved = await hiraya.files.writeAll(destination, archiveWritePayload(pending.bytes), { mimeType: HIRAYA_SCENE_MIME_TYPE, ...(destination === current.handle && current.archive.revision !== null ? { expectedRevision: current.archive.revision } : {}) });
+    current.archive.saved(pending.files, saved.contentRevision);
+    current.handle = destination;
+    current.metadata = saved;
+    workspaceHeading.textContent = saved.name;
+    for (const tab of tabs) if (tab.scenePath && tab.state) tab.state.load(current.archive.readText(tab.scenePath) ?? "", saved.contentRevision);
+    renderDocumentState();
+    setStatus(`Saved ${saved.name}${(await current.archive.inspectDraft()).manifestError ? " as an editable invalid draft" : ""}.`);
+  } catch (error) {
+    const message = error instanceof HirayaSdkError && error.code === "CONFLICT" ? "This Scene changed elsewhere. Your unsaved draft is preserved; use Save As to keep both." : describeError(error, "The Scene could not be saved. Your draft is preserved.");
+    setStatus(message, true);
+  } finally {
+    saving = false;
+    renderControlState();
+  }
+}
+
 async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
   const generation = operations.beginBackground();
   if (generation === null) return;
+  if (scene?.handle && handles.includes(scene.handle)) {
+    try {
+      const metadata = await statFile(scene.handle);
+      if (metadata.contentRevision !== scene.archive.revision) {
+        const { data } = await hiraya.files.readAll(scene.handle);
+        if (await scene.archive.remote(new Uint8Array(data), metadata.contentRevision)) {
+          scene.metadata = metadata;
+          for (const tab of tabs) if (tab.scenePath && tab.state) tab.state.load(scene.archive.readText(tab.scenePath) ?? "", metadata.contentRevision);
+          if (activeTab?.scenePath) activateTab(activeTab, false);
+          renderWorkspace();
+          scheduleScenePreview();
+          setStatus("Reloaded the updated Scene.");
+        } else {
+          required<HTMLElement>("#scene-conflict").hidden = false;
+          setStatus("The Scene changed elsewhere. Your unsaved draft is preserved; use Save As to keep both.", true);
+        }
+      }
+    } catch (error) { setStatus(describeError(error, "Could not reload the Scene."), true); }
+  }
   for (const tab of tabs) {
-    if (!tab.handle || tab.saving || !handles.includes(tab.handle)) continue;
+    if (tab.scenePath || !tab.handle || tab.saving || !handles.includes(tab.handle)) continue;
     try {
       if (tab.state) {
         const loaded = await readText(tab.handle);
@@ -355,7 +522,7 @@ function scheduleAutoSave(tab: DocumentTab) {
 
 async function chooseWorkspace() {
   if (!initialized || opening) return;
-  if (tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Change workspace?", message: "Open tabs have unsaved changes. Changing workspace will close them.", confirmLabel: "Change workspace", destructive: true })) return;
+  if (dirtyDocuments() && !await hiraya.dialogs.confirm({ title: "Change workspace?", message: "Open tabs have unsaved changes. Changing workspace will close them.", confirmLabel: "Change workspace", destructive: true })) return;
   try {
     const selected = await hiraya.dialogs.openFolder();
     if (!selected) return;
@@ -369,6 +536,7 @@ async function chooseWorkspace() {
       metadata = { handle: selected, name: "Desktop", modifiedAt: 0, parent: null };
     }
     for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); }
+    clearSceneWorkspace();
     tabs = [];
     activeTab = null;
     createUntitled();
@@ -403,6 +571,18 @@ async function listFolder(folder: FolderHandle) {
 }
 
 async function refreshWorkspace() {
+  if (scene?.handle) {
+    try {
+      const metadata = await statFile(scene.handle);
+      const { data } = await hiraya.files.readAll(scene.handle);
+      if (!await scene.archive.remote(new Uint8Array(data), metadata.contentRevision)) { setStatus("The Scene changed elsewhere. Your unsaved draft is preserved; use Save As to keep both.", true); return; }
+      scene.metadata = metadata;
+      for (const tab of tabs) if (tab.scenePath && tab.state) tab.state.load(scene.archive.readText(tab.scenePath) ?? "", metadata.contentRevision);
+      if (activeTab?.scenePath) activateTab(activeTab, false);
+      renderWorkspace(); scheduleScenePreview(); setStatus(`Refreshed ${metadata.name}.`);
+    } catch (error) { setStatus(describeError(error, "Could not refresh the Scene."), true); }
+    return;
+  }
   if (!workspace) return;
   try {
     const openFolders = [...expanded];
@@ -416,6 +596,7 @@ async function refreshWorkspace() {
 
 function renderWorkspace() {
   fileTree.replaceChildren();
+  if (scene) { renderSceneWorkspace(); return; }
   if (!workspace) {
     const empty = document.createElement("p");
     empty.className = "sidebar-empty";
@@ -431,6 +612,22 @@ function renderWorkspace() {
   const list = document.createElement("ul");
   list.setAttribute("role", "group");
   appendChildren(list, workspace.handle, 0);
+  fileTree.append(list);
+}
+
+function renderSceneWorkspace() {
+  if (!scene) return;
+  workspaceHeading.hidden = false;
+  workspaceHeading.setAttribute("aria-pressed", String(selectedPath === ""));
+  const list = document.createElement("ul");
+  list.setAttribute("role", "group");
+  for (const path of scene.archive.paths()) {
+    const item = document.createElement("li"); item.setAttribute("role", "none");
+    const row = document.createElement("button"); row.type = "button"; row.className = "tree-row"; row.setAttribute("role", "treeitem"); row.dataset.scenePath = path; row.style.setProperty("--tree-depth", "0"); row.setAttribute("aria-selected", String(path === selectedPath));
+    row.append(document.createElement("span"), makeIcon(scene.archive.isText(path) ? "code" : "file", "tree-icon"));
+    const label = document.createElement("span"); label.textContent = path; row.append(label);
+    item.append(row); list.append(item);
+  }
   fileTree.append(list);
 }
 
@@ -467,6 +664,7 @@ function appendChildren(list: HTMLUListElement, parent: FolderHandle, depth: num
 async function activateTreeTarget(target: EventTarget | null) {
   const button = target instanceof Element ? target.closest<HTMLButtonElement>(".tree-row") : null;
   if (!button) return;
+  if (button.dataset.scenePath) { openScenePath(button.dataset.scenePath); return; }
   const entry = entries.get(button.dataset.handle ?? "");
   if (!entry) return;
   selectedHandle = entry.metadata.handle;
@@ -498,9 +696,19 @@ async function openWorkspaceFile(entry: Extract<DirectoryEntry, { kind: "file" }
 async function searchWorkspace(query: string) {
   const generation = workspaceGeneration;
   searchResults.replaceChildren();
-  if (!workspace || !query.trim()) {
-    const hint = document.createElement("p"); hint.className = "sidebar-empty"; hint.textContent = workspace ? "Type a file name to search this workspace." : "Open a workspace before searching."; searchResults.append(hint); return;
+  if ((!workspace && !scene) || !query.trim()) {
+    const hint = document.createElement("p"); hint.className = "sidebar-empty"; hint.textContent = workspace || scene ? "Type a file name to search this workspace." : "Open a workspace before searching."; searchResults.append(hint); return;
   }
+  if (scene) {
+    const matches = scene.archive.paths().filter((path) => path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
+    if (!matches.length) { const empty = document.createElement("p"); empty.className = "sidebar-empty"; empty.textContent = `No files match “${query}”.`; searchResults.append(empty); return; }
+    for (const path of matches) {
+      const button = document.createElement("button"); button.type = "button"; button.dataset.itemId = path; button.dataset.itemSelect = ""; button.setAttribute("role", "option"); button.append(makeIcon(scene.archive.isText(path) ? "code" : "file"));
+      const text = document.createElement("span"); text.textContent = path; button.append(text); searchResults.append(button);
+    }
+    return;
+  }
+  if (!workspace) return;
   const pending = document.createElement("p"); pending.className = "sidebar-empty"; pending.textContent = "Indexing workspace..."; searchResults.append(pending);
   try {
     await indexFolder(workspace.handle, new Set());
@@ -528,6 +736,7 @@ async function indexFolder(folder: FolderHandle, seen: Set<FolderHandle>) {
 }
 
 async function activateSearchResult(id: string) {
+  if (scene?.archive.files.has(id)) { openScenePath(id); return; }
   const entry = entries.get(id);
   if (entry?.kind === "file") await openWorkspaceFile(entry);
 }
@@ -558,6 +767,13 @@ function selectedParent() {
 }
 
 async function createEntry(kind: "file" | "folder") {
+  if (scene) {
+    if (kind === "folder" || !canWrite) return;
+    const path = await promptName("New Scene file", "Package path", "script.js", "Create", true);
+    if (!path) return;
+    try { openScenePath(scene.archive.createText(path)); scheduleScenePreview(); setStatus(`Created ${path}.`); } catch (error) { setStatus(describeError(error, "Could not create the Scene file."), true); }
+    return;
+  }
   const parent = selectedParent();
   if (!parent || !canWrite) return;
   const name = await promptName(kind === "file" ? "New file" : "New folder", kind === "file" ? "File name" : "Folder name", kind === "file" ? "untitled.txt" : "New folder", "Create");
@@ -574,6 +790,19 @@ async function createEntry(kind: "file" | "folder") {
 }
 
 async function renameEntry() {
+  if (scene) {
+    const path = selectedPath;
+    if (!path || !canWrite) return;
+    const next = await promptName("Rename Scene file", "Package path", path, "Rename", true);
+    if (!next || next === path) return;
+    try {
+      const renamed = scene.archive.rename(path, next);
+      const tab = tabs.find((candidate) => candidate.scenePath === path);
+      if (tab) { tab.scenePath = renamed; tab.name = renamed; }
+      selectedPath = renamed; renderWorkspace(); renderDocumentState(); scheduleScenePreview(); setStatus(`Renamed to ${renamed}.`);
+    } catch (error) { setStatus(describeError(error, `Could not rename ${path}.`), true); }
+    return;
+  }
   const entry = selectedHandle ? entries.get(selectedHandle) : null;
   if (!entry || !canWrite) return;
   const name = await promptName("Rename item", "Name", entry.metadata.name, "Rename");
@@ -598,6 +827,19 @@ async function renameEntry() {
 }
 
 async function deleteEntry() {
+  if (scene) {
+    const path = selectedPath;
+    if (!path || !canWrite || !await hiraya.dialogs.confirm({ title: `Delete ${path}?`, message: "The file will be removed from this Scene when you save.", confirmLabel: "Delete", destructive: true })) return;
+    try {
+      scene.archive.delete(path);
+      const tab = tabs.find((candidate) => candidate.scenePath === path);
+      if (tab) await closeTab(tab, false);
+      selectedPath = scene.archive.paths()[0] ?? "";
+      if (selectedPath) openScenePath(selectedPath); else renderWorkspace();
+      scheduleScenePreview(); setStatus(`Deleted ${path}.`);
+    } catch (error) { setStatus(describeError(error, `Could not delete ${path}.`), true); }
+    return;
+  }
   const entry = selectedHandle ? entries.get(selectedHandle) : null;
   if (!entry || !canWrite) return;
   const affected = tabs.filter((tab) => tab.handle && (tab.handle === entry.metadata.handle || entry.kind === "folder" && isWithinFolder(tab.handle, entry.metadata.handle, parents)));
@@ -615,7 +857,23 @@ async function deleteEntry() {
   } catch (error) { setStatus(describeError(error, `Could not delete ${entry.metadata.name}.`), true); }
 }
 
-function promptName(titleText: string, labelText: string, initial: string, submitText: string) {
+async function importSceneAssets() {
+  if (!scene || !canWrite) return;
+  const selected = await hiraya.dialogs.openFile({ multiple: true });
+  let imported = 0;
+  for (const handle of selected ?? []) {
+    try {
+      const metadata = await statFile(handle);
+      const { data } = await hiraya.files.readAll(handle);
+      scene.archive.import(metadata.name, new Uint8Array(data));
+      imported += 1;
+    } catch (error) { setStatus(describeError(error, "Could not import a Scene asset."), true); }
+  }
+  renderWorkspace(); scheduleScenePreview();
+  if (imported) setStatus(`Imported ${imported} ${imported === 1 ? "asset" : "assets"}.`);
+}
+
+function promptName(titleText: string, labelText: string, initial: string, submitText: string, allowPath = false) {
   const dialog = required<HTMLDialogElement>("#entry-dialog");
   const form = required<HTMLFormElement>("#entry-dialog form");
   const input = required<HTMLInputElement>("#entry-name");
@@ -630,7 +888,7 @@ function promptName(titleText: string, labelText: string, initial: string, submi
       event.preventDefault();
       if ((event.submitter as HTMLButtonElement | null)?.value === "cancel") { dialog.close("cancel"); return; }
       const value = input.value.trim();
-      if (!value || value === "." || value === ".." || /[\\/]/.test(value)) { error.textContent = "Enter a name without slashes."; error.hidden = false; return; }
+      if (!value || value === "." || value === ".." || !allowPath && /[\\/]/.test(value)) { error.textContent = allowPath ? "Enter a valid package path." : "Enter a name without slashes."; error.hidden = false; return; }
       dialog.close("confirm");
     };
     const close = () => { form.removeEventListener("submit", submit); resolve(dialog.returnValue === "confirm" ? input.value.trim() : null); };
@@ -642,9 +900,12 @@ function promptName(titleText: string, labelText: string, initial: string, submi
 
 function renderDocumentState() {
   renderTabs(); renderBreadcrumbs();
-  const dirty = tabs.some(tabDirty);
-  publishWindowTitle(activeTab ? `${tabDirty(activeTab) ? "*" : ""}${activeTab.name} - Integrated Editor` : "Integrated Editor");
-  void hiraya?.window.setDirty(dirty);
+  const dirty = dirtyDocuments();
+  const title = scene?.metadata?.name ?? (scene ? "Untitled Scene" : activeTab?.name);
+  const titleDirty = scene?.archive.dirty ?? (activeTab ? tabDirty(activeTab) : false);
+  publishWindowTitle(title ? `${titleDirty ? "*" : ""}${title} - Integrated Editor` : "Integrated Editor");
+  required<HTMLElement>("#scene-conflict").hidden = !scene?.archive.conflict;
+  if (dirty !== windowDirty) { windowDirty = dirty; void hiraya?.window.setDirty(dirty); }
   renderControlState();
 }
 
@@ -676,7 +937,7 @@ function renderTabs() {
 
 function renderBreadcrumbs() {
   breadcrumbs.replaceChildren();
-  if (!activeTab) { breadcrumbs.hidden = true; return; }
+  if (!activeTab || scene) { breadcrumbs.hidden = true; return; }
   const path: { name: string; handle: FolderHandle }[] = [];
   let parent = activeTab.metadata?.parent ?? null;
   const seen = new Set<string>();
@@ -746,6 +1007,10 @@ async function handleTreeKey(event: KeyboardEvent) {
     selectTreeRow(visible[Math.max(0, Math.min(visible.length - 1, index + (event.key === "ArrowDown" ? 1 : -1)))]);
     return;
   }
+  if (row.dataset.scenePath) {
+    if (event.key === "Enter") { event.preventDefault(); openScenePath(row.dataset.scenePath); }
+    return;
+  }
   const entry = entries.get(row.dataset.handle ?? "");
   if (!entry) return;
   if (event.key === "Enter") { event.preventDefault(); await activateTreeTarget(row); }
@@ -766,9 +1031,14 @@ async function handleTreeKey(event: KeyboardEvent) {
 
 function selectTreeRow(row?: HTMLButtonElement | null) {
   if (!row) return;
-  selectedHandle = row.dataset.handle ?? null;
-  const entry = selectedHandle ? entries.get(selectedHandle) : null;
-  selectedPath = entry ? workspaceEntryPath(entry) : selectedPath;
+  if (row.dataset.scenePath) {
+    selectedHandle = null;
+    selectedPath = row.dataset.scenePath;
+  } else {
+    selectedHandle = row.dataset.handle ?? null;
+    const entry = selectedHandle ? entries.get(selectedHandle) : null;
+    selectedPath = entry ? workspaceEntryPath(entry) : selectedPath;
+  }
   for (const candidate of Array.from(fileTree.querySelectorAll<HTMLButtonElement>(".tree-row"))) candidate.setAttribute("aria-selected", String(candidate === row));
   workspaceHeading.setAttribute("aria-pressed", "false");
   row.focus();
@@ -814,32 +1084,48 @@ function renderControlState() {
   const writableTab = controls.write && Boolean(activeTab?.state);
   editor.dispatch({ effects: editableConfig.reconfigure([EditorState.readOnly.of(!writableTab), EditorView.editable.of(writableTab)]) });
   for (const id of ["auto-save", "auto-format"]) required<HTMLInputElement>(`#${id}`).disabled = !controls.write;
-  for (const id of ["new-file", "new-folder"]) required<HTMLButtonElement>(`#${id}`).disabled = !controls.write || !workspace;
-  for (const id of ["rename-entry", "delete-entry"]) required<HTMLButtonElement>(`#${id}`).disabled = !controls.write || !selectedHandle || !entries.has(selectedHandle);
-  required<HTMLButtonElement>("#refresh-tree").disabled = !workspace || opening;
+  required<HTMLButtonElement>("#new-file").disabled = !controls.write || (!workspace && !scene);
+  required<HTMLButtonElement>("#new-folder").disabled = !controls.write || !workspace || Boolean(scene);
+  required<HTMLButtonElement>("#import-assets").hidden = !scene;
+  required<HTMLButtonElement>("#import-assets").disabled = !controls.write || !scene;
+  for (const id of ["rename-entry", "delete-entry"]) required<HTMLButtonElement>(`#${id}`).disabled = !controls.write || (scene ? !selectedPath : !selectedHandle || !entries.has(selectedHandle));
+  required<HTMLButtonElement>("#refresh-tree").disabled = scene ? !scene.handle || opening : !workspace || opening;
   required<HTMLElement>("#write-state").hidden = !initialized || canWrite;
   publishCommands();
 }
 
 function publishCommands() {
-  const documentCommands = canWrite && activeTab?.state ? [
-    { id: "format", title: "Format", enabled: initialized && !saving && !opening, promoted: true },
+  const savable = Boolean(activeTab?.state || scene);
+  const documentCommands = canWrite && savable ? [
+    ...(activeTab?.state ? [{ id: "format", title: "Format", enabled: initialized && !saving && !opening, promoted: true }] : []),
     { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !opening, promoted: true },
     { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening, promoted: true },
   ] : [];
-  void hiraya?.commands.set([
+  const commands = [
     { id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening, promoted: true },
+    { id: "new-scene", title: "New Scene", enabled: initialized && !saving && !opening },
     ...documentCommands,
     { id: "workspace", title: "Open workspace", enabled: initialized && !opening },
-    { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace) },
-  ]);
+    { id: "search", title: "Search workspace files", shortcut: "Ctrl+P", enabled: initialized && Boolean(workspace || scene) },
+  ];
+  const signature = JSON.stringify(commands);
+  if (signature === commandSignature) return;
+  commandSignature = signature;
+  void hiraya?.commands.set(commands);
 }
 
 function renderPreview(tab: DocumentTab) {
   previewElement.replaceChildren();
   const source = tab.previewSource;
   let element: HTMLElement;
-  if (tab.kind === "image" && source) {
+  if (tab.scenePath && scene) {
+    const bytes = scene.archive.files.get(tab.scenePath);
+    const details = document.createElement("section"); details.className = "file-metadata";
+    const heading = document.createElement("h2"); heading.textContent = "Packaged asset";
+    const list = document.createElement("dl");
+    for (const [label, value] of [["Path", tab.scenePath], ["Size", formatBytes(bytes?.byteLength ?? 0)]]) { const term = document.createElement("dt"); term.textContent = label; const description = document.createElement("dd"); description.textContent = value; list.append(term, description); }
+    details.append(heading, list); element = details;
+  } else if (tab.kind === "image" && source) {
     const image = document.createElement("img");
     image.src = source;
     image.alt = `Preview of ${tab.name}`;
@@ -895,7 +1181,40 @@ async function refreshMediaPreview(tab: DocumentTab, media: HTMLMediaElement) {
   } catch (error) { setStatus(describeError(error, "The media preview could not be refreshed."), true); }
 }
 
-function tabDirty(tab: DocumentTab) { return tab.state?.dirty ?? false; }
+function scheduleScenePreview() {
+  clearTimeout(scenePreviewTimer);
+  scenePreviewTimer = window.setTimeout(() => void updateScenePreview(), 180);
+}
+
+async function updateScenePreview() {
+  stopScenePreview?.(); stopScenePreview = null;
+  scenePreviewResource?.revoke(); scenePreviewResource = null;
+  scenePreview.replaceChildren(); sceneValidation.classList.remove("error");
+  if (!scene) return;
+  try {
+    const inspection = await inspectSceneArchive(scene.archive.pack());
+    const app = { ...inspection, manifest: { schemaVersion: 2, uiRuntime: 1, id: "app.hiraya.scene-preview", name: "Scene preview", version: "0.0.0", entrypoint: inspection.manifest.entrypoint, permissions: [] } } as AppPackageInspection;
+    const csp = `${SANDBOX_CSP.replace("frame-src data: blob:;", "frame-src 'none';")}; worker-src 'none'`;
+    scenePreviewResource = materializeAppPackage(app, { abi: 1, script: "", styles: "html,body{width:100%;height:100%;margin:0;overflow:hidden;background:transparent}" }, URL, csp);
+    const frame = document.createElement("iframe"); frame.title = "Unsaved Scene preview"; frame.sandbox.add("allow-scripts"); frame.setAttribute("csp", csp); frame.tabIndex = 0;
+    stopScenePreview = terminateSandboxNavigation(frame, scenePreviewResource.navigationToken, { onNavigation: () => { stopScenePreview?.(); stopScenePreview = null; scenePreviewResource?.revoke(); sceneValidation.textContent = "Preview navigation was blocked."; sceneValidation.classList.add("error"); } });
+    frame.srcdoc = scenePreviewResource.html;
+    scenePreview.append(frame);
+    sceneValidation.textContent = "Draft is valid. Previewing unsaved in-memory files.";
+    required("#scene-preview-state").textContent = "Live";
+  } catch (error) {
+    sceneValidation.textContent = error instanceof Error ? error.message : "Strict Scene validation failed.";
+    sceneValidation.classList.add("error");
+    const empty = document.createElement("div"); empty.className = "scene-preview-empty";
+    const heading = document.createElement("strong"); heading.textContent = "Preview unavailable";
+    const copy = document.createElement("span"); copy.textContent = "Fix the validation error. You can still save this draft.";
+    empty.append(heading, copy); scenePreview.append(empty);
+    required("#scene-preview-state").textContent = "Invalid draft";
+  }
+}
+
+function tabDirty(tab: DocumentTab) { return tab.scenePath && scene ? scene.archive.pathDirty(tab.scenePath) : tab.state?.dirty ?? false; }
+function dirtyDocuments() { return scene?.archive.dirty ?? tabs.some(tabDirty); }
 
 function releasePreview(tab: DocumentTab) {
   releasePreviewValue(tab.previewObjectUrl);

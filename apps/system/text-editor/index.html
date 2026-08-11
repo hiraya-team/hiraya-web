@@ -18,6 +18,7 @@
       <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L19 8l-3-3L5 16Zm9-9 3 3" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
       <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
     </svg>
@@ -36,7 +37,8 @@
               <strong id="sidebar-title">Explorer</strong>
               <div class="sidebar-actions" id="explorer-actions">
                 <button id="new-file" type="button" aria-label="New file" title="New file" disabled><svg><use href="#icon-plus-file"></use></svg></button>
-                <button id="new-folder" type="button" aria-label="New folder" title="New folder" disabled><svg><use href="#icon-plus-folder"></use></svg></button>
+                 <button id="new-folder" type="button" aria-label="New folder" title="New folder" disabled><svg><use href="#icon-plus-folder"></use></svg></button>
+                 <button id="import-assets" type="button" aria-label="Import Scene assets" title="Import Scene assets" hidden disabled><svg><use href="#icon-upload"></use></svg></button>
                 <button id="rename-entry" type="button" aria-label="Rename selected item" title="Rename selected item (F2)" disabled><svg><use href="#icon-pencil"></use></svg></button>
                 <button id="delete-entry" type="button" aria-label="Delete selected item" title="Delete selected item" disabled><svg><use href="#icon-trash"></use></svg></button>
                 <button id="refresh-tree" type="button" aria-label="Refresh explorer" title="Refresh explorer" disabled><svg><use href="#icon-refresh"></use></svg></button>
@@ -65,12 +67,19 @@
           <section class="editor-stage">
             <div id="tabs" class="editor-tabs" role="toolbar" aria-label="Open files"></div>
             <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden></nav>
-            <div id="editor"></div>
-            <div id="preview" class="file-preview" tabindex="-1" hidden></div>
+            <div id="stage-content" class="stage-content">
+              <div id="editor"></div>
+              <div id="preview" class="file-preview" tabindex="-1" hidden></div>
+              <section id="scene-preview-pane" class="scene-preview-pane" aria-labelledby="scene-preview-title" hidden>
+                <header><strong id="scene-preview-title">Live preview</strong><span id="scene-preview-state">Waiting</span></header>
+                <div id="scene-preview"><div class="scene-preview-empty">Open a Scene file to preview it.</div></div>
+                <p id="scene-validation" role="status">Draft validation appears here.</p>
+              </section>
+            </div>
           </section>
         </div>
       </div>
-      <hiraya-status-bar live="polite"><span id="status">Connecting...</span><hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge></hiraya-status-bar>
+      <hiraya-status-bar live="polite"><span id="status">Connecting...</span><hiraya-badge tone="warning" id="scene-conflict" hidden>Remote conflict</hiraya-badge><hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge></hiraya-status-bar>
     </main>
     <dialog id="entry-dialog" class="entry-dialog" aria-labelledby="entry-dialog-title">
       <form method="dialog">
