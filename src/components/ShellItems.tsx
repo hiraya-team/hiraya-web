@@ -137,6 +137,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
     if (readOnly || busy || drag.current || resize.current || event.button !== 0) return;
     event.preventDefault();
     onSelect?.();
+    if (widget && !selected) return;
     desktopRef.current = ref.current?.closest<HTMLElement>(".desktop") ?? null;
     target.current = { pointerId: event.pointerId, pointerType: event.pointerType, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -200,6 +201,10 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
     }
     if (readOnly || busy || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
+    if (widget && !selected) {
+      onSelect?.();
+      return;
+    }
     const step = gridSize ?? (event.shiftKey ? 24 : 8);
     const x = event.key === "ArrowLeft" ? -step : event.key === "ArrowRight" ? step : 0;
     const y = event.key === "ArrowUp" ? -step : event.key === "ArrowDown" ? step : 0;
