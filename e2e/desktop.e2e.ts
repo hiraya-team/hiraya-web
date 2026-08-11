@@ -1123,6 +1123,11 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toHaveCount(0);
   await expect(clock.getByRole("button", { name: "Remove Clock", exact: true })).toHaveCount(0);
   const moveClock = clock.getByRole("button", { name: "Move Clock", exact: true });
+  const beforeSelectionDrag = await clock.boundingBox();
+  if (!beforeSelectionDrag) throw new Error("The unselected clock is not visible.");
+  await dragPointerTo(page, moveClock, beforeSelectionDrag.x + beforeSelectionDrag.width / 2 + 80, beforeSelectionDrag.y + beforeSelectionDrag.height / 2);
+  await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toBeVisible();
+  await expect.poll(async () => (await clock.boundingBox())?.x).toBe(beforeSelectionDrag.x);
   const moveBounds = await moveClock.boundingBox();
   const contentTop = await clock.locator(".shell-item__content").evaluate((element) => element.getBoundingClientRect().top);
   if (!moveBounds) throw new Error("The clock move control is not visible.");
