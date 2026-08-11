@@ -1278,7 +1278,10 @@ test("adding a widget rearranges overlapping icons and persists both positions",
   await dragPointerTo(page, icon, desktopBounds.x + 800, desktopBounds.y + 260);
   const iconTarget = await icon.boundingBox();
   if (!iconTarget) throw new Error("The arranged icon is not visible.");
-  await beginDragPointerTo(page, clock.getByRole("button", { name: "Move Clock", exact: true }), iconTarget.x + iconTarget.width / 2, iconTarget.y + iconTarget.height / 2);
+  const moveClock = clock.getByRole("button", { name: "Move Clock", exact: true });
+  await moveClock.click();
+  await expect(moveClock).toHaveAttribute("aria-pressed", "true");
+  await beginDragPointerTo(page, moveClock, iconTarget.x + iconTarget.width / 2, iconTarget.y + iconTarget.height / 2);
   await expect(icon).toHaveAttribute("data-widget-arrange-dragging", "true");
   await page.mouse.up();
   await expect(icon).not.toHaveAttribute("data-widget-arrange-dragging", "true");
