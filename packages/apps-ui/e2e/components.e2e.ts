@@ -64,6 +64,19 @@ test("recognizes item-list touch activation and long press once", async ({ page 
   await expect(page.locator("#item-event")).toHaveText("activated second");
   await expect.poll(() => page.evaluate(() => (window as typeof window & { itemActivationCount: number }).itemActivationCount)).toBe(1);
 
+  await page.evaluate(() => {
+    const mounted = document.createElement("hiraya-item-list");
+    mounted.id = "newly-mounted-list";
+    mounted.innerHTML = '<button data-item-id="new-child" data-item-activate>New child</button>';
+    (window as typeof window & { retargetedActivationCount: number }).retargetedActivationCount = 0;
+    mounted.addEventListener("hiraya-item-activate", () => {
+      (window as typeof window & { retargetedActivationCount: number }).retargetedActivationCount += 1;
+    });
+    document.body.append(mounted);
+  });
+  await page.locator("#newly-mounted-list [data-item-id=new-child]").dispatchEvent("dblclick", point);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { retargetedActivationCount: number }).retargetedActivationCount)).toBe(0);
+
   await second.dispatchEvent("pointerdown", { ...point, pointerId: 9 });
   await page.waitForTimeout(550);
   await expect(page.locator("#item-event")).toHaveText("context second");

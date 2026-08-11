@@ -12,7 +12,7 @@ import { useModalDialog } from "./ui/modal-dialog";
 import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { EntryArtwork, StatusBadge, type EntryPreviewSource } from "./components/VisualPrimitives";
 import { ShellItemLayer } from "./components/ShellItems";
-import { allowsMouseDoubleClick, resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
+import { resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
 import { API_ROUTES } from "./lib/api-routes";
@@ -65,6 +65,8 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
     moved: boolean;
   } | null>(null);
   const lastTap = useRef<TouchTap | null>(null);
+  const pointerOwner = useRef<HTMLButtonElement | null>(null);
+  const doubleClickOwner = useRef<HTMLButtonElement | null>(null);
   return (
     <button
       className="file-icon public-icon"
@@ -77,12 +79,21 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
       inert={interactive ? undefined : true}
       aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}`}
       aria-pressed={selected}
-      onClick={onSelect}
+      onClick={(event) => {
+        doubleClickOwner.current = event.detail === 2 && pointerOwner.current === event.currentTarget ? event.currentTarget : null;
+        pointerOwner.current = null;
+        onSelect();
+      }}
       onFocus={(event) => event.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" })}
-      onDoubleClick={() => {
-        if (allowsMouseDoubleClick(performance.now())) onOpen();
+      onDoubleClick={(event) => {
+        if (doubleClickOwner.current === event.currentTarget) onOpen();
+        doubleClickOwner.current = null;
       }}
       onPointerDown={(event) => {
+        if (event.button === 0) {
+          pointerOwner.current = event.pointerType === "touch" ? null : event.currentTarget;
+          doubleClickOwner.current = null;
+        }
         if (event.pointerType !== "touch" || event.button !== 0) return;
         press.current = {
           pointerId: event.pointerId,
@@ -119,6 +130,8 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
         else if (action === "open") onOpen();
       }}
       onPointerCancel={(event) => {
+        pointerOwner.current = null;
+        doubleClickOwner.current = null;
         const current = press.current;
         if (!current || current.pointerId !== event.pointerId) return;
         press.current = null;
