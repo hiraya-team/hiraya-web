@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Close Explorer with Back on mobile.** The upper-left **Back** action and the phone's system Back action now close Explorer instead of opening the desktop root, and another Back action no longer reopens the folder you left.
 - **Select widgets before arranging them.** Moving, resizing, or removing a widget now requires selecting it first, preventing an initial click or drag from changing the desktop unexpectedly.
 - **Keep neighboring icons on the grid.** With **Snap to grid** enabled, icons now stay aligned even when placed beside another icon, while **Auto-arrange while dragging** resolves any overlap at the snapped destination.
 - **Keep folder double-taps contained.** Double-tapping a desktop folder on a touch screen now opens only that folder instead of also opening an item beneath the same position.

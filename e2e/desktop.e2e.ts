@@ -1905,6 +1905,32 @@ test("mobile Back climbs Settings before closing it", async ({ browser }) => {
   await context.close();
 });
 
+test("mobile Back closes Explorer without reopening its folder", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  const folderName = `mobile-back-folder-${Date.now()}`;
+
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const folder = page.locator(".file-icon").filter({ hasText: folderName });
+  const explorer = page.locator('[data-app-window^="explorer:"]');
+
+  await folder.dblclick();
+  await page.getByRole("button", { name: `Back from ${folderName}` }).click();
+  await expect(explorer).toHaveCount(0);
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+
+  await folder.dblclick();
+  await page.goBack();
+  await expect(explorer).toHaveCount(0);
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await page.goBack();
+  await expect(explorer).toHaveCount(0);
+  await context.close();
+});
+
 test("mobile Back dismisses transient surfaces before navigating", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();
