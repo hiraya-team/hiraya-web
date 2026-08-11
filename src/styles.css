@@ -976,6 +976,18 @@
   filter: drop-shadow(0 10px 14px rgba(8, 18, 18, 0.2));
 }
 
+.file-icon[data-auto-arrange-dragging]::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 1px dashed rgba(246, 215, 156, 0.82);
+  border-radius: 12px;
+  background: rgba(231, 185, 100, 0.1);
+  box-shadow: 0 0 0 3px rgba(231, 185, 100, 0.07);
+  content: "";
+  pointer-events: none;
+}
+
 .desktop-marquee {
   position: absolute;
   z-index: 6;
@@ -3198,6 +3210,12 @@
   width: var(--theme-icon-footprint-width);
   min-height: var(--theme-icon-footprint-height);
   border: var(--theme-border-width) dashed var(--theme-accent);
+  border-radius: calc(var(--theme-radius) * 0.86);
+  background: color-mix(in srgb, var(--theme-accent) 11%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent) 8%, transparent);
+}
+.file-icon[data-auto-arrange-dragging]::before {
+  border-color: var(--theme-accent);
   border-radius: calc(var(--theme-radius) * 0.86);
   background: color-mix(in srgb, var(--theme-accent) 11%, transparent);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--theme-accent) 8%, transparent);
