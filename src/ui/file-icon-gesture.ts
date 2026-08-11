@@ -13,16 +13,6 @@ export type ContextMenuPress = {
 
 const DOUBLE_TAP_DELAY_MS = 400;
 const DOUBLE_TAP_DISTANCE = 24;
-const SYNTHETIC_DOUBLE_CLICK_DELAY_MS = 700;
-let lastTouchReleaseAt = Number.NEGATIVE_INFINITY;
-
-export function recordTouchRelease(at: number) {
-  lastTouchReleaseAt = at;
-}
-
-export function allowsMouseDoubleClick(at: number) {
-  return at - lastTouchReleaseAt > SYNTHETIC_DOUBLE_CLICK_DELAY_MS;
-}
 
 export function touchReleaseAction(previous: TouchTap | null, tap: TouchTap, state: {
   cancelled: boolean;
@@ -39,7 +29,6 @@ export function touchReleaseAction(previous: TouchTap | null, tap: TouchTap, sta
 }
 
 export function resolveTouchRelease(previous: TouchTap | null, tap: TouchTap, state: Parameters<typeof touchReleaseAction>[2]) {
-  recordTouchRelease(tap.at);
   const action = touchReleaseAction(previous, tap, state);
   return { action, nextTap: action === "select" ? tap : null } as const;
 }

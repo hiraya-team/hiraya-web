@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep folder double-taps contained.** Double-tapping a desktop folder on a touch screen now opens only that folder instead of also opening an item beneath the same position.
 - **Keep Todo files usable on mobile and after refresh.** Todo now fits narrow screens without clipped filters or messages, and open Todo files restore after a browser refresh without losing their file access.
 - **Use items across desktop area edges.** Icons, widgets, and icon groups now remain visible and usable in every desktop area they overlap, including whole public desktops.
 - **Edit every text file by default.** Files identified with a text media type now open as editable text in **Integrated Editor**, including Markdown, RTF, and Hiraya shell text. Specialized viewers remain available through **Open With** and for matching extensions without a text media type.

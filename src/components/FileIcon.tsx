@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { AvailabilityBadge, EntryArtwork, EntryIcon, type EntryPreviewSource } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
-import { allowsMouseDoubleClick, contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
+import { contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
 import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
@@ -76,6 +76,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
+  const pointerOwner = useRef<HTMLButtonElement | null>(null);
+  const doubleClickOwner = useRef<HTMLButtonElement | null>(null);
   const drag = useRef<DragState | null>(null);
   const renderedEntryRef = useRef({ parentId: entry.parentId, position: entry.position });
   const onMoveRef = useRef(onMove);
@@ -169,6 +171,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
 
   function handlePointerDown(event: React.PointerEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
+    pointerOwner.current = event.pointerType === "touch" ? null : event.currentTarget;
+    doubleClickOwner.current = null;
     if (drag.current) {
       const current = drag.current;
       void finishDrag({ pointerId: current.pointerId, clientX: current.pointerX, clientY: current.pointerY }, true);
@@ -370,8 +374,15 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         inert={interactive ? undefined : true}
         aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability ? `, ${offlineStatusLabel(offlineAvailability)}` : ""}`}
         aria-pressed={selected}
-        onClick={(event) => { if (event.detail === 0) onSelect(event); }}
-        onDoubleClick={() => { if (allowsMouseDoubleClick(performance.now())) onOpen(); }}
+        onClick={(event) => {
+          doubleClickOwner.current = event.detail === 2 && pointerOwner.current === event.currentTarget ? event.currentTarget : null;
+          pointerOwner.current = null;
+          if (event.detail === 0) onSelect(event);
+        }}
+        onDoubleClick={(event) => {
+          if (doubleClickOwner.current === event.currentTarget) onOpen();
+          doubleClickOwner.current = null;
+        }}
         onContextMenu={(event) => {
           if (readOnly) { event.preventDefault(); return; }
           const current = drag.current;
@@ -441,7 +452,11 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={(event) => { void finishDrag(event); }}
-        onPointerCancel={(event) => { void finishDrag(event, true); }}
+        onPointerCancel={(event) => {
+          pointerOwner.current = null;
+          doubleClickOwner.current = null;
+          void finishDrag(event, true);
+        }}
         onLostPointerCapture={(event) => { void finishDrag(event, true); }}
       >
         <span className="file-icon__art">
