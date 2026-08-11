@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Close Explorer with Back on mobile.** The upper-left **Back** action and the phone's system Back action now close Explorer instead of opening the desktop root, and another Back action no longer reopens the folder you left.
 - **Keep neighboring icons on the grid.** With **Snap to grid** enabled, icons now stay aligned even when placed beside another icon, while **Auto-arrange while dragging** resolves any overlap at the snapped destination.
 - **Keep folder double-taps contained.** Double-tapping a desktop folder on a touch screen now opens only that folder instead of also opening an item beneath the same position.
 - **Keep Todo files usable on mobile and after refresh.** Todo now fits narrow screens without clipped filters or messages, and open Todo files restore after a browser refresh without losing their file access.

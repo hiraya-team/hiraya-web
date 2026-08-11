@@ -4539,13 +4539,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
     const focusedId = focusedAppIdRef.current;
     const focused = focusedId ? runningAppsRef.current.find((app) => app.id === focusedId) : undefined;
-    if (focused?.kind === "explorer" && focused.folderId !== null) {
-      resetQuitBack();
-      const folder = entriesRef.current.find((entry) => entry.id === focused.folderId && entry.kind === "folder");
-      navigateExplorerWindow(focused.id, folder?.parentId ?? null, source === "history" ? "replace" : "push");
-      return "handled";
-    }
-
     if (focused) {
       resetQuitBack();
       if (focused.kind === "sandbox") {
