@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { allowsMouseDoubleClick, contextMenuPressAction, dismissesSheetDrag, recordTouchRelease, resolveTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
+import { contextMenuPressAction, dismissesSheetDrag, resolveTouchRelease, touchReleaseAction, type TouchTap } from "../src/ui/file-icon-gesture";
 
 describe("file icon touch release", () => {
   const valid = { cancelled: false, moved: false, longPressed: false, releasedOnIcon: true };
@@ -19,10 +19,9 @@ describe("file icon touch release", () => {
     expect(touchReleaseAction(null, tap, { ...valid, cancelled: true })).toBe("none");
   });
 
-  test("retains only a selecting tap and records touch compatibility timing", () => {
+  test("retains only a selecting tap", () => {
     const first = resolveTouchRelease(null, tap, valid);
     expect(first).toEqual({ action: "select", nextTap: tap });
-    expect(allowsMouseDoubleClick(tap.at + 1)).toBeFalse();
     expect(resolveTouchRelease(tap, { ...tap, at: 1_200 }, valid)).toEqual({ action: "open", nextTap: null });
     expect(resolveTouchRelease(null, { ...tap, at: 1_300 }, { ...valid, moved: true })).toEqual({ action: "none", nextTap: null });
   });
@@ -41,15 +40,6 @@ describe("file icon context menu press", () => {
   test("preserves mouse and keyboard context menus", () => {
     expect(contextMenuPressAction({ pointerType: "mouse", moved: false, longPressed: false })).toBe("open");
     expect(contextMenuPressAction(null)).toBe("open");
-  });
-});
-
-describe("touch compatibility double click", () => {
-  test("suppresses a double click retargeted into newly rendered folder contents", () => {
-    recordTouchRelease(1_000);
-    expect(allowsMouseDoubleClick(1_001)).toBeFalse();
-    expect(allowsMouseDoubleClick(1_700)).toBeFalse();
-    expect(allowsMouseDoubleClick(1_701)).toBeTrue();
   });
 });
 

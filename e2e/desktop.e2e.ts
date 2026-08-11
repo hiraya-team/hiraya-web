@@ -1974,6 +1974,44 @@ test("mobile taps select the full desktop icon footprint", async ({ browser }) =
   await context.close();
 });
 
+test("mobile folder double taps cannot activate newly mounted contents", async ({ browser }) => {
+  const context = await browser.newContext({ ...devices["Pixel 7"] });
+  const page = await context.newPage();
+  await openLocalDesktop(page);
+  const folderName = `touch-folder-${Date.now()}`;
+  const childName = "nested-folder";
+  const actions = page.getByRole("toolbar", { name: "File actions" });
+
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const icon = page.locator('.file-icon[data-entry-id]').filter({ hasText: folderName });
+  await page.locator(".desktop").click({ position: { x: 350, y: 500 } });
+  await actions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(childName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  const childIcon = page.locator('.file-icon[data-entry-id]').filter({ hasText: childName });
+  const target = await icon.boundingBox();
+  expect(target).not.toBeNull();
+  await dragPointerTo(page, childIcon, target!.x + target!.width / 2, target!.y + target!.height / 2);
+  await expect(childIcon).toHaveCount(0);
+
+  const bounds = await icon.boundingBox();
+  expect(bounds).not.toBeNull();
+  const point = { clientX: bounds!.x + bounds!.width / 2, clientY: bounds!.y + bounds!.height / 2, pointerType: "touch", button: 0 };
+  await page.touchscreen.tap(point.clientX, point.clientY);
+  await expect(icon).toHaveAttribute("aria-pressed", "true");
+  await page.touchscreen.tap(point.clientX, point.clientY);
+
+  const explorer = page.getByRole("dialog", { name: folderName });
+  const child = explorer.getByRole("option", { name: `${childName}, folder` });
+  await expect(child).toBeVisible();
+  await child.dispatchEvent("dblclick", point);
+  await expect(child).toBeVisible();
+  await expect(page.getByRole("button", { name: `Back from ${folderName}` })).toBeVisible();
+  await context.close();
+});
+
 test("mobile touch drags selected items and swipes areas from unselected items", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();

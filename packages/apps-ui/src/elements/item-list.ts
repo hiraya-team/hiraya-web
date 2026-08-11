@@ -63,6 +63,8 @@ export class HirayaItemList extends HTMLElementBase {
 
   #press: Press | null = null;
   #reorder: Reorder | null = null;
+  #pointerOwner: string | null = null;
+  #doubleClickOwner: string | null = null;
   #lastTap: { id: string; x: number; y: number; at: number } | null = null;
   #suppressClickUntil = 0;
   #openedContext: { id: string; until: number } | null = null;
@@ -77,11 +79,11 @@ export class HirayaItemList extends HTMLElementBase {
     this.addEventListener("pointermove", this.#onPointerMove);
     this.addEventListener("pointerup", this.#onPointerUp);
     this.addEventListener("pointercancel", this.#onPointerCancel);
-    this.addEventListener("lostpointercapture", this.#onPointerCancel);
+    this.addEventListener("lostpointercapture", this.#onLostPointerCapture);
   }
 
   connectedCallback(): void { this.#sync(); }
-  disconnectedCallback(): void { this.#finishPress(true); this.#finishReorder(true); }
+  disconnectedCallback(): void { this.#finishPress(true); this.#finishReorder(true); this.#pointerOwner = null; this.#doubleClickOwner = null; }
   attributeChangedCallback(): void { this.#sync(); }
 
   #sync(): void {
@@ -114,22 +116,22 @@ export class HirayaItemList extends HTMLElementBase {
   }
 
   #onClick = (event: MouseEvent): void => {
+    const item = this.#item(event.target);
+    this.#doubleClickOwner = event.detail === 2 && item?.dataset.itemId === this.#pointerOwner ? this.#pointerOwner : null;
+    this.#pointerOwner = null;
     if (performance.now() < this.#suppressClickUntil) {
       event.preventDefault();
       return;
     }
-    const item = this.#item(event.target);
     if (!item || this.#isNestedControl(event.target, item) || !item.hasAttribute("data-item-select")) return;
     this.#emit("hiraya-item-select", item, event.clientX, event.clientY, "menu", event);
   };
 
   #onDoubleClick = (event: MouseEvent): void => {
-    if (performance.now() < this.#suppressClickUntil) {
-      event.preventDefault();
-      return;
-    }
     const item = this.#item(event.target);
-    if (!item || this.#isNestedControl(event.target, item) || !item.hasAttribute("data-item-activate")) return;
+    const owner = this.#doubleClickOwner;
+    this.#doubleClickOwner = null;
+    if (!item || item.dataset.itemId !== owner || this.#isNestedControl(event.target, item) || !item.hasAttribute("data-item-activate")) return;
     this.#emit("hiraya-item-activate", item, event.clientX, event.clientY, "menu", event);
   };
 
@@ -189,6 +191,8 @@ export class HirayaItemList extends HTMLElementBase {
     if (event.button !== 0) return;
     const item = this.#item(event.target);
     if (!item) return;
+    this.#pointerOwner = event.pointerType === "touch" ? null : item.dataset.itemId!;
+    this.#doubleClickOwner = null;
     const handle = event.target instanceof Element ? event.target.closest<HTMLElement>("[data-item-reorder-handle]") : null;
     if (handle) {
       const fromIndex = this.#items().indexOf(item);
@@ -253,6 +257,12 @@ export class HirayaItemList extends HTMLElementBase {
   };
 
   #onPointerCancel = (event: PointerEvent): void => {
+    this.#pointerOwner = null;
+    this.#doubleClickOwner = null;
+    this.#onLostPointerCapture(event);
+  };
+
+  #onLostPointerCapture = (event: PointerEvent): void => {
     if (this.#reorder?.pointerId === event.pointerId) this.#finishReorder(true);
     if (this.#press?.pointerId === event.pointerId) this.#finishPress(true);
   };
