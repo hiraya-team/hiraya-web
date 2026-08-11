@@ -1,5 +1,5 @@
 import { DEFAULT_WALLPAPER, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type RootEntryPositionUpdate, type EditorSettings, type Wallpaper } from "../types";
-import { assertIconGroupFolders, assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parsePosition, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
+import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isValidId, parseDesktopIdentity, parseEditorSettings, parseEntries, parseLayout, parseLocalEntry, parsePosition, parseRootEntryPositions, parseRootEntryPositionUpdates } from "./contracts";
 import type { DesktopStateSnapshot, PersistedDesktopState } from "../domain/desktop-state";
 import { DEFAULT_THEME_ID, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme } from "../domain/theme";
@@ -126,11 +126,13 @@ export function iconGroupsAfterEntryChange(entries: readonly DesktopEntry[], ico
 function resetWallpaperAfterEntryRemoval(state: PersistedDesktopState, entries: DesktopEntry[]): PersistedDesktopState {
   const wallpaper = wallpaperAfterEntryRemoval(entries, state.wallpaper);
   const iconGroups = iconGroupsAfterEntryChange(entries, state.iconGroups ?? []);
+  const widgets = state.widgets ?? [];
   const layoutChanged = wallpaper !== state.wallpaper || iconGroups.length !== (state.iconGroups?.length ?? 0);
   return {
     ...state,
     entries,
     wallpaper,
+    widgets,
     iconGroups,
     sync: layoutChanged ? { ...state.sync, layoutRevision: state.sync.catalogRevision } : state.sync,
   };
@@ -371,6 +373,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
       const layout = parseLayout(operation.layout);
       assertWallpaperSource(entries, layout.wallpaper);
       assertIconGroupFolders(entries, layout);
+      assertSceneFiles(entries, layout);
       return { ...state, autoArrangeIcons: layout.autoArrangeIcons, snapToGrid: layout.snapToGrid, gridSize: layout.gridSize, wallpaper: layout.wallpaper, widgets: layout.widgets, iconGroups: layout.iconGroups };
     }
     case "editor-settings":

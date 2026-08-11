@@ -2,6 +2,8 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 
+const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAGluZGV4Lmh0bWwtTUsOgjAQvUptYgKJihs30LLxBnoCbIc4scw07WDg9spnM/Pyvubg2ckcQb1lCK15jSJMKsscwOrIGQWZ6h4n8E2AXurb9dgIx+2njnLPaahXFDqB4vwXTssptUJvdXZAoNvHSOq5QFNtG63JLmGUdjVcmFxA97FFaXdGYJI7kwCJ1WtUJXCAX/AKKY6iTbVX/ABQSwECFAAUAAAACAAAACEAMIFxfy8AAAAtAAAAEQAAAAAAAAAAAAAAAAAAAAAAaGlyYXlhLnNjZW5lLmpzb25QSwECFAAUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAAAAAAAAAAAAAABeAAAAaW5kZXguaHRtbFBLBQYAAAAAAgACAHcAAAAZAQAAAAA=", "base64");
+
 const publicDesktop = {
   schemaVersion: 2,
   id: "public-desk",
@@ -229,4 +231,34 @@ test("whole public desktops render linked Todo widgets read only", async ({ page
 
   await expect(page.getByText("Read public notes", { exact: true })).toBeVisible();
   await expect(page.getByRole("checkbox", { name: "Read public notes" })).toBeDisabled();
+});
+
+test("whole public desktops run Scene widgets and interactive Scene wallpaper", async ({ page }) => {
+  const file = { ...publicDesktop.entries[0], id: "public-scene", name: "Public.hiraya.scene", mimeType: "application/vnd.hiraya.scene+zip", size: sceneFile.byteLength };
+  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+    ...publicDesktop,
+    entries: [file],
+    layout: {
+      ...publicDesktop.layout,
+      wallpaper: { ...publicDesktop.layout.wallpaper, source: `file:${file.id}` },
+      widgets: [{ id: "scene", kind: "scene", fileId: file.id, x: 90, y: 90, width: 420, height: 300 }],
+      iconGroups: [],
+    },
+  } }));
+  await page.route("**/api/public/desktops/e2e-desk/entries/public-scene/content?*", (route) => route.fulfill({ json: {
+    entryId: file.id,
+    contentRevision: 1,
+    size: file.size,
+    sha256: createHash("sha256").update(sceneFile).digest("hex"),
+    access: { url: `${new URL(route.request().url()).origin}/__public-scene`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+  } }));
+  await page.route("**/__public-scene", (route) => route.fulfill({ body: sceneFile, headers: { "content-type": file.mimeType } }));
+  await page.goto("/published/e2e-desk");
+
+  const widget = page.frameLocator('iframe[title="Public.hiraya.scene widget"]');
+  await widget.getByRole("button", { name: "Run Scene" }).click();
+  await expect(widget.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  const wallpaper = page.frameLocator('iframe[title="Public.hiraya.scene wallpaper"]');
+  await wallpaper.getByRole("button", { name: "Run Scene" }).click();
+  await expect(wallpaper.getByRole("button", { name: "Scene received input" })).toBeVisible();
 });

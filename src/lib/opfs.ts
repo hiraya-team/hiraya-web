@@ -27,6 +27,7 @@ import { contentMatchesCacheMarker, getFilesDirectory, materializeOutbox, operat
 import { FRONTEND_ONLY, estimateStorage, getActiveDesktopContext, isNotFound, serializeStorage, setDesktopContext } from "../platform/storage/namespace";
 import * as repositories from "../platform/storage/repositories";
 import { sha256Blob } from "./blob-transfer";
+import { importedFileMimeType, isSceneFile } from "../domain/scene";
 
 type DesktopState = import("../domain/desktop-state").PersistedDesktopState;
 
@@ -69,7 +70,7 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
   const wallpaperFileId = parsedSeeded.layout.wallpaper.source.startsWith("file:") ? parsedSeeded.layout.wallpaper.source.slice(5) : null;
   if (wallpaperFileId) {
     const index = files.findIndex((entry) => entry.id === wallpaperFileId);
-    await validateWallpaperImage(new File([contents[index]], files[index].name, { type: files[index].mimeType }));
+    if (!isSceneFile(files[index])) await validateWallpaperImage(new File([contents[index]], files[index].name, { type: files[index].mimeType }));
   }
   const entries: DesktopEntry[] = parsedSeeded.entries.map((entry) => {
     if (entry.kind === "folder") return entry;
@@ -695,7 +696,7 @@ async function importFilesUnsafe(
     id: crypto.randomUUID(),
     name: names[index],
     parentId,
-    mimeType: source.type || "application/octet-stream",
+    mimeType: importedFileMimeType(source),
     size: source.size,
     createdAt,
     modifiedAt: source.lastModified || createdAt,

@@ -34,10 +34,11 @@ export function editorLanguageFor(fileName: string, language: EditorLanguage) {
 export function fileCapabilities(file: FileEntry) {
   const extension = fileExtension(file.name);
   const mimeType = file.mimeType.toLowerCase();
+  const scenePackage = file.name.toLowerCase().endsWith(".hiraya.scene");
   const appShortcut = mimeType.split(";", 1)[0].trim() === APP_SHORTCUT_MIME_TYPE;
   const urlShortcut = extension === "url";
   const markdown = extension === "md" || extension === "markdown" || mimeType.split(";", 1)[0].trim() === "text/markdown";
-  const editable = !appShortcut && (urlShortcut || mimeType.startsWith("text/") || mimeType.includes("json") || TEXT_EXTENSIONS.has(extension));
+  const editable = !appShortcut && !scenePackage && (urlShortcut || mimeType.startsWith("text/") || mimeType.includes("json") || TEXT_EXTENSIONS.has(extension));
   const preview: FilePreviewKind = urlShortcut ? "url"
     : markdown ? "markdown"
     : editable ? "text"
@@ -47,6 +48,7 @@ export function fileCapabilities(file: FileEntry) {
           : mimeType.startsWith("audio/") ? "audio"
             : "none";
   const icon: FileIconKind = appShortcut ? "app"
+    : scenePackage ? "archive"
     : urlShortcut ? "url"
     : mimeType.startsWith("image/") ? "image"
     : mimeType.startsWith("video/") ? "video"

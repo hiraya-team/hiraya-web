@@ -220,17 +220,20 @@ describe("strict outbox", () => {
     expect(transferred.destination.sync).toMatchObject({ catalogId: "catalog", catalogRevision: 8, entryRevisions: { existing: 2, folder: 6, file: 7 }, contentRevisions: { file: 5 } });
   });
 
-  test("resets a selected image when deleting or transferring its ancestor", () => {
+  test("resets a selected file while preserving its recoverable Scene widget", () => {
     const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
-    const file = { kind: "file" as const, id: "image", name: "wallpaper.png", parentId: folder.id, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "image/png", size: 4 };
-    const source = { ...state(), entries: [folder, file], wallpaper: { ...DEFAULT_WALLPAPER, source: `file:${file.id}` as const }, sync: { ...state().sync, catalogId: "catalog", catalogRevision: 8, layoutRevision: 3 } };
+    const file = { kind: "file" as const, id: "scene", name: "wallpaper.hiraya.scene", parentId: folder.id, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "application/vnd.hiraya.scene+zip", size: 4 };
+    const sceneWidget = { id: "scene-widget", kind: "scene" as const, fileId: file.id, x: 1, y: 2, width: 320, height: 180 };
+    const source = { ...state(), entries: [folder, file], wallpaper: { ...DEFAULT_WALLPAPER, source: `file:${file.id}` as const }, widgets: [sceneWidget], sync: { ...state().sync, catalogId: "catalog", catalogRevision: 8, layoutRevision: 3 } };
     const destination = { ...state(), sync: { ...state().sync, catalogId: "catalog" } };
 
     const deleted = applyOutboxOperation(source, { schemaVersion: 1, kind: "delete", entryId: folder.id });
     const transferred = transferEntriesBetweenDesktopStates(source, destination, [folder.id], null).source;
     expect(deleted.wallpaper).toEqual(DEFAULT_WALLPAPER);
+    expect(deleted.widgets).toEqual([sceneWidget]);
     expect(deleted.sync.layoutRevision).toBe(8);
     expect(transferred.wallpaper).toEqual(DEFAULT_WALLPAPER);
+    expect(transferred.widgets).toEqual([sceneWidget]);
     expect(transferred.sync.layoutRevision).toBe(8);
   });
 

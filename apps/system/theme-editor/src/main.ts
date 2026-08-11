@@ -507,7 +507,7 @@ async function uploadWallpaper() {
 }
 
 async function chooseWallpaper() {
-  const handles = await hiraya.dialogs.openFile({ mimeTypes: ["image/jpeg", "image/png", "image/webp"] }).catch((error) => {
+  const handles = await hiraya.dialogs.openFile({ mimeTypes: ["image/jpeg", "image/png", "image/webp", ".hiraya.scene", "application/vnd.hiraya.scene+zip"] }).catch((error) => {
     setStatus(describeError(error, "The Hiraya file picker could not be opened."), true);
     return null;
   });
@@ -517,13 +517,13 @@ async function chooseWallpaper() {
 async function selectWallpaper(handle: FileHandle) {
   if (!wallpaperState?.canManage || wallpaperBusy) return;
   wallpaperSaveGeneration += 1;
-  await runWallpaper("Applying wallpaper image...", async () => {
+  await runWallpaper("Applying wallpaper file...", async () => {
     wallpaperState = await hiraya.wallpapers.select(handle);
     renderWallpaper();
     renderPreview();
     await refreshWallpaperImage();
     setStatus(`${wallpaperState.currentName} applied.`);
-  }, "The wallpaper image could not be applied.");
+  }, "The wallpaper file could not be applied.");
 }
 
 async function refreshWallpaperImage() {

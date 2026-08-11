@@ -359,6 +359,23 @@
   z-index: -1;
 }
 
+.scene-wallpaper-layer { position: absolute; z-index: 0; inset: 0; overflow: hidden; }
+.scene-frame { width: 100%; height: 100%; border: 0; background: transparent; }
+.scene-frame:not([data-ready]) { visibility: hidden; }
+.scene-frame--wallpaper { display: block; pointer-events: auto; }
+.scene-frame--widget { display: block; border-radius: inherit; }
+.scene-state { display: flex; height: 100%; min-height: 96px; align-items: center; justify-content: center; gap: 8px; padding: 18px; border: 1px solid color-mix(in srgb, var(--theme-chrome-text) 16%, transparent); border-radius: inherit; color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome) 86%, transparent); font-size: 12px; line-height: 1.4; text-align: center; }
+.scene-state--gate { flex-direction: column; }
+.scene-state--gate strong { font-size: 13px; }
+.scene-state--gate span { color: color-mix(in srgb, var(--theme-chrome-text) 72%, transparent); }
+.scene-state--gate button { min-height: 36px; padding: 0 14px; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-accent-text); background: var(--theme-accent); font: inherit; font-weight: 700; cursor: pointer; }
+.scene-state--error { color: var(--theme-danger); }
+.desktop[data-wallpaper="scene"] { background: var(--wallpaper-main); }
+.desktop[data-wallpaper="scene"] .wallpaper-dim,
+.desktop[data-wallpaper="scene"] .wallpaper-color-overlay { z-index: 0; }
+.desktop[data-wallpaper="scene"] .desktop-area-stage--icons { pointer-events: none; }
+.desktop[data-wallpaper="scene"] .desktop-area-stage--icons .file-icon { pointer-events: auto; }
+
 .desktop:is(
   [data-wallpaper="file"][data-custom-loaded],
   [data-wallpaper="theme"]:has(:is(.wallpaper-media, .wallpaper-video, .wallpaper-scene)[data-ready])
@@ -6106,6 +6123,7 @@ button.app-picker__disclosure { cursor: pointer; }
 .shell-item--interactive .shell-item__content { pointer-events: auto; }
 .shell-item__widget-drag { position: absolute; z-index: 1; inset: 0; border: 0; border-radius: inherit; background: transparent; touch-action: none; cursor: grab; }
 .shell-item--interactive .shell-item__widget-drag { right: 52px; bottom: auto; height: 44px; border-radius: var(--theme-radius) var(--theme-radius) 0 0; }
+.shell-item[data-widget-kind="scene"] .shell-item__widget-drag { right: 44px; left: auto; bottom: auto; width: 44px; height: 44px; border-radius: 0; }
 .shell-item__widget-drag:active { cursor: grabbing; }
 .shell-item__widget-drag:focus-visible { outline: 2px solid var(--theme-focus); outline-offset: 2px; }
 .shell-item--widget .shell-item__resize { z-index: 2; border-radius: 0 0 var(--theme-radius) 0; background-color: color-mix(in srgb, var(--theme-chrome) 82%, transparent); }

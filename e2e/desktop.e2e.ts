@@ -48,6 +48,7 @@ async function dragTouch(page: Page, source: Locator, deltaX: number, deltaY: nu
 }
 
 const pngFile = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAGluZGV4Lmh0bWwtTUsOgjAQvUptYgKJihs30LLxBnoCbIc4scw07WDg9spnM/Pyvubg2ckcQb1lCK15jSJMKsscwOrIGQWZ6h4n8E2AXurb9dgIx+2njnLPaahXFDqB4vwXTssptUJvdXZAoNvHSOq5QFNtG63JLmGUdjVcmFxA97FFaXdGYJI7kwCJ1WtUJXCAX/AKKY6iTbVX/ABQSwECFAAUAAAACAAAACEAMIFxfy8AAAAtAAAAEQAAAAAAAAAAAAAAAAAAAAAAaGlyYXlhLnNjZW5lLmpzb25QSwECFAAUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAAAAAAAAAAAAAABeAAAAaW5kZXguaHRtbFBLBQYAAAAAAgACAHcAAAAZAQAAAAA=", "base64");
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
   await openLocalDesktop(page);
@@ -1530,7 +1531,7 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await expect(frame.getByText(`${wallpaperName} added and applied.`)).toBeVisible();
   await frame.getByRole("button", { name: "Grove" }).click();
 
-  await frame.getByRole("button", { name: "Choose Hiraya image" }).click();
+  await frame.getByRole("button", { name: "Choose Hiraya file" }).click();
   const picker = page.getByRole("dialog", { name: "Choose file" });
   await expect(picker.getByRole("radio", { name: wallpaperName })).toBeVisible();
   await picker.getByRole("radio", { name: wallpaperName }).check();
@@ -1545,9 +1546,64 @@ test("Theme Editor selects a wallpaper with the Hiraya file picker", async ({ pa
   await mobilePage.getByRole("dialog", { name: "Settings" }).getByRole("button", { name: /Theme Editor/ }).click();
   const mobileFrame = mobilePage.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe");
   await mobileFrame.getByRole("tab", { name: "Wallpaper" }).click();
-  await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya image" })).toBeVisible();
+  await expect(mobileFrame.getByRole("button", { name: "Choose Hiraya file" })).toBeVisible();
   await expect.poll(() => mobileFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
   await mobileContext.close();
+});
+
+test("Scene widgets and wallpaper receive input without covering desktop chrome", async ({ page }) => {
+  await openLocalDesktop(page);
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: "interactive.hiraya.scene", mimeType: "application/octet-stream", buffer: sceneFile });
+  const sceneIcon = page.getByRole("button", { name: /interactive\.hiraya\.scene, application\/vnd\.hiraya\.scene\+zip/ });
+  await expect(sceneIcon).toBeVisible();
+  await sceneIcon.dblclick();
+  const studio = page.getByRole("dialog", { name: "Scene Studio" });
+  const studioFrame = studio.frameLocator("iframe");
+  await expect(studioFrame.getByRole("heading", { name: "Scene files" })).toBeVisible();
+  await expect(studioFrame.getByRole("option", { name: /index\.html/ })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => studioFrame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.keyboard.press("Control+Shift+x");
+  await expect(studio).toBeHidden();
+  await page.setViewportSize({ width: 1280, height: 720 });
+
+  const desktop = page.locator(".desktop");
+  await desktop.click({ button: "right", position: { x: 700, y: 260 } });
+  const menu = page.getByRole("menu", { name: "Create and desktop actions" });
+  await menu.getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Scene..." }).click();
+  const widgetPicker = page.getByRole("dialog", { name: "Choose a Scene" });
+  await widgetPicker.getByRole("radio", { name: "interactive.hiraya.scene" }).check();
+  await widgetPicker.getByRole("button", { name: "Add widget" }).click();
+  const widgetFrame = page.frameLocator('iframe[title="interactive.hiraya.scene widget"]');
+  await widgetFrame.getByRole("button", { name: "Run Scene" }).click();
+  await expect(widgetFrame.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  await page.getByRole("button", { name: "Remove Scene" }).click();
+
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Theme Editor/ }).click();
+  const themeEditor = page.getByRole("dialog", { name: "Theme Editor" });
+  const themeFrame = themeEditor.frameLocator("iframe");
+  await themeFrame.getByRole("tab", { name: "Wallpaper" }).click();
+  await themeFrame.getByRole("button", { name: "Choose Hiraya file" }).click();
+  const wallpaperPicker = page.getByRole("dialog", { name: "Choose file" });
+  await wallpaperPicker.getByRole("radio", { name: "interactive.hiraya.scene" }).check();
+  await wallpaperPicker.getByRole("button", { name: "Choose file" }).click();
+  await expect(page.locator('iframe[title="interactive.hiraya.scene wallpaper"]')).toBeVisible();
+  expect(await page.evaluate(() => document.elementFromPoint(innerWidth / 2, innerHeight / 2)?.getAttribute("title"))).toBe("Theme Editor");
+  await themeEditor.getByRole("button", { name: "Minimize Theme Editor" }).click();
+  await expect(themeEditor).toBeHidden();
+  const settingsWindow = page.getByRole("dialog", { name: "Settings" });
+  await settingsWindow.getByRole("button", { name: "Minimize Settings" }).click();
+  await expect(settingsWindow).toBeHidden();
+  await expect.poll(() => page.evaluate(() => document.elementFromPoint(innerWidth - 80, innerHeight - 80)?.getAttribute("title"))).toBe("interactive.hiraya.scene wallpaper");
+  const wallpaperFrame = page.frameLocator('iframe[title="interactive.hiraya.scene wallpaper"]');
+  await wallpaperFrame.getByRole("button", { name: "Run Scene" }).click();
+  await expect(wallpaperFrame.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  await expect(sceneIcon).toBeVisible();
 });
 
 test("Theme Editor applies a selected theme and preserves it after reload", async ({ page, browser }) => {

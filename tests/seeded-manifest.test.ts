@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { parsePortableSeededManifest, toPortableSeededManifest } from "../src/lib/seeded-manifest";
 import { desktopStateSnapshot } from "./fixtures";
 import { DEFAULT_WALLPAPER } from "../src/types";
+import { HIRAYA_SCENE_MIME_TYPE } from "../src/domain/scene";
 
 describe("seeded packages", () => {
   test("accepts only schema version 1 with complete entries", () => {
@@ -35,5 +36,14 @@ describe("seeded packages", () => {
     const legacy = parsePortableSeededManifest({ ...value, layout: { snapToGrid: false, wallpaper: "grove" } });
     expect(legacy.layout.wallpaper).toEqual({ ...DEFAULT_WALLPAPER, source: "grove" });
     expect(toPortableSeededManifest({ ...snapshot, layout: legacy.layout }, () => "content/unused").layout.wallpaper.source).toBe("grove");
+  });
+
+  test("strictly validates seeded Scene widget references", () => {
+    const snapshot = desktopStateSnapshot();
+    snapshot.entries = [{ kind: "file", id: "scene", name: "demo.hiraya.scene", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: HIRAYA_SCENE_MIME_TYPE, size: 12 }];
+    snapshot.layout.widgets = [{ id: "scene-widget", kind: "scene", fileId: "scene", x: 10, y: 10, width: 420, height: 300 }];
+    const value = toPortableSeededManifest(snapshot, () => "content/demo.hiraya.scene");
+    expect(parsePortableSeededManifest(value).layout.widgets[0]).toMatchObject({ kind: "scene", fileId: "scene" });
+    expect(() => parsePortableSeededManifest({ ...value, entries: value.entries.map((entry) => entry.kind === "file" ? { ...entry, mimeType: "application/zip" } : entry) })).toThrow("Scene widget must reference");
   });
 });

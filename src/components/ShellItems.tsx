@@ -51,7 +51,7 @@ type Props = {
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
   position: EntryPosition;
   width: number;
@@ -60,6 +60,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   readOnly: boolean;
   areaInteractive?: boolean;
   widget?: boolean;
+  widgetKind?: DesktopWidget["kind"];
   interactive?: boolean;
   selected?: boolean;
   busy?: boolean;
@@ -227,6 +228,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       aria-hidden={!areaInteractive || undefined}
       inert={!areaInteractive || undefined}
       data-selected={selected || undefined}
+      data-widget-kind={widgetKind}
       data-entry-drop-parent={readOnly ? undefined : dropParentId}
       onDragOver={onDrop && !readOnly ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropActive = "true"; } : undefined}
       onDragLeave={onDrop ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropActive; } : undefined}
@@ -328,8 +330,8 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerS
   return <div className="shell-item-layer">
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
-      const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : "Todo list";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget interactive={widget.kind === "todo"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
+      const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : widget.kind === "scene" ? "Scene" : "Todo list";
+      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget widgetKind={widget.kind} interactive={widget.kind === "todo" || widget.kind === "scene"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
         {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : widget.kind === "status" ? <StatusWidget status={status} /> : renderWidget?.(widget)}
       </ShellItem>;
     })}

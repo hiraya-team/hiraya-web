@@ -37,7 +37,7 @@ type DesktopWidgetBounds = {
 
 export type DesktopWidget = DesktopWidgetBounds & (
   | { kind: "clock" | "calendar" | "status" }
-  | { kind: "todo"; fileId: string }
+  | { kind: "todo" | "scene"; fileId: string }
 );
 
 export type DesktopIconGroup = {

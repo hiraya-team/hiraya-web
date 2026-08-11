@@ -14,6 +14,6 @@
   },
   "types": "./src/index.ts",
   "dependencies": {
-    "@hiraya-team/apps-contracts": "2.1.0"
+    "@hiraya-team/apps-contracts": "2.2.0"
   }
 }

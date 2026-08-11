@@ -1,6 +1,6 @@
 import type { DesktopEntry, DesktopLayout, EditorSettings } from "../types";
 import type { DesktopStateSnapshot, DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
-import { assertIconGroupFolders, assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision, type RemoteDesktopState, type RemoteEntry } from "./contracts";
+import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision, type RemoteDesktopState, type RemoteEntry } from "./contracts";
 import { parseThemeState } from "./themes";
 
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true };
@@ -38,6 +38,7 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
   const appearance = parseThemeState(value.appearance);
   assertWallpaperSource(entries, layout.wallpaper, appearance);
   assertIconGroupFolders(entries, layout);
+  assertSceneFiles(entries, layout);
   return {
     entries,
     autoArrangeIcons: layout.autoArrangeIcons,
