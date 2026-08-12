@@ -3,7 +3,7 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "scripts": { "build": "bunx --bun tsc --noEmit && bunx --bun vite build --config ../shared/vite.config.ts" },
+  "scripts": { "build": "bunx --bun tsc --noEmit && bunx --bun vite build" },
   "dependencies": {
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-html": "^6.4.11",
@@ -23,5 +23,5 @@
     "@lezer/highlight": "^1.2.3",
     "codemirror": "^6.0.2"
   },
-  "devDependencies": { "typescript": "~5.8.3", "vite": "^7.0.4" }
+  "devDependencies": { "@types/js-beautify": "^1.14.3", "js-beautify": "^1.15.4", "typescript": "~5.8.3", "vite": "^7.0.4" }
 }

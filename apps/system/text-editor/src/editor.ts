@@ -68,8 +68,12 @@ export function parseTextEditorSettings(value: unknown, fallback: TextEditorSett
   };
 }
 
-export function formatText(name: string, text: string): string {
-  if (name.toLowerCase().endsWith(".json")) return `${JSON.stringify(JSON.parse(text), null, 2)}\n`;
+export async function formatText(name: string, mimeType: string, text: string): Promise<string> {
+  const language = textEditorLanguageFor(name, mimeType);
+  if (language === "json") return `${JSON.stringify(JSON.parse(text), null, 2)}\n`;
+  if (language === "html") return `${globalThis.beautifier.html(text, { indent_size: 2 }).trimEnd()}\n`;
+  if (language === "css") return `${globalThis.beautifier.css(text, { indent_size: 2 }).trimEnd()}\n`;
+  if (language === "javascript" || language === "jsx") return `${globalThis.beautifier.js(text, { indent_size: 2 }).trimEnd()}\n`;
   return `${text.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").trimEnd()}\n`;
 }
 

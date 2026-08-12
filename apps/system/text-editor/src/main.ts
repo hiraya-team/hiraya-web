@@ -105,6 +105,7 @@ let workspaceGeneration = 0;
 let selectedHandle: string | null = null;
 let selectedPath: string | null = null;
 let saving = false;
+let formatting = false;
 let opening = false;
 let initialized = false;
 let canWrite = false;
@@ -388,6 +389,7 @@ async function closeTab(tab: DocumentTab, confirm = true) {
 }
 
 async function save(saveAs: boolean) {
+  if (formatting) return;
   if (scene) await saveScene(saveAs);
   else if (activeTab) await saveTab(activeTab, saveAs);
 }
@@ -407,7 +409,7 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
     if (!destination) destination = await hiraya.dialogs.saveFile({ suggestedName: tab.name, mimeType });
     if (!destination) return;
     const sourceText = state.text;
-    const text = settings.autoFormat ? formatText(tab.name, sourceText) : sourceText;
+    const text = settings.autoFormat ? await formatText(tab.name, tab.metadata?.mimeType ?? "", sourceText) : sourceText;
     if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, state.dirty), state.dirty); return; }
     const bytes = new TextEncoder().encode(text);
     const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType, expectedRevision: expected ?? undefined });
@@ -508,12 +510,23 @@ async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
   if (workspace && handles.some((handle) => entries.has(handle) || handle === workspace?.handle)) void refreshWorkspace();
 }
 
-function applyFormatting() {
-  if (!initialized || opening || !canWrite || !activeTab?.state) return;
+async function applyFormatting() {
+  if (!initialized || opening || saving || formatting || !canWrite || !activeTab?.state) return;
+  const tab = activeTab;
+  const state = tab.state!;
+  const sourceText = state.text;
+  formatting = true;
+  renderControlState();
   try {
-    replaceEditorText(formatText(activeTab.name, editorText()));
+    const formatted = await formatText(tab.name, tab.metadata?.mimeType ?? "", sourceText);
+    if (!initialized || activeTab !== tab || state.text !== sourceText) {
+      setStatus("Document changed while formatting. Try again.", true);
+      return;
+    }
+    replaceEditorText(formatted);
     setStatus("Document formatted.");
   } catch (error) { setStatus(describeError(error, "Could not format the document."), true); }
+  finally { formatting = false; if (initialized) renderControlState(); }
 }
 
 function scheduleAutoSave(tab: DocumentTab) {
@@ -1087,7 +1100,7 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
 }
 
 function renderControlState() {
-  const controls = textEditorControlState(initialized, saving || opening, canWrite);
+  const controls = textEditorControlState(initialized, saving || formatting || opening, canWrite);
   required<HTMLButtonElement>("#explorer-view").disabled = !controls.open;
   required<HTMLButtonElement>("#open-workspace").disabled = !controls.open;
   for (const id of ["font-size", "line-wrap"]) required<HTMLInputElement | HTMLSelectElement>(`#${id}`).disabled = !controls.settings;
@@ -1107,9 +1120,9 @@ function renderControlState() {
 function publishCommands() {
   const savable = Boolean(activeTab?.state || scene);
   const documentCommands = canWrite && savable ? [
-    ...(activeTab?.state ? [{ id: "format", title: "Format", enabled: initialized && !saving && !opening, promoted: true }] : []),
-    { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !opening, promoted: true },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !opening, promoted: true },
+    ...(activeTab?.state ? [{ id: "format", title: "Format", enabled: initialized && !saving && !formatting && !opening, promoted: true }] : []),
+    { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !formatting && !opening, promoted: true },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !formatting && !opening, promoted: true },
   ] : [];
   const commands = [
     { id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening, promoted: true },

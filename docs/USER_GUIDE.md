@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Format web files in Integrated Editor.** **Format** and **Format on save** now format HTML, CSS, JavaScript, JSX, and JSON documents instead of only cleaning up trailing whitespace.
 - **Choose how new files begin.** Open **Settings > Files & apps > New file defaults** to set synchronized starting content and media types by extension for each desktop. JSON, Hiraya Todo, and URL files include useful defaults.
 - **Keep Integrated Editor context while working.** Syntax highlighting now follows a file's media type as well as its name, expanded workspace folders stay open after saving, and the **Explorer**, **Search workspace**, and **Settings** icons all open and close their panels consistently.
 - **Edit structured text files safely.** **Integrated Editor** now edits JSON, YAML, XML, Todo, and POS documents identified by their media type, and preserves that type when saving so their owning apps can still open them.
