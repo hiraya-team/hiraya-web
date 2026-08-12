@@ -2289,7 +2289,7 @@ test("mobile folder double taps cannot activate newly mounted contents", async (
   await context.close();
 });
 
-test("mobile touch drags selected items and swipes areas from unselected items", async ({ browser }) => {
+test("mobile touch drags selected items and swipes areas from unselected items and widgets", async ({ browser }) => {
   const context = await browser.newContext({ ...devices["Pixel 7"] });
   const page = await context.newPage();
   await openLocalDesktop(page);
@@ -2318,6 +2318,22 @@ test("mobile touch drags selected items and swipes areas from unselected items",
   await dragTouch(page, icon, 0, 72);
   await expect(page).toHaveURL(/\/areas\/0\/0$/);
   await expect.poll(async () => (await icon.boundingBox())?.y).toBeGreaterThan(initialBounds!.y + 40);
+
+  const desktop = page.locator(".desktop");
+  await desktop.click({ button: "right", position: { x: 300, y: 400 } });
+  await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "Add widget" }).click();
+  await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
+  const clock = page.locator(".shell-item--widget", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
+  await desktop.tap({ position: { x: 350, y: 500 } });
+  await expect(clock).not.toHaveAttribute("data-selected", "true");
+  const clockPosition = await clock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y") }));
+  await dragTouch(page, clock.getByRole("button", { name: "Move Clock", exact: true }), 180, 0);
+  await expect(page).toHaveURL(/\/areas\/-1\/0$/);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/areas\/0\/0$/);
+  await expect(clock).not.toHaveAttribute("data-selected", "true");
+  await expect.poll(() => clock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y") }))).toEqual(clockPosition);
 
   await context.close();
 });

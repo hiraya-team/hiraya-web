@@ -150,6 +150,10 @@ function ShellItem({ entityId, label, position, width, height, areaSize, readOnl
   const begin = (event: ReactPointerEvent, target: typeof drag) => {
     if (readOnly || busy || drag.current || resize.current || event.button !== 0) return;
     event.preventDefault();
+    if (target === drag && event.pointerType === "touch" && !selected) {
+      surfaceTap.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+      return;
+    }
     onSelect?.({ toggle: event.metaKey || event.ctrlKey });
     if (widget && !selected) return;
     desktopRef.current = ref.current?.closest<HTMLElement>(".desktop") ?? null;
@@ -178,7 +182,12 @@ function ShellItem({ entityId, label, position, width, height, areaSize, readOnl
   };
   const finish = (event: ReactPointerEvent, target: typeof drag, cancelled = false) => {
     const current = target.current;
-    if (!current || current.pointerId !== event.pointerId) return;
+    if (!current || current.pointerId !== event.pointerId) {
+      const tap = surfaceTap.current;
+      surfaceTap.current = null;
+      if (target === drag && !cancelled && tap?.pointerId === event.pointerId && Math.hypot(event.clientX - tap.x, event.clientY - tap.y) < 12) onSelect?.({ toggle: false });
+      return;
+    }
     target.current = null;
     try {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);

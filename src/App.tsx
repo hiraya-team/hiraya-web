@@ -4738,8 +4738,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
     const target = event.target as Element;
-    const unselectedTouchIcon = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected])");
-    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchIcon) return;
+    const unselectedTouchItem = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected]), .shell-item--widget:not([data-selected]) .shell-item__widget-drag");
+    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchItem) return;
     if (event.pointerType !== "touch") {
       event.preventDefault();
       const additive = event.metaKey || event.ctrlKey;
@@ -4764,8 +4764,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (!allowBrowserPinchZoom) event.preventDefault();
     swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
     if (event.pointerType !== "touch") return;
-    if (!allowBrowserPinchZoom && !unselectedTouchIcon) event.currentTarget.setPointerCapture(event.pointerId);
-    if (unselectedTouchIcon) return;
+    if (!allowBrowserPinchZoom && !unselectedTouchItem) event.currentTarget.setPointerCapture(event.pointerId);
+    if (unselectedTouchItem) return;
     const press = {
       activated: false,
       pointerId: event.pointerId,
