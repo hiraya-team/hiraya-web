@@ -171,7 +171,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const byId = new Map(transforms.map((transform) => [transform.entityId, transform.delta]));
     desktop?.querySelectorAll<HTMLElement>("[data-desktop-entity-id]").forEach((entity) => {
       const delta = byId.get(entity.dataset.desktopEntityId ?? "");
-      if (!delta || entity === iconRef.current || entity.dataset.entityDragging) return;
+      if (!delta || entity === iconRef.current || entity.dataset.entityDragging || entity.dataset.entryDropParent !== undefined) return;
       entity.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
       entity.style.setProperty("--auto-arrange-origin-x", `${-delta.x}px`);
       entity.style.setProperty("--auto-arrange-origin-y", `${-delta.y}px`);

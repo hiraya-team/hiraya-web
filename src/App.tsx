@@ -2172,6 +2172,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       if (focused && focused.kind !== "explorer") return;
       const modifier = event.metaKey || event.ctrlKey;
       const key = event.key.toLowerCase();
+      const currentEntryIds = selectionScopeRef.current === "desktop" ? selectedIdsRef.current.flatMap((id) => {
+        const entity = desktopEntityParts(id);
+        return entity?.kind === "entry" ? [entity.sourceId] : [];
+      }) : selectedIdsRef.current;
       if (modifier && key === "a") {
         const explorer = activeExplorer();
         const surface = explorer?.id ?? "desktop";
@@ -2180,12 +2184,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           : desktopEntityList.filter((entity) => segmentKey(projectLogicalPosition(entity, iconArea).segment) === activeSegmentKey && (entity.kind !== "entry" || !isProtectedShellEntry(entity.entry.id))).map((entity) => entity.id);
         event.preventDefault();
         replaceSelection(surface, ids);
-      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && selectedEntryIds.length === 1) {
-        const entry = entryIndex.byId.get(selectedEntryIds[0]);
+      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && currentEntryIds.length === 1) {
+        const entry = entryIndex.byId.get(currentEntryIds[0]);
         if (!entry) return;
         event.preventDefault();
         void copyDeepLinkEvent(entry);
-      } else if (modifier && !event.shiftKey && key === "c" && selectedEntryIds.length) {
+      } else if (modifier && !event.shiftKey && key === "c" && currentEntryIds.length) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
@@ -2197,8 +2201,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           keyboardPasteRef.current = false;
           void beginPasteRef.current(explorer?.folderId ?? null);
         });
-      } else if (event.key === "Delete" && selectedEntryIds.length && canMutate) {
-        const entryIds = canonicalSelectionIds(entriesRef.current, selectedEntryIds);
+      } else if (event.key === "Delete" && currentEntryIds.length && canMutate) {
+        const entryIds = canonicalSelectionIds(entriesRef.current, currentEntryIds);
         if (!entryIds.length) return;
         event.preventDefault();
         openFileDialog({ type: "delete", entryIds });
@@ -3195,8 +3199,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           : await createFolder(name, parentId, position);
       fileDialogResultIdRef.current = created.id;
       setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
-      replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [created.id]);
-      if (created.kind === "folder" && parentId === null && groupCreatedFolderRef.current) addIconGroup(created);
+       const grouped = created.kind === "folder" && parentId === null && groupCreatedFolderRef.current;
+       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [parentId === null ? grouped ? groupEntityId(created.id) : entryEntityId(created.id) : created.id]);
+       if (grouped) addIconGroup(created);
       groupCreatedFolderRef.current = false;
     } else if (dialog.type === "rename") {
       if (!dialogEntry) {
@@ -3266,7 +3271,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         const existingIds = new Set(current.map((entry) => entry.id));
         return [...current, ...imported.filter((entry) => !existingIds.has(entry.id))];
       });
-      replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, plan.rootIds);
+      replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, parentId === null ? plan.rootIds.map(entryEntityId) : plan.rootIds);
     } catch (importError) {
       if (!(importError instanceof DOMException && importError.name === "AbortError")) reportFolderImportError(importError instanceof Error ? importError.message : "The import could not be completed.");
     } finally {
@@ -4341,7 +4346,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const pasted = await pasteEntries(snapshot, parentId, names, pastePositions(snapshot, parentId, position));
     const pastedIds = new Set(pasted.map((entry) => entry.id));
     const rootIds = pasted.filter((entry) => !pastedIds.has(entry.parentId ?? "")).map((entry) => entry.id);
-    replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, rootIds);
+    replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, parentId === null ? rootIds.map(entryEntityId) : rootIds);
     setPendingPaste(null);
     setContextMenu(null);
     setClipboardOffer((current) => dismissClipboardOffer(current));
@@ -4733,8 +4738,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
     if (event.button !== 0) return;
     const target = event.target as Element;
-    const unselectedTouchIcon = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected])");
-    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchIcon) return;
+    const unselectedTouchItem = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected]), .shell-item--widget:not([data-selected]) .shell-item__widget-drag");
+    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchItem) return;
     if (event.pointerType !== "touch") {
       event.preventDefault();
       const additive = event.metaKey || event.ctrlKey;
@@ -4759,8 +4764,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (!allowBrowserPinchZoom) event.preventDefault();
     swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
     if (event.pointerType !== "touch") return;
-    if (!allowBrowserPinchZoom && !unselectedTouchIcon) event.currentTarget.setPointerCapture(event.pointerId);
-    if (unselectedTouchIcon) return;
+    if (!allowBrowserPinchZoom && !unselectedTouchItem) event.currentTarget.setPointerCapture(event.pointerId);
+    if (unselectedTouchItem) return;
     const press = {
       activated: false,
       pointerId: event.pointerId,
