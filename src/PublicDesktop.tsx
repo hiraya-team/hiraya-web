@@ -8,7 +8,7 @@ import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, 
 import type { DesktopEntry, FileEntry, FolderEntry } from "./types";
 import { builtinAppWindow } from "./apps/registry";
 import { createEntryIndex } from "./ui/entry-index";
-import { useModalDialog } from "./ui/modal-dialog";
+import { useNativeDialog } from "./ui/modal-dialog";
 import { publicAreaMapSegments, publicFolderBackTarget } from "./ui/public-desktop-layout";
 import { EntryArtwork, StatusBadge, type EntryPreviewSource } from "./components/VisualPrimitives";
 import { ShellItemLayer } from "./components/ShellItems";
@@ -33,12 +33,11 @@ const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
 
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose);
   return (
-    <div ref={backdropRef} className="modal-backdrop large-download-gate__backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section ref={dialogRef} className="file-window large-download-gate" role="dialog" aria-modal="true" aria-labelledby="download-gate-title" tabIndex={-1}>
+    <dialog ref={dialogRef} className="modal-backdrop large-download-gate__backdrop" aria-labelledby="download-gate-title" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="file-window large-download-gate">
         <header className="window-header">
           <div><span className="window-kicker">Download</span><h2 id="download-gate-title">Sign in for this download</h2></div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close download dialog"><X size={18} /></button>
@@ -55,7 +54,7 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
           </a>
         </div>
       </section>
-    </div>
+    </dialog>
   );
 }
 

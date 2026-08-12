@@ -1,7 +1,7 @@
 import { createElement, useEffect, useRef, type HTMLAttributes, type ReactNode } from "react";
-import { defineHirayaElements, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "@hiraya/apps-ui/elements";
+import { HirayaItemList, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "@hiraya/apps-ui/elements";
 
-defineHirayaElements();
+if (typeof customElements !== "undefined" && !customElements.get("hiraya-item-list")) customElements.define("hiraya-item-list", HirayaItemList);
 
 type ItemAttributes = HTMLAttributes<HTMLElement> & {
   "data-item-id": string;

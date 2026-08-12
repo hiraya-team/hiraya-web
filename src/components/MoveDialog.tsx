@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { Desktop, Folder, SpinnerGap, X } from "@phosphor-icons/react";
 import type { DesktopEntry, FolderEntry } from "../types";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 
 export interface MoveDialogProps {
   desktops: readonly { id: string; name: string; folders: readonly FolderEntry[] }[];
@@ -46,9 +46,8 @@ export function MoveDialog({ desktops, activeDesktopId, entries, invalidIds, onC
   const [selectedDesktopId, setSelectedDesktopId] = useState(activeDesktopId);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, submitting);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose, submitting);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -65,8 +64,8 @@ export function MoveDialog({ desktops, activeDesktopId, entries, invalidIds, onC
   }
 
   return (
-    <div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
-      <section ref={dialogRef} className="file-window move-dialog" role="dialog" aria-modal="true" aria-labelledby="move-dialog-title" tabIndex={-1}>
+    <dialog ref={dialogRef} className="modal-backdrop" aria-labelledby="move-dialog-title" onPointerDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
+      <section className="file-window move-dialog">
         <header className="window-header move-dialog__header">
           <div>
              <span className="window-kicker">Move {entries.length === 1 ? "item" : "items"}</span>
@@ -99,6 +98,6 @@ export function MoveDialog({ desktops, activeDesktopId, entries, invalidIds, onC
           </div>
         </form>
       </section>
-    </div>
+    </dialog>
   );
 }

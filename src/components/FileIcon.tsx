@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef } from "react";
-import { AvailabilityBadge, EntryArtwork, EntryIcon, type EntryPreviewSource } from "./VisualPrimitives";
+import { AvailabilityBadge, EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
 import type { DesktopEntry, EntryPosition, GridSize } from "../types";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
@@ -71,7 +71,6 @@ type DragState = {
   canDrag: boolean;
 };
 
-export const EntryTypeIcon = EntryIcon;
 
 export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);

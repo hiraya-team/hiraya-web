@@ -26,7 +26,6 @@ export function storeSearchMatches(query: string, ...values: Array<string | null
 export type InspectedStorePackage = Readonly<{ archive: Blob; inspection: AppPackageInspection }>;
 export type LoadedStorePackages = Readonly<{ packages: StorePackage[]; managed: boolean; descriptor: AppStoreDescriptor | null }>;
 
-const SYSTEM_APP_ID_SET = RESERVED_SYSTEM_APP_IDS;
 let cachedCatalog: { key: string; value: Promise<ReturnType<typeof parseAppCatalog>> } | null = null;
 
 function parseDescriptor(value: unknown): AppStoreDescriptor | null {
@@ -66,7 +65,7 @@ export async function loadStorePackages(desktop: DesktopIdentity, directBlobOrig
     .filter((entry) => entry.name.toLowerCase().endsWith(".hiraya.app"))
     .map((entry) => ({ source: "remote", kind: "store", entry, contentRevision: entry.contentRevision, catalogId: state.catalogId, catalogRevision: state.catalogRevision, desktopId: state.id })) };
   const catalog = await loadAppCatalog(state.catalogId, state.id, catalogEntry, directBlobOrigin);
-  if (catalog.releases.some((release) => release.kind === "system" && !SYSTEM_APP_ID_SET.has(release.manifest.id))) throw new Error("The app catalog contains an unsupported trusted system app.");
+  if (catalog.releases.some((release) => release.kind === "system" && !RESERVED_SYSTEM_APP_IDS.has(release.manifest.id))) throw new Error("The app catalog contains an unsupported trusted system app.");
   return { managed: true, descriptor, packages: catalog.releases.map((release) => {
     const entry = files.find((entry) => entry.parentId === null && entry.name === release.fileName);
     if (!entry || entry.size !== release.size) throw new Error(`The app catalog release ${release.fileName} is unavailable.`);

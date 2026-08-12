@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties
 import { ArrowsLeftRight, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, Info, LinkSimple, Package, PencilSimple, Play, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 import { dismissesSheetDrag } from "../ui/file-icon-gesture";
 import { openWithMenuItems, type OpenWithItem } from "../ui/open-with-menu";
 
@@ -242,11 +242,11 @@ function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus
   onFocus: (event: React.FocusEvent<HTMLDivElement>) => void;
   children: ReactNode;
 }) {
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const sheetRef = useRef<HTMLElement>(null);
   const drag = useRef<{ pointerId: number; startY: number; startedAt: number; moved: boolean } | null>(null);
   const previousFocusRef = useRef<HTMLElement | null>(typeof document !== "undefined" && document.activeElement instanceof HTMLElement ? document.activeElement : null);
-  useModalDialog(backdropRef, dialogRef, onClose);
+  useNativeDialog(dialogRef, onClose, false, undefined, presentation === "sheet");
 
   useEffect(() => () => {
     if (presentation !== "menu") return;
@@ -256,8 +256,8 @@ function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus
 
   const menu = <div ref={menuRef} className="context-menu" data-positioned={presentation === "menu" || undefined} role="menu" aria-label={label} style={presentation === "menu" ? style : undefined} onFocusCapture={onFocus} onKeyDown={handleMenuKeyDown}>{children}</div>;
   if (presentation === "menu") return menu;
-  return <div ref={backdropRef} className="action-sheet-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section ref={dialogRef} className="action-sheet" role="dialog" aria-modal="true" aria-label={label} tabIndex={-1}>
+  return <dialog ref={dialogRef} className="action-sheet-backdrop" aria-label={label} onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section ref={sheetRef} className="action-sheet">
       <div className="action-sheet__handle" aria-hidden="true" onPointerDown={(event) => {
         if (event.button !== 0) return;
         drag.current = { pointerId: event.pointerId, startY: event.clientY, startedAt: performance.now(), moved: false };
@@ -267,23 +267,23 @@ function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus
         if (!current || current.pointerId !== event.pointerId) return;
         const delta = Math.max(0, event.clientY - current.startY);
         current.moved ||= delta > 4;
-        dialogRef.current?.style.setProperty("transform", `translate3d(0, ${delta}px, 0)`);
+        sheetRef.current?.style.setProperty("transform", `translate3d(0, ${delta}px, 0)`);
       }} onPointerUp={(event) => {
         const current = drag.current;
         if (!current || current.pointerId !== event.pointerId) return;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
         const delta = Math.max(0, event.clientY - current.startY);
         if (dismissesSheetDrag(delta, performance.now() - current.startedAt)) { drag.current = null; onClose(); return; }
-        dialogRef.current?.style.removeProperty("transform");
+        sheetRef.current?.style.removeProperty("transform");
         window.setTimeout(() => { if (drag.current === current) drag.current = null; }, 0);
       }} onPointerCancel={(event) => {
         if (drag.current?.pointerId !== event.pointerId) return;
         drag.current = null;
-        dialogRef.current?.style.removeProperty("transform");
+        sheetRef.current?.style.removeProperty("transform");
       }}><span /></div>
       {menu}
     </section>
-  </div>;
+  </dialog>;
 }
 
 function handleMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {

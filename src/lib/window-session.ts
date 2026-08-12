@@ -13,8 +13,6 @@ type WindowSessionBase = {
 export type WindowSessionApp = WindowSessionBase & BuiltinAppTarget;
 
 export type WindowSession = { schemaVersion: 1; apps: WindowSessionApp[] };
-export type BrowserHistoryState = { schemaVersion: 1; apps: WindowTarget[] };
-
 export type WindowTarget = BuiltinAppTarget;
 
 export const EMPTY_WINDOW_SESSION: WindowSession = { schemaVersion: 1, apps: [] };
@@ -34,10 +32,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-export function windowTargetId(target: WindowTarget) {
-  return builtinAppTargetId(target);
-}
-
 export function parseWindowTargets(value: unknown): WindowTarget[] {
   if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.apps) || value.apps.length > 100) throw new Error("The browser history has an unsupported format.");
   const ids = new Set<string>();
@@ -45,7 +39,7 @@ export function parseWindowTargets(value: unknown): WindowTarget[] {
     if (!isRecord(item)) throw new Error("The route history contains an invalid app.");
     const target = extractBuiltinAppTarget(item);
     if (!target) throw new Error("The route history contains an invalid app.");
-    const id = windowTargetId(target);
+    const id = builtinAppTargetId(target);
     if (ids.has(id)) throw new Error("The route history contains duplicate apps.");
     ids.add(id);
     return target;

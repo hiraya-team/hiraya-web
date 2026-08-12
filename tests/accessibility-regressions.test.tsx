@@ -358,11 +358,16 @@ describe("accessibility regressions", () => {
     expect(app).toContain("fileDialogResultIdRef.current = created.id");
     expect(app).toContain("fileDialogResultIdRef.current = renamed.id");
     expect(app).not.toContain("setDialog({ type:");
-    expect(dialog).toContain("useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus)");
+    expect(dialog).toContain("useNativeDialog(dialogRef, onClose, submitting, restoreFocus)");
+    expect(dialog).toContain('<dialog ref={dialogRef} className="modal-backdrop"');
     expect(dialog).toContain('aria-invalid={error ? "true" : undefined}');
     expect(dialog).toContain('aria-errormessage={error ? "file-name-error" : undefined}');
     expect(dialog).toContain("requestAnimationFrame(() => nameRef.current?.focus())");
-    expect(modal).toContain("restoreFocusRef.current?.() ?? entry.previousFocus");
+    expect(modal).toContain("dialog.showModal()");
+    expect(modal).toContain('dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus()');
+    expect(modal).toContain('dialog.addEventListener("cancel", onCancel)');
+    expect(modal).toContain("if (!dismissDisabledRef.current) onCloseRef.current()");
+    expect(modal).toContain("restoreFocusRef.current?.() ?? invoker");
   });
 
   test("mobile destination launches suppress menu refocus and establish destination focus", async () => {
