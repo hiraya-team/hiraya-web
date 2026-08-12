@@ -50,6 +50,7 @@ export function useDesktopSelection() {
     selectedIds,
     selectedIdsRef,
     selectionScope,
+    selectionScopeRef,
     mobileMultiSelectScope,
     replaceSelection,
     selectEntry,

@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ArrowsLeftRight, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, ImageSquare, Info, LinkSimple, Package, PencilSimple, Play, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
+import { ArrowsLeftRight, ArrowsOut, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, ImageSquare, Info, LinkSimple, Package, PencilSimple, Play, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { useNativeDialog } from "../ui/modal-dialog";
@@ -232,6 +232,23 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
       {onSettings && <button className="context-menu__separated" type="button" role="menuitem" onClick={onSettings}>
         <GearSix size={17} /> Settings
       </button>}
+  </ActionMenuFrame>;
+}
+
+export function WidgetContextMenu({ menu, label, onOpen, onResize, onRemove, onClose }: {
+  menu: Extract<Exclude<ContextMenuState, null>, { type: "widget" }>;
+  label: string;
+  onOpen?: () => void;
+  onResize: () => void;
+  onRemove: () => void;
+  onClose: () => void;
+}) {
+  const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
+  const onFocus = useRovingMenu(position.ref);
+  return <ActionMenuFrame key={menu.presentation} menuRef={position.ref} style={position.style} presentation={menu.presentation} label={`Actions for ${label}`} onClose={onClose} onFocus={onFocus}>
+    {onOpen && <button type="button" role="menuitem" onClick={onOpen}><FolderOpen size={17} /> Open</button>}
+    <button className={!onOpen ? undefined : "context-menu__separated"} type="button" role="menuitem" onClick={onResize}><ArrowsOut size={17} /> Resize</button>
+    <button className="context-menu__danger" type="button" role="menuitem" onClick={onRemove}><Trash size={17} /> Remove</button>
   </ActionMenuFrame>;
 }
 

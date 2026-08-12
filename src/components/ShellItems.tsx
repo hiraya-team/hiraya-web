@@ -9,6 +9,8 @@ import { resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { useTickingDate } from "../ui/use-ticking-date";
 import { ItemList } from "./ItemList";
 import { EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
+import { focusSpatialDesktopEntity, groupEntityId, widgetEntityId } from "../ui/desktop-entity";
+import type { DesktopEntityTransform } from "../ui/desktop-entity";
 
 type StatusModel = {
   syncStatus: "blocked" | "connecting" | "error" | "local" | "offline" | "online" | "upgrade-required";
@@ -38,22 +40,25 @@ type Props = {
   onDrop?: (dataTransfer: DataTransfer, folderId: string) => void;
   onMoveWidget?: (widget: DesktopWidget, position: EntryPosition) => void;
   onResizeWidget?: (widget: DesktopWidget, size: { width: number; height: number }) => void;
-  onPreviewWidget?: (widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) => readonly { entryId: string; delta: EntryPosition }[] | null;
+  onPreviewWidget?: (widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) => readonly DesktopEntityTransform[] | null;
   onRemoveWidget?: (widget: DesktopWidget) => void;
-  onSelectWidget?: (widget: DesktopWidget) => void;
+  onSelectWidget?: (widget: DesktopWidget, options: { toggle: boolean }) => void;
   onActivateWidget?: (widget: DesktopWidget) => void;
-  selectedWidgetId?: string | null;
+  onWidgetContextMenu?: (widget: DesktopWidget, x: number, y: number, presentation: "menu" | "sheet") => void;
+  onSelectGroup?: (folder: FolderEntry, options: { toggle: boolean }) => void;
+  selectedEntityIds?: ReadonlySet<string>;
   widgetBusy?: boolean;
   gridSize?: GridSize;
   onMoveGroup?: (folder: FolderEntry, position: EntryPosition) => void;
   onResizeGroup?: (group: DesktopIconGroup, size: { width: number; height: number }) => void;
-  onPreviewGroup?: (folder: FolderEntry, group: DesktopIconGroup, change: { x: number; y: number; width: number; height: number }) => readonly { entryId: string; delta: EntryPosition }[] | null;
+  onPreviewGroup?: (folder: FolderEntry, group: DesktopIconGroup, change: { x: number; y: number; width: number; height: number }) => readonly DesktopEntityTransform[] | null;
   onUngroup?: (group: DesktopIconGroup) => void;
 };
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetId, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onActivate, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ entityId, label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetId, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onActivate, onContextMenu, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+  entityId: string;
   label: string;
   position: EntryPosition;
   width: number;
@@ -68,11 +73,12 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   selected?: boolean;
   busy?: boolean;
   gridSize?: GridSize;
-  onSelect?: () => void;
+  onSelect?: (options: { toggle: boolean }) => void;
   onActivate?: () => void;
+  onContextMenu?: (x: number, y: number, presentation: "menu" | "sheet") => void;
   onMove?: (position: EntryPosition) => void;
   onResize?: (size: { width: number; height: number }) => void;
-  onPreview?: (change: { x: number; y: number; width: number; height: number }) => readonly { entryId: string; delta: EntryPosition }[] | null;
+  onPreview?: (change: { x: number; y: number; width: number; height: number }) => readonly DesktopEntityTransform[] | null;
   onRemove?: () => void;
   removeLabel?: string;
   dropParentId?: string;
@@ -108,19 +114,19 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
     preview.style.height = `${next.height}px`;
     preview.dataset.visible = "true";
   };
-  const applyIconTransforms = (transforms: readonly { entryId: string; delta: EntryPosition }[] | null) => {
+  const applyIconTransforms = (transforms: readonly DesktopEntityTransform[] | null) => {
     const desktop = desktopRef.current ?? ref.current?.closest<HTMLElement>(".desktop");
-    desktop?.querySelectorAll<HTMLElement>(".file-icon[data-widget-arrange-dragging]").forEach((icon) => {
-      icon.style.removeProperty("transform");
-      delete icon.dataset.widgetArrangeDragging;
+    desktop?.querySelectorAll<HTMLElement>("[data-shell-arrange-dragging]").forEach((entity) => {
+      entity.style.removeProperty("transform");
+      delete entity.dataset.shellArrangeDragging;
     });
     if (!transforms) return;
-    const byId = new Map(transforms.map((transform) => [transform.entryId, transform.delta]));
-    desktop?.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]").forEach((icon) => {
-      const delta = byId.get(icon.dataset.entryId ?? "");
-      if (!delta) return;
-      icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
-      icon.dataset.widgetArrangeDragging = "true";
+    const byId = new Map(transforms.map((transform) => [transform.entityId, transform.delta]));
+    desktop?.querySelectorAll<HTMLElement>("[data-desktop-entity-id]").forEach((entity) => {
+      const delta = byId.get(entity.dataset.desktopEntityId ?? "");
+      if (!delta || entity === ref.current) return;
+      entity.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
+      entity.dataset.shellArrangeDragging = "true";
     });
   };
   const resetVisuals = (target: typeof drag) => {
@@ -136,16 +142,16 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   useEffect(() => () => {
     drag.current = null;
     resize.current = null;
-    desktopRef.current?.querySelectorAll<HTMLElement>(".file-icon[data-widget-arrange-dragging]").forEach((icon) => {
-      icon.style.removeProperty("transform");
-      delete icon.dataset.widgetArrangeDragging;
+    desktopRef.current?.querySelectorAll<HTMLElement>("[data-shell-arrange-dragging]").forEach((entity) => {
+      entity.style.removeProperty("transform");
+      delete entity.dataset.shellArrangeDragging;
     });
   }, []);
   const begin = (event: ReactPointerEvent, target: typeof drag) => {
     if (readOnly || busy || drag.current || resize.current || event.button !== 0) return;
     event.preventDefault();
-    onSelect?.();
-    if (widget && !selected) return;
+    onSelect?.({ toggle: event.metaKey || event.ctrlKey });
+    if (!selected) return;
     desktopRef.current = ref.current?.closest<HTMLElement>(".desktop") ?? null;
     target.current = { pointerId: event.pointerId, pointerType: event.pointerType, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -183,8 +189,8 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
     const y = event.clientY - current.startY;
     resetVisuals(target);
     desktopRef.current = null;
-    if (target === drag && current.pointerType === "touch" && widgetId && onActivate) {
-      const result = resolveTouchRelease(lastTap.current, { id: widgetId, x: event.clientX, y: event.clientY, at: performance.now() }, { cancelled, moved: current.moved, longPressed: false, releasedOnIcon: true });
+    if (target === drag && current.pointerType === "touch" && onActivate) {
+      const result = resolveTouchRelease(lastTap.current, { id: widgetId ?? entityId, x: event.clientX, y: event.clientY, at: performance.now() }, { cancelled, moved: current.moved, longPressed: false, releasedOnIcon: true });
       lastTap.current = result.nextTap;
       if (result.action === "open") onActivate();
     }
@@ -212,10 +218,14 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       desktopRef.current = null;
       return;
     }
+    if (mode === "move" && !event.altKey && ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
+      if (focusSpatialDesktopEntity(event.currentTarget as HTMLElement, event.key)) event.preventDefault();
+      return;
+    }
     if (readOnly || busy || !["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) return;
     event.preventDefault();
     if (widget && !selected) {
-      onSelect?.();
+      onSelect?.({ toggle: false });
       return;
     }
     const step = gridSize ?? (event.shiftKey ? 24 : 8);
@@ -240,11 +250,12 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       aria-hidden={!areaInteractive || undefined}
       inert={!areaInteractive || undefined}
       data-selected={selected || undefined}
+      data-desktop-entity-id={entityId}
       data-widget-kind={widgetKind}
       data-entry-drop-parent={readOnly ? undefined : dropParentId}
       onPointerDown={widget && interactive ? (event) => {
         if (!safeWidgetSurface(event.target)) return;
-        onSelect?.();
+        onSelect?.({ toggle: event.metaKey || event.ctrlKey });
         if (event.pointerType === "touch") surfaceTap.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
       } : undefined}
       onPointerUp={widget && interactive && onActivate ? (event) => {
@@ -257,15 +268,16 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       } : undefined}
       onPointerCancel={widget && interactive ? () => { surfaceTap.current = null; } : undefined}
       onDoubleClick={widget && onActivate ? (event) => { if (safeWidgetSurface(event.target)) onActivate(); } : undefined}
+      onContextMenu={onContextMenu ? (event) => { event.preventDefault(); onContextMenu(event.clientX, event.clientY, "menu"); } : undefined}
       onDragOver={onDrop && !readOnly ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropActive = "true"; } : undefined}
       onDragLeave={onDrop ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropActive; } : undefined}
       onDrop={onDrop && !readOnly ? (event) => { event.preventDefault(); delete event.currentTarget.dataset.dropActive; onDrop(event.dataTransfer); } : undefined}
     >
     {!widget && <header className="shell-item__header">
-      <button className="shell-item__drag" type="button" disabled={readOnly || busy} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{label}</button>
+      <button className="shell-item__drag" type="button" disabled={readOnly || busy} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use Alt+arrow keys for precise movement"} onClick={(event) => { if (event.detail === 0) onSelect?.({ toggle: event.metaKey || event.ctrlKey }); }} onDoubleClick={onActivate} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{label}</button>
       {!readOnly && onRemove && <button className="shell-item__remove" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
     </header>}
-    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={widgetKind === "scene" && !selected ? `Select ${label}` : `Move ${label}`} aria-pressed={selected} title={widgetKind === "scene" && !selected ? `Select ${label}` : "Drag to move; use arrow keys for precise movement"} onClick={onSelect} onDoubleClick={onActivate} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{widgetKind === "scene" && <DotsSix className="shell-item__widget-grip-icon" size={20} weight="bold" aria-hidden="true" />}</button>}
+    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={widgetKind === "scene" && !selected ? `Select ${label}` : `Move ${label}`} aria-pressed={selected} title={widgetKind === "scene" && !selected ? `Select ${label}` : "Drag to move; use Alt+arrow keys for precise movement"} onClick={(event) => { if (event.detail === 0) onSelect?.({ toggle: event.metaKey || event.ctrlKey }); }} onDoubleClick={onActivate} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{widgetKind === "scene" && <DotsSix className="shell-item__widget-grip-icon" size={20} weight="bold" aria-hidden="true" />}</button>}
     <div className="shell-item__content">{children}</div>
     {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} onLostPointerCapture={(event) => finish(event, resize, true)} />}
     {widget && selected && onRemove && <button className="shell-item__remove shell-item__remove--widget" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
@@ -346,7 +358,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
   </div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, onActivateWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, onActivateWidget, onWidgetContextMenu, onSelectGroup, selectedEntityIds = new Set(), widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const ownerKey = segmentKey(ownerSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === ownerKey);
@@ -360,14 +372,16 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerS
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
       const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : widget.kind === "scene" ? "Scene" : "Todo list";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget widgetId={widget.id} widgetKind={widget.kind} interactive={widget.kind === "todo" || widget.kind === "scene"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onActivate={widget.kind === "todo" || widget.kind === "scene" ? () => onActivateWidget?.(widget) : undefined} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
+      const entityId = widgetEntityId(widget.id);
+      return <ShellItem key={widget.id} entityId={entityId} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget widgetId={widget.id} widgetKind={widget.kind} interactive={widget.kind === "todo" || widget.kind === "scene"} selected={selectedEntityIds.has(entityId)} busy={widgetBusy} gridSize={gridSize} onSelect={(options) => onSelectWidget?.(widget, options)} onActivate={widget.kind === "todo" || widget.kind === "scene" ? () => onActivateWidget?.(widget) : undefined} onContextMenu={!readOnly && onWidgetContextMenu ? (x, y, presentation) => onWidgetContextMenu(widget, x, y, presentation) : undefined} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
         {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : widget.kind === "status" ? <StatusWidget status={status} /> : renderWidget?.(widget)}
       </ShellItem>;
     })}
     {visibleGroups.map(({ group, folder }) => {
       const position = projectLogicalPosition(folder.position, areaSize).local;
       const children = entries.filter((entry) => entry.parentId === folder.id).sort((a, b) => a.name.localeCompare(b.name));
-      return <ShellItem key={folder.id} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(folder.position, group, activeSegment, areaSize)} busy={widgetBusy} gridSize={gridSize} onMove={(local) => onMoveGroup?.(folder, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
+      const entityId = groupEntityId(folder.id);
+      return <ShellItem key={folder.id} entityId={entityId} label={folder.name} position={position} width={group.width} height={group.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(folder.position, group, activeSegment, areaSize)} selected={selectedEntityIds.has(entityId)} busy={widgetBusy} gridSize={gridSize} onSelect={(options) => onSelectGroup?.(folder, options)} onActivate={() => onOpen(folder)} onMove={(local) => onMoveGroup?.(folder, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeGroup?.(group, size)} onPreview={(bounds) => onPreviewGroup?.(folder, group, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onUngroup?.(group)} removeLabel={`Ungroup ${folder.name}`} dropParentId={folder.id} onDrop={onDrop ? (dataTransfer) => onDrop(dataTransfer, folder.id) : undefined}>
         <IconGroupContents folder={folder} entries={children} readOnly={readOnly} loadPreview={loadPreview} selectedIds={selectedIds} onOpen={onOpen} onSelectEntry={onSelectEntry} onEntryContextMenu={onEntryContextMenu} onMoveEntry={onMoveEntry} getDesktopDropPreview={getDesktopDropPreview} gridSize={gridSize} isEntryReadOnly={isEntryReadOnly} onDrop={onDrop} />
       </ShellItem>;
     })}

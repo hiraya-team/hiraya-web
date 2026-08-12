@@ -15,7 +15,7 @@ test("renders built-in widgets and folder-backed groups with accessible actions"
     areaSize={{ width: 1000, height: 700 }}
     status={{ syncStatus: "offline", isSyncing: false, outboxCount: 2, quota: null }}
     gridSize={24}
-    selectedWidgetId="status"
+    selectedEntityIds={new Set(["widget:status"])}
     selectedIds={new Set([child.id])}
     onOpen={() => undefined}
     onSelectEntry={() => undefined}
