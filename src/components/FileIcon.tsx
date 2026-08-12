@@ -102,6 +102,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     if (iconRef.current) delete iconRef.current.dataset.dragging;
     completed.canvas.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging], .file-icon[data-auto-arrange-dragging]").forEach((icon) => {
       icon.style.removeProperty("transform");
+      icon.style.removeProperty("--auto-arrange-origin-x");
+      icon.style.removeProperty("--auto-arrange-origin-y");
       delete icon.dataset.groupDragging;
       delete icon.dataset.autoArrangeDragging;
     });
@@ -157,6 +159,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
   function applyAutoArrangeTransforms(current: DragState, transforms: readonly { entryId: string; delta: EntryPosition }[] | null) {
     current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-auto-arrange-dragging]").forEach((icon) => {
       icon.style.removeProperty("transform");
+      icon.style.removeProperty("--auto-arrange-origin-x");
+      icon.style.removeProperty("--auto-arrange-origin-y");
       delete icon.dataset.autoArrangeDragging;
     });
     if (!transforms) return;
@@ -165,6 +169,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       const delta = byId.get(icon.dataset.entryId ?? "");
       if (!delta || icon === iconRef.current || icon.dataset.groupDragging || icon.dataset.entryDropParent) return;
       icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
+      icon.style.setProperty("--auto-arrange-origin-x", `${-delta.x}px`);
+      icon.style.setProperty("--auto-arrange-origin-y", `${-delta.y}px`);
       icon.dataset.autoArrangeDragging = "true";
     });
   }
