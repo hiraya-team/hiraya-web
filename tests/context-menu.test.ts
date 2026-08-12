@@ -50,6 +50,25 @@ describe("Context menu presentation", () => {
     expect(markup).toContain("disabled=\"\"");
     expect(markup).toContain("Publish...");
   });
+
+  test("offers an eligible file as the desktop wallpaper only for one selected item", () => {
+    const single = renderToStaticMarkup(createElement(ContextMenu, {
+      ...callbacks,
+      entry,
+      menu: { type: "entry", entryId: entry.id, x: 24, y: 80, presentation: "menu" },
+      onSetAsWallpaper() {},
+    }));
+    const multiple = renderToStaticMarkup(createElement(ContextMenu, {
+      ...callbacks,
+      entry,
+      menu: { type: "entry", entryId: entry.id, x: 24, y: 80, presentation: "menu" },
+      onSetAsWallpaper() {},
+      selectionCount: 2,
+    }));
+
+    expect(single).toContain("Set as desktop wallpaper");
+    expect(multiple).not.toContain("Set as desktop wallpaper");
+  });
 });
 
 test("widget context menu exposes only applicable actions", () => {

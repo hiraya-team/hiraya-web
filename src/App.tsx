@@ -183,7 +183,7 @@ import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./pla
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
-import { assertWallpaperSource, parseLayout } from "./lib/contracts";
+import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
@@ -6324,6 +6324,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             setContextMenu(null);
           }}
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
+          onSetAsWallpaper={contextMenuEntries.length === 1 && canSettings && isWallpaperFile(contextMenuEntry) ? () => {
+            const entry = contextMenuEntry;
+            clearWallpaperPreview();
+            setContextMenu(null);
+            setError("");
+            void selectWallpaperFile(entry.id, layoutRef.current, activeDesktopIdRef.current)
+              .then(() => setNotice(`${entry.name} set as desktop wallpaper`))
+              .catch((wallpaperError) => setError(wallpaperError instanceof Error ? wallpaperError.message : "The wallpaper could not be saved."));
+          } : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
           onPublish={contextMenuEntries.length === 1 && activeDesktop?.capabilities.manage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}

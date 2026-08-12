@@ -28,6 +28,10 @@ const WALLPAPER_COLOR = /^#[0-9A-F]{6}$/;
 const WALLPAPER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const MAX_WALLPAPER_BYTES = 20 * 1024 * 1024;
 const WALLPAPER_KEYS = new Set(["source", "fit", "positionX", "positionY", "blur", "dim", "overlayColor", "overlayOpacity"]);
+
+export function isWallpaperFile(entry: DesktopEntry) {
+  return entry.kind === "file" && (isSceneFile(entry) || WALLPAPER_IMAGE_TYPES.has(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= MAX_WALLPAPER_BYTES);
+}
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
 const MIME_TYPE = new RegExp(`^${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`);
 const MIME_PARAMETER_NAME = new RegExp(`;\\s*(${MIME_TOKEN})\\s*=`, "g");
@@ -318,7 +322,7 @@ export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpape
   }
   if (!wallpaper.source.startsWith("file:")) return;
   const file = entries.find((entry) => entry.id === wallpaper.source.slice(5));
-  if (!file || file.kind !== "file" || !(isSceneFile(file) || WALLPAPER_IMAGE_TYPES.has(file.mimeType.split(";", 1)[0].trim().toLowerCase()) && file.size <= MAX_WALLPAPER_BYTES)) {
+  if (!file || !isWallpaperFile(file)) {
     throw new Error("The custom wallpaper must reference a JPEG, PNG, WebP, or Scene file on this desktop within its size limit.");
   }
 }
