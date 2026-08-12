@@ -136,7 +136,8 @@ test("application shortcuts launch from the desktop and persist", async ({ page 
   await expect(shortcut).toBeVisible();
   await page.reload();
   await expect(shortcut).toBeVisible();
-  await shortcut.dblclick();
+  await shortcut.focus();
+  await page.keyboard.press("Enter");
   await expect(page.getByRole("dialog", { name: /Integrated Editor/ })).toBeVisible();
 });
 
