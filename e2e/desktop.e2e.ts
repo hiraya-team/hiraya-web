@@ -61,8 +61,8 @@ test("keyboard modal traps focus, closes with Escape, and restores its invoker",
   await expect(dialog.locator("input")).toBeFocused();
 
   await page.keyboard.press("Shift+Tab");
-  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest('[role="dialog"]')))).toBe(true);
-  const results = await new AxeBuilder({ page }).include("[role=dialog]").analyze();
+  await expect.poll(() => page.evaluate(() => Boolean(document.activeElement?.closest("dialog")))).toBe(true);
+  const results = await new AxeBuilder({ page }).include("dialog").analyze();
   expect(results.violations.filter((violation) => ["serious", "critical"].includes(violation.impact ?? ""))).toEqual([]);
 
   await page.keyboard.press("Escape");
