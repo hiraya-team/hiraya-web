@@ -720,6 +720,29 @@ test("shows image thumbnails on the desktop and in folders", async ({ page }) =>
   }).toEqual([32, 32]);
 });
 
+test("sets an image as wallpaper from its context menu and keeps it after reload", async ({ page }) => {
+  await openLocalDesktop(page);
+  const name = `context-wallpaper-${Date.now()}.png`;
+  const chooser = page.waitForEvent("filechooser");
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name, mimeType: "image/png", buffer: pngFile });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Set as desktop wallpaper" }).click();
+  await expect(page.getByText(`${name} set as desktop wallpaper`)).toBeVisible();
+  await expect(page.locator(".desktop")).toHaveAttribute("data-wallpaper", "file");
+  await expect(page.locator(".desktop")).toHaveAttribute("data-custom-loaded", "true");
+
+  await page.reload();
+  await expect(page.locator(".desktop")).toHaveAttribute("data-wallpaper", "file");
+  await expect(page.locator(".desktop")).toHaveAttribute("data-custom-loaded", "true");
+
+  await page.setViewportSize({ width: 390, height: 720 });
+  await page.locator(".file-icon").filter({ hasText: name }).click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: "Set as desktop wallpaper" })).toBeVisible();
+});
+
 test("opens an imported RTF document in the document viewer", async ({ page }) => {
   const pageErrors: string[] = [];
   const cycleErrors: string[] = [];
