@@ -14,7 +14,7 @@ export type DesktopRoute = {
 
 export const SETTINGS_PAGES = [
   "desktop", "desktop/desktops",
-  "files-apps", "files-apps/file-types",
+  "files-apps", "files-apps/file-types", "files-apps/new-file-defaults",
   "sharing", "sharing/desktop", "sharing/short-links",
   "sync-storage", "sync-storage/connection", "sync-storage/activity", "sync-storage/export",
   "system", "system/updates", "system/about",
@@ -22,14 +22,14 @@ export const SETTINGS_PAGES = [
 export type SettingsPage = typeof SETTINGS_PAGES[number];
 export const SETTINGS_PAGE_TITLES: Record<SettingsPage, string> = {
   desktop: "Desktop", "desktop/desktops": "Desktops",
-  "files-apps": "Files & apps", "files-apps/file-types": "File type defaults",
+  "files-apps": "Files & apps", "files-apps/file-types": "File type defaults", "files-apps/new-file-defaults": "New file defaults",
   sharing: "Sharing", "sharing/desktop": "Desktop sharing", "sharing/short-links": "Short Links",
   "sync-storage": "Sync & storage", "sync-storage/connection": "Connection & Offline", "sync-storage/activity": "Activity", "sync-storage/export": "Export",
   system: "System", "system/updates": "Updates", "system/about": "About",
 };
 export const SETTINGS_PARENTS: Partial<Record<SettingsPage, SettingsPage>> = {
   "desktop/desktops": "desktop",
-  "files-apps/file-types": "files-apps",
+  "files-apps/file-types": "files-apps", "files-apps/new-file-defaults": "files-apps",
   "sharing/desktop": "sharing", "sharing/short-links": "sharing",
   "sync-storage/connection": "sync-storage", "sync-storage/activity": "sync-storage", "sync-storage/export": "sync-storage",
   "system/updates": "system", "system/about": "system",

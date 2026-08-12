@@ -83,12 +83,19 @@ export type DesktopCapabilities = {
 
 export type EditorLanguage = "auto" | "plain" | "markdown" | "json" | "javascript" | "typescript" | "jsx" | "tsx" | "css" | "html" | "xml" | "yaml";
 
+export type FileCreationTemplate = {
+  extension: string;
+  mimeType: string;
+  content: string;
+};
+
 export type EditorSettings = {
   autoSave: boolean;
   autoFormat: boolean;
   fontSize: number;
   language: EditorLanguage;
   lineWrap: boolean;
+  fileCreationTemplates: FileCreationTemplate[];
 };
 
 export type BaseEntry = {

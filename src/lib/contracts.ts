@@ -20,6 +20,7 @@ import { isBuiltinThemeId, parseCustomTheme, parseThemeState } from "./themes";
 import type { CustomTheme, ThemeState } from "../domain/theme";
 import { HIRAYA_SCENE_MIME_TYPE, isSceneFile, MAX_SCENE_BYTES } from "../domain/scene";
 import { parseAuthorityIdentity } from "./wire-authority";
+import { DEFAULT_FILE_CREATION_TEMPLATES, parseFileCreationTemplates } from "./file-creation-templates";
 
 const EDITOR_LANGUAGES = new Set<EditorLanguage>(["auto", "plain", "markdown", "json", "javascript", "typescript", "jsx", "tsx", "css", "html", "xml", "yaml"]);
 const WALLPAPER_IDS = new Set<string>(WALLPAPERS);
@@ -419,6 +420,7 @@ export function parseEditorSettings(value: unknown): EditorSettings {
     fontSize: value.fontSize as number,
     language: value.language as EditorLanguage,
     lineWrap: value.lineWrap as boolean | undefined ?? true,
+    fileCreationTemplates: parseFileCreationTemplates(value.fileCreationTemplates ?? DEFAULT_FILE_CREATION_TEMPLATES),
   };
 }
 

@@ -2120,6 +2120,7 @@ export const updateRootEntryPositions = defaultEngine.updateRootEntryPositions.b
 export const updateEntryPosition = defaultEngine.updateEntryPosition.bind(defaultEngine);
 export const saveFile = defaultEngine.saveFile.bind(defaultEngine);
 export const saveDesktopLayout = defaultEngine.saveDesktopLayout.bind(defaultEngine);
+export const saveEditorSettings = defaultEngine.saveEditorSettings.bind(defaultEngine);
 export const selectTheme = defaultEngine.selectTheme.bind(defaultEngine);
 export const saveCustomTheme = defaultEngine.saveCustomTheme.bind(defaultEngine);
 export const installThemePackage = defaultEngine.installThemePackage.bind(defaultEngine);

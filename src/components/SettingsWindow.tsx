@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { ArrowClockwise, ArrowLeft, ArrowsOut, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, Desktop, DownloadSimple, ExportIcon, EyeSlash, GlobeSimple, GridFour, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork } from "@phosphor-icons/react";
+import { ArrowClockwise, ArrowLeft, ArrowsOut, CaretRight, ClockCounterClockwise, CloudCheck, CornersIn, CornersOut, Desktop, DownloadSimple, ExportIcon, EyeSlash, FileCode, GlobeSimple, GridFour, Info, LinkSimple, MagnifyingGlass, PaintBrush, Package, ShareNetwork } from "@phosphor-icons/react";
 import { ActivityLog } from "./ActivityLog";
 import type { ActivityPage, ActivityQuery, ActivityRecord } from "../lib/activity";
 import { GRID_SIZES, type DesktopEntry, type DesktopIdentity, type DesktopLayout, type GridSize } from "../types";
@@ -15,6 +15,8 @@ import type { CatalogQuota } from "../lib/desktop-catalog";
 import type { DesktopPreference } from "../lib/desktop-preferences";
 import { SETTINGS_PAGE_TITLES, SETTINGS_PARENTS, type SettingsPage } from "../lib/routes";
 import { ItemList } from "./ItemList";
+import { FileCreationTemplatesSettings } from "./FileCreationTemplatesSettings";
+import type { FileCreationTemplate } from "../types";
 
 const SETTINGS_CATEGORIES = [
   { id: "desktop", label: "Desktop" },
@@ -64,9 +66,11 @@ type Props = {
   connectionPanel: ReactNode;
   sharingPanel: ReactNode;
   fileAssociations: FileAssociation[];
+  fileCreationTemplates: FileCreationTemplate[];
   onSetFileAssociation: (matcher: string, appId: string) => void;
   onRemoveFileAssociation: (matcher: string) => void;
   onResetFileAssociations: () => void;
+  onFileCreationTemplatesChange: (templates: FileCreationTemplate[]) => Promise<void>;
   onListShortLinks: () => Promise<ShortLink[]>;
   onCreateShortLink: (input: { slug?: string; destinationUrl: string }) => Promise<ShortLink>;
   onUpdateShortLink: (slug: string, input: { destinationUrl?: string; enabled?: boolean }) => Promise<ShortLink>;
@@ -105,6 +109,9 @@ export function SettingsWindow(props: Props) {
   const mobileBackButtonRef = useRef<HTMLButtonElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const previousPageRef = useRef(page);
+  const [fileTemplateDrafts, setFileTemplateDrafts] = useState(props.fileCreationTemplates);
+  const [fileTemplatesDirty, setFileTemplatesDirty] = useState(false);
+  useEffect(() => { if (!fileTemplatesDirty) setFileTemplateDrafts(props.fileCreationTemplates); }, [fileTemplatesDirty, props.fileCreationTemplates]);
   const parent = SETTINGS_PARENTS[page];
   const category = page.split("/")[0];
   const isCategory = !parent;
@@ -144,6 +151,7 @@ export function SettingsWindow(props: Props) {
   if (page === "desktop") content = <><NavigationRow id="desktop/theme-editor-link-heading" icon={<PaintBrush size={17} />} title="Theme Editor" description="Create and apply themes, and customize this desktop's wallpaper." onClick={props.onOpenThemeEditor} /><NavigationRow id="desktop/desktops-link-heading" icon={<Desktop size={17} />} title="Desktops" description="Manage names, ownership, account limits, pins, and switcher order." onClick={() => navigate("desktop/desktops")} />{desktopControls}</>;
   else if (page === "files-apps") content = <>
     <NavigationRow id="files-apps/file-types-link-heading" icon={<Package size={17} />} title="File type defaults" description="Choose preferred apps for compatible files." onClick={() => navigate("files-apps/file-types")} />
+    <NavigationRow id="files-apps/new-file-defaults-link-heading" icon={<FileCode size={17} />} title="New file defaults" description="Choose starting content by file extension for this desktop." onClick={() => navigate("files-apps/new-file-defaults")} />
     <section className="settings-section" aria-labelledby="file-options-heading"><div className="settings-section__heading"><EyeSlash size={18} /><div><h3 id="file-options-heading">Files and previews</h3><p>Choose what this browser shows and searches.</p></div></div><div className="settings-list">
       <label className="settings-row"><span className="settings-row__icon"><EyeSlash size={17} weight={props.showHiddenFiles ? "fill" : "regular"} /></span><span className="settings-row__copy"><strong>Show hidden files</strong><small>Show dot-prefixed files and the read-only `.hiraya` system tree.</small></span><input type="checkbox" checked={props.showHiddenFiles} disabled={!props.localPreferencesLoaded} onChange={(event) => props.onShowHiddenFilesChange(event.target.checked)} /></label>
       <label className="settings-row"><span className="settings-row__icon"><MagnifyingGlass size={17} /></span><span className="settings-row__copy"><strong>Search all accessible desktops</strong><small>{props.desktopSearchAvailable ? "Use server results online and cached results offline." : "This server does not advertise accessible-desktop search."}</small></span><input type="checkbox" checked={props.searchAllDesktops} disabled={!props.desktopSearchAvailable || !props.localPreferencesLoaded} onChange={(event) => props.onSearchAllDesktopsChange(event.target.checked)} /></label>
@@ -155,6 +163,7 @@ export function SettingsWindow(props: Props) {
   else if (page === "system") content = <><NavigationRow id="system/updates-link-heading" icon={<ArrowClockwise size={17} />} title="Updates" description="Install Hiraya and keep this app current." onClick={() => navigate("system/updates")} /><NavigationRow id="system/about-link-heading" icon={<Info size={17} />} title="About" description="Review app and server build information." onClick={() => navigate("system/about")} /></>;
   else if (page === "desktop/desktops") content = <DesktopSettings desktops={props.desktops} activeDesktopId={props.activeDesktopId} quota={props.catalogQuota} quotaStale={props.quotaStale} arrangementDisabled={props.desktopArrangementDisabled} onCreate={props.onCreateDesktop} onRename={props.onRenameDesktop} onDelete={props.onDeleteDesktop} onArrange={props.onArrangeDesktops} canManageDesktop={props.canManageDesktop} />;
   else if (page === "files-apps/file-types") content = <><section className="settings-section settings-page--apps" aria-labelledby="file-types-heading"><div className="settings-section__heading"><div><h4 id="file-types-heading">File type defaults</h4><p>Handler hints activate only after this device approves the exact compatible app package.</p></div><button className="button button--quiet" type="button" disabled={!props.fileAssociations.length} onClick={props.onResetFileAssociations}>Reset all</button></div><div className="settings-list">{props.fileAssociations.length > 0 && <ItemList items={props.fileAssociations} getId={(association) => association.matcher} label="Preferred file type handlers" renderItem={(association, { itemProps }) => { const compatible = props.installedApps.filter((app) => installedAppIsAvailable(app, props.entries) && installedAppAcceptsMatcher(app, association.matcher)); const selected = compatible.find((app) => app.appId === association.appId); return <div {...itemProps} className="settings-row" key={association.matcher}><span className="settings-row__copy"><strong>{association.matcher}</strong><small>{selected?.manifest.name ?? `${association.appId} (unavailable or incompatible)`}</small></span><select aria-label={`Preferred app for ${association.matcher}`} value={selected?.appId ?? association.appId} onChange={(event) => props.onSetFileAssociation(association.matcher, event.target.value)}>{!selected && <option value={association.appId}>{association.appId} (unavailable or incompatible)</option>}{compatible.map((app) => <option value={app.appId} key={app.appId}>{app.manifest.name}</option>)}</select><button className="button button--quiet" type="button" onClick={() => props.onRemoveFileAssociation(association.matcher)}>Remove</button></div>; }} />}{!props.fileAssociations.length && <p className="theme-custom__empty">No preferred handlers. Use Open With on a file to choose one.</p>}<ItemList items={SYSTEM_FILE_DEFAULTS} getId={(item) => item.matcher} label="Bundled file type handlers" renderItem={(item, { itemProps }) => <div {...itemProps} className="settings-row" key={item.label}><span className="settings-row__copy"><strong>{item.label}</strong><small>{item.matcher}</small></span><span>{props.installedApps.find((app) => app.appId === item.appId)?.manifest.name ?? "Bundled default"}</span></div>} /></div></section><button className="inline-help-link" type="button" onClick={() => props.onOpenHelp("apps-and-permissions")}>App packages, permissions, and updates</button></>;
+  else if (page === "files-apps/new-file-defaults") content = <FileCreationTemplatesSettings drafts={fileTemplateDrafts} dirty={fileTemplatesDirty} disabled={!props.canMutate} onDraftsChange={(drafts) => { setFileTemplateDrafts(drafts); setFileTemplatesDirty(true); }} onChange={async (templates) => { await props.onFileCreationTemplatesChange(templates); setFileTemplateDrafts(templates); setFileTemplatesDirty(false); }} />;
   else if (page === "sharing/desktop") content = props.sharingPanel;
   else if (page === "sharing/short-links") content = <ShortLinksSettings embedded baseUrl={props.shortLinkBaseUrl} onBack={() => navigate("sharing")} onList={props.onListShortLinks} onCreate={props.onCreateShortLink} onUpdate={props.onUpdateShortLink} onDelete={props.onDeleteShortLink} onConfirmDelete={props.onConfirmShortLinkDelete} />;
   else if (page === "sync-storage/connection") content = props.connectionPanel;

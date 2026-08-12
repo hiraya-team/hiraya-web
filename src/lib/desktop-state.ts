@@ -2,8 +2,9 @@ import type { DesktopEntry, DesktopLayout, EditorSettings } from "../types";
 import type { DesktopStateSnapshot, DesktopSyncState, PersistedDesktopState } from "../domain/desktop-state";
 import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isRecord, parseEditorSettings, parseEntries, parseLayout, readRevision, type RemoteDesktopState, type RemoteEntry } from "./contracts";
 import { parseThemeState } from "./themes";
+import { DEFAULT_FILE_CREATION_TEMPLATES } from "./file-creation-templates";
 
-export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true };
+export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true, fileCreationTemplates: DEFAULT_FILE_CREATION_TEMPLATES };
 
 export function emptySyncState(): DesktopSyncState {
   return { catalogId: null, catalogRevision: 0, entryRevisions: {}, contentRevisions: {}, layoutRevision: 0, settingsRevision: 0, themeSelectionRevision: 0, themeRevisions: {} };
