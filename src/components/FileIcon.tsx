@@ -6,6 +6,8 @@ import { contextMenuPressAction, resolveTouchRelease, type TouchTap } from "../u
 import { entryDropTargetAt, highlightEntryDropTarget, type EntryDropDestination } from "../ui/entry-drop-target";
 import { browserEdgeDwellTimers, resetEdgeDwell, updateEdgeDwell, type EdgeDirection, type EdgeDwellState } from "../ui/edge-entry";
 import { createPointerDragPreview, movePointerDragPreview, removePointerDragPreview, type PointerDragPreview } from "../ui/pointer-drag-preview";
+import { entryEntityId, focusSpatialDesktopEntity } from "../ui/desktop-entity";
+import type { DesktopEntityTransform } from "../ui/desktop-entity";
 
 type Props = {
   entry: DesktopEntry;
@@ -14,7 +16,7 @@ type Props = {
   onTouchSelect: () => void;
   onOpen: () => void;
   onMove: (position: EntryPosition, destination: EntryDropDestination, delta: EntryPosition) => Promise<boolean>;
-  onDragMove?: (position: EntryPosition, destination: EntryDropDestination | null) => readonly { entryId: string; delta: EntryPosition }[] | null;
+  onDragMove?: (position: EntryPosition, destination: EntryDropDestination | null) => readonly DesktopEntityTransform[] | null;
   dragEdgeAt: (clientX: number, clientY: number) => EdgeDirection | null;
   onDragAtEdge: (direction: EdgeDirection) => {
     deltaX: number;
@@ -31,6 +33,7 @@ type Props = {
   onContextMenu: (event: React.MouseEvent) => void;
   onContextMenuAt: (x: number, y: number, presentation: "menu" | "sheet") => void;
   onExternalDrop?: (dataTransfer: DataTransfer) => void;
+  allowFolderDrop?: boolean;
   offlineAvailability?: OfflineEntryAvailability;
   allowBrowserPinchZoom?: boolean;
   interactive?: boolean;
@@ -72,7 +75,7 @@ type DragState = {
 };
 
 
-export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
+export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, allowFolderDrop = true, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);
   const lastTap = useRef<TouchTap | null>(null);
@@ -100,12 +103,12 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     delete completed.canvas.dataset.iconDragging;
     iconRef.current?.style.removeProperty("transform");
     if (iconRef.current) delete iconRef.current.dataset.dragging;
-    completed.canvas.querySelectorAll<HTMLElement>(".file-icon[data-group-dragging], .file-icon[data-auto-arrange-dragging]").forEach((icon) => {
-      icon.style.removeProperty("transform");
-      icon.style.removeProperty("--auto-arrange-origin-x");
-      icon.style.removeProperty("--auto-arrange-origin-y");
-      delete icon.dataset.groupDragging;
-      delete icon.dataset.autoArrangeDragging;
+    completed.canvas.closest<HTMLElement>(".desktop")?.querySelectorAll<HTMLElement>("[data-entity-dragging], [data-auto-arrange-dragging]").forEach((entity) => {
+      entity.style.removeProperty("transform");
+      entity.style.removeProperty("--auto-arrange-origin-x");
+      entity.style.removeProperty("--auto-arrange-origin-y");
+      delete entity.dataset.entityDragging;
+      delete entity.dataset.autoArrangeDragging;
     });
   }
 
@@ -149,29 +152,30 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     iconRef.current?.style.setProperty("transform", `translate3d(${current.x - current.baseX}px, ${current.y - current.baseY}px, 0)`);
     if (!iconRef.current?.dataset.selected) return;
     const groupDelta = { x: current.x - current.groupOriginX, y: current.y - current.groupOriginY };
-    document.querySelectorAll<HTMLElement>(".file-icon[data-selected]").forEach((icon) => {
-      if (icon === iconRef.current) return;
-      icon.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;
-      icon.dataset.groupDragging = "true";
+    iconRef.current.closest<HTMLElement>(".desktop")?.querySelectorAll<HTMLElement>("[data-desktop-entity-id][data-selected]").forEach((entity) => {
+      if (entity === iconRef.current) return;
+      entity.style.transform = `translate3d(${groupDelta.x}px, ${groupDelta.y}px, 0)`;
+      entity.dataset.entityDragging = "true";
     });
   }
 
-  function applyAutoArrangeTransforms(current: DragState, transforms: readonly { entryId: string; delta: EntryPosition }[] | null) {
-    current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-auto-arrange-dragging]").forEach((icon) => {
-      icon.style.removeProperty("transform");
-      icon.style.removeProperty("--auto-arrange-origin-x");
-      icon.style.removeProperty("--auto-arrange-origin-y");
-      delete icon.dataset.autoArrangeDragging;
+  function applyAutoArrangeTransforms(current: DragState, transforms: readonly DesktopEntityTransform[] | null) {
+    const desktop = current.canvas.closest<HTMLElement>(".desktop");
+    desktop?.querySelectorAll<HTMLElement>("[data-auto-arrange-dragging]").forEach((entity) => {
+      entity.style.removeProperty("transform");
+      entity.style.removeProperty("--auto-arrange-origin-x");
+      entity.style.removeProperty("--auto-arrange-origin-y");
+      delete entity.dataset.autoArrangeDragging;
     });
     if (!transforms) return;
-    const byId = new Map(transforms.map((transform) => [transform.entryId, transform.delta]));
-    current.canvas.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]").forEach((icon) => {
-      const delta = byId.get(icon.dataset.entryId ?? "");
-      if (!delta || icon === iconRef.current || icon.dataset.groupDragging || icon.dataset.entryDropParent) return;
-      icon.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
-      icon.style.setProperty("--auto-arrange-origin-x", `${-delta.x}px`);
-      icon.style.setProperty("--auto-arrange-origin-y", `${-delta.y}px`);
-      icon.dataset.autoArrangeDragging = "true";
+    const byId = new Map(transforms.map((transform) => [transform.entityId, transform.delta]));
+    desktop?.querySelectorAll<HTMLElement>("[data-desktop-entity-id]").forEach((entity) => {
+      const delta = byId.get(entity.dataset.desktopEntityId ?? "");
+      if (!delta || entity === iconRef.current || entity.dataset.entityDragging) return;
+      entity.style.transform = `translate3d(${delta.x}px, ${delta.y}px, 0)`;
+      entity.style.setProperty("--auto-arrange-origin-x", `${-delta.x}px`);
+      entity.style.setProperty("--auto-arrange-origin-y", `${-delta.y}px`);
+      entity.dataset.autoArrangeDragging = "true";
     });
   }
 
@@ -281,7 +285,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
       current.maxY = pageChange.maxY;
       applyDragTransform(current);
     }, onEdgeDwellChangeRef.current, browserEdgeDwellTimers);
-    const dropTarget = entryDropTargetAt(event.clientX, event.clientY, entry.id);
+    const candidate = entryDropTargetAt(event.clientX, event.clientY, entry.id);
+    const dropTarget = candidate?.desktop || allowFolderDrop ? candidate : null;
     highlightEntryDropTarget(dropTarget?.element ?? null);
     const currentPosition = { x: drag.current.x, y: drag.current.y };
     updateSnapPreview(dropTarget?.desktop ? (getSnapPreview?.(currentPosition) ?? currentPosition) : null);
@@ -313,7 +318,8 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     } catch {
       // Pointer capture may be released implicitly between the check and call.
     }
-    const dropTarget = completed.canDrag && completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
+    const candidate = completed.canDrag && completed.moved && !cancelled ? entryDropTargetAt(event.clientX, event.clientY, entry.id) : null;
+    const dropTarget = candidate?.desktop || allowFolderDrop ? candidate : null;
     const position = { x: Math.round(completed.x), y: Math.round(completed.y) };
     const preview = getSnapPreviewRef.current;
     const committedPosition = preview && dropTarget?.desktop ? preview(position) : position;
@@ -374,6 +380,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         data-grid={gridSize || undefined}
         data-selected={selected || undefined}
         data-entry-id={entry.id}
+        data-desktop-entity-id={entryEntityId(entry.id)}
         data-folder-id={entry.kind === "folder" ? entry.id : undefined}
         data-entry-drop-parent={entry.kind === "folder" && !readOnly ? entry.id : undefined}
         type="button"
@@ -424,31 +431,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         onKeyDown={(event) => {
           if (event.key === "Enter") onOpen();
           else if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) {
-            const desktopBounds = event.currentTarget.closest(".desktop")?.getBoundingClientRect();
-            const icons = Array.from(document.querySelectorAll<HTMLButtonElement>(".file-icon")).filter((icon) => {
-              if (!desktopBounds) return true;
-              const bounds = icon.getBoundingClientRect();
-              return bounds.right > desktopBounds.left && bounds.left < desktopBounds.right && bounds.bottom > desktopBounds.top && bounds.top < desktopBounds.bottom;
-            });
-            const currentIndex = icons.indexOf(event.currentTarget);
-            let target: HTMLButtonElement | undefined;
-            if (event.key === "Home") target = icons[0];
-            else if (event.key === "End") target = icons.at(-1);
-            else {
-              const currentBounds = event.currentTarget.getBoundingClientRect();
-              const currentCenter = { x: currentBounds.left + currentBounds.width / 2, y: currentBounds.top + currentBounds.height / 2 };
-              target = icons
-                .filter((_, index) => index !== currentIndex)
-                .map((icon) => {
-                  const bounds = icon.getBoundingClientRect();
-                  const dx = bounds.left + bounds.width / 2 - currentCenter.x;
-                  const dy = bounds.top + bounds.height / 2 - currentCenter.y;
-                  return { icon, dx, dy, distance: Math.hypot(dx, dy) };
-                })
-                .filter(({ dx, dy }) => event.key === "ArrowLeft" ? dx < 0 : event.key === "ArrowRight" ? dx > 0 : event.key === "ArrowUp" ? dy < 0 : dy > 0)
-                .sort((a, b) => a.distance - b.distance)[0]?.icon;
-            }
-            if (target) { event.preventDefault(); target.focus(); target.click(); }
+            if (focusSpatialDesktopEntity(event.currentTarget, event.key)) event.preventDefault();
           }
           else if (event.key === "ContextMenu" || event.shiftKey && event.key === "F10") {
             event.preventDefault();

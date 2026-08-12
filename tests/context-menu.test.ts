@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ContextMenu, DesktopContextMenu } from "../src/components/ContextMenu";
+import { ContextMenu, DesktopContextMenu, WidgetContextMenu } from "../src/components/ContextMenu";
 import { PasteFromDeviceDialog } from "../src/components/PasteFromDeviceDialog";
 import { openWithMenuItems } from "../src/ui/open-with-menu";
 
@@ -50,6 +50,15 @@ describe("Context menu presentation", () => {
     expect(markup).toContain("disabled=\"\"");
     expect(markup).toContain("Publish...");
   });
+});
+
+test("widget context menu exposes only applicable actions", () => {
+  const linked = renderToStaticMarkup(createElement(WidgetContextMenu, { menu: { type: "widget", widgetId: "todo", x: 20, y: 80, presentation: "menu" }, label: "Todo list", onOpen() {}, onResize() {}, onRemove() {}, onClose() {} }));
+  const clock = renderToStaticMarkup(createElement(WidgetContextMenu, { menu: { type: "widget", widgetId: "clock", x: 20, y: 80, presentation: "menu" }, label: "Clock", onResize() {}, onRemove() {}, onClose() {} }));
+  expect(linked).toContain("Open");
+  expect(linked).toContain("Resize");
+  expect(linked).toContain("Remove");
+  expect(clock).not.toContain("Open</button>");
 });
 
 describe("Paste actions", () => {
