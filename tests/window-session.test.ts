@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createWindowSession, parseWindowSession, parseWindowTargets, restoreWindowSession } from "../src/lib/window-session";
 import { windowsForHiddenFilePreference } from "../src/features/windows/model";
-import type { DesktopEntry } from "../src/types";
 
 describe("window and browser sessions", () => {
   test("omits ephemeral sandbox and merge apps from strict v1 sessions", () => {
@@ -109,31 +108,11 @@ describe("window and browser sessions", () => {
     expect(parseWindowTargets({ schemaVersion: 1, apps: [target] })).toEqual([target]);
   });
 
-  test("persists approved-package handler identity and migrates legacy file targets", () => {
+  test("persists approved-package handler identity and native file targets", () => {
     const bounds = { x: 12, y: 18, width: 700, height: 500 };
     const target = { kind: "system" as const, appId: "user.notes", targetKind: "file" as const, entryId: "file", source: "desktop" as const, digest: "a".repeat(64), permissions: ["files:read"] };
     expect(createWindowSession([{ kind: "sandbox", systemTarget: target, bounds, minimized: false, zIndex: 1 }]).apps[0]).toEqual({ ...target, bounds, minimized: false, zIndex: 1 });
     expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "file", fileId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "file", fileId: "file" });
   });
 
-  test("migrates saved folder explorer app targets back to native explorer windows", () => {
-    const bounds = { x: 0, y: 0, width: 700, height: 500 };
-    const session = parseWindowSession({ schemaVersion: 1, apps: [
-      { kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "root", entryId: null, bounds, minimized: false, zIndex: 1 },
-      { kind: "system", appId: "app.hiraya.folder-explorer", targetKind: "folder", entryId: "folder", bounds, minimized: false, zIndex: 2 },
-    ] });
-    const entries: DesktopEntry[] = [{ kind: "folder", id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }];
-    expect(session.apps.map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
-    expect(restoreWindowSession(session, entries, { column: 0, row: 0 }, { width: 1000, height: 700 }).map((app) => app.kind === "explorer" ? app.folderId : app.kind)).toEqual([null, "folder"]);
-  });
-
-  test("migrates saved Markdown Preview windows to Media Viewer", () => {
-    const bounds = { x: 0, y: 0, width: 700, height: 500 };
-    expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "system", appId: "app.hiraya.markdown-preview", targetKind: "file", entryId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "system", appId: "app.hiraya.media-viewer", targetKind: "file", entryId: "file" });
-  });
-
-  test("migrates saved Scene Studio windows to Integrated Editor", () => {
-    const bounds = { x: 0, y: 0, width: 900, height: 650 };
-    expect(parseWindowSession({ schemaVersion: 1, apps: [{ kind: "system", appId: "app.hiraya.scene-editor", targetKind: "file", entryId: "file", bounds, minimized: false, zIndex: 1 }] }).apps[0]).toMatchObject({ kind: "system", appId: "app.hiraya.text-editor", targetKind: "file", entryId: "file" });
-  });
 });

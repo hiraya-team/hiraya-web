@@ -1,4 +1,4 @@
-import { defineElement, elementStyles, hirayaEvent, HTMLElementBase } from "./shared";
+import { elementStyles, hirayaEvent, HTMLElementBase } from "./shared";
 
 export type HirayaImageZoom = "fit" | number;
 
@@ -310,8 +310,4 @@ export class HirayaImageViewer extends HTMLElementBase {
     const value = Number(this.getAttribute(name));
     return Number.isFinite(value) && value > 0 ? value : fallback;
   }
-}
-
-export function defineHirayaImageViewer(): void {
-  defineElement("hiraya-image-viewer", HirayaImageViewer);
 }

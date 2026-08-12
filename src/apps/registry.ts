@@ -6,13 +6,10 @@ import type {
   BuiltinAppWindow,
   SystemAppTarget,
 } from "./types";
-import { RETIRED_SYSTEM_APP_IDS, SYSTEM_APP_IDS } from "./system-app-ids";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
-
-const LEGACY_FOLDER_EXPLORER_APP_ID = "app.hiraya.folder-explorer";
 
 const BUILTIN_APP_WINDOWS: Record<BuiltinAppKind, BuiltinAppWindow> = {
   file: { width: 920, height: 680, minWidth: 420, minHeight: 320 },
@@ -39,14 +36,11 @@ export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null
   if (value.kind === "store") return { kind: "store" };
   if (value.kind === "system" && typeof value.appId === "string" && value.appId.length <= 160 && ["file", "folder", "root"].includes(String(value.targetKind)) && (value.entryId === null || isValidId(value.entryId))) {
     if (value.targetKind === "root" && value.entryId !== null || value.targetKind !== "root" && value.entryId === null) return null;
-    if (value.appId === LEGACY_FOLDER_EXPLORER_APP_ID && (value.targetKind === "root" || value.targetKind === "folder")) {
-      return { kind: "explorer", folderId: value.targetKind === "root" ? null : value.entryId as string };
-    }
     const identityFields = [value.source, value.digest, value.permissions];
     const hasIdentity = identityFields.some((part) => part !== undefined);
     if (hasIdentity && (value.source !== "system" && value.source !== "desktop" && value.source !== "store" && value.source !== "account" || typeof value.digest !== "string" || !/^[a-f0-9]{64}$/.test(value.digest) || !Array.isArray(value.permissions) || value.permissions.some((permission) => typeof permission !== "string") || new Set(value.permissions).size !== value.permissions.length)) return null;
     return {
-      kind: "system", appId: value.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? SYSTEM_APP_IDS.mediaViewer : value.appId === RETIRED_SYSTEM_APP_IDS.sceneEditor ? SYSTEM_APP_IDS.textEditor : value.appId, targetKind: value.targetKind, entryId: value.entryId,
+      kind: "system", appId: value.appId, targetKind: value.targetKind, entryId: value.entryId,
       ...(hasIdentity ? { source: value.source, digest: value.digest, permissions: [...value.permissions as string[]] } : {}),
     } as SystemAppTarget;
   }

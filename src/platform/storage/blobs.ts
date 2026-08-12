@@ -140,11 +140,6 @@ async function deleteApprovedPackageArchiveUnsafe(digest: string) {
   }
 }
 
-export async function deleteApprovedPackageArchive(digest: string) {
-  validatePackageDigest(digest);
-  return await serializePackageArchives(() => deleteApprovedPackageArchiveUnsafe(digest));
-}
-
 export async function releaseApprovedPackageArchive(digest: string) {
   validatePackageDigest(digest);
   await serializePackageArchives(async () => {

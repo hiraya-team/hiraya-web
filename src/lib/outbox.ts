@@ -205,15 +205,6 @@ export function transferEntriesBetweenDesktopStates(
 
 export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOperation {
   if (operation.schemaVersion !== 1) throw new Error("The queued operation uses an unsupported schema version.");
-  const legacy = operation as unknown as Record<string, unknown>;
-  if (legacy.kind === "update-entry") {
-    const entry = parseLocalEntry(legacy.entry);
-    operation = { schemaVersion: 1, kind: "patch-entry", entryId: entry.id, changes: { name: entry.name, parentId: entry.parentId, position: entry.position, modifiedAt: entry.modifiedAt } };
-  } else if (operation.kind === "save-content" && "entry" in legacy) {
-    const entry = parseLocalEntry(legacy.entry);
-    if (entry.kind !== "file") throw new Error("Saved content requires a file entry.");
-    operation = { schemaVersion: 1, kind: "save-content", entryId: entry.id, mimeType: entry.mimeType, size: entry.size, modifiedAt: entry.modifiedAt };
-  }
   if (operation.kind === "create") {
     if (!Array.isArray(operation.entries)) throw new Error("The desktop entries have an unsupported format.");
     return { ...operation, entries: operation.entries.map(parseLocalEntry) };

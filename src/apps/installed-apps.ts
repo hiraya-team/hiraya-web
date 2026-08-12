@@ -1,5 +1,4 @@
 import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
-import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { SystemAppTarget } from "./types";
 
 type InstalledAppBase = Readonly<{
@@ -18,15 +17,6 @@ export type InstalledApp = InstalledAppBase & Readonly<
 >;
 
 export type FileAssociation = Readonly<{ matcher: string; appId: string; createdAt: number }>;
-export type QuarantinedApp = Readonly<{
-  appId: string;
-  packageEntryId: string;
-  digest: string;
-  version: string;
-  manifest: JsonValue;
-  approvedAt: number;
-  storage: readonly Readonly<{ key: string; value: JsonValue; bytes: number }>[];
-}>;
 
 const DIGEST = /^[a-f0-9]{64}$/;
 const ARCHIVE_PATH = /^system-apps\/[a-z0-9-]+\.hiraya\.app$/;
@@ -51,29 +41,11 @@ export function parseFileAssociation(value: unknown): FileAssociation {
   return { matcher, appId: item.appId, createdAt: item.createdAt };
 }
 
-export function parseQuarantinedApp(value: unknown): QuarantinedApp {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Quarantined app must be an object.");
-  const item = value as Record<string, unknown>;
-  if (Object.keys(item).some((key) => !["appId", "packageEntryId", "digest", "version", "manifest", "approvedAt", "storage"].includes(key))) throw new TypeError("Quarantined app has an unsupported shape.");
-  if (typeof item.appId !== "string" || item.appId.length === 0 || item.appId.length > 256) throw new TypeError("Quarantined app ID is invalid.");
-  if (typeof item.packageEntryId !== "string" || item.packageEntryId.length === 0 || item.packageEntryId.length > 256) throw new TypeError("Quarantined package entry ID is invalid.");
-  if (typeof item.digest !== "string" || !DIGEST.test(item.digest)) throw new TypeError("Quarantined app digest is invalid.");
-  if (typeof item.version !== "string" || item.version.length === 0 || item.version.length > 128) throw new TypeError("Quarantined app version is invalid.");
-  if (!Number.isSafeInteger(item.approvedAt) || Number(item.approvedAt) < 0 || !Array.isArray(item.storage)) throw new TypeError("Quarantined app metadata is invalid.");
-  const storage = item.storage.map((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Quarantined app storage is invalid.");
-    const row = value as Record<string, unknown>;
-    if (Object.keys(row).some((key) => !["key", "value", "bytes"].includes(key)) || typeof row.key !== "string" || row.key.length === 0 || row.key.length > 128 || !Number.isSafeInteger(row.bytes) || Number(row.bytes) < 0) throw new TypeError("Quarantined app storage is invalid.");
-    return { key: row.key, value: parseJsonValue(row.value), bytes: Number(row.bytes) };
-  });
-  return { appId: item.appId, packageEntryId: item.packageEntryId, digest: item.digest, version: item.version, manifest: parseJsonValue(item.manifest), approvedAt: Number(item.approvedAt), storage };
-}
-
 export function parseInstalledApp(value: unknown): InstalledApp {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Installed app must be an object.");
   const item = value as Record<string, unknown>;
   const manifest = parseManifestV2(item.manifest);
-  const source = item.source ?? "desktop";
+  const source = item.source;
   if (Object.keys(item).some((key) => !["appId", "source", "packageEntryId", "archivePath", "sourceCatalogId", "sourceDesktopId", "sourceContentRevision", "installationGeneration", "digest", "version", "manifest", "approvedAt"].includes(key))) throw new TypeError("Installed app has an unsupported shape.");
   if (item.appId !== manifest.id || item.version !== manifest.version) throw new TypeError("Installed app identity does not match its manifest.");
   if (typeof item.digest !== "string" || !DIGEST.test(item.digest)) throw new TypeError("Installed app digest is invalid.");

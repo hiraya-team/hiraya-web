@@ -1,22 +1,17 @@
 import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
-import { parseFileAssociation, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
+import { parseFileAssociation, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
 import { SYSTEM_APP_CATALOG, systemInstallFromCatalog, type SystemAppCatalogItem } from "../../apps/system-apps";
-import { RETIRED_SYSTEM_APP_IDS, SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 import type { ThemeDefinition } from "../../domain/theme";
 import {
   clearAppStorage,
   installApp,
   listFileAssociations,
   listInstalledApps,
-  listQuarantinedApps,
   readAppStorage,
   removeAppStorage,
   removeFileAssociation,
-  removeQuarantinedApp,
-  retireMarkdownPreview,
-  retireSceneEditor,
   resetFileAssociations,
   setFileAssociation,
   uninstallApp,
@@ -59,7 +54,6 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
   const accountAppQueue = useRef<Promise<void>>(Promise.resolve());
   const [appsLoaded, setAppsLoaded] = useState(false);
   const [localFileAssociations, setLocalFileAssociations] = useState<FileAssociation[]>([]);
-  const [quarantinedApps, setQuarantinedApps] = useState<QuarantinedApp[]>([]);
   const [dialogRequests, setDialogRequests] = useState<readonly DialogRequest[]>([]);
   const [notifications, setNotifications] = useState<readonly AppNotification[]>([]);
 
@@ -93,26 +87,23 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     if (!enabled) return;
     let cancelled = false;
     setAppsLoaded(false);
-    void Promise.all([listInstalledApps(), listFileAssociations(), listQuarantinedApps()])
-      .then(async ([storedApps, associations, quarantined]) => {
+    void Promise.all([listInstalledApps(), listFileAssociations()])
+      .then(async ([storedApps, associations]) => {
         const retainedSystemApps = (await Promise.all(storedApps.filter((app) => app.source === "system").map(async (app) => {
           try { await readApprovedPackageArchive(app.digest); return app; } catch { return null; }
         }))).filter((app): app is InstalledApp & { source: "system" } => app !== null);
         const byId = new Map([...storedApps.filter((app) => app.source !== "system"), ...retainedSystemApps].map((app) => [app.appId, app]));
-        const systemApps = await Promise.all(SYSTEM_APP_CATALOG.filter((item) => item.manifest.id !== RETIRED_SYSTEM_APP_IDS.markdownPreview).map(async (item) => {
+        const systemApps = await Promise.all(SYSTEM_APP_CATALOG.map(async (item) => {
           const current = byId.get(item.manifest.id);
           if (current?.source === "system" && systemInstallMatchesCatalog(current, item)) return current;
           const install = systemInstallFromCatalog(item, current);
           if (!current || !systemInstallMatchesCatalog(current, item)) await installApp(install);
           return install;
         }));
-        const retiredDigests = await Promise.all([retireMarkdownPreview(), retireSceneEditor()]);
-        for (const retiredDigest of retiredDigests) if (retiredDigest) await releaseApprovedPackageArchive(retiredDigest);
         if (cancelled) return;
         const systemIds = new Set(systemApps.map((app) => app.appId));
-        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => app.appId !== RETIRED_SYSTEM_APP_IDS.markdownPreview && app.appId !== RETIRED_SYSTEM_APP_IDS.sceneEditor && !systemIds.has(app.appId)), ...systemApps]);
-        setLocalFileAssociations(associations.map((association) => association.appId === RETIRED_SYSTEM_APP_IDS.markdownPreview ? { ...association, appId: SYSTEM_APP_IDS.mediaViewer } : association.appId === RETIRED_SYSTEM_APP_IDS.sceneEditor ? { ...association, appId: SYSTEM_APP_IDS.textEditor } : association));
-        setQuarantinedApps(quarantined);
+        setLocalApps([...storedApps.filter((app) => app.source !== "system" && !systemIds.has(app.appId)), ...retainedSystemApps.filter((app) => !systemIds.has(app.appId)), ...systemApps]);
+        setLocalFileAssociations(associations);
         setAppsLoaded(true);
       })
       .catch((error) => {
@@ -211,11 +202,6 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     setLocalFileAssociations((current) => current.filter((association) => association.appId !== appId));
   }
 
-  async function discardQuarantine(appId: string) {
-    await removeQuarantinedApp(appId);
-    setQuarantinedApps((current) => current.filter((item) => item.appId !== appId));
-  }
-
   async function saveAssociation(matcher: string, appId: string) {
     const association = await setFileAssociation({ matcher, appId, createdAt: Date.now() });
     const next = [...fileAssociations.filter((item) => item.matcher !== association.matcher), association].sort((left, right) => left.matcher.localeCompare(right.matcher));
@@ -278,12 +264,10 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     blockedAccountAppOperations: accountState?.outbox.filter((record) => record.status === "blocked") ?? [],
     appsLoaded,
     fileAssociations,
-    quarantinedApps,
     dialogRequests,
     notifications,
     approveInstall,
     removeInstall,
-    discardQuarantine,
     saveAssociation,
     deleteAssociation,
     clearAssociations,

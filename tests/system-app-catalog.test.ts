@@ -16,15 +16,9 @@ describe("bundled system app catalog", () => {
 
   test("emits trusted digests so ordinary startup does not inspect unchanged archives", async () => {
     const plugin = await Bun.file(new URL("../build/system-apps.ts", import.meta.url)).text();
-    const controller = await Bun.file(new URL("../src/features/app-management/controller.ts", import.meta.url)).text();
     const launcher = await Bun.file(new URL("../src/features/app-management/launch.ts", import.meta.url)).text();
 
     expect(plugin).toContain('createHash("sha256")');
-    expect(controller).not.toContain('import("@hiraya-team/app-cli")');
-    expect(controller).not.toContain("systemAppArchiveUrl");
-    expect(controller).toContain('current?.source === "system" && systemInstallMatchesCatalog(current, item)');
-    expect(controller.indexOf("await installApp(install)")).toBeLessThan(controller.indexOf("retireMarkdownPreview(), retireSceneEditor()"));
-    expect(controller.indexOf("retireMarkdownPreview(), retireSceneEditor()")).toBeLessThan(controller.indexOf("await releaseApprovedPackageArchive(retiredDigest)"));
     expect(launcher).toContain('import("@hiraya-team/app-cli")');
     expect(launcher).toContain("install.appId === SYSTEM_APP_IDS.mediaViewer && isMarkdownFile(target)");
     expect(launcher).toContain("Only the bundled Document & Media Viewer can change this preference.");

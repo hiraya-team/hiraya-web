@@ -584,7 +584,7 @@ test("local mutation persists through reload", async ({ page }) => {
     database.close();
     return { stores, names: desktops.flatMap((desktop) => desktop.state.entries.map((entry) => entry.name)) };
   });
-  expect(stored.stores).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "quarantined-apps", "sessions"]);
+  expect(stored.stores).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "sessions"]);
   expect(stored.names).toContain(name);
 });
 
@@ -595,7 +595,6 @@ test("concurrent tabs serialize the first IndexedDB reset", async ({ browser }) 
   await Promise.all([first.goto("/"), second.goto("/")]);
   await expect(first.locator(".desktop-shell")).toBeVisible();
   await expect(second.locator(".desktop-shell")).toBeVisible();
-  await expect.poll(() => first.evaluate(() => Object.keys(localStorage).filter((key) => key.startsWith("hiraya-indexeddb-reset-v1-")).length)).toBe(1);
   await context.close();
 });
 

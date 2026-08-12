@@ -37,8 +37,8 @@ describe("strict outbox", () => {
     const folder = { kind: "folder" as const, id: "folder", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
     const file = { kind: "file" as const, id: "file", name: "note.txt", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 10 }, mimeType: "text/plain", size: 0 };
     let projected = applyOutboxOperation(state(), { schemaVersion: 1, kind: "create", entries: [folder, file] });
-    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "update-entry", entry: { ...folder, name: "Documents" } });
-    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "save-content", entry: { ...file, size: 4, modifiedAt: 2 } });
+    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "patch-entry", entryId: folder.id, changes: { name: "Documents" } });
+    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "save-content", entryId: file.id, mimeType: file.mimeType, size: 4, modifiedAt: 2 });
     projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "root-entry-positions", positions: [{ entryId: file.id, position: { x: -20, y: 30 } }] });
     projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "layout", layout: { snapToGrid: true, wallpaper: { ...DEFAULT_WALLPAPER, source: "grove" } } });
     const settings = { ...projected.editorSettings, fontSize: 17, autoFormat: true };
@@ -85,8 +85,8 @@ describe("strict outbox", () => {
     let projected = { ...state(), entries: [folder] };
 
     projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "create", entries: [file] });
-    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "update-entry", entry: { ...file, name: "renamed.txt", modifiedAt: 2 } });
-    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "save-content", entry: { ...file, name: "renamed.txt", size: 4, modifiedAt: 3 } });
+    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "patch-entry", entryId: file.id, changes: { name: "renamed.txt", modifiedAt: 2 } });
+    projected = applyOutboxOperation(projected, { schemaVersion: 1, kind: "save-content", entryId: file.id, mimeType: file.mimeType, size: 4, modifiedAt: 3 });
 
     expect(projected.entries.find(({ id }) => id === file.id)).toMatchObject({ parentId: folder.id, name: "renamed.txt", size: 4 });
   });

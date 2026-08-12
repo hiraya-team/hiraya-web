@@ -37,13 +37,6 @@ describe("account app wire contract", () => {
     expect(() => parseAccountAppsSnapshot({ ...snapshot(), handlerHints: { ".txt": "dev.hiraya.missing" } })).toThrow("outside the inventory");
   });
 
-  test("keeps the retired Markdown Preview ID reserved", () => {
-    const value = snapshot();
-    const app = value.apps[0];
-    const retiredId = "app.hiraya.markdown-preview";
-    expect(() => parseAccountAppsSnapshot({ ...value, apps: [{ ...app, appId: retiredId, manifest: { ...app.manifest, id: retiredId }, manifestResource: { ...app.manifestResource, path: `.hiraya/account/apps/${retiredId}/manifest.json` } }], installation: { apps: [{ ...value.installation.apps[0], appId: retiredId, manifest: { ...app.manifest, id: retiredId }, manifestResource: { ...app.manifestResource, path: `.hiraya/account/apps/${retiredId}/manifest.json` } }] } })).toThrow("Trusted system apps");
-  });
-
   test("constructs only contract routes with escaped path segments", () => {
     expect(API_ROUTES.apps).toBe("/api/apps");
     expect(API_ROUTES.appPackageCommit("upload/value")).toBe("/api/apps/packages/upload%2Fvalue/commit");

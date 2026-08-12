@@ -33,12 +33,9 @@ describe("Settings app data UI", () => {
       entries: [],
       canMutate: true,
       installedApps: [systemApp],
-      quarantinedApps: [],
       fileAssociations: [{ matcher: ".txt", appId: systemApp.appId, createdAt: 1 }],
       onLaunchApp: () => undefined,
       onUninstallApp: () => undefined,
-      onExportQuarantinedApp: () => undefined,
-      onRemoveQuarantinedApp: () => undefined,
       onResetApp: () => undefined,
       onSetFileAssociation: () => undefined,
       onRemoveFileAssociation: () => undefined,
@@ -54,30 +51,10 @@ describe("Settings app data UI", () => {
     expect(markup).not.toContain("Uninstall");
   });
 
-  test("surfaces quarantined app storage with download and removal controls", () => {
-    const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "files-apps/recovered-data", onPageChange: () => undefined, layout: { autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], canMutate: true,
-      installedApps: [systemApp], fileAssociations: [], quarantinedApps: [{ appId: systemApp.appId, packageEntryId: "old-package", digest: "b".repeat(64), version: "0.9.0", manifest: { name: "Old editor" }, approvedAt: 1, storage: [{ key: "draft", value: { text: "kept" }, bytes: 15 }] }],
-      onLaunchApp: () => undefined, onUninstallApp: () => undefined, onResetApp: () => undefined, onExportQuarantinedApp: () => undefined, onRemoveQuarantinedApp: () => undefined, onSetFileAssociation: () => undefined, onRemoveFileAssociation: () => undefined, onResetFileAssociations: () => undefined, onOpenHelp: () => undefined,
-    } as Parameters<typeof SettingsWindow>[0])} />);
-    expect(markup).toContain("Recovered app data");
-    expect(markup).toContain("Download export");
-    expect(markup).toContain("15 bytes");
-    expect(markup).toContain("Remove");
-  });
-
-  test("shows an empty recovered-data state", () => {
-    const markup = renderToStaticMarkup(<SettingsWindow {...({
-      page: "files-apps/recovered-data", onPageChange: () => undefined, layout: { autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], canMutate: true,
-      installedApps: [], fileAssociations: [], quarantinedApps: [],
-    } as Parameters<typeof SettingsWindow>[0])} />);
-    expect(markup).toContain("No recovered app data.");
-  });
-
   test("offers the synchronized icon grid presets", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
       page: "desktop", onPageChange: () => undefined, layout: { autoArrangeIcons: true, snapToGrid: true, gridSize: 36, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], canMutate: true,
-      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined,
+      installedApps: [], fileAssociations: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined,
     } as Parameters<typeof SettingsWindow>[0])} />);
     expect(markup).toContain("Grid size");
     expect(markup).toContain("Auto-arrange while dragging");
@@ -88,7 +65,7 @@ describe("Settings app data UI", () => {
   test("shows account short links only when the session advertises support", () => {
     const props = {
       page: "sharing", onPageChange: () => undefined, layout: { autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], canMutate: false,
-      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, shortLinkBaseUrl: "https://go.example.test/r/",
+      installedApps: [], fileAssociations: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, shortLinkBaseUrl: "https://go.example.test/r/",
     } as Parameters<typeof SettingsWindow>[0];
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable={false} />)).not.toContain("Create and manage account-wide redirect URLs.");
     expect(renderToStaticMarkup(<SettingsWindow {...props} shortLinksAvailable />)).toContain("Create and manage account-wide redirect URLs.");
@@ -97,7 +74,7 @@ describe("Settings app data UI", () => {
   test("opens Theme Editor from desktop settings", () => {
     const markup = renderToStaticMarkup(<SettingsWindow {...({
       page: "desktop", onPageChange: () => undefined, layout: { autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER }, activeDesktopId: "desktop", entries: [], canMutate: true,
-      installedApps: [], fileAssociations: [], quarantinedApps: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, sharingAvailable: true, shortLinksAvailable: true,
+      installedApps: [], fileAssociations: [], onLayoutChange: () => Promise.resolve(), onOpenHelp: () => undefined, sharingAvailable: true, shortLinksAvailable: true,
     } as Parameters<typeof SettingsWindow>[0])} />);
     expect(markup).toContain('aria-pressed="true">Desktop</button>');
     expect(markup).toContain('aria-pressed="false">Sharing</button>');
