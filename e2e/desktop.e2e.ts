@@ -691,6 +691,31 @@ test("opens text MIME as editable text in Integrated Editor", async ({ page }) =
   await expect(editor).toHaveText("# Mobile Markdown");
 });
 
+test("edits structured text without changing its MIME type", async ({ page }) => {
+  await openLocalDesktop(page);
+  const name = "features.hiraya.todo";
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name, mimeType: "application/vnd.hiraya.todo+json", buffer: Buffer.from('{"schemaVersion":1,"items":[]}') });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Edit file" }).click();
+  const app = page.getByRole("dialog", { name: /Integrated Editor/ });
+  const editor = app.frameLocator("iframe");
+  await expect(editor.locator(".cm-content")).toHaveText('{"schemaVersion":1,"items":[]}');
+  await editor.locator(".cm-content").fill('{"schemaVersion":1,"items":[{"text":"Ship it"}]}');
+  await app.getByRole("button", { name: /Minimize/ }).focus();
+  await page.keyboard.press("Control+s");
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
+  await app.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
+  await expect(app).toBeHidden();
+
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Properties" }).click();
+  await expect(page.getByRole("dialog", { name: `${name} Properties` }).locator("dd", { hasText: "application/vnd.hiraya.todo+json" })).toBeVisible();
+});
+
 test("opens GFM Markdown with safe relative and external images in the document viewer", async ({ page }) => {
   await openLocalDesktop(page);
   const actions = page.getByRole("toolbar", { name: "File actions" });

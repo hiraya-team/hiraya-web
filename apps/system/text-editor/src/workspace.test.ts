@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { DirectoryEntry, FileHandle, FolderHandle } from "@hiraya-team/apps-sdk";
-import { editorFileKind, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries } from "./workspace";
+import { editorFileKind, fileMimeTypeForSave, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries } from "./workspace";
 
 const folder = (name: string, handle = name as FolderHandle, parent: FolderHandle | null = null): DirectoryEntry => ({ kind: "folder", metadata: { handle, name, modifiedAt: 0, parent } });
 const file = (name: string, mimeType = "application/octet-stream", handle = name as FileHandle, parent: FolderHandle | null = null): DirectoryEntry => ({ kind: "file", metadata: { handle, name, mimeType, size: 0, modifiedAt: 0, parent, contentRevision: 1 } });
@@ -17,7 +17,19 @@ describe("Integrated Editor workspace", () => {
   test("recognizes editable text without treating binary files as source", () => {
     expect(isEditableFile((file("README", "text/plain") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
     expect(isEditableFile((file("script.ts") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("features.hiraya.todo", "application/vnd.hiraya.todo+json") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("inventory.hpos", "APPLICATION/VND.HIRAYA.POS+JSON; charset=utf-8") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("settings", "application/json") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("config", "application/yaml") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("feed", "application/atom+xml") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
     expect(isEditableFile((file("photo.png", "image/png") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(false);
+    expect(isEditableFile((file("archive.json", "application/zip") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(false);
+  });
+
+  test("preserves a document MIME when saving", () => {
+    const todo = (file("features.hiraya.todo", "application/vnd.hiraya.todo+json") as Extract<DirectoryEntry, { kind: "file" }>).metadata;
+    expect(fileMimeTypeForSave(todo)).toBe("application/vnd.hiraya.todo+json");
+    expect(fileMimeTypeForSave(null)).toBe("text/plain; charset=utf-8");
   });
 
   test("selects native previews and a safe fallback for non-text files", () => {

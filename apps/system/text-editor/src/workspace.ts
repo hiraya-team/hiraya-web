@@ -4,6 +4,7 @@ const TEXT_EXTENSIONS = /\.(?:css|csv|html?|hsh|js|jsx|json|log|markdown|md|ts|t
 const IMAGE_EXTENSIONS = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
 const AUDIO_EXTENSIONS = /\.(?:aac|flac|m4a|mp3|oga|ogg|wav|weba)$/i;
 const VIDEO_EXTENSIONS = /\.(?:m4v|mov|mp4|ogv|webm)$/i;
+const TEXT_APPLICATION_MIME = /^application\/(?:ecmascript|javascript|json|xml|x-yaml|yaml|[^/]+\+(?:json|xml))$/;
 
 export type EditorFileKind = "text" | "image" | "pdf" | "audio" | "video" | "scene" | "metadata";
 
@@ -21,7 +22,12 @@ export function filterWorkspaceEntries(entries: Iterable<DirectoryEntry>, query:
 }
 
 export function isEditableFile(file: FileMetadata): boolean {
-  return file.mimeType.startsWith("text/") || TEXT_EXTENSIONS.test(file.name);
+  const mimeType = file.mimeType.split(";", 1)[0].trim().toLowerCase();
+  return mimeType.startsWith("text/") || TEXT_APPLICATION_MIME.test(mimeType) || mimeType === "application/octet-stream" && TEXT_EXTENSIONS.test(file.name);
+}
+
+export function fileMimeTypeForSave(file: FileMetadata | null): string {
+  return file?.mimeType || "text/plain; charset=utf-8";
 }
 
 export function editorFileKind(file: FileMetadata): EditorFileKind {

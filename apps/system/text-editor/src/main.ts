@@ -19,7 +19,7 @@ import { tags } from "@lezer/highlight";
 import { minimalSetup } from "codemirror";
 import { formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage, type TextEditorLanguage, type TextEditorSettings } from "./editor";
 import { archiveWritePayload, SceneArchiveState, starterSceneArchive } from "./scene";
-import { editorFileKind, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries, type EditorFileKind } from "./workspace";
+import { editorFileKind, fileMimeTypeForSave, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries, type EditorFileKind } from "./workspace";
 import "./style.css";
 
 type DocumentTab = {
@@ -403,13 +403,14 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
   try {
     let destination = saveAs ? null : tab.handle;
     const expected = saveAs ? null : state.revision;
-    if (!destination) destination = await hiraya.dialogs.saveFile({ suggestedName: tab.name, mimeType: "text/plain" });
+    const mimeType = fileMimeTypeForSave(tab.metadata);
+    if (!destination) destination = await hiraya.dialogs.saveFile({ suggestedName: tab.name, mimeType });
     if (!destination) return;
     const sourceText = state.text;
     const text = settings.autoFormat ? formatText(tab.name, sourceText) : sourceText;
     if (!canWrite) { setStatus(writeRestrictionMessage(writeReason, state.dirty), state.dirty); return; }
     const bytes = new TextEncoder().encode(text);
-    const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType: "text/plain; charset=utf-8", expectedRevision: expected ?? undefined });
+    const saved = await hiraya.files.writeAll(destination, bytes.buffer, { mimeType, expectedRevision: expected ?? undefined });
     tab.handle = destination;
     tab.metadata = saved;
     tab.name = saved.name;
