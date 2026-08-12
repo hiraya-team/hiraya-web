@@ -47,6 +47,7 @@ import {
   renameDesktop as renameDesktopMutation,
   saveCustomTheme,
   saveDesktopLayout,
+  saveEditorSettings,
   selectTheme,
   updateRootEntryPositions,
   updateEntryPosition,
@@ -106,6 +107,7 @@ import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-di
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
+import { fileCreationTemplate } from "./lib/file-creation-templates";
 import { APP_SHORTCUT_MAX_BYTES, APP_SHORTCUT_MIME_TYPE, availableAppShortcutName, createAppShortcut, parseAppShortcut } from "./lib/app-shortcut";
 import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
@@ -3155,8 +3157,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         if (positionOverlapsObstacles(projected.local, iconMetrics, obstacles)) throw new Error("Icons cannot be created beneath a desktop widget or icon group. Choose a free area and try again.");
       }
       if (dialog.type === "create-shortcut" && !name.toLowerCase().endsWith(".url")) throw new Error("A shortcut file name must end in .url.");
+      const template = dialog.type === "create-file" ? fileCreationTemplate(name, appSnapshotRef.current?.editorSettings.fileCreationTemplates ?? []) : undefined;
       const created = dialog.type === "create-file"
-        ? await createTextFile(name, parentId, position)
+        ? template ? await createFile(name, parentId, position, new Blob([template.content], { type: template.mimeType })) : await createTextFile(name, parentId, position)
         : dialog.type === "create-shortcut"
           ? await createFile(name, parentId, position, new Blob([createInternetShortcut(dialog.url).content], { type: INTERNET_SHORTCUT_MIME_TYPE }))
           : await createFolder(name, parentId, position);
@@ -5906,9 +5909,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                         />}
                         sharingPanel={activeDesktop?.capabilities.manage ? <SharingDialog desktop={activeDesktop} embedded onClose={() => navigateSettingsPage("sharing")} onOpenHelp={() => openHelp("sharing")} /> : null}
                         fileAssociations={fileAssociations}
+                        fileCreationTemplates={appSnapshotRef.current?.editorSettings.fileCreationTemplates ?? []}
                         onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
                         onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
                         onResetFileAssociations={() => void clearAssociations()}
+                        onFileCreationTemplatesChange={async (templates) => {
+                          const snapshot = appSnapshotRef.current;
+                          if (!snapshot) throw new Error("The desktop is unavailable.");
+                          await saveEditorSettings({ ...snapshot.editorSettings, fileCreationTemplates: templates });
+                        }}
                         onListShortLinks={listShortLinks}
                         onCreateShortLink={createShortLink}
                         onUpdateShortLink={updateShortLink}

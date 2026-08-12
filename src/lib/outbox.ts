@@ -542,7 +542,8 @@ function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, re
 function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor-settings" }>, remote: EditorSettings) {
   const base = operation.conflictBase;
   if (!base) return operation.settings;
-  return parseEditorSettings(Object.fromEntries((Object.keys(base) as Array<keyof EditorSettings>).map((key) => [key, same(operation.settings[key], base[key]) ? remote[key] : operation.settings[key]])));
+  const templates = mergeItems(base.fileCreationTemplates, operation.settings.fileCreationTemplates, remote.fileCreationTemplates, (item) => item.extension);
+  return parseEditorSettings({ ...Object.fromEntries((Object.keys(base) as Array<keyof EditorSettings>).filter((key) => key !== "fileCreationTemplates").map((key) => [key, same(operation.settings[key], base[key]) ? remote[key] : operation.settings[key]])), fileCreationTemplates: templates });
 }
 
 function operationIntentIsSatisfied(operation: OutboxOperation, remote: DesktopStateSnapshot) {
@@ -613,7 +614,10 @@ export function resolveOutboxRevisionConflict(operation: OutboxOperation, confli
   }
   if (operation.kind === "editor-settings") {
     if (!operation.conflictBase) return { kind: "blocked", fields: ["editor settings"] };
-    const fields = (Object.keys(operation.conflictBase) as Array<keyof EditorSettings>).filter((key) => !same(operation.settings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.settings[key]));
+    const fields = (Object.keys(operation.conflictBase) as Array<keyof EditorSettings>).filter((key) => key !== "fileCreationTemplates" && !same(operation.settings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.conflictBase![key]) && !same(remote.editorSettings[key], operation.settings[key]));
+    const localTemplates = changedItemIds(operation.conflictBase.fileCreationTemplates, operation.settings.fileCreationTemplates, (item) => item.extension);
+    const remoteTemplates = changedItemIds(operation.conflictBase.fileCreationTemplates, remote.editorSettings.fileCreationTemplates, (item) => item.extension);
+    if ([...localTemplates].some((extension) => remoteTemplates.has(extension) && !same(operation.settings.fileCreationTemplates.find((item) => item.extension === extension), remote.editorSettings.fileCreationTemplates.find((item) => item.extension === extension)))) fields.push("fileCreationTemplates");
     return fields.length ? { kind: "blocked", fields: fields.map((field) => field.replace(/[A-Z]/g, (letter) => ` ${letter.toLowerCase()}`)) } : { kind: "rebase", operation: { ...operation, baseRevision: (rebased as typeof operation).baseRevision, settings: mergeEditorSettings(operation, remote.editorSettings) } };
   }
   return { kind: "blocked", fields: [conflict.resourceKind] };

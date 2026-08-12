@@ -58,6 +58,17 @@ describe("strict outbox", () => {
     expect(projected.appearance).toEqual({ selectedThemeId: DEFAULT_THEME_ID, customThemes: [] });
   });
 
+  test("rebases independent file creation template edits by extension", () => {
+    const base = state();
+    const localSettings = { ...base.editorSettings, fileCreationTemplates: base.editorSettings.fileCreationTemplates.map((item) => item.extension === ".json" ? { ...item, content: "local" } : item) };
+    const remote = desktopStateSnapshot();
+    remote.editorSettings = { ...remote.editorSettings, fileCreationTemplates: remote.editorSettings.fileCreationTemplates.map((item) => item.extension === ".url" ? { ...item, content: "remote" } : item) };
+    const result = resolveOutboxRevisionConflict({ schemaVersion: 1, kind: "editor-settings", settings: localSettings, baseRevision: 1, conflictBase: base.editorSettings }, { resourceKind: "editor-settings", resourceId: "desk", expectedRevision: 1, actualRevision: 2 }, remote);
+    expect(result.kind).toBe("rebase");
+    if (result.kind === "rebase") expect(result.operation.settings.fileCreationTemplates.map(({ extension, content }) => [extension, content])).toContainEqual([".json", "local"]);
+    if (result.kind === "rebase") expect(result.operation.settings.fileCreationTemplates.map(({ extension, content }) => [extension, content])).toContainEqual([".url", "remote"]);
+  });
+
   test("atomically removes a replaced package wallpaper and its selected layout source", () => {
     const wallpaper = { assetId: "old-asset", kind: "scene" as const, size: 4, sha256: "a".repeat(64), revision: 2 };
     const installed = { id: "aurora", name: "Aurora", definition: BUILTIN_THEMES[DEFAULT_THEME_ID].definition, wallpaper };
