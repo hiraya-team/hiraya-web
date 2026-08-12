@@ -24,7 +24,6 @@
   },
   "dependencies": {
     "@hiraya-team/apps-contracts": "2.2.0",
-    "@hiraya-team/apps-sdk": "2.2.0",
     "@hiraya-team/app-cli": "2.2.0",
     "@hiraya/app-runtime": "workspace:*",
     "@hiraya/apps-ui": "workspace:*",

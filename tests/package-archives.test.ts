@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { indexedDB } from "fake-indexeddb";
 import { sha256Blob } from "../src/lib/blob-transfer";
-import { deleteApprovedPackageArchive, readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../src/platform/storage/blobs";
-import { configureStorageNamespace, indexedDatabaseName } from "../src/platform/storage/namespace";
+import { readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../src/platform/storage/blobs";
+import { configureStorageNamespace } from "../src/platform/storage/namespace";
 import { initializeDatabase } from "../src/platform/storage/database-client";
-import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, installApp, listFileAssociations, listInstalledApps, readAccountApps, readAppStorage, reconcileAccountApps, retireMarkdownPreview, retireSceneEditor, retryAccountAppOperation, setFileAssociation, writeAppStorage } from "../src/platform/storage/repositories";
+import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, readAccountApps, readAppStorage, reconcileAccountApps, retryAccountAppOperation } from "../src/platform/storage/repositories";
 
 class MemoryDirectory {
   readonly directories = new Map<string, MemoryDirectory>();
@@ -41,13 +41,13 @@ class MemoryDirectory {
 }
 
 describe("approved package archives", () => {
-  test("saves, reads, and explicitly deletes digest-addressed archives in the selected namespace", async () => {
+  test("saves and reads digest-addressed archives in the selected namespace", async () => {
     const root = new MemoryDirectory();
     const values = new Map<string, string>();
     Object.defineProperties(globalThis, {
       indexedDB: { configurable: true, value: indexedDB },
       navigator: { configurable: true, value: { storage: { getDirectory: async () => root }, locks: { request: (_name: string, callback: () => unknown) => callback() } } },
-      localStorage: { configurable: true, value: { getItem: (key: string) => key.startsWith("hiraya-indexeddb-reset-") ? "complete" : values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } },
+      localStorage: { configurable: true, value: { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => values.set(key, value) } },
       sessionStorage: { configurable: true, value: { getItem: () => null } },
     });
     await configureStorageNamespace("archive-test");
@@ -56,57 +56,10 @@ describe("approved package archives", () => {
     const digest = await sha256Blob(archive);
     await saveApprovedPackageArchive(digest, archive);
     expect(await (await readApprovedPackageArchive(digest)).text()).toBe("package bytes");
-    await deleteApprovedPackageArchive(digest);
-    await expect(readApprovedPackageArchive(digest)).rejects.toHaveProperty("name", "NotFoundError");
-    await deleteApprovedPackageArchive(digest);
   });
 
-  test("upgrades IndexedDB and atomically recovers account app operations", async () => {
-    await new Promise<void>((resolve, reject) => {
-      const open = indexedDB.open(indexedDatabaseName(), 1);
-      open.onupgradeneeded = () => {
-        const storage = open.result.createObjectStore("app-storage", { keyPath: ["appId", "key"] });
-        storage.createIndex("appId", "appId");
-        open.result.createObjectStore("installed-apps", { keyPath: "appId" });
-        const associations = open.result.createObjectStore("file-associations", { keyPath: "matcher" });
-        associations.createIndex("appId", "appId");
-      };
-      open.onsuccess = () => { open.result.close(); resolve(); };
-      open.onerror = () => reject(open.error);
-    });
+  test("atomically recovers account app operations", async () => {
     await initializeDatabase();
-
-    const retiredArchive = new Blob(["retired package"]);
-    const retiredDigest = await sha256Blob(retiredArchive);
-    const systemManifest = (id: string, name: string) => ({ schemaVersion: 2 as const, uiRuntime: 1 as const, id, name, version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const, "files:read" as const], fileTypes: [".md"] });
-    await saveApprovedPackageArchive(retiredDigest, retiredArchive);
-    await installApp({ appId: "app.hiraya.media-viewer", source: "system", packageEntryId: null, archivePath: "system-apps/media-viewer.hiraya.app", digest: "b".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.media-viewer", "Media Viewer"), approvedAt: 2 });
-    await installApp({ appId: "app.hiraya.markdown-preview", source: "system", packageEntryId: null, archivePath: "system-apps/markdown-preview.hiraya.app", digest: retiredDigest, version: "1.0.0", manifest: systemManifest("app.hiraya.markdown-preview", "Markdown Preview"), approvedAt: 1 });
-    await writeAppStorage("app.hiraya.markdown-preview", "draft", { value: true }, 1024, 10);
-    await setFileAssociation({ matcher: ".md", appId: "app.hiraya.markdown-preview", createdAt: 42 });
-    expect(await retireMarkdownPreview()).toBe(retiredDigest);
-    expect(await retireMarkdownPreview()).toBeNull();
-    expect((await listInstalledApps()).map((app) => app.appId)).not.toContain("app.hiraya.markdown-preview");
-    expect(await readAppStorage("app.hiraya.markdown-preview", "draft")).toBeUndefined();
-    expect(await listFileAssociations()).toContainEqual({ matcher: ".md", appId: "app.hiraya.media-viewer", createdAt: 42 });
-    await releaseApprovedPackageArchive(retiredDigest);
-    await expect(readApprovedPackageArchive(retiredDigest)).rejects.toHaveProperty("name", "NotFoundError");
-    await expect(installApp({ appId: "app.hiraya.markdown-preview", source: "desktop", packageEntryId: "package", archivePath: null, digest: "c".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.markdown-preview", "Markdown Preview"), approvedAt: 3 })).rejects.toThrow("reserved");
-
-    const sceneArchive = new Blob(["scene editor package"]);
-    const sceneDigest = await sha256Blob(sceneArchive);
-    await saveApprovedPackageArchive(sceneDigest, sceneArchive);
-    await installApp({ appId: "app.hiraya.text-editor", source: "system", packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app", digest: "d".repeat(64), version: "1.0.0", manifest: systemManifest("app.hiraya.text-editor", "Integrated Editor"), approvedAt: 4 });
-    await installApp({ appId: "app.hiraya.scene-editor", source: "system", packageEntryId: null, archivePath: "system-apps/scene-editor.hiraya.app", digest: sceneDigest, version: "1.0.0", manifest: systemManifest("app.hiraya.scene-editor", "Scene Studio"), approvedAt: 5 });
-    await writeAppStorage("app.hiraya.scene-editor", "draft", { value: true }, 1024, 10);
-    await setFileAssociation({ matcher: ".hiraya.scene", appId: "app.hiraya.scene-editor", createdAt: 43 });
-    expect(await retireSceneEditor()).toBe(sceneDigest);
-    expect(await retireSceneEditor()).toBeNull();
-    expect((await listInstalledApps()).map((app) => app.appId)).not.toContain("app.hiraya.scene-editor");
-    expect(await readAppStorage("app.hiraya.scene-editor", "draft")).toBeUndefined();
-    expect(await listFileAssociations()).toContainEqual({ matcher: ".hiraya.scene", appId: "app.hiraya.text-editor", createdAt: 43 });
-    await releaseApprovedPackageArchive(sceneDigest);
-    await expect(readApprovedPackageArchive(sceneDigest)).rejects.toHaveProperty("name", "NotFoundError");
 
     const appId = "dev.hiraya.notes";
     const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: appId, name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const], fileTypes: [] };

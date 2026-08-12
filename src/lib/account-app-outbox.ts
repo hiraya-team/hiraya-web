@@ -1,6 +1,6 @@
 import { parseJsonValue, parseManifestV2, type HirayaAppManifestV2, type JsonValue } from "@hiraya-team/apps-contracts";
 import { isRecord } from "./contracts";
-import type { AccountAppsSnapshot } from "./account-apps";
+import { parseAccountAppDataKey, parseAccountAppId, type AccountAppsSnapshot } from "./account-apps";
 
 const SHA256 = /^[a-f0-9]{64}$/;
 const MD5 = /^[a-f0-9]{32}$/;
@@ -62,19 +62,9 @@ function generation(value: unknown, message: string) {
   return Number(value);
 }
 
-function appId(value: unknown) {
-  if (typeof value !== "string" || !/^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/.test(value) || value.length > 256) throw new Error("A queued account app operation has an invalid app ID.");
-  return value;
-}
-
-function key(value: unknown) {
-  if (typeof value !== "string" || !value || new TextEncoder().encode(value).byteLength > 128 || [...value].some((character) => (character.codePointAt(0) ?? 0) < 32 || character.codePointAt(0) === 127)) throw new Error("A queued account app operation has an invalid data key.");
-  return value;
-}
-
 export function parseAccountAppOperation(value: unknown): AccountAppOperation {
   if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.kind !== "string") throw new Error("A queued account app operation has an unsupported format.");
-  const id = value.kind === "handlers" ? "" : appId(value.appId);
+  const id = value.kind === "handlers" ? "" : parseAccountAppId(value.appId);
   if (value.kind === "install") {
     exactKeys(value, ["schemaVersion", "kind", "appId", "manifest", "digest", "md5", "size"], "A queued app installation has an unsupported shape.");
     const manifest = parseManifestV2(value.manifest);
@@ -82,15 +72,15 @@ export function parseAccountAppOperation(value: unknown): AccountAppOperation {
     return { schemaVersion: 1, kind: "install", appId: id, manifest, digest: value.digest, md5: value.md5, size: Number(value.size) };
   }
   if (value.kind === "uninstall") { exactKeys(value, ["schemaVersion", "kind", "appId", "installationGeneration"], "A queued uninstall has an unsupported shape."); return { schemaVersion: 1, kind: "uninstall", appId: id, installationGeneration: generation(value.installationGeneration, "A queued uninstall has an invalid generation.") }; }
-  if (value.kind === "put-data") { exactKeys(value, ["schemaVersion", "kind", "appId", "key", "dataGeneration", "value"], "Queued app data has an unsupported shape."); return { schemaVersion: 1, kind: "put-data", appId: id, key: key(value.key), dataGeneration: generation(value.dataGeneration, "Queued app data has an invalid generation."), value: parseJsonValue(value.value) }; }
-  if (value.kind === "delete-data") { exactKeys(value, ["schemaVersion", "kind", "appId", "key", "dataGeneration"], "Queued app data has an unsupported shape."); return { schemaVersion: 1, kind: "delete-data", appId: id, key: key(value.key), dataGeneration: generation(value.dataGeneration, "Queued app data has an invalid generation.") }; }
+  if (value.kind === "put-data") { exactKeys(value, ["schemaVersion", "kind", "appId", "key", "dataGeneration", "value"], "Queued app data has an unsupported shape."); return { schemaVersion: 1, kind: "put-data", appId: id, key: parseAccountAppDataKey(value.key), dataGeneration: generation(value.dataGeneration, "Queued app data has an invalid generation."), value: parseJsonValue(value.value) }; }
+  if (value.kind === "delete-data") { exactKeys(value, ["schemaVersion", "kind", "appId", "key", "dataGeneration"], "Queued app data has an unsupported shape."); return { schemaVersion: 1, kind: "delete-data", appId: id, key: parseAccountAppDataKey(value.key), dataGeneration: generation(value.dataGeneration, "Queued app data has an invalid generation.") }; }
   if (value.kind === "clear-data") { exactKeys(value, ["schemaVersion", "kind", "appId", "dataGeneration"], "Queued app data has an unsupported shape."); return { schemaVersion: 1, kind: "clear-data", appId: id, dataGeneration: generation(value.dataGeneration, "Queued app data has an invalid generation.") }; }
   if (value.kind === "handlers") {
     exactKeys(value, ["schemaVersion", "kind", "hints"], "Queued handler hints have an unsupported shape.");
     if (!isRecord(value.hints) || Object.keys(value.hints).length > 128) throw new Error("Queued handler hints have an unsupported format.");
     const hints = Object.fromEntries(Object.entries(value.hints).map(([matcher, target]) => {
       if (!matcher || new TextEncoder().encode(matcher).byteLength > 255 || [...matcher].some((character) => (character.codePointAt(0) ?? 0) < 32 || character.codePointAt(0) === 127)) throw new Error("Queued handler hints contain an invalid key.");
-      return [matcher, appId(target)];
+      return [matcher, parseAccountAppId(target)];
     }));
     return { schemaVersion: 1, kind: "handlers", hints };
   }

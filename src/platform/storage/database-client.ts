@@ -1,5 +1,5 @@
 import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
-import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp, type QuarantinedApp } from "../../apps/installed-apps";
+import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
 import type { PersistedDesktopState } from "../../domain/desktop-state";
 import type { LocalPreferences } from "../../domain/preferences";
 import type { DesktopIdentity } from "../../types";
@@ -11,7 +11,7 @@ import { parseAccountAppOperation, parseAccountAppOutboxRecord, projectAccountAp
 import { applyOutboxOperation, desktopPendingOperationProtection, normalizeOutboxOperation, outboxOperationDesktopIds, outboxRecordsDependingOnDesktop, parseRevisionConflictDetails, rebaseOutboxOperationAfterAcknowledgement, transferEntriesBetweenDesktopStates, type OutboxOperation, type OutboxRecord, type RevisionConflictDetails } from "../../lib/outbox";
 import { EMPTY_WINDOW_SESSION, parseWindowSession, type WindowSession } from "../../lib/window-session";
 import { getActiveDesktopContext, getRoot, indexedDatabaseName } from "./namespace";
-import { RESERVED_SYSTEM_APP_IDS, RETIRED_SYSTEM_APP_IDS, SYSTEM_APP_IDS } from "../../apps/system-app-ids";
+import { RESERVED_SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 
 type StorageDbRequests = {
   listDesktops: undefined;
@@ -46,11 +46,7 @@ type StorageDbRequests = {
   pruneDesktops: { retainedDesktopIds: string[] };
   listInstalledApps: undefined;
   installApp: { install: InstalledApp };
-  retireMarkdownPreview: undefined;
-  retireSceneEditor: undefined;
   uninstallApp: { appId: string };
-  listQuarantinedApps: undefined;
-  removeQuarantinedApp: { appId: string };
   listFileAssociations: undefined;
   setFileAssociation: { association: FileAssociation };
   removeFileAssociation: { matcher: string };
@@ -101,11 +97,7 @@ type StorageDbResponses = {
   pruneDesktops: undefined;
   listInstalledApps: InstalledApp[];
   installApp: InstalledApp;
-  retireMarkdownPreview: string | null;
-  retireSceneEditor: string | null;
   uninstallApp: undefined;
-  listQuarantinedApps: QuarantinedApp[];
-  removeQuarantinedApp: undefined;
   listFileAssociations: FileAssociation[];
   setFileAssociation: FileAssociation;
   removeFileAssociation: undefined;
@@ -129,7 +121,7 @@ type ClientState = { id: "singleton"; clientId: string; nextSequence: number };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
 type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
 
-const DATABASE_VERSION = 2;
+export const DATABASE_VERSION = 3;
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
 const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] };
 const STORES = {
@@ -140,7 +132,6 @@ const STORES = {
   sessions: "sessions",
   activity: "activity",
   installedApps: "installed-apps",
-  quarantinedApps: "quarantined-apps",
   appStorage: "app-storage",
   fileAssociations: "file-associations",
   accountApps: "account-apps",
@@ -166,6 +157,28 @@ function transactionDone(transaction: IDBTransaction) {
   });
 }
 
+export function resetDatabaseSchema(db: IDBDatabase) {
+  for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
+  const desktops = db.createObjectStore(STORES.desktops, { keyPath: "id" });
+  desktops.createIndex("ordinal", "ordinal", { unique: true });
+  const outbox = db.createObjectStore(STORES.outbox, { keyPath: "sequence" });
+  outbox.createIndex("operationId", "operationId", { unique: true });
+  outbox.createIndex("desktopId", "desktopId");
+  db.createObjectStore(STORES.clientState, { keyPath: "id" });
+  db.createObjectStore(STORES.preferences);
+  db.createObjectStore(STORES.sessions);
+  db.createObjectStore(STORES.activity, { keyPath: "catalogRevision", autoIncrement: true });
+  db.createObjectStore(STORES.installedApps, { keyPath: "appId" });
+  const appStorage = db.createObjectStore(STORES.appStorage, { keyPath: ["appId", "key"] });
+  appStorage.createIndex("appId", "appId");
+  const associations = db.createObjectStore(STORES.fileAssociations, { keyPath: "matcher" });
+  associations.createIndex("appId", "appId");
+  db.createObjectStore(STORES.accountApps, { keyPath: "id" });
+  const accountAppOutbox = db.createObjectStore(STORES.accountAppOutbox, { keyPath: "sequence" });
+  accountAppOutbox.createIndex("operationId", "operationId", { unique: true });
+  db.createObjectStore(STORES.accountAppClientState, { keyPath: "id" });
+}
+
 async function transact<T>(storeNames: string | string[], mode: IDBTransactionMode, operation: (transaction: IDBTransaction) => Promise<T>): Promise<T> {
   const transaction = (await openDatabase()).transaction(storeNames, mode, { durability: mode === "readwrite" ? "strict" : "default" });
   const done = transactionDone(transaction);
@@ -185,32 +198,7 @@ function openDatabase() {
   database = new Promise<IDBDatabase>((resolve, reject) => {
     const open = indexedDB.open(indexedDatabaseName(), DATABASE_VERSION);
     let settled = false;
-    open.onupgradeneeded = (event) => {
-      const db = open.result;
-      if (event.oldVersion < 1) {
-        const desktops = db.createObjectStore(STORES.desktops, { keyPath: "id" });
-        desktops.createIndex("ordinal", "ordinal", { unique: true });
-        const outbox = db.createObjectStore(STORES.outbox, { keyPath: "sequence" });
-        outbox.createIndex("operationId", "operationId", { unique: true });
-        outbox.createIndex("desktopId", "desktopId");
-        db.createObjectStore(STORES.clientState, { keyPath: "id" });
-        db.createObjectStore(STORES.preferences);
-        db.createObjectStore(STORES.sessions);
-        db.createObjectStore(STORES.activity, { keyPath: "catalogRevision", autoIncrement: true });
-        db.createObjectStore(STORES.installedApps, { keyPath: "appId" });
-        db.createObjectStore(STORES.quarantinedApps, { keyPath: "appId" });
-        const appStorage = db.createObjectStore(STORES.appStorage, { keyPath: ["appId", "key"] });
-        appStorage.createIndex("appId", "appId");
-        const associations = db.createObjectStore(STORES.fileAssociations, { keyPath: "matcher" });
-        associations.createIndex("appId", "appId");
-      }
-      if (event.oldVersion < 2) {
-        db.createObjectStore(STORES.accountApps, { keyPath: "id" });
-        const outbox = db.createObjectStore(STORES.accountAppOutbox, { keyPath: "sequence" });
-        outbox.createIndex("operationId", "operationId", { unique: true });
-        db.createObjectStore(STORES.accountAppClientState, { keyPath: "id" });
-      }
-    };
+    open.onupgradeneeded = () => resetDatabaseSchema(open.result);
     open.onsuccess = () => {
       if (settled) { open.result.close(); return; }
       settled = true;
@@ -556,42 +544,10 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
       if (install.source !== "system" && RESERVED_SYSTEM_APP_IDS.has(install.appId)) throw new Error("That app ID is reserved for a trusted system app.");
       return transact(STORES.installedApps, "readwrite", async (tx) => { const store = tx.objectStore(STORES.installedApps); const current = await request(store.get(install.appId)) as InstalledApp | undefined; if (current?.source === "system" && install.source !== "system") throw new Error("Bundled system apps cannot be replaced."); await request(store.put(install)); return install; }) as Promise<StorageDbResponses[M]>;
     }
-    case "retireMarkdownPreview": {
-      return transact([STORES.installedApps, STORES.appStorage, STORES.fileAssociations], "readwrite", async (tx) => {
-        const apps = tx.objectStore(STORES.installedApps);
-        const retired = await request(apps.get(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as InstalledApp | undefined;
-        if (!retired || retired.source !== "system") return null;
-        const replacement = await request(apps.get(SYSTEM_APP_IDS.mediaViewer)) as InstalledApp | undefined;
-        if (replacement?.source !== "system") throw new Error("Media Viewer must be installed before retiring Markdown Preview.");
-        await request(apps.delete(RETIRED_SYSTEM_APP_IDS.markdownPreview));
-        const storage = tx.objectStore(STORES.appStorage);
-        for (const record of await request(storage.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
-        const associations = tx.objectStore(STORES.fileAssociations);
-        for (const association of await request(associations.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.markdownPreview)) as FileAssociation[]) await request(associations.put({ ...association, appId: SYSTEM_APP_IDS.mediaViewer }));
-        return retired.digest;
-      }) as Promise<StorageDbResponses[M]>;
-    }
-    case "retireSceneEditor": {
-      return transact([STORES.installedApps, STORES.appStorage, STORES.fileAssociations], "readwrite", async (tx) => {
-        const apps = tx.objectStore(STORES.installedApps);
-        const retired = await request(apps.get(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as InstalledApp | undefined;
-        if (!retired || retired.source !== "system") return null;
-        const replacement = await request(apps.get(SYSTEM_APP_IDS.textEditor)) as InstalledApp | undefined;
-        if (replacement?.source !== "system") throw new Error("Integrated Editor must be installed before retiring Scene Studio.");
-        await request(apps.delete(RETIRED_SYSTEM_APP_IDS.sceneEditor));
-        const storage = tx.objectStore(STORES.appStorage);
-        for (const record of await request(storage.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
-        const associations = tx.objectStore(STORES.fileAssociations);
-        for (const association of await request(associations.index("appId").getAll(RETIRED_SYSTEM_APP_IDS.sceneEditor)) as FileAssociation[]) await request(associations.put({ ...association, appId: SYSTEM_APP_IDS.textEditor }));
-        return retired.digest;
-      }) as Promise<StorageDbResponses[M]>;
-    }
     case "uninstallApp": {
       const appId = (params as StorageDbRequests["uninstallApp"]).appId;
       return transact([STORES.installedApps, STORES.appStorage, STORES.fileAssociations], "readwrite", async (tx) => { const apps = tx.objectStore(STORES.installedApps); const current = await request(apps.get(appId)) as InstalledApp | undefined; if (current && current.source !== "system") { await request(apps.delete(appId)); await deleteAppData(tx, appId); } }) as Promise<StorageDbResponses[M]>;
     }
-    case "listQuarantinedApps": return transact(STORES.quarantinedApps, "readonly", async (tx) => (await request(tx.objectStore(STORES.quarantinedApps).getAll()) as QuarantinedApp[]).map(parseQuarantinedApp).sort((a, b) => a.approvedAt - b.approvedAt || a.appId.localeCompare(b.appId))) as Promise<StorageDbResponses[M]>;
-    case "removeQuarantinedApp": return transact(STORES.quarantinedApps, "readwrite", async (tx) => { await request(tx.objectStore(STORES.quarantinedApps).delete((params as StorageDbRequests["removeQuarantinedApp"]).appId)); }) as Promise<StorageDbResponses[M]>;
     case "listFileAssociations": return transact(STORES.fileAssociations, "readonly", async (tx) => (await request(tx.objectStore(STORES.fileAssociations).getAll()) as FileAssociation[]).map(parseFileAssociation).sort((a, b) => a.matcher.localeCompare(b.matcher))) as Promise<StorageDbResponses[M]>;
     case "setFileAssociation": {
       const association = parseFileAssociation((params as StorageDbRequests["setFileAssociation"]).association);

@@ -1,6 +1,6 @@
 import type { DesktopIdentity } from "../types";
-
-export type DesktopPreference = { id: string; pinned: boolean };
+import type { DesktopPreference } from "../domain/preferences";
+export type { DesktopPreference } from "../domain/preferences";
 
 export function desktopPreferences(desktops: readonly DesktopIdentity[]): DesktopPreference[] {
   return desktops.map(({ id, pinned }) => ({ id, pinned }));

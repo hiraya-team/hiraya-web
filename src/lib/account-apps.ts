@@ -47,7 +47,7 @@ function exactKeys(value: Record<string, unknown>, keys: readonly string[], mess
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
 }
 
-function appId(value: unknown) {
+export function parseAccountAppId(value: unknown) {
   if (typeof value !== "string" || value.length > 256 || !APP_ID.test(value)) throw new Error("An account app has an invalid app ID.");
   return value;
 }
@@ -95,7 +95,7 @@ function parseGenerations(value: unknown): AccountAppGenerations {
   };
 }
 
-function dataKey(value: unknown) {
+export function parseAccountAppDataKey(value: unknown) {
   if (typeof value !== "string" || !value || new TextEncoder().encode(value).byteLength > 128 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
     return point < 32 || point === 127;
@@ -106,13 +106,13 @@ function dataKey(value: unknown) {
 function parseDataItem(value: unknown): AccountAppDataItem {
   if (!isRecord(value)) throw new Error("An account app data item has an unsupported format.");
   exactKeys(value, ["key", "dataGeneration", "revision", "size", "sha256"], "An account app data item has an unsupported shape.");
-  return { key: dataKey(value.key), dataGeneration: nonNegative(value.dataGeneration, "An account app data item has an invalid generation."), revision: readRevision(value.revision), size: nonNegative(value.size, "An account app data item has an invalid size."), sha256: digest(value.sha256) };
+  return { key: parseAccountAppDataKey(value.key), dataGeneration: nonNegative(value.dataGeneration, "An account app data item has an invalid generation."), revision: readRevision(value.revision), size: nonNegative(value.size, "An account app data item has an invalid size."), sha256: digest(value.sha256) };
 }
 
 function parseApp(value: unknown, withData: boolean): AccountApp | Omit<AccountApp, "data"> {
   if (!isRecord(value)) throw new Error("An account app has an unsupported format.");
   exactKeys(value, withData ? ["appId", "manifest", "generations", "manifestResource", "package", "data"] : ["appId", "manifest", "generations", "manifestResource", "package"], "An account app has an unsupported shape.");
-  const id = appId(value.appId);
+  const id = parseAccountAppId(value.appId);
   if (RESERVED_SYSTEM_APP_IDS.has(id)) throw new Error("Trusted system apps cannot appear in synchronized account apps.");
   const manifest = parseManifestV2(value.manifest);
   if (manifest.id !== id) throw new Error("An account app manifest has a different app ID.");
@@ -130,7 +130,7 @@ function parseHints(value: unknown) {
   if (!isRecord(value) || Object.keys(value).length > 128) throw new Error("Account app handler hints have an unsupported format.");
   return Object.fromEntries(Object.entries(value).map(([key, value]) => {
     if (!key || new TextEncoder().encode(key).byteLength > 255 || [...key].some((character) => (character.codePointAt(0) ?? 0) < 32 || character.codePointAt(0) === 127)) throw new Error("An account app handler key is invalid.");
-    return [key, appId(value)];
+    return [key, parseAccountAppId(value)];
   }));
 }
 

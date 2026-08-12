@@ -20,11 +20,9 @@ export function parseTodoText(text: string): TodoDocument {
   try { value = JSON.parse(text); } catch { throw new Error("This Todo file is not valid JSON."); }
   const root = record(value, "Todo file");
   exact(root, ["schemaVersion", "tasks"], "Todo file");
-  if (root.schemaVersion !== 1 && root.schemaVersion !== 2) throw new Error("This Todo file uses an unsupported schema version.");
+  if (root.schemaVersion !== 2) throw new Error("This Todo file uses an unsupported schema version.");
   if (!Array.isArray(root.tasks)) throw new Error(`Tasks must be an array with at most ${MAX_TASKS} items.`);
-  const tasks = root.schemaVersion === 1
-    ? root.tasks.map((task) => ({ ...parseItem(task, "Task", false), subitems: [] }))
-    : root.tasks.map((task) => parseTask(task));
+  const tasks = root.tasks.map((task) => parseTask(task));
   const items = tasks.flatMap((task) => [task, ...task.subitems]);
   if (items.length > MAX_TASKS) throw new Error(`Tasks must contain at most ${MAX_TASKS} items.`);
   if (new Set(items.map((item) => item.id)).size !== items.length) throw new Error("Task IDs must be unique.");

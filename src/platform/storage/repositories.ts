@@ -1,6 +1,6 @@
 import { parseJsonValue, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { LocalPreferences } from "../../domain/preferences";
-import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, parseQuarantinedApp, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
+import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
 import { parseWindowSession, type WindowSession } from "../../lib/window-session";
 import { callDatabase, initializeDatabase } from "./database-client";
 import { parseAccountAppsSnapshot, type AccountAppsSnapshot } from "../../lib/account-apps";
@@ -34,29 +34,9 @@ export async function installApp(install: InstalledApp) {
   return callDatabase("installApp", { install: parseInstalledApp(install) }, null);
 }
 
-export async function retireMarkdownPreview() {
-  await initializeDatabase();
-  return callDatabase("retireMarkdownPreview", undefined, null);
-}
-
-export async function retireSceneEditor() {
-  await initializeDatabase();
-  return callDatabase("retireSceneEditor", undefined, null);
-}
-
 export async function uninstallApp(appId: string) {
   await initializeDatabase();
   return callDatabase("uninstallApp", { appId }, null);
-}
-
-export async function listQuarantinedApps() {
-  await initializeDatabase();
-  return (await callDatabase("listQuarantinedApps", undefined, null)).map(parseQuarantinedApp);
-}
-
-export async function removeQuarantinedApp(appId: string) {
-  await initializeDatabase();
-  return callDatabase("removeQuarantinedApp", { appId }, null);
 }
 
 export async function listFileAssociations() {

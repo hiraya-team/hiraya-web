@@ -133,7 +133,7 @@ import type { ThemePackageCache } from "./lib/theme-package";
 import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
-import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp, type QuarantinedApp } from "./apps/installed-apps";
+import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
@@ -300,12 +300,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     blockedAccountAppOperations,
     appsLoaded,
     fileAssociations,
-    quarantinedApps,
     dialogRequests: appDialogRequests,
     notifications: appNotifications,
     approveInstall,
     removeInstall,
-    discardQuarantine,
     saveAssociation,
     deleteAssociation,
     clearAssociations,
@@ -3865,20 +3863,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     setNotice(`${desired.manifest.name} will be uninstalled from this account`);
   }
 
-  function exportQuarantinedApp(app: QuarantinedApp) {
-    const url = URL.createObjectURL(new Blob([JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(), app }, null, 2)], { type: "application/json" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${app.appId}-quarantine.json`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
-  }
-
-  async function discardQuarantinedApp(app: QuarantinedApp) {
-    if (!(await requestConfirmation({ title: `Remove recovered data for ${app.appId}?`, message: "Download the quarantine export first if you may need this app's original manifest and local storage. This removal cannot be undone.", confirmLabel: "Remove recovered data", danger: true }))) return;
-    await discardQuarantine(app.appId);
-  }
-
   async function openInternetShortcut(file: FileEntry, popup: Window | null) {
     if (!popup) {
       setError("The link was blocked by the browser. Allow pop-ups for Hiraya and try again.");
@@ -5893,7 +5877,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                         installState={installState}
                         serverBuildTimestamp={serverBuildTimestamp}
                         installedApps={installedApps}
-                        quarantinedApps={quarantinedApps}
                         connectionPanel={<ConnectionPanel
                           embedded
                           status={syncStatus}
@@ -5912,8 +5895,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                           onOpenHelp={() => openHelp("offline")}
                         />}
                         sharingPanel={activeDesktop?.capabilities.manage ? <SharingDialog desktop={activeDesktop} embedded onClose={() => navigateSettingsPage("sharing")} onOpenHelp={() => openHelp("sharing")} /> : null}
-                        onExportQuarantinedApp={exportQuarantinedApp}
-                        onRemoveQuarantinedApp={(app) => void discardQuarantinedApp(app)}
                         fileAssociations={fileAssociations}
                         onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
                         onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}

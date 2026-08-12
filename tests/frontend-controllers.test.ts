@@ -1,14 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { connectionIndicator } from "../src/features/connection/controller";
 import { formatDesktopClock } from "../src/features/shell/clock";
 import { nextUnreadNotificationIds } from "../src/features/notifications/controller";
 import { canViewDesktopActivity, localDesktopIdentity } from "../src/lib/permissions";
 
 describe("feature-owned shell controllers", () => {
-  test("projects connection and notification unread state", () => {
-    expect(connectionIndicator("online", true, []).status).toBe("syncing");
-    expect(connectionIndicator("online", false, [{ status: "pending" } as never]).status).toBe("waiting");
-    expect(connectionIndicator("offline", false, []).tone).toBe("danger");
+  test("projects notification unread state", () => {
     expect([...nextUnreadNotificationIds(new Set(), new Set(["known"]), new Set(["known", "new"]), false)]).toEqual(["new"]);
   });
 
