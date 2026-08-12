@@ -1290,7 +1290,7 @@ test("desktop widgets and icon groups persist and remain usable on mobile", asyn
   const initialLeft = await clock.evaluate((element) => element.getBoundingClientRect().left);
   await moveClock.focus();
   await expect(clock.getByRole("button", { name: "Resize Clock", exact: true })).toBeVisible();
-  await page.keyboard.press("Shift+ArrowRight");
+  await page.keyboard.press("Alt+ArrowRight");
   await expect.poll(() => clock.evaluate((element) => element.getBoundingClientRect().left)).toBeGreaterThan(initialLeft);
   const initialWidth = await clock.evaluate((element) => element.getBoundingClientRect().width);
   const resizeClock = clock.getByRole("button", { name: "Resize Clock", exact: true });
@@ -1431,9 +1431,9 @@ test("adding a widget rearranges overlapping icons and persists both positions",
   await moveClock.click();
   await expect(moveClock).toHaveAttribute("aria-pressed", "true");
   await beginDragPointerTo(page, moveClock, iconTarget.x + iconTarget.width / 2, iconTarget.y + iconTarget.height / 2);
-  await expect(icon).toHaveAttribute("data-widget-arrange-dragging", "true");
+  await expect(icon).toHaveAttribute("data-shell-arrange-dragging", "true");
   await page.mouse.up();
-  await expect(icon).not.toHaveAttribute("data-widget-arrange-dragging", "true");
+  await expect(icon).not.toHaveAttribute("data-shell-arrange-dragging", "true");
   await expect.poll(async () => {
     const moved = await icon.boundingBox();
     return moved ? Math.round(moved.y - iconTarget.y) : 0;
@@ -1569,7 +1569,7 @@ test("icon groups reserve space, follow the grid, and persist arranged icons", a
   const moveGroup = group.getByRole("button", { name: `Move ${groupName}` });
   await expect(moveGroup).toBeEnabled();
   await moveGroup.focus();
-  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Alt+ArrowRight");
   await expect.poll(async () => Math.round((await group.boundingBox())?.x ?? 0) - Math.round(initialLeft)).toBe(24);
   const initialWidth = (await group.boundingBox())?.width ?? 0;
   const resizeGroup = group.getByRole("button", { name: `Resize ${groupName}` });
