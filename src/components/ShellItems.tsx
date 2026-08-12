@@ -151,7 +151,7 @@ function ShellItem({ entityId, label, position, width, height, areaSize, readOnl
     if (readOnly || busy || drag.current || resize.current || event.button !== 0) return;
     event.preventDefault();
     onSelect?.({ toggle: event.metaKey || event.ctrlKey });
-    if (!selected) return;
+    if (widget && !selected) return;
     desktopRef.current = ref.current?.closest<HTMLElement>(".desktop") ?? null;
     target.current = { pointerId: event.pointerId, pointerType: event.pointerType, startX: event.clientX, startY: event.clientY, width: bounds.width, height: bounds.height, moved: false };
     event.currentTarget.setPointerCapture(event.pointerId);
