@@ -1100,7 +1100,7 @@
 .file-icon-snap-preview,
 .shell-item-snap-preview {
   position: absolute;
-  z-index: 1;
+  z-index: 6;
   display: none;
   width: 90px;
   min-height: 94px;
@@ -5472,10 +5472,14 @@ button.app-picker__disclosure { cursor: pointer; }
 .runtime-app-actions { display: flex; min-width: 0; align-items: center; gap: 5px; }
 .runtime-app-actions__overflow:not([data-always]) { display: none; }
 .runtime-app-actions__overflow [data-direct] { display: none; }
-.runtime-app-actions__overflow .mobile-header-menu__trigger { display: flex; width: auto; min-width: 34px; gap: 5px; padding-inline: 8px; color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome-text) 11%, transparent); }
-.runtime-app-actions__overflow .mobile-header-menu__trigger:hover { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
-.runtime-app-action { min-height: 31px; padding: 0 10px; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome-text) 11%, transparent); font: inherit; font-size: 12px; font-weight: 650; white-space: nowrap; }
-.runtime-app-action:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
+.runtime-app-actions__overflow .mobile-header-menu__trigger { display: flex; width: auto; min-width: 34px; gap: 5px; padding-inline: 8px; color: var(--theme-text); background: color-mix(in srgb, var(--theme-text) 11%, transparent); }
+.runtime-app-actions__overflow .mobile-header-menu__trigger:hover { background: color-mix(in srgb, var(--theme-text) 18%, transparent); }
+.runtime-app-action { min-height: 31px; padding: 0 10px; border: 0; border-radius: var(--theme-radius-small); color: var(--theme-text); background: color-mix(in srgb, var(--theme-text) 11%, transparent); font: inherit; font-size: 12px; font-weight: 650; white-space: nowrap; }
+.runtime-app-action:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-text) 18%, transparent); }
+.mobile-global-actions .runtime-app-actions__overflow .mobile-header-menu__trigger,
+.mobile-global-actions .runtime-app-action:not(.runtime-app-action--primary) { color: var(--theme-chrome-text); background: color-mix(in srgb, var(--theme-chrome-text) 11%, transparent); }
+.mobile-global-actions .runtime-app-actions__overflow .mobile-header-menu__trigger:hover,
+.mobile-global-actions .runtime-app-action:not(.runtime-app-action--primary):hover:not(:disabled) { background: color-mix(in srgb, var(--theme-chrome-text) 18%, transparent); }
 .runtime-app-action--primary { color: var(--theme-accent-text); background: var(--theme-accent); }
 .runtime-app-action--primary:hover:not(:disabled) { background: color-mix(in srgb, var(--theme-accent) 88%, white); }
 .runtime-app-action:disabled { cursor: default; opacity: .48; }

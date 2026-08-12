@@ -76,6 +76,15 @@ describe("file association resolution", () => {
     }
   });
 
+  test("routes editable source extensions with empty or generic MIME to Integrated Editor", () => {
+    const sourceEditor = { ...text, manifest: { ...text.manifest, fileTypes: ["application/*", ".yaml"] } };
+    for (const file of [{ name: "worker.TS", mimeType: "application/octet-stream" }, { name: "config.yaml", mimeType: "" }]) {
+      expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.textEditor);
+      expect(resolveFileApp(file, [sourceEditor, generic], [], [])?.app.appId).toBe(SYSTEM_APP_IDS.textEditor);
+    }
+    expect(resolveFileApp({ name: "worker.ts", mimeType: "application/octet-stream" }, [sourceEditor, generic], [], [{ matcher: "application/octet-stream", appId: generic.appId, createdAt: 1 }])?.app.appId).toBe(generic.appId);
+  });
+
   test("opens Scene packages in Integrated Editor", () => {
     const file = { name: "ambient.HIRAYA.SCENE", mimeType: "application/vnd.hiraya.scene+zip" };
     expect(systemDefaultAppId(file)).toBe(SYSTEM_APP_IDS.textEditor);

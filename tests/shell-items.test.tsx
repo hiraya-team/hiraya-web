@@ -63,11 +63,12 @@ test("renders permanent widget and icon group geometry outside the current area"
   expect(markup).toContain("--shell-x:360px;--shell-y:280px;width:480px;height:240px");
 });
 
-test("gives Todo widgets interactive content without changing built-in widgets", () => {
-  const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "todo", kind: "todo", fileId: "list", x: 20, y: 20, width: 340, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} renderWidget={() => <button type="button">Open list</button>} />);
+test("gives linked widgets safe selection and activation surfaces", () => {
+  const markup = renderToStaticMarkup(<ShellItemLayer widgets={[{ id: "todo", kind: "todo", fileId: "list", x: 20, y: 20, width: 340, height: 300 }]} groups={[]} entries={[]} activeSegment={{ column: 0, row: 0 }} areaSize={{ width: 1000, height: 700 }} onOpen={() => undefined} onActivateWidget={() => undefined} renderWidget={() => <button type="button">Open list</button>} />);
   expect(markup).toContain("shell-item--interactive");
   expect(markup).toContain("Open list");
   expect(markup).toContain('aria-label="Move Todo list"');
+  expect(markup).toContain('data-widget-kind="todo"');
 });
 
 test("gives an unselected Scene a visible selection grip", () => {

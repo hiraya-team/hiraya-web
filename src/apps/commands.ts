@@ -140,6 +140,11 @@ export class RuntimeCommandContributions<Context> {
     return true;
   };
 
+  readonly executeShortcut = (shortcut: string) => {
+    const command = this.#promoted.find((candidate) => candidate.shortcut === shortcut && candidate.enabled);
+    return command ? this.execute(command.id) : false;
+  };
+
   #clearRegistrations(): void {
     for (const dispose of this.#disposals.splice(0)) dispose();
     this.#localIds.clear();

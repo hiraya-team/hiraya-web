@@ -791,15 +791,20 @@ export class SyncEngine {
         const conflict = error.code === "revision_conflict" ? error.details as RevisionConflictDetails | null : null;
         if (autoResolveConflict && conflict) {
           let remoteState = await this.fetchDesktop(record.desktopId);
+          let keepMineRevision: number | undefined;
           if (record.operation.kind === "save-content" && conflict.resourceKind === "content" && conflict.resourceId === record.operation.entryId) {
             const retained = await this.fetchCurrentVerifiedContent(record.desktopId, record.operation.entryId, remoteState);
             remoteState = retained.remote;
             await this.storage.retainContentConflictServer(record.operationId, retained.content);
+            await this.storage.retainContentConflictBase(record.operationId, retained.revision, retained.content);
+            keepMineRevision = retained.revision;
           }
           const remote = toSnapshot(remoteState);
           this.assertActive(generation);
           const latestConflict = currentConflict(conflict, remote);
-          const resolution = resolveOutboxRevisionConflict(record.operation, latestConflict, remote);
+          const resolution = keepMineRevision === undefined
+            ? resolveOutboxRevisionConflict(record.operation, latestConflict, remote)
+            : { kind: "rebase" as const, operation: { ...record.operation, baseContentRevision: keepMineRevision } };
           if (resolution.kind === "satisfied") {
             const applied = await this.storage.resolveSatisfiedMutation(remote, record.operationId, latestConflict.actualRevision, record.desktopId);
             this.assertActive(generation);

@@ -9,6 +9,8 @@ export type AssociationResolution = Readonly<{ app: InstalledApp; preferredUnava
 
 export type ReservedFileHandler = "app-package" | "app-shortcut" | "internet-shortcut";
 
+const EDITABLE_TEXT_EXTENSION = /\.(?:css|csv|html?|hsh|js|jsx|json|log|markdown|md|ts|tsx|txt|xml|ya?ml)$/i;
+
 export const SYSTEM_FILE_DEFAULTS = [
   { label: "Hiraya Scenes", matcher: ".hiraya.scene, application/vnd.hiraya.scene+zip", appId: SYSTEM_APP_IDS.textEditor },
   { label: "Text and source files", matcher: "text/*", appId: SYSTEM_APP_IDS.textEditor },
@@ -62,6 +64,7 @@ export function systemDefaultAppId(file: Pick<FileEntry, "name" | "mimeType">): 
   if (name.endsWith(".hsh")) return SYSTEM_APP_IDS.terminal;
   if (isMarkdownFile(file)) return SYSTEM_APP_IDS.mediaViewer;
   if (name.endsWith(".docx") || name.endsWith(".rtf") || mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" || mime === "application/rtf") return SYSTEM_APP_IDS.mediaViewer;
+  if ((!mime || mime === "application/octet-stream") && EDITABLE_TEXT_EXTENSION.test(name)) return SYSTEM_APP_IDS.textEditor;
   if (mime.startsWith("image/")) return SYSTEM_APP_IDS.imageViewer;
   if (mime === "application/pdf" || mime.startsWith("audio/") || mime.startsWith("video/")) return SYSTEM_APP_IDS.mediaViewer;
   return SYSTEM_APP_IDS.fileViewer;

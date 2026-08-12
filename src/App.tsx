@@ -2250,6 +2250,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         setActivePanel("search");
         return;
       }
+      if (modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+        const app = runningAppsRef.current.find((candidate) => candidate.id === focusedAppIdRef.current);
+        if (app?.kind === "sandbox" && app.commands.executeShortcut("Ctrl+S")) event.preventDefault();
+        return;
+      }
       if (modifier && event.shiftKey && !event.altKey && event.key.toLowerCase() === "x" && focusedAppIdRef.current) {
         event.preventDefault();
         void closeAppRef.current(focusedAppIdRef.current);
@@ -2279,7 +2284,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     }
     window.addEventListener("keydown", onGlobalShortcut);
     return () => window.removeEventListener("keydown", onGlobalShortcut);
-  }, [focusedAppIdRef, minimapExpanded, shortcutsSuspended, windowed]);
+  }, [focusedAppIdRef, minimapExpanded, runningAppsRef, shortcutsSuspended, windowed]);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -5597,6 +5602,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   onSelectWidget={(widget) => {
                     replaceSelection("desktop", []);
                     setSelectedWidgetId(widget.id);
+                  }}
+                  onActivateWidget={(widget) => {
+                    if (widget.kind !== "todo" && widget.kind !== "scene") return;
+                    const file = entries.find((entry) => entry.id === widget.fileId);
+                    if (file) handleOpen(file);
                   }}
                   selectedWidgetId={selectedWidgetId}
                   widgetBusy={widgetMutationPending}

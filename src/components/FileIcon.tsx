@@ -279,7 +279,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
     const dropTarget = entryDropTargetAt(event.clientX, event.clientY, entry.id);
     highlightEntryDropTarget(dropTarget?.element ?? null);
     const currentPosition = { x: drag.current.x, y: drag.current.y };
-    updateSnapPreview(getSnapPreview && dropTarget?.desktop ? getSnapPreview(currentPosition) : null);
+    updateSnapPreview(dropTarget?.desktop ? (getSnapPreview?.(currentPosition) ?? currentPosition) : null);
     applyDragTransform(drag.current);
     const previewPosition = getSnapPreviewRef.current && dropTarget?.desktop ? getSnapPreviewRef.current(currentPosition) : currentPosition;
     applyAutoArrangeTransforms(drag.current, onDragMoveRef.current?.(previewPosition, dropTarget) ?? null);
