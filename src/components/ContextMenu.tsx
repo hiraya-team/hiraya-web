@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
-import { ArrowsLeftRight, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, Info, LinkSimple, Package, PencilSimple, Play, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
+import { ArrowsLeftRight, CalendarBlank, Check, CheckSquare, CloudArrowDown, CloudSlash, Copy, DownloadSimple, FilePlus, FolderOpen, FolderPlus, Gauge, GearSix, Globe, ImageSquare, Info, LinkSimple, Package, PencilSimple, Play, Trash, UploadSimple, ClipboardText, Clock } from "@phosphor-icons/react";
 import type { ContextMenuState, DesktopEntry } from "../types";
 import { isLinearNavigationKey, linearNavigationIndex, submenuKeyIntent, visibleMenuItems } from "../ui/keyboard-navigation";
 import { useNativeDialog } from "../ui/modal-dialog";
@@ -119,6 +119,7 @@ type Props = {
   onEditFile?: () => void;
   onRename: () => void;
   onDownload?: () => void;
+  onSetAsWallpaper?: () => void;
   onCopy: () => void;
   onPasteInto?: () => void;
   onUploadInto?: () => void;
@@ -141,7 +142,7 @@ type Props = {
   onClose: () => void;
 };
 
-export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onGroup, onMove, onProperties, onDelete, onCopyLink, onPublish, publishDisabled = false, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
+export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onSetAsWallpaper, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onGroup, onMove, onProperties, onDelete, onCopyLink, onPublish, publishDisabled = false, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
   const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
   const onFocus = useRovingMenu(position.ref);
   const offlineItems: SubmenuItem[] = [
@@ -167,6 +168,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
           <DownloadSimple size={17} /> Download
         </button>
       )}
+      {selectionCount === 1 && entry.kind === "file" && onSetAsWallpaper && <button type="button" role="menuitem" onClick={onSetAsWallpaper}><ImageSquare size={17} /> Set as desktop wallpaper</button>}
       <button type="button" role="menuitem" onClick={onCopy}><Copy size={17} /> Copy {selectionCount > 1 ? `${selectionCount} items` : ""}<kbd>Ctrl/⌘ C</kbd></button>
       {selectionCount === 1 && onCopyLink && <button type="button" role="menuitem" onClick={onCopyLink}><LinkSimple size={17} /> Copy link</button>}
       {selectionCount === 1 && onPublish && <button type="button" role="menuitem" disabled={publishDisabled} onClick={onPublish}><Globe size={17} /> Publish...</button>}
