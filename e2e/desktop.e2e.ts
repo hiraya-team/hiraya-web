@@ -911,6 +911,38 @@ test("pastes clipboard URL text as a named Internet Shortcut", async ({ page, co
   await expect(page.locator(".file-icon").filter({ hasText: "example.com 2.url" })).toBeVisible();
 });
 
+test("edits an Internet Shortcut as text while normal open follows its URL", async ({ page, context }) => {
+  await openLocalDesktop(page);
+  const name = "Website.URL";
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name, mimeType: "application/internet-shortcut", buffer: Buffer.from("[InternetShortcut]\r\nURL=https://example.com/first\r\n") });
+
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Edit file" }).click();
+  const app = page.getByRole("dialog", { name: /Integrated Editor/ });
+  const editor = app.frameLocator("iframe");
+  await expect(editor.locator(".cm-content")).toContainText("URL=https://example.com/first");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await editor.locator(".cm-content").fill("[InternetShortcut]\nURL=https://example.com/updated\n");
+  await app.getByRole("button", { name: /Minimize/ }).focus();
+  await page.keyboard.press("Control+s");
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
+  await app.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
+
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Edit file" }).click();
+  await expect(app.frameLocator("iframe").locator(".cm-content")).toContainText("URL=https://example.com/updated");
+  await app.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
+
+  await context.route("https://example.com/updated", (route) => route.fulfill({ body: "Shortcut opened" }));
+  const popupPromise = context.waitForEvent("page");
+  await icon.dblclick();
+  const popup = await popupPromise;
+  await expect(popup).toHaveURL("https://example.com/updated");
+});
+
 test("opens imported audio from a local Blob preview source", async ({ page }) => {
   await openLocalDesktop(page);
   const name = `preview-${Date.now()}.wav`;

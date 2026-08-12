@@ -22,6 +22,7 @@ describe("Integrated Editor workspace", () => {
     expect(isEditableFile((file("settings", "application/json") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
     expect(isEditableFile((file("config", "application/yaml") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
     expect(isEditableFile((file("feed", "application/atom+xml") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
+    expect(isEditableFile((file("Website.URL", "application/internet-shortcut") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(true);
     expect(isEditableFile((file("photo.png", "image/png") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(false);
     expect(isEditableFile((file("archive.json", "application/zip") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe(false);
   });
@@ -38,6 +39,7 @@ describe("Integrated Editor workspace", () => {
     expect(editorFileKind((file("song.mp3") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("audio");
     expect(editorFileKind((file("clip.webm") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("video");
     expect(editorFileKind((file("ambient.hiraya.scene") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("scene");
+    expect(editorFileKind((file("Website.URL", "application/internet-shortcut") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("text");
     expect(editorFileKind((file("archive.zip", "application/zip") as Extract<DirectoryEntry, { kind: "file" }>).metadata)).toBe("metadata");
   });
 

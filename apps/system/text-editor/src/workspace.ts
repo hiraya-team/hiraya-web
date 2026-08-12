@@ -23,7 +23,7 @@ export function filterWorkspaceEntries(entries: Iterable<DirectoryEntry>, query:
 
 export function isEditableFile(file: FileMetadata): boolean {
   const mimeType = file.mimeType.split(";", 1)[0].trim().toLowerCase();
-  return mimeType.startsWith("text/") || TEXT_APPLICATION_MIME.test(mimeType) || mimeType === "application/octet-stream" && TEXT_EXTENSIONS.test(file.name);
+  return file.name.toLowerCase().endsWith(".url") || mimeType.startsWith("text/") || TEXT_APPLICATION_MIME.test(mimeType) || mimeType === "application/octet-stream" && TEXT_EXTENSIONS.test(file.name);
 }
 
 export function fileMimeTypeForSave(file: FileMetadata | null): string {

@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Edit internet shortcuts as text.** Choose **Edit file** on a `.url` internet shortcut to change its source in **Integrated Editor**. Opening the shortcut normally still follows its saved address.
 - **Swipe desktop areas from widgets.** On touch screens, swipe from an unselected widget's move surface to change desktop areas without selecting or moving the widget.
 - **Format web files in Integrated Editor.** **Format** and **Format on save** now format HTML, CSS, JavaScript, JSX, and JSON documents instead of only cleaning up trailing whitespace.
 - **Select and move every desktop item together.** Icons, widgets, and icon groups now share Ctrl/Cmd and marquee selection, grouped movement, spatial keyboard navigation, and familiar pointer or touch activation. Linked widgets also offer **Open**, **Resize**, and **Remove** from their context menu.
