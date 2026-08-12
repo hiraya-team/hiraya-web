@@ -5,6 +5,7 @@ import type { DesktopEntry, DesktopIconGroup, DesktopWidget, EntryPosition, Fold
 import { MIN_SHELL_ITEM_SIZE, boundsIntersectSegment, clampShellItemBounds, projectLogicalPosition, segmentKey, snapShellItemBounds, type SurfaceSegment } from "../ui/desktop-geometry";
 import type { EntryDropDestination } from "../ui/entry-drop-target";
 import { useEntryPointerDrag } from "../ui/use-entry-pointer-drag";
+import { resolveTouchRelease, type TouchTap } from "../ui/file-icon-gesture";
 import { useTickingDate } from "../ui/use-ticking-date";
 import { ItemList } from "./ItemList";
 import { EntryArtwork, type EntryPreviewSource } from "./VisualPrimitives";
@@ -40,6 +41,7 @@ type Props = {
   onPreviewWidget?: (widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) => readonly { entryId: string; delta: EntryPosition }[] | null;
   onRemoveWidget?: (widget: DesktopWidget) => void;
   onSelectWidget?: (widget: DesktopWidget) => void;
+  onActivateWidget?: (widget: DesktopWidget) => void;
   selectedWidgetId?: string | null;
   widgetBusy?: boolean;
   gridSize?: GridSize;
@@ -51,7 +53,7 @@ type Props = {
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
-function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
+function ShellItem({ label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetId, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onActivate, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   label: string;
   position: EntryPosition;
   width: number;
@@ -60,12 +62,14 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   readOnly: boolean;
   areaInteractive?: boolean;
   widget?: boolean;
+  widgetId?: string;
   widgetKind?: DesktopWidget["kind"];
   interactive?: boolean;
   selected?: boolean;
   busy?: boolean;
   gridSize?: GridSize;
   onSelect?: () => void;
+  onActivate?: () => void;
   onMove?: (position: EntryPosition) => void;
   onResize?: (size: { width: number; height: number }) => void;
   onPreview?: (change: { x: number; y: number; width: number; height: number }) => readonly { entryId: string; delta: EntryPosition }[] | null;
@@ -81,6 +85,9 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
   const desktopRef = useRef<HTMLElement | null>(null);
   const drag = useRef<Interaction | null>(null);
   const resize = useRef<Interaction | null>(null);
+  const lastTap = useRef<TouchTap | null>(null);
+  const surfaceTap = useRef<{ pointerId: number; x: number; y: number } | null>(null);
+  const safeWidgetSurface = (target: EventTarget | null) => target instanceof Element && !target.closest("button, input, select, textarea, a, [contenteditable='true'], iframe");
   const pointerBounds = (target: typeof drag, current: Interaction, x: number, y: number) => target === drag
     ? clampShellItemBounds({ x: bounds.x + x, y: bounds.y + y }, bounds.width, bounds.height, areaSize)
     : clampShellItemBounds(bounds, Math.max(MIN_SHELL_ITEM_SIZE.width, current.width + x), Math.max(MIN_SHELL_ITEM_SIZE.height, current.height + y), areaSize);
@@ -176,6 +183,11 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
     const y = event.clientY - current.startY;
     resetVisuals(target);
     desktopRef.current = null;
+    if (target === drag && current.pointerType === "touch" && widgetId && onActivate) {
+      const result = resolveTouchRelease(lastTap.current, { id: widgetId, x: event.clientX, y: event.clientY, at: performance.now() }, { cancelled, moved: current.moved, longPressed: false, releasedOnIcon: true });
+      lastTap.current = result.nextTap;
+      if (result.action === "open") onActivate();
+    }
     if (cancelled || !current.moved) return;
     const next = adjustedBounds(target, current, x, y);
     if (target === drag) {
@@ -230,6 +242,21 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       data-selected={selected || undefined}
       data-widget-kind={widgetKind}
       data-entry-drop-parent={readOnly ? undefined : dropParentId}
+      onPointerDown={widget && interactive ? (event) => {
+        if (!safeWidgetSurface(event.target)) return;
+        onSelect?.();
+        if (event.pointerType === "touch") surfaceTap.current = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+      } : undefined}
+      onPointerUp={widget && interactive && onActivate ? (event) => {
+        const tap = surfaceTap.current;
+        surfaceTap.current = null;
+        if (!tap || tap.pointerId !== event.pointerId || !widgetId) return;
+        const result = resolveTouchRelease(lastTap.current, { id: widgetId, x: event.clientX, y: event.clientY, at: performance.now() }, { cancelled: false, moved: Math.hypot(event.clientX - tap.x, event.clientY - tap.y) >= 12, longPressed: false, releasedOnIcon: safeWidgetSurface(event.target) });
+        lastTap.current = result.nextTap;
+        if (result.action === "open") onActivate();
+      } : undefined}
+      onPointerCancel={widget && interactive ? () => { surfaceTap.current = null; } : undefined}
+      onDoubleClick={widget && onActivate ? (event) => { if (safeWidgetSurface(event.target)) onActivate(); } : undefined}
       onDragOver={onDrop && !readOnly ? (event) => { event.preventDefault(); event.currentTarget.dataset.dropActive = "true"; } : undefined}
       onDragLeave={onDrop ? (event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropActive; } : undefined}
       onDrop={onDrop && !readOnly ? (event) => { event.preventDefault(); delete event.currentTarget.dataset.dropActive; onDrop(event.dataTransfer); } : undefined}
@@ -238,7 +265,7 @@ function ShellItem({ label, position, width, height, areaSize, readOnly, areaInt
       <button className="shell-item__drag" type="button" disabled={readOnly || busy} aria-label={`Move ${label}`} title={readOnly ? undefined : "Drag to move; use arrow keys for precise movement"} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{label}</button>
       {!readOnly && onRemove && <button className="shell-item__remove" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
     </header>}
-    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={widgetKind === "scene" && !selected ? `Select ${label}` : `Move ${label}`} aria-pressed={selected} title={widgetKind === "scene" && !selected ? `Select ${label}` : "Drag to move; use arrow keys for precise movement"} onClick={onSelect} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{widgetKind === "scene" && <DotsSix className="shell-item__widget-grip-icon" size={20} weight="bold" aria-hidden="true" />}</button>}
+    {widget && !readOnly && <button className="shell-item__widget-drag" type="button" disabled={busy} aria-label={widgetKind === "scene" && !selected ? `Select ${label}` : `Move ${label}`} aria-pressed={selected} title={widgetKind === "scene" && !selected ? `Select ${label}` : "Drag to move; use arrow keys for precise movement"} onClick={onSelect} onDoubleClick={onActivate} onFocus={onSelect} onKeyDown={(event) => keyboardAdjust(event, "move")} onPointerDown={(event) => begin(event, drag)} onPointerMove={(event) => move(event, drag)} onPointerUp={(event) => finish(event, drag)} onPointerCancel={(event) => finish(event, drag, true)} onLostPointerCapture={(event) => finish(event, drag, true)}>{widgetKind === "scene" && <DotsSix className="shell-item__widget-grip-icon" size={20} weight="bold" aria-hidden="true" />}</button>}
     <div className="shell-item__content">{children}</div>
     {!readOnly && onResize && (!widget || selected) && <button className="shell-item__resize" type="button" disabled={busy} aria-label={`Resize ${label}`} title="Drag to resize; use arrow keys for precise sizing" onKeyDown={(event) => keyboardAdjust(event, "resize")} onPointerDown={(event) => begin(event, resize)} onPointerMove={(event) => move(event, resize)} onPointerUp={(event) => finish(event, resize)} onPointerCancel={(event) => finish(event, resize, true)} onLostPointerCapture={(event) => finish(event, resize, true)} />}
     {widget && selected && onRemove && <button className="shell-item__remove shell-item__remove--widget" type="button" disabled={busy} aria-label={removeLabel ?? `Remove ${label}`} title={removeLabel ?? `Remove ${label}`} onClick={onRemove}><X size={15} /></button>}
@@ -319,7 +346,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
   </div>;
 }
 
-export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
+export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, onActivateWidget, selectedWidgetId, widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const ownerKey = segmentKey(ownerSegment);
   const visibleWidgets = widgets.filter((widget) => segmentKey(projectLogicalPosition(widget, areaSize).segment) === ownerKey);
@@ -333,7 +360,7 @@ export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerS
     {visibleWidgets.map((widget) => {
       const position = projectLogicalPosition(widget, areaSize).local;
       const title = widget.kind === "clock" ? "Clock" : widget.kind === "calendar" ? "Calendar" : widget.kind === "status" ? "Status" : widget.kind === "scene" ? "Scene" : "Todo list";
-      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget widgetKind={widget.kind} interactive={widget.kind === "todo" || widget.kind === "scene"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
+      return <ShellItem key={widget.id} label={title} position={position} width={widget.width} height={widget.height} areaSize={areaSize} readOnly={readOnly} areaInteractive={boundsIntersectSegment(widget, widget, activeSegment, areaSize)} widget widgetId={widget.id} widgetKind={widget.kind} interactive={widget.kind === "todo" || widget.kind === "scene"} selected={selectedWidgetId === widget.id} busy={widgetBusy} gridSize={gridSize} onSelect={() => onSelectWidget?.(widget)} onActivate={widget.kind === "todo" || widget.kind === "scene" ? () => onActivateWidget?.(widget) : undefined} onMove={(local) => onMoveWidget?.(widget, { x: ownerSegment.column * areaSize.width + local.x, y: ownerSegment.row * areaSize.height + local.y })} onResize={(size) => onResizeWidget?.(widget, size)} onPreview={(bounds) => onPreviewWidget?.(widget, { x: ownerSegment.column * areaSize.width + bounds.x, y: ownerSegment.row * areaSize.height + bounds.y, width: bounds.width, height: bounds.height }) ?? null} onRemove={() => onRemoveWidget?.(widget)}>
         {widget.kind === "clock" ? <ClockWidget /> : widget.kind === "calendar" ? <CalendarWidget /> : widget.kind === "status" ? <StatusWidget status={status} /> : renderWidget?.(widget)}
       </ShellItem>;
     })}

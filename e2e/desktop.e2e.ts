@@ -243,6 +243,7 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   const originalSecond = { x: target.x, y: target.y };
 
   await beginDragPointerTo(page, first, target.x + target.width + 6 + firstBounds.width / 2, target.y + target.height / 2);
+  await expect(page.locator(".file-icon-snap-preview[data-visible]")).toBeVisible();
   await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
   await page.mouse.up();
   await expect.poll(async () => {
@@ -811,7 +812,8 @@ test("opening and restoring a text file preserves its loaded contents", async ({
   let app = page.getByRole("dialog", { name: /Integrated Editor/ });
   let editor = app.frameLocator("iframe");
   await editor.locator(".cm-content").fill(contents);
-  await app.getByRole("button", { name: "Save", exact: true }).click();
+  await app.getByRole("button", { name: /Minimize/ }).focus();
+  await page.keyboard.press("Control+s");
   await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
   await app.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
   const discard = page.getByRole("alertdialog", { name: "Discard unsaved changes?" }).getByRole("button", { name: "Discard and close" });
@@ -1616,6 +1618,10 @@ test("Scene widgets and wallpaper receive input without covering desktop chrome"
   await expect(sceneWidget).toHaveAttribute("data-selected", "true");
   await expect.poll(async () => (await sceneWidget.boundingBox())?.x).toBe(beforeSelection.x);
   const moveScene = sceneWidget.getByRole("button", { name: "Move Scene", exact: true });
+  await moveScene.dblclick();
+  const widgetEditor = page.getByRole("dialog", { name: /interactive\.hiraya\.scene - Integrated Editor/ });
+  await expect(widgetEditor).toBeVisible();
+  await widgetEditor.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
   const moveBounds = await moveScene.boundingBox();
   if (!moveBounds) throw new Error("The Scene move grip is not visible.");
   await dragPointerTo(page, moveScene, moveBounds.x - 48, moveBounds.y + moveBounds.height / 2);

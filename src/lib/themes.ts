@@ -196,6 +196,10 @@ export function themeContrastChecks(definition: ThemeDefinition): ThemeContrastC
   const selectedSurface = mixThemeColors(colors.selection, colors.window, 0.23);
   const hoverSurface = mixThemeColors(colors.accent, colors.window, 0.13);
   const subtleChromeSurface = mixThemeColors(colors.chromeText, colors.chrome, 0.09);
+  const windowActionSurface = mixThemeColors(colors.text, colors.windowMuted, 0.11);
+  const windowActionHoverSurface = mixThemeColors(colors.text, colors.windowMuted, 0.18);
+  const chromeActionSurface = mixThemeColors(colors.chromeText, colors.chrome, 0.11);
+  const chromeActionHoverSurface = mixThemeColors(colors.chromeText, colors.chrome, 0.18);
   const textPairs: Array<[string, string, string]> = [
     ["text / window", roles.foreground, roles.window],
     ["text / minimum-opacity window", roles.foreground, minimumWindow],
@@ -208,6 +212,10 @@ export function themeContrastChecks(definition: ThemeDefinition): ThemeContrastC
     ["text / chrome", roles.chromeForeground, roles.chrome],
     ["text / minimum-opacity chrome", roles.chromeForeground, minimumChrome],
     ["text / blended chrome control", roles.chromeForeground, subtleChromeSurface],
+    ["text / window action", roles.foreground, windowActionSurface],
+    ["text / window action hover", roles.foreground, windowActionHoverSurface],
+    ["text / chrome action", roles.chromeForeground, chromeActionSurface],
+    ["text / chrome action hover", roles.chromeForeground, chromeActionHoverSurface],
     ["accent foreground / accent fill", roles.accentForeground, roles.accentFill],
     ["accent badge text / blended surface", roles.accentOnWindow, roles.accentSurface],
     ["status badge text / blended surface", roles.statusForeground, roles.statusSurface],

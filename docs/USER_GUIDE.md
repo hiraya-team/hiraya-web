@@ -16,6 +16,9 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Use familiar desktop actions everywhere.** **Ctrl+S** or **Cmd+S** now saves the focused app instead of the browser page, desktop drags always show their destination, linked widgets select from safe surfaces and open on double activation, and app actions remain legible in Hiraya Dusk.
+- **Keep local file edits during synchronization.** When the same file changes remotely, Hiraya now safely retries your local content against the verified server revision instead of requiring a manual **Keep mine** choice. Other synchronization conflicts retain their existing merge and resolution behavior.
+- **Edit source files with generic file types.** Recognized text and source extensions now open in **Integrated Editor** even when an imported file has a generic media type. Explicit **Open With** choices and Markdown preview behavior remain unchanged.
 - **Author Scenes in Integrated Editor.** Opening a `.hiraya.scene` file now turns **Integrated Editor** into a Scene workspace with package files, source tabs, asset tools, and a live preview side by side. The separate **Scene Studio** app has been removed.
 - **Find and select Scene widgets.** Scene widgets now keep a visible corner grip for selection and movement while leaving the Scene itself interactive. Select the grip first, then drag it to move the widget.
 - **Preview desktop placement.** While **Auto-arrange while dragging** shifts nearby icons, dashed placeholders show exactly where those icons will be placed. With **Snap to grid** enabled, a softly faded grid surrounds every icon, widget, icon group, or Explorer drop preview.

@@ -2056,16 +2056,26 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
-  test("retains verified current server bytes before blocking a content revision conflict", async () => {
+  test("automatically keeps mine with the verified current content revision", async () => {
     const storage = remoteStorage();
     let remote = remoteDesktopState();
+    let prepares = 0;
+    const baseRevisions: Array<number | undefined> = [];
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);
-      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") return Response.json({ state: "prepared", transactionId: "content-conflict", expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: "https://uploads.example.test/content-conflict", method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
-      if (String(input) === "https://uploads.example.test/content-conflict") return new Response(null, { status: 200 });
-      if (String(input) === "/api/desktops/desk/entries/transactions/content-conflict/commit") {
+      if (String(input) === "/api/desktops/desk/entries/transactions" && init?.method === "POST") {
+        prepares += 1;
+        baseRevisions.push(JSON.parse(String(init.body)).operations[0].baseRevision);
+        return Response.json({ state: "prepared", transactionId: `content-conflict-${prepares}`, expiresAt: 2_000_000_000_000, items: [{ entryId: "file-1", access: { url: `https://uploads.example.test/content-conflict-${prepares}`, method: "PUT", headers: {}, expiresAt: 2_000_000_000_000 } }] });
+      }
+      if (String(input).startsWith("https://uploads.example.test/content-conflict-")) return new Response(null, { status: 200 });
+      if (String(input) === "/api/desktops/desk/entries/transactions/content-conflict-1/commit") {
         remote = { ...remote, catalogRevision: 2, entries: [{ ...remote.entries[0], revision: 2, contentRevision: 2 }] };
         return Response.json({ error: "The file content changed.", code: "revision_conflict", conflict: { resourceKind: "content", resourceId: "file-1", expectedRevision: 1, actualRevision: 2 } }, { status: 409 });
+      }
+      if (String(input) === "/api/desktops/desk/entries/transactions/content-conflict-2/commit") {
+        remote = { ...remote, catalogRevision: 3, entries: [{ ...remote.entries[0], revision: 3, contentRevision: 3 }] };
+        return Response.json({ state: "committed", catalogRevision: 3 });
       }
       if (String(input) === "/api/desktops/desk/entries/file-1/content?revision=2") return Response.json({ entryId: "file-1", contentRevision: 2, size: 4, sha256: "edb465624291e4053c6c5ea4b7eb320dec773e10a57d26b95dcf0564f8e310f8", access: { url: "https://downloads.example.test/conflict-server", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 } });
       if (String(input) === "https://downloads.example.test/conflict-server") return new Response("note");
@@ -2074,12 +2084,9 @@ describe("canonical synchronization", () => {
     const engine = new SyncEngine({ storage, fetch: fetchImpl, eventSource: FakeEventSource as unknown as typeof EventSource, createXMLHttpRequest: xhrUsingFetch(fetchImpl) });
     await engine.start("desk", { x: 0, y: 0 });
     await engine.saveTextFile("file-1", "mine");
-    await waitFor(async () => (await engine.getOutboxStatus()).blocked === 1);
-    const [blocked] = await engine.listOutboxRecords();
-    const retained = await engine.loadContentConflict(blocked.operationId);
-    expect(await retained.mine.text()).toBe("mine");
-    expect(await retained.server.text()).toBe("note");
-    expect(retained.serverRevision).toBe(2);
+    await waitForOutboxDrain(engine);
+    expect(baseRevisions).toEqual([1, 2]);
+    expect(storage.stats.blockWrites).toBe(1);
     await engine.stop();
   });
 
