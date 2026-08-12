@@ -255,6 +255,11 @@ test("dragging shifts overlapping icons live and persists the arrangement", asyn
   await beginDragPointerTo(page, first, target.x + target.width / 2, target.y + target.height / 2);
   await expect(second).toHaveAttribute("data-auto-arrange-dragging", "true");
   await expect.poll(() => second.evaluate((element) => getComputedStyle(element, "::before").borderStyle)).toBe("dashed");
+  await expect.poll(() => second.evaluate((element) => {
+    const icon = new DOMMatrixReadOnly(getComputedStyle(element).transform);
+    const silhouette = new DOMMatrixReadOnly(getComputedStyle(element, "::before").transform);
+    return [Math.round(icon.m41 + silhouette.m41), Math.round(icon.m42 + silhouette.m42)];
+  })).toEqual([0, 0]);
   await first.dispatchEvent("pointercancel", { pointerId: 1, pointerType: "mouse", clientX: target.x + target.width / 2, clientY: target.y + target.height / 2 });
   await page.mouse.up();
   await expect(second).not.toHaveAttribute("data-auto-arrange-dragging", "true");
