@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { ClipboardText, X } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
 import { namesMatch, validateEntryName } from "../lib/entry-validation";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 
 type Props = {
   roots: readonly DesktopEntry[];
@@ -15,9 +15,8 @@ export function PasteConflictDialog({ roots, existingNames, onClose, onPaste }: 
   const [names, setNames] = useState(() => new Map(roots.map((entry) => [entry.id, entry.name])));
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, submitting);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose, submitting);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -38,8 +37,8 @@ export function PasteConflictDialog({ roots, existingNames, onClose, onPaste }: 
   }
 
   return (
-    <div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
-      <section ref={dialogRef} className="file-dialog paste-conflict-dialog" role="dialog" aria-modal="true" aria-labelledby="paste-conflict-title" tabIndex={-1}>
+    <dialog ref={dialogRef} className="modal-backdrop" aria-labelledby="paste-conflict-title" onPointerDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
+      <section className="file-dialog paste-conflict-dialog">
         <header className="window-header">
           <div><span className="window-kicker">Name conflict</span><h2 id="paste-conflict-title">Choose new names</h2></div>
           <button className="icon-button" type="button" onClick={onClose} disabled={submitting} aria-label="Close paste dialog"><X size={18} /></button>
@@ -47,7 +46,7 @@ export function PasteConflictDialog({ roots, existingNames, onClose, onPaste }: 
         <form onSubmit={submit}>
           <p className="dialog-message">One or more names are already used in this destination.</p>
           <div className="paste-conflict-dialog__fields">
-            {roots.map((entry, index) => <label key={entry.id}>{entry.kind === "folder" ? "Folder" : "File"} name<input autoFocus={index === 0} maxLength={180} value={names.get(entry.id) ?? ""} onChange={(event) => setNames((current) => new Map(current).set(entry.id, event.target.value))} /></label>)}
+            {roots.map((entry, index) => <label key={entry.id}>{entry.kind === "folder" ? "Folder" : "File"} name<input autoFocus={index === 0} data-dialog-autofocus={index === 0 || undefined} maxLength={180} value={names.get(entry.id) ?? ""} onChange={(event) => setNames((current) => new Map(current).set(entry.id, event.target.value))} /></label>)}
           </div>
           {error && <p className="form-error" role="alert">{error}</p>}
           <div className="dialog-actions">
@@ -56,6 +55,6 @@ export function PasteConflictDialog({ roots, existingNames, onClose, onPaste }: 
           </div>
         </form>
       </section>
-    </div>
+    </dialog>
   );
 }

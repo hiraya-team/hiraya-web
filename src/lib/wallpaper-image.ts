@@ -2,7 +2,6 @@ const MAX_BYTES = 20 * 1024 * 1024;
 const MAX_DIMENSION = 8192;
 const MAX_PIXELS = 40_000_000;
 
-export const WALLPAPER_IMAGE_ACCEPT = "image/jpeg,image/png,image/webp";
 
 type ImageDimensions = { width: number; height: number };
 type ImageDecoder = (file: File) => Promise<ImageDimensions>;

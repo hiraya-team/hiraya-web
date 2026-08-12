@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { X } from "@phosphor-icons/react";
 import type { DesktopEntry, DialogState } from "../types";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 
 type Props = {
   dialog: Exclude<DialogState, null>;
@@ -20,10 +20,9 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
   const [name, setName] = useState(creatingFile ? "untitled.txt" : creatingShortcut ? dialog.name : creatingFolder ? "New folder" : entry?.name ?? "");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, submitting, restoreFocus);
+  useNativeDialog(dialogRef, onClose, submitting, restoreFocus);
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
@@ -43,8 +42,8 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
   const title = creatingFile ? "New text file" : creatingShortcut ? "Paste link" : creatingFolder ? "New folder" : dialog.type === "rename" ? `Rename ${noun}` : entryCount > 1 ? `${deleteLabel} (${entryCount} items)` : `${deleteLabel}: ${noun}`;
 
   return (
-    <div ref={backdropRef} className="modal-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
-      <section ref={dialogRef} className="file-dialog" role="dialog" aria-modal="true" aria-labelledby="file-dialog-title" tabIndex={-1}>
+    <dialog ref={dialogRef} className="modal-backdrop" aria-labelledby="file-dialog-title" onMouseDown={(event) => event.target === event.currentTarget && !submitting && onClose()}>
+      <section className="file-dialog">
         <header className="window-header">
           <div>
             <span className="window-kicker">Hiraya</span>
@@ -69,6 +68,7 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
                 id="file-name"
                 ref={nameRef}
                 autoFocus
+                data-dialog-autofocus
                 value={name}
                 onChange={(event) => { setName(event.target.value); setError(""); }}
                 onFocus={(event) => {
@@ -83,13 +83,13 @@ export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, t
           )}
           {error && <p className="form-error" id="file-name-error" role="alert">{error}</p>}
           <div className="dialog-actions">
-            <button className="button button--quiet" type="button" onClick={onClose} disabled={submitting} autoFocus={dialog.type === "delete"}>Cancel</button>
+            <button className="button button--quiet" type="button" onClick={onClose} disabled={submitting} autoFocus={dialog.type === "delete"} data-dialog-autofocus={dialog.type === "delete" || undefined}>Cancel</button>
             <button className={`button ${dialog.type === "delete" ? "button--danger" : "button--primary"}`} type="submit" disabled={submitting}>
               {submitting ? (dialog.type === "delete" ? trashSupported ? "Moving..." : "Deleting..." : creatingShortcut ? "Pasting..." : "Saving...") : creatingFile ? "Create file" : creatingShortcut ? "Create shortcut" : creatingFolder ? "Create folder" : dialog.type === "rename" ? "Rename" : deleteLabel}
             </button>
           </div>
         </form>
       </section>
-    </div>
+    </dialog>
   );
 }

@@ -2,7 +2,7 @@ import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "r
 import { File, Folder, MagnifyingGlass, Package, SquaresFour, TerminalWindow, X } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
 import { filterAndGroupSearchItems, selectedRenderedItem, type SearchCategory, type SearchItem } from "../ui/panel-data";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 import type { CommandId, CommandItem } from "../apps/commands";
 import type { DesktopSearchResponse, DesktopSearchResult } from "../lib/search";
 import { indexSearchBreadcrumbs } from "../ui/search-breadcrumbs";
@@ -69,15 +69,14 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const searchGenerationRef = useRef(0);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const queryRef = useRef<HTMLInputElement>(null);
   const titleId = useId();
   const queryLabelId = useId();
   const listId = useId();
   const scopeStatusId = useId();
   const breadcrumbs = useMemo(() => indexSearchBreadcrumbs(entries), [entries]);
-  useModalDialog(backdropRef, dialogRef, onClose);
+  useNativeDialog(dialogRef, onClose);
 
   useEffect(() => {
     const generation = ++searchGenerationRef.current;
@@ -194,8 +193,8 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
 
   let resultIndex = 0;
   return (
-    <div ref={backdropRef} className="modal-backdrop command-palette-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-      <section ref={dialogRef} className="file-window command-palette" role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
+    <dialog ref={dialogRef} className="modal-backdrop command-palette-backdrop" aria-labelledby={titleId} onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+      <section className="file-window command-palette">
         <header className="window-header">
           <div><span className="window-kicker">Hiraya</span><h2 id={titleId}>Search</h2></div>
           <button className="icon-button" type="button" aria-label="Close search" onClick={onClose}>
@@ -216,6 +215,7 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
             placeholder="Search Hiraya"
             autoComplete="off"
             autoFocus
+            data-dialog-autofocus
             aria-autocomplete="list"
             aria-expanded="true"
             aria-haspopup="listbox"
@@ -275,6 +275,6 @@ export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesk
           )}
         </div>
       </section>
-    </div>
+    </dialog>
   );
 }

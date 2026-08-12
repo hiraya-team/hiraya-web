@@ -4,7 +4,7 @@ import type { DialogRequest } from "../apps/host/dialogs";
 import { matchingFileType } from "../apps/installed-apps";
 import type { DesktopEntry, FileEntry, FolderEntry } from "../types";
 import { createEntryIndex } from "../ui/entry-index";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 import { FileDialog } from "./FileDialog";
 import { EntryIcon } from "./VisualPrimitives";
 
@@ -22,8 +22,7 @@ const ROOT_ID = "desktop-root";
 
 export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpenFolder, onSave, onCreateFolder }: Props) {
   const pickingFile = request.kind === "openFile" || request.kind === "pickFile";
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [folderId, setFolderId] = useState("");
   const [expanded, setExpanded] = useState(() => new Set([ROOT_ID]));
@@ -31,7 +30,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [creatingFolder, setCreatingFolder] = useState(false);
-  useModalDialog(backdropRef, dialogRef, onCancel, busy);
+  useNativeDialog(dialogRef, onCancel, busy);
 
   const index = useMemo(() => createEntryIndex(entries), [entries]);
   const files = useMemo(() => entries.filter((entry): entry is FileEntry => entry.kind === "file" && (
@@ -135,11 +134,11 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
     : `${selectedFolder?.name ?? "Desktop"} selected`;
   const actionLabel = request.kind === "pickFile" ? request.params.actionLabel : request.kind === "saveFile" ? "Save" : request.kind === "openFolder" ? "Choose folder" : multiple ? selectedFiles.length ? `Choose ${selectedFiles.length} ${selectedFiles.length === 1 ? "file" : "files"}` : "Choose files" : "Choose file";
 
-  return <><div ref={backdropRef} className="modal-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
-    <section ref={dialogRef} className="file-dialog app-picker" role="dialog" aria-modal="true" aria-labelledby="app-picker-title" tabIndex={-1}>
+  return <><dialog ref={dialogRef} className="modal-backdrop" aria-labelledby="app-picker-title" onPointerDown={(event) => event.target === event.currentTarget && !busy && onCancel()}>
+    <section className="file-dialog app-picker">
       <header className="window-header"><div><span className="window-kicker">Hiraya</span><h2 id="app-picker-title">{title}</h2></div><button className="icon-button" type="button" onClick={onCancel} disabled={busy} aria-label="Close dialog"><X size={18} /></button></header>
       <div className="app-picker__content">
-        {request.kind === "saveFile" && <label>File name<input autoFocus value={name} maxLength={180} onChange={(event) => setName(event.target.value)} /></label>}
+        {request.kind === "saveFile" && <label>File name<input autoFocus data-dialog-autofocus value={name} maxLength={180} onChange={(event) => setName(event.target.value)} /></label>}
         <div className="app-picker__tree" role="group" aria-label={pickingFile ? "Files" : "Folders"}>
           <ul className="app-picker__branch">
             <li>
@@ -159,7 +158,7 @@ export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpe
         </div>
       </div>
     </section>
-  </div>
+  </dialog>
   {creatingFolder && <FileDialog dialog={{ type: "create-folder", parentId: folderId || null }} entry={null} onClose={() => setCreatingFolder(false)} onSubmit={createPickedFolder} />}
   </>;
 }

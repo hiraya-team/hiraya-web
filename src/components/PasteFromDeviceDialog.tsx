@@ -1,14 +1,13 @@
 import { useRef } from "react";
 import { X } from "@phosphor-icons/react";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 
 export function PasteFromDeviceDialog({ error, onClose }: { error?: string; onClose: () => void }) {
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose);
 
-  return <div ref={backdropRef} className="modal-backdrop confirmation-dialog-backdrop" role="presentation" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section ref={dialogRef} className="file-dialog confirmation-dialog" role="dialog" aria-modal="true" aria-labelledby="device-paste-title" aria-describedby="device-paste-message" tabIndex={-1}>
+  return <dialog ref={dialogRef} className="modal-backdrop confirmation-dialog-backdrop" aria-labelledby="device-paste-title" aria-describedby="device-paste-message" onPointerDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section className="file-dialog confirmation-dialog">
       <header className="window-header">
         <h2 id="device-paste-title">Paste from device</h2>
         <button className="icon-button" type="button" aria-label="Close paste prompt" onClick={onClose}><X size={18} /></button>
@@ -23,5 +22,5 @@ export function PasteFromDeviceDialog({ error, onClose }: { error?: string; onCl
         <button className="button button--quiet" type="button" onClick={onClose}>Cancel</button>
       </div>
     </section>
-  </div>;
+  </dialog>;
 }

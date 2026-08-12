@@ -12,7 +12,7 @@ import {
 } from "../lib/sharing";
 import type { DesktopEntry, DesktopIdentity } from "../types";
 import { writeClipboardText } from "../ui/clipboard-copy";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 
 export function PublishDialog({
   desktop,
@@ -31,9 +31,8 @@ export function PublishDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, busy);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose, busy);
 
   async function refresh() {
     const next = await getSharing(desktop.id);
@@ -100,23 +99,15 @@ export function PublishDialog({
   }
 
   return (
-    <div
-      ref={backdropRef}
+    <dialog
+      ref={dialogRef}
       className="modal-backdrop"
-      role="presentation"
+      aria-labelledby="publish-title"
       onPointerDown={(event) => {
         if (!busy && event.target === event.currentTarget) onClose();
       }}
     >
-      <section
-        ref={dialogRef}
-        className="file-window sharing-dialog publish-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="publish-title"
-        tabIndex={-1}
-        aria-busy={busy || undefined}
-      >
+      <section className="file-window sharing-dialog publish-dialog" aria-busy={busy || undefined}>
         <header className="window-header">
           <div>
             <h2 id="publish-title">Publish {entry.name}</h2>
@@ -184,6 +175,7 @@ export function PublishDialog({
                 <span>Item alias</span>
                 <input
                   autoFocus
+                  data-dialog-autofocus
                   value={itemAlias}
                   minLength={3}
                   maxLength={48}
@@ -277,6 +269,6 @@ export function PublishDialog({
           )}
         </div>
       </section>
-    </div>
+    </dialog>
   );
 }

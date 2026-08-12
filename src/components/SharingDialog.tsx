@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type Ref } from "react";
 import {
   ArrowSquareOut,
   Check,
@@ -26,7 +26,7 @@ import {
   type SharingState,
 } from "../lib/sharing";
 import type { DesktopIdentity } from "../types";
-import { useModalDialog } from "../ui/modal-dialog";
+import { useNativeDialog } from "../ui/modal-dialog";
 import { writeClipboardText } from "../ui/clipboard-copy";
 import { RoleBadge } from "./VisualPrimitives";
 import { ItemList } from "./ItemList";
@@ -71,9 +71,8 @@ export function SharingDialog({
   } | null>(null);
   const copiedTimerRef = useRef<number | null>(null);
   const copyGenerationRef = useRef(0);
-  const backdropRef = useRef<HTMLDivElement>(null);
-  const dialogRef = useRef<HTMLElement>(null);
-  useModalDialog(backdropRef, dialogRef, onClose, busy !== "", restoreFocus, !embedded);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useNativeDialog(dialogRef, onClose, busy !== "", restoreFocus, !embedded);
 
   function applySharing(next: SharingState) {
     setSharing(next);
@@ -163,25 +162,18 @@ export function SharingDialog({
     ...sharing.members.map((value) => ({ type: "member" as const, value })),
     ...sharing.pending.map((value) => ({ type: "invite" as const, value })),
   ] : [];
+  const Backdrop = embedded ? "div" : "dialog";
 
   return (
-    <div
-      ref={backdropRef}
+    <Backdrop
+      ref={embedded ? undefined : dialogRef as Ref<HTMLDialogElement> & Ref<HTMLDivElement>}
       className={embedded ? "sharing-dialog-embedded" : "modal-backdrop"}
-      role="presentation"
+      aria-labelledby={embedded ? undefined : "sharing-title"}
       onPointerDown={(event) => {
         if (!embedded && !busy && event.target === event.currentTarget) onClose();
       }}
     >
-      <section
-        ref={dialogRef}
-        className={embedded ? "sharing-dialog sharing-dialog--embedded" : "file-window sharing-dialog"}
-        role={embedded ? undefined : "dialog"}
-        aria-modal={embedded ? undefined : "true"}
-        aria-labelledby={embedded ? undefined : "sharing-title"}
-        tabIndex={-1}
-        aria-busy={busy !== "" || undefined}
-      >
+      <section className={embedded ? "sharing-dialog sharing-dialog--embedded" : "file-window sharing-dialog"} aria-busy={busy !== "" || undefined}>
         {!embedded && <header className="window-header">
           <div>
             <span className="window-kicker">Access and publication</span>
@@ -637,6 +629,6 @@ export function SharingDialog({
           )}
         </div>
       </section>
-    </div>
+    </Backdrop>
   );
 }
