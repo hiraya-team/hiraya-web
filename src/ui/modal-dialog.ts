@@ -21,7 +21,7 @@ export function useNativeDialog(
     if (!dialog) return;
     const invoker = invokerRef.current;
     dialog.showModal();
-    requestAnimationFrame(() => dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus());
+    dialog.querySelector<HTMLElement>("[data-dialog-autofocus]")?.focus();
     const unregisterDismiss = registerTransientDismiss(() => {
       if (!dismissDisabledRef.current) onCloseRef.current();
     });
