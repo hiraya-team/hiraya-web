@@ -37,6 +37,9 @@ export class CapabilityStore {
 
   derive(appInstanceId: string, source: FileCapabilityHandle, kind: "file" | "folder", entryId: string): FileCapabilityHandle {
     const parent = this.lookup(appInstanceId, source);
+    for (const record of this.records.values()) {
+      if (!record.revoked && record.appInstanceId === appInstanceId && record.kind === kind && record.entryId === entryId && record.scopeEntryId === parent.scopeEntryId && sameOperations(record.operations, parent.operations)) return record.handle;
+    }
     return this.grant(appInstanceId, kind, entryId, parent.scopeEntryId, parent.operations);
   }
 
@@ -105,4 +108,8 @@ export class CapabilityStore {
 
 function isMutation(operation: FileCapabilityOperation) {
   return operation === "write" || operation === "create" || operation === "rename" || operation === "move" || operation === "delete";
+}
+
+function sameOperations(left: ReadonlySet<FileCapabilityOperation>, right: ReadonlySet<FileCapabilityOperation>) {
+  return left.size === right.size && [...left].every((operation) => right.has(operation));
 }
