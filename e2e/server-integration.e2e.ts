@@ -329,29 +329,11 @@ async function primary(browser: Browser) {
   await first.reload();
   await expect(first.locator(".desktop-shell")).toBeVisible();
 
-  await first.getByRole("button", { name: /^Notifications/ }).click();
-  const reviewVersions = first.getByRole("button", { name: "Review versions" }).first();
-  await expect(reviewVersions).toBeVisible({ timeout: 30_000 });
-  await reviewVersions.click();
-  const merge = first.getByRole("dialog", { name: `Merge · ${mergeFile}` });
-  await expect(merge.getByText("Review versions", { exact: true })).toBeVisible();
-  await expect(merge.getByRole("heading", { name: "Base" })).toBeVisible();
-  await expect(merge.getByRole("heading", { name: "Mine" })).toBeVisible();
-  await expect(merge.getByRole("heading", { name: "Server" })).toBeVisible();
-  await first.setViewportSize({ width: 390, height: 844 });
-  await expect(merge.getByRole("tab", { name: "Mine" })).toBeVisible();
-  await merge.getByRole("tab", { name: "Server" }).click();
-  await expect(merge.getByRole("heading", { name: "Server" })).toBeVisible();
-  expect(await first.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
-  await merge.getByRole("button", { name: "Use mine" }).click();
-  await merge.locator("textarea").fill("Resolved by Merge\n");
-  await merge.getByRole("button", { name: "Save merged" }).click();
-  await expect(merge).toBeHidden({ timeout: 30_000 });
-  await first.setViewportSize({ width: 1280, height: 720 });
+  await expect.poll(() => remoteText(second, mergeFile), { timeout: 30_000 }).toBe("Mine from the offline browser\n");
+  await expect(first.getByRole("button", { name: "Review versions" })).toHaveCount(0);
   const restoredEditor = first.getByRole("dialog", { name: /Integrated Editor/ });
   if (await restoredEditor.isVisible()) await first.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
 
-  await expect.poll(() => remoteText(second, mergeFile), { timeout: 30_000 }).toBe("Resolved by Merge\n");
   await second.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
 
   const chooser = first.waitForEvent("filechooser");
