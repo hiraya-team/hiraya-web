@@ -530,6 +530,74 @@ test("Integrated Editor browses and manages a selected workspace", async ({ page
   await expect(app.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
 });
 
+test("Integrated Editor preserves expanded folders on save and toggles every sidebar view", async ({ page }) => {
+  await openLocalDesktop(page);
+  const stamp = Date.now();
+  const workspaceName = `editor-state-${stamp}`;
+  const folderName = `nested-${stamp}`;
+  const fileName = `data-${stamp}.json`;
+  const fileActions = page.getByRole("toolbar", { name: "File actions" });
+
+  await fileActions.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(workspaceName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await page.locator(".file-icon").filter({ hasText: workspaceName }).dblclick();
+  const folderWindow = page.getByRole("dialog", { name: workspaceName });
+  await folderWindow.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Folder name").fill(folderName);
+  await page.getByRole("button", { name: "Create folder" }).click();
+  await folderWindow.getByText(folderName, { exact: true }).dblclick();
+  const nestedWindow = page.getByRole("dialog", { name: folderName });
+  await nestedWindow.getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(fileName);
+  await page.getByRole("button", { name: "Create file" }).click();
+
+  await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
+  const launcher = page.getByRole("dialog", { name: /Search/ });
+  await launcher.locator("input").fill("Integrated Editor");
+  await page.keyboard.press("Enter");
+  const app = page.getByRole("dialog", { name: /Integrated Editor/ });
+  const frame = app.frameLocator("iframe");
+
+  const explorer = frame.getByRole("button", { name: "Explorer", exact: true });
+  await explorer.click();
+  await expect(explorer).toHaveAttribute("aria-expanded", "false");
+  await explorer.click();
+  await expect(explorer).toHaveAttribute("aria-expanded", "true");
+  for (const name of ["Search workspace", "Settings"]) {
+    const button = frame.getByRole("button", { name });
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "false");
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+  }
+  await frame.getByRole("button", { name: "Explorer", exact: true }).click();
+
+  await frame.getByRole("button", { name: "Open workspace" }).click();
+  const picker = page.getByRole("dialog", { name: "Choose folder" });
+  await picker.getByRole("radio", { name: workspaceName }).check();
+  await picker.getByRole("button", { name: "Choose folder" }).click();
+  const tree = frame.getByRole("tree", { name: "Workspace files" });
+  const folder = tree.getByRole("treeitem", { name: folderName, exact: true });
+  await folder.click();
+  await expect(folder).toHaveAttribute("aria-expanded", "true");
+  await tree.getByRole("treeitem", { name: fileName, exact: true }).click();
+  await frame.locator(".cm-content").fill('{"saved":true}');
+  await app.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(frame.locator("#status")).toHaveText(`Refreshed ${workspaceName}.`);
+  await expect(tree.getByRole("treeitem", { name: folderName, exact: true })).toHaveAttribute("aria-expanded", "true");
+  await expect(tree.getByRole("treeitem", { name: fileName, exact: true })).toBeVisible();
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const settings = frame.getByRole("button", { name: "Settings" });
+  await settings.click();
+  await expect(settings).toHaveAttribute("aria-expanded", "true");
+  await settings.click();
+  await expect(settings).toHaveAttribute("aria-expanded", "false");
+});
+
 test("app save picker creates and selects a folder", async ({ page }) => {
   await openLocalDesktop(page);
   const parentName = `picker-parent-${Date.now()}`;

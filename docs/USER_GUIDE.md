@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Keep Integrated Editor context while working.** Syntax highlighting now follows a file's media type as well as its name, expanded workspace folders stay open after saving, and the **Explorer**, **Search workspace**, and **Settings** icons all open and close their panels consistently.
 - **Edit structured text files safely.** **Integrated Editor** now edits JSON, YAML, XML, Todo, and POS documents identified by their media type, and preserves that type when saving so their owning apps can still open them.
 - **Use familiar desktop actions everywhere.** **Ctrl+S** or **Cmd+S** now saves the focused app instead of the browser page, desktop drags always show their destination, linked widgets select from safe surfaces and open on double activation, and app actions remain legible in Hiraya Dusk.
 - **Keep local file edits during synchronization.** When the same file changes remotely, Hiraya now safely retries your local content against the verified server revision instead of requiring a manual **Keep mine** choice. Other synchronization conflicts retain their existing merge and resolution behavior.

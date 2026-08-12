@@ -123,9 +123,9 @@ const expanded = new Set<FolderHandle>();
 
 required("#close-sidebar").addEventListener("click", () => setSidebarOpen(false));
 required("#sidebar-backdrop").addEventListener("click", () => setSidebarOpen(false));
-required("#explorer-view").addEventListener("click", () => required("#explorer-view").getAttribute("aria-pressed") === "true" ? setSidebarOpen(!sidebarOpen) : showSidebar("explorer"));
-required("#search-view").addEventListener("click", () => showSidebar("search"));
-required("#settings-view").addEventListener("click", () => showSidebar("settings"));
+required("#explorer-view").addEventListener("click", () => toggleSidebar("explorer"));
+required("#search-view").addEventListener("click", () => toggleSidebar("search"));
+required("#settings-view").addEventListener("click", () => toggleSidebar("settings"));
 required("#open-workspace").addEventListener("click", () => void chooseWorkspace());
 workspaceHeading.addEventListener("click", () => { if (scene) { selectedPath = ""; renderWorkspace(); renderControlState(); } else if (workspace) { selectedHandle = workspace.handle; selectedPath = ""; renderWorkspace(); renderControlState(); } });
 required("#refresh-tree").addEventListener("click", () => void refreshWorkspace());
@@ -359,7 +359,7 @@ function activateTab(tab: DocumentTab, focus = true) {
     editor.setState(EditorState.create({ doc: tab.state.text, extensions: editorExtensions }));
     switchingDocument = false;
     applySettings();
-    editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name))) });
+    editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name, tab.metadata?.mimeType))) });
   } else renderPreview(tab);
   renderControlState();
   renderDocumentState();
@@ -417,7 +417,7 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
     state.saved(sourceText, text, saved.contentRevision);
     if (activeTab === tab) {
       replaceEditorText(state.text);
-      editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name))) });
+      editor.dispatch({ effects: languageConfig.reconfigure(languageExtension(textEditorLanguageFor(tab.name, tab.metadata?.mimeType))) });
     }
     renderDocumentState();
     if (state.dirty) scheduleAutoSave(tab);
@@ -977,13 +977,22 @@ function showSidebar(mode: "explorer" | "search" | "settings") {
   if (mode === "search") { searchInput.focus(); void searchWorkspace(searchInput.value); }
 }
 
+function toggleSidebar(mode: "explorer" | "search" | "settings") {
+  const active = required(`#${mode}-view`).getAttribute("aria-pressed") === "true";
+  if (active) setSidebarOpen(!sidebarOpen);
+  else showSidebar(mode);
+}
+
 function setSidebarOpen(open: boolean) {
   sidebarOpen = open;
   workbench.classList.toggle("sidebar-closed", !open);
   sidebar.classList.toggle("open", open);
   const mobile = matchMedia("(max-width: 700px)").matches;
   required<HTMLElement>("#sidebar-backdrop").hidden = !mobile || !open;
-  required("#explorer-view").setAttribute("aria-expanded", String(open));
+  for (const mode of ["explorer", "search", "settings"]) {
+    const view = required(`#${mode}-view`);
+    view.setAttribute("aria-expanded", String(open && view.getAttribute("aria-pressed") === "true"));
+  }
 }
 
 function handleShortcut(event: KeyboardEvent) {
