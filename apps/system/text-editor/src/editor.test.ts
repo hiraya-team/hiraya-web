@@ -72,7 +72,7 @@ describe("Integrated Editor document behavior", () => {
     const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     const manifest = await Bun.file(new URL("../public/hiraya.app.json", import.meta.url)).json();
-    expect(manifest.version).toBe("1.5.2");
+    expect(manifest.version).toBe("1.5.3");
     expect(manifest.window).toMatchObject({ renderWidth: 818, renderHeight: 572 });
     expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
     expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
@@ -179,12 +179,28 @@ describe("Integrated Editor document behavior", () => {
     expect(parseTextEditorSettings({ fontSize: 99 })).toEqual(DEFAULT_TEXT_EDITOR_SETTINGS);
   });
 
-  test("selects syntax highlighting from the file extension", () => {
+  test("selects syntax highlighting from the file MIME type or extension", () => {
     expect(textEditorLanguageFor("component.TSX")).toBe("tsx");
     expect(textEditorLanguageFor("site.min.js")).toBe("javascript");
     expect(textEditorLanguageFor("config.yml")).toBe("yaml");
     expect(textEditorLanguageFor("README.md")).toBe("markdown");
+    expect(textEditorLanguageFor("settings", "application/json")).toBe("json");
+    expect(textEditorLanguageFor("features.hiraya.todo", "application/vnd.hiraya.todo+json")).toBe("json");
+    expect(textEditorLanguageFor("README", "text/markdown; charset=utf-8")).toBe("markdown");
+    expect(textEditorLanguageFor("feed", "application/atom+xml")).toBe("xml");
+    expect(textEditorLanguageFor("config", "application/yaml")).toBe("yaml");
+    expect(textEditorLanguageFor("data.txt", "application/json")).toBe("json");
     expect(textEditorLanguageFor("LICENSE")).toBe("plain");
+  });
+
+  test("uses one toggle path and expansion state for every sidebar view", async () => {
+    const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
+    const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
+    for (const view of ["explorer", "search", "settings"]) {
+      expect(html).toContain(`id="${view}-view"`);
+      expect(html.slice(html.indexOf(`id="${view}-view"`), html.indexOf(`id="${view}-view"`) + 300)).toContain('aria-expanded="');
+      expect(source).toContain(`toggleSidebar("${view}")`);
+    }
   });
 
   test("clearly distinguishes preserved drafts from clean read-only documents", () => {

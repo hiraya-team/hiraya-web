@@ -193,7 +193,12 @@ describe("app file authority", () => {
   test("confines listing and derived handles to the granted folder ancestry", async () => {
     const h = fixture();
     const folder = h.capabilities.grantFolder("app-1", h.folder.id);
-    expect((await h.service().list({ folder })).map((entry) => entry.metadata.name)).toEqual(["nested.bin"]);
+    const first = await h.service().list({ folder });
+    const second = await h.service().list({ folder });
+    expect(first.map((entry) => entry.metadata.name)).toEqual(["nested.bin"]);
+    expect(second[0].metadata.handle).toBe(first[0].metadata.handle);
+    const broaderFolder = h.capabilities.grantFolder("app-1", h.folder.id, ["stat", "read", "list"]);
+    expect((await h.service().list({ folder: broaderFolder }))[0].metadata.handle).not.toBe(first[0].metadata.handle);
     const unrelated = h.capabilities.grantFile("app-1", h.unrelated.id, ["stat"]);
     const forgedScope = h.capabilities.derive("app-1", folder, "file", h.unrelated.id) as FileHandle;
     await expectCode(h.service().stat({ handle: forgedScope }), "NOT_FOUND");

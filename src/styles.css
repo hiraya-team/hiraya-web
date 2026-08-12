@@ -980,6 +980,7 @@
   position: absolute;
   inset: 0;
   z-index: -1;
+  transform: translate3d(var(--auto-arrange-origin-x), var(--auto-arrange-origin-y), 0);
   border: 1px dashed rgba(246, 215, 156, 0.82);
   border-radius: 12px;
   background: rgba(231, 185, 100, 0.1);

@@ -23,10 +23,32 @@ const EXTENSION_LANGUAGES: Readonly<Record<string, TextEditorLanguage>> = {
   yml: "yaml",
 };
 
+const MIME_LANGUAGES: Readonly<Record<string, TextEditorLanguage>> = {
+  "application/ecmascript": "javascript",
+  "application/javascript": "javascript",
+  "application/json": "json",
+  "application/typescript": "typescript",
+  "application/xml": "xml",
+  "application/x-yaml": "yaml",
+  "application/yaml": "yaml",
+  "text/css": "css",
+  "text/ecmascript": "javascript",
+  "text/html": "html",
+  "text/javascript": "javascript",
+  "text/jsx": "jsx",
+  "text/markdown": "markdown",
+  "text/typescript": "typescript",
+  "text/tsx": "tsx",
+  "text/xml": "xml",
+  "text/x-yaml": "yaml",
+  "text/yaml": "yaml",
+};
+
 export const DEFAULT_TEXT_EDITOR_SETTINGS: TextEditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, lineWrap: true };
 
-export function textEditorLanguageFor(name: string): TextEditorLanguage {
-  return EXTENSION_LANGUAGES[name.split(".").pop()?.toLowerCase() ?? ""] ?? "plain";
+export function textEditorLanguageFor(name: string, mimeType = ""): TextEditorLanguage {
+  const mime = mimeType.split(";", 1)[0].trim().toLowerCase();
+  return MIME_LANGUAGES[mime] ?? (mime.endsWith("+json") ? "json" : mime.endsWith("+xml") ? "xml" : EXTENSION_LANGUAGES[name.split(".").pop()?.toLowerCase() ?? ""] ?? "plain");
 }
 
 export function writeRestrictionMessage(reason: "available" | "read-only" | "shared-offline" | "temporarily-unavailable", dirty: boolean) {
