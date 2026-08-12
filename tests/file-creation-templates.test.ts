@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DEFAULT_FILE_CREATION_TEMPLATES, fileCreationTemplate, parseFileCreationTemplates } from "../src/lib/file-creation-templates";
+import { DEFAULT_FILE_CREATION_TEMPLATES, fileCreationTemplate, parseFileCreationTemplates, textEditorLaunchArgument } from "../src/lib/file-creation-templates";
 import { parseEditorSettings } from "../src/lib/contracts";
 
 describe("file creation templates", () => {
@@ -21,5 +21,12 @@ describe("file creation templates", () => {
     expect(() => parseFileCreationTemplates([{ extension: ".json", mimeType: "application/json", content: "" }, { extension: ".json", mimeType: "application/json", content: "" }])).toThrow("unsupported format");
     expect(() => parseFileCreationTemplates([{ extension: ".txt", mimeType: "text/plain", content: "x".repeat(64 * 1024 + 1) }])).toThrow("unsupported format");
     expect(() => parseFileCreationTemplates([{ extension: ".txt", mimeType: "text/plain; note=\"bad\nvalue\"", content: "" }])).toThrow("unsupported format");
+  });
+
+  test("keeps file templates out of Integrated Editor launch arguments", () => {
+    const settings = parseEditorSettings({ autoSave: false, autoFormat: true, fontSize: 18, language: "json", lineWrap: false, fileCreationTemplates: [{ extension: ".txt", mimeType: "text/plain", content: "x".repeat(64 * 1024) }] });
+    const argument = textEditorLaunchArgument(settings);
+    expect(argument.length).toBeLessThanOrEqual(256);
+    expect(JSON.parse(argument)).toEqual({ autoSave: false, autoFormat: true, fontSize: 18, language: "json", lineWrap: false });
   });
 });

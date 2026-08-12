@@ -107,7 +107,7 @@ import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-di
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
-import { fileCreationTemplate } from "./lib/file-creation-templates";
+import { fileCreationTemplate, textEditorLaunchArgument } from "./lib/file-creation-templates";
 import { APP_SHORTCUT_MAX_BYTES, APP_SHORTCUT_MIME_TYPE, availableAppShortcutName, createAppShortcut, parseAppShortcut } from "./lib/app-shortcut";
 import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
@@ -3708,7 +3708,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         },
         getEntries: () => entriesRef.current,
         getSnapshot: () => appSnapshotRef.current ?? (() => { throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE"); })(),
-        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
+        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [textEditorLaunchArgument(appSnapshotRef.current.editorSettings)] : [],
         getAppCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
         canMutate: () => canMutateRef.current,
         loadArchive: async (candidate) => (await import("./features/app-management/archive-loader")).loadInstalledAppArchive(candidate, readFile),
