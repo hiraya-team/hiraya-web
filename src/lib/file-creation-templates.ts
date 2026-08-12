@@ -1,4 +1,4 @@
-import type { FileCreationTemplate } from "../types";
+import type { EditorSettings, FileCreationTemplate } from "../types";
 
 const MIME_TYPE = /^[!#$%&'*+.^_`|~\w-]+\/[!#$%&'*+.^_`|~\w-]+(?:\s*;\s*[!#$%&'*+.^_`|~\w-]+\s*=\s*(?:[!#$%&'*+.^_`|~\w-]+|"(?:[^"\\]|\\.)*"))*\s*$/;
 
@@ -26,4 +26,8 @@ export function parseFileCreationTemplates(value: unknown): FileCreationTemplate
 export function fileCreationTemplate(name: string, templates: readonly FileCreationTemplate[]) {
   const lowerName = name.toLowerCase();
   return [...templates].sort((a, b) => b.extension.length - a.extension.length).find(({ extension }) => lowerName.endsWith(extension));
+}
+
+export function textEditorLaunchArgument({ autoSave, autoFormat, fontSize, language, lineWrap }: EditorSettings) {
+  return JSON.stringify({ autoSave, autoFormat, fontSize, language, lineWrap });
 }

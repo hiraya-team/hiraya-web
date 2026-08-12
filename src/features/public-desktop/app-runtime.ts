@@ -19,6 +19,7 @@ import { fetchPublicFile, LargeDownloadAuthRequiredError, type PublicAuthority, 
 import type { DesktopEntry, FileEntry } from "../../types";
 import { resolveTheme } from "../../lib/themes";
 import { initialWindowBounds } from "../../ui/window-manager";
+import { textEditorLaunchArgument } from "../../lib/file-creation-templates";
 
 export type PublicAppRuntime = {
   app: SandboxApp;
@@ -86,7 +87,7 @@ export async function launchPublicFileApp(options: LaunchPublicFileAppOptions): 
     fileSync,
     getEntries: () => snapshot.entries,
     getSnapshot: () => snapshot,
-    getLaunchArguments: () => install.manifest.id === "app.hiraya.text-editor" ? [JSON.stringify(snapshot.editorSettings)] : [],
+    getLaunchArguments: () => install.manifest.id === "app.hiraya.text-editor" ? [textEditorLaunchArgument(snapshot.editorSettings)] : [],
     getAppCapabilities: () => ({ files: { write: false, writeReason: "read-only" }, externalEmbeddedPreviews: false }),
     canMutate: () => false,
     loadArchive: async () => {

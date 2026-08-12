@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, ArrowsIn, ArrowsLeftRight, Bell, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Minus, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
-import { ContextMenu, DesktopContextMenu } from "./components/ContextMenu";
+import { ContextMenu, DesktopContextMenu, WidgetContextMenu } from "./components/ContextMenu";
 import { ShellItemLayer } from "./components/ShellItems";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
@@ -107,7 +107,7 @@ import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-di
 import { namesMatch } from "./lib/entry-validation";
 import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
 import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
-import { fileCreationTemplate } from "./lib/file-creation-templates";
+import { fileCreationTemplate, textEditorLaunchArgument } from "./lib/file-creation-templates";
 import { APP_SHORTCUT_MAX_BYTES, APP_SHORTCUT_MIME_TYPE, availableAppShortcutName, createAppShortcut, parseAppShortcut } from "./lib/app-shortcut";
 import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
 import { validateWallpaperImage } from "./lib/wallpaper-image";
@@ -176,13 +176,14 @@ import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { nextQuitBack, type QuitBackState } from "./ui/back-navigation";
+import { desktopEntities, desktopEntityMovementPlan, desktopEntityParts, desktopSelectionCanDropIntoFolder, entryEntityId, groupEntityId, retainedDesktopEntityIds, widgetEntityId } from "./ui/desktop-entity";
 import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
 import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
 import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
 import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
-import { assertWallpaperSource, parseLayout } from "./lib/contracts";
+import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
@@ -339,8 +340,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const transferPhasesRef = useRef(new Map<string, FileTransferState["phase"]>());
   const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
   const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
-  const { selectedIds, selectedIdsRef, selectionScope, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
-  const [selectedWidgetId, setSelectedWidgetId] = useState<string | null>(null);
+  const { selectedIds, selectedIdsRef, selectionScope, selectionScopeRef, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
   const [todoWidgetPosition, setTodoWidgetPosition] = useState<EntryPosition | null>(null);
   const [sceneWidgetPosition, setSceneWidgetPosition] = useState<EntryPosition | null>(null);
   const [widgetMutationPending, setWidgetMutationPending] = useState(false);
@@ -431,6 +431,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
   const desktopSizeRef = useRef(desktopSize);
+  const iconMetricsRef = useRef(themeIconMetrics(resolveTheme(DEFAULT_THEME_STATE)));
   const iconAreaSizeRef = useRef(desktopSize);
   const canvasRef = useRef<HTMLDivElement>(null);
   const windowTrackRef = useRef<HTMLDivElement>(null);
@@ -499,6 +500,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const widgetMutationPendingRef = useRef(false);
   const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
   const entriesRef = useRef(entries);
+  const projectedShellEntriesRef = useRef<DesktopEntry[]>([]);
   const installedAppsRef = useRef(installedApps);
   installedAppsRef.current = installedApps;
   const routeRef = useRef<DesktopRoute | null>(null);
@@ -611,6 +613,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   offlineModelRef.current = offlineModel;
   const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
   const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
+  iconMetricsRef.current = iconMetrics;
   const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
   const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
@@ -671,6 +674,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, homeObstacles);
     return position ? projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry) : projected.filter((entry) => entry.id !== VIRTUAL_HIRAYA_ROOT_ID);
   }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, showHiddenFiles, thumbnailHierarchyAvailable]);
+  projectedShellEntriesRef.current = shellEntryList;
   const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
   const groupedFolderIds = useMemo(() => new Set(layout.iconGroups.map((group) => group.folderId)), [layout.iconGroups]);
   const desktopEntryList = useMemo(() => shellEntryList.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, shellEntryList]);
@@ -736,9 +740,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const position = responsive.positions.get(entry.id) ?? entry.position;
       return position.x + iconMetrics.width > iconArea.width - minimapWidth && position.y + iconMetrics.height > iconArea.height - minimapHeight;
     });
-  const selectedIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
-  const hasVirtualSelection = selectedIds.some(isProtectedShellEntry);
-  const selectedEntries = selectedIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
+  const selectedEntityIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedEntryIds = selectionScope === "desktop" ? selectedIds.flatMap((id) => {
+    const entity = desktopEntityParts(id);
+    return entity?.kind === "entry" ? [entity.sourceId] : [];
+  }) : selectedIds;
+  const selectedIdSet = useMemo(() => new Set(selectedEntryIds), [selectedEntryIds]);
+  const hasVirtualSelection = selectedEntryIds.some(isProtectedShellEntry);
+  const selectedEntries = selectedEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
+  const desktopEntityList = useMemo(() => desktopEntities(shellEntryList, layout.widgets, layout.iconGroups, iconMetrics), [iconMetrics, layout.iconGroups, layout.widgets, shellEntryList]);
   const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
   const mobileFileSurface = focusedExplorer?.id ?? (selectionScope.startsWith("icon-group:") ? selectionScope : "desktop");
   const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
@@ -746,6 +756,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !focusedExplorer?.transient && !hasVirtualSelection && !contextMenu && Boolean(activeDesktopId);
   const dialogEntry = dialog?.type === "rename" ? (entryIndex.byId.get(dialog.entryId) ?? null) : dialog?.type === "delete" ? (entryIndex.byId.get(dialog.entryIds[0]) ?? null) : null;
   const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
+  const contextMenuWidget = contextMenu?.type === "widget" ? (layout.widgets.find((widget) => widget.id === contextMenu.widgetId) ?? null) : null;
   const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
   const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
   const shortcutsSuspended = Boolean(dialog || pendingPaste || pendingDevicePaste || moveDialogEntryIds.length || activePanel || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
@@ -756,7 +767,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       || (next.type === "delete" && (!next.entryIds.length || next.entryIds.some((id) => !entriesRef.current.some((entry) => entry.id === id))))) return;
     const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     fileDialogInvokerRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger")
-      ?? (active?.closest(".context-menu") ? selectedIdsRef.current.map(fileDialogEntryElement).find(Boolean) ?? null : active);
+      ?? (active?.closest(".context-menu") ? selectedIdsRef.current.map((id) => fileDialogEntryElement(desktopEntityParts(id)?.sourceId ?? id)).find(Boolean) ?? null : active);
     fileDialogResultIdRef.current = null;
     setDialog(next);
   }, [selectedIdsRef]);
@@ -1098,8 +1109,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function selectEntry(surface: string, entry: DesktopEntry, options: { toggle?: boolean; range?: boolean; orderedIds?: string[] } = {}) {
-    setSelectedWidgetId(null);
-    selectEntryId(surface, entry.id, options);
+    selectEntryId(surface, surface === "desktop" ? entryEntityId(entry.id) : entry.id, options);
   }
 
   const runningAppTargets = useCallback((apps = runningAppsRef.current): WindowTarget[] => {
@@ -1515,10 +1525,13 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         setEntries(synced.entries);
         setAppearance(synced.appearance);
         const syncedIds = new Set(synced.entries.map((entry) => entry.id));
+        const retainedIds = selectionScopeRef.current === "desktop"
+          ? retainedDesktopEntityIds(desktopEntities([...synced.entries, ...projectedShellEntriesRef.current.filter((entry) => isProtectedShellEntry(entry))], visibleLayout.widgets, visibleLayout.iconGroups, iconMetricsRef.current), selectedIdsRef.current)
+          : syncedIds;
         appSnapshotRef.current = synced;
         if (changedEntryIds.size) for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("files.changed", app.files.changedPayload(changedEntryIds));
-        retainSelection(syncedIds);
-        setContextMenu((current) => (current?.type === "entry" && !syncedIds.has(current.entryId) ? null : current));
+        retainSelection(retainedIds);
+        setContextMenu((current) => current?.type === "entry" && !syncedIds.has(current.entryId) || current?.type === "widget" && !visibleLayout.widgets.some((widget) => widget.id === current.widgetId) ? null : current);
         setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
         setDialog((current) => {
           if (!current) return null;
@@ -1697,7 +1710,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       unsubscribeCatalog();
       void layoutSaveRef.current.catch(() => undefined).then(() => stopDesktopSync());
     };
-  }, [focusedAppIdRef, retainSelection, runningAppsRef, setFocusedApp, updateRunningApps, warmStart]);
+  }, [focusedAppIdRef, retainSelection, runningAppsRef, selectedIdsRef, selectionScopeRef, setFocusedApp, updateRunningApps, warmStart]);
 
   useEffect(() => {
     const completedIds = new Set(fileTransfers.filter((transfer) => transfer.phase === "complete").map((transfer) => transfer.id));
@@ -2162,15 +2175,17 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       if (modifier && key === "a") {
         const explorer = activeExplorer();
         const surface = explorer?.id ?? "desktop";
-        const ids = (explorer ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? []) : activeDesktopSegment.entries.map((entry) => entry.id)).filter((id) => !isProtectedShellEntry(id));
+        const ids = explorer
+          ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? [])
+          : desktopEntityList.filter((entity) => segmentKey(projectLogicalPosition(entity, iconArea).segment) === activeSegmentKey && (entity.kind !== "entry" || !isProtectedShellEntry(entity.entry.id))).map((entity) => entity.id);
         event.preventDefault();
         replaceSelection(surface, ids);
-      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && selectedIdsRef.current.length === 1) {
-        const entry = entryIndex.byId.get(selectedIdsRef.current[0]);
+      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && selectedEntryIds.length === 1) {
+        const entry = entryIndex.byId.get(selectedEntryIds[0]);
         if (!entry) return;
         event.preventDefault();
         void copyDeepLinkEvent(entry);
-      } else if (modifier && !event.shiftKey && key === "c" && selectedIdsRef.current.length) {
+      } else if (modifier && !event.shiftKey && key === "c" && selectedEntryIds.length) {
         event.preventDefault();
         void copySelectionRef.current();
       } else if (modifier && key === "v") {
@@ -2182,8 +2197,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           keyboardPasteRef.current = false;
           void beginPasteRef.current(explorer?.folderId ?? null);
         });
-      } else if (event.key === "Delete" && selectedIdsRef.current.length && canMutate) {
-        const entryIds = canonicalSelectionIds(entriesRef.current, selectedIdsRef.current);
+      } else if (event.key === "Delete" && selectedEntryIds.length && canMutate) {
+        const entryIds = canonicalSelectionIds(entriesRef.current, selectedEntryIds);
         if (!entryIds.length) return;
         event.preventDefault();
         openFileDialog({ type: "delete", entryIds });
@@ -2410,14 +2425,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
 
   function openDesktopContextMenu(clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
-    setSelectedWidgetId(null);
     replaceSelection("desktop", []);
     setContextMenu({ type: "desktop", parentId: null, x: clientX, y: clientY, position: positionAtDesktopPoint(clientX, clientY), presentation });
   }
 
   function openEntryContextMenu(entryId: string, clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
     window.getSelection()?.removeAllRanges();
-    setSelectedWidgetId(null);
     setContextMenu({ type: "entry", entryId, x: clientX, y: clientY, presentation });
   }
 
@@ -2550,11 +2563,16 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function previewWidgetChange(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if (change.x !== undefined || change.y !== undefined) {
+      const next = normalizeWidget(widget, change);
+      const mixed = previewMixedDesktopMovement(widgetEntityId(widget.id), { x: next.x, y: next.y });
+      if (mixed) return mixed;
+    }
     if (!layoutRef.current.autoArrangeIcons) return null;
     const plan = widgetChangePlan(widget, change);
     return plan ? plan.updates.flatMap(({ entryId, position }) => {
       const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
-      return current ? [{ entryId, delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
     }) : [];
   }
 
@@ -2611,7 +2629,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       widgetMutationPendingRef.current = false;
       setWidgetMutationPending(false);
     }
-    setSelectedWidgetId(plan.nextWidget.id);
+    replaceSelection("desktop", [widgetEntityId(plan.nextWidget.id)]);
     return true;
   }
 
@@ -2643,6 +2661,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function updateWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if ((change.x !== undefined || change.y !== undefined) && mixedDesktopMovement(widgetEntityId(widget.id), { x: change.x ?? widget.x, y: change.y ?? widget.y })) {
+      void commitMixedDesktopMovement(widgetEntityId(widget.id), { x: change.x ?? widget.x, y: change.y ?? widget.y });
+      return;
+    }
     void commitWidgetChange(widget, change);
   }
 
@@ -2650,7 +2672,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     if (widgetMutationPendingRef.current) return;
     widgetMutationPendingRef.current = true;
     setWidgetMutationPending(true);
-    setSelectedWidgetId((current) => current === widget.id ? null : current);
+    if (selectedIdsRef.current.includes(widgetEntityId(widget.id))) replaceSelection("desktop", selectedIdsRef.current.filter((id) => id !== widgetEntityId(widget.id)));
     try {
       await persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.filter((item) => item.id !== widget.id) });
     } finally {
@@ -2677,11 +2699,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function previewIconGroupChange(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    if (change.x !== undefined || change.y !== undefined) {
+      const mixed = previewMixedDesktopMovement(groupEntityId(folder.id), { x: change.x ?? folder.position.x, y: change.y ?? folder.position.y });
+      if (mixed) return mixed;
+    }
     if (!layoutRef.current.autoArrangeIcons) return null;
     const plan = iconGroupChangePlan(folder, group, change);
     return plan ? plan.updates.flatMap(({ entryId, position }) => {
       const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
-      return current ? [{ entryId, delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
     }) : [];
   }
 
@@ -2762,6 +2788,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function moveIconGroup(folder: FolderEntry, position: EntryPosition) {
+    if (mixedDesktopMovement(groupEntityId(folder.id), position)) {
+      void commitMixedDesktopMovement(groupEntityId(folder.id), position);
+      return;
+    }
     const group = layoutRef.current.iconGroups.find((item) => item.folderId === folder.id);
     if (group) void commitIconGroupChange(folder, group, position);
   }
@@ -2979,7 +3009,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const remaining = windowsForHiddenFilePreference(runningAppsRef.current, false);
       updateRunningApps(remaining);
       if (focusedAppIdRef.current && !remaining.some((app) => app.id === focusedAppIdRef.current)) setFocusedApp(null);
-      if (selectedIdsRef.current.some(isProtectedShellEntry)) replaceSelection(selectionScope, []);
+      if (selectedEntryIds.some(isProtectedShellEntry)) replaceSelection(selectionScope, []);
     }
     setShowHiddenFiles(enabled);
     try {
@@ -3200,7 +3230,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       setEntries((current) => current.filter((entry) => !deletedIds.has(entry.id)));
       replaceSelection(
         selectionScope,
-        selectedIdsRef.current.filter((id) => !deletedIds.has(id)),
+        selectedIdsRef.current.filter((id) => {
+          const entity = desktopEntityParts(id);
+          return !deletedIds.has(entity?.sourceId ?? id);
+        }),
       );
       const label = ids.length === 1 ? dialogEntry.name : `${ids.length} items`;
       if (syncStatus === "online") setTrashNotifications((current) => [...current, createTrashNotification(activeDesktopIdRef.current, label, rootIds)]);
@@ -3284,7 +3317,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const nextEntries = entriesRef.current.some((entry) => entry.id === image.id) ? entriesRef.current : [...entriesRef.current, image];
     entriesRef.current = nextEntries;
     setEntries([...nextEntries]);
-    if (selectDesktopIcon) replaceSelection("desktop", [image.id]);
+    if (selectDesktopIcon) replaceSelection("desktop", [entryEntityId(image.id)]);
     const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` as const } };
     await persistWallpaperLayout(layoutWithImage, desktopId);
     return wallpaperEditorState(layoutWithImage, nextEntries, appearanceRef.current, true, "");
@@ -3320,6 +3353,71 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
   }
 
+  function mixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    if (selectionScope !== "desktop" || selectedEntityIdSet.size < 2) return null;
+    const selected = desktopEntityList.filter((entity) => selectedEntityIdSet.has(entity.id));
+    if (!selected.some((entity) => entity.kind !== "entry") || selected.some((entity) => entity.kind === "entry" && (isProtectedShellEntry(entity.entry) || !entriesRef.current.some((entry) => entry.id === entity.entry.id)))) return null;
+    return desktopEntityMovementPlan(desktopEntityList, selectedEntityIdSet, anchorId, position);
+  }
+
+  function previewMixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    const plan = mixedDesktopMovement(anchorId, position);
+    return plan?.moves.map((move) => ({ entityId: move.id, delta: plan.delta })) ?? null;
+  }
+
+  async function commitMixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    if (!canMutate || widgetMutationPendingRef.current) return false;
+    const plan = mixedDesktopMovement(anchorId, position);
+    if (!plan) return false;
+    const entityById = new Map(desktopEntityList.map((entity) => [entity.id, entity]));
+    const entryUpdates = plan.moves.flatMap((move) => {
+      const entity = entityById.get(move.id);
+      return entity?.kind === "entry" || entity?.kind === "group" ? [{ entryId: entity.entry.id, position: move.position }] : [];
+    });
+    const movedWidgets = new Map(plan.moves.filter((move) => move.kind === "widget").map((move) => [desktopEntityParts(move.id)!.sourceId, move.position]));
+    const previousEntries = new Map(entryUpdates.map(({ entryId }) => [entryId, entriesRef.current.find((entry) => entry.id === entryId)!.position]));
+    const currentLayout = layoutRef.current;
+    const nextLayout = movedWidgets.size ? { ...currentLayout, widgets: currentLayout.widgets.map((widget) => movedWidgets.has(widget.id) ? { ...widget, ...movedWidgets.get(widget.id)! } : widget) } : currentLayout;
+    const nextPositions = new Map(entryUpdates.map((update) => [update.entryId, update.position]));
+    const desktopId = activeDesktopIdRef.current;
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    if (nextLayout !== currentLayout) previewLayout(nextLayout, desktopId);
+    entriesRef.current = entriesRef.current.map((entry) => nextPositions.has(entry.id) ? { ...entry, position: nextPositions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let entriesSaved = false;
+    try {
+      if (entryUpdates.length) {
+        await updateRootEntryPositions(entryUpdates);
+        entriesSaved = true;
+      }
+      if (nextLayout !== currentLayout) await saveLayout({ ...layoutRef.current, widgets: nextLayout.widgets }, desktopId);
+      return true;
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let entriesRestored = !entriesSaved;
+      if (entriesSaved) {
+        try {
+          await updateRootEntryPositions([...previousEntries].map(([entryId, previous]) => ({ entryId, position: previous })));
+          entriesRestored = true;
+        } catch {
+          // Keep persisted entry positions visible when compensation fails.
+        }
+      }
+      if (nextLayout !== currentLayout) previewLayout({ ...layoutRef.current, widgets: currentLayout.widgets }, desktopId);
+      if (entriesRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previousEntries.has(entry.id) ? { ...entry, position: previousEntries.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(entriesRestored ? "The selected desktop items could not be moved." : "The mixed desktop move failed after file positions were saved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+  }
+
   function positionsOverlapShellItems(positions: readonly EntryPosition[]) {
     return positions.some((position) => {
       const projected = projectLogicalPosition(position, iconArea);
@@ -3337,6 +3435,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   function previewDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination | null) {
+    if (destination?.desktop) {
+      const { logicalPosition } = desktopMovePosition(entry, position);
+      const mixed = previewMixedDesktopMovement(entryEntityId(entry.id), logicalPosition);
+      if (mixed) return mixed;
+    }
     if (!layoutRef.current.autoArrangeIcons || !destination?.desktop) return null;
     const movingIds = new Set(desktopMoveGroup(entry).map((item) => item.id));
     const updates = arrangedDesktopMove(entry, position);
@@ -3344,16 +3447,18 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return updates.flatMap(({ entryId, position: next }) => {
       if (movingIds.has(entryId)) return [];
       const current = entryIndex.byId.get(entryId)?.position;
-      return current ? [{ entryId, delta: { x: next.x - current.x, y: next.y - current.y } }] : [];
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: next.x - current.x, y: next.y - current.y } }] : [];
     });
   }
 
   async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
     if (!canMutate || widgetMutationPendingRef.current) return false;
     if (!destination.desktop) {
+      if (selectionScope === "desktop" && selectedEntityIdSet.has(entryEntityId(entry.id)) && !desktopSelectionCanDropIntoFolder(desktopEntityList, selectedEntityIdSet)) return false;
       return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
     }
     const { logicalPosition } = desktopMovePosition(entry, position);
+    if (mixedDesktopMovement(entryEntityId(entry.id), logicalPosition)) return commitMixedDesktopMovement(entryEntityId(entry.id), logicalPosition);
     const group = desktopMoveGroup(entry);
     if (layoutRef.current.autoArrangeIcons) {
       const updates = arrangedDesktopMove(entry, position);
@@ -3459,7 +3564,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const positioned = await updateRootEntryPositions(positions);
       const positionedById = new Map(positioned.map((entry) => [entry.id, entry]));
       setEntries((current) => current.map((entry) => positionedById.get(entry.id) ?? entry));
-      replaceSelection("desktop", items.map((entry) => entry.id));
+      replaceSelection("desktop", items.map((entry) => entryEntityId(entry.id)));
       setContextMenu(null);
       return true;
     } catch (moveError) {
@@ -3603,7 +3708,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         },
         getEntries: () => entriesRef.current,
         getSnapshot: () => appSnapshotRef.current ?? (() => { throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE"); })(),
-        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [JSON.stringify(appSnapshotRef.current.editorSettings)] : [],
+        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [textEditorLaunchArgument(appSnapshotRef.current.editorSettings)] : [],
         getAppCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
         canMutate: () => canMutateRef.current,
         loadArchive: async (candidate) => (await import("./features/app-management/archive-loader")).loadInstalledAppArchive(candidate, readFile),
@@ -3815,7 +3920,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const content = new Blob([createAppShortcut(app.appId)], { type: APP_SHORTCUT_MIME_TYPE });
     const created = await createFile(name, null, positionFor(null), content);
     setEntries((current) => current.some((entry) => entry.id === created.id) ? current : [...current, created]);
-    replaceSelection("desktop", [created.id]);
+    replaceSelection("desktop", [entryEntityId(created.id)]);
     setNotice(`${app.manifest.name} added to the desktop`);
   }
 
@@ -4185,7 +4290,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   async function copySelection() {
-    const selectedIds = canonicalSelectionIds(entriesRef.current, selectedIdsRef.current);
+    const selectedIds = canonicalSelectionIds(entriesRef.current, selectionScope === "desktop" ? selectedIdsRef.current.flatMap((id) => {
+      const entity = desktopEntityParts(id);
+      return entity?.kind === "entry" ? [entity.sourceId] : [];
+    }) : selectedIdsRef.current);
     if (!selectedIds.length) return;
     const uncachedFiles = offlineFilesUnderRoots(entries, selectedIds).filter((entry) => offlineModel.entries[entry.id]?.downloadBytes > 0);
     setCopyDownload(uncachedFiles.length ? { entryIds: new Set(uncachedFiles.map((entry) => entry.id)), totalBytes: uncachedFiles.reduce((total, entry) => total + offlineModel.entries[entry.id].downloadBytes, 0) } : null);
@@ -4627,7 +4735,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const target = event.target as Element;
     const unselectedTouchIcon = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected])");
     if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchIcon) return;
-    setSelectedWidgetId(null);
     if (event.pointerType !== "touch") {
       event.preventDefault();
       const additive = event.metaKey || event.ctrlKey;
@@ -4779,12 +4886,12 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       if (Math.hypot(event.clientX - marqueePress.startX, event.clientY - marqueePress.startY) < 4) return;
       const bounds = event.currentTarget.getBoundingClientRect();
       setMarquee({ left: left - bounds.left, top: top - bounds.top, width: right - left, height: bottom - top });
-      const hits = Array.from(event.currentTarget.querySelectorAll<HTMLElement>(".file-icon[data-entry-id]"))
-        .filter((icon) => {
-          const rect = icon.getBoundingClientRect();
+      const hits = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-desktop-entity-id]"))
+        .filter((entity) => {
+          const rect = entity.getBoundingClientRect();
           return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
         })
-        .map((icon) => icon.dataset.entryId!)
+        .map((entity) => entity.dataset.desktopEntityId!)
         .filter(Boolean);
       replaceSelection("desktop", [...marqueePress.initial, ...hits]);
       return;
@@ -5409,7 +5516,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         }}
         onClick={(event) => {
           if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) {
-            setSelectedWidgetId(null);
             replaceSelection("desktop", []);
           }
         }}
@@ -5506,7 +5612,6 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                     })
                   }
                   onOpen={() => {
-                    setSelectedWidgetId(null);
                     replaceSelection("desktop", []);
                     handleOpen(entry);
                   }}
@@ -5522,15 +5627,16 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   } : undefined}
                   gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                   onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
+                  allowFolderDrop={selectionScope !== "desktop" || !selectedEntityIdSet.has(entryEntityId(entry.id)) || desktopSelectionCanDropIntoFolder(desktopEntityList, selectedEntityIdSet)}
                   onContextMenu={(event) => {
                     event.preventDefault();
                     if (isProtectedShellEntry(entry)) return;
-                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
+                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entryEntityId(entry.id)]);
                     openEntryContextMenu(entry.id, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
                   }}
                   onContextMenuAt={(x, y, presentation) => {
                     if (isProtectedShellEntry(entry)) return;
-                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entry.id]);
+                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entryEntityId(entry.id)]);
                     openEntryContextMenu(entry.id, x, y, presentation);
                   }}
                 />
@@ -5602,16 +5708,18 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   onResizeWidget={(widget, size) => updateWidget(widget, size)}
                   onPreviewWidget={previewWidgetChange}
                   onRemoveWidget={removeWidget}
-                  onSelectWidget={(widget) => {
-                    replaceSelection("desktop", []);
-                    setSelectedWidgetId(widget.id);
-                  }}
+                  onSelectWidget={(widget, options) => selectEntryId("desktop", widgetEntityId(widget.id), options)}
                   onActivateWidget={(widget) => {
                     if (widget.kind !== "todo" && widget.kind !== "scene") return;
                     const file = entries.find((entry) => entry.id === widget.fileId);
                     if (file) handleOpen(file);
                   }}
-                  selectedWidgetId={selectedWidgetId}
+                  onWidgetContextMenu={(widget, x, y, presentation) => {
+                    if (!selectedEntityIdSet.has(widgetEntityId(widget.id))) replaceSelection("desktop", [widgetEntityId(widget.id)]);
+                    setContextMenu({ type: "widget", widgetId: widget.id, x, y, presentation });
+                  }}
+                  onSelectGroup={(folder, options) => selectEntryId("desktop", groupEntityId(folder.id), options)}
+                  selectedEntityIds={selectedEntityIdSet}
                   widgetBusy={widgetMutationPending}
                   gridSize={layout.snapToGrid ? layout.gridSize : undefined}
                   onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
@@ -5947,7 +6055,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                           else if (affected.length > 1) {
                             replaceSelection(
                               "desktop",
-                              affected.map((entry) => entry.id),
+                              affected.map((entry) => entry.parentId === null ? entryEntityId(entry.id) : entry.id),
                             );
                             const root = affected.find((entry) => entry.parentId === null);
                             if (root) goToSegment(projectLogicalPosition(root.position, iconAreaSizeRef.current).segment);
@@ -6216,6 +6324,15 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             setContextMenu(null);
           }}
           onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
+          onSetAsWallpaper={contextMenuEntries.length === 1 && canSettings && isWallpaperFile(contextMenuEntry) ? () => {
+            const entry = contextMenuEntry;
+            clearWallpaperPreview();
+            setContextMenu(null);
+            setError("");
+            void selectWallpaperFile(entry.id, layoutRef.current, activeDesktopIdRef.current)
+              .then(() => setNotice(`${entry.name} set as desktop wallpaper`))
+              .catch((wallpaperError) => setError(wallpaperError instanceof Error ? wallpaperError.message : "The wallpaper could not be saved."));
+          } : undefined}
           onCopy={() => void copySelection()}
           onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
           onPublish={contextMenuEntries.length === 1 && activeDesktop?.capabilities.manage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}
@@ -6272,6 +6389,23 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           selectionCount={contextMenuEntries.length}
           trashSupported={syncStatus !== "local"}
           readOnly={!canMutate}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {contextMenu?.type === "widget" && contextMenuWidget && (
+        <WidgetContextMenu
+          menu={contextMenu}
+          label={contextMenuWidget.kind === "clock" ? "Clock" : contextMenuWidget.kind === "calendar" ? "Calendar" : contextMenuWidget.kind === "status" ? "Status" : contextMenuWidget.kind === "scene" ? "Scene" : "Todo list"}
+          onOpen={(contextMenuWidget.kind === "todo" || contextMenuWidget.kind === "scene") ? () => {
+            const file = entries.find((entry) => entry.id === contextMenuWidget.fileId);
+            setContextMenu(null);
+            if (file) handleOpen(file);
+          } : undefined}
+          onResize={() => {
+            setContextMenu(null);
+            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-desktop-entity-id="${CSS.escape(widgetEntityId(contextMenuWidget.id))}"] .shell-item__resize`)?.focus());
+          }}
+          onRemove={() => { setContextMenu(null); void removeWidget(contextMenuWidget); }}
           onClose={() => setContextMenu(null)}
         />
       )}

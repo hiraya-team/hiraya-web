@@ -129,5 +129,6 @@ export type DialogState =
 
 export type ContextMenuState =
   | { type: "entry"; entryId: string; x: number; y: number; presentation: "menu" | "sheet" }
+  | { type: "widget"; widgetId: string; x: number; y: number; presentation: "menu" | "sheet" }
   | { type: "desktop"; parentId: string | null; x: number; y: number; position: EntryPosition; presentation: "menu" | "sheet" }
   | null;

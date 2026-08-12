@@ -1,11 +1,19 @@
 import { describe, expect, test } from "bun:test";
-import { parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
+import { isWallpaperFile, parseContentAccessDescriptor, parseDirectBlobAccess, parseEntries, parseLayout, parseRemoteDesktopState, parseRootEntryPositionUpdates } from "../src/lib/contracts";
 import { remoteDesktopState } from "./fixtures";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { HIRAYA_SCENE_MIME_TYPE, MAX_SCENE_BYTES } from "../src/domain/scene";
 
 describe("contracts", () => {
+  test("identifies files supported as desktop wallpaper", () => {
+    const file = { kind: "file" as const, id: "file", name: "wallpaper.png", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "image/png; profile=srgb", size: 4 };
+    expect(isWallpaperFile(file)).toBe(true);
+    expect(isWallpaperFile({ ...file, name: "wallpaper.gif", mimeType: "image/gif" })).toBe(false);
+    expect(isWallpaperFile({ ...file, name: "ambient.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE, size: MAX_SCENE_BYTES })).toBe(true);
+    expect(isWallpaperFile({ ...file, name: "ambient.hiraya.scene", mimeType: HIRAYA_SCENE_MIME_TYPE, size: MAX_SCENE_BYTES + 1 })).toBe(false);
+  });
+
   test("requires createdAt", () => {
     const entry = { kind: "folder", id: "a", name: "A", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
     expect(parseEntries([entry])).toEqual([entry]);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ContextMenu, DesktopContextMenu } from "../src/components/ContextMenu";
+import { ContextMenu, DesktopContextMenu, WidgetContextMenu } from "../src/components/ContextMenu";
 import { PasteFromDeviceDialog } from "../src/components/PasteFromDeviceDialog";
 import { openWithMenuItems } from "../src/ui/open-with-menu";
 
@@ -50,6 +50,34 @@ describe("Context menu presentation", () => {
     expect(markup).toContain("disabled=\"\"");
     expect(markup).toContain("Publish...");
   });
+
+  test("offers an eligible file as the desktop wallpaper only for one selected item", () => {
+    const single = renderToStaticMarkup(createElement(ContextMenu, {
+      ...callbacks,
+      entry,
+      menu: { type: "entry", entryId: entry.id, x: 24, y: 80, presentation: "menu" },
+      onSetAsWallpaper() {},
+    }));
+    const multiple = renderToStaticMarkup(createElement(ContextMenu, {
+      ...callbacks,
+      entry,
+      menu: { type: "entry", entryId: entry.id, x: 24, y: 80, presentation: "menu" },
+      onSetAsWallpaper() {},
+      selectionCount: 2,
+    }));
+
+    expect(single).toContain("Set as desktop wallpaper");
+    expect(multiple).not.toContain("Set as desktop wallpaper");
+  });
+});
+
+test("widget context menu exposes only applicable actions", () => {
+  const linked = renderToStaticMarkup(createElement(WidgetContextMenu, { menu: { type: "widget", widgetId: "todo", x: 20, y: 80, presentation: "menu" }, label: "Todo list", onOpen() {}, onResize() {}, onRemove() {}, onClose() {} }));
+  const clock = renderToStaticMarkup(createElement(WidgetContextMenu, { menu: { type: "widget", widgetId: "clock", x: 20, y: 80, presentation: "menu" }, label: "Clock", onResize() {}, onRemove() {}, onClose() {} }));
+  expect(linked).toContain("Open");
+  expect(linked).toContain("Resize");
+  expect(linked).toContain("Remove");
+  expect(clock).not.toContain("Open</button>");
 });
 
 describe("Paste actions", () => {
