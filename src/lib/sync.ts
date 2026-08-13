@@ -777,11 +777,11 @@ export class SyncEngine {
         const revision = reconciled.sync.contentRevisions[id];
         if (entry && Number.isSafeInteger(revision)) retainedUploads.push({ id, revision, sha256, content: await this.storage.readPendingContent(record.operationId, id, record.operation.kind === "save-content" ? record.operation.stagedContentKey : undefined) });
       }
-      await this.storage.acknowledgeMutation(record.operationId);
       for (const upload of retainedUploads) {
-        try { await this.storage.cacheRemoteFile(record.desktopId, reconciled.sync.catalogId!, upload.id, upload.revision, upload.sha256, upload.content); }
+        try { await this.storage.cacheRemoteFile(record.desktopId, reconciled.sync.catalogId!, upload.id, upload.revision, upload.sha256, upload.content, record.operationId); }
         catch (error) { console.warn("Hiraya could not retain uploaded file content locally.", error); }
       }
+      await this.storage.acknowledgeMutation(record.operationId);
       this.finishUploadTransfers(record, generation);
       if (this.offlineInventoryListeners.size > 0 && outboxOperationDesktopIds(record).has(this.desktopId)) await this.refreshOfflineInventory();
       await this.publishOutbox();
