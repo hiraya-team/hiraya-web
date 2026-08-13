@@ -728,11 +728,28 @@ test("sets an image as wallpaper from its context menu and keeps it after reload
   await (await chooser).setFiles({ name, mimeType: "image/png", buffer: pngFile });
 
   const icon = page.locator(".file-icon").filter({ hasText: name });
+  await page.evaluate(() => {
+    const decode = window.createImageBitmap;
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    Object.assign(window, {
+      releaseWallpaperDecode: release,
+      createImageBitmap: async (...args: Parameters<typeof createImageBitmap>) => {
+        await gate;
+        return decode(...args);
+      },
+    });
+  });
   await icon.click({ button: "right" });
   await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Set as desktop wallpaper" }).click();
+  const desktop = page.locator(".desktop");
+  await expect(desktop).toHaveAttribute("data-wallpaper-pending", "true");
+  await expect.poll(() => desktop.evaluate((element) => ({ background: getComputedStyle(element).backgroundImage, before: getComputedStyle(element, "::before").display, after: getComputedStyle(element, "::after").display }))).toEqual({ background: "none", before: "none", after: "none" });
+  await page.evaluate(() => (window as Window & { releaseWallpaperDecode(): void }).releaseWallpaperDecode());
   await expect(page.getByText(`${name} set as desktop wallpaper`)).toBeVisible();
-  await expect(page.locator(".desktop")).toHaveAttribute("data-wallpaper", "file");
-  await expect(page.locator(".desktop")).toHaveAttribute("data-custom-loaded", "true");
+  await expect(desktop).not.toHaveAttribute("data-wallpaper-pending", "true");
+  await expect(desktop).toHaveAttribute("data-wallpaper", "file");
+  await expect(desktop).toHaveAttribute("data-custom-loaded", "true");
 
   await page.reload();
   await expect(page.locator(".desktop")).toHaveAttribute("data-wallpaper", "file");
@@ -741,6 +758,11 @@ test("sets an image as wallpaper from its context menu and keeps it after reload
   await page.setViewportSize({ width: 390, height: 720 });
   await page.locator(".file-icon").filter({ hasText: name }).click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Set as desktop wallpaper" })).toBeVisible();
+
+  await page.evaluate(() => { window.createImageBitmap = async () => { throw new Error("decode failed"); }; });
+  await page.getByRole("menuitem", { name: "Set as desktop wallpaper" }).click();
+  await expect(page.getByText("The wallpaper image could not be decoded.")).toBeVisible();
+  await expect(desktop).not.toHaveAttribute("data-wallpaper-pending", "true");
 });
 
 test("opens an imported RTF document in the document viewer", async ({ page }) => {

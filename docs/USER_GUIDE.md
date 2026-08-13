@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Open directly onto your wallpaper.** A saved custom wallpaper now stays behind a neutral loading surface while your desktop opens instead of briefly showing Hiraya Dusk first.
+- **Show custom wallpaper without a flash.** A neutral surface now covers Hiraya Dusk while you apply or open a custom wallpaper, so the previous default artwork does not appear briefly first.
 - **Keep desktop gestures above Scene wallpaper.** Scene wallpaper can observe pointer activity below app windows without taking control of it, so right-click menus, marquee selection, icons, and widgets remain owned by the desktop shell.
 - **Edit internet shortcuts as text.** Choose **Edit file** on a `.url` internet shortcut to change its source in **Integrated Editor**. Opening the shortcut normally still follows its saved address.
 - **Swipe desktop areas from widgets.** On touch screens, swipe from an unselected widget's move surface to change desktop areas without selecting or moving the widget.

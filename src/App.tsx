@@ -361,6 +361,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [layout, setLayout] = useState<DesktopLayout>(() => ({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [] }));
   const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
   const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
+  const [wallpaperSelectionPending, setWallpaperSelectionPending] = useState(false);
   const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
   const [exporting, setExporting] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
@@ -501,6 +502,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   } | null>(null);
   const layoutRef = useRef(layout);
   const widgetMutationPendingRef = useRef(false);
+  const wallpaperSelectionPendingRef = useRef(0);
   const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
   const entriesRef = useRef(entries);
   const projectedShellEntriesRef = useRef<DesktopEntry[]>([]);
@@ -2825,6 +2827,16 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     return pending;
   }
 
+  async function withWallpaperSelectionPending<T>(operation: () => Promise<T>) {
+    wallpaperSelectionPendingRef.current += 1;
+    setWallpaperSelectionPending(true);
+    try { return await operation(); }
+    finally {
+      wallpaperSelectionPendingRef.current -= 1;
+      if (!wallpaperSelectionPendingRef.current) setWallpaperSelectionPending(false);
+    }
+  }
+
   async function persistWallpaperLayout(next: DesktopLayout, desktopId: string) {
     requireWallpaperManagement();
     if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
@@ -3320,28 +3332,32 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   async function importWallpaper(file: File, nextLayout: DesktopLayout, desktopId: string, selectDesktopIcon: boolean) {
     requireWallpaperManagement();
     if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
-    await validateWallpaperImage(file);
-    const [image] = await importFiles([file], null, [positionFor(null)]);
-    const nextEntries = entriesRef.current.some((entry) => entry.id === image.id) ? entriesRef.current : [...entriesRef.current, image];
-    entriesRef.current = nextEntries;
-    setEntries([...nextEntries]);
-    if (selectDesktopIcon) replaceSelection("desktop", [entryEntityId(image.id)]);
-    const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` as const } };
-    await persistWallpaperLayout(layoutWithImage, desktopId);
-    return wallpaperEditorState(layoutWithImage, nextEntries, appearanceRef.current, true, "");
+    return withWallpaperSelectionPending(async () => {
+      await validateWallpaperImage(file);
+      const [image] = await importFiles([file], null, [positionFor(null)]);
+      const nextEntries = entriesRef.current.some((entry) => entry.id === image.id) ? entriesRef.current : [...entriesRef.current, image];
+      entriesRef.current = nextEntries;
+      setEntries([...nextEntries]);
+      if (selectDesktopIcon) replaceSelection("desktop", [entryEntityId(image.id)]);
+      const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` as const } };
+      await persistWallpaperLayout(layoutWithImage, desktopId);
+      return wallpaperEditorState(layoutWithImage, nextEntries, appearanceRef.current, true, "");
+    });
   }
 
   async function selectWallpaperFile(fileId: string, nextLayout: DesktopLayout, desktopId: string) {
     requireWallpaperManagement();
     if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
-    const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
-    if (!entry) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
-    const file = await readFile(fileId);
-    if (!isSceneFile(entry)) await validateWallpaperImage(file);
-    if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((candidate) => candidate.id === fileId && candidate.kind === "file")) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
-    const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` as const } };
-    await persistWallpaperLayout(layoutWithImage, desktopId);
-    return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
+    return withWallpaperSelectionPending(async () => {
+      const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
+      if (!entry) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
+      const file = await readFile(fileId);
+      if (!isSceneFile(entry)) await validateWallpaperImage(file);
+      if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((candidate) => candidate.id === fileId && candidate.kind === "file")) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
+      const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` as const } };
+      await persistWallpaperLayout(layoutWithImage, desktopId);
+      return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
+    });
   }
 
   function desktopMovePosition(entry: DesktopEntry, position: EntryPosition) {
@@ -5526,6 +5542,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         data-area-transition-phase={areaTransition?.phase}
         data-area-transition-kind={areaTransition?.kind}
         data-loading={loading || undefined}
+        data-wallpaper-pending={wallpaperSelectionPending || undefined}
         data-wallpaper={wallpaperFile && isSceneFile(wallpaperFile) ? "scene" : layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
         data-custom-loaded={wallpaperUrl ? true : undefined}
         data-custom-failed={wallpaperFailed || undefined}
