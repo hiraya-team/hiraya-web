@@ -111,6 +111,16 @@ async function createTextFile(page: Page, name: string) {
 async function verifyWarmStart(page: Page, cachedName: string) {
   let release!: () => void;
   const gate = new Promise<void>((resolve) => { release = resolve; });
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      const desktop = document.querySelector(".desktop");
+      if (desktop && !("hirayaInitialDesktopLoading" in window)) {
+        Object.assign(window, { hirayaInitialDesktopLoading: desktop.hasAttribute("data-loading") });
+        observer.disconnect();
+      }
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  });
   await page.route("**/api/**", async (route) => {
     const url = new URL(route.request().url());
     if (url.pathname === "/api/auth/session" || url.pathname === "/api/desktops" || (url.pathname.startsWith("/api/desktops/") && url.searchParams.get("projection") === "web")) await gate;
@@ -118,6 +128,7 @@ async function verifyWarmStart(page: Page, cachedName: string) {
   });
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
+  expect(await page.evaluate(() => (window as Window & { hirayaInitialDesktopLoading?: boolean }).hirayaInitialDesktopLoading)).toBe(true);
   await expect(page.getByRole("button", { name: `${cachedName}, folder` })).toBeVisible();
   await expect(page.getByText("Opening your desktop...", { exact: true })).toHaveCount(0);
   await expect(page.getByText("Loading desktop...", { exact: true })).toHaveCount(0);
