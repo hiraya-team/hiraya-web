@@ -2,15 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
 import type { CustomTheme, ThemeWallpaperPackage } from "../domain/theme";
 import type { ThemePackageCache } from "../lib/theme-package";
+import type { WallpaperSceneTarget } from "../ui/wallpaper-pointer";
 
-type Props = { theme: CustomTheme; accessUrl: string; cache?: ThemePackageCache; directBlobOrigin?: string };
+type Props = { theme: CustomTheme; accessUrl: string; cache?: ThemePackageCache; directBlobOrigin?: string; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void };
 type Loaded = { kind: "image" | "video"; url: string; revoke(): void } | { kind: "scene"; html: string; csp: string; navigationToken: string; revoke(): void };
 
-function SceneWallpaper({ loaded, ready, onReady, onError }: { loaded: Extract<Loaded, { kind: "scene" }>; ready: boolean; onReady(): void; onError(): void }) {
+function SceneWallpaper({ loaded, ready, onReady, onError, onWallpaperTarget }: { loaded: Extract<Loaded, { kind: "scene" }>; ready: boolean; onReady(): void; onError(): void; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
     const frame = frameRef.current;
     if (!frame) return;
+    onWallpaperTarget?.({ frame, token: loaded.navigationToken });
     frame.setAttribute("csp", loaded.csp);
     const stopNavigation = terminateSandboxNavigation(frame, loaded.navigationToken, {
       onNavigation: loaded.revoke,
@@ -24,12 +26,12 @@ function SceneWallpaper({ loaded, ready, onReady, onError }: { loaded: Extract<L
       },
     });
     frame.srcdoc = loaded.html;
-    return () => { stopNavigation(); frame.removeAttribute("srcdoc"); };
-  }, [loaded, onError, onReady]);
+    return () => { onWallpaperTarget?.(null); stopNavigation(); frame.removeAttribute("srcdoc"); };
+  }, [loaded, onError, onReady, onWallpaperTarget]);
   return <iframe ref={frameRef} className="wallpaper-scene" data-ready={ready || undefined} title="" aria-hidden="true" inert tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="" onError={onError} />;
 }
 
-export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin }: Props) {
+export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin, onWallpaperTarget }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -80,7 +82,7 @@ export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin }: Pr
   const succeeded = useCallback(() => setReady(true), []);
   return <>
     <div className="wallpaper-image" data-wallpaper-pending={!ready && !failed && !motionFallback || undefined} aria-hidden="true" />
-    {loaded?.kind === "scene" && <SceneWallpaper loaded={loaded} ready={ready} onReady={succeeded} onError={fail} />}
+    {loaded?.kind === "scene" && <SceneWallpaper loaded={loaded} ready={ready} onReady={succeeded} onError={fail} onWallpaperTarget={onWallpaperTarget} />}
     {loaded?.kind === "video" && <video className="wallpaper-video" data-ready={ready || undefined} aria-hidden="true" inert src={loaded.url} autoPlay loop muted playsInline onCanPlay={succeeded} onError={fail} />}
     {loaded?.kind === "image" && <img className="wallpaper-media" data-ready={ready || undefined} aria-hidden="true" inert draggable={false} src={loaded.url} alt="" onLoad={succeeded} onError={fail} />}
   </>;

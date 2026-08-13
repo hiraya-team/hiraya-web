@@ -129,6 +129,7 @@ import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settings
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
 import { TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
+import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
 import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
@@ -184,6 +185,7 @@ import { serializeStorage } from "./platform/storage/namespace";
 import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
 import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
+import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
@@ -430,6 +432,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const groupCreatedFolderRef = useRef(false);
   const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
   const desktopRef = useRef<HTMLElement>(null);
+  const wallpaperSceneRef = useRef<WallpaperSceneTarget | null>(null);
   const desktopSizeRef = useRef(desktopSize);
   const iconMetricsRef = useRef(themeIconMetrics(resolveTheme(DEFAULT_THEME_STATE)));
   const iconAreaSizeRef = useRef(desktopSize);
@@ -4784,6 +4787,29 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     desktopPressRef.current = press;
   }
 
+  const observeDesktopPointer = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target || (event.target as Element).closest(".app-window")) return;
+    postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, desktop, event.type as SandboxPointerObservation["phase"]));
+  }, []);
+
+  const observeDesktopContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target || (event.target as Element).closest(".app-window")) return;
+    postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, desktop, "contextmenu"));
+  }, []);
+
+  const observeWidgetPointer = useCallback((observation: SandboxPointerObservation, frame: HTMLIFrameElement) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target) return;
+    postSandboxPointer(target.frame, target.token, projectSandboxPointer(observation, frame, desktop));
+  }, []);
+
+  const registerWallpaperScene = useCallback((target: WallpaperSceneTarget | null) => { wallpaperSceneRef.current = target; }, []);
+
   function handleDesktopWheel(event: React.WheelEvent<HTMLElement>) {
     if (event.ctrlKey || (event.target as Element).closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
     event.preventDefault();
@@ -5519,6 +5545,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
           event.preventDefault();
           event.stopPropagation();
         }}
+        onPointerDownCapture={observeDesktopPointer}
+        onPointerMoveCapture={observeDesktopPointer}
+        onPointerUpCapture={observeDesktopPointer}
+        onPointerCancelCapture={observeDesktopPointer}
+        onContextMenuCapture={observeDesktopContextMenu}
         onClick={(event) => {
           if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) {
             replaceSelection("desktop", []);
@@ -5562,9 +5593,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
-        {wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperContentRevision} readContent={(file) => readFile(file.id)} mode="wallpaper" /></div></Suspense>}
+        {wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperContentRevision} readContent={(file) => readFile(file.id)} mode="wallpaper" onWallpaperTarget={registerWallpaperScene} /></div></Suspense>}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
         <div
           className="wallpaper-color-overlay"
@@ -5676,7 +5707,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   renderWidget={(widget) => {
                     if (widget.kind === "scene") {
                       const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
-                      return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readContent={(entry) => readFile(entry.id)} mode="widget" /></Suspense>;
+                      return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readContent={(entry) => readFile(entry.id)} mode="widget" onPointerObservation={observeWidgetPointer} /></Suspense>;
                     }
                     if (widget.kind !== "todo") return null;
                     const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;

@@ -46,4 +46,13 @@ describe("Scene packages", () => {
     expect(source).toContain('sandbox="allow-scripts"');
     expect(source).toContain('tabIndex={mode === "wallpaper" ? -1 : 0}');
   });
+
+  test("keeps wallpaper frames passive and exposes normalized observations", async () => {
+    const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
+    const runtime = await Bun.file(new URL("../packages/app-runtime/src/sandbox.ts", import.meta.url)).text();
+    expect(css).toContain(".scene-frame--wallpaper { display: block; pointer-events: none; }");
+    expect(css).not.toContain('[data-wallpaper="scene"] .desktop-area-stage--icons { pointer-events: none; }');
+    expect(runtime).toContain("hiraya:wallpaper-pointer");
+    expect(runtime).toContain("hiraya:sandbox-pointer");
+  });
 });

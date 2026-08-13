@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { Play, WarningCircle } from "@phosphor-icons/react";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
+import type { SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import type { FileEntry } from "../../types";
+import type { WallpaperSceneTarget } from "../../ui/wallpaper-pointer";
 import { inspectSceneFile, materializeScene, sceneMotionBlocked, SCENE_CSP } from "./scene-package";
 
-type Props = { file: FileEntry | null; contentRevision: number; readContent: (file: FileEntry) => Promise<Blob>; mode: "widget" | "wallpaper" };
+type Props = { file: FileEntry | null; contentRevision: number; readContent: (file: FileEntry) => Promise<Blob>; mode: "widget" | "wallpaper"; onPointerObservation?: (observation: SandboxPointerObservation, frame: HTMLIFrameElement) => void; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void };
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; html: string; navigationToken: string; revoke(): void };
 
-export function SceneFrame({ file, contentRevision, readContent, mode }: Props) {
+export function SceneFrame({ file, contentRevision, readContent, mode, onPointerObservation, onWallpaperTarget }: Props) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [ready, setReady] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
@@ -49,10 +51,11 @@ export function SceneFrame({ file, contentRevision, readContent, mode }: Props) 
     const frame = frameRef.current;
     if (!frame) return;
     frame.setAttribute("csp", SCENE_CSP);
-    const stop = terminateSandboxNavigation(frame, state.navigationToken, { onNavigation: fail, onReady: () => setReady(true) });
+    if (mode === "wallpaper") onWallpaperTarget?.({ frame, token: state.navigationToken });
+    const stop = terminateSandboxNavigation(frame, state.navigationToken, { onNavigation: fail, onPointer: onPointerObservation ? (observation) => onPointerObservation(observation, frame) : undefined, onReady: () => setReady(true) });
     frame.srcdoc = state.html;
-    return () => { stop(); frame.removeAttribute("srcdoc"); };
-  }, [fail, state]);
+    return () => { if (mode === "wallpaper") onWallpaperTarget?.(null); stop(); frame.removeAttribute("srcdoc"); };
+  }, [fail, mode, onPointerObservation, onWallpaperTarget, state]);
 
   if (blocked) return mode === "wallpaper" ? null : <div className="scene-state scene-state--gate"><Play size={20} /><strong>Motion is reduced</strong><span>Run this Scene once when you are ready.</span><button type="button" onClick={() => setAllowed(true)}>Run Scene</button></div>;
   if (state.status === "loading") return <div className="scene-state" role="status">Loading Scene...</div>;

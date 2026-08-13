@@ -1,4 +1,4 @@
 html, body { height: 100%; margin: 0; }
-body { display: grid; place-items: center; background: radial-gradient(circle at 50% 60%, #546d67, #203738 70%); color: #f8e3b2; font: 600 1rem system-ui; }
+body { display: grid; place-content: center; justify-items: center; gap: 1rem; background: radial-gradient(circle at 50% 60%, #546d67, #203738 70%); color: #f8e3b2; font: 600 1rem system-ui; }
 button { min-height: 44px; padding: .8rem 1.1rem; border: 1px solid currentColor; border-radius: .75rem; color: inherit; background: rgb(20 43 43 / .72); }
 button[aria-pressed="true"] { color: #203738; background: #f0bd68; box-shadow: 0 1rem 4rem rgb(240 189 104 / .4); }

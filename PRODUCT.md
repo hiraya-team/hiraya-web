@@ -28,7 +28,7 @@ Hiraya runs as an installable PWA or browser tab. Users open files and `.hiraya.
 - Importing a theme applies it to the current desktop; there is no separate installed-theme package manager.
 - Theme packages may include static, animated, or sandboxed executable wallpaper scenes.
 - Packaged wallpaper assets are hidden, synchronized desktop resources owned by the imported custom theme and cleaned up with it.
-- Wallpaper scenes have no Hiraya host API, file access, network access, or pointer interaction.
+- Wallpaper scenes have no Hiraya host API, file access, or network access. They may observe normalized pointer activity below app windows, while the desktop shell remains the native event owner.
 - Public desktops run the selected scene for anonymous visitors.
 - Animated and scene wallpapers may omit a poster; reduced-motion and failure states use the built-in Hiraya Dusk wallpaper.
 - The original visible package file is independent of the imported hidden resource.
