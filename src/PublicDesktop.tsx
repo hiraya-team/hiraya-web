@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, SquaresFour, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
@@ -27,6 +27,8 @@ import { withoutDotEntries } from "./ui/hidden-entries";
 import { reservedFileHandler } from "./apps/file-associations";
 import { RuntimeAppActions } from "./features/windows/WindowLayer";
 import { isSceneFile } from "./domain/scene";
+import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
+import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
@@ -157,6 +159,21 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
   const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const [windowBounds, setWindowBounds] = useState<WindowBounds>(() => initialWindowBounds({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
   const desktopRef = useRef<HTMLElement>(null);
+  const wallpaperSceneRef = useRef<WallpaperSceneTarget | null>(null);
+  const registerWallpaperScene = useCallback((target: WallpaperSceneTarget | null) => { wallpaperSceneRef.current = target; }, []);
+  const observePointer = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const target = wallpaperSceneRef.current;
+    if (target && !(event.target as Element).closest(".app-window")) postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, event.currentTarget, event.type as SandboxPointerObservation["phase"]));
+  }, []);
+  const observeContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>) => {
+    const target = wallpaperSceneRef.current;
+    if (target && !(event.target as Element).closest(".app-window")) postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, event.currentTarget, "contextmenu"));
+  }, []);
+  const observeWidgetPointer = useCallback((observation: SandboxPointerObservation, frame: HTMLIFrameElement) => {
+    const target = wallpaperSceneRef.current;
+    const surface = desktopRef.current;
+    if (target && surface) postSandboxPointer(target.frame, target.token, projectSandboxPointer(observation, frame, surface));
+  }, []);
   const areaSwitcherRef = useRef<HTMLElement>(null);
   const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
   const openRef = useRef(open);
@@ -340,12 +357,17 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
           } as React.CSSProperties
         }
         aria-label={desktop ? `${desktop.name} public desktop` : "Public desktop"}
+        onPointerDownCapture={observePointer}
+        onPointerMoveCapture={observePointer}
+        onPointerUpCapture={observePointer}
+        onPointerCancelCapture={observePointer}
+        onContextMenuCapture={observeContextMenu}
       >
         {wallpaper?.source.startsWith("theme:") && (() => {
           const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
-          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicDesktopContent(authority.desktopAlias, undefined, selected.wallpaper.assetId, selected.wallpaper.revision)} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicDesktopContent(authority.desktopAlias, undefined, selected.wallpaper.assetId, selected.wallpaper.revision)} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
-        {wholeDesktop && wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperFile.contentRevision} readContent={(file) => fetchPublicFile(authority, file, wallpaperFile.contentRevision)} mode="wallpaper" /></div></Suspense>}
+        {wholeDesktop && wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperFile.contentRevision} readContent={(file) => fetchPublicFile(authority, file, wallpaperFile.contentRevision)} mode="wallpaper" onWallpaperTarget={registerWallpaperScene} /></div></Suspense>}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />
         <div
@@ -409,7 +431,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
                   if (widget.kind === "scene") {
                     const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
                     const contentRevision = desktop.entries.find((entry) => entry.id === widget.fileId)?.contentRevision ?? 0;
-                    return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={contentRevision} readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} mode="widget" /></Suspense>;
+                    return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={contentRevision} readContent={(entry) => fetchPublicFile(authority, entry, contentRevision)} mode="widget" onPointerObservation={observeWidgetPointer} /></Suspense>;
                   }
                   if (widget.kind !== "todo") return null;
                   const file = publicEntries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;

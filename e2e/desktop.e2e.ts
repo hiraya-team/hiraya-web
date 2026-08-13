@@ -48,7 +48,7 @@ async function dragTouch(page: Page, source: Locator, deltaX: number, deltaY: nu
 }
 
 const pngFile = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
-const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAGluZGV4Lmh0bWwtTUsOgjAQvUptYgKJihs30LLxBnoCbIc4scw07WDg9spnM/Pyvubg2ckcQb1lCK15jSJMKsscwOrIGQWZ6h4n8E2AXurb9dgIx+2njnLPaahXFDqB4vwXTssptUJvdXZAoNvHSOq5QFNtG63JLmGUdjVcmFxA97FFaXdGYJI7kwCJ1WtUJXCAX/AKKY6iTbVX/ABQSwECFAAUAAAACAAAACEAMIFxfy8AAAAtAAAAEQAAAAAAAAAAAAAAAAAAAAAAaGlyYXlhLnNjZW5lLmpzb25QSwECFAAUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAAAAAAAAAAAAAABeAAAAaW5kZXguaHRtbFBLBQYAAAAAAgACAHcAAAAZAQAAAAA=", "base64");
+const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAHP6KseYAAABXAQAACgAAAGluZGV4Lmh0bWxVUMFOxSAQ/JXaU0l8POPRFi7GizGa2KPxQGG1G3mAsFSJ8d/F18b4brszOzOZHc6M11QCNDMdrBymTOSdfMyuGTU4GPYbMiQdMZDU3iVqVlBUbT6AI/6eIZYRLGjysWtXumX9OnDvtEX9Jjom5AYRfNK1d1TVoj1GNRE04AKmQRcytf0a5acEcVGEdRNPz70y5mapqjtMVQw1bcaoirr6UNYGFSDugsdqHNtz+D0U8uu/Bw85zd2R4QZIoWX9X4/Jm8KNIpWA+GaTxO34cM8TRXSv+FK6E7dUi0G3u7xg7JsN++1LP1BLAQIUABQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAAAAAAAAAAAAAAAAAAABoaXJheWEuc2NlbmUuanNvblBLAQIUABQAAAAIAAAAIQAc/oqx5gAAAFcBAAAKAAAAAAAAAAAAAAAAAF4AAABpbmRleC5odG1sUEsFBgAAAAACAAIAdwAAAGwBAAAAAA==", "base64");
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {
   await openLocalDesktop(page);
@@ -1818,10 +1818,18 @@ test("Scene widgets and wallpaper receive input without covering desktop chrome"
   const settingsWindow = page.getByRole("dialog", { name: "Settings" });
   await settingsWindow.getByRole("button", { name: "Minimize Settings" }).click();
   await expect(settingsWindow).toBeHidden();
-  await expect.poll(() => page.evaluate(() => document.elementFromPoint(innerWidth - 80, innerHeight - 80)?.getAttribute("title"))).toBe("interactive.hiraya.scene wallpaper");
+  await expect.poll(() => page.evaluate(() => document.elementFromPoint(innerWidth - 80, innerHeight - 80)?.getAttribute("title"))).not.toBe("interactive.hiraya.scene wallpaper");
   const wallpaperFrame = page.frameLocator('iframe[title="interactive.hiraya.scene wallpaper"]');
-  await wallpaperFrame.getByRole("button", { name: "Run Scene" }).click();
-  await expect(wallpaperFrame.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  await desktop.click({ button: "right", position: { x: 900, y: 420 } });
+  await expect(page.getByRole("menu", { name: "Create and desktop actions" })).toBeVisible();
+  await expect.poll(async () => JSON.parse(await wallpaperFrame.locator("body").getAttribute("data-pointers") ?? "[]")).toContainEqual(expect.objectContaining({ phase: "contextmenu", x: 900, y: 420, pointerType: "mouse" }));
+  await page.keyboard.press("Escape");
+  await page.mouse.move(820, 430);
+  await page.mouse.down();
+  await page.mouse.move(940, 520, { steps: 4 });
+  await expect(page.locator(".desktop-marquee")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(async () => JSON.parse(await wallpaperFrame.locator("body").getAttribute("data-pointers") ?? "[]")).toContainEqual(expect.objectContaining({ phase: "pointerup", pointerType: "mouse" }));
   await expect(sceneIcon).toBeVisible();
 });
 

@@ -2,7 +2,7 @@ import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 
-const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAGluZGV4Lmh0bWwtTUsOgjAQvUptYgKJihs30LLxBnoCbIc4scw07WDg9spnM/Pyvubg2ckcQb1lCK15jSJMKsscwOrIGQWZ6h4n8E2AXurb9dgIx+2njnLPaahXFDqB4vwXTssptUJvdXZAoNvHSOq5QFNtG63JLmGUdjVcmFxA97FFaXdGYJI7kwCJ1WtUJXCAX/AKKY6iTbVX/ABQSwECFAAUAAAACAAAACEAMIFxfy8AAAAtAAAAEQAAAAAAAAAAAAAAAAAAAAAAaGlyYXlhLnNjZW5lLmpzb25QSwECFAAUAAAACAAAACEAJVqhaJMAAADGAAAACgAAAAAAAAAAAAAAAABeAAAAaW5kZXguaHRtbFBLBQYAAAAAAgACAHcAAAAZAQAAAAA=", "base64");
+const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAHP6KseYAAABXAQAACgAAAGluZGV4Lmh0bWxVUMFOxSAQ/JXaU0l8POPRFi7GizGa2KPxQGG1G3mAsFSJ8d/F18b4brszOzOZHc6M11QCNDMdrBymTOSdfMyuGTU4GPYbMiQdMZDU3iVqVlBUbT6AI/6eIZYRLGjysWtXumX9OnDvtEX9Jjom5AYRfNK1d1TVoj1GNRE04AKmQRcytf0a5acEcVGEdRNPz70y5mapqjtMVQw1bcaoirr6UNYGFSDugsdqHNtz+D0U8uu/Bw85zd2R4QZIoWX9X4/Jm8KNIpWA+GaTxO34cM8TRXSv+FK6E7dUi0G3u7xg7JsN++1LP1BLAQIUABQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAAAAAAAAAAAAAAAAAAABoaXJheWEuc2NlbmUuanNvblBLAQIUABQAAAAIAAAAIQAc/oqx5gAAAFcBAAAKAAAAAAAAAAAAAAAAAF4AAABpbmRleC5odG1sUEsFBgAAAAACAAIAdwAAAGwBAAAAAA==", "base64");
 
 const publicDesktop = {
   schemaVersion: 2,
@@ -259,6 +259,6 @@ test("whole public desktops run Scene widgets and interactive Scene wallpaper", 
   await widget.getByRole("button", { name: "Run Scene" }).click();
   await expect(widget.getByRole("button", { name: "Scene received input" })).toBeVisible();
   const wallpaper = page.frameLocator('iframe[title="Public.hiraya.scene wallpaper"]');
-  await wallpaper.getByRole("button", { name: "Run Scene" }).click();
-  await expect(wallpaper.getByRole("button", { name: "Scene received input" })).toBeVisible();
+  await page.locator(".public-desktop__surface").click({ position: { x: 700, y: 400 } });
+  await expect.poll(async () => JSON.parse(await wallpaper.locator("body").getAttribute("data-pointers") ?? "[]")).toContainEqual(expect.objectContaining({ phase: "pointerup", x: 700, y: 400, pointerType: "mouse" }));
 });
