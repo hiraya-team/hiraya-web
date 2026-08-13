@@ -476,8 +476,20 @@ describe("canonical synchronization", () => {
     await engine.stop();
   });
 
-  test("retains uploaded files in the verified offline cache after acknowledgement", async () => {
+  test("retains uploaded files in the verified offline cache before acknowledgement removes staged content", async () => {
     const storage = remoteStorage();
+    const cacheRemoteFile = storage.cacheRemoteFile;
+    let acknowledged = false;
+    storage.cacheRemoteFile = async (...args) => {
+      expect(acknowledged).toBe(false);
+      expect(args[6]).toBe("1");
+      return cacheRemoteFile(...args);
+    };
+    const acknowledgeMutation = storage.acknowledgeMutation;
+    storage.acknowledgeMutation = async (operationId) => {
+      acknowledged = true;
+      return acknowledgeMutation(operationId);
+    };
     let remote = remoteDesktopState();
     const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
       if (String(input) === "/api/desktops/desk?projection=web" && !init?.method) return Response.json(remote);

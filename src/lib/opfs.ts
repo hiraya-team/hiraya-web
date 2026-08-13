@@ -973,12 +973,12 @@ async function cacheThemePackageUnsafe(desktopId: string, themeId: string, expec
   return true;
 }
 
-async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob): Promise<File | null> {
+async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob, acknowledgedOperationId?: string): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = manifest.entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
   if (!entry || manifest.sync.catalogId !== catalogId || manifest.sync.contentRevisions[id] !== contentRevision) return null;
   const hasPendingContent = (await callDatabase("readOutbox", undefined, null)).some((record) =>
-    record.desktopId === desktopId && operationContentIds(record.operation).includes(id));
+    record.operationId !== acknowledgedOperationId && record.desktopId === desktopId && operationContentIds(record.operation).includes(id));
   if (hasPendingContent) return readCachedFileUnsafe(desktopId, catalogId, id, contentRevision);
   if (content.size !== entry.size) throw new Error(`The server contents of “${entry.name}” have an unexpected size.`);
   if (!/^[a-f0-9]{64}$/.test(sha256) || await sha256Blob(content) !== sha256) throw new Error(`The server contents of “${entry.name}” failed integrity verification.`);
@@ -1180,7 +1180,7 @@ export function updateRootEntryPositions(positions: RootEntryPositionUpdate[]) {
 export function updateEntryPosition(id: string, position: EntryPosition) { return serializeStorage(() => updateEntryPositionUnsafe(id, position)); }
 export function readFile(id: FileEntry["id"]) { return serializeStorage(() => readFileUnsafe(id)); }
 export function readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => readCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
-export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, sha256, content)); }
+export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob, acknowledgedOperationId?: string) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, sha256, content, acknowledgedOperationId)); }
 export function removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => removeCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
 export function readCachedThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage) { return serializeStorage(() => readCachedThemePackageUnsafe(desktopId, themeId, expected)); }
 export function cacheThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage, content: Blob) { return serializeStorage(() => cacheThemePackageUnsafe(desktopId, themeId, expected, content)); }
