@@ -332,6 +332,7 @@
 
 .desktop:is(
   [data-loading],
+  [data-wallpaper-pending],
   [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
   [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
 ) {
@@ -340,11 +341,13 @@
 
 .desktop:is(
   [data-loading],
+  [data-wallpaper-pending],
   [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
   [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
 )::before,
 .desktop:is(
   [data-loading],
+  [data-wallpaper-pending],
   [data-wallpaper="file"]:not([data-custom-loaded]):not([data-custom-failed]),
   [data-wallpaper="theme"]:has(.wallpaper-image[data-wallpaper-pending])
 )::after {
