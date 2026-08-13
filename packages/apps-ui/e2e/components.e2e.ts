@@ -145,6 +145,13 @@ test("has no automatically detectable accessibility violations", async ({ page }
 
 test("keeps controls usable in a narrow app window", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 760 });
+  await page.locator("hiraya-status-bar").evaluate((element) => {
+    const main = element.parentElement!;
+    main.style.display = "grid";
+    main.style.gridTemplateRows = "1fr auto";
+    element.textContent = "Could not format the document. Cannot read properties of undefined while formatting a long mobile document.";
+  });
   await expect(page.locator("hiraya-selection-toolbar")).toBeVisible();
   await expect(page.getByText("Primary action", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 });

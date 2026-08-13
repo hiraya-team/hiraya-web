@@ -21,7 +21,8 @@
     "@hiraya/app-runtime": "workspace:*",
     "@hiraya/system-apps-shared": "workspace:*",
     "@lezer/highlight": "^1.2.3",
-    "codemirror": "^6.0.2"
+    "codemirror": "^6.0.2",
+    "js-beautify": "^1.15.4"
   },
-  "devDependencies": { "@types/js-beautify": "^1.14.3", "js-beautify": "^1.15.4", "typescript": "~5.8.3", "vite": "^7.0.4" }
+  "devDependencies": { "@types/js-beautify": "^1.14.3", "typescript": "~5.8.3", "vite": "^7.0.4" }
 }

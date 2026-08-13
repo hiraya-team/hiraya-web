@@ -1,3 +1,5 @@
+import { css_beautify, html_beautify, js_beautify } from "js-beautify";
+
 export type TextEditorSettings = Readonly<{
   autoSave: boolean;
   autoFormat: boolean;
@@ -71,9 +73,9 @@ export function parseTextEditorSettings(value: unknown, fallback: TextEditorSett
 export async function formatText(name: string, mimeType: string, text: string): Promise<string> {
   const language = textEditorLanguageFor(name, mimeType);
   if (language === "json") return `${JSON.stringify(JSON.parse(text), null, 2)}\n`;
-  if (language === "html") return `${globalThis.beautifier.html(text, { indent_size: 2 }).trimEnd()}\n`;
-  if (language === "css") return `${globalThis.beautifier.css(text, { indent_size: 2 }).trimEnd()}\n`;
-  if (language === "javascript" || language === "jsx") return `${globalThis.beautifier.js(text, { indent_size: 2 }).trimEnd()}\n`;
+  if (language === "html") return `${html_beautify(text, { indent_size: 2 }).trimEnd()}\n`;
+  if (language === "css") return `${css_beautify(text, { indent_size: 2 }).trimEnd()}\n`;
+  if (language === "javascript" || language === "jsx") return `${js_beautify(text, { indent_size: 2 }).trimEnd()}\n`;
   return `${text.split(/\r?\n/).map((line) => line.trimEnd()).join("\n").trimEnd()}\n`;
 }
 

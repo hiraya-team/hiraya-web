@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { css_beautify, html_beautify, js_beautify } from "js-beautify";
 import { DEFAULT_TEXT_EDITOR_SETTINGS, formatText, parseTextEditorSettings, textEditorControlState, textEditorLanguageFor, TextDocumentOperations, TextDocumentState, writeRestrictionMessage } from "./editor";
 
 describe("Integrated Editor document behavior", () => {
-  globalThis.beautifier = { css: css_beautify, html: html_beautify, js: js_beautify };
   test("leads the window title with the active document", async () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     expect(source).toContain('const title = scene?.metadata?.name ?? (scene ? "Untitled Scene" : activeTab?.name)');
@@ -175,6 +173,7 @@ describe("Integrated Editor document behavior", () => {
   });
 
   test("formats supported web languages and preserves compatible copied settings", async () => {
+    expect(globalThis).not.toHaveProperty("beautifier");
     expect(await formatText("data.json", "", "{\"a\":1}")).toBe('{\n  "a": 1\n}\n');
     expect(await formatText("index.html", "", "<main><div>Hello</div><div>world</div></main>")).toBe("<main>\n  <div>Hello</div>\n  <div>world</div>\n</main>\n");
     expect(await formatText("style.css", "", "body{color:red;margin:0}")).toBe("body {\n  color: red;\n  margin: 0\n}\n");
