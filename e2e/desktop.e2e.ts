@@ -795,10 +795,14 @@ test("formats JavaScript in Integrated Editor", async ({ page }) => {
   await page.locator(".file-icon").filter({ hasText: "format.js" }).dblclick();
 
   const app = page.getByRole("dialog", { name: /Integrated Editor/ });
-  const editor = app.frameLocator("iframe").locator(".cm-content");
+  const frame = app.frameLocator("iframe");
+  const editor = frame.locator(".cm-content");
   await expect(editor).toHaveText("const value={answer:42,items:[1,2]};");
   await app.getByRole("button", { name: "Format", exact: true }).click();
   await expect.poll(() => editor.evaluate((element) => (element as HTMLElement).innerText.trimEnd())).toBe("const value = {\n  answer: 42,\n  items: [1, 2]\n};");
+  await expect(frame.locator("#status")).toHaveText("Document formatted.");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => frame.locator(".app-shell").evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
 test("edits structured text without changing its MIME type", async ({ page }) => {

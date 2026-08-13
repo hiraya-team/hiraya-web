@@ -18,7 +18,7 @@ New user-facing features are listed newest first.
 
 - **Edit internet shortcuts as text.** Choose **Edit file** on a `.url` internet shortcut to change its source in **Integrated Editor**. Opening the shortcut normally still follows its saved address.
 - **Swipe desktop areas from widgets.** On touch screens, swipe from an unselected widget's move surface to change desktop areas without selecting or moving the widget.
-- **Format web files in Integrated Editor.** **Format** and **Format on save** now format HTML, CSS, JavaScript, JSX, and JSON documents instead of only cleaning up trailing whitespace.
+- **Format web files reliably in Integrated Editor.** **Format** and **Format on save** format HTML, CSS, JavaScript, JSX, and JSON documents, and long status messages stay within narrow app windows.
 - **Select and move every desktop item together.** Icons, widgets, and icon groups now share Ctrl/Cmd and marquee selection, grouped movement, spatial keyboard navigation, and familiar pointer or touch activation. Linked widgets also offer **Open**, **Resize**, and **Remove** from their context menu.
 - **Set wallpaper directly from a file.** Open the context menu for a JPEG, PNG, WebP, or Hiraya Scene file and choose **Set as desktop wallpaper** to apply it while keeping the current wallpaper fit and effects.
 - **Choose how new files begin.** Open **Settings > Files & apps > New file defaults** to set synchronized starting content and media types by extension for each desktop. JSON, Hiraya Todo, and URL files include useful defaults.

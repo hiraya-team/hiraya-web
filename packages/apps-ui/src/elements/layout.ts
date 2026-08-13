@@ -55,7 +55,7 @@ export class HirayaStatusBar extends HTMLElementBase {
     super();
     const root = this.attachShadow({ mode: "open" });
     root.innerHTML = `<style>${elementStyles}
-      :host { display: block; }
+      :host { display: block; min-inline-size: 0; }
       div { min-block-size: 2rem; padding: .35rem .7rem; overflow: hidden; border-block-start: 1px solid var(--hiraya-border, #526a60); color: var(--hiraya-text-muted, #aabbb4); background: var(--hiraya-surface, #172722); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
       .danger { color: var(--hiraya-danger, #ff8175); }
       :host(.error) div { color: var(--hiraya-danger, #ff8175); }
