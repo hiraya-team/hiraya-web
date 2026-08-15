@@ -173,7 +173,7 @@ export function parseSettingValue(value: unknown): JsonValue {
   return result;
 }
 
-function parseLifecycle(value: unknown): NodeLifecycle {
+export function parseNodeLifecycle(value: unknown): NodeLifecycle {
   if (!isRecord(value)) throw new Error("A node lifecycle has an unsupported shape.");
   if (value.kind === "active") {
     assertExactKeys(value, ["kind"], "A node lifecycle has an unsupported shape.");
@@ -209,7 +209,7 @@ export function parseNode(value: unknown): Node {
     id: parseStableId(value.id, "A node ID is invalid."),
     name: parseCanonicalName(value.name, "A node name is invalid."),
     parentId: value.parentId === null ? null : parseStableId(value.parentId, "A node parent ID is invalid."),
-    lifecycle: parseLifecycle(value.lifecycle),
+    lifecycle: parseNodeLifecycle(value.lifecycle),
     position: parsePosition(value.position),
     createdAt: parseNonNegativeSafeInteger(value.createdAt, "A node creation time is invalid."),
     modifiedAt: parseNonNegativeSafeInteger(value.modifiedAt, "A node modification time is invalid."),

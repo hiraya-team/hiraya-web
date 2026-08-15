@@ -87,15 +87,51 @@ describe("workspace filesystem storage", () => {
     expect(redoMiddle).toMatchObject({ intent: "redo", compensatesOperationId: undoMiddle.operationId });
     expect(redoNewest).toMatchObject({ intent: "redo", compensatesOperationId: undoNewest.operationId });
 
-    const beforeReopen = { content: await blobHash((await filesystem.readFile(file.id)).content), operations: await filesystem.listOperations() };
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const chunks = accountRoot.directories.get("chunks")!;
+    const chunkWrites = () => [...chunks.directories.values()].flatMap((directory) => [...directory.files].map(([hash, entry]) => [hash, entry.writes] as const)).sort(([left], [right]) => left.localeCompare(right));
+    const writesBeforeMetadata = chunkWrites();
+    timestamp = 1_500;
+    await filesystem.renameNode(file.id, "Renamed.txt");
+    await filesystem.setNodePositions([{ nodeId: file.id, position: { x: 40, y: 50 } }]);
+    await filesystem.moveNodes([file.id], null);
+    await filesystem.moveNodes([file.id], folder.id);
+    await filesystem.trashNodes([file.id]);
+    expect((await filesystem.listTrash()).map(({ id }) => id)).toEqual([file.id]);
+    await filesystem.restoreNodes([file.id], "original");
+    await filesystem.setSetting("editor", "theme", null);
+    await filesystem.setSettings("editor", [{ key: "theme", value: "dusk" }, { key: "wrap", value: true }]);
+    const disposable = await filesystem.createFolder({ name: "Disposable" });
+    await filesystem.trashNodes([disposable.id]);
+    await filesystem.purgeNodes([disposable.id]);
+    const retainedTrash = await filesystem.createFolder({ name: "Retained Trash" });
+    await filesystem.trashNodes([retainedTrash.id]);
+    expect(chunkWrites()).toEqual(writesBeforeMetadata);
+
+    const beforeReopen = {
+      content: await blobHash((await filesystem.readFile(file.id)).content),
+      operations: await filesystem.listOperations(),
+      root: await filesystem.listChildren(null),
+      children: await filesystem.listChildren(folder.id),
+      trash: await filesystem.listTrash(),
+      settings: await filesystem.listSettings("editor"),
+    };
     filesystem.close();
     const reopened = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
     const [reloadedFolder] = await reopened.listChildren(null);
     const [reloadedFile] = await reopened.listChildren(reloadedFolder!.id);
     expect(reloadedFolder).toMatchObject({ id: folder.id, kind: "folder", name: "Documents" });
-    expect(reloadedFile).toMatchObject({ id: file.id, kind: "file", name: "Notes.txt" });
+    expect(reloadedFile).toMatchObject({ id: file.id, kind: "file", name: "Renamed.txt", position: { x: 40, y: 50 } });
     expect(await reopened.getNode(reloadedFile!.id)).toEqual(reloadedFile);
-    expect({ content: await blobHash((await reopened.readFile(reloadedFile!.id)).content), operations: await reopened.listOperations() }).toEqual(beforeReopen);
+    expect({
+      content: await blobHash((await reopened.readFile(reloadedFile!.id)).content),
+      operations: await reopened.listOperations(),
+      root: await reopened.listChildren(null),
+      children: await reopened.listChildren(folder.id),
+      trash: await reopened.listTrash(),
+      settings: await reopened.listSettings("editor"),
+    }).toEqual(beforeReopen);
+    expect((await reopened.getSetting("editor", "theme"))?.value).toBe("dusk");
     expect(beforeReopen.operations.every(({ operation }) => operation.deviceId === DEVICE)).toBe(true);
 
     const versions = await reopened.listFileVersions(file.id);
@@ -110,13 +146,11 @@ describe("workspace filesystem storage", () => {
     const undoRestore = await reopened.undoWrite(restore.operationId);
     expect(await blobHash((await reopened.readFile(file.id)).content)).toBe(await blobHash(newest));
 
-    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
     const orphanHash = await sha256Hex(new TextEncoder().encode("rejected"));
     const sharedHash = await sha256Hex(shared);
     expect(memoryChunk(accountRoot, orphanHash)).toBeDefined();
     const raceContent = new Blob(["race"], { type: "text/plain" });
     const raceHash = await sha256Hex(await raceContent.arrayBuffer());
-    const chunks = accountRoot.directories.get("chunks")!;
     const raceShard = chunks.directories.get(raceHash.slice(0, 2)) ?? chunks.directory(raceHash.slice(0, 2));
     let staged!: () => void;
     const stagedPromise = new Promise<void>((resolve) => { staged = resolve; });
@@ -142,8 +176,8 @@ describe("workspace filesystem storage", () => {
     expect(await blobHash((await reopened.readFile(file.id)).content)).toBe(await blobHash(raceContent));
     for (const version of await reopened.listFileVersions(file.id)) await reopened.readFileVersion(file.id, version.operationId);
 
-    expect(locks.calls).toHaveLength(13);
-    expect(locks.calls).toEqual(Array.from({ length: 13 }, () => ({ name: `hiraya-web2-v1-${ACCOUNT_HASH}-storage`, mode: "exclusive" })));
+    expect(locks.calls).toHaveLength(26);
+    expect(locks.calls).toEqual(Array.from({ length: 26 }, () => ({ name: `hiraya-web2-v1-${ACCOUNT_HASH}-storage`, mode: "exclusive" })));
     expect(await getAccountOpfsRoot(ACCOUNT, memoryOpfsHandle(origin))).toBe(memoryOpfsHandle(accountRoot));
     competing.close();
     reopened.close();

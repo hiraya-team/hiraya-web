@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { IDBDatabase, IDBFactory, IDBKeyRange } from "fake-indexeddb";
+import { IDBDatabase, IDBFactory, IDBKeyRange, IDBObjectStore } from "fake-indexeddb";
 import {
   filesystemDatabaseName,
   openFilesystemDatabase,
@@ -79,6 +79,10 @@ function writeDraft(operationId: string, nodeId: string, manifest: Awaited<Retur
 
 function versionDraft(operationId: string, nodeId: string, version: { mimeType: string; size: number; manifestHash: string; modifiedAt: number }): WorkspaceOperationDraft {
   return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, ...version };
+}
+
+function operationBase(operationId: string) {
+  return { schemaVersion: 1 as const, operationId, workspaceId: WORKSPACE, deviceId: DEVICE };
 }
 
 async function workspaceDatabase(factory: IDBFactory, now?: () => number, id = WORKSPACE) {
@@ -347,9 +351,11 @@ describe("web2 filesystem database", () => {
     await database.commitOperation({ operation: createDraft(otherOperationId, [folder(stableId(156), "Elsewhere")], otherWorkspace) });
     await expect(database.commitOperation({ operation: versionDraft(stableId(157), nodeId, inverse!), intent: "undo", compensatesOperationId: otherOperationId, expectedContentTuple: writeTuple })).rejects.toThrow("same workspace");
 
+    await database.commitOperation({ operation: { ...operationBase(stableId(160)), kind: "rename", nodeId, name: "Renamed.txt", modifiedAt: 99 } });
     const undoId = stableId(158);
     const undo = await database.commitOperation({ operation: versionDraft(undoId, nodeId, inverse!), intent: "undo", compensatesOperationId: writeId, expectedContentTuple: writeTuple });
     expect(undo).toMatchObject({ intent: "undo", compensatesOperationId: writeId });
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Renamed.txt", manifestHash: initial.hash });
     const redoId = stableId(159);
     const redoInverse = undo.inverse.kind === "write" ? undo.inverse : undefined;
     const redoInput = { operation: versionDraft(redoId, nodeId, redoInverse!), intent: "redo" as const, compensatesOperationId: undoId, expectedContentTuple: { logicalTime: undo.operation.logicalTime, operationId: undoId } };
@@ -425,6 +431,222 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("commits exact metadata, lifecycle, and setting projections through purge and reopen", async () => {
+    const factory = new IDBFactory();
+    let time = 900;
+    const database = await workspaceDatabase(factory, () => time++);
+    const manifest = await verifiedManifest(3, 15);
+    const sourceId = stableId(200);
+    const destinationId = stableId(201);
+    const treeId = stableId(202);
+    const fileId = stableId(203);
+    const retainedTrashId = stableId(204);
+    const createId = stableId(210);
+    await database.commitOperation({ operation: createDraft(createId, [
+      folder(sourceId, "Source"),
+      folder(destinationId, "Destination"),
+      folder(treeId, "Tree", sourceId),
+      file(fileId, "Notes.txt", manifest, treeId),
+      folder(retainedTrashId, "Later"),
+    ]), manifests: [manifest] });
+    const createdFile = (await database.getNode(fileId))!;
+
+    const renameId = stableId(211);
+    const rename = await database.commitOperation({ operation: { ...operationBase(renameId), kind: "rename", nodeId: fileId, name: "Renamed.txt", modifiedAt: 20 } });
+    const renamedFile = (await database.getNode(fileId))!;
+    expect(rename.inverse).toEqual({ kind: "rename", nodeId: fileId, name: "Notes.txt", modifiedAt: 10 });
+    expect(renamedFile).toEqual({ ...createdFile, name: "Renamed.txt", modifiedAt: 20, fieldTuples: { ...createdFile.fieldTuples, name: { logicalTime: 901, operationId: renameId } } });
+
+    const positionId = stableId(212);
+    const position = await database.commitOperation({ operation: { ...operationBase(positionId), kind: "position", positions: [{ nodeId: fileId, position: { x: 9, y: 8 } }] } });
+    const positionedFile = (await database.getNode(fileId))!;
+    expect(position.inverse).toEqual({ kind: "position", positions: [{ nodeId: fileId, position: { x: 3, y: 4 } }] });
+    expect(positionedFile).toEqual({ ...renamedFile, position: { x: 9, y: 8 }, fieldTuples: { ...renamedFile.fieldTuples, position: { logicalTime: 902, operationId: positionId } } });
+
+    const treeBeforeMove = (await database.getNode(treeId))!;
+    const moveId = stableId(213);
+    const move = await database.commitOperation({ operation: { ...operationBase(moveId), kind: "move", nodeIds: [treeId], parentId: destinationId, modifiedAt: 30 } });
+    expect(move.inverse).toEqual({ kind: "move", roots: [{ nodeId: treeId, parentId: sourceId, modifiedAt: 10 }] });
+    expect(move.affectedIdentities).toEqual([
+      `folder:${WORKSPACE}:${destinationId}`,
+      `folder:${WORKSPACE}:${sourceId}`,
+      `node:${WORKSPACE}:${treeId}`,
+    ].sort());
+    expect((await readStored(factory, await filesystemDatabaseName(ACCOUNT), "changes", [WORKSPACE, 4]) as { affectedIdentities: string[] }).affectedIdentities).toEqual(move.affectedIdentities);
+    expect(await database.getNode(treeId)).toEqual({ ...treeBeforeMove, parentId: destinationId, modifiedAt: 30, fieldTuples: { ...treeBeforeMove.fieldTuples, parent: { logicalTime: 903, operationId: moveId } } });
+    expect(await database.getNode(fileId)).toEqual(positionedFile);
+
+    const trashId = stableId(214);
+    const trash = await database.commitOperation({ operation: { ...operationBase(trashId), kind: "trash", nodeIds: [fileId, treeId], trashedAt: 40 } });
+    expect(trash.inverse).toEqual({ kind: "trash", roots: [{ nodeId: treeId, parentId: destinationId }], nodeIds: [treeId, fileId].sort() });
+    expect(trash.affectedIdentities).toEqual([
+      `folder:${WORKSPACE}:${destinationId}`,
+      `folder:${WORKSPACE}:root`,
+      `node:${WORKSPACE}:${fileId}`,
+      `node:${WORKSPACE}:${treeId}`,
+      `trash:${WORKSPACE}`,
+    ].sort());
+    expect((await database.listTrash(WORKSPACE)).map(({ id }) => id)).toEqual([treeId]);
+    expect((await database.getNode(treeId))?.parentId).toBeNull();
+    expect((await database.getNode(fileId))?.parentId).toBe(treeId);
+    expect((await database.getNode(fileId))?.fieldTuples).toEqual({ ...positionedFile.fieldTuples, lifecycle: { logicalTime: 904, operationId: trashId } });
+    expect((await database.getNode(fileId) as Extract<Awaited<ReturnType<FilesystemDatabase["getNode"]>>, { kind: "file" }>).manifestHash).toBe(manifest.hash);
+
+    const restoreId = stableId(215);
+    const restore = await database.commitOperation({ operation: { ...operationBase(restoreId), kind: "restore", nodeIds: [treeId], destination: "original", modifiedAt: 50 } });
+    expect(restore.inverse).toMatchObject({ kind: "restore", roots: [{ nodeId: treeId, parentId: null }] });
+    expect(restore.inverse.kind === "restore" && restore.inverse.nodes.every(({ lifecycle }) => lifecycle.trashedAt === 40)).toBe(true);
+    expect(restore.affectedIdentities).toEqual(trash.affectedIdentities);
+    expect((await database.getNode(treeId))?.parentId).toBe(destinationId);
+    expect((await database.getNode(fileId))?.lifecycle).toEqual({ kind: "active" });
+    expect((await database.listFileVersions(WORKSPACE, fileId)).map(({ operationId, modifiedAt }) => ({ operationId, modifiedAt }))).toEqual([{ operationId: createId, modifiedAt: 10 }]);
+
+    await database.commitOperation({ operation: { ...operationBase(stableId(216)), kind: "trash", nodeIds: [treeId], trashedAt: 60 } });
+    const purge = await database.commitOperation({ operation: { ...operationBase(stableId(217)), kind: "purge", nodeIds: [treeId] } });
+    expect(purge.inverse).toEqual({ kind: "purge", nodeIds: [treeId, fileId].sort(), reason: "Permanent purge cannot be undone." });
+    expect(purge.affectedIdentities).toEqual([
+      `folder:${WORKSPACE}:root`,
+      `node:${WORKSPACE}:${fileId}`,
+      `node:${WORKSPACE}:${treeId}`,
+      `trash:${WORKSPACE}`,
+    ].sort());
+    expect(await database.getNode(treeId)).toBeUndefined();
+    await expect(database.commitOperation({ operation: createDraft(stableId(218), [folder(treeId, "Reused")]) })).rejects.toThrow("retained operation history");
+
+    const setNullId = stableId(219);
+    const setNull = await database.commitOperation({ operation: { ...operationBase(setNullId), kind: "set", namespace: "editor", key: "theme", value: null } });
+    expect(setNull.inverse).toEqual({ kind: "set", namespace: "editor", key: "theme", previous: { exists: false } });
+    const setManyDraft = { ...operationBase(stableId(220)), kind: "set-many" as const, namespace: "editor" as const, settings: [{ key: "theme", value: { dark: true } }, { key: "font", value: null }] };
+    const setMany = await database.commitOperation({ operation: setManyDraft });
+    expect(setMany.inverse).toEqual({ kind: "set-many", namespace: "editor", settings: [{ key: "theme", previous: { exists: true, value: null } }, { key: "font", previous: { exists: false } }] });
+    const revisionAfterSettings = (await database.listWorkspaces())[0]!.localRevision;
+    expect(await database.commitOperation({ operation: setManyDraft })).toEqual(setMany);
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(revisionAfterSettings);
+    expect((await database.listSettings(WORKSPACE, "editor")).map(({ key, value, logicalTime, operationId }) => ({ key, value, logicalTime, operationId }))).toEqual([
+      { key: "font", value: null, logicalTime: setMany.operation.logicalTime, operationId: setMany.operationId },
+      { key: "theme", value: { dark: true }, logicalTime: setMany.operation.logicalTime, operationId: setMany.operationId },
+    ]);
+    expect((await database.getSetting(WORKSPACE, "editor", "font"))?.value).toBeNull();
+    expect(await database.getSetting(WORKSPACE, "editor", "absent")).toBeUndefined();
+    expect(await database.listRetainedChunkHashes()).toEqual(["f".repeat(64)]);
+
+    await database.commitOperation({ operation: { ...operationBase(stableId(221)), kind: "trash", nodeIds: [retainedTrashId], trashedAt: 70 } });
+    const beforeReopen = { active: await database.listChildren(WORKSPACE, null), trash: await database.listTrash(WORKSPACE), settings: await database.listSettings(WORKSPACE, "editor"), operations: await database.listOperations(WORKSPACE) };
+    database.close();
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect({ active: await reopened.listChildren(WORKSPACE, null), trash: await reopened.listTrash(WORKSPACE), settings: await reopened.listSettings(WORKSPACE, "editor"), operations: await reopened.listOperations(WORKSPACE) }).toEqual(beforeReopen);
+    expect(await reopened.getNode(treeId)).toBeUndefined();
+    reopened.close();
+  });
+
+  test("rejects metadata collisions, invalid destinations, depth overflow, and partial batches atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 1_000);
+    const manifest = await verifiedManifest(1, 1);
+    const firstId = stableId(230);
+    const secondId = stableId(231);
+    const destinationId = stableId(232);
+    const childId = stableId(233);
+    const destinationFileId = stableId(234);
+    await database.commitOperation({ operation: createDraft(stableId(235), [
+      folder(firstId, "First"), folder(secondId, "Second"), folder(destinationId, "Destination"), folder(childId, "Child", firstId), file(destinationFileId, "File.txt", manifest), folder(stableId(236), "FIRST", destinationId),
+    ]), manifests: [manifest] });
+    const beforeFirst = await database.getNode(firstId);
+    const beforeSecond = await database.getNode(secondId);
+
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(237)), kind: "rename", nodeId: secondId, name: "first", modifiedAt: 20 } })).rejects.toThrow("sibling");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(238)), kind: "move", nodeIds: [firstId, secondId], parentId: destinationId, modifiedAt: 21 } })).rejects.toThrow("sibling");
+    expect(await database.getNode(firstId)).toEqual(beforeFirst);
+    expect(await database.getNode(secondId)).toEqual(beforeSecond);
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(239)), kind: "move", nodeIds: [firstId], parentId: stableId(999), modifiedAt: 22 } })).rejects.toThrow("does not exist");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(240)), kind: "move", nodeIds: [firstId], parentId: destinationFileId, modifiedAt: 22 } })).rejects.toThrow("active folder");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(241)), kind: "move", nodeIds: [firstId], parentId: childId, modifiedAt: 22 } })).rejects.toThrow("descendant");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(242)), kind: "move", nodeIds: [firstId, childId], parentId: null, modifiedAt: 22 } })).rejects.toThrow("overlap");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(246)), kind: "rename", nodeId: secondId, name: "Changed", modifiedAt: 22 }, intent: "undo", compensatesOperationId: stableId(235) } as never)).rejects.toThrow("forward intent only");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(247)), kind: "copy", sourceNodeIds: [firstId], nodes: [folder(stableId(248), "Copy")] } } as never)).rejects.toThrow("Copy and transfer");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(249)), kind: "transfer", nodeIds: [firstId], destinationWorkspaceId: stableId(250), parentId: null, modifiedAt: 22 } } as never)).rejects.toThrow("Copy and transfer");
+
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(243)), kind: "position", positions: [{ nodeId: firstId, position: { x: 100, y: 100 } }, { nodeId: stableId(998), position: { x: 0, y: 0 } }] } })).rejects.toThrow("active nodes");
+    expect(await database.getNode(firstId)).toEqual(beforeFirst);
+    await database.commitOperation({ operation: { ...operationBase(stableId(244)), kind: "set", namespace: "editor", key: "safe", value: true } });
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(245)), kind: "set-many", namespace: "editor", settings: [{ key: "safe", value: false }, { key: "safe", value: null }] } } as never)).rejects.toThrow("duplicate keys");
+    expect((await database.getSetting(WORKSPACE, "editor", "safe"))?.value).toBe(true);
+
+    const tooDeep = Array.from({ length: 66 }, (_, index) => folder(stableId(400 + index), `Too deep ${index}`, index === 0 ? null : stableId(399 + index)));
+    await expect(database.commitOperation({ operation: createDraft(stableId(466), tooDeep) })).rejects.toThrow("too deep");
+    expect(await database.getNode(stableId(400))).toBeUndefined();
+    const overflowParentId = stableId(367);
+    const overflowChildId = stableId(368);
+    await database.commitOperation({ operation: createDraft(stableId(369), [folder(overflowParentId, "Overflow parent"), folder(overflowChildId, "Overflow child", overflowParentId)]) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(500)), kind: "trash", nodeIds: [overflowChildId], trashedAt: 1 } });
+    const chain = Array.from({ length: 65 }, (_, index) => folder(stableId(300 + index), `Depth ${index}`, index === 0 ? null : stableId(299 + index)));
+    await database.commitOperation({ operation: createDraft(stableId(365), chain) });
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(366)), kind: "move", nodeIds: [secondId], parentId: stableId(364), modifiedAt: 23 } })).rejects.toThrow("too deep");
+    await database.commitOperation({ operation: { ...operationBase(stableId(501)), kind: "move", nodeIds: [overflowParentId], parentId: stableId(363), modifiedAt: 24 } });
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(502)), kind: "restore", nodeIds: [overflowChildId], destination: "original", modifiedAt: 25 } })).rejects.toThrow("too deep");
+    expect(await database.getNode(secondId)).toEqual(beforeSecond);
+    database.close();
+  });
+
+  test("rolls back projected metadata when a later transaction write fails", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 1_050);
+    const nodeId = stableId(367);
+    const operationId = stableId(368);
+    await database.commitOperation({ operation: createDraft(stableId(369), [folder(nodeId, "Original")]) });
+    const before = await database.getNode(nodeId);
+    const revision = (await database.listWorkspaces())[0]!.localRevision;
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (value, key) {
+      if (this.name === "operations" && (value as { operationId?: unknown }).operationId === operationId) throw new DOMException("Injected failure", "AbortError");
+      return key === undefined ? originalAdd.call(this, value) : originalAdd.call(this, value, key);
+    };
+    try {
+      await expect(database.commitOperation({ operation: { ...operationBase(operationId), kind: "rename", nodeId, name: "Changed", modifiedAt: 20 } })).rejects.toThrow("Injected failure");
+    } finally {
+      IDBObjectStore.prototype.add = originalAdd;
+    }
+    expect(await database.getNode(nodeId)).toEqual(before);
+    expect(await database.getOperation(operationId)).toBeUndefined();
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(revision);
+    database.close();
+  });
+
+  test("requires valid restore destinations and supports an atomic root fallback after collisions clear", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 1_100);
+    const parentId = stableId(370);
+    const childId = stableId(371);
+    const conflictId = stableId(372);
+    const nestedConflictId = stableId(385);
+    await database.commitOperation({ operation: createDraft(stableId(373), [folder(parentId, "Parent"), folder(childId, "Child", parentId)]) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(374)), kind: "trash", nodeIds: [childId], trashedAt: 1 } });
+    await database.commitOperation({ operation: createDraft(stableId(386), [folder(nestedConflictId, "child", parentId)]) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(375)), kind: "trash", nodeIds: [parentId], trashedAt: 2 } });
+    expect((await database.listTrash(WORKSPACE)).map(({ id }) => id)).toEqual([parentId, childId]);
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(376)), kind: "restore", nodeIds: [parentId, childId], destination: "original", modifiedAt: 3 } })).rejects.toThrow("sibling");
+    await database.commitOperation({ operation: { ...operationBase(stableId(390)), kind: "restore", nodeIds: [parentId], destination: "original", modifiedAt: 4 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(391)), kind: "rename", nodeId: nestedConflictId, name: "Other", modifiedAt: 5 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(392)), kind: "trash", nodeIds: [parentId], trashedAt: 6 } });
+    const coRestore = await database.commitOperation({ operation: { ...operationBase(stableId(393)), kind: "restore", nodeIds: [parentId, childId], destination: "original", modifiedAt: 7 } });
+    expect(coRestore.inverse).toMatchObject({ kind: "restore", roots: [{ nodeId: parentId, parentId: null, modifiedAt: 4 }, { nodeId: childId, parentId: null, modifiedAt: 10 }] });
+    expect(await database.getNode(parentId)).toMatchObject({ parentId: null, modifiedAt: 7, lifecycle: { kind: "active" } });
+    expect(await database.getNode(childId)).toMatchObject({ parentId, modifiedAt: 7, lifecycle: { kind: "active" } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(377)), kind: "trash", nodeIds: [childId], trashedAt: 8 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(378)), kind: "trash", nodeIds: [parentId], trashedAt: 9 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(379)), kind: "purge", nodeIds: [parentId] } });
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(380)), kind: "restore", nodeIds: [childId], destination: "original", modifiedAt: 10 } })).rejects.toThrow("original parent");
+
+    await database.commitOperation({ operation: createDraft(stableId(381), [folder(conflictId, "child")]) });
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(382)), kind: "restore", nodeIds: [childId], destination: "root", modifiedAt: 11 } })).rejects.toThrow("sibling");
+    expect((await database.listTrash(WORKSPACE)).map(({ id }) => id)).toEqual([childId]);
+    await database.commitOperation({ operation: { ...operationBase(stableId(383)), kind: "trash", nodeIds: [conflictId], trashedAt: 12 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(384)), kind: "restore", nodeIds: [childId], destination: "root", modifiedAt: 13 } });
+    expect(await database.getNode(childId)).toMatchObject({ parentId: null, lifecycle: { kind: "active" } });
+    expect((await database.listTrash(WORKSPACE)).map(({ id }) => id)).toEqual([conflictId]);
+    database.close();
+  });
+
   test("closes and reopens an identical projection and history", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 800);
@@ -449,14 +671,21 @@ describe("web2 filesystem database", () => {
     reopened.close();
   });
 
-  test("rejects malformed stored records instead of projecting them", async () => {
+  test("rejects malformed stored nodes and inverse metadata instead of projecting them", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory);
     const malformedId = stableId(140);
+    const operationId = stableId(141);
+    const stored = await database.commitOperation({ operation: createDraft(operationId, [folder(stableId(142), "Valid")]) });
     const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
-    await idbRequest(raw.transaction("nodes", "readwrite").objectStore("nodes").put({ id: malformedId, parentKey: "", lifecycleKey: "active" }));
+    const transaction = raw.transaction(["nodes", "operations"], "readwrite");
+    await Promise.all([
+      idbRequest(transaction.objectStore("nodes").put({ id: malformedId, parentKey: "", lifecycleKey: "active" })),
+      idbRequest(transaction.objectStore("operations").put({ ...stored, inverse: { ...stored.inverse, unexpected: true } })),
+    ]);
     raw.close();
     await expect(database.getNode(malformedId)).rejects.toThrow("unsupported shape");
+    await expect(database.getOperation(operationId)).rejects.toThrow("unsupported shape");
     database.close();
   });
 

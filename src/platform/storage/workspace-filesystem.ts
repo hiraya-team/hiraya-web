@@ -6,7 +6,8 @@ import {
   type FilesystemDatabaseEnvironment,
   type StoredOperation,
 } from "../../filesystem/database";
-import { WEB2_SCHEMA_VERSION, type Node, type OperationTuple, type Position } from "../../filesystem/model";
+import { WEB2_SCHEMA_VERSION, type JsonValue, type Node, type OperationTuple, type Position, type Setting, type SettingNamespace } from "../../filesystem/model";
+import type { SettingChange } from "../../filesystem/operations";
 
 export type WorkspaceFilesystemEnvironment = FilesystemDatabaseEnvironment & {
   originRoot?: FileSystemDirectoryHandle;
@@ -19,8 +20,19 @@ export type WorkspaceFilesystem = {
   createFile(value: { name: string; content: Blob; mimeType?: string; parentId?: string | null; position?: Position }): Promise<Node>;
   getNode(nodeId: string): Promise<Node | undefined>;
   listChildren(parentId: string | null): Promise<Node[]>;
+  listTrash(): Promise<Node[]>;
+  getSetting(namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
+  listSettings(namespace: SettingNamespace): Promise<Setting[]>;
   readFile(nodeId: string): Promise<{ content: Blob; contentTuple: OperationTuple }>;
   writeFile(nodeId: string, content: Blob, value: { expectedContentTuple: OperationTuple; mimeType?: string }): Promise<StoredOperation>;
+  renameNode(nodeId: string, name: string): Promise<StoredOperation>;
+  moveNodes(nodeIds: string[], parentId: string | null): Promise<StoredOperation>;
+  setNodePositions(positions: Array<{ nodeId: string; position: Position }>): Promise<StoredOperation>;
+  trashNodes(nodeIds: string[]): Promise<StoredOperation>;
+  restoreNodes(nodeIds: string[], destination: "original" | "root"): Promise<StoredOperation>;
+  purgeNodes(nodeIds: string[]): Promise<StoredOperation>;
+  setSetting(namespace: SettingNamespace, key: string, value: JsonValue): Promise<StoredOperation>;
+  setSettings(namespace: SettingNamespace, settings: SettingChange[]): Promise<StoredOperation>;
   listOperations(limit?: number): Promise<StoredOperation[]>;
   listFileVersions(nodeId: string): Promise<FileVersion[]>;
   readFileVersion(nodeId: string, operationId: string): Promise<Blob>;
@@ -55,7 +67,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       if (manifest.size !== size) throw new Error("File content does not match its manifest size.");
       return reconstructBlob(root, manifest, mimeType);
     };
-    const commitVersion = async (nodeId: string, version: Pick<FileVersion, "mimeType" | "size" | "manifestHash" | "modifiedAt">, expectedContentTuple: OperationTuple, intent: "undo" | "redo" | "restore", compensatesOperationId: string) => {
+    const commitVersion = async (nodeId: string, version: Pick<FileVersion, "mimeType" | "size" | "manifestHash">, expectedContentTuple: OperationTuple, intent: "undo" | "redo" | "restore", compensatesOperationId: string) => {
       await content(version.mimeType, version.size, version.manifestHash);
       return database.commitOperation({
         operation: {
@@ -68,7 +80,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
           mimeType: version.mimeType,
           size: version.size,
           manifestHash: version.manifestHash,
-          modifiedAt: version.modifiedAt,
+          modifiedAt: now(),
         },
         intent,
         compensatesOperationId,
@@ -115,6 +127,9 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         return node?.workspaceId === workspaceId ? node : undefined;
       },
       listChildren: (parentId) => database.listChildren(workspaceId, parentId),
+      listTrash: () => database.listTrash(workspaceId),
+      getSetting: (namespace, key) => database.getSetting(workspaceId, namespace, key),
+      listSettings: (namespace) => database.listSettings(workspaceId, namespace),
 
       readFile: async (nodeId) => {
         const node = await fileNode(nodeId);
@@ -132,6 +147,15 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         });
       }),
 
+      renameNode: (nodeId, name) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "rename", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeId, name, modifiedAt: now() } })),
+      moveNodes: (nodeIds, parentId) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "move", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, parentId, modifiedAt: now() } })),
+      setNodePositions: (positions) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, positions } })),
+      trashNodes: (nodeIds) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, trashedAt: now() } })),
+      restoreNodes: (nodeIds, destination) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destination, modifiedAt: now() } })),
+      purgeNodes: (nodeIds) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "purge", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds } })),
+      setSetting: (namespace, key, value) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, key, value } })),
+      setSettings: (namespace, settings) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, settings } })),
+
       listOperations: (limit) => database.listOperations(workspaceId, limit),
       listFileVersions: (nodeId) => database.listFileVersions(workspaceId, nodeId),
 
@@ -145,7 +169,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         const target = await database.getOperation(operationId);
         if (!target || target.workspaceId !== workspaceId) throw new Error("That operation does not exist in this workspace.");
         if (target.operation.kind === "create") throw new Error("Create undo is unsupported until lifecycle projection exists.");
-        if (target.intent !== "forward" && target.intent !== "redo" && target.intent !== "restore" || target.inverse.kind !== "write") throw new Error("Only a write, redo, or restore can be undone.");
+        if (target.operation.kind !== "write" || target.intent !== "forward" && target.intent !== "redo" && target.intent !== "restore" || target.inverse.kind !== "write") throw new Error("Only a write, redo, or restore can be undone.");
         const current = await fileNode(target.operation.nodeId);
         return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "undo", target.operationId);
       }),
@@ -162,7 +186,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         const version = versions.find((candidate) => candidate.operationId === operationId);
         if (!version || version.current) throw new Error("That historical file version is no longer available.");
         const node = await fileNode(nodeId);
-        return commitVersion(nodeId, { ...version, modifiedAt: now() }, node.fieldTuples.content!, "restore", operationId);
+        return commitVersion(nodeId, version, node.fieldTuples.content!, "restore", operationId);
       }),
 
       removeOrphans: () => locked(async () => removeOrphanChunks(root, await database.listRetainedChunkHashes())),
