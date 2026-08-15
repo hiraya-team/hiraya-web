@@ -88,7 +88,7 @@ export function parseStableId(value: unknown, message = "A stable ID is invalid.
 }
 
 export function parseCanonicalName(value: unknown, message = "A name is invalid.") {
-  if (typeof value !== "string" || !value || value !== value.trim() || value !== value.normalize("NFC") || value === "." || value === ".." || value.includes("/") || value.includes("\\") || [...value].length > 180 || [...value].some((character) => {
+  if (typeof value !== "string" || !value || value !== value.trim() || value === "." || value === ".." || value.includes("/") || value.includes("\\") || [...value].length > 180 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
     return point < 32 || point === 127;
   })) throw new Error(message);
