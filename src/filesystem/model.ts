@@ -52,6 +52,13 @@ export type FieldConflict =
 export type NodeLifecycle =
   | { kind: "active" }
   | { kind: "trashed"; trashedAt: number; originalParentId: string | null };
+export type NodeFieldTuples = {
+  name: OperationTuple;
+  parent: OperationTuple;
+  lifecycle: OperationTuple;
+  position: OperationTuple;
+  content: OperationTuple | null;
+};
 type NodeBase = {
   workspaceId: string;
   id: string;
@@ -61,6 +68,7 @@ type NodeBase = {
   position: Position;
   createdAt: number;
   modifiedAt: number;
+  fieldTuples: NodeFieldTuples;
 };
 export type Node =
   | NodeBase & { kind: "folder" }
@@ -180,9 +188,21 @@ function parseLifecycle(value: unknown): NodeLifecycle {
   };
 }
 
+function parseNodeFieldTuples(value: unknown): NodeFieldTuples {
+  if (!isRecord(value)) throw new Error("Node field tuples have an unsupported shape.");
+  assertExactKeys(value, ["name", "parent", "lifecycle", "position", "content"], "Node field tuples have an unsupported shape.");
+  return {
+    name: parseOperationTuple(value.name),
+    parent: parseOperationTuple(value.parent),
+    lifecycle: parseOperationTuple(value.lifecycle),
+    position: parseOperationTuple(value.position),
+    content: value.content === null ? null : parseOperationTuple(value.content),
+  };
+}
+
 export function parseNode(value: unknown): Node {
   if (!isRecord(value) || value.kind !== "folder" && value.kind !== "file") throw new Error("A node has an unsupported shape.");
-  const baseKeys = ["workspaceId", "id", "kind", "name", "parentId", "lifecycle", "position", "createdAt", "modifiedAt"];
+  const baseKeys = ["workspaceId", "id", "kind", "name", "parentId", "lifecycle", "position", "createdAt", "modifiedAt", "fieldTuples"];
   assertExactKeys(value, value.kind === "file" ? [...baseKeys, "mimeType", "size", "manifestHash"] : baseKeys, "A node has an unsupported shape.");
   const base: NodeBase = {
     workspaceId: parseStableId(value.workspaceId, "A node workspace ID is invalid."),
@@ -193,9 +213,14 @@ export function parseNode(value: unknown): Node {
     position: parsePosition(value.position),
     createdAt: parseNonNegativeSafeInteger(value.createdAt, "A node creation time is invalid."),
     modifiedAt: parseNonNegativeSafeInteger(value.modifiedAt, "A node modification time is invalid."),
+    fieldTuples: parseNodeFieldTuples(value.fieldTuples),
   };
   if (base.parentId === base.id) throw new Error("A node cannot be its own parent.");
-  if (value.kind === "folder") return { ...base, kind: "folder" };
+  if (value.kind === "folder") {
+    if (base.fieldTuples.content !== null) throw new Error("A folder cannot have a content tuple.");
+    return { ...base, kind: "folder" };
+  }
+  if (base.fieldTuples.content === null) throw new Error("A file requires a content tuple.");
   return {
     ...base,
     kind: "file",

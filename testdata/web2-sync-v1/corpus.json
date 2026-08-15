@@ -869,7 +869,14 @@
                 "lifecycle": { "kind": "active" },
                 "position": { "x": 10, "y": 20 },
                 "createdAt": 1,
-                "modifiedAt": 1
+                "modifiedAt": 1,
+                "fieldTuples": {
+                  "name": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "parent": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "lifecycle": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "position": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "content": null
+                }
               }
             ],
             "settings": [],
@@ -912,19 +919,29 @@
             "kind": "exact-nodes",
             "workspaceId": "00000000-0000-4000-8000-000000000001",
             "asOf": 10,
-            "nodeIds": ["00000000-0000-4000-8000-000000000201"]
+            "nodeIds": ["00000000-0000-4000-8000-000000000202"]
           },
           "nodes": [
             {
               "workspaceId": "00000000-0000-4000-8000-000000000001",
-              "id": "00000000-0000-4000-8000-000000000201",
-              "kind": "folder",
-              "name": "Documents",
+              "id": "00000000-0000-4000-8000-000000000202",
+              "kind": "file",
+              "name": "note.txt",
               "parentId": null,
               "lifecycle": { "kind": "active" },
               "position": { "x": 10, "y": 20 },
               "createdAt": 1,
-              "modifiedAt": 1
+              "modifiedAt": 1,
+              "fieldTuples": {
+                "name": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "parent": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "lifecycle": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "position": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "content": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" }
+              },
+              "mimeType": "text/plain",
+              "size": 5,
+              "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
             }
           ],
           "settings": [],
@@ -1019,7 +1036,14 @@
                   "lifecycle": { "kind": "active" },
                   "position": { "x": 10, "y": 20 },
                   "createdAt": 1,
-                  "modifiedAt": 1
+                  "modifiedAt": 1,
+                  "fieldTuples": {
+                    "name": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
+                    "parent": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
+                    "lifecycle": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
+                    "position": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
+                    "content": null
+                  }
                 }
               ],
               "settings": [],
