@@ -16,6 +16,7 @@ test("renders an accessible responsive shell", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.on("pageerror", (error) => errors.push(error.message));
+  page.on("response", (response) => { if (response.status() >= 400) errors.push(`${response.status()} ${new URL(response.url()).pathname}`); });
   await openShell(page);
   await expect(page.getByRole("heading", { name: "Your local workspace is ready." })).toBeVisible();
   const control = page.getByRole("button", { name: "Reload shell" });
@@ -74,6 +75,11 @@ test("installs the manifest and reloads offline without caching API requests", a
   expect(precached).toContain("/index.html");
   expect(precached).toContain("/manifest.webmanifest");
   expect(precached.some((pathname) => pathname.startsWith("/assets/") && pathname.endsWith(".js"))).toBe(true);
+  expect(await page.evaluate(async () => {
+    const name = (await caches.keys()).find((item) => item.startsWith("hiraya-shell-"));
+    const response = name ? await (await caches.open(name)).match("/index.html", { ignoreVary: true }) : undefined;
+    return response ? { status: response.status, shell: (await response.text()).includes('<div id="root"></div>') } : null;
+  })).toEqual({ status: 200, shell: true });
   await expect(page.request.get("/icon.svg")).resolves.toBeTruthy();
   await context.setOffline(true);
   await page.reload();
