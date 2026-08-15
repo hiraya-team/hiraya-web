@@ -1,0 +1,60 @@
+import type { DesktopIdentity } from "../types";
+import { isRecord, parseDesktopIdentity, readRevision } from "./contracts";
+import { parseAuthorityIdentity } from "./wire-authority";
+
+export type RemoteDesktopIdentity = DesktopIdentity;
+export type QuotaMeasure = { used: number; limit: number };
+export type CatalogQuota = {
+  storageBytes: QuotaMeasure;
+  desktops: QuotaMeasure;
+  entries: QuotaMeasure;
+};
+export type RemoteDesktopCatalog = {
+  schemaVersion: 2;
+  catalogId: string;
+  catalogRevision: number;
+  desktops: RemoteDesktopIdentity[];
+  quota: CatalogQuota;
+};
+
+function parseQuotaMeasure(value: unknown, label: string): QuotaMeasure {
+  if (!isRecord(value)) throw new Error(`The server catalog has invalid ${label} quota data.`);
+  const used = readRevision(value.used);
+  const limit = readRevision(value.limit);
+  if (limit < 1) throw new Error(`The server catalog has an invalid ${label} quota.`);
+  return { used, limit };
+}
+
+export function parseDesktopCatalog(value: unknown): RemoteDesktopCatalog {
+  if (!isRecord(value) || !Array.isArray(value.desktops)) throw new Error("The server desktop catalog has an unsupported format.");
+  const authority = parseAuthorityIdentity(value, "The server catalog");
+  const desktops = value.desktops.map((candidate): RemoteDesktopIdentity => {
+    if (!isRecord(candidate) || candidate.pinned !== undefined && typeof candidate.pinned !== "boolean") throw new Error("A server desktop has an invalid pinned preference.");
+    return parseDesktopIdentity(candidate);
+  });
+  if (new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The server desktop catalog contains duplicate IDs.");
+  if (new Set(desktops.map((desktop) => `${desktop.ownership}:${desktop.owner.id}:${desktop.name.toLocaleLowerCase()}`)).size !== desktops.length) throw new Error("The server desktop catalog contains duplicate names.");
+  if (!isRecord(value.quota)) throw new Error("The server catalog has invalid quota data.");
+  const quota = {
+    storageBytes: parseQuotaMeasure(value.quota.storageBytes, "storage"),
+    desktops: parseQuotaMeasure(value.quota.desktops, "desktop"),
+    entries: parseQuotaMeasure(value.quota.entries, "entry"),
+  };
+  if (quota.desktops.used !== desktops.filter((desktop) => desktop.ownership === "owned").length) throw new Error("The server catalog has inconsistent desktop quota usage.");
+  return { ...authority, catalogRevision: readRevision(value.catalogRevision), desktops, quota };
+}
+
+export function resolveDesktopContext(requestedId: string | null, desktops: readonly DesktopIdentity[]) {
+  if (requestedId && desktops.some((desktop) => desktop.id === requestedId)) return requestedId;
+  return desktops[0]?.id ?? null;
+}
+
+export function desktopDeleteProtection(desktopCount: number) {
+  if (desktopCount === 1) return "The last desktop cannot be deleted.";
+  return "";
+}
+
+export function desktopCreateProtection(desktopCount: number, quota?: CatalogQuota | null) {
+  if (quota && desktopCount >= quota.desktops.limit) return "Desktop limit reached. Delete a desktop or ask an administrator to increase your quota.";
+  return "";
+}

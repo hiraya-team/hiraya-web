@@ -1,0 +1,6699 @@
+import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ArrowLeft, ArrowsIn, ArrowsLeftRight, Bell, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Minus, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
+import seededDesktop from "virtual:hiraya-seeded";
+import { ContextMenu, DesktopContextMenu, WidgetContextMenu } from "./components/ContextMenu";
+import { ShellItemLayer } from "./components/ShellItems";
+import { FileDialog } from "./components/FileDialog";
+import { FileIcon } from "./components/FileIcon";
+import { FolderExplorer } from "./components/FolderExplorer";
+import { FileWindow } from "./components/FileWindow";
+import { MoveDialog } from "./components/MoveDialog";
+import { DesktopSwitcher } from "./components/DesktopSwitcher";
+import type { CatalogQuota } from "./lib/desktop-catalog";
+import { PasteConflictDialog } from "./components/PasteConflictDialog";
+import { PasteFromDeviceDialog } from "./components/PasteFromDeviceDialog";
+import { PropertiesWindow } from "./components/PropertiesWindow";
+import { SettingsWindow } from "./components/SettingsWindow";
+import { GettingStartedDialog } from "./components/GettingStartedDialog";
+import { AppPickerDialog } from "./components/AppPickerDialog";
+import { TodoWidget } from "./features/widgets/TodoWidget";
+import { TODO_EXTENSION, TODO_MIME_TYPE } from "./features/widgets/todo-document";
+import { HIRAYA_SCENE_EXTENSION, HIRAYA_SCENE_MIME_TYPE, isSceneFile } from "./domain/scene";
+import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
+import {
+  createFolder,
+  createFile,
+  createEntries,
+  createDesktop as createDesktopMutation,
+  createTextFile,
+  deleteCustomTheme,
+  captureEntries,
+  deleteEntries,
+  deleteDesktop as deleteDesktopMutation,
+  fetchServerBuildTimestamp,
+  importFiles,
+  installThemePackage,
+  initializeDesktop,
+  listActivity,
+  listDesktops,
+  moveEntries,
+  transferEntries,
+  pasteEntries,
+  readFile,
+  previewFile,
+  refreshDesktopCatalog,
+  thumbnailFile,
+  renameEntry,
+  renameDesktop as renameDesktopMutation,
+  saveCustomTheme,
+  saveDesktopLayout,
+  saveEditorSettings,
+  selectTheme,
+  updateRootEntryPositions,
+  updateEntryPosition,
+  subscribeToSync,
+  subscribeToActivityChanges,
+  subscribeToDesktopCatalog,
+  subscribeToOutbox,
+  listOutboxRecords,
+  retryBlockedOutboxRecord,
+  discardBlockedOutboxRecord,
+  loadContentConflict,
+  resolveContentConflictKeepLocal,
+  resolveContentConflictKeepServer,
+  resolveContentConflictMerged,
+  resolveContentConflictKeepBoth,
+  loadOfflineInventory,
+  subscribeToOfflineStorage,
+  subscribeToEntryDownloads,
+  subscribeToTransfers,
+  dismissFileTransfer,
+  dismissCompletedFileTransfer,
+  estimateOfflineOperation,
+  downloadOfflineCopies,
+  releaseOfflineCopies,
+  listTrash,
+  listSystemEntries,
+  readSystemFile,
+  readTrashFile,
+  restoreTrash,
+  permanentlyDeleteTrash,
+  stopDesktopSync,
+  type SyncStatus,
+  type OfflineOperationProgress,
+  type FileTransferState,
+  type ContentConflictBundle,
+  updateDesktopPreferences as updateDesktopPreferencesMutation,
+  VirtualFileChangedError,
+} from "./lib/sync";
+import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
+import type { DesktopStateSnapshot } from "./domain/desktop-state";
+import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
+import type { ExplorerView, LocalPreferences } from "./domain/preferences";
+import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
+import { exportSeededDesktop } from "./lib/seeded";
+import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
+import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, SETTINGS_PAGE_TITLES, SETTINGS_PARENTS, type DesktopRoute, type SettingsPage } from "./lib/routes";
+import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
+import type { CustomTheme, ThemeState } from "./domain/theme";
+import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER, type ContextMenuState, type DesktopEntry, type DesktopIconGroup, type DesktopIdentity, type DesktopLayout, type DesktopWidget, type DialogState, type EntryPosition, type FileEntry, type FolderEntry } from "./types";
+import { GRID_ORIGIN, arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, boundsIntersectSegment, clampShellItemBounds, desktopShellItemObstacles, iconAreaSize, intersectingSegments, nextAvailableDesktopSlot, nextRootEntryPosition, positionOverlapsObstacles, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, segmentKey, snapAxis, snapShellItemBounds, type DesktopObstacle, type SurfaceSegment } from "./ui/desktop-geometry";
+import type { EntryDropDestination } from "./ui/entry-drop-target";
+import { fileCapabilities } from "./ui/file-capabilities";
+import { createEntryIndex } from "./ui/entry-index";
+import { clampWindowBounds, initialWindowBounds, type WindowBounds } from "./ui/window-manager";
+import { canMutateShellDrop, canonicalSelectionIds, downloadedThumbnailEntry, isProtectedShellEntry, protectedShellSource, protectedWindowDisposition, shellEntries, virtualThumbnailSource, VIRTUAL_HIRAYA_ROOT_ID } from "./ui/shell-entries";
+import { dismissTopTransient, registerTransientDismiss } from "./ui/transient-dismiss";
+import { namesMatch } from "./lib/entry-validation";
+import { createWindowSession, restoreWindowSession, type WindowSession, type WindowTarget } from "./lib/window-session";
+import { createInternetShortcut, INTERNET_SHORTCUT_MIME_TYPE, parseInternetShortcut } from "./lib/internet-shortcut";
+import { fileCreationTemplate, textEditorLaunchArgument } from "./lib/file-creation-templates";
+import { APP_SHORTCUT_MAX_BYTES, APP_SHORTCUT_MIME_TYPE, availableAppShortcutName, createAppShortcut, parseAppShortcut } from "./lib/app-shortcut";
+import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task";
+import { validateWallpaperImage } from "./lib/wallpaper-image";
+import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
+import type { AuthSession } from "./lib/auth";
+import { SearchCommandPalette } from "./components/SearchCommandPalette";
+import { KeyboardShortcutsPanel } from "./components/KeyboardShortcutsPanel";
+import { TrashWindow } from "./components/TrashWindow";
+import { PanelDialog } from "./components/PanelDialog";
+import { ConfirmationDialog, type ConfirmationRequest } from "./components/ConfirmationDialog";
+import { SharingDialog } from "./components/SharingDialog";
+import { PublishDialog } from "./components/PublishDialog";
+import { canOpenActivity } from "./ui/activity-navigation";
+import { iconGroupsAfterEntryChange, isRevisionConflictRecord, mergeDesktopLayout, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
+import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
+import { accountResources, downloadAccountResource } from "./lib/account-apps";
+import type { KeyboardShortcut } from "./ui/panel-data";
+import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
+import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
+import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
+import { TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
+import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
+import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
+import { SandboxAppFrame } from "@hiraya/app-runtime/react";
+import type { ThemePackageCache } from "./lib/theme-package";
+import { API_ROUTES } from "./lib/api-routes";
+import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
+import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
+import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp } from "./apps/installed-apps";
+import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
+import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
+import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
+import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
+import type { SystemAppTarget } from "./apps/types";
+import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
+import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
+import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
+import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
+import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
+import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
+import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
+import { HelpPanel } from "./components/HelpPanel";
+import type { HelpSectionId } from "./lib/help";
+import { ConnectionPanel } from "./components/ConnectionPanel";
+import { lockAuthBootstrap } from "./lib/auth";
+import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
+import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, swipeAxis, swipePreviewReady, type AreaSwitcherTap } from "./ui/shell";
+import { SERVER_ROUTES } from "./lib/api-routes";
+import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
+import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
+import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds } from "./ui/app-history";
+import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "./ui/area-camera";
+import { MERGE_APP_WINDOW, runningAppIds as projectRunningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets as projectRunningAppTargets, topRunningAppInSegment, windowsForHiddenFilePreference, type BaseRunningApp, type ExplorerApp, type FileApp, type PropertiesApp, type RunningApp, type SandboxApp, type SettingsApp, type StoreApp } from "./features/windows/model";
+import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp, type RouteHistoryState } from "./features/windows/history";
+import { arrangeDesktops, type DesktopPreference } from "./lib/desktop-preferences";
+import { useRunningWindows } from "./features/windows/controller";
+import { WindowLayer } from "./features/windows/WindowLayer";
+import { AreaSwitcher } from "./features/areas/AreaSwitcher";
+import { systemInstallMatchesCatalog, useAppPlatform } from "./features/app-management/controller";
+import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
+import { sandboxWindowOptions } from "./ui/app-window-sizing";
+import { useDesktopSelection } from "./features/selection/controller";
+import { waitForAnimations } from "./ui/animation-completion";
+import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
+import { createShortLink, deleteShortLink, listShortLinks, updateShortLink } from "./lib/short-links";
+import { DesktopClock } from "./features/shell/DesktopClock";
+import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
+import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
+import { nextQuitBack, type QuitBackState } from "./ui/back-navigation";
+import { desktopEntities, desktopEntityMovementPlan, desktopEntityParts, desktopSelectionCanDropIntoFolder, entryEntityId, groupEntityId, retainedDesktopEntityIds, widgetEntityId } from "./ui/desktop-entity";
+import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
+import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
+import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
+import { serializeStorage } from "./platform/storage/namespace";
+import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
+import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
+import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
+import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
+
+const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
+const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
+
+type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
+type PendingDevicePaste = { parentId: string | null; position?: EntryPosition; error?: string };
+type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
+type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
+type ProtectedLoadState = { status: "idle" | "loading" | "ready" | "error"; message?: string };
+function publishedSystemApp(item: StorePackage) {
+  if (item.kind !== "system" || !item.release) return null;
+  return { slug: item.release.slug, archivePath: `system-apps/${item.release.slug}.hiraya.app`, digest: item.release.digest, manifest: item.release.manifest };
+}
+type MergeReview = {
+  state: "loading" | "ready" | "resolving" | "error";
+  error?: string;
+  mine: MergeFileVersion;
+  server: MergeFileVersion;
+  mode: "text" | "media" | "binary";
+  mediaKind?: "image" | "audio" | "video" | "pdf";
+  regions: ThreeWayTextMergeRegion[];
+  resolutions: Record<string, MergeTextResolution>;
+  mergedText: string;
+  serverRevision: number;
+};
+const DESKTOP_LONG_PRESS_MS = 500;
+const AREA_TRANSITION_WATCHDOG_MS = 10_000;
+const WHEEL_SWIPE_END_MS = 160;
+const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .shell-item, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
+const ONBOARDING_VERSION = 1;
+
+function isDesktopSurface(desktop: DesktopIdentity) {
+  return desktop.purpose !== "app-store" || desktop.ownership === "owned";
+}
+
+function fileDialogEntryElement(id: string) {
+  return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
+}
+
+function iconGroupSelectionScope(folderId: string) {
+  return `icon-group:${folderId}`;
+}
+
+function formatImportBytes(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 ** 3) return `${(value / 1024 ** 2).toFixed(1)} MB`;
+  return `${(value / 1024 ** 3).toFixed(1)} GB`;
+}
+
+function mergeAppId(operationId: string) {
+  return `merge:${operationId}`;
+}
+
+function mergeTextForRegions(regions: readonly ThreeWayTextMergeRegion[], resolutions: Record<string, MergeTextResolution>) {
+  return regions.map((region, index) => {
+    if (region.kind === "resolved") return region.text;
+    const resolution = resolutions[String(index)];
+    return resolution === "mine" ? region.mine : resolution === "server" ? region.server : resolution === "both" ? `${region.mine}${region.server}` : "";
+  }).join("");
+}
+
+async function decodeLegacyConflictText(content: Blob) {
+  if (content.size > THREE_WAY_TEXT_MERGE_MAX_BYTES) return null;
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await content.arrayBuffer());
+    const lineCount = text ? text.split(/\r\n|\r|\n/).length : 0;
+    return lineCount <= THREE_WAY_TEXT_MERGE_MAX_LINES ? text : null;
+  } catch {
+    return null;
+  }
+}
+
+function transientMenuOpen() {
+  return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel"));
+}
+
+function themeEditorState(appearance: ThemeState, canManage: boolean, restrictionReason: string): ThemeEditorState {
+  return {
+    selectedThemeId: appearance.selectedThemeId,
+    themes: [
+      ...BUILTIN_THEME_IDS.map((id) => ({ id, ...BUILTIN_THEMES[id], builtIn: true, hasWallpaper: false })),
+      ...appearance.customThemes.map(({ id, name, definition, wallpaper }) => ({ id, name, definition, builtIn: false, hasWallpaper: Boolean(wallpaper) })),
+    ],
+    canManage,
+    restrictionReason: canManage ? "" : restrictionReason,
+  };
+}
+
+const WALLPAPER_NAMES = { dusk: "Dusk", grove: "Grove", ember: "Ember" } as const;
+
+function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEntry[], appearance: ThemeState, canManage: boolean, restrictionReason: string): WallpaperEditorState {
+  const source = layout.wallpaper.source;
+  const file = source.startsWith("file:") ? entries.find((entry): entry is FileEntry => entry.id === source.slice(5) && entry.kind === "file") : null;
+  const theme = source.startsWith("theme:") ? appearance.customThemes.find((candidate) => candidate.id === source.slice(6) && candidate.wallpaper) : null;
+  return {
+    wallpaper: layout.wallpaper,
+    currentName: source in WALLPAPER_NAMES ? WALLPAPER_NAMES[source as keyof typeof WALLPAPER_NAMES] : theme ? `${theme.name} included` : file?.name ?? "Custom wallpaper",
+    canManage,
+    restrictionReason: canManage ? "" : restrictionReason,
+  };
+}
+
+function App({ session, warmStart = false }: { session: AuthSession | null; warmStart?: boolean }) {
+  const commandService = useMemo(createAppCommandService, []);
+  const [loading, setLoading] = useState(true);
+  const {
+    lifecycle: appLifecycle,
+    theme: appTheme,
+    hostServices: appHostServices,
+    capabilities: appCapabilities,
+    installedApps,
+    availableAccountApps,
+    accountAppsSnapshot,
+    accountAppsError,
+    accountAppsPending,
+    blockedAccountAppOperations,
+    appsLoaded,
+    fileAssociations,
+    dialogRequests: appDialogRequests,
+    notifications: appNotifications,
+    approveInstall,
+    removeInstall,
+    saveAssociation,
+    deleteAssociation,
+    clearAssociations,
+    clearAppData,
+    publishAccountInstall,
+    approveAccountInstall,
+    uninstallAccountApp,
+    retryAccountAppOperation,
+    discardAccountAppOperation,
+  } = useAppPlatform({
+    enabled: !loading,
+    initialTheme: resolveTheme(DEFAULT_THEME_STATE),
+    onCloseRequest: ({ instanceId }) => closeAppRef.current(instanceId, false),
+    onError: (loadError) => setError(loadError.message),
+    accountSyncOrigin: session?.directBlobOrigin ?? null,
+  });
+  const [entries, setEntries] = useState<DesktopEntry[]>([]);
+  const [desktops, setDesktops] = useState<DesktopIdentity[]>([]);
+  const [catalogQuota, setCatalogQuota] = useState<CatalogQuota | null>(null);
+  const [activeDesktopId, setActiveDesktopId] = useState("");
+  const [error, setError] = useState("");
+  const [folderImportError, setFolderImportError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [backPrompt, setBackPrompt] = useState("");
+  const [shellMessages, setShellMessages] = useState<ShellMessage[]>([]);
+  const nextShellMessageIdRef = useRef(0);
+  const transferDismissTimersRef = useRef(new Map<string, number>());
+  const [areaAnnouncement, setAreaAnnouncement] = useState("");
+  const [notificationAnnouncement, setNotificationAnnouncement] = useState("");
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const transferPhasesRef = useRef(new Map<string, FileTransferState["phase"]>());
+  const [swipePreview, setSwipePreview] = useState<SurfaceSegment | null>(null);
+  const [areaTransition, setAreaTransition] = useState<AreaTransition | null>(null);
+  const { selectedIds, selectedIdsRef, selectionScope, selectionScopeRef, mobileMultiSelectScope, replaceSelection, selectEntry: selectEntryId, retainSelection, beginMobileMultiSelect } = useDesktopSelection();
+  const [todoWidgetPosition, setTodoWidgetPosition] = useState<EntryPosition | null>(null);
+  const [sceneWidgetPosition, setSceneWidgetPosition] = useState<EntryPosition | null>(null);
+  const [widgetMutationPending, setWidgetMutationPending] = useState(false);
+  const [dirtyAppIds, setDirtyAppIds] = useState<Set<string>>(() => new Set());
+  const [dialog, setDialog] = useState<DialogState>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null);
+  const [moveDialogEntryIds, setMoveDialogEntryIds] = useState<string[]>([]);
+  const [moveDialogSubmitting, setMoveDialogSubmitting] = useState(false);
+  const [desktopMoveFolders, setDesktopMoveFolders] = useState<Record<string, DesktopEntry[]>>({});
+  const [moveDestinationsLoading, setMoveDestinationsLoading] = useState(false);
+  const { runningApps, runningAppsRef, focusedAppId, focusedAppIdRef, updateRunningApps, setFocusedApp, nextWindowZIndex, setNextWindowZIndex } = useRunningWindows();
+  const [windowSessionRestored, setWindowSessionRestored] = useState(false);
+  const [routeHistoryReady, setRouteHistoryReady] = useState(false);
+  const [route, setRoute] = useState<DesktopRoute | null>(null);
+  const [desktopSize, setDesktopSize] = useState(() => ({ width: window.innerWidth, height: Math.max(1, window.innerHeight - 44) }));
+  const [layout, setLayout] = useState<DesktopLayout>(() => ({ autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [] }));
+  const [wallpaperAsset, setWallpaperAsset] = useState<{ key: string; url: string } | null>(null);
+  const [wallpaperFailedKey, setWallpaperFailedKey] = useState<string | null>(null);
+  const [wallpaperSelectionPending, setWallpaperSelectionPending] = useState(false);
+  const [appearance, setAppearance] = useState<ThemeState>(DEFAULT_THEME_STATE);
+  const [exporting, setExporting] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>("connecting");
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(() => Boolean(document.fullscreenElement));
+  const windowed = useMediaQuery(WINDOWED_DESKTOP_QUERY);
+  const [autoUpdate, setAutoUpdate] = useState(true);
+  const [externalEmbeddedPreviews, setExternalEmbeddedPreviews] = useState<boolean | null>(null);
+  const [allowBrowserPinchZoom, setAllowBrowserPinchZoom] = useState(false);
+  const [updateSupported, setUpdateSupported] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
+  const [updateChecking, setUpdateChecking] = useState(false);
+  const [showUpdateToast, setShowUpdateToast] = useState(false);
+  const [updateBlocked, setUpdateBlocked] = useState(false);
+  const [updateApplying, setUpdateApplying] = useState(false);
+  const [serverBuildTimestamp, setServerBuildTimestamp] = useState<string | null>(null);
+  const [pendingPaste, setPendingPaste] = useState<PendingPaste | null>(null);
+  const [pendingDevicePaste, setPendingDevicePaste] = useState<PendingDevicePaste | null>(null);
+  const [clipboardOffer, setClipboardOffer] = useState<ClipboardOfferState | null>(() => restoreClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage));
+  const [marquee, setMarquee] = useState<{ left: number; top: number; width: number; height: number } | null>(null);
+  const [edgeDwell, setEdgeDwell] = useState<{ direction: EdgeDirection; id: number } | null>(null);
+  const [activePanel, setActivePanel] = useState<"search" | "sync" | "offline" | "help" | "shortcuts" | "trash" | null>(null);
+  const [helpSection, setHelpSection] = useState<HelpSectionId>("start-here");
+  const [outboxRecords, setOutboxRecords] = useState<OutboxRecord[]>([]);
+  const [mergeReviews, setMergeReviews] = useState<Record<string, MergeReview>>({});
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
+  const [storagePersistence, setStoragePersistence] = useState<StoragePersistenceStatus>("checking");
+  const [confirmation, setConfirmation] = useState<ConfirmationRequest | null>(null);
+  const [offlineInventory, setOfflineInventory] = useState<OfflineStorageInventory | null>(null);
+  const [offlineProgress, setOfflineProgress] = useState<OfflineOperationProgress | null>(null);
+  const [activeEntryDownloadIds, setActiveEntryDownloadIds] = useState<ReadonlySet<string>>(new Set());
+  const [fileTransfers, setFileTransfers] = useState<readonly FileTransferState[]>([]);
+  const [copyDownload, setCopyDownload] = useState<{ entryIds: ReadonlySet<string>; totalBytes: number } | null>(null);
+  const [offlineBusy, setOfflineBusy] = useState(false);
+  const [importProgress, setImportProgress] = useState<{ folderCount: number; fileCount: number; totalBytes: number; phase: "preparing" | "saving" | "syncing" } | null>(null);
+  const [trashNotifications, setTrashNotifications] = useState<TrashNotification[]>([]);
+  const [cachedSearchResults, setCachedSearchResults] = useState<DesktopSearchResult[]>([]);
+  const [searchAllDesktops, setSearchAllDesktops] = useState(false);
+  const [explorerView, setExplorerView] = useState<ExplorerView>("list");
+  const [showHiddenFiles, setShowHiddenFiles] = useState(false);
+  const [systemDocument, setSystemDocument] = useState<SystemEntriesDocument | null>(null);
+  const [shellTrash, setShellTrash] = useState<TrashDocument | null>(null);
+  const [systemLoad, setSystemLoad] = useState<ProtectedLoadState>({ status: "idle" });
+  const [trashLoad, setTrashLoad] = useState<ProtectedLoadState>({ status: "idle" });
+  const [protectedRefreshToken, setProtectedRefreshToken] = useState(0);
+  const [minimapExpanded, setMinimapExpanded] = useState(false);
+  const [showGettingStarted, setShowGettingStarted] = useState(false);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+  const [pwaInstalled, setPwaInstalled] = useState(false);
+  const [publishEntryId, setPublishEntryId] = useState<string | null>(null);
+  const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
+  const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
+  const [storeInstallKey, setStoreInstallKey] = useState<string | null>(null);
+  const [storeLoading, setStoreLoading] = useState(false);
+  const [storeError, setStoreError] = useState("");
+  const storeInspectionCacheRef = useRef(new Map<string, InspectedStorePackage>());
+  const storeRefreshGenerationRef = useRef(0);
+  const storeManagedRef = useRef(false);
+  const storeDescriptorRef = useRef<AppStoreDescriptor | null>(null);
+  const activeSystemDigestsRef = useRef(new Set<string>());
+  const activeSystemAppIdsRef = useRef(new Set<string>());
+  const systemReconciliationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const systemPackageReconciliationRef = useRef(new Set<string>());
+  const refreshStoreRef = useRef<() => void>(() => undefined);
+  const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
+  const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
+  const fileDialogResultIdRef = useRef<string | null>(null);
+  const groupCreatedFolderRef = useRef(false);
+  const mobileDestinationOriginRef = useRef<HTMLElement | null>(null);
+  const desktopRef = useRef<HTMLElement>(null);
+  const wallpaperSceneRef = useRef<WallpaperSceneTarget | null>(null);
+  const desktopSizeRef = useRef(desktopSize);
+  const iconMetricsRef = useRef(themeIconMetrics(resolveTheme(DEFAULT_THEME_STATE)));
+  const iconAreaSizeRef = useRef(desktopSize);
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const windowTrackRef = useRef<HTMLDivElement>(null);
+  const frameTrackRef = useRef<HTMLDivElement>(null);
+  const areaTransitionTimerRef = useRef<number | null>(null);
+  const areaTransitionGenerationRef = useRef(0);
+  const areaTransitionRef = useRef<AreaTransition | null>(null);
+  const completeAreaTransitionRef = useRef<() => void>(() => undefined);
+  const stopAreaTransitionWaitRef = useRef<(() => void) | null>(null);
+  const areaTransitionNavigationRef = useRef<{ generation: number; mode: "push" | "replace"; route: DesktopRoute } | null>(null);
+  const immediateAreaTransitionRef = useRef<{ generation: number; target: SurfaceSegment } | null>(null);
+  const uploadRef = useRef<HTMLInputElement>(null);
+  const directoryRef = useRef<HTMLInputElement>(null);
+  const uploadParentRef = useRef<string | null>(null);
+  const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
+  const importOperationRef = useRef<ImportOperationContext | null>(null);
+  const swipeRef = useRef<{ axis: "x" | "y" | null; pointerId: number; startSegment: SurfaceSegment; startX: number; startY: number; x: number; y: number; previewTarget: SurfaceSegment | null; transitionId?: number } | null>(null);
+  const wheelSwipeRef = useRef<{ deltaX: number; deltaY: number; switched: boolean; timer: number } | null>(null);
+  const desktopPressRef = useRef<{
+    activated: boolean;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    timer: number;
+  } | null>(null);
+  const desktopTouchPointersRef = useRef(new Set<number>());
+  const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreNotificationFocus = useCallback(() => areaSwitcherTriggerRef.current?.focus(), []);
+  const areaSwitcherTapRef = useRef<AreaSwitcherTap | null>(null);
+  const areaSwitcherRef = useRef<HTMLElement>(null);
+  const areaSwitcherRestoreFocusRef = useRef(false);
+  const areaSwitcherInternalActivationRef = useRef(false);
+  const suppressAreaSwitcherClickRef = useRef(false);
+  const minimapSwipeRef = useRef<{
+    axis: "x" | "y" | null;
+    pointerId: number;
+    startSegment: SurfaceSegment;
+    startX: number;
+    startY: number;
+    previewTarget: SurfaceSegment | null;
+  } | null>(null);
+  const suppressMinimapClickRef = useRef(false);
+  const suppressClickRef = useRef(false);
+  const clipboardRef = useRef<ClipboardEntrySnapshot | null>(null);
+  const keyboardPasteRef = useRef(false);
+  const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; additive: boolean; initial: string[] } | null>(null);
+  const beginPasteRef = useRef<(parentId: string | null, position?: EntryPosition, snapshot?: ClipboardEntrySnapshot) => Promise<void>>(async () => undefined);
+  const copySelectionRef = useRef<() => Promise<void>>(async () => undefined);
+  const handleImportRef = useRef<(files: File[], parentId: string | null, base?: EntryPosition) => Promise<void>>(async () => undefined);
+  const edgeDwellGenerationRef = useRef(0);
+  const edgeNavigationRef = useRef<{
+    route: DesktopRoute;
+    historyState: unknown;
+    draftEntryId?: string;
+    focusedAppId?: string | null;
+    targetSegment?: { column: number; row: number };
+  } | null>(null);
+  const windowEdgeNavigationRef = useRef<{
+    appId: string;
+    bounds: WindowBounds;
+    route: DesktopRoute;
+    historyState: unknown;
+    targetSegment?: SurfaceSegment;
+  } | null>(null);
+  const layoutRef = useRef(layout);
+  const widgetMutationPendingRef = useRef(false);
+  const wallpaperSelectionPendingRef = useRef(0);
+  const wallpaperAssetRef = useRef<{ key: string; url: string } | null>(null);
+  const entriesRef = useRef(entries);
+  const projectedShellEntriesRef = useRef<DesktopEntry[]>([]);
+  const installedAppsRef = useRef(installedApps);
+  installedAppsRef.current = installedApps;
+  const routeRef = useRef<DesktopRoute | null>(null);
+  const settingsPageRef = useRef<SettingsPage>("desktop");
+  const navigationReadyRef = useRef(false);
+  const applyLocationRouteRef = useRef<(entriesValue?: DesktopEntry[], layoutValue?: DesktopLayout) => void>(() => undefined);
+  const navigateRouteRef = useRef<(next: DesktopRoute, mode?: "push" | "replace", previousApps?: WindowTarget[]) => void>(() => undefined);
+  const openRouteAppsRef = useRef<(next: DesktopRoute) => void>(() => undefined);
+  const restoreHistoryAppsRef = useRef<(apps: WindowTarget[]) => void>(() => undefined);
+  const restoreRunningAppsRef = useRef<(session: WindowSession, entries: DesktopEntry[]) => void>(() => undefined);
+  const applyOpenQueryRef = useRef<(entries: DesktopEntry[], layout: DesktopLayout) => void>(() => undefined);
+  const closeAppRef = useRef<(id: string, consultLifecycle?: boolean, syncRoute?: boolean) => Promise<boolean>>(async () => false);
+  const fileLoadGenerationsRef = useRef<Record<string, number>>({});
+  const mergeLoadGenerationsRef = useRef<Record<string, number>>({});
+  const mergeLoadSequenceRef = useRef(0);
+  const layoutSaveRef = useRef<Promise<void>>(Promise.resolve());
+  const layoutSaveQueueRef = useRef(createLatestTaskQueue<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number }>(({ layout: next, baseLayout, baseRevision }) => saveDesktopLayout(next, { layout: baseLayout, revision: baseRevision })));
+  const layoutDraftRef = useRef<{ desktopId: string; layout: DesktopLayout; baseLayout: DesktopLayout; baseRevision: number } | null>(null);
+  const wallpaperPreviewRef = useRef<{ desktopId: string; layout: DesktopLayout } | null>(null);
+  const contentRevisionsRef = useRef<Record<string, number>>({});
+  const activeDesktopIdRef = useRef("");
+  const desktopsRef = useRef<DesktopIdentity[]>([]);
+  const catalogAuthoritativeRef = useRef(false);
+  const activateDesktopRef = useRef<(desktopId: string) => Promise<boolean>>(async () => false);
+  const activationQueueRef = useRef(createSerialTaskQueue());
+  const activationGenerationRef = useRef(0);
+  const fileDirtyRef = useRef<Record<string, boolean>>({});
+  const appSnapshotRef = useRef<DesktopStateSnapshot | null>(null);
+  const sandboxFullscreenBoundsRef = useRef(new Map<string, WindowBounds>());
+  const windowSessionReadyRef = useRef(false);
+  const windowSessionSaveRef = useRef<Promise<void>>(Promise.resolve());
+  const updaterRef = useRef<PwaUpdater | null>(null);
+  const confirmationResolverRef = useRef<((confirmed: boolean) => void) | null>(null);
+  const persistenceRequestedRef = useRef(false);
+  const restoredWindowBoundsRef = useRef(new Map<string, WindowBounds>());
+  const pendingSystemRestoreRef = useRef<Array<Extract<WindowSession["apps"][number], { kind: "system" }>>>([]);
+  const pendingSandboxLaunchIdsRef = useRef(new Set<string>());
+  const launchInstalledAppRef = useRef<(install: InstalledApp, target?: FileEntry | FolderEntry | "root", launchSource?: "launcher" | "file" | "restore") => Promise<void>>(async () => undefined);
+  const canMutateRef = useRef(false);
+  const canSettingsRef = useRef(false);
+  const appearanceRef = useRef<ThemeState>(DEFAULT_THEME_STATE);
+  const syncStatusRef = useRef<SyncStatus>("connecting");
+  const offlineModelRef = useRef<ReturnType<typeof buildOfflineAvailability> | null>(null);
+  const handleOpenRef = useRef<(entry: DesktopEntry) => void>(() => undefined);
+  const chooseUploadRef = useRef<(parentId: string | null) => void>(() => undefined);
+  const chooseFolderImportRef = useRef<(parentId: string | null) => Promise<void>>(async () => undefined);
+  const windowCommandRef = useRef<{
+    maximize: (id: string) => void;
+    move: (id: string, direction: "left" | "right" | "up" | "down") => void;
+    adjust: (id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") => void;
+  }>({ maximize: () => {}, move: () => {}, adjust: () => {} });
+  const autoUpdateRef = useRef(true);
+  const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] });
+  const updatePreferenceLoadedRef = useRef(false);
+  const manualUpdateCheckRef = useRef(false);
+  const actionSheetHistoryRef = useRef<string | null>(null);
+  const restoringHistoryRef = useRef(false);
+  const restoreOnlyPopRef = useRef(false);
+  const backInFlightRef = useRef(false);
+  const rootBackGuardInstalledRef = useRef(false);
+  const quitBackRef = useRef<QuitBackState>({ count: 0, lastAt: 0 });
+  const quitBackTimerRef = useRef<number | null>(null);
+  const navigateBackEvent = useEffectEvent((source: "ui" | "history", historyState?: unknown) => navigateBack(source, historyState));
+  const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
+  areaTransitionRef.current = areaTransition;
+  desktopSizeRef.current = desktopSize;
+  desktopsRef.current = desktops;
+  const routeExplorerFolderId = route?.explorerFolderId;
+  const routeFileId = route?.fileId;
+  const routePropertiesEntryId = route?.propertiesEntryId;
+  const routeSettings = route?.settings;
+  if (routeSettings) settingsPageRef.current = routeSettings;
+  const settingsPage = routeSettings ?? settingsPageRef.current;
+  const activeDesktop = desktops.find((desktop) => desktop.id === activeDesktopId);
+  const canMutate = canMutateDesktop(activeDesktop, syncStatus);
+  canMutateRef.current = canMutate;
+  const canManage = Boolean(activeDesktop?.capabilities.manage && syncStatus === "online");
+  const canSettings = Boolean(activeDesktop?.capabilities.settings && canMutate);
+  canSettingsRef.current = canSettings;
+  appearanceRef.current = appearance;
+  syncStatusRef.current = syncStatus;
+  const canViewActivity = canViewDesktopActivity(activeDesktop, syncStatus);
+  const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
+  const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
+  const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
+  const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "account-short-links-v1");
+  const publicationsAvailable = Boolean(session?.capabilities.publications === "alias-publications-v1");
+  const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
+  const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
+  const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
+  const actionSheetOpen = contextMenu?.presentation === "sheet";
+  const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
+  const offlineModel = useMemo(
+    () =>
+      buildOfflineAvailability(
+        entries,
+        offlineInventory ?? {
+          desktopId: activeDesktopId,
+          authoritativeLocal: syncStatus === "local",
+          files: {},
+          cachedBytes: 0,
+          protectedBytes: 0,
+          releasableBytes: 0,
+          browserStorage: null,
+        },
+        { updatingIds: new Set([...(offlineProgress?.updatingIds ?? []), ...activeEntryDownloadIds]) },
+      ),
+    [activeDesktopId, entries, offlineInventory, offlineProgress, activeEntryDownloadIds, syncStatus],
+  );
+  offlineModelRef.current = offlineModel;
+  const activeTheme = useMemo(() => resolveTheme(appearance), [appearance]);
+  const iconMetrics = useMemo(() => themeIconMetrics(activeTheme), [activeTheme]);
+  iconMetricsRef.current = iconMetrics;
+  const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
+  iconAreaSizeRef.current = iconArea;
+  const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
+  const copyDeepLinkEvent = useEffectEvent(copyDeepLink);
+
+  useEffect(() => {
+    let active = true;
+    if (!showHiddenFiles || !activeDesktopId || loading) {
+      setSystemDocument(null);
+      setShellTrash(null);
+      setSystemLoad({ status: "idle" });
+      setTrashLoad({ status: "idle" });
+      return () => { active = false; };
+    }
+    setSystemLoad({ status: "loading" });
+    void listSystemEntries(activeDesktopId).then((document) => {
+      if (!active) return;
+      setSystemDocument(document);
+      setSystemLoad({ status: "ready" });
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      setSystemDocument(null);
+      setSystemLoad({ status: "error", message: reason instanceof Error ? reason.message : "System resources could not be loaded." });
+    });
+    if (syncStatus === "local") {
+      setShellTrash(null);
+      setTrashLoad({ status: "ready" });
+    } else {
+      setTrashLoad({ status: "loading" });
+      void listTrash(activeDesktopId).then((document) => {
+        if (!active) return;
+        setShellTrash(document);
+        setTrashLoad({ status: "ready" });
+      }).catch((reason: unknown) => {
+        if (!active) return;
+        setShellTrash(null);
+        setTrashLoad({ status: "error", message: reason instanceof Error ? reason.message : "Trash contents could not be loaded." });
+      });
+    }
+    return () => { active = false; };
+  }, [activeDesktopId, appearance, entries, layout, loading, protectedRefreshToken, showHiddenFiles, syncStatus]);
+  const activeSystemDocument = systemDocument?.desktopId === activeDesktopId ? systemDocument : null;
+  const activeShellTrash = shellTrash?.desktopId === activeDesktopId ? shellTrash : null;
+  const accountResourceList = useMemo(() => accountAppsSnapshot ? accountResources(accountAppsSnapshot) : [], [accountAppsSnapshot]);
+  const protectedTreeStatus = (() => {
+    if (!showHiddenFiles) return undefined;
+    if (systemLoad.status === "loading" || trashLoad.status === "loading" || systemLoad.status === "idle" || trashLoad.status === "idle") return { message: "Loading protected desktop files..." };
+    const failures = [systemLoad.status === "error" ? systemLoad.message : "", trashLoad.status === "error" ? trashLoad.message : ""].filter(Boolean);
+    if (!failures.length) return undefined;
+    return { message: `${failures.length === 1 && (activeSystemDocument || activeShellTrash) ? "The protected tree is incomplete. " : "The protected tree could not be loaded. "}${failures.join(" ")}`, error: true, onRetry: () => setProtectedRefreshToken((value) => value + 1) };
+  })();
+  const activeShellItemObstacles = useMemo(() => desktopShellItemObstacles(layout.widgets, layout.iconGroups, entries, { column: activeSegment.column, row: activeSegment.row }, iconArea), [activeSegment.column, activeSegment.row, entries, iconArea, layout.iconGroups, layout.widgets]);
+  const shellEntryList = useMemo(() => {
+    const projected = shellEntries(entries, contentRevisionsRef.current, showHiddenFiles, thumbnailHierarchyAvailable, activeSystemDocument?.entries, activeShellTrash?.items, showHiddenFiles, accountResourceList);
+    if (!projected.some((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID)) return projected;
+    const occupied = projected.filter((entry) => entry.parentId === null && entry.id !== VIRTUAL_HIRAYA_ROOT_ID).map((entry) => entry.position);
+    const homeObstacles = desktopShellItemObstacles(layout.widgets, layout.iconGroups, entries, { column: 0, row: 0 }, iconArea);
+    const position = nextAvailableDesktopSlot(iconArea, occupied, false, iconMetrics, homeObstacles);
+    return position ? projected.map((entry) => entry.id === VIRTUAL_HIRAYA_ROOT_ID ? { ...entry, position } : entry) : projected.filter((entry) => entry.id !== VIRTUAL_HIRAYA_ROOT_ID);
+  }, [accountResourceList, activeShellTrash, activeSystemDocument, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, showHiddenFiles, thumbnailHierarchyAvailable]);
+  projectedShellEntriesRef.current = shellEntryList;
+  const shellEntryIndex = useMemo(() => createEntryIndex(shellEntryList), [shellEntryList]);
+  const groupedFolderIds = useMemo(() => new Set(layout.iconGroups.map((group) => group.folderId)), [layout.iconGroups]);
+  const desktopEntryList = useMemo(() => shellEntryList.filter((entry) => entry.parentId !== null || !groupedFolderIds.has(entry.id)), [groupedFolderIds, shellEntryList]);
+  const rootEntries = desktopEntryList.filter((entry) => entry.parentId === null);
+  const responsive = useMemo(() => responsiveDesktop(desktopEntryList, iconArea, iconMetrics), [desktopEntryList, iconArea, iconMetrics]);
+  const activeSegmentKey = segmentKey(activeSegment);
+  const activeShellItemOverlap = layout.widgets.some((widget) => boundsIntersectSegment(widget, widget, activeSegment, iconArea))
+    || layout.iconGroups.some((group) => {
+      const folder = entries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+      return Boolean(folder && boundsIntersectSegment(folder.position, group, activeSegment, iconArea));
+    });
+  const actualActiveSegment = responsive.segments.find((candidate) => candidate.key === activeSegmentKey);
+  const occupiedSegments = useMemo(() => {
+    const byKey = new Map(responsive.segments.map((segment) => [segment.key, { ...segment, itemCount: segment.entries.length }]));
+    const occupy = (segment: SurfaceSegment) => {
+      const key = segmentKey(segment);
+      const current = byKey.get(key) ?? { entries: [], itemCount: 0, key, segment };
+      byKey.set(key, { ...current, itemCount: (current.itemCount ?? current.entries.length) + 1 });
+    };
+    for (const entry of rootEntries) {
+      const ownerKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
+      for (const segment of intersectingSegments(entry.position, iconMetrics, iconArea)) {
+        if (segmentKey(segment) !== ownerKey) occupy(segment);
+      }
+    }
+    for (const widget of layout.widgets) {
+      for (const segment of intersectingSegments(widget, widget, iconArea)) occupy(segment);
+    }
+    for (const group of layout.iconGroups) {
+      const folder = entries.find((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+      if (!folder) continue;
+      for (const segment of intersectingSegments(folder.position, group, iconArea)) occupy(segment);
+    }
+    for (const app of runningApps) {
+      const segment = projectLogicalPosition(app.bounds, desktopSize).segment;
+      occupy(segment);
+    }
+    return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
+  }, [desktopSize, entries, iconArea, iconMetrics, layout.iconGroups, layout.widgets, responsive.segments, rootEntries, runningApps]);
+  const visibleSegments = (() => {
+    const byKey = new Map(occupiedSegments.map((candidate) => [candidate.key, candidate]));
+    const home: SurfaceSegment = { column: 0, row: 0 };
+    if (!byKey.has(segmentKey(home))) byKey.set(segmentKey(home), { entries: [], itemCount: 0, key: segmentKey(home), segment: home });
+    if (!byKey.has(activeSegmentKey)) byKey.set(activeSegmentKey, { entries: [], itemCount: 0, key: activeSegmentKey, segment: activeSegment });
+    return [...byKey.values()].sort((a, b) => a.segment.row - b.segment.row || a.segment.column - b.segment.column);
+  })();
+  const visibleSegmentsByKey = new Map(visibleSegments.map((segment) => [segment.key, segment]));
+  const minimapSegments = areaMapSegments(visibleSegments.map((segment) => segment.segment), activeSegment, minimapExpanded).map((segment) => {
+    const key = segmentKey(segment);
+    return visibleSegmentsByKey.get(key) ?? { entries: [], key, segment };
+  });
+  const minimapWindowLimit = minimapWindowCapacity(desktopSize.width, true);
+  const minimapDetailed = minimapExpanded;
+  const restingCamera = areaCameraPosition(activeSegment, desktopSize);
+  const iconRestingCamera = areaCameraPosition(activeSegment, iconArea);
+  const transitionSegmentKeys = new Set(areaTransition ? [segmentKey(areaTransition.source), segmentKey(areaTransition.target)] : []);
+  const activeDesktopSegment = actualActiveSegment ?? { entries: [], key: activeSegmentKey, segment: activeSegment };
+  const minimapWidth = minimapDetailed ? Math.min(760, desktopSize.width - 16) : 52;
+  const minimapHeight = minimapDetailed ? Math.min(420, desktopSize.height * 0.56) : 68;
+  const minimapObscured =
+    !minimapExpanded &&
+    activeDesktopSegment.entries.some((entry) => {
+      const position = responsive.positions.get(entry.id) ?? entry.position;
+      return position.x + iconMetrics.width > iconArea.width - minimapWidth && position.y + iconMetrics.height > iconArea.height - minimapHeight;
+    });
+  const selectedEntityIdSet = useMemo(() => new Set(selectedIds), [selectedIds]);
+  const selectedEntryIds = selectionScope === "desktop" ? selectedIds.flatMap((id) => {
+    const entity = desktopEntityParts(id);
+    return entity?.kind === "entry" ? [entity.sourceId] : [];
+  }) : selectedIds;
+  const selectedIdSet = useMemo(() => new Set(selectedEntryIds), [selectedEntryIds]);
+  const hasVirtualSelection = selectedEntryIds.some(isProtectedShellEntry);
+  const selectedEntries = selectedEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
+  const desktopEntityList = useMemo(() => desktopEntities(shellEntryList, layout.widgets, layout.iconGroups, iconMetrics), [iconMetrics, layout.iconGroups, layout.widgets, shellEntryList]);
+  const focusedExplorer = runningApps.find((app): app is ExplorerApp => app.id === focusedAppId && app.kind === "explorer");
+  const mobileFileSurface = focusedExplorer?.id ?? (selectionScope.startsWith("icon-group:") ? selectionScope : "desktop");
+  const mobileFileSelection = selectionScope === mobileFileSurface ? selectedEntries : [];
+  const mobileSelectionMode = mobileMultiSelectScope === mobileFileSurface && selectionScope === mobileFileSurface;
+  const showMobileSelectionToolbar = (!focusedAppId || Boolean(focusedExplorer)) && !focusedExplorer?.transient && !hasVirtualSelection && !contextMenu && Boolean(activeDesktopId);
+  const dialogEntry = dialog?.type === "rename" ? (entryIndex.byId.get(dialog.entryId) ?? null) : dialog?.type === "delete" ? (entryIndex.byId.get(dialog.entryIds[0]) ?? null) : null;
+  const contextMenuEntry = contextMenu?.type === "entry" ? (entryIndex.byId.get(contextMenu.entryId) ?? null) : null;
+  const contextMenuWidget = contextMenu?.type === "widget" ? (layout.widgets.find((widget) => widget.id === contextMenu.widgetId) ?? null) : null;
+  const contextMenuEntries = contextMenuEntry && selectedIdSet.has(contextMenuEntry.id) ? selectedEntries : contextMenuEntry ? [contextMenuEntry] : [];
+  const moveDialogEntries = moveDialogEntryIds.map((id) => entryIndex.byId.get(id)).filter((entry): entry is DesktopEntry => Boolean(entry));
+  const shortcutsSuspended = Boolean(dialog || pendingPaste || pendingDevicePaste || moveDialogEntryIds.length || activePanel || publishEntryId || confirmation || contextMenu || appDialogRequests.length);
+
+  const openFileDialog = useCallback((next: Exclude<DialogState, null>) => {
+    if (("parentId" in next && next.parentId !== null && !entriesRef.current.some((entry) => entry.id === next.parentId && entry.kind === "folder"))
+      || (next.type === "rename" && !entriesRef.current.some((entry) => entry.id === next.entryId))
+      || (next.type === "delete" && (!next.entryIds.length || next.entryIds.some((id) => !entriesRef.current.some((entry) => entry.id === id))))) return;
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    fileDialogInvokerRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger")
+      ?? (active?.closest(".context-menu") ? selectedIdsRef.current.map((id) => fileDialogEntryElement(desktopEntityParts(id)?.sourceId ?? id)).find(Boolean) ?? null : active);
+    fileDialogResultIdRef.current = null;
+    setDialog(next);
+  }, [selectedIdsRef]);
+
+  const restoreFileDialogFocus = useCallback(() => {
+    const result = fileDialogResultIdRef.current;
+    fileDialogResultIdRef.current = null;
+    return result ? fileDialogEntryElement(result) ?? fileDialogInvokerRef.current : fileDialogInvokerRef.current;
+  }, []);
+
+  function launchMobileDestination(dismiss: (restoreFocus?: boolean) => void, action: () => void) {
+    const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    mobileDestinationOriginRef.current = active?.closest(".mobile-header-menu")?.querySelector<HTMLElement>(".mobile-header-menu__trigger") ?? null;
+    dismiss(false);
+    action();
+  }
+
+  const restoreMobileDestinationFocus = useCallback(() => {
+    const target = mobileDestinationOriginRef.current;
+    mobileDestinationOriginRef.current = null;
+    return target;
+  }, []);
+
+  useEffect(() => {
+    if (!minimapExpanded) return;
+    const unregisterDismiss = registerTransientDismiss(collapseAreaMap);
+    const frame = window.requestAnimationFrame(() => {
+      areaSwitcherRef.current?.querySelector<HTMLButtonElement>('.desktop-minimap__area[aria-current="true"]')?.focus();
+    });
+    return () => {
+      unregisterDismiss();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [minimapExpanded]);
+
+  useEffect(() => {
+    if (minimapExpanded || !areaSwitcherRestoreFocusRef.current) return;
+    areaSwitcherRestoreFocusRef.current = false;
+    const frame = window.requestAnimationFrame(() => areaSwitcherTriggerRef.current?.focus());
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSegmentKey, minimapExpanded]);
+
+  useEffect(() => {
+    if (!minimapExpanded) return;
+    let timer: number | null = null;
+    const dismissForFrameFocus = () => {
+      timer = window.setTimeout(() => {
+        if (!(document.activeElement instanceof HTMLIFrameElement) || areaSwitcherRef.current?.contains(document.activeElement)) return;
+        areaSwitcherInternalActivationRef.current = false;
+        setMinimapExpanded(false);
+      }, 0);
+    };
+    window.addEventListener("blur", dismissForFrameFocus, true);
+    return () => {
+      window.removeEventListener("blur", dismissForFrameFocus, true);
+      if (timer !== null) window.clearTimeout(timer);
+    };
+  }, [minimapExpanded]);
+
+  useEffect(() => {
+    appTheme.set(activeTheme);
+    const tokens = mapThemeTokens(activeTheme);
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("theme.changed", tokens);
+  }, [activeTheme, appTheme, runningAppsRef]);
+
+  useEffect(() => {
+    const next = themeEditorState(appearance, canSettings, settingsRestrictionReason(activeDesktop, syncStatus));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox" && app.install.appId === SYSTEM_APP_IDS.themeEditor) app.dispatcher.emit("themes.changed", next);
+  }, [activeDesktop, appearance, canSettings, runningAppsRef, syncStatus]);
+
+  useEffect(() => {
+    const next = wallpaperEditorState(layout, entries, appearance, canSettings, settingsRestrictionReason(activeDesktop, syncStatus));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox" && app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.themeEditor) app.dispatcher.emit("wallpapers.changed", next);
+  }, [activeDesktop, appearance, canSettings, entries, layout, runningAppsRef, syncStatus]);
+
+  useEffect(() => {
+    persistClipboardOffer(typeof sessionStorage === "undefined" ? null : sessionStorage, clipboardOffer);
+  }, [clipboardOffer]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function inspectClipboard() {
+      if (!navigator.clipboard?.read || !navigator.permissions?.query) return;
+      try {
+        const permission = await navigator.permissions.query({ name: "clipboard-read" as PermissionName });
+        if (permission.state !== "granted") return;
+        const item = (await navigator.clipboard.read()).find((candidate) => candidate.types.some(isClipboardArchiveType));
+        if (!item) return;
+        const snapshot = await decodeClipboardArchiveItem(item);
+        if (cancelled) return;
+        clipboardRef.current = snapshot;
+        setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot)));
+      } catch {
+        /* Clipboard inspection is best-effort and must never request access. */
+      }
+    }
+    function inspectWhenVisible() {
+      if (document.visibilityState === "visible") void inspectClipboard();
+    }
+    void inspectClipboard();
+    window.addEventListener("focus", inspectClipboard);
+    document.addEventListener("visibilitychange", inspectWhenVisible);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", inspectClipboard);
+      document.removeEventListener("visibilitychange", inspectWhenVisible);
+    };
+  }, []);
+
+  useEffect(
+    () =>
+      appLifecycle.subscribe((owner, state) => {
+        fileDirtyRef.current[owner.instanceId] = state.dirty;
+        setDirtyAppIds((current) => {
+          if (current.has(owner.instanceId) === state.dirty) return current;
+          const next = new Set(current);
+          if (state.dirty) next.add(owner.instanceId);
+          else next.delete(owner.instanceId);
+          return next;
+        });
+        updateRunningApps((current) =>
+          current.map((app) => {
+            if (app.id !== owner.instanceId || app.kind !== "sandbox") return app;
+            app.dispatcher.emit("window.stateChanged", { focused: state.focused, maximized: state.maximized, fullscreen: state.fullscreen, width: state.width, height: state.height });
+            let bounds = { ...app.bounds, width: state.width, height: state.height };
+            if (state.fullscreen) {
+              if (!sandboxFullscreenBoundsRef.current.has(app.id)) sandboxFullscreenBoundsRef.current.set(app.id, app.bounds);
+              const segment = projectLogicalPosition(app.bounds, desktopSizeRef.current).segment;
+              bounds = { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, desktopSizeRef.current), ...desktopSizeRef.current };
+            } else {
+              bounds = sandboxFullscreenBoundsRef.current.get(app.id) ?? bounds;
+              sandboxFullscreenBoundsRef.current.delete(app.id);
+            }
+            return { ...app, title: state.title, bounds };
+          }),
+        );
+      }),
+    [appLifecycle, updateRunningApps],
+  );
+
+  useEffect(() => {
+    for (const app of runningAppsRef.current) {
+      if (app.kind !== "sandbox") continue;
+      appCapabilities.setInstanceMutationAllowed(app.id, canMutate);
+      app.dispatcher.emit("capabilities.changed", { files: fileWriteCapability(activeDesktop, syncStatus), externalEmbeddedPreviews: externalEmbeddedPreviews === true });
+    }
+  }, [activeDesktop, appCapabilities, canMutate, externalEmbeddedPreviews, runningAppsRef, syncStatus]);
+  useEffect(() => {
+    const current = routeRef.current;
+    if (!canViewActivity && settingsPage === "sync-storage/activity" && current) navigateRouteRef.current({ column: current.column, row: current.row, settings: "sync-storage" }, "replace");
+  }, [canViewActivity, settingsPage]);
+  useEffect(() => {
+    const current = routeRef.current;
+    if (!shortLinksAvailable && settingsPage === "sharing/short-links" && current) navigateRouteRef.current({ column: current.column, row: current.row, settings: activeDesktop?.capabilities.manage ? "sharing" : "desktop" }, "replace");
+  }, [activeDesktop?.capabilities.manage, settingsPage, shortLinksAvailable]);
+  useEffect(() => {
+    const current = routeRef.current;
+    if (current && (!session || !activeDesktop?.capabilities.manage) && (settingsPage === "sharing" || settingsPage === "sharing/desktop")) navigateRouteRef.current({ column: current.column, row: current.row, settings: shortLinksAvailable ? "sharing" : "desktop" }, "replace");
+    else if (current && settingsPage === "sharing/desktop" && !canManage) navigateRouteRef.current({ column: current.column, row: current.row, settings: "sharing" }, "replace");
+  }, [activeDesktop?.capabilities.manage, canManage, session, settingsPage, shortLinksAvailable]);
+  useEffect(() => {
+    if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
+  }, [loading, preferencesLoaded]);
+  function enqueueSystemReconciliation(work: () => Promise<void>) {
+    const result = systemReconciliationQueueRef.current.then(work, work);
+    systemReconciliationQueueRef.current = result.catch(() => undefined);
+    return result;
+  }
+  const reconcileSystemPackage = useEffectEvent((item: StorePackage, value: InspectedStorePackage) => enqueueSystemReconciliation(async () => {
+    if (item.source !== "remote" || item.kind !== "system" || !activeSystemDigestsRef.current.has(value.inspection.digest) || systemPackageReconciliationRef.current.has(value.inspection.digest)) return;
+    const catalogItem = publishedSystemApp(item);
+    if (!catalogItem) throw new Error("Trusted system apps require a runtime catalog release.");
+    const current = installedApps.find((app) => app.appId === catalogItem.manifest.id);
+    if (current && systemInstallMatchesCatalog(current, catalogItem)) return;
+    const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === value.inspection.manifest.id).map((app) => app.id);
+    systemPackageReconciliationRef.current.add(value.inspection.digest);
+    try {
+      if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Update ${value.inspection.manifest.name}?`, message: "This trusted system app has unsaved changes. Close it and apply the administrator's update?", confirmLabel: "Close and update" })) return;
+      if (!activeSystemDigestsRef.current.has(value.inspection.digest)) return;
+      const expected = { schemaVersion: 2 as const, catalogId: item.catalogId, catalogRevision: item.catalogRevision, desktopId: item.desktopId };
+      await serializeStorage(async () => {
+        if (!await appStoreDescriptorIsCurrent(expected)) return;
+        await saveApprovedPackageArchive(value.inspection.digest, value.archive);
+        if (!await appStoreDescriptorIsCurrent(expected) || !activeSystemDigestsRef.current.has(value.inspection.digest)) return;
+        forceCloseRunningAppInstances([...runningAppsRef.current], value.inspection.manifest.id, closeApp);
+        await approveInstall(systemInstallFromCatalog(catalogItem, current));
+      });
+    } catch (reason) {
+      setStoreError(reason instanceof Error ? reason.message : "A trusted system app could not be updated.");
+    } finally {
+      systemPackageReconciliationRef.current.delete(value.inspection.digest);
+    }
+  }));
+  const reconcileMissingSystemPackages = useEffectEvent((packages: readonly StorePackage[], managed: boolean, descriptor: AppStoreDescriptor | null, generation: number) => enqueueSystemReconciliation(async () => {
+    if (!managed || !descriptor || generation !== storeRefreshGenerationRef.current) return;
+    const activeIds = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.manifest.id] : []));
+    for (const current of installedApps) {
+      if (current.source !== "system" || activeIds.has(current.appId)) continue;
+      const fallback = SYSTEM_APP_CATALOG.find((item) => item.manifest.id === current.appId);
+      if (!fallback || systemInstallMatchesCatalog(current, fallback)) continue;
+      const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === current.appId).map((app) => app.id);
+      if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Restore ${current.manifest.name}?`, message: "This trusted system release was withdrawn but has unsaved changes. Close it and restore Hiraya's bundled version?", confirmLabel: "Close and restore", danger: true })) continue;
+      if (generation !== storeRefreshGenerationRef.current || !storeManagedRef.current || activeSystemAppIdsRef.current.has(current.appId)) return;
+      await serializeStorage(async () => {
+        if (!await appStoreDescriptorIsCurrent(descriptor) || activeSystemAppIdsRef.current.has(current.appId)) return;
+        forceCloseRunningAppInstances([...runningAppsRef.current], current.appId, closeApp);
+        await approveInstall(systemInstallFromCatalog(fallback, current));
+      });
+    }
+  }));
+  useEffect(() => {
+    if (!appsLoaded) return;
+    const store = session ? desktops.find((desktop) => desktop.purpose === "app-store") : undefined;
+    let active = true;
+    const refresh = async () => {
+      const generation = ++storeRefreshGenerationRef.current;
+      if (active) {
+        setStoreLoading(Boolean(store));
+        setStoreError(store ? "" : session ? "No administrator App Store is configured." : "The App Store requires a synchronized Hiraya account.");
+      }
+      try {
+        const packages: StorePackage[] = [];
+        let managed = false;
+        let storeDescriptor: AppStoreDescriptor | null = null;
+        if (store) {
+          try {
+            const loaded = await loadStorePackages(store, session!.directBlobOrigin);
+            packages.push(...loaded.packages);
+            managed = loaded.managed;
+            storeDescriptor = loaded.descriptor;
+          } catch (reason) {
+            if (active && generation === storeRefreshGenerationRef.current) setStoreError(reason instanceof Error ? reason.message : "The administrator app store could not be loaded.");
+          }
+        }
+        if (!active || generation !== storeRefreshGenerationRef.current) return;
+        storeManagedRef.current = managed;
+        storeDescriptorRef.current = storeDescriptor;
+        activeSystemDigestsRef.current = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.digest] : []));
+        activeSystemAppIdsRef.current = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.manifest.id] : []));
+        await reconcileMissingSystemPackages(packages, managed, storeDescriptor, generation);
+        if (!active || generation !== storeRefreshGenerationRef.current) return;
+        setStorePackages(packages);
+        const next = new Map<string, StoreInspection>();
+        for (const item of packages) {
+          const key = storePackageKey(item);
+          const cached = storeInspectionCacheRef.current.get(key);
+          if (cached) {
+            next.set(key, { status: "ready", value: cached });
+            void reconcileSystemPackage(item, cached);
+          }
+          else {
+            const systemApp = publishedSystemApp(item);
+            const current = systemApp && installedApps.find((app) => app.appId === systemApp.manifest.id);
+            if (!storePackageNeedsRefreshInspection(item, Boolean(current && systemInstallMatchesCatalog(current, systemApp)))) continue;
+            next.set(key, { status: "loading" });
+            void inspectStorePackage(item, session!.directBlobOrigin).then(async (value) => {
+              if (!active || generation !== storeRefreshGenerationRef.current) return;
+              storeInspectionCacheRef.current.set(key, value);
+              setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
+              await reconcileSystemPackage(item, value);
+            }).catch((reason) => {
+              if (active && generation === storeRefreshGenerationRef.current) setStoreInspections((current) => new Map(current).set(key, { status: "error", message: reason instanceof Error ? reason.message : "This app package is invalid." }));
+            });
+          }
+        }
+        setStoreInspections(next);
+      } catch (reason) {
+        if (active && generation === storeRefreshGenerationRef.current) setStoreError(reason instanceof Error ? reason.message : "The app store could not be loaded.");
+      } finally {
+        if (active && generation === storeRefreshGenerationRef.current) setStoreLoading(false);
+      }
+    };
+    refreshStoreRef.current = () => { void refresh(); };
+    void refresh();
+    const unsubscribe = store ? subscribeToAppStoreChanges((descriptor) => {
+      if (descriptor.desktopId === store.id) void refresh();
+    }) : () => undefined;
+    return () => {
+      active = false;
+      storeManagedRef.current = false;
+      storeDescriptorRef.current = null;
+      activeSystemDigestsRef.current.clear();
+      activeSystemAppIdsRef.current.clear();
+      unsubscribe();
+      if (refreshStoreRef.current) refreshStoreRef.current = () => undefined;
+    };
+  // The reconciliation callback is a useEffectEvent and intentionally not an effect dependency.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [appsLoaded, desktops, session]);
+  useEffect(() => {
+    void reconcileMissingSystemPackages(storePackages, storeManagedRef.current, storeDescriptorRef.current, storeRefreshGenerationRef.current);
+    for (const item of storePackages) {
+      if (item.kind !== "system") continue;
+      const inspection = storeInspections.get(storePackageKey(item));
+      if (inspection?.status === "ready") void reconcileSystemPackage(item, inspection.value);
+    }
+  // Retry a deferred trusted update after its running app becomes clean or closes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirtyAppIds, runningApps, storeInspections, storePackages]);
+  useEffect(() => {
+    const approved = new Set(installedApps.filter((app) => app.source === "account").map((app) => `${app.appId}:${app.installationGeneration}:${app.digest}`));
+    for (const running of runningAppsRef.current) if (running.kind === "sandbox" && running.install.source === "account" && !approved.has(`${running.install.appId}:${running.install.installationGeneration}:${running.install.digest}`)) void closeAppRef.current(running.id, false, false);
+  }, [installedApps, runningAppsRef]);
+
+  useEffect(() => {
+    const beforeInstall = (event: Event) => {
+      event.preventDefault();
+      setInstallPrompt(event as InstallPromptEvent);
+    };
+    const installed = () => {
+      setPwaInstalled(true);
+      setInstallPrompt(null);
+    };
+    window.addEventListener("beforeinstallprompt", beforeInstall);
+    window.addEventListener("appinstalled", installed);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", beforeInstall);
+      window.removeEventListener("appinstalled", installed);
+    };
+  }, []);
+  function setCurrentRoute(next: DesktopRoute) {
+    routeRef.current = next;
+    setRoute(next);
+  }
+
+  function requestConfirmation(request: ConfirmationRequest) {
+    confirmationResolverRef.current?.(false);
+    setConfirmation(request);
+    return new Promise<boolean>((resolve) => {
+      confirmationResolverRef.current = resolve;
+    });
+  }
+
+  function resolveConfirmation(confirmed: boolean) {
+    const resolve = confirmationResolverRef.current;
+    confirmationResolverRef.current = null;
+    setConfirmation(null);
+    resolve?.(confirmed);
+  }
+
+  function selectEntry(surface: string, entry: DesktopEntry, options: { toggle?: boolean; range?: boolean; orderedIds?: string[] } = {}) {
+    selectEntryId(surface, surface === "desktop" ? entryEntityId(entry.id) : entry.id, options);
+  }
+
+  const runningAppTargets = useCallback((apps = runningAppsRef.current): WindowTarget[] => {
+    return projectRunningAppTargets(apps);
+  }, [runningAppsRef]);
+
+  const runningAppIds = useCallback((apps = runningAppsRef.current) => {
+    return projectRunningAppIds(apps);
+  }, [runningAppsRef]);
+
+  function historyApps(state: unknown) {
+    return parseRunningAppHistory(state);
+  }
+
+  function routeHistoryState(apps: WindowTarget[], parentPath?: string, instances = runningAppIds(), page = routeRef.current?.settings ?? "desktop"): RouteHistoryState {
+    return createRouteHistoryState(apps, instances, page, parentPath);
+  }
+
+  function writeRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
+    const pathname = formatDesktopRoute(next);
+    if (mode === "push" && pathname !== window.location.pathname) {
+      const current = window.history.state as Partial<RouteHistoryState> | null;
+      const previousInstances = current?.hiraya ? historyInstanceIds(current, (previousApps ?? runningAppTargets()).map(builtinAppTargetId)) : (previousApps ?? runningAppTargets()).map(builtinAppTargetId);
+      window.history.replaceState(routeHistoryState(previousApps ?? runningAppTargets(), current?.hiraya ? current.parentPath : undefined, previousInstances), "", window.location.href);
+      window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname, runningAppIds(), next.settings ?? "desktop"), "", pathname);
+    } else if (mode === "replace" || pathname !== window.location.pathname || window.location.search) {
+      const current = window.history.state as Partial<RouteHistoryState> | null;
+      window.history.replaceState(routeHistoryState(runningAppTargets(), current?.hiraya ? current.parentPath : undefined, runningAppIds(), next.settings ?? "desktop"), "", pathname);
+    }
+    if (next.settings) settingsPageRef.current = next.settings;
+    setCurrentRoute(next);
+  }
+
+  function applyLocationRoute(entriesValue = entriesRef.current, layoutValue = layoutRef.current) {
+    if (!navigationReadyRef.current) return;
+    void layoutValue;
+    const parsed = parseDesktopRoute(window.location.pathname);
+    const requested = parsed?.settings === "desktop" && window.location.pathname.endsWith("/settings") ? { ...parsed, settings: historySettingsPage(window.history.state) } : parsed;
+    const normalized = normalizeDesktopRoute(requested, entriesValue, activeDesktopIdRef.current);
+    if (!normalized) return;
+    const canonicalPath = formatDesktopRoute(normalized);
+    if (canonicalPath !== window.location.pathname || window.location.search) writeRoute(normalized, "replace");
+    else setCurrentRoute(normalized);
+  }
+
+  function navigateRoute(next: DesktopRoute, mode: "push" | "replace" = "push", previousApps?: WindowTarget[]) {
+    const normalized = normalizeDesktopRoute(next, entriesRef.current, activeDesktopIdRef.current);
+    if (normalized) writeRoute(normalized, mode, previousApps);
+  }
+
+  function navigateSettingsPage(next: SettingsPage, mode: "push" | "replace" = "push") {
+    const current = routeRef.current;
+    if (!current || current.settings === next) return;
+    navigateRoute({ column: current.column, row: current.row, settings: next }, mode);
+  }
+
+  function navigateSettingsBack(parent: SettingsPage) {
+    const current = routeRef.current;
+    if (!current) return;
+    const parentPath = formatDesktopRoute({ desktopId: activeDesktopIdRef.current, column: current.column, row: current.row, settings: parent });
+    const state = window.history.state as Partial<RouteHistoryState> | null;
+    if (state?.hiraya && state.parentPath === parentPath) window.history.back();
+    else navigateSettingsPage(parent, "replace");
+  }
+
+  function routeForApp(app: RunningApp | null, current: DesktopRoute): DesktopRoute {
+    if (app?.kind === "settings") return { desktopId: activeDesktopIdRef.current, column: current.column, row: current.row, settings: settingsPageRef.current };
+    return routeForRunningApp(app, current, activeDesktopIdRef.current);
+  }
+
+  function segmentForApp(app: RunningApp, size = desktopSize) {
+    return runningAppSegment(app, size);
+  }
+
+  function appIsInSegment(app: RunningApp, segment: SurfaceSegment, size = desktopSize) {
+    return runningAppIsInSegment(app, segment, size);
+  }
+
+  function topAppInSegment(apps: RunningApp[], segment: SurfaceSegment, excludedId?: string) {
+    return topRunningAppInSegment(apps, segment, desktopSize, excludedId);
+  }
+
+  function focusApp(id: string, syncRoute = true) {
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (!target) return;
+    const zIndex = nextWindowZIndex();
+    updateRunningApps((current) => current.map((app) => (app.id === id ? { ...app, minimized: false, zIndex } : app)));
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: app.id === id });
+    setFocusedApp(id);
+    const currentRoute = routeRef.current;
+    if (syncRoute && currentRoute) goToSegment(segmentForApp(target), "replace", { ...target, minimized: false, zIndex });
+  }
+
+  function closeApp(id: string, syncRoute = true) {
+    const closing = runningAppsRef.current.find((app) => app.id === id);
+    if (closing?.kind === "settings") settingsPageRef.current = "desktop";
+    delete fileDirtyRef.current[id];
+    setDirtyAppIds((current) => {
+      if (!current.has(id)) return current;
+      const next = new Set(current);
+      next.delete(id);
+      return next;
+    });
+    delete fileLoadGenerationsRef.current[id];
+    if (closing?.kind === "merge") delete mergeLoadGenerationsRef.current[closing.operationId];
+    sandboxFullscreenBoundsRef.current.delete(id);
+    if (closing?.kind === "merge") setMergeReviews((current) => {
+      const next = { ...current };
+      delete next[closing.operationId];
+      return next;
+    });
+    if (closing?.kind === "sandbox") {
+      closing.dispatcher.dispose();
+      closing.files.close();
+      appCapabilities.revokeInstance(id);
+    }
+    const remaining = runningAppsRef.current.filter((app) => app.id !== id);
+    updateRunningApps(remaining);
+    if (focusedAppIdRef.current === id) {
+      const next = topAppInSegment(remaining, activeSegment);
+      setFocusedApp(next?.id ?? null);
+      const currentRoute = routeRef.current;
+      if (syncRoute && !restoringHistoryRef.current && currentRoute) navigateRoute(routeForApp(next, currentRoute), "replace");
+    }
+  }
+
+  async function requestCloseApp(id: string, consultLifecycle = true, syncRoute = true): Promise<boolean> {
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (!target) return true;
+    if (target.kind === "sandbox" && consultLifecycle) {
+      return appLifecycle.requestClose({ appId: target.package.manifest.id, instanceId: target.id });
+    }
+    const dirty = target.kind === "sandbox" ? dirtyAppIds.has(id) || appLifecycle.snapshot({ appId: target.package.manifest.id, instanceId: target.id }).dirty : Boolean(fileDirtyRef.current[id]);
+    return closeWithDirtyCheck({
+      dirty,
+      confirmDiscard: () => requestConfirmation({ title: "Discard unsaved changes?", message: target.kind === "sandbox" ? "Close this app and discard its unsaved changes?" : target.kind === "merge" ? "Close Merge and discard edits to the merged result? The original queued versions remain safe." : "Close this file and discard its unsaved editor changes?", confirmLabel: "Discard and close", danger: true }),
+      close: () => closeApp(id, syncRoute),
+    });
+  }
+
+  function minimizeApp(id: string) {
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (target?.kind === "sandbox") appLifecycle.setHostState({ appId: target.package.manifest.id, instanceId: target.id }, { focused: false });
+    updateRunningApps((current) => current.map((app) => (app.id === id ? { ...app, minimized: true } : app)));
+    if (focusedAppIdRef.current === id) {
+      const next = topAppInSegment(runningAppsRef.current, activeSegment, id);
+      setFocusedApp(next?.id ?? null);
+      const currentRoute = routeRef.current;
+      if (currentRoute) navigateRoute(routeForApp(next, currentRoute), "replace");
+    }
+  }
+
+  function updateAppBounds(id: string, bounds: WindowBounds) {
+    if (!windowed) return;
+    const target = runningAppsRef.current.find((app) => app.id === id);
+    if (target?.kind === "sandbox") appLifecycle.setHostState({ appId: target.package.manifest.id, instanceId: target.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    updateRunningApps((current) => current.map((app) => app.id === id ? { ...app, bounds: { ...bounds, ...restoreLogicalPosition(bounds, segmentForApp(app), desktopSize) } } : app));
+  }
+
+  function createAppBase(id: string, kind: RunningApp["kind"], index?: number, segment = activeSegment): BaseRunningApp {
+    const staggerIndex = index ?? runningAppsRef.current.filter((app) => appIsInSegment(app, segment)).length;
+    const { width, height, minWidth, minHeight } = kind === "sandbox" ? { width: 820, height: 620, minWidth: 360, minHeight: 260 } : kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(kind);
+    const localBounds = initialWindowBounds(desktopSize, { width, height, minWidth, minHeight, index: staggerIndex });
+    return {
+      id,
+      bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, segment, desktopSize) },
+      minimized: false,
+      zIndex: nextWindowZIndex(),
+    };
+  }
+
+  function loadFileApp(id: string, file: FileEntry, expectedRevision: number) {
+    const generation = (fileLoadGenerationsRef.current[id] ?? 0) + 1;
+    fileLoadGenerationsRef.current[id] = generation;
+    updateRunningApps((current) => current.map((candidate) => (candidate.id === id && candidate.kind === "file" ? { ...candidate, blob: undefined, loadError: undefined } : candidate)));
+    void readFile(file.id)
+      .then((blob) => {
+        if (fileLoadGenerationsRef.current[id] !== generation || !runningAppsRef.current.some((candidate) => candidate.id === id)) return;
+        updateRunningApps((current) =>
+          current.map((candidate) =>
+            candidate.id === id && candidate.kind === "file"
+              ? {
+                  ...candidate,
+                  blob,
+                  loadError: undefined,
+                  editable: fileCapabilities(file).editable,
+                  contentRevision: expectedRevision,
+                }
+              : candidate,
+          ),
+        );
+        void loadOfflineInventory().catch(() => undefined);
+      })
+      .catch((openError) => {
+        if (fileLoadGenerationsRef.current[id] !== generation) return;
+        updateRunningApps((current) =>
+          current.map((candidate) =>
+            candidate.id === id && candidate.kind === "file"
+              ? {
+                  ...candidate,
+                  loadError: openError instanceof Error ? openError.message : "The file could not be opened.",
+                }
+              : candidate,
+          ),
+        );
+      });
+  }
+
+  function restoreRunningApps(session: WindowSession, loadedEntries: DesktopEntry[]) {
+    const byId = new Map(loadedEntries.map((entry) => [entry.id, entry]));
+    const restoredRoute = routeRef.current ?? normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), loadedEntries, activeDesktopIdRef.current);
+    const savedApps = restoreWindowSession(session, loadedEntries, restoredRoute, desktopSize);
+    pendingSystemRestoreRef.current = savedApps.flatMap((saved): Array<Extract<WindowSession["apps"][number], { kind: "system" }>> => {
+      if (saved.kind === "system") return [saved];
+      if (saved.kind === "file") {
+        const file = byId.get(saved.fileId);
+        return file?.kind === "file" ? [{ ...saved, kind: "system", appId: systemDefaultAppId(file), targetKind: "file", entryId: file.id }] : [];
+      }
+      return [];
+    });
+    const restored = savedApps
+      .filter((saved) => saved.kind !== "system" && saved.kind !== "file")
+      .map((saved): RunningApp => {
+        if (saved.kind === "settings") return { ...saved, id: builtinAppTargetId(saved) };
+        return { ...saved, id: builtinAppTargetId(saved) };
+      });
+    setNextWindowZIndex(Math.max(1, ...restored.map((app) => app.zIndex)));
+    updateRunningApps(restored);
+    setFocusedApp(null);
+  }
+
+  useEffect(() => {
+    if (!installedApps.length || !pendingSystemRestoreRef.current.length) return;
+    const pending = pendingSystemRestoreRef.current;
+    pendingSystemRestoreRef.current = [];
+    for (const saved of pending) {
+      const target = saved.targetKind === "root" ? "root" : entriesRef.current.find((entry) => entry.id === saved.entryId && entry.kind === saved.targetKind);
+      if (!target) continue;
+      const current = target !== "root" && target.kind === "file" ? resolveRestoredFileApp(target, installedApps, entriesRef.current, fileAssociations, saved) : null;
+      const install = current?.app ?? installedApps.find((app) => app.appId === saved.appId);
+      const identityMatches = target === "root" || target.kind !== "file" ? Boolean(install && installedAppMatchesSavedIdentity(install, saved)) : Boolean(current);
+      if (!install || !installedAppIsAvailable(install, entriesRef.current) || !identityMatches) {
+        setNotice(`The saved handler ${saved.appId} is unavailable or changed. Open the item again to choose an available app.`);
+        continue;
+      }
+      if (current?.app.appId !== saved.appId) setNotice(`The saved handler ${saved.appId} is unavailable or no longer preferred. Restored with ${install.manifest.name}.`);
+      else if (current?.preferredUnavailable) setNotice(`Your preferred app for ${current.preferredUnavailable.matcher} is unavailable. Restored with ${install.manifest.name}.`);
+      const restoredTarget: SystemAppTarget = { ...saved, appId: install.appId, source: install.source, digest: install.digest, permissions: [...install.manifest.permissions] };
+      void launchInstalledAppRef.current(install, target, "restore").then(() => updateRunningApps((apps) => apps.map((app) => (app.id === builtinAppTargetId(restoredTarget) ? { ...app, bounds: saved.bounds, minimized: saved.minimized, zIndex: saved.zIndex } : app))));
+    }
+  }, [fileAssociations, installedApps, updateRunningApps]);
+
+  function restoreHistoryApps(targets: WindowTarget[]) {
+    const historySegment = normalizeDesktopRoute(parseDesktopRoute(window.location.pathname), entriesRef.current, activeDesktopIdRef.current);
+    const existing = new Map(runningAppsRef.current.map((app) => [app.id, app]));
+    const restored: RunningApp[] = [];
+    const filesToLoad: FileApp[] = [];
+    for (const target of targets) {
+      const id = builtinAppTargetId(target);
+      const current = existing.get(id);
+      if (current) continue;
+      if (target.kind === "settings") {
+        restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "settings" });
+        continue;
+      }
+      if (target.kind === "store") {
+        restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "store" });
+        continue;
+      }
+      if (target.kind === "explorer") {
+        openExplorerWindow(target.folderId, false, false);
+        continue;
+      }
+      if (target.kind === "properties") {
+        if (!entriesRef.current.some((entry) => entry.id === target.entryId)) continue;
+        restored.push({ ...createAppBase(id, target.kind, runningAppsRef.current.length + restored.length, historySegment), kind: "properties", entryId: target.entryId });
+        continue;
+      }
+      if (target.kind === "system") {
+        const launchTarget = target.targetKind === "root" ? "root" : entriesRef.current.find((entry) => entry.id === target.entryId && entry.kind === target.targetKind);
+        const current = launchTarget !== "root" && launchTarget?.kind === "file" ? resolveRestoredFileApp(launchTarget, installedApps, entriesRef.current, fileAssociations, target) : null;
+        const install = current?.app ?? installedApps.find((app) => app.appId === target.appId);
+        const identityMatches = launchTarget === "root" || launchTarget?.kind !== "file" ? Boolean(install && installedAppMatchesSavedIdentity(install, target)) : Boolean(current);
+        if (install && launchTarget && identityMatches && installedAppIsAvailable(install, entriesRef.current)) {
+          if (current?.app.appId !== target.appId) setNotice(`The saved handler ${target.appId} is unavailable or no longer preferred. Restored with ${install.manifest.name}.`);
+          else if (current?.preferredUnavailable) setNotice(`Your preferred app for ${current.preferredUnavailable.matcher} is unavailable. Restored with ${install.manifest.name}.`);
+          void launchInstalledApp(install, launchTarget, "restore");
+        } else setNotice(`The saved handler ${target.appId} is unavailable or changed. Open the item again to choose an available app.`);
+        continue;
+      }
+      const file = entriesRef.current.find((entry): entry is FileEntry => entry.id === target.fileId && entry.kind === "file");
+      if (!file) continue;
+      const resolution = resolveFileApp(file, installedApps, entriesRef.current, fileAssociations);
+      if (resolution) void launchInstalledAppRef.current(resolution.app, file, "restore");
+    }
+    updateRunningApps([...runningAppsRef.current, ...restored]);
+    for (const app of filesToLoad) loadFileApp(app.id, app.file!, app.contentRevision);
+  }
+
+  function applyOpenQuery(loadedEntries: DesktopEntry[], loadedLayout: DesktopLayout) {
+    void loadedLayout;
+    const url = new URL(window.location.href);
+    const openPath = url.searchParams.get("open");
+    if (openPath === null) {
+      applyLocationRouteRef.current(loadedEntries, loadedLayout);
+      return;
+    }
+    try {
+      const file = resolveOpenFilePath(loadedEntries, openPath);
+      const current = normalizeDesktopRoute(parseDesktopRoute(url.pathname), loadedEntries, activeDesktopIdRef.current);
+      const next: DesktopRoute = {
+        desktopId: current.desktopId ?? activeDesktopIdRef.current,
+        column: current.column,
+        row: current.row,
+        ...(current.explorerFolderId !== undefined ? { explorerFolderId: current.explorerFolderId } : {}),
+        fileId: file.id,
+      };
+      url.searchParams.delete("open");
+      url.pathname = formatDesktopRoute(next);
+      url.hash = "";
+      window.history.replaceState(window.history.state, "", url);
+      setCurrentRoute(next);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : `No file exists at “${openPath}”.`);
+      applyLocationRouteRef.current(loadedEntries, loadedLayout);
+    }
+  }
+
+  restoreRunningAppsRef.current = restoreRunningApps;
+  restoreHistoryAppsRef.current = restoreHistoryApps;
+  applyOpenQueryRef.current = applyOpenQuery;
+
+  applyLocationRouteRef.current = applyLocationRoute;
+  navigateRouteRef.current = navigateRoute;
+  openRouteAppsRef.current = (next) => {
+    if (next.explorerFolderId !== undefined) openExplorerWindow(next.explorerFolderId, false, !next.fileId && !next.propertiesEntryId && !next.settings);
+    if (next.fileId) {
+      const fileId = next.fileId;
+      const entry = entryIndex.byId.get(fileId);
+      const openApp = runningAppsRef.current.find((app) => {
+        const target = app.kind === "sandbox" && app.systemTarget ? app.systemTarget : extractBuiltinAppTarget(app);
+        return target ? builtinAppTargetOpensFile(target, fileId) : false;
+      });
+      if (openApp) focusApp(openApp.id, false);
+      const resolution = entry?.kind === "file" && !openApp ? resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations) : null;
+      if (entry?.kind === "file" && resolution) void launchInstalledApp(resolution.app, entry, "restore");
+    }
+    if (next.propertiesEntryId && entryIndex.byId.has(next.propertiesEntryId)) openPropertiesWindow(next.propertiesEntryId, false);
+    if (next.settings) openSettingsWindow(false);
+    if (next.explorerFolderId === undefined && !next.fileId && !next.propertiesEntryId && !next.settings) {
+      const focused = runningAppsRef.current.find((app) => app.id === focusedAppIdRef.current);
+      const route = { ...next, desktopId: activeDesktopIdRef.current };
+      if (!focused || formatDesktopRoute(routeForApp(focused, route)) !== formatDesktopRoute(route)) setFocusedApp(null);
+    }
+  };
+  closeAppRef.current = requestCloseApp;
+
+  useEffect(() => {
+    let active = true;
+    const layoutSaveQueue = layoutSaveQueueRef.current;
+    const transferPhases = transferPhasesRef.current;
+    let sessionRestoreStarted = false;
+    let savedWindowSession: Promise<{ session: WindowSession; loaded: true } | { session: null; loaded: false }> | null = null;
+    const restoreSavedWindowSession = () => {
+      if (sessionRestoreStarted || !savedWindowSession) return;
+      sessionRestoreStarted = true;
+      void savedWindowSession.then((result) => {
+        if (!active) return;
+        if (result.loaded) {
+          restoreRunningAppsRef.current(result.session, entriesRef.current);
+          const routedApps = historyApps(window.history.state);
+          if (routedApps) restoreHistoryAppsRef.current(routedApps);
+          windowSessionReadyRef.current = true;
+        } else {
+          setError("The saved app session could not be loaded.");
+        }
+        setWindowSessionRestored(true);
+        setLoading(false);
+      });
+    };
+    const unsubscribe = subscribeToSync(
+      (synced) => {
+        if (!active) return;
+        const previousSnapshot = appSnapshotRef.current;
+        const changedEntryIds = previousSnapshot
+          ? new Set([
+              ...synced.entries
+                .filter((entry) => {
+                  const previous = previousSnapshot.entries.find((candidate) => candidate.id === entry.id);
+                  return !previous || previous.modifiedAt !== entry.modifiedAt || previous.name !== entry.name || previous.parentId !== entry.parentId || previous.kind !== entry.kind || (entry.kind === "file" && previous.kind === "file" && (previous.size !== entry.size || previous.mimeType !== entry.mimeType || previousSnapshot.sync.contentRevisions[entry.id] !== synced.sync.contentRevisions[entry.id]));
+                })
+                .map((entry) => entry.id),
+              ...previousSnapshot.entries.filter((entry) => !synced.entries.some((candidate) => candidate.id === entry.id)).map((entry) => entry.id),
+            ])
+          : new Set<string>();
+        contentRevisionsRef.current = synced.sync.contentRevisions;
+        const draft = layoutDraftRef.current?.desktopId === activeDesktopIdRef.current ? layoutDraftRef.current : null;
+        const mergedDraftLayout = draft ? mergeDesktopLayout(draft.baseLayout, draft.layout, synced.layout) : null;
+        const draftIconGroups = mergedDraftLayout ? iconGroupsAfterEntryChange(synced.entries, mergedDraftLayout.iconGroups) : [];
+        const visibleLayout = mergedDraftLayout ? draftIconGroups.length === mergedDraftLayout.iconGroups.length ? mergedDraftLayout : { ...mergedDraftLayout, iconGroups: draftIconGroups } : synced.layout;
+        if (draft) {
+          const mergedDraft = { ...draft, layout: visibleLayout };
+          layoutDraftRef.current = mergedDraft;
+          if (visibleLayout !== draft.layout) {
+            const save = layoutSaveQueue.run(mergedDraft);
+            layoutSaveRef.current = save;
+            void save.catch(() => setError("The desktop area layout could not be saved."));
+          }
+        }
+        layoutRef.current = visibleLayout;
+        entriesRef.current = synced.entries;
+        setLayout(visibleLayout);
+        setEntries(synced.entries);
+        setAppearance(synced.appearance);
+        const syncedIds = new Set(synced.entries.map((entry) => entry.id));
+        const retainedIds = selectionScopeRef.current === "desktop"
+          ? retainedDesktopEntityIds(desktopEntities([...synced.entries, ...projectedShellEntriesRef.current.filter((entry) => isProtectedShellEntry(entry))], visibleLayout.widgets, visibleLayout.iconGroups, iconMetricsRef.current), selectedIdsRef.current)
+          : syncedIds;
+        appSnapshotRef.current = synced;
+        if (changedEntryIds.size) for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.emit("files.changed", app.files.changedPayload(changedEntryIds));
+        retainSelection(retainedIds);
+        setContextMenu((current) => current?.type === "entry" && !syncedIds.has(current.entryId) || current?.type === "widget" && !visibleLayout.widgets.some((widget) => widget.id === current.widgetId) ? null : current);
+        setMoveDialogEntryIds((current) => current.filter((id) => syncedIds.has(id)));
+        setDialog((current) => {
+          if (!current) return null;
+          if (current.type === "create-file" || current.type === "create-shortcut" || current.type === "create-folder") {
+            return current.parentId && !synced.entries.some((entry) => entry.id === current.parentId && entry.kind === "folder") ? null : current;
+          }
+          return current.type === "rename" ? (syncedIds.has(current.entryId) ? current : null) : current.entryIds.some((id) => syncedIds.has(id)) ? { ...current, entryIds: current.entryIds.filter((id) => syncedIds.has(id)) } : null;
+        });
+        const availableApps = runningAppsRef.current.filter((app) => {
+          if (app.transient) return true;
+          if (app.kind === "sandbox") {
+            if (app.systemTarget?.entryId) return syncedIds.has(app.systemTarget.entryId);
+            return installedAppIsAvailable(app.install, synced.entries);
+          }
+          if (app.kind === "merge") return true;
+          const dependency = builtinAppEntryDependency(app);
+          return !dependency || syncedIds.has(dependency.entryId);
+        });
+        for (const app of runningAppsRef.current) if (app.kind === "sandbox" && !availableApps.includes(app)) app.dispatcher.dispose();
+        updateRunningApps(availableApps);
+        if (focusedAppIdRef.current && !availableApps.some((app) => app.id === focusedAppIdRef.current)) {
+          const currentRoute = routeRef.current;
+          const next = topRunningAppInSegment(availableApps, currentRoute ?? { column: 0, row: 0 }, desktopSizeRef.current);
+          setFocusedApp(next?.id ?? null);
+        }
+        navigationReadyRef.current = true;
+        applyLocationRouteRef.current(synced.entries, synced.layout);
+        void loadOfflineInventory().catch(() => undefined);
+        setLoading(false);
+        restoreSavedWindowSession();
+      },
+      (nextStatus) => {
+        if (!active) return;
+        setSyncStatus(nextStatus);
+      },
+      (syncing) => {
+        if (active) setIsSyncing(syncing);
+      },
+    );
+    const unsubscribeOutbox = subscribeToOutbox((records) => {
+      if (!active) return;
+      setOutboxRecords([...records]);
+      const retained = new Set(records.filter(isContentConflict).map((record) => record.operationId));
+      const staleApps = runningAppsRef.current.filter((app): app is Extract<RunningApp, { kind: "merge" }> => app.kind === "merge" && !retained.has(app.operationId));
+      const stale = new Set(staleApps.map((app) => app.id));
+      if (stale.size) {
+        const remaining = runningAppsRef.current.filter((app) => !stale.has(app.id));
+        for (const app of staleApps) {
+          delete fileDirtyRef.current[app.id];
+          delete mergeLoadGenerationsRef.current[app.operationId];
+        }
+        updateRunningApps(remaining);
+        setDirtyAppIds((current) => new Set([...current].filter((id) => !stale.has(id))));
+        setMergeReviews((current) => Object.fromEntries(Object.entries(current).filter(([operationId]) => retained.has(operationId))));
+        if (focusedAppIdRef.current && stale.has(focusedAppIdRef.current)) {
+          const segment = routeRef.current ?? { column: 0, row: 0 };
+          setFocusedApp(topRunningAppInSegment(remaining, segment, desktopSizeRef.current)?.id ?? null);
+        }
+      }
+    });
+    const unsubscribeOffline = subscribeToOfflineStorage(
+      (inventory) => {
+        if (active && inventory.desktopId === activeDesktopIdRef.current) setOfflineInventory(inventory);
+      },
+      (progress) => {
+        if (active && (!progress || progress.desktopId === activeDesktopIdRef.current)) setOfflineProgress(progress);
+      },
+    );
+    const unsubscribeEntryDownloads = subscribeToEntryDownloads((entryIds) => {
+      if (active) setActiveEntryDownloadIds(entryIds);
+    });
+    let transferFrame = 0;
+    let pendingTransfers: readonly FileTransferState[] = [];
+    const unsubscribeTransfers = subscribeToTransfers((transfers) => {
+      pendingTransfers = transfers;
+      for (const transfer of transfers) {
+        const previous = transferPhases.get(transfer.id);
+        if (previous !== transfer.phase && (transfer.phase === "complete" || transfer.phase === "failed")) {
+          setNotificationAnnouncement(`${transfer.direction === "upload" ? "Upload" : "Download"} ${transfer.phase} for ${transfer.fileName}.`);
+        }
+        transferPhases.set(transfer.id, transfer.phase);
+      }
+      const currentIds = new Set(transfers.map((transfer) => transfer.id));
+      for (const id of transferPhases.keys()) if (!currentIds.has(id)) transferPhases.delete(id);
+      if (!active || transferFrame) return;
+      transferFrame = requestAnimationFrame(() => {
+        transferFrame = 0;
+        if (active) setFileTransfers(pendingTransfers);
+      });
+    });
+    const unsubscribeCatalog = subscribeToDesktopCatalog((registry) => {
+      if (!active) return;
+      catalogAuthoritativeRef.current = Boolean(registry.catalogId);
+      const nextDesktops = registry.catalogId ? registry.desktops : arrangeDesktops(registry.desktops, localPreferencesRef.current.desktops);
+      desktopsRef.current = nextDesktops;
+      setDesktops(nextDesktops);
+      setCatalogQuota(registry.quota);
+      const retainedIds = registry.desktops.map((desktop) => desktop.id);
+      if (activeDesktopIdRef.current && !retainedIds.includes(activeDesktopIdRef.current)) {
+        const fallback = registry.desktops[0];
+        if (fallback)
+          void activateDesktopRef.current(fallback.id).then((switched) => {
+            if (switched) return pruneLocalDesktops(retainedIds);
+          });
+      } else {
+        void pruneLocalDesktops(retainedIds);
+      }
+    });
+    void listDesktops(seededDesktop, { cacheFirst: warmStart })
+      .then((registry) => {
+        if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
+        catalogAuthoritativeRef.current = Boolean(registry.catalogId);
+        const routeDesktopId = parseDesktopRoute(window.location.pathname)?.desktopId;
+        const surfaces = registry.desktops.filter(isDesktopSurface);
+        const desktopId = routeDesktopId && surfaces.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && surfaces.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : surfaces[0].id;
+        setDesktops(registry.catalogId ? registry.desktops : arrangeDesktops(registry.desktops, localPreferencesRef.current.desktops));
+        setCatalogQuota(registry.quota);
+        activeDesktopIdRef.current = desktopId;
+        setActiveDesktopId(desktopId);
+        return switchLocalDesktop(desktopId)
+          .then(() => pruneLocalDesktops(registry.desktops.map((desktop) => desktop.id)))
+          .then(() => {
+            const backgroundServer = warmStart && !registry.catalogId;
+            const initialization = initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, seededDesktop, { backgroundServer });
+            if (backgroundServer) void initialization.then(() => refreshDesktopCatalog()).catch(() => undefined);
+            savedWindowSession = readWindowSession(desktopId).then(
+              (session) => ({ session, loaded: true as const }),
+              () => ({ session: null, loaded: false as const }),
+            );
+            return initialization;
+          });
+      })
+      .then(({ desktop: loadedDesktop, status: loadedStatus }) => {
+        if (!active) return;
+        const { entries: loadedEntries, layout: loadedLayout, appearance: loadedAppearance, sync } = loadedDesktop;
+        contentRevisionsRef.current = sync.contentRevisions;
+        appSnapshotRef.current = loadedDesktop;
+        layoutRef.current = loadedLayout;
+        entriesRef.current = loadedEntries;
+        setLayout(loadedLayout);
+        setEntries(loadedEntries);
+        setAppearance(loadedAppearance);
+        setSyncStatus(loadedStatus);
+        setLoading(false);
+        void loadOfflineInventory().catch(() => undefined);
+        restoreSavedWindowSession();
+        const routedApps = historyApps(window.history.state);
+        if (routedApps) restoreHistoryAppsRef.current(routedApps);
+        setRouteHistoryReady(true);
+        navigationReadyRef.current = true;
+        applyOpenQueryRef.current(loadedEntries, loadedLayout);
+      })
+      .catch((loadError) => {
+        if (active && !(loadError instanceof DOMException && loadError.name === "AbortError")) {
+          setError(loadError instanceof Error ? loadError.message : "Your files could not be loaded.");
+        }
+        if (active && !sessionRestoreStarted) {
+          setWindowSessionRestored(true);
+          setLoading(false);
+        }
+        if (active) setRouteHistoryReady(true);
+      });
+    return () => {
+      active = false;
+      const pendingWallpaper = wallpaperPreviewRef.current;
+      wallpaperPreviewRef.current = null;
+      const pendingLayout = layoutDraftRef.current;
+      if (pendingWallpaper && pendingLayout?.desktopId === activeDesktopIdRef.current && canSettingsRef.current) layoutSaveRef.current = layoutSaveQueue.run(pendingLayout).catch(() => undefined);
+      unsubscribe();
+      unsubscribeOutbox();
+      unsubscribeOffline();
+      unsubscribeEntryDownloads();
+      unsubscribeTransfers();
+      if (transferFrame) cancelAnimationFrame(transferFrame);
+      transferPhases.clear();
+      unsubscribeCatalog();
+      void layoutSaveRef.current.catch(() => undefined).then(() => stopDesktopSync());
+    };
+  }, [focusedAppIdRef, retainSelection, runningAppsRef, selectedIdsRef, selectionScopeRef, setFocusedApp, updateRunningApps, warmStart]);
+
+  useEffect(() => {
+    const completedIds = new Set(fileTransfers.filter((transfer) => transfer.phase === "complete").map((transfer) => transfer.id));
+    for (const [id, timer] of transferDismissTimersRef.current) {
+      if (completedIds.has(id)) continue;
+      window.clearTimeout(timer);
+      transferDismissTimersRef.current.delete(id);
+    }
+    for (const id of completedIds) {
+      if (transferDismissTimersRef.current.has(id)) continue;
+      transferDismissTimersRef.current.set(id, window.setTimeout(() => {
+        transferDismissTimersRef.current.delete(id);
+        dismissCompletedFileTransfer(id);
+      }, 2_000));
+    }
+  }, [fileTransfers]);
+
+  useEffect(() => () => {
+    for (const timer of transferDismissTimersRef.current.values()) window.clearTimeout(timer);
+    transferDismissTimersRef.current.clear();
+  }, []);
+
+  useEffect(() => {
+    if (!notificationAnnouncement) return;
+    const timer = window.setTimeout(() => setNotificationAnnouncement(""), 5_000);
+    return () => window.clearTimeout(timer);
+  }, [notificationAnnouncement]);
+
+  useEffect(() => () => confirmationResolverRef.current?.(false), []);
+
+  useEffect(() => {
+    if (activePanel !== "sync") return;
+    if (!persistenceRequestedRef.current) {
+      persistenceRequestedRef.current = true;
+      void requestStoragePersistence().then(setStoragePersistence);
+    }
+    let active = true;
+    void listOutboxRecords()
+      .then((records) => {
+        if (active) setOutboxRecords(records);
+      })
+      .catch((reason) => {
+        if (active) setError(reason instanceof Error ? reason.message : "The synchronization queue could not be loaded.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [activePanel]);
+
+  useEffect(() => {
+    if (activePanel !== "offline" || !activeDesktopId) return;
+    void loadOfflineInventory().catch((reason) => setError(reason instanceof Error ? reason.message : "Offline storage could not be loaded."));
+  }, [activeDesktopId, activePanel]);
+
+  useEffect(() => {
+    if (activePanel !== "search") return;
+    let active = true;
+    void Promise.all(desktops.map(async (desktop) => localSearchResults(desktop, desktop.id === activeDesktopId ? entriesRef.current : await readDesktopEntries(desktop.id), desktop.id !== activeDesktopId)))
+      .then((results) => {
+        if (active) setCachedSearchResults(results.flat());
+      })
+      .catch(() => {
+        if (active) setCachedSearchResults(activeDesktop ? localSearchResults(activeDesktop, entriesRef.current, false) : []);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeDesktop, activeDesktopId, activePanel, desktops]);
+
+  useEffect(() => {
+    if (!moveDialogEntryIds.length || !activeDesktopId) return;
+    let active = true;
+    setDesktopMoveFolders({});
+    setMoveDestinationsLoading(true);
+    void Promise.all(desktops.map(async (desktop) => [desktop.id, desktop.id === activeDesktopId ? entriesRef.current : await readDesktopEntries(desktop.id)] as const))
+      .then((values) => {
+        if (active) setDesktopMoveFolders(Object.fromEntries(values));
+      })
+      .catch(() => {
+        if (active) setError("Desktop destinations could not be loaded. Close and reopen Move to retry.");
+      })
+      .finally(() => {
+        if (active) setMoveDestinationsLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [activeDesktopId, desktops, moveDialogEntryIds.length]);
+
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!Object.values(fileDirtyRef.current).some(Boolean)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeUnload);
+    return () => window.removeEventListener("beforeunload", warnBeforeUnload);
+  }, []);
+
+  useEffect(() => {
+    if (syncStatus === "online" && !isSyncing && outboxRecords.length === 0) setLastSyncedAt(Date.now());
+  }, [isSyncing, outboxRecords.length, syncStatus]);
+
+  const syncIssue = activeDesktopId ? outboxRecords.find((record) => record.status === "blocked" && outboxOperationDesktopIds(record).has(activeDesktopId)) ?? null : null;
+  const syncIssueError = syncIssue?.error;
+  const syncIssueOperationId = syncIssue?.operationId;
+
+  useEffect(() => {
+    if (!syncIssueOperationId) return;
+    setNotificationAnnouncement(`Sync issue. ${syncIssueError || "A queued change needs attention before sync can continue."}`);
+  }, [syncIssueError, syncIssueOperationId]);
+
+  useEffect(() => {
+    if (syncStatus !== "online" || serverBuildTimestamp) return;
+    let active = true;
+    void fetchServerBuildTimestamp()
+      .then((timestamp) => {
+        if (active) setServerBuildTimestamp(timestamp);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [serverBuildTimestamp, syncStatus]);
+
+  useEffect(() => {
+    if (windowSessionReadyRef.current) {
+      const session = createWindowSession(runningApps);
+      windowSessionSaveRef.current = windowSessionSaveRef.current
+        .then(() => saveWindowSession(activeDesktopIdRef.current, session))
+        .catch(() => {
+          setError("The open app session could not be saved.");
+        });
+    }
+    if (navigationReadyRef.current && windowSessionRestored && routeHistoryReady) {
+      const current = window.history.state as Partial<RouteHistoryState> | null;
+      window.history.replaceState({
+        hiraya: true,
+        schemaVersion: 1,
+        ...(current?.hiraya && current.parentPath ? { parentPath: current.parentPath } : {}),
+        ...(current?.hiraya && current.rootBackGuard ? { rootBackGuard: true as const } : {}),
+        apps: runningAppTargets(runningApps),
+        instances: runningAppIds(runningApps),
+        settingsPage: routeRef.current?.settings ?? "desktop",
+      } satisfies RouteHistoryState, "", window.location.href);
+    }
+  }, [routeHistoryReady, runningAppIds, runningAppTargets, runningApps, windowSessionRestored]);
+
+  useEffect(() => {
+    const atHome = navigationReadyRef.current && routeHistoryReady && !focusedAppId && route?.column === 0 && route.row === 0 && route.explorerFolderId === undefined && !route.fileId && !route.propertiesEntryId && !route.settings;
+    if (!atHome) {
+      rootBackGuardInstalledRef.current = false;
+      return;
+    }
+    if (rootBackGuardInstalledRef.current) return;
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (!current?.hiraya) return;
+    rootBackGuardInstalledRef.current = true;
+    window.history.replaceState({ ...current, rootBackGuard: undefined }, "", window.location.href);
+    window.history.pushState({ ...current, rootBackGuard: true }, "", window.location.href);
+  }, [focusedAppId, route, routeHistoryReady]);
+
+  useEffect(() => () => {
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    quitBackRef.current = { count: 0, lastAt: 0 };
+    setBackPrompt("");
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = null;
+  }, [focusedAppId, route?.column, route?.explorerFolderId, route?.fileId, route?.propertiesEntryId, route?.row, route?.settings]);
+
+  useEffect(() => {
+    let active = true;
+    const updater = createPwaUpdater({
+      onUpdateAvailable: () => {
+        if (!active) return;
+        setUpdateReady(true);
+        if (manualUpdateCheckRef.current || (updatePreferenceLoadedRef.current && autoUpdateRef.current)) setShowUpdateToast(true);
+      },
+      onError: () => {
+        if (active) setError("Hiraya could not check for app updates.");
+      },
+    });
+    updaterRef.current = updater;
+    setUpdateSupported(updater.supported);
+
+    const checkAutomatically = () => {
+      if (!active || !autoUpdateRef.current || !updater.supported) return;
+      void updater.check().catch(() => {
+        if (active) setError("Hiraya could not check for app updates.");
+      });
+    };
+    const checkWhenVisible = () => {
+      if (document.visibilityState === "visible") checkAutomatically();
+    };
+    window.addEventListener("online", checkAutomatically);
+    document.addEventListener("visibilitychange", checkWhenVisible);
+
+    void readLocalPreferences()
+      .then((preferences) => {
+        if (!active) return;
+        autoUpdateRef.current = preferences.autoUpdate;
+        localPreferencesRef.current = preferences;
+        updatePreferenceLoadedRef.current = true;
+        setAutoUpdate(preferences.autoUpdate);
+        setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
+        setAllowBrowserPinchZoom(preferences.allowBrowserPinchZoom);
+        setSearchAllDesktops(preferences.searchAllDesktops && desktopSearchAvailable);
+        setExplorerView(preferences.explorerView);
+        setShowHiddenFiles(preferences.showHiddenFiles);
+        if (!catalogAuthoritativeRef.current) setDesktops((current) => arrangeDesktops(current, preferences.desktops));
+        setPreferencesLoaded(true);
+        checkAutomatically();
+      })
+      .catch(() => {
+        if (!active) return;
+        updatePreferenceLoadedRef.current = true;
+        setPreferencesLoaded(true);
+        setError("The local update preference could not be loaded.");
+        checkAutomatically();
+      });
+
+    return () => {
+      active = false;
+      updater.dispose();
+      if (updaterRef.current === updater) updaterRef.current = null;
+      window.removeEventListener("online", checkAutomatically);
+      document.removeEventListener("visibilitychange", checkWhenVisible);
+    };
+  }, [desktopSearchAvailable]);
+
+  useEffect(() => {
+    if (!actionSheetOpen) return;
+    const token = crypto.randomUUID();
+    actionSheetHistoryRef.current = token;
+    window.history.pushState(actionSheetHistoryState(window.history.state, token), "", window.location.href);
+    return () => {
+      if (actionSheetHistoryRef.current !== token) return;
+      if (actionSheetHistoryToken(window.history.state) === token) window.history.back();
+      else actionSheetHistoryRef.current = null;
+    };
+  }, [actionSheetOpen]);
+
+  useEffect(() => {
+    async function restoreRoute(state?: unknown) {
+      if (!navigationReadyRef.current) return;
+      completeAreaTransitionRef.current();
+      setDialog(null);
+      setContextMenu(null);
+      setMoveDialogEntryIds([]);
+      if (areaSwitcherRef.current?.hasAttribute("data-expanded")) areaSwitcherRestoreFocusRef.current = true;
+      setMinimapExpanded(false);
+      const requestedRoute = parseDesktopRoute(window.location.pathname);
+      const requestedDesktopId = requestedRoute?.desktopId;
+      if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId && isDesktopSurface(desktop))) {
+        void activateDesktopRef.current(requestedDesktopId).then((switched) => {
+          if (switched && requestedRoute) navigateRouteRef.current(requestedRoute, "replace");
+        });
+        return;
+      }
+      const apps = historyApps(state);
+      if (apps) {
+        const destinationIds = historyInstanceIds(state, apps.map(builtinAppTargetId));
+        const removedIds = removedHistoryInstanceIds(runningAppIds(), destinationIds);
+        restoringHistoryRef.current = true;
+        try {
+          for (const id of removedIds) {
+            if (!(await closeAppRef.current(id, true, false))) {
+              window.history.forward();
+              return;
+            }
+          }
+        } finally {
+          restoringHistoryRef.current = false;
+        }
+        restoreHistoryAppsRef.current(apps);
+      }
+      applyLocationRouteRef.current();
+    }
+    const onPopState = (event: PopStateEvent) => {
+      if (actionSheetHistoryRef.current) {
+        actionSheetHistoryRef.current = null;
+        setContextMenu(null);
+        return;
+      }
+      if (restoreOnlyPopRef.current) {
+        restoreOnlyPopRef.current = false;
+        void restoreRoute(event.state);
+        return;
+      }
+      void navigateBackEvent("history", event.state).then((result) => {
+        if (result === "restore") return restoreRoute(event.state);
+      });
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [navigateBackEvent, runningAppIds]);
+
+  useEffect(() => {
+    function syncFullscreen() {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+    }
+    document.addEventListener("fullscreenchange", syncFullscreen);
+    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
+  }, []);
+
+  useEffect(() => {
+    const desktop = desktopRef.current;
+    if (!desktop) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const width = Math.max(1, Math.round(entry.contentRect.width));
+      const height = Math.max(1, Math.round(entry.contentRect.height));
+      setDesktopSize((current) => (current.width === width && current.height === height ? current : { width, height }));
+    });
+    observer.observe(desktop);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (areaTransitionRef.current) completeAreaTransitionRef.current();
+  }, [desktopSize.width, desktopSize.height]);
+
+  useEffect(() => () => {
+    areaTransitionGenerationRef.current += 1;
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    if (wheelSwipeRef.current) window.clearTimeout(wheelSwipeRef.current.timer);
+  }, []);
+
+  const previousDesktopSizeRef = useRef(desktopSize);
+  useEffect(() => {
+    const previous = previousDesktopSizeRef.current;
+    if (!windowed) return;
+    previousDesktopSizeRef.current = desktopSize;
+    if (previous.width === desktopSize.width && previous.height === desktopSize.height) return;
+    updateRunningApps((currentApps) =>
+      currentApps.map((app) => {
+        const projection = projectLogicalPosition(app.bounds, previous);
+        const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
+        const localBounds = clampWindowBounds({ ...app.bounds, ...projection.local }, desktopSize, { minWidth, minHeight });
+        return { ...app, bounds: { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, desktopSize) } };
+      }),
+    );
+  }, [desktopSize, updateRunningApps, windowed]);
+
+  useEffect(() => {
+    if (loading) return;
+    const currentApps = runningAppsRef.current;
+    const reconciledApps = currentApps.flatMap((app): RunningApp[] => {
+      if (app.transient) return [app];
+      if (app.kind === "sandbox") {
+        if (app.systemTarget?.entryId) return entryIndex.byId.has(app.systemTarget.entryId) ? [app] : [];
+        return installedAppIsAvailable(app.install, entries) ? [app] : [];
+      }
+      if (app.kind === "merge") return [app];
+      const dependency = builtinAppEntryDependency(app);
+      if (!dependency) return [app];
+      const entry = entryIndex.byId.get(dependency.entryId);
+      if (!entry || (dependency.kind !== "entry" && entry.kind !== dependency.kind)) return [];
+      if (app.kind !== "file") return [app];
+      if (entry.kind !== "file") return [];
+      const expectedRevision = contentRevisionsRef.current[app.fileId] ?? 0;
+      if (expectedRevision !== app.contentRevision && fileDirtyRef.current[app.id]) {
+        return [{ ...app, file: entry, contentRevision: expectedRevision, remoteChanged: true }];
+      }
+      return [{ ...app, file: entry, editable: fileCapabilities(entry).editable }];
+    });
+    updateRunningApps(reconciledApps);
+    if (focusedAppIdRef.current && !reconciledApps.some((app) => app.id === focusedAppIdRef.current)) {
+      const next = topRunningAppInSegment(reconciledApps, routeRef.current ?? { column: 0, row: 0 }, desktopSizeRef.current);
+      setFocusedApp(next?.id ?? null);
+    }
+
+    for (const app of currentApps) {
+      if (app.kind !== "file" || app.transient || fileDirtyRef.current[app.id]) continue;
+      const entry = entryIndex.byId.get(app.fileId);
+      const expectedRevision = contentRevisionsRef.current[app.fileId] ?? 0;
+      if (entry?.kind !== "file" || app.contentRevision === expectedRevision) continue;
+      const generation = (fileLoadGenerationsRef.current[app.id] ?? 0) + 1;
+      fileLoadGenerationsRef.current[app.id] = generation;
+      void readFile(app.fileId)
+        .then((blob) => {
+          if (fileLoadGenerationsRef.current[app.id] !== generation) return;
+          updateRunningApps((current) =>
+            current.map((candidate) =>
+              candidate.id === app.id && candidate.kind === "file"
+                ? {
+                    ...candidate,
+                    file: entry,
+                    blob,
+                    editable: fileCapabilities(entry).editable,
+                    contentRevision: expectedRevision,
+                    remoteChanged: false,
+                  }
+                : candidate,
+            ),
+          );
+        })
+        .catch(() => setError("An open file changed on the server but could not be refreshed."));
+    }
+  }, [entries, entryIndex, focusedAppIdRef, loading, runningAppsRef, setFocusedApp, updateRunningApps]);
+
+  useEffect(() => {
+    if (loading || !windowSessionRestored) return;
+    openRouteAppsRef.current({
+      column: 0,
+      row: 0,
+      ...(routeExplorerFolderId !== undefined ? { explorerFolderId: routeExplorerFolderId } : {}),
+      ...(routeFileId ? { fileId: routeFileId } : {}),
+      ...(routePropertiesEntryId ? { propertiesEntryId: routePropertiesEntryId } : {}),
+      ...(routeSettings ? { settings: routeSettings } : {}),
+    });
+  }, [fileAssociations, installedApps, loading, routeExplorerFolderId, routeFileId, routePropertiesEntryId, routeSettings, windowSessionRestored]);
+
+  useEffect(() => {
+    applyLocationRouteRef.current();
+  }, [responsive.segments.length]);
+
+  useEffect(
+    () => () => {
+      if (desktopPressRef.current) window.clearTimeout(desktopPressRef.current.timer);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    function closeMenu(event: PointerEvent) {
+      if (!(event.target as Element).closest?.(".context-menu, .action-sheet")) setContextMenu(null);
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key.toLowerCase() === "r" && contextMenuEntry && canMutate) {
+        openFileDialog({ type: "rename", entryId: contextMenuEntry.id });
+        setContextMenu(null);
+      }
+    }
+    window.addEventListener("pointerdown", closeMenu);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", closeMenu);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [canMutate, contextMenuEntry, openFileDialog]);
+
+  useEffect(() => {
+    function editableTarget(target: EventTarget | null) {
+      const element = target as Element | null;
+      return Boolean(element?.closest?.("input, textarea, [contenteditable='true'], .cm-editor"));
+    }
+    function activeExplorer() {
+      const app = runningAppsRef.current.find((candidate) => candidate.id === focusedAppIdRef.current);
+      return app?.kind === "explorer" ? app : null;
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (editableTarget(event.target) || shortcutsSuspended || transientMenuOpen()) return;
+      const focused = runningAppsRef.current.find((candidate) => candidate.id === focusedAppIdRef.current);
+      if (focused && focused.kind !== "explorer") return;
+      const modifier = event.metaKey || event.ctrlKey;
+      const key = event.key.toLowerCase();
+      const currentEntryIds = selectionScopeRef.current === "desktop" ? selectedIdsRef.current.flatMap((id) => {
+        const entity = desktopEntityParts(id);
+        return entity?.kind === "entry" ? [entity.sourceId] : [];
+      }) : selectedIdsRef.current;
+      if (modifier && key === "a") {
+        const explorer = activeExplorer();
+        const surface = explorer?.id ?? "desktop";
+        const ids = explorer
+          ? (entryIndex.children.get(explorer.folderId)?.map((entry) => entry.id) ?? [])
+          : desktopEntityList.filter((entity) => segmentKey(projectLogicalPosition(entity, iconArea).segment) === activeSegmentKey && (entity.kind !== "entry" || !isProtectedShellEntry(entity.entry.id))).map((entity) => entity.id);
+        event.preventDefault();
+        replaceSelection(surface, ids);
+      } else if (modifier && event.shiftKey && !event.altKey && key === "c" && currentEntryIds.length === 1) {
+        const entry = entryIndex.byId.get(currentEntryIds[0]);
+        if (!entry) return;
+        event.preventDefault();
+        void copyDeepLinkEvent(entry);
+      } else if (modifier && !event.shiftKey && key === "c" && currentEntryIds.length) {
+        event.preventDefault();
+        void copySelectionRef.current();
+      } else if (modifier && key === "v") {
+        if (activeExplorer()?.transient) return;
+        keyboardPasteRef.current = true;
+        const explorer = activeExplorer();
+        window.setTimeout(() => {
+          if (!keyboardPasteRef.current) return;
+          keyboardPasteRef.current = false;
+          void beginPasteRef.current(explorer?.folderId ?? null);
+        });
+      } else if (event.key === "Delete" && currentEntryIds.length && canMutate) {
+        const entryIds = canonicalSelectionIds(entriesRef.current, currentEntryIds);
+        if (!entryIds.length) return;
+        event.preventDefault();
+        openFileDialog({ type: "delete", entryIds });
+      }
+    }
+    function onPaste(event: ClipboardEvent) {
+      if (editableTarget(event.target) || !canMutate || (!pendingDevicePaste && (shortcutsSuspended || transientMenuOpen()))) return;
+      if (!event.clipboardData) return;
+      const keyboardPaste = keyboardPasteRef.current;
+      keyboardPasteRef.current = false;
+      const files = Array.from(event.clipboardData.files);
+      const items = Array.from(event.clipboardData.items);
+      event.preventDefault();
+      const explorer = activeExplorer();
+      if (!pendingDevicePaste && explorer?.transient) return;
+      const parentId = pendingDevicePaste?.parentId ?? explorer?.folderId ?? null;
+      const position = pendingDevicePaste?.position;
+      if (files.length || items.some((item) => item.kind === "file" && !isClipboardArchiveType(item.type))) {
+        setPendingDevicePaste(null);
+        void snapshotFromClipboardItems(event.clipboardData.items)
+          .then((snapshot) => snapshot ? beginPasteRef.current(parentId, position, snapshot) : files.length ? handleImportRef.current(files, parentId, position) : Promise.reject(new Error("Clipboard folders could not be read. Use Import folder instead.")))
+          .catch((pasteError) => setError(pasteError instanceof Error ? pasteError.message : "Clipboard files could not be pasted."));
+        return;
+      }
+      if (items.some((item) => isClipboardArchiveType(item.type))) {
+        setPendingDevicePaste(null);
+        void beginPasteRef.current(parentId, position);
+        return;
+      }
+      const clipboardText = event.clipboardData.getData("text/plain");
+      try {
+        const shortcut = createInternetShortcut(clipboardText);
+        setPendingDevicePaste(null);
+        openFileDialog({ type: "create-shortcut", parentId, position, url: shortcut.url, name: shortcut.name });
+      } catch {
+        if (pendingDevicePaste && !clipboardText && clipboardRef.current) {
+          setPendingDevicePaste(null);
+          void beginPasteRef.current(parentId, position, clipboardRef.current);
+        } else if (pendingDevicePaste) setPendingDevicePaste({ ...pendingDevicePaste, error: "The clipboard does not contain files, a Hiraya item, or a complete URL." });
+        else if (keyboardPaste) void beginPasteRef.current(parentId);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("paste", onPaste);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("paste", onPaste);
+    };
+    // copyDeepLinkEvent is a useEffectEvent and intentionally non-reactive.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, pendingDevicePaste, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
+
+  useEffect(() => {
+    function onGlobalShortcut(event: KeyboardEvent) {
+      if (shortcutsSuspended || transientMenuOpen()) return;
+      const modifier = event.metaKey || event.ctrlKey;
+      if (event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey && event.code === "Space") {
+        event.preventDefault();
+        areaSwitcherInternalActivationRef.current = false;
+        areaSwitcherRestoreFocusRef.current = minimapExpanded;
+        setMinimapExpanded(!minimapExpanded);
+        return;
+      }
+      if (modifier && event.key.toLowerCase() === "k") {
+        event.preventDefault();
+        setActivePanel("search");
+        return;
+      }
+      if (modifier && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "s") {
+        const app = runningAppsRef.current.find((candidate) => candidate.id === focusedAppIdRef.current);
+        if (app?.kind === "sandbox" && app.commands.executeShortcut("Ctrl+S")) event.preventDefault();
+        return;
+      }
+      if (modifier && event.shiftKey && !event.altKey && event.key.toLowerCase() === "x" && focusedAppIdRef.current) {
+        event.preventDefault();
+        void closeAppRef.current(focusedAppIdRef.current);
+        return;
+      }
+      if (event.key === "?" && !event.metaKey && !event.ctrlKey && !(event.target as Element | null)?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) {
+        event.preventDefault();
+        setActivePanel("shortcuts");
+        return;
+      }
+      const arrowDirection = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)
+        ? event.key.replace("Arrow", "").toLowerCase() as "left" | "right" | "up" | "down"
+        : null;
+      if (windowed && event.altKey && event.key === "Enter" && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.maximize(focusedAppIdRef.current);
+      } else if (windowed && event.altKey && event.shiftKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.adjust(focusedAppIdRef.current, "move", arrowDirection);
+      } else if (windowed && event.altKey && event.ctrlKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.adjust(focusedAppIdRef.current, "resize", arrowDirection);
+      } else if (windowed && event.altKey && arrowDirection && focusedAppIdRef.current) {
+        event.preventDefault();
+        windowCommandRef.current.move(focusedAppIdRef.current, arrowDirection);
+      }
+    }
+    window.addEventListener("keydown", onGlobalShortcut);
+    return () => window.removeEventListener("keydown", onGlobalShortcut);
+  }, [focusedAppIdRef, minimapExpanded, runningAppsRef, shortcutsSuspended, windowed]);
+
+  useEffect(() => {
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if ((event.target as Element | null)?.closest?.("input, textarea, [contenteditable='true'], .cm-editor")) return;
+      const owner = contextMenu ? "contextMenu" : moveDialogEntries.length > 0 ? "moveDialog" : dialog ? "dialog" : minimapExpanded ? "areaEditor" : null;
+      if (!owner) return;
+      if (owner === "moveDialog" && moveDialogSubmitting) return;
+      event.preventDefault();
+      if (owner === "dialog") setDialog(null);
+      else if (owner === "moveDialog") setMoveDialogEntryIds([]);
+      else if (owner === "contextMenu") setContextMenu(null);
+      else if (owner === "areaEditor") {
+        areaSwitcherRestoreFocusRef.current = true;
+        setMinimapExpanded(false);
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [contextMenu, dialog, minimapExpanded, moveDialogEntries.length, moveDialogSubmitting]);
+
+  useEffect(() => {
+    if (!error) return;
+    setShellMessages((current) => [...current, { id: ++nextShellMessageIdRef.current, kind: "error", message: error, folderImportHelp: error === folderImportError }]);
+    setError("");
+    setFolderImportError("");
+  }, [error, folderImportError]);
+
+  useEffect(() => {
+    if (!notice) return;
+    setShellMessages((current) => [...current, { id: ++nextShellMessageIdRef.current, kind: "notice", message: notice }]);
+    setNotice("");
+  }, [notice]);
+
+  const wallpaperFileId = layout.wallpaper.source.startsWith("file:") ? layout.wallpaper.source.slice(5) : null;
+  const wallpaperFile = wallpaperFileId ? entries.find((entry): entry is FileEntry => entry.id === wallpaperFileId && entry.kind === "file") : null;
+  const wallpaperFileExists = Boolean(wallpaperFile);
+  const wallpaperContentRevision = wallpaperFileId ? (contentRevisionsRef.current[wallpaperFileId] ?? wallpaperFile?.modifiedAt ?? 0) : 0;
+  const wallpaperKey = wallpaperFileId && activeDesktopId ? `${activeDesktopId}:${wallpaperFileId}:${wallpaperContentRevision}` : null;
+  const wallpaperLoadReady = true;
+  const wallpaperUrl = wallpaperAsset?.key === wallpaperKey ? wallpaperAsset.url : null;
+  const wallpaperFailed = wallpaperFailedKey === wallpaperKey;
+  const themePackageCache = useMemo<ThemePackageCache | undefined>(() => activeDesktopId ? {
+    readVerified: (themeId, expected) => readCachedThemePackage(activeDesktopId, themeId, expected),
+    write: (themeId, expected, content) => cacheThemePackage(activeDesktopId, themeId, expected, content),
+  } : undefined, [activeDesktopId]);
+
+  useEffect(() => {
+    const previous = wallpaperAssetRef.current;
+    wallpaperAssetRef.current = null;
+    setWallpaperAsset(null);
+    setWallpaperFailedKey(null);
+    if (previous) URL.revokeObjectURL(previous.url);
+  }, [wallpaperKey]);
+
+  useEffect(() => {
+    let active = true;
+    if (!wallpaperKey || !wallpaperFileId || !wallpaperFileExists || !wallpaperLoadReady || wallpaperFile && isSceneFile(wallpaperFile)) return;
+    void readFile(wallpaperFileId)
+      .then((file) => {
+        if (!active) return;
+        const next = { key: wallpaperKey, url: URL.createObjectURL(file) };
+        const previous = wallpaperAssetRef.current;
+        wallpaperAssetRef.current = next;
+        setWallpaperAsset(next);
+        if (previous) URL.revokeObjectURL(previous.url);
+      })
+      .catch(() => { if (active) setWallpaperFailedKey(wallpaperKey); });
+    return () => {
+      active = false;
+    };
+  }, [wallpaperFile, wallpaperFileExists, wallpaperFileId, wallpaperKey, wallpaperLoadReady]);
+
+  useEffect(
+    () => () => {
+      if (wallpaperAssetRef.current) URL.revokeObjectURL(wallpaperAssetRef.current.url);
+    },
+    [],
+  );
+
+  function childrenCount(parentId: string | null) {
+    return parentId !== null ? (entryIndex.children.get(parentId)?.length ?? 0) : activeDesktopSegment.entries.length;
+  }
+
+  function positionFor(parentId: string | null) {
+    if (parentId === null) {
+      const occupied = activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local);
+      const localPosition = nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, iconMetrics, activeShellItemObstacles);
+      if (!localPosition) throw new Error("There is no free space in this desktop area. Move an icon or shell item, or switch to another area and try again.");
+      return restoreLogicalPosition(localPosition, activeSegment, iconArea);
+    }
+    const position = nextRootEntryPosition(childrenCount(parentId), window.innerHeight, undefined, iconMetrics);
+    return position;
+  }
+
+  function snapPositionInView(position: EntryPosition) {
+    return {
+      x: snapAxis(position.x, GRID_ORIGIN.x, layout.gridSize, Math.max(8, iconArea.width - iconMetrics.width)),
+      y: snapAxis(position.y, GRID_ORIGIN.y, layout.gridSize, Math.max(8, iconArea.height - iconMetrics.height)),
+    };
+  }
+
+  function clampPositionInView(position: EntryPosition) {
+    return {
+      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, position.x)),
+      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, position.y)),
+    };
+  }
+
+  function snapRootEntryPosition(position: EntryPosition) {
+    const projection = projectLogicalPosition(position, iconArea);
+    return restoreLogicalPosition(snapPositionInView(projection.local), projection.segment, iconArea);
+  }
+
+  function positionAtDesktopPoint(clientX: number, clientY: number) {
+    const bounds = desktopRef.current?.getBoundingClientRect();
+    if (!bounds) return { x: 8, y: 8 };
+    const position = clampPositionInView({ x: clientX - bounds.left - iconMetrics.width / 2, y: clientY - bounds.top - iconMetrics.height / 2 });
+    return layoutRef.current.snapToGrid ? snapPositionInView(position) : position;
+  }
+
+  function openDesktopContextMenu(clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
+    window.getSelection()?.removeAllRanges();
+    replaceSelection("desktop", []);
+    setContextMenu({ type: "desktop", parentId: null, x: clientX, y: clientY, position: positionAtDesktopPoint(clientX, clientY), presentation });
+  }
+
+  function openEntryContextMenu(entryId: string, clientX: number, clientY: number, presentation: "menu" | "sheet" = "menu") {
+    window.getSelection()?.removeAllRanges();
+    setContextMenu({ type: "entry", entryId, x: clientX, y: clientY, presentation });
+  }
+
+  function captureImportOperation(parentId: string | null, position?: EntryPosition): ImportOperationContext {
+    return { operationId: crypto.randomUUID(), desktopId: activeDesktopIdRef.current, parentId, activationGeneration: activationGenerationRef.current, position };
+  }
+
+  function importOperationIsCurrent(context: ImportOperationContext) {
+    assertImportOperationCurrent(context, { desktopId: activeDesktopIdRef.current, activationGeneration: activationGenerationRef.current, entries: entriesRef.current });
+  }
+
+  function chooseUpload(parentId: string | null, position?: EntryPosition) {
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
+    importOperationRef.current = captureImportOperation(parentId, position);
+    uploadParentRef.current = parentId;
+    uploadPositionRef.current = position;
+    uploadRef.current?.click();
+  }
+
+  async function chooseFolderImport(parentId: string | null, position?: EntryPosition) {
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
+    if (!supportsDirectoryPicker()) {
+      reportFolderImportError("Folder import is not supported by this browser. Use Upload files to add files without a folder hierarchy.");
+      return;
+    }
+    const context = captureImportOperation(parentId, position);
+    importOperationRef.current = context;
+    if (supportsDirectoryHandlePicker()) {
+      try {
+        const picker = (window as typeof window & { showDirectoryPicker(): Promise<FileSystemDirectoryHandle> }).showDirectoryPicker;
+        const directory = await picker.call(window);
+        const sources = await sourcesFromDirectoryHandle(directory);
+        importOperationIsCurrent(context);
+        await handleImportSources(sources, context);
+      } catch (reason) {
+        if (!(reason instanceof DOMException && reason.name === "AbortError")) reportFolderImportError(reason instanceof Error ? reason.message : "The selected folder could not be imported.");
+      } finally {
+        if (importOperationRef.current?.operationId === context.operationId) importOperationRef.current = null;
+      }
+      return;
+    }
+    const confirmed = await requestConfirmation({ title: "Import folder with browser fallback?", message: "This browser's folder selector preserves files and their hierarchy, but empty folders cannot be represented and will not be imported.", confirmLabel: "Choose folder" });
+    if (!confirmed) return;
+    try {
+      importOperationIsCurrent(context);
+    } catch (reason) {
+      if (reason instanceof DOMException && reason.name === "AbortError") return;
+      throw reason;
+    }
+    uploadParentRef.current = parentId;
+    uploadPositionRef.current = position;
+    directoryRef.current?.click();
+  }
+  chooseUploadRef.current = chooseUpload;
+  chooseFolderImportRef.current = chooseFolderImport;
+
+  function reportFolderImportError(message: string) {
+    setFolderImportError(message);
+    setError(message);
+  }
+
+  function previewLayout(next: DesktopLayout, desktopId: string) {
+    if (!canMutateRef.current || desktopId !== activeDesktopIdRef.current) return;
+    const current = layoutDraftRef.current?.desktopId === desktopId ? layoutDraftRef.current : null;
+    layoutDraftRef.current = current
+      ? { ...current, layout: next }
+      : { desktopId, layout: next, baseLayout: appSnapshotRef.current?.layout ?? layoutRef.current, baseRevision: appSnapshotRef.current?.sync.layoutRevision ?? 0 };
+    layoutRef.current = next;
+    setLayout(next);
+  }
+
+  async function saveLayout(next: DesktopLayout, desktopId: string) {
+    previewLayout(next, desktopId);
+    const draft = layoutDraftRef.current;
+    if (!draft || draft.desktopId !== desktopId) return;
+    const save = layoutSaveQueueRef.current.run(draft);
+    layoutSaveRef.current = save;
+    await save;
+    if (layoutDraftRef.current?.desktopId === desktopId && layoutDraftRef.current.layout === next) layoutDraftRef.current = null;
+  }
+
+  async function persistLayout(next: DesktopLayout, desktopId = activeDesktopIdRef.current) {
+    if (!canMutateRef.current || desktopId !== activeDesktopIdRef.current) return;
+    try {
+      await saveLayout(next, desktopId);
+    } catch {
+      setError("The desktop area layout could not be saved.");
+    }
+  }
+
+  function normalizeWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    const changed = { ...widget, ...change };
+    const projection = projectLogicalPosition(changed, iconArea);
+    const bounds = layoutRef.current.snapToGrid
+      ? snapShellItemBounds(projection.local, changed.width, changed.height, iconArea, layoutRef.current.gridSize)
+      : clampShellItemBounds(projection.local, changed.width, changed.height, iconArea);
+    return { ...changed, ...restoreLogicalPosition(bounds, projection.segment, iconArea), width: bounds.width, height: bounds.height };
+  }
+
+  function shellItemPlacementPlan(proposed: DesktopObstacle, segment: SurfaceSegment, nextLayout: DesktopLayout, excludedWidgetId?: string, excludedGroupId?: string) {
+    const otherObstacles = desktopShellItemObstacles(nextLayout.widgets.filter((item) => item.id !== excludedWidgetId), nextLayout.iconGroups.filter((item) => item.folderId !== excludedGroupId), entriesRef.current, segment, iconArea);
+    const persistedIds = new Set(entriesRef.current.map((entry) => entry.id));
+    otherObstacles.push(...desktopEntryList.flatMap((entry) => {
+      const entryProjection = projectLogicalPosition(entry.position, iconArea);
+      return !persistedIds.has(entry.id) && entry.parentId === null && segmentKey(entryProjection.segment) === segmentKey(segment)
+        ? [{ ...entryProjection.local, width: iconMetrics.width, height: iconMetrics.height }]
+        : [];
+    }));
+    if (positionOverlapsObstacles(proposed, proposed, otherObstacles)) return null;
+    const grouped = new Set(nextLayout.iconGroups.map((group) => group.folderId));
+    const desktopEntries = entriesRef.current.filter((entry) => !grouped.has(entry.id));
+    if (!nextLayout.autoArrangeIcons) {
+      const overlap = desktopEntries.some((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, iconArea).segment) === segmentKey(segment) && positionOverlapsObstacles(projectLogicalPosition(entry.position, iconArea).local, iconMetrics, [proposed]));
+      return overlap ? null : [];
+    }
+    return arrangeDesktopAroundObstacle(desktopEntries, proposed, segment, iconArea, iconMetrics, nextLayout.gridSize, otherObstacles);
+  }
+
+  function widgetChangePlan(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    const nextWidget = normalizeWidget(widget, change);
+    const currentLayout = layoutRef.current;
+    const widgets = currentLayout.widgets.some((item) => item.id === widget.id)
+      ? currentLayout.widgets.map((item) => item.id === widget.id ? nextWidget : item)
+      : [...currentLayout.widgets, nextWidget];
+    const nextLayout = { ...currentLayout, widgets };
+    const projection = projectLogicalPosition(nextWidget, iconArea);
+    const proposed = clampShellItemBounds(projection.local, nextWidget.width, nextWidget.height, iconArea);
+    const updates = shellItemPlacementPlan(proposed, projection.segment, nextLayout, widget.id);
+    return updates ? { currentLayout, nextLayout, nextWidget, updates } : null;
+  }
+
+  function previewWidgetChange(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if (change.x !== undefined || change.y !== undefined) {
+      const next = normalizeWidget(widget, change);
+      const mixed = previewMixedDesktopMovement(widgetEntityId(widget.id), { x: next.x, y: next.y });
+      if (mixed) return mixed;
+    }
+    if (!layoutRef.current.autoArrangeIcons) return null;
+    const plan = widgetChangePlan(widget, change);
+    return plan ? plan.updates.flatMap(({ entryId, position }) => {
+      const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+    }) : [];
+  }
+
+  async function commitWidgetChange(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if (widgetMutationPendingRef.current) return false;
+    const plan = widgetChangePlan(widget, change);
+    if (!plan) {
+      setError(layoutRef.current.autoArrangeIcons ? "There is not enough room to place the widget without overlaps." : "Widgets cannot overlap desktop icons, widgets, or icon groups.");
+      return false;
+    }
+    const desktopId = activeDesktopIdRef.current;
+    const previous = new Map(plan.updates.map(({ entryId }) => [entryId, entriesRef.current.find((entry) => entry.id === entryId)!.position]));
+    const positions = new Map(plan.updates.map(({ entryId, position }) => [entryId, position]));
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    previewLayout(plan.nextLayout, desktopId);
+    entriesRef.current = entriesRef.current.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let iconsSaved = false;
+    try {
+      if (plan.updates.length) {
+        await updateRootEntryPositions(plan.updates);
+        iconsSaved = true;
+      }
+      const latestLayout = layoutRef.current;
+      const mergedLayout = {
+        ...latestLayout,
+        widgets: latestLayout.widgets.some((item) => item.id === plan.nextWidget.id)
+          ? latestLayout.widgets.map((item) => item.id === plan.nextWidget.id ? plan.nextWidget : item)
+          : [...latestLayout.widgets, plan.nextWidget],
+      };
+      await saveLayout(mergedLayout, desktopId);
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let iconsRestored = !iconsSaved;
+      if (iconsSaved && previous.size) {
+        try {
+          await updateRootEntryPositions([...previous].map(([entryId, position]) => ({ entryId, position })));
+          iconsRestored = true;
+        } catch {
+          // Keep the successfully persisted icon arrangement rather than showing stale positions.
+        }
+      }
+      const rollbackLayout = { ...layoutRef.current, widgets: plan.currentLayout.widgets };
+      previewLayout(rollbackLayout, desktopId);
+      if (iconsRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(iconsRestored ? "The widget change could not be saved." : "The widget change failed after nearby icons moved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+    replaceSelection("desktop", [widgetEntityId(plan.nextWidget.id)]);
+    return true;
+  }
+
+  function addWidget(kind: DesktopWidget["kind"], position: EntryPosition) {
+    if (kind === "todo" || kind === "scene") {
+      if (kind === "todo") setTodoWidgetPosition(position);
+      else setSceneWidgetPosition(position);
+      setContextMenu(null);
+      return;
+    }
+    const size = kind === "status" ? { width: 260, height: 150 } : { width: 220, height: 150 };
+    const widget: DesktopWidget = { id: `${kind}-${crypto.randomUUID()}`, kind, ...position, ...size };
+    void commitWidgetChange(widget, {});
+    setContextMenu(null);
+  }
+
+  function addTodoWidget(file: FileEntry) {
+    if (!todoWidgetPosition) return;
+    const widget: DesktopWidget = { id: `todo-${crypto.randomUUID()}`, kind: "todo", fileId: file.id, ...todoWidgetPosition, width: 340, height: 300 };
+    setTodoWidgetPosition(null);
+    void commitWidgetChange(widget, {});
+  }
+
+  function addSceneWidget(file: FileEntry) {
+    if (!sceneWidgetPosition) return;
+    const widget: DesktopWidget = { id: `scene-${crypto.randomUUID()}`, kind: "scene", fileId: file.id, ...sceneWidgetPosition, width: 420, height: 300 };
+    setSceneWidgetPosition(null);
+    void commitWidgetChange(widget, {});
+  }
+
+  function updateWidget(widget: DesktopWidget, change: Partial<Pick<DesktopWidget, "x" | "y" | "width" | "height">>) {
+    if ((change.x !== undefined || change.y !== undefined) && mixedDesktopMovement(widgetEntityId(widget.id), { x: change.x ?? widget.x, y: change.y ?? widget.y })) {
+      void commitMixedDesktopMovement(widgetEntityId(widget.id), { x: change.x ?? widget.x, y: change.y ?? widget.y });
+      return;
+    }
+    void commitWidgetChange(widget, change);
+  }
+
+  async function removeWidget(widget: DesktopWidget) {
+    if (widgetMutationPendingRef.current) return;
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    if (selectedIdsRef.current.includes(widgetEntityId(widget.id))) replaceSelection("desktop", selectedIdsRef.current.filter((id) => id !== widgetEntityId(widget.id)));
+    try {
+      await persistLayout({ ...layoutRef.current, widgets: layoutRef.current.widgets.filter((item) => item.id !== widget.id) });
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+  }
+
+  function iconGroupChangePlan(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    const currentLayout = layoutRef.current;
+    const position = { x: change.x ?? folder.position.x, y: change.y ?? folder.position.y };
+    const projection = projectLogicalPosition(position, iconArea);
+    const bounds = currentLayout.snapToGrid
+      ? snapShellItemBounds(projection.local, change.width ?? group.width, change.height ?? group.height, iconArea, currentLayout.gridSize)
+      : clampShellItemBounds(projection.local, change.width ?? group.width, change.height ?? group.height, iconArea);
+    const nextFolder = { ...folder, position: restoreLogicalPosition(bounds, projection.segment, iconArea) };
+    const nextGroup = { ...group, width: bounds.width, height: bounds.height };
+    const iconGroups = currentLayout.iconGroups.some((item) => item.folderId === folder.id)
+      ? currentLayout.iconGroups.map((item) => item.folderId === folder.id ? nextGroup : item)
+      : [...currentLayout.iconGroups, nextGroup];
+    const nextLayout = { ...currentLayout, iconGroups };
+    const updates = shellItemPlacementPlan(bounds, projection.segment, nextLayout, undefined, folder.id);
+    return updates ? { currentLayout, nextLayout, nextFolder, nextGroup, updates } : null;
+  }
+
+  function previewIconGroupChange(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    if (change.x !== undefined || change.y !== undefined) {
+      const mixed = previewMixedDesktopMovement(groupEntityId(folder.id), { x: change.x ?? folder.position.x, y: change.y ?? folder.position.y });
+      if (mixed) return mixed;
+    }
+    if (!layoutRef.current.autoArrangeIcons) return null;
+    const plan = iconGroupChangePlan(folder, group, change);
+    return plan ? plan.updates.flatMap(({ entryId, position }) => {
+      const current = entriesRef.current.find((entry) => entry.id === entryId)?.position;
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: position.x - current.x, y: position.y - current.y } }] : [];
+    }) : [];
+  }
+
+  async function commitIconGroupChange(folder: FolderEntry, group: DesktopIconGroup, change: Partial<EntryPosition & Pick<DesktopIconGroup, "width" | "height">>) {
+    if (widgetMutationPendingRef.current) return false;
+    const plan = iconGroupChangePlan(folder, group, change);
+    if (!plan) {
+      setError(layoutRef.current.autoArrangeIcons ? "There is not enough room to place the icon group without overlaps." : "Icon groups cannot overlap desktop icons, widgets, or other icon groups.");
+      return false;
+    }
+    const desktopId = activeDesktopIdRef.current;
+    const positionUpdates = [...plan.updates];
+    if (plan.nextFolder.position.x !== folder.position.x || plan.nextFolder.position.y !== folder.position.y) positionUpdates.push({ entryId: folder.id, position: plan.nextFolder.position });
+    const currentEntries = entriesRef.current.some((entry) => entry.id === folder.id) ? entriesRef.current : [...entriesRef.current, folder];
+    const previous = new Map(positionUpdates.map(({ entryId }) => [entryId, currentEntries.find((entry) => entry.id === entryId)!.position]));
+    const positions = new Map(positionUpdates.map(({ entryId, position }) => [entryId, position]));
+    const previousGroup = plan.currentLayout.iconGroups.find((item) => item.folderId === folder.id);
+    const layoutChanged = !previousGroup || previousGroup.width !== plan.nextGroup.width || previousGroup.height !== plan.nextGroup.height;
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    if (layoutChanged) previewLayout(plan.nextLayout, desktopId);
+    entriesRef.current = currentEntries.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let positionsSaved = false;
+    try {
+      if (positionUpdates.length) {
+        await updateRootEntryPositions(positionUpdates);
+        positionsSaved = true;
+      }
+      if (layoutChanged) {
+        const latestLayout = layoutRef.current;
+        await saveLayout({
+          ...latestLayout,
+          iconGroups: latestLayout.iconGroups.some((item) => item.folderId === folder.id)
+            ? latestLayout.iconGroups.map((item) => item.folderId === folder.id ? plan.nextGroup : item)
+            : [...latestLayout.iconGroups, plan.nextGroup],
+        }, desktopId);
+      }
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let positionsRestored = !positionsSaved;
+      if (positionsSaved && previous.size) {
+        try {
+          await updateRootEntryPositions([...previous].map(([entryId, position]) => ({ entryId, position })));
+          positionsRestored = true;
+        } catch {
+          // Keep successfully persisted positions rather than showing stale coordinates.
+        }
+      }
+      if (layoutChanged) previewLayout({ ...layoutRef.current, iconGroups: plan.currentLayout.iconGroups }, desktopId);
+      if (positionsRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(positionsRestored ? "The icon group change could not be saved." : "The icon group change failed after nearby icons moved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+    return true;
+  }
+
+  function addIconGroup(folder: FolderEntry) {
+    if (folder.parentId !== null || layoutRef.current.iconGroups.some((group) => group.folderId === folder.id)) return;
+    void commitIconGroupChange(folder, { folderId: folder.id, width: 340, height: 260 }, {});
+    setContextMenu(null);
+  }
+
+  function updateIconGroup(group: DesktopIconGroup, size: { width: number; height: number }) {
+    const folder = entriesRef.current.find((entry): entry is FolderEntry => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null);
+    if (folder) void commitIconGroupChange(folder, group, size);
+  }
+
+  function ungroupIconGroup(group: DesktopIconGroup) {
+    void persistLayout({ ...layoutRef.current, iconGroups: layoutRef.current.iconGroups.filter((item) => item.folderId !== group.folderId) });
+  }
+
+  function moveIconGroup(folder: FolderEntry, position: EntryPosition) {
+    if (mixedDesktopMovement(groupEntityId(folder.id), position)) {
+      void commitMixedDesktopMovement(groupEntityId(folder.id), position);
+      return;
+    }
+    const group = layoutRef.current.iconGroups.find((item) => item.folderId === folder.id);
+    if (group) void commitIconGroupChange(folder, group, position);
+  }
+
+  async function flushLayoutDraft(desktopId: string) {
+    const pending = layoutDraftRef.current;
+    if (!pending || pending.desktopId !== desktopId) return;
+    await persistLayout(pending.layout, desktopId);
+  }
+
+  function requireWallpaperManagement() {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+  }
+
+  function wallpaperLayout(wallpaper: WallpaperEditorWallpaper) {
+    const next = parseLayout({ ...layoutRef.current, wallpaper });
+    assertWallpaperSource(entriesRef.current, next.wallpaper, appearanceRef.current);
+    return next;
+  }
+
+  function clearWallpaperPreview() {
+    const pending = wallpaperPreviewRef.current;
+    wallpaperPreviewRef.current = null;
+    return pending;
+  }
+
+  async function withWallpaperSelectionPending<T>(operation: () => Promise<T>) {
+    wallpaperSelectionPendingRef.current += 1;
+    setWallpaperSelectionPending(true);
+    try { return await operation(); }
+    finally {
+      wallpaperSelectionPendingRef.current -= 1;
+      if (!wallpaperSelectionPendingRef.current) setWallpaperSelectionPending(false);
+    }
+  }
+
+  async function persistWallpaperLayout(next: DesktopLayout, desktopId: string) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    try {
+      await saveLayout(next, desktopId);
+      return wallpaperEditorState(next, entriesRef.current, appearanceRef.current, true, "");
+    } catch (saveError) {
+      const persisted = appSnapshotRef.current?.layout;
+      if (persisted && desktopId === activeDesktopIdRef.current && layoutDraftRef.current?.layout === next) {
+        layoutDraftRef.current = null;
+        layoutRef.current = persisted;
+        setLayout(persisted);
+      }
+      setError(saveError instanceof Error ? saveError.message : "The wallpaper could not be saved.");
+      throw saveError;
+    }
+  }
+
+  function previewWallpaper(wallpaper: WallpaperEditorWallpaper) {
+    requireWallpaperManagement();
+    const desktopId = activeDesktopIdRef.current;
+    const next = wallpaperLayout(wallpaper);
+    clearWallpaperPreview();
+    wallpaperPreviewRef.current = { desktopId, layout: next };
+    previewLayout(next, desktopId);
+  }
+
+  async function saveWallpaper(wallpaper: WallpaperEditorWallpaper) {
+    requireWallpaperManagement();
+    clearWallpaperPreview();
+    const desktopId = activeDesktopIdRef.current;
+    const next = wallpaperLayout(wallpaper);
+    previewLayout(next, desktopId);
+    return persistWallpaperLayout(next, desktopId);
+  }
+
+  async function flushWallpaperPreview(desktopId: string) {
+    const pending = wallpaperPreviewRef.current;
+    if (!pending || pending.desktopId !== desktopId) return;
+    clearWallpaperPreview();
+    if (!canSettingsRef.current) {
+      if (layoutDraftRef.current?.desktopId === desktopId) layoutDraftRef.current = null;
+      return;
+    }
+    await persistWallpaperLayout(pending.layout, desktopId);
+  }
+
+  async function changeTheme(themeId: string) {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+    try {
+      const next = await selectTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
+    } catch (themeError) {
+      setError(themeError instanceof Error ? themeError.message : "The selected theme could not be saved.");
+      throw themeError;
+    }
+  }
+
+  async function persistCustomTheme(theme: CustomTheme) {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+    try {
+      const existing = appearanceRef.current.customThemes.find((candidate) => candidate.id === theme.id);
+      const saved = await saveCustomTheme(existing?.wallpaper ? { ...theme, wallpaper: existing.wallpaper } : theme);
+      const next = await selectTheme(saved.id);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
+    } catch (themeError) {
+      setError(themeError instanceof Error ? themeError.message : "The custom theme could not be saved.");
+      throw themeError;
+    }
+  }
+
+  async function removeCustomTheme(themeId: string) {
+    if (!canSettingsRef.current) throw new HostServiceError(settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current), "PERMISSION_DENIED");
+    try {
+      const next = await deleteCustomTheme(themeId);
+      appearanceRef.current = next;
+      setAppearance(next);
+      return next;
+    } catch (themeError) {
+      setError(themeError instanceof Error ? themeError.message : "The custom theme could not be deleted.");
+      throw themeError;
+    }
+  }
+
+  async function checkForUpdate() {
+    const updater = updaterRef.current;
+    if (!updater?.supported || updateChecking) return;
+    if (updateReady) {
+      setUpdateBlocked(false);
+      setShowUpdateToast(true);
+      return;
+    }
+    manualUpdateCheckRef.current = true;
+    setUpdateChecking(true);
+    try {
+      const result = await updater.check();
+      if (result === "current") setNotice("Hiraya is already up to date.");
+    } catch {
+      setError("Hiraya could not check for app updates.");
+    } finally {
+      manualUpdateCheckRef.current = false;
+      setUpdateChecking(false);
+    }
+  }
+
+  async function changeAutoUpdate(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, autoUpdate: enabled };
+    autoUpdateRef.current = enabled;
+    localPreferencesRef.current = next;
+    setAutoUpdate(enabled);
+    try {
+      await saveLocalPreferences(next);
+      if (enabled) void updaterRef.current?.check().catch(() => setError("Hiraya could not check for app updates."));
+    } catch {
+      autoUpdateRef.current = previous.autoUpdate;
+      localPreferencesRef.current = previous;
+      setAutoUpdate(previous.autoUpdate);
+      setError("The local update preference could not be saved.");
+    }
+  }
+
+  async function changeExternalEmbeddedPreviews(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, externalEmbeddedPreviews: enabled };
+    localPreferencesRef.current = next;
+    setExternalEmbeddedPreviews(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setExternalEmbeddedPreviews(previous.externalEmbeddedPreviews);
+      setError("The external preview preference could not be saved.");
+    }
+  }
+
+  async function changeAllowBrowserPinchZoom(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, allowBrowserPinchZoom: enabled };
+    localPreferencesRef.current = next;
+    setAllowBrowserPinchZoom(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setAllowBrowserPinchZoom(previous.allowBrowserPinchZoom);
+      setError("The browser zoom preference could not be saved.");
+    }
+  }
+
+  async function changeSearchAllDesktops(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, searchAllDesktops: enabled };
+    localPreferencesRef.current = next;
+    setSearchAllDesktops(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setSearchAllDesktops(previous.searchAllDesktops);
+      setError("The search preference could not be saved.");
+    }
+  }
+
+  async function changeExplorerView(view: ExplorerView) {
+    if (view === localPreferencesRef.current.explorerView) return;
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, explorerView: view };
+    localPreferencesRef.current = next;
+    setExplorerView(view);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setExplorerView(previous.explorerView);
+      setError("The folder view preference could not be saved.");
+    }
+  }
+
+  async function changeShowHiddenFiles(enabled: boolean) {
+    const previous = localPreferencesRef.current;
+    const next = { ...previous, showHiddenFiles: enabled };
+    localPreferencesRef.current = next;
+    if (!enabled) {
+      const remaining = windowsForHiddenFilePreference(runningAppsRef.current, false);
+      updateRunningApps(remaining);
+      if (focusedAppIdRef.current && !remaining.some((app) => app.id === focusedAppIdRef.current)) setFocusedApp(null);
+      if (selectedEntryIds.some(isProtectedShellEntry)) replaceSelection(selectionScope, []);
+    }
+    setShowHiddenFiles(enabled);
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      localPreferencesRef.current = previous;
+      setShowHiddenFiles(previous.showHiddenFiles);
+      setError("The hidden files preference could not be saved.");
+    }
+  }
+
+  async function closeGettingStarted() {
+    setShowGettingStarted(false);
+    if (localPreferencesRef.current.onboardingVersion >= ONBOARDING_VERSION) return;
+    const next = { ...localPreferencesRef.current, onboardingVersion: ONBOARDING_VERSION };
+    localPreferencesRef.current = next;
+    try {
+      await saveLocalPreferences(next);
+    } catch {
+      setError("Getting Started completion could not be saved. The guide may appear again.");
+    }
+  }
+
+  async function installPwa() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    const choice = await installPrompt.userChoice;
+    if (choice.outcome === "accepted") setInstallPrompt(null);
+  }
+
+  async function applyActivatedDesktopState(desktopId: string, desktop: DesktopStateSnapshot) {
+    activeDesktopIdRef.current = desktopId;
+    setActiveDesktopId(desktopId);
+    contentRevisionsRef.current = desktop.sync.contentRevisions;
+    entriesRef.current = desktop.entries;
+    layoutRef.current = desktop.layout;
+    setEntries(desktop.entries);
+    setLayout(desktop.layout);
+    setAppearance(desktop.appearance);
+    replaceSelection("desktop", []);
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox") app.dispatcher.dispose();
+    updateRunningApps([]);
+    appSnapshotRef.current = desktop;
+    setFocusedApp(null);
+    writeRoute(normalizeDesktopRoute({ desktopId, column: 0, row: 0 }, desktop.entries, desktopId), "replace");
+    restoreRunningApps(await readWindowSession(desktopId), desktop.entries);
+    windowSessionReadyRef.current = true;
+    setWindowSessionRestored(true);
+  }
+
+  async function performDesktopActivation(desktopId: string, token: number) {
+    activationGenerationRef.current = token;
+    if (desktopId === activeDesktopIdRef.current) return true;
+    if (Object.values(fileDirtyRef.current).some(Boolean) && !(await requestConfirmation({ title: "Switch desktops?", message: "Switching desktops will discard unsaved changes in open files and merge drafts.", confirmLabel: "Discard and switch", danger: true }))) return false;
+    const previousDesktopId = activeDesktopIdRef.current;
+    let syncStopped = false;
+    setLoading(true);
+    setError("");
+    setDialog(null);
+    setContextMenu(null);
+    setImportProgress(null);
+    setMoveDialogEntryIds([]);
+    windowSessionReadyRef.current = false;
+    try {
+      await flushWallpaperPreview(previousDesktopId);
+      await flushLayoutDraft(previousDesktopId);
+      await layoutSaveRef.current;
+      await stopDesktopSync();
+      syncStopped = true;
+      setOfflineInventory(null);
+      setOfflineProgress(null);
+      const desktop = await switchLocalDesktop(desktopId);
+      await applyActivatedDesktopState(desktopId, desktop);
+      await initializeDesktop(desktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, null, { backgroundServer: true });
+      await loadOfflineInventory();
+      if (activationGenerationRef.current !== token || activeDesktopIdRef.current !== desktopId) throw new Error("Desktop activation lost ownership.");
+      return true;
+    } catch (switchError) {
+      if (syncStopped && previousDesktopId && previousDesktopId !== desktopId) {
+        try {
+          await stopDesktopSync();
+          const previous = await switchLocalDesktop(previousDesktopId);
+          await applyActivatedDesktopState(previousDesktopId, previous);
+          await initializeDesktop(previousDesktopId, { x: window.innerWidth, y: Math.max(1, window.innerHeight - 44) }, null, { backgroundServer: true });
+          await loadOfflineInventory();
+        } catch (rollbackError) {
+          setError(rollbackError instanceof Error ? `Desktop activation failed and rollback failed: ${rollbackError.message}` : "Desktop activation and rollback failed.");
+          return false;
+        }
+      }
+      setError(switchError instanceof Error ? switchError.message : "The desktop could not be opened.");
+      return false;
+    } finally {
+      setLoading(false);
+    }
+  }
+  function activateDesktop(desktopId: string) {
+    return activationQueueRef.current.run((token) => performDesktopActivation(desktopId, token));
+  }
+  activateDesktopRef.current = activateDesktop;
+
+  async function createDesktop(name: string) {
+    const desktop = await createDesktopMutation(name);
+    setDesktops((current) => [...current, desktop]);
+    await activateDesktop(desktop.id);
+  }
+
+  async function renameDesktop(desktopId: string, name: string) {
+    if (!desktopsRef.current.find((desktop) => desktop.id === desktopId)?.capabilities.manage) throw new Error("You do not have permission to rename this desktop.");
+    const renamed = await renameDesktopMutation(desktopId, name);
+    setDesktops((current) => current.map((desktop) => (desktop.id === desktopId ? renamed : desktop)));
+  }
+
+  async function deleteDesktop(desktopId: string) {
+    const desktop = desktops.find((candidate) => candidate.id === desktopId);
+    if (!desktop?.capabilities.delete || desktops.filter((candidate) => candidate.ownership === "owned").length === 1) return;
+    if (!(await requestConfirmation({ title: `Delete ${desktop.name}?`, message: `Delete “${desktop.name}” and every file, folder, and Trash item in it? This cannot be undone.`, confirmLabel: "Delete desktop", danger: true }))) return;
+    if (desktopId === activeDesktopIdRef.current) {
+      const replacement = desktops.find((candidate) => candidate.id !== desktopId)!;
+      if (!(await activateDesktop(replacement.id))) return;
+    }
+    await deleteDesktopMutation(desktopId);
+    setDesktops((current) => current.filter((candidate) => candidate.id !== desktopId));
+  }
+
+  async function arrangeDesktopCatalog(preferences: DesktopPreference[]) {
+    const previousDesktops = desktopsRef.current;
+    const nextDesktops = arrangeDesktops(previousDesktops, preferences);
+    setDesktops(nextDesktops);
+    if (session && syncStatus !== "online" && syncStatus !== "blocked") {
+      setDesktops(previousDesktops);
+      throw new Error("Reconnect to change pinned desktops or their order.");
+    }
+    try {
+      if (session) await updateDesktopPreferencesMutation(preferences);
+      const previousPreferences = localPreferencesRef.current;
+      const nextPreferences = { ...previousPreferences, desktops: preferences };
+      localPreferencesRef.current = nextPreferences;
+      try { await saveLocalPreferences(nextPreferences); }
+      catch {
+        localPreferencesRef.current = previousPreferences;
+        setError("The desktop order was saved, but its offline copy could not be updated.");
+      }
+    } catch (reason) {
+      setDesktops(previousDesktops);
+      throw reason;
+    }
+  }
+
+  async function activateUpdate() {
+    if (Object.values(fileDirtyRef.current).some(Boolean)) {
+      setUpdateBlocked(true);
+      return;
+    }
+    const updater = updaterRef.current;
+    if (!updater) return;
+    setUpdateBlocked(false);
+    setUpdateApplying(true);
+    try {
+      await updater.activate();
+    } catch {
+      setUpdateApplying(false);
+      setError("The app update could not be applied.");
+    }
+  }
+
+  async function handleDialogSubmit(name: string) {
+    if (!dialog || !canMutate) return;
+    if (dialog.type === "create-file" || dialog.type === "create-shortcut" || dialog.type === "create-folder") {
+      const parentId = dialog.parentId;
+      const position = dialog.position ?? positionFor(parentId);
+      if (parentId === null) {
+        const projected = projectLogicalPosition(position, iconArea);
+        const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
+        if (positionOverlapsObstacles(projected.local, iconMetrics, obstacles)) throw new Error("Icons cannot be created beneath a desktop widget or icon group. Choose a free area and try again.");
+      }
+      if (dialog.type === "create-shortcut" && !name.toLowerCase().endsWith(".url")) throw new Error("A shortcut file name must end in .url.");
+      const template = dialog.type === "create-file" ? fileCreationTemplate(name, appSnapshotRef.current?.editorSettings.fileCreationTemplates ?? []) : undefined;
+      const created = dialog.type === "create-file"
+        ? template ? await createFile(name, parentId, position, new Blob([template.content], { type: template.mimeType })) : await createTextFile(name, parentId, position)
+        : dialog.type === "create-shortcut"
+          ? await createFile(name, parentId, position, new Blob([createInternetShortcut(dialog.url).content], { type: INTERNET_SHORTCUT_MIME_TYPE }))
+          : await createFolder(name, parentId, position);
+      fileDialogResultIdRef.current = created.id;
+      setEntries((current) => (current.some((entry) => entry.id === created.id) ? current : [...current, created]));
+       const grouped = created.kind === "folder" && parentId === null && groupCreatedFolderRef.current;
+       replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, [parentId === null ? grouped ? groupEntityId(created.id) : entryEntityId(created.id) : created.id]);
+       if (grouped) addIconGroup(created);
+      groupCreatedFolderRef.current = false;
+    } else if (dialog.type === "rename") {
+      if (!dialogEntry) {
+        setDialog(null);
+        return;
+      }
+      const renamed = await renameEntry(dialogEntry.id, name);
+      fileDialogResultIdRef.current = renamed.id;
+      setEntries((current) => current.map((entry) => (entry.id === renamed.id ? renamed : entry)));
+      updateRunningApps((current) =>
+        current.map((app) =>
+          app.kind === "file" && app.fileId === renamed.id
+            ? {
+                ...app,
+                file: renamed as FileEntry,
+                editable: renamed.kind === "file" ? fileCapabilities(renamed).editable : app.editable,
+              }
+            : app,
+        ),
+      );
+    } else {
+      if (!dialogEntry) {
+        setDialog(null);
+        return;
+      }
+      const ids = dialog.type === "delete" ? dialog.entryIds : [];
+      const selected = new Set(ids);
+      const rootIds = ids.filter((id) => !entryIndex.ancestors(id).some((ancestor) => selected.has(ancestor.id)));
+      const deleted = await deleteEntries(ids);
+      const deletedIds = new Set(deleted.map((entry) => entry.id));
+      setEntries((current) => current.filter((entry) => !deletedIds.has(entry.id)));
+      replaceSelection(
+        selectionScope,
+        selectedIdsRef.current.filter((id) => {
+          const entity = desktopEntityParts(id);
+          return !deletedIds.has(entity?.sourceId ?? id);
+        }),
+      );
+      const label = ids.length === 1 ? dialogEntry.name : `${ids.length} items`;
+      if (syncStatus === "online") setTrashNotifications((current) => [...current, createTrashNotification(activeDesktopIdRef.current, label, rootIds)]);
+    }
+    setDialog(null);
+  }
+
+  async function handleImportSources(sources: readonly ImportSource[], context: ImportOperationContext) {
+    if (!sources.length || !canMutate) return;
+    importOperationIsCurrent(context);
+    const { parentId, position: base } = context;
+    setFolderImportError("");
+    setError("");
+    setImportProgress({ folderCount: 0, fileCount: sources.filter((source) => source.file).length, totalBytes: sources.reduce((total, source) => total + (source.file?.size ?? 0), 0), phase: "preparing" });
+    try {
+      const offset = childrenCount(parentId);
+      const occupied = parentId === null ? activeDesktopSegment.entries.map((entry) => responsive.positions.get(entry.id) ?? projectLogicalPosition(entry.position, iconArea).local) : [];
+      const positionForRoot = (index: number) => {
+        if (parentId !== null) return nextRootEntryPosition(offset + index, window.innerHeight, base, iconMetrics);
+        const localPosition = base && index === 0 ? (layoutRef.current.snapToGrid ? snapPositionInView(base) : clampPositionInView(base)) : nextAvailableDesktopSlot(iconArea, occupied, responsive.segments.length > 1, iconMetrics, activeShellItemObstacles);
+        if (!localPosition || positionOverlapsObstacles(localPosition, iconMetrics, activeShellItemObstacles)) throw new Error("There is no free space in this desktop area. Move an icon or shell item, or switch to another area and try again.");
+        occupied.push(localPosition);
+        return restoreLogicalPosition(localPosition, activeSegment, iconArea);
+      };
+      const plan = buildImportPlan(sources, { destinationParentId: parentId, existingEntries: entriesRef.current, positionForRoot });
+      setImportProgress({ folderCount: plan.folderCount, fileCount: plan.fileCount, totalBytes: plan.totalBytes, phase: "saving" });
+      importOperationIsCurrent(context);
+      const imported = await createEntries(plan.entries, plan.contents);
+      setEntries((current) => {
+        const existingIds = new Set(current.map((entry) => entry.id));
+        return [...current, ...imported.filter((entry) => !existingIds.has(entry.id))];
+      });
+      replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, parentId === null ? plan.rootIds.map(entryEntityId) : plan.rootIds);
+    } catch (importError) {
+      if (!(importError instanceof DOMException && importError.name === "AbortError")) reportFolderImportError(importError instanceof Error ? importError.message : "The import could not be completed.");
+    } finally {
+      if (importOperationRef.current?.operationId === context.operationId) {
+        importOperationRef.current = null;
+        setImportProgress(null);
+      }
+    }
+  }
+
+  async function handleImport(files: File[], parentId: string | null, base?: EntryPosition) {
+    const context = captureImportOperation(parentId, base);
+    importOperationRef.current = context;
+    await handleImportSources(
+      files.map((file) => ({ relativePath: file.name, file })),
+      context,
+    );
+  }
+
+  async function handleExternalDrop(dataTransfer: DataTransfer, parentId: string | null, base?: EntryPosition) {
+    if (!canMutate) return;
+    const context = captureImportOperation(parentId, base);
+    importOperationRef.current = context;
+    setFolderImportError("");
+    setError("");
+    setImportProgress({ folderCount: 0, fileCount: 0, totalBytes: 0, phase: "preparing" });
+    try {
+      const sources = await sourcesFromDrop(dataTransfer);
+      if (!sources.length) return;
+      importOperationIsCurrent(context);
+      await handleImportSources(sources, context);
+    } catch (dropError) {
+      if (!(dropError instanceof DOMException && dropError.name === "AbortError")) reportFolderImportError(dropError instanceof Error ? dropError.message : "The dropped items could not be imported.");
+    } finally {
+      if (importOperationRef.current?.operationId === context.operationId) {
+        importOperationRef.current = null;
+        setImportProgress(null);
+      }
+    }
+  }
+  handleImportRef.current = handleImport;
+
+  async function importWallpaper(file: File, nextLayout: DesktopLayout, desktopId: string, selectDesktopIcon: boolean) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    return withWallpaperSelectionPending(async () => {
+      await validateWallpaperImage(file);
+      const [image] = await importFiles([file], null, [positionFor(null)]);
+      const nextEntries = entriesRef.current.some((entry) => entry.id === image.id) ? entriesRef.current : [...entriesRef.current, image];
+      entriesRef.current = nextEntries;
+      setEntries([...nextEntries]);
+      if (selectDesktopIcon) replaceSelection("desktop", [entryEntityId(image.id)]);
+      const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${image.id}` as const } };
+      await persistWallpaperLayout(layoutWithImage, desktopId);
+      return wallpaperEditorState(layoutWithImage, nextEntries, appearanceRef.current, true, "");
+    });
+  }
+
+  async function selectWallpaperFile(fileId: string, nextLayout: DesktopLayout, desktopId: string) {
+    requireWallpaperManagement();
+    if (desktopId !== activeDesktopIdRef.current) throw new HostServiceError("The active desktop changed.", "UNAVAILABLE");
+    return withWallpaperSelectionPending(async () => {
+      const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === fileId && candidate.kind === "file");
+      if (!entry) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
+      const file = await readFile(fileId);
+      if (!isSceneFile(entry)) await validateWallpaperImage(file);
+      if (desktopId !== activeDesktopIdRef.current || !entriesRef.current.some((candidate) => candidate.id === fileId && candidate.kind === "file")) throw new HostServiceError("The wallpaper file is no longer available.", "NOT_FOUND");
+      const layoutWithImage = { ...nextLayout, wallpaper: { ...nextLayout.wallpaper, source: `file:${fileId}` as const } };
+      await persistWallpaperLayout(layoutWithImage, desktopId);
+      return wallpaperEditorState(layoutWithImage, entriesRef.current, appearanceRef.current, true, "");
+    });
+  }
+
+  function desktopMovePosition(entry: DesktopEntry, position: EntryPosition) {
+    const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
+    const sourceOrigin = areaWorldOrigin(sourceSegment, iconArea);
+    const worldPosition = { x: sourceOrigin.x + position.x, y: sourceOrigin.y + position.y };
+    const projected = projectLogicalPosition(worldPosition, iconArea);
+    const targetSegment = edgeNavigationRef.current?.targetSegment ?? projected.segment;
+    const localPosition = {
+      x: Math.min(Math.max(8, iconArea.width - iconMetrics.width), Math.max(8, worldPosition.x - targetSegment.column * iconArea.width)),
+      y: Math.min(Math.max(8, iconArea.height - iconMetrics.height), Math.max(8, worldPosition.y - targetSegment.row * iconArea.height)),
+    };
+    return { logicalPosition: restoreLogicalPosition(localPosition, targetSegment, iconArea), targetSegment };
+  }
+
+  function desktopMoveGroup(entry: DesktopEntry) {
+    return selectedIdSet.has(entry.id) ? selectedEntries.filter((item) => item.parentId === null) : [entry];
+  }
+
+  function mixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    if (selectionScope !== "desktop" || selectedEntityIdSet.size < 2) return null;
+    const selected = desktopEntityList.filter((entity) => selectedEntityIdSet.has(entity.id));
+    if (!selected.some((entity) => entity.kind !== "entry") || selected.some((entity) => entity.kind === "entry" && (isProtectedShellEntry(entity.entry) || !entriesRef.current.some((entry) => entry.id === entity.entry.id)))) return null;
+    return desktopEntityMovementPlan(desktopEntityList, selectedEntityIdSet, anchorId, position);
+  }
+
+  function previewMixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    const plan = mixedDesktopMovement(anchorId, position);
+    return plan?.moves.map((move) => ({ entityId: move.id, delta: plan.delta })) ?? null;
+  }
+
+  async function commitMixedDesktopMovement(anchorId: string, position: EntryPosition) {
+    if (!canMutate || widgetMutationPendingRef.current) return false;
+    const plan = mixedDesktopMovement(anchorId, position);
+    if (!plan) return false;
+    const entityById = new Map(desktopEntityList.map((entity) => [entity.id, entity]));
+    const entryUpdates = plan.moves.flatMap((move) => {
+      const entity = entityById.get(move.id);
+      return entity?.kind === "entry" || entity?.kind === "group" ? [{ entryId: entity.entry.id, position: move.position }] : [];
+    });
+    const movedWidgets = new Map(plan.moves.filter((move) => move.kind === "widget").map((move) => [desktopEntityParts(move.id)!.sourceId, move.position]));
+    const previousEntries = new Map(entryUpdates.map(({ entryId }) => [entryId, entriesRef.current.find((entry) => entry.id === entryId)!.position]));
+    const currentLayout = layoutRef.current;
+    const nextLayout = movedWidgets.size ? { ...currentLayout, widgets: currentLayout.widgets.map((widget) => movedWidgets.has(widget.id) ? { ...widget, ...movedWidgets.get(widget.id)! } : widget) } : currentLayout;
+    const nextPositions = new Map(entryUpdates.map((update) => [update.entryId, update.position]));
+    const desktopId = activeDesktopIdRef.current;
+    setError("");
+    widgetMutationPendingRef.current = true;
+    setWidgetMutationPending(true);
+    if (nextLayout !== currentLayout) previewLayout(nextLayout, desktopId);
+    entriesRef.current = entriesRef.current.map((entry) => nextPositions.has(entry.id) ? { ...entry, position: nextPositions.get(entry.id)! } : entry);
+    setEntries(entriesRef.current);
+    let entriesSaved = false;
+    try {
+      if (entryUpdates.length) {
+        await updateRootEntryPositions(entryUpdates);
+        entriesSaved = true;
+      }
+      if (nextLayout !== currentLayout) await saveLayout({ ...layoutRef.current, widgets: nextLayout.widgets }, desktopId);
+      return true;
+    } catch {
+      if (desktopId !== activeDesktopIdRef.current) return false;
+      let entriesRestored = !entriesSaved;
+      if (entriesSaved) {
+        try {
+          await updateRootEntryPositions([...previousEntries].map(([entryId, previous]) => ({ entryId, position: previous })));
+          entriesRestored = true;
+        } catch {
+          // Keep persisted entry positions visible when compensation fails.
+        }
+      }
+      if (nextLayout !== currentLayout) previewLayout({ ...layoutRef.current, widgets: currentLayout.widgets }, desktopId);
+      if (entriesRestored) {
+        entriesRef.current = entriesRef.current.map((entry) => previousEntries.has(entry.id) ? { ...entry, position: previousEntries.get(entry.id)! } : entry);
+        setEntries(entriesRef.current);
+      }
+      setError(entriesRestored ? "The selected desktop items could not be moved." : "The mixed desktop move failed after file positions were saved. Reload to reconcile the desktop.");
+      return false;
+    } finally {
+      widgetMutationPendingRef.current = false;
+      setWidgetMutationPending(false);
+    }
+  }
+
+  function positionsOverlapShellItems(positions: readonly EntryPosition[]) {
+    return positions.some((position) => {
+      const projected = projectLogicalPosition(position, iconArea);
+      const obstacles = desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, projected.segment, iconArea);
+      return positionOverlapsObstacles(projected.local, iconMetrics, obstacles);
+    });
+  }
+
+  function arrangedDesktopMove(entry: DesktopEntry, position: EntryPosition) {
+    const { logicalPosition, targetSegment } = desktopMovePosition(entry, position);
+    const group = desktopMoveGroup(entry);
+    const sourceSegmentKey = segmentKey(projectLogicalPosition(entry.position, iconArea).segment);
+    if (group.some((item) => segmentKey(projectLogicalPosition(item.position, iconArea).segment) !== sourceSegmentKey)) return undefined;
+    return arrangeDesktopDrag(desktopEntryList, new Set(group.map((item) => item.id)), entry.id, logicalPosition, targetSegment, iconArea, iconMetrics, layoutRef.current.gridSize, undefined, desktopShellItemObstacles(layoutRef.current.widgets, layoutRef.current.iconGroups, entriesRef.current, targetSegment, iconArea));
+  }
+
+  function previewDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination | null) {
+    if (destination?.desktop) {
+      const { logicalPosition } = desktopMovePosition(entry, position);
+      const mixed = previewMixedDesktopMovement(entryEntityId(entry.id), logicalPosition);
+      if (mixed) return mixed;
+    }
+    if (!layoutRef.current.autoArrangeIcons || !destination?.desktop) return null;
+    const movingIds = new Set(desktopMoveGroup(entry).map((item) => item.id));
+    const updates = arrangedDesktopMove(entry, position);
+    if (!updates) return updates === null ? [] : null;
+    return updates.flatMap(({ entryId, position: next }) => {
+      if (movingIds.has(entryId)) return [];
+      const current = entryIndex.byId.get(entryId)?.position;
+      return current ? [{ entityId: entryEntityId(entryId), delta: { x: next.x - current.x, y: next.y - current.y } }] : [];
+    });
+  }
+
+  async function handleDesktopMove(entry: DesktopEntry, position: EntryPosition, destination: EntryDropDestination) {
+    if (!canMutate || widgetMutationPendingRef.current) return false;
+    if (!destination.desktop) {
+      if (selectionScope === "desktop" && selectedEntityIdSet.has(entryEntityId(entry.id)) && !desktopSelectionCanDropIntoFolder(desktopEntityList, selectedEntityIdSet)) return false;
+      return handleMoveTo(selectedIdSet.has(entry.id) ? selectedEntries : [entry], destination.parentId, true);
+    }
+    const { logicalPosition } = desktopMovePosition(entry, position);
+    if (mixedDesktopMovement(entryEntityId(entry.id), logicalPosition)) return commitMixedDesktopMovement(entryEntityId(entry.id), logicalPosition);
+    const group = desktopMoveGroup(entry);
+    if (layoutRef.current.autoArrangeIcons) {
+      const updates = arrangedDesktopMove(entry, position);
+      if (updates === null) {
+        setError("There is not enough room to prevent icon overlaps in this area.");
+        return false;
+      }
+      if (updates === undefined) return moveDesktopGroup(group, entry, logicalPosition);
+      if (!updates.length) return true;
+      const previous = new Map(updates.map(({ entryId }) => [entryId, entryIndex.byId.get(entryId)!.position]));
+      const nextPositions = new Map(updates.map(({ entryId, position: next }) => [entryId, next]));
+      setEntries((current) => current.map((item) => nextPositions.has(item.id) ? { ...item, position: nextPositions.get(item.id)! } : item));
+      try {
+        await updateRootEntryPositions(updates);
+        return true;
+      } catch {
+        setEntries((current) => current.map((item) => {
+          const intended = nextPositions.get(item.id);
+          return intended && item.position.x === intended.x && item.position.y === intended.y ? { ...item, position: previous.get(item.id)! } : item;
+        }));
+        setError("The arranged icon positions could not be saved.");
+        return false;
+      }
+    }
+    const delta = { x: logicalPosition.x - entry.position.x, y: logicalPosition.y - entry.position.y };
+    const overlapsShellItem = positionsOverlapShellItems(group.map((item) => ({ x: item.position.x + delta.x, y: item.position.y + delta.y })));
+    if (overlapsShellItem) {
+      setError("Icons cannot be placed beneath a desktop widget or icon group. Move the shell item or drop into an icon group instead.");
+      return false;
+    }
+    if (group.length > 1) {
+      return moveDesktopGroup(group, entry, logicalPosition);
+    }
+    setEntries((current) => current.map((item) => (item.id === entry.id ? { ...item, position: logicalPosition } : item)));
+    try {
+      await updateEntryPosition(entry.id, logicalPosition);
+      return true;
+    } catch {
+      setEntries((current) => current.map((item) => (item.id === entry.id ? { ...item, position: entry.position } : item)));
+      setError("The new icon position could not be saved.");
+      return false;
+    }
+  }
+
+  async function moveDesktopGroup(group: DesktopEntry[], anchor: DesktopEntry, logicalPosition: EntryPosition) {
+    const delta = { x: logicalPosition.x - anchor.position.x, y: logicalPosition.y - anchor.position.y };
+    const updates = group.map((item) => ({ entryId: item.id, position: { x: item.position.x + delta.x, y: item.position.y + delta.y } }));
+    const previous = new Map(group.map((item) => [item.id, item.position]));
+    const nextPositions = new Map(updates.map((item) => [item.entryId, item.position]));
+    setEntries((current) => current.map((item) => (nextPositions.has(item.id) ? { ...item, position: nextPositions.get(item.id)! } : item)));
+    try {
+      await updateRootEntryPositions(updates);
+      return true;
+    } catch {
+      setEntries((current) => current.map((item) => (previous.has(item.id) ? { ...item, position: previous.get(item.id)! } : item)));
+      setError("The selected icon positions could not be saved.");
+      return false;
+    }
+  }
+
+  async function autoArrangeDesktopIcons() {
+    if (!canMutate) return;
+    const arranged = arrangeDesktopSegment(desktopEntryList, activeSegment, iconArea, iconMetrics, activeShellItemObstacles);
+    if (!arranged) {
+      setError("There is not enough room to auto-arrange every icon in this area.");
+      return;
+    }
+    const updates = arranged.filter(({ entryId, position }) => {
+      const current = entryIndex.byId.get(entryId)?.position;
+      return current?.x !== position.x || current.y !== position.y;
+    });
+    if (!updates.length) return;
+    const previous = new Map(updates.map(({ entryId }) => [entryId, entryIndex.byId.get(entryId)!.position]));
+    const positions = new Map(updates.map(({ entryId, position }) => [entryId, position]));
+    setError("");
+    setEntries((current) => current.map((entry) => positions.has(entry.id) ? { ...entry, position: positions.get(entry.id)! } : entry));
+    try {
+      await updateRootEntryPositions(updates);
+    } catch {
+      setEntries((current) => current.map((entry) => previous.has(entry.id) ? { ...entry, position: previous.get(entry.id)! } : entry));
+      setError("The desktop icons could not be auto-arranged.");
+    }
+  }
+
+  async function handleMoveToDesktop(items: readonly DesktopEntry[], anchor: DesktopEntry, clientX: number, clientY: number) {
+    if (!canMutate || widgetMutationPendingRef.current) return false;
+    const origin = restoreLogicalPosition(positionAtDesktopPoint(clientX, clientY), activeSegment, iconArea);
+    const positions = items.map((entry) => ({
+      entryId: entry.id,
+      position: { x: origin.x + entry.position.x - anchor.position.x, y: origin.y + entry.position.y - anchor.position.y },
+    }));
+    if (!layoutRef.current.autoArrangeIcons && positionsOverlapShellItems(positions.map(({ position }) => position))) {
+      setError("Icons cannot be placed beneath a desktop widget or icon group. Move the shell item or drop into an icon group instead.");
+      return false;
+    }
+    setError("");
+    try {
+      const moved = items.every((entry) => entry.parentId === null)
+        ? items
+        : await moveEntries(items.map((entry) => entry.id), null);
+      const movedById = new Map(moved.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((entry) => movedById.get(entry.id) ?? entry));
+      const positioned = await updateRootEntryPositions(positions);
+      const positionedById = new Map(positioned.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((entry) => positionedById.get(entry.id) ?? entry));
+      replaceSelection("desktop", items.map((entry) => entryEntityId(entry.id)));
+      setContextMenu(null);
+      return true;
+    } catch (moveError) {
+      setError(moveError instanceof Error ? moveError.message : "The items could not be moved to the desktop.");
+      return false;
+    }
+  }
+
+  async function handleMoveTo(items: readonly DesktopEntry[], parentId: string | null, bubbleError = false) {
+    if (!canMutate) return false;
+    setError("");
+    try {
+      if (items.every((entry) => entry.parentId === parentId)) return true;
+      const moved = await moveEntries(
+        items.map((entry) => entry.id),
+        parentId,
+      );
+      const movedById = new Map(moved.map((entry) => [entry.id, entry]));
+      setEntries((current) => current.map((item) => movedById.get(item.id) ?? item));
+      replaceSelection(selectionScope, []);
+      setContextMenu(null);
+      return true;
+    } catch (moveError) {
+      const message = moveError instanceof Error ? moveError.message : "The item could not be moved.";
+      setError(message);
+      if (bubbleError) throw moveError;
+      return false;
+    }
+  }
+
+  function openExplorerWindow(folderId: string | null, syncRoute = true, focus = true) {
+    const id = builtinAppTargetId({ kind: "explorer", folderId });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      if (focus) focusApp(id, syncRoute);
+      return false;
+    }
+    const app: ExplorerApp = { ...createAppBase(id, "explorer"), kind: "explorer", folderId, ...(isProtectedShellEntry(folderId) ? { transient: true } : {}) };
+    updateRunningApps([...runningAppsRef.current, app]);
+    if (focus) setFocusedApp(id);
+    return true;
+  }
+
+  function navigateExplorerWindow(appId: string, folderId: string | null, mode: "push" | "replace" = "push") {
+    const nextId = builtinAppTargetId({ kind: "explorer", folderId });
+    if (nextId === appId) return;
+    const previousApps = runningAppTargets();
+    const zIndex = nextWindowZIndex();
+    const existing = runningAppsRef.current.find((app) => app.id === nextId);
+    if (existing) {
+      updateRunningApps(runningAppsRef.current.filter((app) => app.id !== appId).map((app) => (app.id === nextId ? { ...app, minimized: false, zIndex } : app)));
+    } else {
+      updateRunningApps(runningAppsRef.current.map((app) => (app.id === appId && app.kind === "explorer" ? { ...app, id: nextId, folderId, zIndex, transient: isProtectedShellEntry(folderId) || undefined } : app)));
+    }
+    setFocusedApp(nextId);
+    if (isProtectedShellEntry(folderId)) return;
+    const currentRoute = routeRef.current;
+    if (currentRoute && existing) {
+      const segment = segmentForApp(existing);
+      navigateRoute({ ...segment, explorerFolderId: folderId }, mode, previousApps);
+    } else if (currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: folderId }, mode, previousApps);
+  }
+
+  function openSettingsWindow(syncRoute = true) {
+    const id = builtinAppTargetId({ kind: "settings" });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      focusApp(id, syncRoute);
+      return false;
+    }
+    const previousApps = runningAppTargets();
+    const app: SettingsApp = { ...createAppBase(id, "settings"), kind: "settings" };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setFocusedApp(id);
+    const currentRoute = routeRef.current;
+    if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, settings: "desktop" }, "push", previousApps);
+    return true;
+  }
+
+  function openStoreWindow() {
+    const id = builtinAppTargetId({ kind: "store" });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      focusApp(id);
+      return;
+    }
+    const app: StoreApp = { ...createAppBase(id, "store"), kind: "store" };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setFocusedApp(id);
+    const current = window.history.state as Partial<RouteHistoryState> | null;
+    if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", window.location.href);
+  }
+
+  function openActivityLog() {
+    openSettingsWindow();
+    navigateSettingsPage("sync-storage/activity");
+  }
+
+  function openPropertiesWindow(entryId: string, syncRoute = true) {
+    const entry = entriesRef.current.find((candidate) => candidate.id === entryId);
+    if (!entry) return false;
+    const id = builtinAppTargetId({ kind: "properties", entryId });
+    if (runningAppsRef.current.some((app) => app.id === id)) {
+      focusApp(id, syncRoute);
+      return false;
+    }
+    const previousApps = runningAppTargets();
+    const app: PropertiesApp = { ...createAppBase(id, "properties"), kind: "properties", entryId };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setFocusedApp(id);
+    const currentRoute = routeRef.current;
+    if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, propertiesEntryId: entryId }, "push", previousApps);
+    return true;
+  }
+
+  async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
+    const launchTarget = target ?? (install.source === "system" && install.appId === SYSTEM_APP_IDS.themeEditor ? "root" : undefined);
+    const pendingId = launchTarget ? builtinAppTargetId({ kind: "system", appId: install.appId, targetKind: launchTarget === "root" ? "root" : launchTarget.kind, entryId: launchTarget === "root" ? null : launchTarget.id }) : null;
+    if (pendingId && pendingSandboxLaunchIdsRef.current.has(pendingId)) return;
+    if (pendingId) pendingSandboxLaunchIdsRef.current.add(pendingId);
+    setError("");
+    try {
+      const result = await launchSandboxApp({
+        install,
+        target: launchTarget,
+        source: launchSource,
+        activeSegment,
+        desktopSize,
+        runningApps: runningAppsRef.current,
+        activeTheme,
+        capabilities: appCapabilities,
+        hostServices: appHostServices,
+        commandService,
+        fileSync: {
+          readFile,
+          previewFile,
+          saveFile: saveAppFile,
+          createFile: createAppFile,
+          createFolder,
+          renameEntry,
+          moveEntry: moveAppEntry,
+          deleteEntry: deleteAppEntry,
+          deleteEntries,
+        },
+        getEntries: () => entriesRef.current,
+        getSnapshot: () => appSnapshotRef.current ?? (() => { throw new HostServiceError("The desktop is unavailable.", "UNAVAILABLE"); })(),
+        getLaunchArguments: () => install.appId === SYSTEM_APP_IDS.textEditor && appSnapshotRef.current ? [textEditorLaunchArgument(appSnapshotRef.current.editorSettings)] : [],
+        getAppCapabilities: () => ({ files: fileWriteCapability(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatus), externalEmbeddedPreviews: localPreferencesRef.current.externalEmbeddedPreviews }),
+        canMutate: () => canMutateRef.current,
+        loadArchive: async (candidate) => (await import("./features/app-management/archive-loader")).loadInstalledAppArchive(candidate, readFile),
+        shouldFocusTarget: (systemTarget) => routeTargetsAppEntry(routeRef.current, systemTarget),
+        createBase: (id) => createAppBase(id, "sandbox"),
+        createPosition: () => positionFor(null),
+        confirm: requestConfirmation,
+        openEntry: (entry) => handleOpenRef.current(entry),
+        importFiles: (parentId) => chooseUploadRef.current(parentId),
+        importFolder: (parentId) => chooseFolderImportRef.current(parentId),
+        showEntryActions: (instanceId, ids) => {
+          replaceSelection(`app:${instanceId}`, ids);
+          setContextMenu({ type: "entry", entryId: ids[0], x: Math.round(window.innerWidth / 2), y: Math.round(window.innerHeight / 2), presentation: "sheet" });
+        },
+        getEntryStatus: (id) => {
+          const status = offlineModelRef.current?.entries[id];
+          const legacyStatus = status?.status === "local" || status?.protected ? "protected" : status?.status === "updating" ? "updating" : status?.status === "available" ? "cached" : "unavailable";
+          return { status: legacyStatus, pinned: false, directlyPinned: false };
+        },
+        setExternalEmbeddedPreviews: changeExternalEmbeddedPreviews,
+        getThemeEditorState: () => themeEditorState(appearanceRef.current, canSettingsRef.current, settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current)),
+        selectTheme: async (themeId) => themeEditorState(await changeTheme(themeId), true, ""),
+        saveTheme: async (theme: ServiceMethods["themes.save"]["params"]) => themeEditorState(await persistCustomTheme(theme), true, ""),
+        deleteTheme: async (themeId) => themeEditorState(await removeCustomTheme(themeId), true, ""),
+        getWallpaperEditorState: () => wallpaperEditorState(layoutRef.current, entriesRef.current, appearanceRef.current, canSettingsRef.current, settingsRestrictionReason(desktopsRef.current.find((desktop) => desktop.id === activeDesktopIdRef.current), syncStatusRef.current)),
+        previewWallpaper,
+        saveWallpaper,
+        uploadWallpaper: (file) => {
+          clearWallpaperPreview();
+          return importWallpaper(file, layoutRef.current, activeDesktopIdRef.current, false);
+        },
+        selectWallpaper: (fileId) => {
+          clearWallpaperPreview();
+          return selectWallpaperFile(fileId, layoutRef.current, activeDesktopIdRef.current);
+        },
+      });
+      if (result.kind === "existing") {
+        if (result.shouldFocus) focusApp(result.id);
+        return;
+      }
+      if (install.source === "account" && !installedAppsRef.current.some((current) => current.source === "account" && current.appId === install.appId && current.installationGeneration === install.installationGeneration && current.digest === install.digest)) {
+        result.app.dispatcher.dispose();
+        appCapabilities.revokeInstance(result.app.id);
+        return;
+      }
+      updateRunningApps([...runningAppsRef.current, result.app]);
+      if (result.shouldFocus) setFocusedApp(result.app.id);
+      if (!result.systemTarget && launchSource !== "restore") {
+        const current = window.history.state as Partial<RouteHistoryState> | null;
+        if (current?.hiraya) window.history.pushState(routeHistoryState(runningAppTargets(), window.location.pathname), "", window.location.href);
+      }
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    } finally {
+      if (pendingId) pendingSandboxLaunchIdsRef.current.delete(pendingId);
+    }
+  }
+  launchInstalledAppRef.current = launchInstalledApp;
+
+  async function openAppPackage(file: FileEntry, launchFile?: FileEntry, inspected?: AppPackageInspection) {
+    setError("");
+    try {
+      const blob = inspected ? null : await readFile(file.id);
+      const { inspectAppArchive } = await import("@hiraya-team/app-cli");
+      const appPackage = inspected ?? await inspectAppArchive(new Uint8Array(await blob!.arrayBuffer()));
+      if (isReservedSystemAppId(appPackage.manifest.id)) throw new Error("That app ID is reserved for a trusted system app.");
+      const approved = installedApps.find((item) => item.appId === appPackage.manifest.id);
+      let install = approved;
+      if (!packageMatchesInstall(approved, file.id, appPackage.digest, appPackage.manifest.version)) {
+        const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
+        const confirmed = await requestConfirmation({ title: `${approved ? "Approve updated" : "Install"} ${appPackage.manifest.name}?`, message: `Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`, confirmLabel: approved ? "Approve update" : "Install and run" });
+        if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
+        if (session) {
+          const published = await publishAccountInstall(blob ?? await readFile(file.id), appPackage);
+          if (!published) { setNotice(`${appPackage.manifest.name} queued for account synchronization`); return; }
+          install = published;
+        } else install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
+        if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
+        if (!session) await approveInstall(install);
+        if (approved?.source === "store" || approved?.source === "account") await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
+      }
+      await launchInstalledApp(install!, launchFile);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
+    }
+  }
+
+  async function installStorePackage(item: StorePackage) {
+    const key = storePackageKey(item);
+    setStoreInstallKey(key);
+    setError("");
+    try {
+      let inspected = storeInspectionCacheRef.current.get(key);
+      if (!inspected) {
+        setStoreInspections((current) => new Map(current).set(key, { status: "loading" }));
+        try {
+          const value = await inspectStorePackage(item, session!.directBlobOrigin);
+          inspected = value;
+          setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
+        } catch (reason) {
+          setStoreInspections((current) => { const next = new Map(current); next.delete(key); return next; });
+          throw reason;
+        }
+      }
+      storeInspectionCacheRef.current.set(key, inspected);
+      const appPackage = inspected.inspection;
+      if (isReservedSystemAppId(appPackage.manifest.id)) throw new Error("That app ID is reserved for a trusted system app.");
+      const approved = installedApps.find((candidate) => candidate.appId === appPackage.manifest.id);
+      const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
+      const confirmed = await requestConfirmation({
+        title: `${approved ? "Approve update for" : "Install"} ${appPackage.manifest.name}?`,
+        message: `Version ${appPackage.manifest.version}. Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`,
+        confirmLabel: approved ? "Approve update" : "Install",
+      });
+      if (!confirmed) return;
+      const remoteStore = desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store");
+      const published = remoteStore ? (await loadStorePackages(remoteStore, session!.directBlobOrigin)).packages : [];
+      if (!published.some((candidate) => storePackageKey(candidate) === key)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
+      await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
+      const install: InstalledApp | null = session ? await publishAccountInstall(inspected.archive, appPackage) : {
+        appId: appPackage.manifest.id,
+        source: "store",
+        packageEntryId: item.entry.id,
+        archivePath: null,
+        sourceCatalogId: item.catalogId,
+        sourceDesktopId: item.desktopId,
+        sourceContentRevision: item.contentRevision,
+        digest: appPackage.digest,
+        version: appPackage.manifest.version,
+        manifest: appPackage.manifest,
+        approvedAt: Date.now(),
+      };
+      if (!install) { setNotice(`${appPackage.manifest.name} queued for account synchronization`); return; }
+      if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
+      if (!session) await approveInstall(install);
+      if ((approved?.source === "store" || approved?.source === "account") && approved.digest !== install.digest) await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
+      setNotice(`${appPackage.manifest.name} ${approved ? "updated" : "installed"}`);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "The app could not be installed.");
+    } finally {
+      setStoreInstallKey((current) => current === key ? null : current);
+    }
+  }
+
+  async function openHirayaPackage(file: FileEntry) {
+    setError("");
+    try {
+      const blob = await readFile(file.id);
+      const { inspectHirayaArchive } = await import("@hiraya-team/app-cli");
+      const inspection = await inspectHirayaArchive(new Uint8Array(await blob.arrayBuffer()));
+      if (inspection.kind === "app") {
+        const { kind: _kind, ...appPackage } = inspection;
+        void _kind;
+        await openAppPackage(file, undefined, appPackage);
+        return;
+      }
+      if (inspection.kind !== "theme") throw new Error("Open Scene files with Integrated Editor.");
+      if (!canSettings) throw new Error(settingsRestrictionReason(activeDesktop, syncStatus));
+      const wallpaper = inspection.manifest.wallpaper;
+      const replacedTheme = appearance.customThemes.find((theme) => theme.id === inspection.manifest.id);
+      const replacing = replacedTheme !== undefined;
+      const confirmed = await requestConfirmation({
+        title: `${replacing ? "Replace" : "Import"} ${inspection.manifest.name}?`,
+        message: wallpaper?.kind === "scene"
+          ? "This theme includes executable wallpaper code. Hiraya blocks network, file, host-service, and pointer access, but the scene can still consume processor and memory resources."
+          : wallpaper ? `This theme includes a ${wallpaper.kind} wallpaper stored as a hidden synchronized theme asset.` : "This package contains theme colors and desktop metrics without a wallpaper.",
+        confirmLabel: replacing ? "Replace and apply" : "Import and apply",
+      });
+      if (!confirmed || !entriesRef.current.some((entry) => entry.id === file.id)) return;
+      const theme: CustomTheme = { id: inspection.manifest.id, name: inspection.manifest.name, definition: inspection.manifest.definition };
+      if (!wallpaper && !replacedTheme?.wallpaper) {
+        await saveCustomTheme(theme);
+        await selectTheme(theme.id);
+      } else {
+        const nextLayout: DesktopLayout = {
+          ...layoutRef.current,
+          wallpaper: wallpaper ? {
+            ...layoutRef.current.wallpaper,
+            source: `theme:${theme.id}`,
+            fit: wallpaper.fit ?? "cover",
+            positionX: wallpaper.positionX ?? 50,
+            positionY: wallpaper.positionY ?? 50,
+            blur: wallpaper.blur ?? 0,
+            dim: wallpaper.dim ?? 0,
+            overlayColor: wallpaper.overlayColor ?? "#000000",
+            overlayOpacity: wallpaper.overlayOpacity ?? 0,
+          } : layoutRef.current.wallpaper.source === `theme:${theme.id}` ? { ...DEFAULT_WALLPAPER } : layoutRef.current.wallpaper,
+        };
+        await installThemePackage(theme, wallpaper?.kind ?? null, blob.slice(0, blob.size, "application/vnd.hiraya.theme+zip"), nextLayout);
+      }
+      setNotice(`${inspection.manifest.name} imported and applied`);
+    } catch (packageError) {
+      setError(packageError instanceof Error ? packageError.message : "The Hiraya package could not be opened.");
+    }
+  }
+
+  function launchApp(install: InstalledApp) {
+    if (install.source === "system" || install.source === "store" || install.source === "account") void launchInstalledApp(install);
+    else {
+      const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === install.packageEntryId && candidate.kind === "file");
+      if (entry) void openAppPackage(entry);
+      else setError("That app package is unavailable.");
+    }
+  }
+
+  async function addAppShortcut(app: InstalledApp) {
+    if (!canMutate) throw new Error("This desktop is read only.");
+    const name = availableAppShortcutName(app.manifest.name, entriesRef.current.filter((entry) => entry.parentId === null).map((entry) => entry.name));
+    const content = new Blob([createAppShortcut(app.appId)], { type: APP_SHORTCUT_MIME_TYPE });
+    const created = await createFile(name, null, positionFor(null), content);
+    setEntries((current) => current.some((entry) => entry.id === created.id) ? current : [...current, created]);
+    replaceSelection("desktop", [entryEntityId(created.id)]);
+    setNotice(`${app.manifest.name} added to the desktop`);
+  }
+
+  async function openAppShortcut(file: FileEntry) {
+    try {
+      if (file.size > APP_SHORTCUT_MAX_BYTES) throw new Error("This application shortcut is too large.");
+      const shortcut = parseAppShortcut(await (await readFile(file.id)).text());
+      const app = installedAppsRef.current.find((candidate) => candidate.appId === shortcut.appId);
+      if (!app || !installedAppIsAvailable(app, entriesRef.current)) throw new Error(`The app ${shortcut.appId} is not installed or available. Open Applications to install or synchronize it.`);
+      launchApp(app);
+    } catch (openError) {
+      setError(openError instanceof Error ? openError.message : "The application shortcut could not be opened.");
+    }
+  }
+
+  async function openFileWithApp(app: InstalledApp, file: FileEntry) {
+    setContextMenu(null);
+    const currentRoute = routeRef.current;
+    if (!currentRoute) return;
+    const previousApps = runningAppTargets();
+    const target: SystemAppTarget = { kind: "system", appId: app.appId, targetKind: "file", entryId: file.id };
+    if (app.source === "system" || app.source === "store" || app.source === "account") await launchInstalledApp(app, file);
+    else {
+      const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
+      if (packageEntry) await openAppPackage(packageEntry, file);
+      else setError("That app package is unavailable.");
+    }
+    const id = builtinAppTargetId(target);
+    if (!runningAppsRef.current.some((running) => running.id === id)) return;
+    if (routeRef.current !== currentRoute) return;
+    navigateRoute({ column: currentRoute.column, row: currentRoute.row, fileId: file.id }, "push", previousApps);
+    focusApp(id, false);
+  }
+
+  async function removeInstalledApp(app: InstalledApp) {
+    if (app.source === "system" || app.source === "account") return;
+    if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
+    forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
+    await removeInstall(app.appId);
+    if (app.source === "store") await releaseApprovedPackageArchive(app.digest).catch(() => undefined);
+    setNotice(`${app.manifest.name} uninstalled`);
+  }
+
+  async function uninstallFromAccount(appId: string) {
+    const app = availableAccountApps.find((candidate) => candidate.appId === appId) ?? null;
+    const approved = installedApps.find((candidate) => candidate.appId === appId && candidate.source === "account");
+    const desired = app ?? (approved ? { appId: approved.appId, manifest: approved.manifest } : null);
+    const remote = availableAccountApps.find((candidate) => candidate.appId === appId) ?? (accountAppsSnapshot?.apps.find((candidate) => candidate.appId === appId));
+    if (!desired || !remote || !uninstallAccountApp) return;
+    if (!(await requestConfirmation({ title: `Uninstall ${desired.manifest.name} from this account?`, message: "This removes the app package, synchronized app data, and handler hints for every device. Local approvals will no longer launch it.", confirmLabel: "Uninstall from account", danger: true }))) return;
+    forceCloseRunningAppInstances([...runningAppsRef.current], appId, closeApp);
+    await uninstallAccountApp(remote);
+    setNotice(`${desired.manifest.name} will be uninstalled from this account`);
+  }
+
+  async function openInternetShortcut(file: FileEntry, popup: Window | null) {
+    if (!popup) {
+      setError("The link was blocked by the browser. Allow pop-ups for Hiraya and try again.");
+      return;
+    }
+    popup.opener = null;
+    try {
+      const shortcut = parseInternetShortcut(await (await readFile(file.id)).text());
+      popup.location.replace(shortcut.url);
+    } catch (openError) {
+      popup.close();
+      setError(openError instanceof Error ? openError.message : "The internet shortcut could not be opened.");
+    }
+  }
+
+  function openVirtualThumbnail(file: FileEntry) {
+    const source = virtualThumbnailSource(file);
+    const original = source && entriesRef.current.find((entry): entry is FileEntry => entry.id === source.entryId && entry.kind === "file");
+    if (!source || !original || contentRevisionsRef.current[original.id] !== source.contentRevision) {
+      setError("That generated thumbnail is no longer available.");
+      return;
+    }
+    const id = `virtual-thumbnail-window:${file.id}`;
+    const existing = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (existing && (existing.kind !== "file" || !existing.loadError)) {
+      focusApp(id, false);
+      return;
+    }
+    if (existing) updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: undefined } : candidate));
+    else {
+      const app: FileApp = { ...createAppBase(id, "file"), transient: true, kind: "file", fileId: file.id, file, editMode: false, contentRevision: source.contentRevision, remoteChanged: false };
+      updateRunningApps([...runningAppsRef.current, app]);
+    }
+    setFocusedApp(id);
+    void thumbnailFile(original.id).then((thumbnail) => {
+      if (thumbnail.kind !== "blob") throw new Error("The thumbnail response was not browser-safe.");
+      const blob = thumbnail.blob;
+      const downloaded = downloadedThumbnailEntry(file, blob);
+      const opened = new File([blob], downloaded.name, { type: downloaded.mimeType, lastModified: downloaded.modifiedAt });
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, file: downloaded, blob: opened, editable: false, loadError: undefined } : candidate));
+    }).catch((openError) => updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The thumbnail could not be opened." } : candidate)));
+  }
+
+  function downloadProtectedBlob(blob: Blob, name: string) {
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = name;
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+  }
+
+  function protectedFileDetails(file: FileEntry) {
+    const source = protectedShellSource(file);
+    const systemEntry = source?.kind === "system" ? activeSystemDocument?.entries.find((entry) => entry.id === source.entryId) : undefined;
+    const trashItem = source?.kind === "trash" ? activeShellTrash?.items.find((item) => item.entry.id === source.rootId) : undefined;
+    const trashEntry = source?.kind === "trash" ? trashItem?.entries.find((entry) => entry.id === source.entryId) : undefined;
+    const accountResource = source?.kind === "account" ? accountResourceList.find((resource) => resource.id === source.resourceId) : undefined;
+    if (!source || source.kind === "system" && !systemEntry || source.kind === "trash" && (!trashEntry || trashEntry.kind !== "file") || source.kind === "account" && !accountResource) return null;
+    if (source.kind === "account") return {
+      source,
+      revision: accountResource!.revision,
+      package: false,
+      load: async () => {
+        if (!session) throw new Error("Sign in again to open this account resource.");
+        return downloadAccountResource(accountResource!, session.directBlobOrigin);
+      },
+    };
+    return source.kind === "system"
+      ? { source, revision: systemEntry!.contentRevision, package: systemEntry!.systemRole === "theme-package", load: () => readSystemFile(activeDesktopId, activeSystemDocument!.catalogId, systemEntry!) }
+      : { source, revision: trashEntry!.contentRevision, package: false, load: () => readTrashFile(activeDesktopId, activeShellTrash!.catalogId, source.rootId, trashEntry!) };
+  }
+
+  function loadProtectedWindow(id: string, file: FileEntry, revision: number, load: () => Promise<File>) {
+    const generation = (fileLoadGenerationsRef.current[id] ?? 0) + 1;
+    fileLoadGenerationsRef.current[id] = generation;
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, file, blob: undefined, editable: fileCapabilities(file).editable, contentRevision: revision, loadError: undefined } : candidate));
+    void load().then((blob) => {
+      if (fileLoadGenerationsRef.current[id] !== generation || !runningAppsRef.current.some((candidate) => candidate.id === id)) return;
+      const opened = new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, blob: opened, loadError: undefined } : candidate));
+    }).catch((openError) => {
+      if (fileLoadGenerationsRef.current[id] !== generation) return;
+      if (openError instanceof VirtualFileChangedError) setProtectedRefreshToken((value) => value + 1);
+      updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The protected file could not be opened." } : candidate));
+    });
+  }
+
+  function openProtectedFile(file: FileEntry) {
+    const details = protectedFileDetails(file);
+    if (!details) {
+      setError("That protected file is no longer available. Reopen the .hiraya folder and try again.");
+      return;
+    }
+    if (details.package) {
+      void details.load().then((blob) => downloadProtectedBlob(blob, file.name)).catch((openError) => setError(openError instanceof Error ? openError.message : "The protected package could not be downloaded."));
+      return;
+    }
+    const id = `protected-file-window:${file.id}`;
+    const existing = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (existing && (existing.kind !== "file" || !existing.loadError)) {
+      focusApp(id, false);
+      return;
+    }
+    if (existing) updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: undefined } : candidate));
+    else {
+      const app: FileApp = { ...createAppBase(id, "file"), transient: true, kind: "file", fileId: file.id, file, editable: fileCapabilities(file).editable, editMode: false, contentRevision: details.revision, remoteChanged: false };
+      updateRunningApps([...runningAppsRef.current, app]);
+    }
+    setFocusedApp(id);
+    loadProtectedWindow(id, file, details.revision, details.load);
+  }
+
+  const reconcileProtectedWindows = useEffectEvent(() => {
+    for (const app of runningAppsRef.current) {
+      if (app.kind !== "file" || !app.transient || !app.file || virtualThumbnailSource(app.file)) continue;
+      const source = protectedShellSource(app.file);
+      if (!source) continue;
+      const loadState = source.kind === "system" ? systemLoad.status : source.kind === "trash" ? trashLoad.status : "ready";
+      if (loadState === "idle" || loadState === "loading") continue;
+      const details = protectedFileDetails(app.file);
+      const projected = shellEntryIndex.byId.get(app.fileId);
+      const disposition = protectedWindowDisposition(app.contentRevision, details?.revision ?? null);
+      if (disposition === "close" || !projected || projected.kind !== "file") {
+        void closeAppRef.current(app.id, false, false);
+        continue;
+      }
+      if (disposition === "reload") loadProtectedWindow(app.id, projected, details!.revision, details!.load);
+    }
+  });
+
+  useEffect(() => {
+    reconcileProtectedWindows();
+  }, [accountAppsSnapshot, accountResourceList, activeShellTrash, activeSystemDocument, reconcileProtectedWindows, systemLoad.status, trashLoad.status]);
+
+  function handleOpen(entry: DesktopEntry) {
+    setContextMenu(null);
+    if (isProtectedShellEntry(entry)) {
+      if (entry.kind === "folder") openExplorerWindow(entry.id, false);
+      else if (virtualThumbnailSource(entry)) openVirtualThumbnail(entry);
+      else openProtectedFile(entry);
+      return;
+    }
+    if (entry.kind === "file") {
+      const reserved = reservedFileHandler(entry);
+      if (reserved === "app-shortcut") {
+        void openAppShortcut(entry);
+        return;
+      }
+      if (reserved === "app-package") {
+        void openHirayaPackage(entry);
+        return;
+      }
+      if (reserved === "internet-shortcut") {
+        setError("");
+        void openInternetShortcut(entry, window.open("about:blank", "_blank"));
+        return;
+      }
+    }
+    const currentRoute = routeRef.current;
+    if (!currentRoute) return;
+    if (entry.kind === "folder") {
+      const existingId = builtinAppTargetId({ kind: "explorer", folderId: entry.id });
+      if (runningAppsRef.current.some((app) => app.id === existingId)) {
+        focusApp(existingId);
+        return;
+      }
+      const previousApps = runningAppTargets();
+      const created = openExplorerWindow(entry.id, false);
+      navigateRoute({ column: currentRoute.column, row: currentRoute.row, explorerFolderId: entry.id }, created ? "push" : "replace", previousApps);
+      return;
+    }
+    const resolution = resolveFileApp(entry, installedApps, entriesRef.current, fileAssociations);
+    const app = resolution?.app;
+    if (!app) {
+      setError("No available app can open this item.");
+      return;
+    }
+    if (resolution?.preferredUnavailable) setNotice(`Your preferred app for ${resolution.preferredUnavailable.matcher} is unavailable. Opened with ${app.manifest.name}; change the preference in Settings > Apps > File types.`);
+    void openFileWithApp(app, entry);
+  }
+  handleOpenRef.current = handleOpen;
+
+  function handleEditFile(file: FileEntry) {
+    setContextMenu(null);
+    const currentRoute = routeRef.current;
+    if (!currentRoute || !fileCapabilities(file).editable) return;
+    const editor = installedApps.find((app) => app.appId === SYSTEM_APP_IDS.textEditor);
+    if (!editor) {
+      setError("Integrated Editor is unavailable.");
+      return;
+    }
+    void openFileWithApp(editor, file);
+  }
+
+  async function download(file: FileEntry) {
+    try {
+      const blob = await readFile(file.id);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = file.name;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setContextMenu(null);
+    } catch {
+      setError("The file could not be downloaded.");
+    }
+  }
+
+  async function copyDeepLink(entry: DesktopEntry) {
+    const segment = entry.parentId === null ? projectLogicalPosition(entry.position, iconAreaSizeRef.current).segment : activeSegment;
+    const target = entry.kind === "folder" ? { desktopId: activeDesktopIdRef.current, ...segment, explorerFolderId: entry.id } : { desktopId: activeDesktopIdRef.current, ...segment, fileId: entry.id };
+    const url = new URL(formatDesktopRoute(target), window.location.origin);
+    try {
+      await navigator.clipboard.writeText(url.href);
+      setNotice(`Link to ${entry.name} copied`);
+      setContextMenu(null);
+    } catch {
+      setError("The browser did not allow Hiraya to copy this link.");
+    }
+  }
+
+  async function makeAvailableOffline(rootIds: string[]) {
+    if (offlineBusy) return;
+    const desktopId = activeDesktopIdRef.current;
+    setOfflineBusy(true);
+    setError("");
+    try {
+      const estimate = await estimateOfflineOperation(rootIds);
+      if (
+        (estimate.fileCount >= 50 || estimate.downloadBytes >= 100 * 1024 * 1024) &&
+        !(await requestConfirmation({
+          title: "Make this selection available offline?",
+          message: `${estimate.fileCount} current files may download (${formatImportBytes(estimate.downloadBytes)}). Future folder descendants are not downloaded automatically.`,
+          confirmLabel: "Make available",
+        }))
+      )
+        return;
+      await downloadOfflineCopies(estimate.roots);
+      if (activeDesktopIdRef.current === desktopId) setNotice(`${estimate.fileCount} ${estimate.fileCount === 1 ? "file is" : "files are"} available locally`);
+      setContextMenu(null);
+    } catch (availabilityError) {
+      setError(availabilityError instanceof Error ? availabilityError.message : "Offline availability could not be changed.");
+    } finally {
+      setOfflineBusy(false);
+    }
+  }
+
+
+  async function removeDownloadedCopies(rootIds?: string[]) {
+    if (offlineBusy) return;
+    setOfflineBusy(true);
+    try {
+      const released = await releaseOfflineCopies(rootIds);
+      setNotice(released.releasedFiles ? `${released.releasedFiles} downloaded ${released.releasedFiles === 1 ? "copy" : "copies"} released (${formatImportBytes(released.releasedBytes)})` : released.skippedFiles ? "No copies released. Authoritative or pending content was kept." : "No eligible downloaded copies found.");
+      setContextMenu(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Downloaded copies could not be released.");
+    } finally {
+      setOfflineBusy(false);
+    }
+  }
+
+  function invalidateShellTrashRoot(rootId: string) {
+    setShellTrash((current) => current ? { ...current, items: current.items.filter((item) => item.entry.id !== rootId) } : current);
+  }
+
+  async function undoMoveToTrash(pending: TrashNotification) {
+    if (pending.state === "running") return;
+    setTrashNotifications((current) => updateTrashNotification(current, pending.id, "running"));
+    try {
+      if (!desktopsRef.current.some((desktop) => desktop.id === pending.desktopId)) throw new Error("That desktop is no longer accessible. Open Trash after access is restored.");
+      if (activeDesktopIdRef.current !== pending.desktopId && !(await activateDesktop(pending.desktopId))) throw new Error("The desktop could not be opened.");
+      const revisions = new Map((await listTrash(pending.desktopId)).items.map((item) => [item.entry.id, item.entry.revision]));
+      for (const id of pending.rootIds) {
+        const revision = revisions.get(id);
+        if (revision === undefined) throw new Error("That item is no longer in Trash.");
+        await restoreTrash(pending.desktopId, id, "original", revision);
+        invalidateShellTrashRoot(id);
+      }
+      setTrashNotifications((current) => dismissTrashNotification(current, pending.id));
+    } catch (restoreError) {
+      const message = restoreError instanceof Error ? restoreError.message : "The Trash move could not be undone.";
+      setTrashNotifications((current) => updateTrashNotification(current, pending.id, "failed", message));
+    }
+  }
+
+  async function openTrashNotification(pending: TrashNotification) {
+    if (!desktopsRef.current.some((desktop) => desktop.id === pending.desktopId)) {
+      setTrashNotifications((current) => updateTrashNotification(current, pending.id, "failed", "That desktop is no longer accessible."));
+      return;
+    }
+    if (activeDesktopIdRef.current !== pending.desktopId && !(await activateDesktop(pending.desktopId))) return;
+    setActivePanel("trash");
+  }
+
+  async function openSearchResult(result: DesktopSearchResult) {
+    const destination = desktopsRef.current.find((desktop) => desktop.id === result.desktopId && desktop.capabilities.read && (result.authorityCatalogId === null || desktop.authorityCatalogId === result.authorityCatalogId));
+    if (!destination) {
+      setError("That search result is no longer accessible.");
+      return;
+    }
+    if (result.desktopId !== activeDesktopIdRef.current && !(await activateDesktop(result.desktopId))) return;
+    const current = entriesRef.current.find((entry) => entry.id === result.entry.id);
+    if (!current) {
+      setError("That search result is stale. Search again after reconnecting.");
+      return;
+    }
+    if (current.parentId === null) goToSegment(projectLogicalPosition(current.position, iconAreaSizeRef.current).segment);
+    handleOpen(current);
+  }
+
+  async function copySelection() {
+    const selectedIds = canonicalSelectionIds(entriesRef.current, selectionScope === "desktop" ? selectedIdsRef.current.flatMap((id) => {
+      const entity = desktopEntityParts(id);
+      return entity?.kind === "entry" ? [entity.sourceId] : [];
+    }) : selectedIdsRef.current);
+    if (!selectedIds.length) return;
+    const uncachedFiles = offlineFilesUnderRoots(entries, selectedIds).filter((entry) => offlineModel.entries[entry.id]?.downloadBytes > 0);
+    setCopyDownload(uncachedFiles.length ? { entryIds: new Set(uncachedFiles.map((entry) => entry.id)), totalBytes: uncachedFiles.reduce((total, entry) => total + offlineModel.entries[entry.id].downloadBytes, 0) } : null);
+    setError("");
+    try {
+      const snapshot = await captureEntries(selectedIds);
+      clipboardRef.current = snapshot;
+      setClipboardOffer((current) => observeClipboardOffer(current, clipboardSnapshotIdentity(snapshot), true));
+      if (navigator.clipboard?.write && "ClipboardItem" in window) {
+        try {
+          const archive = await encodeClipboardArchive(snapshot);
+          const summary = snapshot.selectedRootIds
+            .map((id) => snapshot.entries.find((entry) => entry.id === id)?.name)
+            .filter(Boolean)
+            .join("\n");
+          await navigator.clipboard.write([new ClipboardItem({ [CLIPBOARD_ARCHIVE_WEB_MIME_TYPE]: archive, "text/plain": new Blob([summary], { type: "text/plain" }) })]);
+        } catch {
+          /* The durable in-app clipboard remains available. */
+        }
+      }
+      setContextMenu(null);
+      setNotice(`${snapshot.selectedRootIds.length} ${snapshot.selectedRootIds.length === 1 ? "item" : "items"} copied`);
+    } catch (copyError) {
+      setError(copyError instanceof Error ? copyError.message : "The selected items could not be copied.");
+    } finally {
+      setCopyDownload(null);
+    }
+  }
+  copySelectionRef.current = copySelection;
+
+  function pastePositions(snapshot: ClipboardEntrySnapshot, parentId: string | null, base?: EntryPosition) {
+    const roots = snapshot.selectedRootIds.map((id) => snapshot.entries.find((entry) => entry.id === id)!);
+    const positions = new Map<string, EntryPosition>();
+    if (parentId !== null) {
+      roots.forEach((entry, index) => positions.set(entry.id, nextRootEntryPosition(childrenCount(parentId) + index, window.innerHeight, undefined, iconMetrics)));
+      return positions;
+    }
+    const first = roots[0];
+    const origin = base ? restoreLogicalPosition(base, activeSegment, iconArea) : positionFor(null);
+    for (const entry of roots) positions.set(entry.id, { x: origin.x + entry.position.x - first.position.x, y: origin.y + entry.position.y - first.position.y });
+    return positions;
+  }
+
+  async function commitPaste(snapshot: ClipboardEntrySnapshot, parentId: string | null, position: EntryPosition | undefined, names: Map<string, string>) {
+    const pasted = await pasteEntries(snapshot, parentId, names, pastePositions(snapshot, parentId, position));
+    const pastedIds = new Set(pasted.map((entry) => entry.id));
+    const rootIds = pasted.filter((entry) => !pastedIds.has(entry.parentId ?? "")).map((entry) => entry.id);
+    replaceSelection(parentId === null ? "desktop" : `explorer:${parentId}`, parentId === null ? rootIds.map(entryEntityId) : rootIds);
+    setPendingPaste(null);
+    setContextMenu(null);
+    setClipboardOffer((current) => dismissClipboardOffer(current));
+  }
+
+  async function beginPaste(parentId: string | null, position?: EntryPosition, supplied?: ClipboardEntrySnapshot) {
+    if (!canMutate || parentId !== null && !entriesRef.current.some((entry) => entry.id === parentId && entry.kind === "folder")) return;
+    setError("");
+    let snapshot = supplied ?? clipboardRef.current;
+    if (!supplied && navigator.clipboard?.read) {
+      try {
+        const item = (await navigator.clipboard.read()).find((candidate) => candidate.types.some((type) => type.includes("x-hiraya-entry-archive")));
+        if (item) snapshot = await decodeClipboardArchiveItem(item);
+      } catch {
+        /* Permission denial falls back to the in-app clipboard. */
+      }
+    }
+    if (!snapshot) {
+      setError("Nothing has been copied in Hiraya yet.");
+      return;
+    }
+    const roots = snapshot.selectedRootIds.map((id) => snapshot!.entries.find((entry) => entry.id === id)!);
+    const existingNames = entriesRef.current.filter((entry) => entry.parentId === parentId).map((entry) => entry.name);
+    const conflicts = roots.some((entry, index) => existingNames.some((name) => namesMatch(name, entry.name)) || roots.slice(0, index).some((previous) => namesMatch(previous.name, entry.name)));
+    if (conflicts) {
+      setPendingPaste({ snapshot, parentId, position });
+      setContextMenu(null);
+      return;
+    }
+    try {
+      await commitPaste(snapshot, parentId, position, new Map(roots.map((entry) => [entry.id, entry.name])));
+    } catch (pasteError) {
+      setError(pasteError instanceof Error ? pasteError.message : "The copied items could not be pasted.");
+    }
+  }
+  beginPasteRef.current = beginPaste;
+
+  async function pasteFromContextMenu(parentId: string | null, position?: EntryPosition) {
+    if (!canMutate) return;
+    setContextMenu(null);
+    try {
+      if (!navigator.clipboard?.read) throw new Error("Clipboard reading is unavailable.");
+      const items = await navigator.clipboard.read();
+      const archive = items.find((item) => item.types.some(isClipboardArchiveType));
+      if (archive) {
+        await beginPaste(parentId, position, await decodeClipboardArchiveItem(archive));
+        return;
+      }
+      const textItem = items.find((item) => item.types.includes("text/plain"));
+      if (textItem) {
+        const shortcut = createInternetShortcut(await (await textItem.getType("text/plain")).text());
+        openFileDialog({ type: "create-shortcut", parentId, position, url: shortcut.url, name: shortcut.name });
+        return;
+      }
+    } catch {
+      /* A real paste event is required for host files and denied clipboard reads. */
+    }
+    setPendingDevicePaste({ parentId, position });
+  }
+
+  async function handleExport() {
+    setError("");
+    setExporting(true);
+    try {
+      const archive = await exportSeededDesktop(readFile);
+      const url = URL.createObjectURL(archive);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "hiraya-seeded.zip";
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setNotice("Deployment seed exported");
+    } catch (exportError) {
+      setError(exportError instanceof Error ? exportError.message : "The desktop could not be exported.");
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  function setAreaTrackTransform(windowPosition: EntryPosition, iconPosition: EntryPosition) {
+    desktopRef.current?.style.setProperty("--area-track-x", `${windowPosition.x}px`);
+    desktopRef.current?.style.setProperty("--area-track-y", `${windowPosition.y}px`);
+    desktopRef.current?.style.setProperty("--icon-area-track-x", `${iconPosition.x}px`);
+    desktopRef.current?.style.setProperty("--icon-area-track-y", `${iconPosition.y}px`);
+  }
+
+  function resetAreaTrackTransform() {
+    desktopRef.current?.style.removeProperty("--area-track-x");
+    desktopRef.current?.style.removeProperty("--area-track-y");
+    desktopRef.current?.style.removeProperty("--icon-area-track-x");
+    desktopRef.current?.style.removeProperty("--icon-area-track-y");
+  }
+
+  function setAreaTransitionDepth(depth: number) {
+    const clamped = Math.min(1, Math.max(0, depth));
+    desktopRef.current?.style.setProperty("--area-frame-opacity", String(clamped));
+  }
+
+  function completeAreaTransition() {
+    areaTransitionGenerationRef.current += 1;
+    areaTransitionNavigationRef.current = null;
+    immediateAreaTransitionRef.current = null;
+    stopAreaTransitionWaitRef.current?.();
+    stopAreaTransitionWaitRef.current = null;
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    areaTransitionTimerRef.current = null;
+    setAreaTransition(null);
+    resetAreaTrackTransform();
+    desktopRef.current?.style.removeProperty("--area-frame-opacity");
+  }
+  completeAreaTransitionRef.current = completeAreaTransition;
+
+  useEffect(() => {
+    if (areaTransition?.phase !== "preparing") return;
+    const pending = areaTransitionNavigationRef.current;
+    if (!pending || pending.generation !== areaTransition.id || areaTransitionGenerationRef.current !== areaTransition.id) return;
+    setAreaTransition({ ...areaTransition, destination: areaTransition.target, phase: "settling" });
+    navigateRouteRef.current(pending.route, pending.mode);
+  }, [areaTransition]);
+
+  useLayoutEffect(() => {
+    const pending = immediateAreaTransitionRef.current;
+    if (!pending || pending.generation !== areaTransition?.id || activeSegmentKey !== segmentKey(pending.target)) return;
+    immediateAreaTransitionRef.current = null;
+    completeAreaTransitionRef.current();
+  }, [activeSegmentKey, areaTransition?.id]);
+
+  useLayoutEffect(() => {
+    if (areaTransition?.phase !== "settling" || !areaTransition.destination || activeSegmentKey !== segmentKey(areaTransition.destination)) return;
+    const generation = areaTransition.id;
+    if (areaTransition.kind === "gesture") {
+      resetAreaTrackTransform();
+      setAreaTransitionDepth(0);
+    }
+    if (activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      completeAreaTransitionRef.current();
+      return;
+    }
+
+    stopAreaTransitionWaitRef.current?.();
+    if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+    areaTransitionTimerRef.current = window.setTimeout(() => {
+      if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
+    }, AREA_TRANSITION_WATCHDOG_MS);
+    const hosts = desktopRef.current?.querySelectorAll<Element>(".desktop-area-track, .desktop-area-frame") ?? [];
+    let completedSynchronously = false;
+    const stop = waitForAnimations([...hosts], () => {
+      completedSynchronously = true;
+      if (areaTransitionGenerationRef.current === generation) completeAreaTransitionRef.current();
+    });
+    if (!completedSynchronously) stopAreaTransitionWaitRef.current = stop;
+    else stop();
+    return () => stop();
+  }, [activeSegmentKey, activeTheme.motion, areaTransition?.destination, areaTransition?.id, areaTransition?.kind, areaTransition?.phase]);
+
+  function goToSegment(segment: SurfaceSegment, mode: "push" | "replace" = "push", preferredApp?: RunningApp | null, focusDestinationApp = true, animate = true) {
+    const currentRoute = routeRef.current;
+    if (!currentRoute) return;
+    const nextApp = focusDestinationApp ? (preferredApp && appIsInSegment(preferredApp, segment) ? preferredApp : topAppInSegment(runningAppsRef.current, segment)) : null;
+    setFocusedApp(nextApp?.id ?? null);
+    const destinationRoute = routeForApp(nextApp, { ...currentRoute, ...segment });
+    if (segmentKey(segment) === activeSegmentKey || activeTheme.motion === 0 || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      completeAreaTransition();
+      navigateRoute(destinationRoute, mode);
+      return;
+    }
+    if (!animate) {
+      const generation = ++areaTransitionGenerationRef.current;
+      const camera = areaCameraPosition(segment, desktopSizeRef.current);
+      const iconCamera = areaCameraPosition(segment, iconAreaSizeRef.current);
+      setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "interactive", kind: "gesture" });
+      setAreaTrackTransform(camera, iconCamera);
+      immediateAreaTransitionRef.current = { generation, target: segment };
+      navigateRoute(destinationRoute, mode);
+      return;
+    }
+    setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(segment)}`);
+    const generation = ++areaTransitionGenerationRef.current;
+    setAreaTransition({ id: generation, source: activeSegment, target: segment, phase: "preparing", kind: "programmatic" });
+    areaTransitionNavigationRef.current = { generation, mode, route: destinationRoute };
+  }
+
+  function appIsMaximized(app: RunningApp) {
+    const local = projectLogicalPosition(app.bounds, desktopSizeRef.current).local;
+    return local.x === 0 && local.y === 0 && app.bounds.width === desktopSizeRef.current.width && app.bounds.height === desktopSizeRef.current.height;
+  }
+
+  function toggleMaximizeApp(id: string) {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app) return;
+    const size = desktopSizeRef.current;
+    const segment = projectLogicalPosition(app.bounds, size).segment;
+    const restored = restoredWindowBoundsRef.current.get(id);
+    const maximized = appIsMaximized(app);
+    const fallbackOptions = app.kind === "sandbox" ? (app.package.manifest.window ? sandboxWindowOptions(app.package.manifest.window, activeTheme) : { width: 820, height: 620, minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
+    const fallback = initialWindowBounds(size, fallbackOptions);
+    const bounds = maximized ? (restored ?? { ...fallback, ...restoreLogicalPosition(fallback, segment, size) }) : { ...restoreLogicalPosition({ x: 0, y: 0 }, segment, size), width: size.width, height: size.height };
+    if (!maximized) restoredWindowBoundsRef.current.set(id, app.bounds);
+    else restoredWindowBoundsRef.current.delete(id);
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? { ...candidate, bounds } : candidate));
+    if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { maximized: !maximized, width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    focusApp(id);
+  }
+
+  function moveAppToArea(id: string, direction: "left" | "right" | "up" | "down") {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app) return;
+    const size = desktopSizeRef.current;
+    const projection = projectLogicalPosition(app.bounds, size);
+    const segment = {
+      column: projection.segment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: projection.segment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
+    };
+    const moved = { ...app, bounds: { ...app.bounds, ...restoreLogicalPosition(projection.local, segment, size) } };
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? moved : candidate));
+    goToSegment(segment, "push", moved);
+  }
+
+  function adjustAppWindow(id: string, operation: "move" | "resize", direction: "left" | "right" | "up" | "down") {
+    if (!windowed) return;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === id);
+    if (!app || appIsMaximized(app)) return;
+    const size = desktopSizeRef.current;
+    const projection = projectLogicalPosition(app.bounds, size);
+    const currentBounds = { ...app.bounds, ...projection.local };
+    const { minWidth, minHeight } = app.kind === "sandbox" ? (app.package.manifest.window ?? { minWidth: 360, minHeight: 260 }) : app.kind === "merge" ? MERGE_APP_WINDOW : builtinAppWindow(app.kind);
+    const step = 20;
+    const draft = operation === "move"
+      ? {
+          ...currentBounds,
+          x: currentBounds.x + (direction === "left" ? -step : direction === "right" ? step : 0),
+          y: currentBounds.y + (direction === "up" ? -step : direction === "down" ? step : 0),
+        }
+      : {
+          ...currentBounds,
+          width: currentBounds.width + (direction === "left" ? -step : direction === "right" ? step : 0),
+          height: currentBounds.height + (direction === "up" ? -step : direction === "down" ? step : 0),
+        };
+    const localBounds = clampWindowBounds(draft, size, { minWidth, minHeight });
+    const bounds = { ...localBounds, ...restoreLogicalPosition(localBounds, projection.segment, size) };
+    updateRunningApps((current) => current.map((candidate) => candidate.id === id ? { ...candidate, bounds } : candidate));
+    if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { width: Math.round(bounds.width), height: Math.round(bounds.height) });
+    focusApp(id);
+  }
+
+  function showDesktop() {
+    for (const app of runningAppsRef.current) if (app.kind === "sandbox") appLifecycle.setHostState({ appId: app.package.manifest.id, instanceId: app.id }, { focused: false });
+    setFocusedApp(null);
+    const currentRoute = routeRef.current;
+    if (currentRoute) navigateRoute({ desktopId: activeDesktopIdRef.current, column: currentRoute.column, row: currentRoute.row }, "replace");
+  }
+
+  function resetQuitBack() {
+    quitBackRef.current = { count: 0, lastAt: 0 };
+    setBackPrompt("");
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = null;
+  }
+
+  function confirmQuit(source: "ui" | "history", historyState?: unknown) {
+    const next = nextQuitBack(quitBackRef.current, Date.now());
+    quitBackRef.current = next.state;
+    setBackPrompt(next.message);
+    if (quitBackTimerRef.current !== null) window.clearTimeout(quitBackTimerRef.current);
+    quitBackTimerRef.current = window.setTimeout(resetQuitBack, 3_000);
+    if (!next.quit) {
+      if (source === "history") {
+        const state = historyState && typeof historyState === "object" ? historyState : window.history.state;
+        window.history.pushState({ ...(state as object), rootBackGuard: true }, "", window.location.href);
+      }
+      return;
+    }
+    resetQuitBack();
+    window.close();
+    if (source === "history") window.history.back();
+    else window.history.go(-2);
+  }
+
+  async function navigateBack(source: "ui" | "history" = "ui", historyState?: unknown): Promise<"handled" | "restore"> {
+    if (backInFlightRef.current) {
+      if (source === "history") {
+        restoreOnlyPopRef.current = true;
+        window.history.forward();
+      }
+      return "handled";
+    }
+    backInFlightRef.current = true;
+    try {
+    if (dismissTopTransient()) {
+      resetQuitBack();
+      if (source === "history") {
+        restoreOnlyPopRef.current = true;
+        window.history.forward();
+      }
+      return "handled";
+    }
+    const settingsParent = SETTINGS_PARENTS[settingsPage];
+    if (settingsParent && focusedAppIdRef.current === builtinAppTargetId({ kind: "settings" })) {
+      resetQuitBack();
+      if (source === "ui") navigateSettingsBack(settingsParent);
+      else {
+        settingsPageRef.current = settingsParent;
+        return "restore";
+      }
+      return "handled";
+    }
+
+    const focusedId = focusedAppIdRef.current;
+    const focused = focusedId ? runningAppsRef.current.find((app) => app.id === focusedId) : undefined;
+    if (focused) {
+      resetQuitBack();
+      if (focused.kind === "sandbox") {
+        const outcome = await appLifecycle.requestBack(
+          { appId: focused.package.manifest.id, instanceId: focused.id },
+          (requestId) => focused.dispatcher.emit("app.backRequested", { requestId }),
+        );
+        if (outcome === "handled") {
+          if (source === "history") {
+            restoreOnlyPopRef.current = true;
+            window.history.forward();
+          }
+          return "handled";
+        }
+        if (outcome === "failed") {
+          setNotice(`${runningAppLabel(focused)} could not go back. Use Close to leave the app.`);
+          if (source === "history") {
+            restoreOnlyPopRef.current = true;
+            window.history.forward();
+          }
+          return "handled";
+        }
+      }
+      const current = window.history.state as Partial<RouteHistoryState> | null;
+      const closed = await requestCloseApp(focused.id, true, !(source === "history" || current?.hiraya && current.parentPath !== undefined));
+      if (!closed) {
+        if (source === "history") {
+          restoreOnlyPopRef.current = true;
+          window.history.forward();
+        }
+        return "handled";
+      }
+      if (source === "history") return "restore";
+      if (current?.hiraya && current.parentPath !== undefined) {
+        restoreOnlyPopRef.current = true;
+        window.history.back();
+      }
+      return "handled";
+    }
+
+    const currentRoute = routeRef.current;
+    if (currentRoute && (currentRoute.column !== 0 || currentRoute.row !== 0)) {
+      resetQuitBack();
+      goToSegment({ column: 0, row: 0 }, "replace", null, false, source !== "history");
+      return "handled";
+    }
+
+    confirmQuit(source, historyState);
+    return "handled";
+    } finally {
+      backInFlightRef.current = false;
+    }
+  }
+
+  windowCommandRef.current = { maximize: toggleMaximizeApp, move: moveAppToArea, adjust: adjustAppWindow };
+
+  function edgeAt(clientX: number, clientY: number) {
+    const desktop = desktopRef.current;
+    if (!desktop) return null;
+    const bounds = desktop.getBoundingClientRect();
+    const threshold = Math.min(36, Math.max(24, Math.min(bounds.width, bounds.height) * 0.06));
+    return (
+      [
+        { direction: "left" as const, distance: clientX - bounds.left },
+        { direction: "right" as const, distance: bounds.right - clientX },
+        { direction: "up" as const, distance: clientY - bounds.top },
+        { direction: "down" as const, distance: bounds.bottom - clientY },
+      ]
+        .filter((candidate) => candidate.distance <= threshold)
+        .sort((a, b) => a.distance - b.distance)[0]?.direction ?? null
+    );
+  }
+
+  function handleEdgeDwellChange(direction: EdgeDirection | null) {
+    setEdgeDwell(direction ? { direction, id: ++edgeDwellGenerationRef.current } : null);
+  }
+
+  function handleDesktopPointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 0) return;
+    const target = event.target as Element;
+    const unselectedTouchItem = event.pointerType === "touch" && target.closest(".file-icon:not([data-selected]), .shell-item--widget:not([data-selected]) .shell-item__widget-drag");
+    if (target.closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR) && !unselectedTouchItem) return;
+    if (event.pointerType !== "touch") {
+      event.preventDefault();
+      const additive = event.metaKey || event.ctrlKey;
+      const initial = additive && selectionScope === "desktop" ? [...selectedIdsRef.current] : [];
+      if (!additive) replaceSelection("desktop", []);
+      marqueeRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, additive, initial };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    desktopTouchPointersRef.current.add(event.pointerId);
+    if (desktopTouchPointersRef.current.size > 1) {
+      if (desktopPressRef.current) window.clearTimeout(desktopPressRef.current.timer);
+      desktopPressRef.current = null;
+      swipeRef.current = null;
+      setSwipePreview(null);
+      completeAreaTransition();
+      if (canvasRef.current) {
+        delete canvasRef.current.dataset.swiping;
+      }
+      return;
+    }
+    if (!allowBrowserPinchZoom) event.preventDefault();
+    swipeRef.current = { axis: null, pointerId: event.pointerId, startSegment: activeSegment, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, previewTarget: null };
+    if (event.pointerType !== "touch") return;
+    if (!allowBrowserPinchZoom && !unselectedTouchItem) event.currentTarget.setPointerCapture(event.pointerId);
+    if (unselectedTouchItem) return;
+    const press = {
+      activated: false,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      timer: 0,
+    };
+    press.timer = window.setTimeout(() => {
+      if (desktopPressRef.current !== press) return;
+      press.activated = true;
+      swipeRef.current = null;
+      setSwipePreview(null);
+      suppressClickRef.current = true;
+      openDesktopContextMenu(press.startX, press.startY, "sheet");
+    }, DESKTOP_LONG_PRESS_MS);
+    desktopPressRef.current = press;
+  }
+
+  const observeDesktopPointer = useCallback((event: React.PointerEvent<HTMLElement>) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target || (event.target as Element).closest(".app-window")) return;
+    postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, desktop, event.type as SandboxPointerObservation["phase"]));
+  }, []);
+
+  const observeDesktopContextMenu = useCallback((event: React.MouseEvent<HTMLElement>) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target || (event.target as Element).closest(".app-window")) return;
+    postSandboxPointer(target.frame, target.token, desktopPointerObservation(event.nativeEvent, desktop, "contextmenu"));
+  }, []);
+
+  const observeWidgetPointer = useCallback((observation: SandboxPointerObservation, frame: HTMLIFrameElement) => {
+    const desktop = desktopRef.current;
+    const target = wallpaperSceneRef.current;
+    if (!desktop || !target) return;
+    postSandboxPointer(target.frame, target.token, projectSandboxPointer(observation, frame, desktop));
+  }, []);
+
+  const registerWallpaperScene = useCallback((target: WallpaperSceneTarget | null) => { wallpaperSceneRef.current = target; }, []);
+
+  function handleDesktopWheel(event: React.WheelEvent<HTMLElement>) {
+    if (event.ctrlKey || (event.target as Element).closest(DESKTOP_GESTURE_EXCLUSION_SELECTOR)) return;
+    event.preventDefault();
+    const gesture = wheelSwipeRef.current ?? { deltaX: 0, deltaY: 0, switched: false, timer: 0 };
+    window.clearTimeout(gesture.timer);
+    const lineScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? 16 : 1;
+    gesture.deltaX += event.deltaX * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.width : lineScale);
+    gesture.deltaY += event.deltaY * (event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? desktopSize.height : lineScale);
+    gesture.timer = window.setTimeout(() => {
+      if (wheelSwipeRef.current === gesture) wheelSwipeRef.current = null;
+    }, WHEEL_SWIPE_END_MS);
+    wheelSwipeRef.current = gesture;
+    if (gesture.switched) return;
+    const axis = swipeAxis(gesture.deltaX, gesture.deltaY);
+    if (!axis) return;
+    gesture.switched = true;
+    const delta = axis === "x" ? gesture.deltaX : gesture.deltaY;
+    goToSegment(adjacentSwipeArea(activeSegment, axis, -delta));
+  }
+
+  function handleIconDragAtEdge(entry: DesktopEntry, direction: EdgeDirection) {
+    const previousSegment = edgeNavigationRef.current?.targetSegment ?? activeSegment;
+    const targetSegment = {
+      column: previousSegment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: previousSegment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
+    };
+    if (!edgeNavigationRef.current && routeRef.current) {
+      edgeNavigationRef.current = { route: routeRef.current, historyState: window.history.state, draftEntryId: entry.id, focusedAppId: focusedAppIdRef.current };
+    }
+    const pending = edgeNavigationRef.current;
+    if (!pending || pending.draftEntryId !== entry.id) return null;
+    pending.targetSegment = targetSegment;
+    const sourceSegment = projectLogicalPosition(entry.position, iconArea).segment;
+    const transfer = areaTransferDelta(previousSegment, targetSegment, iconArea);
+    const targetOffset = areaTransferDelta(sourceSegment, targetSegment, iconArea);
+    goToSegment(targetSegment, "replace", undefined, true, false);
+    return {
+      deltaX: transfer.x,
+      deltaY: transfer.y,
+      minX: targetOffset.x + 8,
+      minY: targetOffset.y + 8,
+      maxX: targetOffset.x + Math.max(8, iconArea.width - iconMetrics.width),
+      maxY: targetOffset.y + Math.max(8, iconArea.height - iconMetrics.height),
+    };
+  }
+
+  function handleWindowDragAtEdge(appId: string, direction: EdgeDirection, localBounds: WindowBounds) {
+    if (!windowed) return null;
+    const app = runningAppsRef.current.find((candidate) => candidate.id === appId);
+    if (!app) return null;
+    const previousSegment = windowEdgeNavigationRef.current?.targetSegment ?? segmentForApp(app);
+    const targetSegment = {
+      column: previousSegment.column + (direction === "left" ? -1 : direction === "right" ? 1 : 0),
+      row: previousSegment.row + (direction === "up" ? -1 : direction === "down" ? 1 : 0),
+    };
+    if (!windowEdgeNavigationRef.current && routeRef.current) windowEdgeNavigationRef.current = { appId, bounds: { ...app.bounds }, route: routeRef.current, historyState: window.history.state };
+    const pending = windowEdgeNavigationRef.current;
+    if (!pending || pending.appId !== appId) return null;
+    const logicalBounds = { ...localBounds, ...restoreLogicalPosition(localBounds, targetSegment, desktopSize) };
+    const movedApp = { ...app, bounds: logicalBounds };
+    pending.targetSegment = targetSegment;
+    updateRunningApps((current) => current.map((candidate) => candidate.id === appId ? movedApp : candidate));
+    goToSegment(targetSegment, "replace", movedApp, true, false);
+    return localBounds;
+  }
+
+  function finishWindowEdgeNavigation(appId: string, cancelled: boolean) {
+    const pending = windowEdgeNavigationRef.current;
+    windowEdgeNavigationRef.current = null;
+    setEdgeDwell(null);
+    if (!pending || pending.appId !== appId) return;
+    const finalRoute = routeRef.current;
+    window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
+    if (cancelled || !finalRoute) {
+      updateRunningApps((current) => current.map((app) => app.id === appId ? { ...app, bounds: pending.bounds } : app));
+      setCurrentRoute(pending.route);
+      setFocusedApp(appId);
+      return;
+    }
+    writeRoute(finalRoute, "push");
+  }
+
+  function finishEdgeNavigation(cancelled: boolean) {
+    const pending = edgeNavigationRef.current;
+    edgeNavigationRef.current = null;
+    setEdgeDwell(null);
+    if (!pending) return;
+    const finalRoute = routeRef.current;
+    window.history.replaceState(pending.historyState, "", formatDesktopRoute(pending.route));
+    if (cancelled || !finalRoute) {
+      setCurrentRoute(pending.route);
+      setFocusedApp(pending.focusedAppId ?? null);
+      return;
+    }
+    writeRoute(finalRoute, "push");
+  }
+
+  function handleDesktopPointerMove(event: React.PointerEvent<HTMLElement>) {
+    const marqueePress = marqueeRef.current;
+    if (marqueePress?.pointerId === event.pointerId) {
+      const left = Math.min(marqueePress.startX, event.clientX);
+      const top = Math.min(marqueePress.startY, event.clientY);
+      const right = Math.max(marqueePress.startX, event.clientX);
+      const bottom = Math.max(marqueePress.startY, event.clientY);
+      if (Math.hypot(event.clientX - marqueePress.startX, event.clientY - marqueePress.startY) < 4) return;
+      const bounds = event.currentTarget.getBoundingClientRect();
+      setMarquee({ left: left - bounds.left, top: top - bounds.top, width: right - left, height: bottom - top });
+      const hits = Array.from(event.currentTarget.querySelectorAll<HTMLElement>("[data-desktop-entity-id]"))
+        .filter((entity) => {
+          const rect = entity.getBoundingClientRect();
+          return rect.right >= left && rect.left <= right && rect.bottom >= top && rect.top <= bottom;
+        })
+        .map((entity) => entity.dataset.desktopEntityId!)
+        .filter(Boolean);
+      replaceSelection("desktop", [...marqueePress.initial, ...hits]);
+      return;
+    }
+    const press = desktopPressRef.current;
+    if (press?.pointerId === event.pointerId) {
+      if (press.activated) {
+        event.preventDefault();
+        return;
+      }
+      if (Math.hypot(event.clientX - press.startX, event.clientY - press.startY) >= 7) {
+        window.clearTimeout(press.timer);
+        desktopPressRef.current = null;
+      }
+    }
+    const swipe = swipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId || !canvasRef.current) return;
+    swipe.x = event.clientX;
+    swipe.y = event.clientY;
+    const deltaX = swipe.x - swipe.startX;
+    const deltaY = swipe.y - swipe.startY;
+    if (!swipe.axis) {
+      swipe.axis = swipeAxis(deltaX, deltaY);
+      if (!swipe.axis) return;
+      if (areaTransitionTimerRef.current !== null) window.clearTimeout(areaTransitionTimerRef.current);
+      areaTransitionTimerRef.current = null;
+      const transitionId = ++areaTransitionGenerationRef.current;
+      swipe.transitionId = transitionId;
+      const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+      const target = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
+      swipe.previewTarget = null;
+      setAreaTransition({ id: transitionId, source: swipe.startSegment, target, phase: "interactive", kind: "gesture" });
+      canvasRef.current.dataset.swiping = "true";
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
+    const camera = areaCameraDragPosition(swipe.startSegment, desktopSize, { x: deltaX, y: deltaY }, swipe.axis);
+    const iconCamera = areaCameraDragPosition(swipe.startSegment, iconArea, { x: deltaX, y: deltaY }, swipe.axis);
+    setAreaTrackTransform(camera, iconCamera);
+    const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+    const viewportDistance = swipe.axis === "x" ? desktopSize.width : desktopSize.height;
+    const transitionTarget = adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta);
+    if (!areaTransition || segmentKey(areaTransition.target) !== segmentKey(transitionTarget)) {
+      setAreaTransition({ id: swipe.transitionId!, source: swipe.startSegment, target: transitionTarget, phase: "interactive", kind: "gesture" });
+    }
+    setAreaTransitionDepth(areaTransitionDepth(primaryDelta, viewportDistance));
+    const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
+    if (segmentKey(previewTarget ?? swipe.startSegment) !== segmentKey(swipe.previewTarget ?? swipe.startSegment)) {
+      swipe.previewTarget = previewTarget;
+      setSwipePreview(previewTarget);
+    }
+  }
+
+  function finishDesktopSwipe(event: React.PointerEvent<HTMLElement>, cancelled = false) {
+    if (event.pointerType === "touch") desktopTouchPointersRef.current.delete(event.pointerId);
+    if (marqueeRef.current?.pointerId === event.pointerId) {
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      marqueeRef.current = null;
+      setMarquee(null);
+      suppressClickRef.current = true;
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 0);
+      return;
+    }
+    const press = desktopPressRef.current;
+    if (press?.pointerId === event.pointerId) {
+      window.clearTimeout(press.timer);
+      desktopPressRef.current = null;
+      if (press.activated) {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        swipeRef.current = null;
+        setSwipePreview(null);
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 0);
+        return;
+      }
+    }
+    const swipe = swipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const nextSegment = committedSwipeTarget(swipe.previewTarget, cancelled);
+    suppressClickRef.current = swipe.axis !== null;
+    window.setTimeout(() => {
+      suppressClickRef.current = false;
+    }, 0);
+    swipeRef.current = null;
+    setSwipePreview(null);
+    const transitionTarget = swipe.axis ? adjacentSwipeArea(swipe.startSegment, swipe.axis, swipe.axis === "x" ? swipe.x - swipe.startX : swipe.y - swipe.startY) : swipe.startSegment;
+    const generation = swipe.transitionId ?? ++areaTransitionGenerationRef.current;
+    if (swipe.axis) {
+      setAreaTransition({ id: generation, source: swipe.startSegment, target: transitionTarget, destination: nextSegment ?? swipe.startSegment, phase: "settling", kind: "gesture" });
+    }
+    if (canvasRef.current) {
+      delete canvasRef.current.dataset.swiping;
+      if (!nextSegment) {
+        const camera = areaCameraPosition(swipe.startSegment, desktopSize);
+        const iconCamera = areaCameraPosition(swipe.startSegment, iconArea);
+        setAreaTrackTransform(camera, iconCamera);
+      }
+    }
+    if (nextSegment && routeRef.current) {
+      const nextApp = topAppInSegment(runningAppsRef.current, nextSegment);
+      setFocusedApp(nextApp?.id ?? null);
+      setAreaAnnouncement(`Moved to ${homeRelativeAreaLabel(nextSegment)}`);
+      navigateRoute(routeForApp(nextApp, { ...routeRef.current, ...nextSegment }));
+    }
+  }
+
+  function invalidMoveIds(items: readonly DesktopEntry[]) {
+    return new Set(items.flatMap((entry) => [entry.id, ...entryIndex.descendants(entry.id).map((descendant) => descendant.id)]));
+  }
+
+  async function toggleFullscreen() {
+    setError("");
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen();
+      else await document.documentElement.requestFullscreen();
+    } catch {
+      setError("Fullscreen mode could not be changed.");
+    }
+  }
+
+  function runningAppLabel(app: RunningApp) {
+    const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
+    return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
+  }
+
+  const windowSearchItems = runningApps.map((app) => {
+    const area = segmentForApp(app);
+    return { id: app.id, title: runningAppLabel(app), detail: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}` };
+  });
+  const focusedApp = runningApps.find((app) => app.id === focusedAppId);
+  const desktopChoices = desktops.filter(isDesktopSurface);
+  const commandContext: AppCommandContext = {
+    canMutate,
+    canOpenTrash,
+    canOpenSettings: true,
+    createFile: () => openFileDialog({ type: "create-file", parentId: null }),
+    createFolder: () => openFileDialog({ type: "create-folder", parentId: null }),
+    uploadFiles: () => chooseUpload(null),
+    importFolder: () => chooseFolderImport(null),
+    autoArrange: autoArrangeDesktopIcons,
+    openSettings: openSettingsWindow,
+    openAreaMap,
+    openPanel: setActivePanel,
+  };
+  const searchCommands = [...commandService.list(commandContext), ...createDesktopSwitchCommands(desktopChoices, activeDesktopId)];
+  const keyboardShortcuts: KeyboardShortcut[] = [
+    { id: "search", group: "Navigation", label: "Open search", keys: ["Ctrl/⌘", "K"] },
+    { id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] },
+    { id: "shortcuts", group: "Navigation", label: "Show keyboard shortcuts", keys: ["?"] },
+    { id: "select-all", group: "Files", label: "Select all in the current view", keys: ["Ctrl/⌘", "A"] },
+    { id: "copy", group: "Files", label: "Copy selected items", keys: ["Ctrl/⌘", "C"] },
+    { id: "copy-link", group: "Files", label: "Copy link to selected item", keys: ["Ctrl/⌘", "Shift", "C"] },
+    { id: "paste", group: "Files", label: "Paste items", keys: ["Ctrl/⌘", "V"] },
+    { id: "trash", group: "Files", label: "Move selected items to Trash", keys: ["Delete"] },
+    { id: "save", group: "Editor", label: "Save the open file", keys: ["Ctrl/⌘", "S"] },
+    ...(windowed ? [
+      { id: "maximize", group: "Windows", label: "Maximize or restore focused window", keys: ["Alt", "Enter"] },
+      { id: "move-window", group: "Windows", label: "Move focused window between areas", keys: ["Alt", "Arrow key"] },
+      { id: "nudge-window", group: "Windows", label: "Move focused window within its area", keys: ["Alt", "Shift", "Arrow key"] },
+      { id: "resize-window", group: "Windows", label: "Resize focused window", keys: ["Alt", "Ctrl", "Arrow key"] },
+    ] : []),
+    { id: "close-window", group: "Windows", label: "Close the focused window", keys: ["Ctrl/⌘", "Shift", "X"] },
+    { id: "dismiss", group: "Windows", label: "Dismiss the current menu or dialog", keys: ["Escape"] },
+  ];
+
+  function runSearchCommand(commandId: CommandId) {
+    const desktop = desktopChoices.find(({ id }) => desktopSwitchCommandId(id) === commandId);
+    if (desktop) {
+      void activateDesktop(desktop.id);
+      return;
+    }
+    void commandService.execute(commandId, commandContext);
+  }
+
+  function openHelp(section: HelpSectionId = "start-here") {
+    setHelpSection(section);
+    setActivePanel("help");
+  }
+
+  function openAreaMap() {
+    areaSwitcherInternalActivationRef.current = false;
+    areaSwitcherRestoreFocusRef.current = false;
+    setMinimapExpanded(true);
+  }
+
+  function collapseAreaMap(restoreFocus = true) {
+    areaSwitcherInternalActivationRef.current = false;
+    if (restoreFocus) areaSwitcherRestoreFocusRef.current = true;
+    setMinimapExpanded(false);
+  }
+
+  function selectAreaFromSwitcher(segment: SurfaceSegment) {
+    areaSwitcherTapRef.current = null;
+    goToSegment(segment, "push", undefined, false);
+    collapseAreaMap();
+  }
+
+  function areaSwitcherContains(target: EventTarget | null) {
+    return Boolean(target && (areaSwitcherTriggerRef.current?.contains(target as Node) || areaSwitcherRef.current?.contains(target as Node)));
+  }
+
+  function handleShellAreaSwitcherInteraction(event: React.PointerEvent<HTMLElement> | React.KeyboardEvent<HTMLElement>) {
+    areaSwitcherInternalActivationRef.current = false;
+    if (minimapExpanded && !areaSwitcherContains(event.target)) collapseAreaMap(false);
+  }
+
+  function captureAreaSwitcherActivation(event: React.MouseEvent<HTMLElement>) {
+    if (minimapExpanded && areaSwitcherContains(event.target)) areaSwitcherInternalActivationRef.current = true;
+  }
+
+  function handleShellAreaSwitcherFocus(event: React.FocusEvent<HTMLElement>) {
+    if (!minimapExpanded || areaSwitcherContains(event.target)) return;
+    if (areaSwitcherInternalActivationRef.current) {
+      areaSwitcherInternalActivationRef.current = false;
+      return;
+    }
+    collapseAreaMap(false);
+  }
+
+  function toggleAreaSwitcher() {
+    if (suppressAreaSwitcherClickRef.current) {
+      suppressAreaSwitcherClickRef.current = false;
+      return;
+    }
+    if (minimapDetailed) collapseAreaMap();
+    else openAreaMap();
+  }
+
+  function handleMobileAreaSwitcherTap(event: React.PointerEvent<HTMLButtonElement>) {
+    if (event.pointerType !== "touch") return;
+    const tap = { x: event.clientX, y: event.clientY, at: performance.now() };
+    if (!isAreaSwitcherDoubleTap(areaSwitcherTapRef.current, tap)) {
+      areaSwitcherTapRef.current = tap;
+      return;
+    }
+    areaSwitcherTapRef.current = null;
+    suppressAreaSwitcherClickRef.current = true;
+    if (activeSegmentKey !== segmentKey({ column: 0, row: 0 })) goToSegment({ column: 0, row: 0 });
+    collapseAreaMap();
+  }
+
+  function beginExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    if (!minimapExpanded || event.pointerType !== "touch" || event.button !== 0) return;
+    event.stopPropagation();
+    minimapSwipeRef.current = {
+      axis: null,
+      pointerId: event.pointerId,
+      startSegment: activeSegment,
+      startX: event.clientX,
+      startY: event.clientY,
+      previewTarget: null,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>) {
+    const swipe = minimapSwipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    const deltaX = event.clientX - swipe.startX;
+    const deltaY = event.clientY - swipe.startY;
+    if (!swipe.axis) swipe.axis = swipeAxis(deltaX, deltaY);
+    if (!swipe.axis) return;
+    event.preventDefault();
+    const primaryDelta = swipe.axis === "x" ? deltaX : deltaY;
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const viewportDistance = swipe.axis === "x" ? bounds.width : bounds.height;
+    const previewTarget = swipePreviewReady(primaryDelta, viewportDistance) ? adjacentSwipeArea(swipe.startSegment, swipe.axis, primaryDelta) : null;
+    if (segmentKey(previewTarget ?? swipe.startSegment) !== segmentKey(swipe.previewTarget ?? swipe.startSegment)) {
+      swipe.previewTarget = previewTarget;
+      setSwipePreview(previewTarget);
+    }
+  }
+
+  function finishExpandedMinimapSwipe(event: React.PointerEvent<HTMLDivElement>, cancelled = false) {
+    const swipe = minimapSwipeRef.current;
+    if (!swipe || swipe.pointerId !== event.pointerId) return;
+    event.stopPropagation();
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+    const nextSegment = committedSwipeTarget(swipe.previewTarget, cancelled);
+    minimapSwipeRef.current = null;
+    setSwipePreview(null);
+    if (!swipe.axis) return;
+    suppressMinimapClickRef.current = true;
+    window.setTimeout(() => {
+      suppressMinimapClickRef.current = false;
+    }, 0);
+    if (nextSegment) selectAreaFromSwitcher(nextSegment);
+  }
+
+  function outboxAffectedLabels(record: OutboxRecord) {
+    const operation = record.operation;
+    const ids = operation.kind === "delete" ? [operation.entryId] : operation.kind === "delete-entries" || operation.kind === "move-entries" || operation.kind === "entry-transfer" ? operation.entryIds : operation.kind === "patch-entry" || operation.kind === "save-content" ? [operation.entryId] : operation.kind === "create" ? operation.entries.map((entry) => entry.id) : [];
+    const desktopName = desktopsRef.current.find((desktop) => desktop.id === record.desktopId)?.name ?? record.desktopId;
+    const entryNames = record.desktopId === activeDesktopIdRef.current ? ids.map((id) => entriesRef.current.find((entry) => entry.id === id)?.name).filter((name): name is string => Boolean(name)) : [];
+    return [`Desktop: ${desktopName}`, ...entryNames];
+  }
+
+  function isContentConflict(record: OutboxRecord) {
+    return isRevisionConflictRecord(record) && record.operation.kind === "save-content" && record.conflictDetails?.resourceKind === "content";
+  }
+
+  function loadingMergeReview(record: OutboxRecord): MergeReview {
+    const operation = record.operation.kind === "save-content" ? record.operation : null;
+    const file = operation ? entriesRef.current.find((entry): entry is FileEntry => entry.id === operation.entryId && entry.kind === "file") : null;
+    const name = file?.name ?? "Changed file";
+    const mimeType = operation?.mimeType ?? file?.mimeType ?? "application/octet-stream";
+    const size = operation?.size ?? file?.size ?? 0;
+    const modifiedAt = operation?.modifiedAt ?? file?.modifiedAt ?? Date.now();
+    return {
+      state: "loading",
+      mine: { name, mimeType, size, modifiedAt },
+      server: { name, mimeType: file?.mimeType ?? mimeType, size: file?.size ?? size, modifiedAt: file?.modifiedAt ?? modifiedAt },
+      mode: "binary",
+      regions: [],
+      resolutions: {},
+      mergedText: "",
+      serverRevision: record.conflictDetails?.actualRevision ?? 0,
+    };
+  }
+
+  async function buildMergeReview(bundle: ContentConflictBundle): Promise<MergeReview> {
+    const mine = { ...bundle.mineMetadata, content: bundle.mine };
+    const server = { ...bundle.serverMetadata, content: bundle.server };
+    const file = entriesRef.current.find((entry): entry is FileEntry => entry.id === bundle.entryId && entry.kind === "file");
+    const preview = file ? fileCapabilities({ ...file, name: bundle.serverMetadata.name, mimeType: bundle.serverMetadata.mimeType, size: bundle.serverMetadata.size, modifiedAt: bundle.serverMetadata.modifiedAt }) : null;
+    if (preview?.editable) {
+      let regions: ThreeWayTextMergeRegion[];
+      if (bundle.base) {
+        const result = mergeThreeWayText(
+          new Uint8Array(await bundle.base.arrayBuffer()),
+          new Uint8Array(await bundle.mine.arrayBuffer()),
+          new Uint8Array(await bundle.server.arrayBuffer()),
+        );
+        if (result.status === "unavailable") return { state: "ready", mine, server, mode: "binary", regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+        regions = result.regions;
+      } else {
+        const [mineText, serverText] = await Promise.all([decodeLegacyConflictText(bundle.mine), decodeLegacyConflictText(bundle.server)]);
+        if (mineText === null || serverText === null) return { state: "ready", mine, server, mode: "binary", regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+        regions = mineText === serverText ? [{ kind: "resolved", text: mineText }] : [{ kind: "unresolved", base: "The common base is unavailable for this older queued change.", mine: mineText, server: serverText }];
+      }
+      return { state: "ready", mine, server, mode: "text", regions, resolutions: {}, mergedText: mergeTextForRegions(regions, {}), serverRevision: bundle.serverRevision };
+    }
+    const mediaKind = preview && ["image", "audio", "video", "pdf"].includes(preview.preview) ? preview.preview as "image" | "audio" | "video" | "pdf" : undefined;
+    return { state: "ready", mine, server, mode: mediaKind ? "media" : "binary", mediaKind, regions: [], resolutions: {}, mergedText: "", serverRevision: bundle.serverRevision };
+  }
+
+  async function loadMergeReview(record: OutboxRecord) {
+    const appId = mergeAppId(record.operationId);
+    const generation = ++mergeLoadSequenceRef.current;
+    mergeLoadGenerationsRef.current[record.operationId] = generation;
+    setMergeReviews((current) => ({ ...current, [record.operationId]: { ...(current[record.operationId] ?? loadingMergeReview(record)), state: "loading", error: undefined } }));
+    try {
+      const review = await buildMergeReview(await loadContentConflict(record.operationId));
+      if (mergeLoadGenerationsRef.current[record.operationId] === generation && runningAppsRef.current.some((app) => app.id === appId)) {
+        fileDirtyRef.current[appId] = false;
+        setDirtyAppIds((current) => {
+          if (!current.has(appId)) return current;
+          const next = new Set(current);
+          next.delete(appId);
+          return next;
+        });
+        setMergeReviews((current) => ({ ...current, [record.operationId]: review }));
+      }
+    } catch (reason) {
+      if (mergeLoadGenerationsRef.current[record.operationId] === generation && runningAppsRef.current.some((app) => app.id === appId)) setMergeReviews((current) => ({ ...current, [record.operationId]: { ...(current[record.operationId] ?? loadingMergeReview(record)), state: "error", error: reason instanceof Error ? reason.message : "The conflicting versions could not be loaded." } }));
+    }
+  }
+
+  async function openMergeReview(record: OutboxRecord) {
+    if (!isContentConflict(record)) return;
+    if (record.desktopId !== activeDesktopIdRef.current && !(await activateDesktop(record.desktopId))) return;
+    const currentRecord = (await listOutboxRecords()).find((candidate) => candidate.operationId === record.operationId);
+    if (!currentRecord || !isContentConflict(currentRecord)) throw new Error("That content conflict no longer exists.");
+    const id = mergeAppId(currentRecord.operationId);
+    const existing = runningAppsRef.current.find((app) => app.id === id);
+    if (existing) {
+      focusApp(id);
+      if (mergeReviews[currentRecord.operationId]?.state === "error") await loadMergeReview(currentRecord);
+      return;
+    }
+    const app: RunningApp = { ...createAppBase(id, "merge"), kind: "merge", operationId: currentRecord.operationId };
+    updateRunningApps([...runningAppsRef.current, app]);
+    setMergeReviews((current) => ({ ...current, [currentRecord.operationId]: loadingMergeReview(currentRecord) }));
+    setActivePanel(null);
+    setFocusedApp(id);
+    goToSegment(segmentForApp(app), "replace", app);
+    await loadMergeReview(currentRecord);
+  }
+
+  function resolveMergeTextConflict(operationId: string, conflictId: string, resolution: MergeTextResolution) {
+    const appId = mergeAppId(operationId);
+    fileDirtyRef.current[appId] = true;
+    setDirtyAppIds((current) => new Set(current).add(appId));
+    setMergeReviews((current) => {
+      const review = current[operationId];
+      if (!review || review.mode !== "text" || review.state !== "ready") return current;
+      const resolutions = { ...review.resolutions, [conflictId]: resolution };
+      return { ...current, [operationId]: { ...review, resolutions, mergedText: mergeTextForRegions(review.regions, resolutions) } };
+    });
+  }
+
+  async function applyMergeResolution(operationId: string, resolution: "mine" | "server" | "both" | "merged") {
+    const review = mergeReviews[operationId];
+    if (!review || review.state !== "ready") return;
+    if (resolution === "server" && !(await requestConfirmation({ title: "Use the server version?", message: "Discard this browser's queued version and keep the current server file? This cannot be undone.", confirmLabel: "Use server version", danger: true }))) return;
+    setMergeReviews((current) => current[operationId] ? { ...current, [operationId]: { ...current[operationId], state: "resolving", error: undefined } } : current);
+    try {
+      if (resolution === "mine") await resolveContentConflictKeepLocal(operationId, review.serverRevision);
+      else if (resolution === "server") await resolveContentConflictKeepServer(operationId);
+      else if (resolution === "both") await resolveContentConflictKeepBoth(operationId);
+      else await resolveContentConflictMerged(operationId, new Blob([review.mergedText], { type: review.mine.mimeType }), review.serverRevision);
+      closeApp(mergeAppId(operationId));
+      setNotice(resolution === "both" ? "Both file versions were kept." : resolution === "merged" ? "The merged file was queued for synchronization." : resolution === "mine" ? "Your version was queued for synchronization." : "The server version was restored.");
+    } catch (reason) {
+      setMergeReviews((current) => current[operationId] ? { ...current, [operationId]: { ...current[operationId], state: "ready", error: reason instanceof Error ? reason.message : "The conflict could not be resolved." } } : current);
+    }
+  }
+
+  function retrySyncIssue(record: OutboxRecord) {
+    if (isContentConflict(record)) {
+      void openMergeReview(record).catch((reason) => setError(reason instanceof Error ? reason.message : "The conflicting versions could not be opened."));
+      return;
+    }
+    void retryBlockedOutboxRecord(record.operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The queued change could not be retried."));
+  }
+
+  function discardSyncIssue(record: OutboxRecord) {
+    const removesDesktop = record.error?.startsWith("Access to this desktop was revoked.") || record.operation.kind === "create-desktop";
+    void requestConfirmation({
+      title: removesDesktop ? "Remove local desktop?" : "Discard queued change?",
+      message: removesDesktop ? "This removes this desktop's local projection and every queued change that depends on it. These changes have not reached the server and cannot be recovered." : "Discard this blocked local change and restore the server version? This cannot be undone.",
+      confirmLabel: removesDesktop ? "Remove local desktop" : "Discard change",
+      danger: true,
+    }).then(async (confirmed) => {
+      if (!confirmed) return;
+      try {
+        setOutboxRecords(await discardBlockedOutboxRecord(record.operationId));
+      } catch (reason) {
+        setError(reason instanceof Error ? reason.message : "The queued change could not be discarded.");
+      }
+    });
+  }
+
+  function renderMobileStartMenu(dismiss: (restoreFocus?: boolean) => void) {
+    return <>
+      {session && (
+        <div className="account-menu__identity">
+          <strong>{session.user.displayName}</strong>
+          {session.user.email && <span>{session.user.email}</span>}
+        </div>
+      )}
+      <details className="mobile-start-applications">
+        <summary><Package /><span>Applications</span><CaretRight size={15} aria-hidden="true" /></summary>
+        <div>
+          {installedApps.toSorted((a, b) => a.manifest.name.localeCompare(b.manifest.name)).map((app) => {
+            const available = installedAppIsAvailable(app, entries);
+            return <button type="button" key={app.appId} disabled={!available} title={available ? app.manifest.name : `${app.manifest.name} is unavailable`} onClick={() => launchMobileDestination(dismiss, () => launchApp(app))}><Package /><span>{app.manifest.name}</span>{!available && <small>Unavailable</small>}</button>;
+          })}
+          <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}><Package /><span>App Store</span>{storeUpdateCount > 0 && <small>{storeUpdateCount} update{storeUpdateCount === 1 ? "" : "s"}</small>}</button>
+        </div>
+      </details>
+      <span className="mobile-header-menu__separator" />
+      <button type="button" onClick={() => launchMobileDestination(dismiss, () => openSettingsWindow())}>
+        <GearSix /> Settings
+      </button>
+      {canOpenTrash && <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("trash"))}>
+        <Trash /> Trash
+      </button>}
+      {session && <>
+        <span className="mobile-header-menu__separator" />
+        <a className="account-menu__action" href={SERVER_ROUTES.profile} onClick={() => dismiss()}>
+          <IdentificationCard /> Profile
+        </a>
+        <form action={SERVER_ROUTES.logout} method="post" onSubmit={() => lockAuthBootstrap()}>
+          <button className="account-menu__action" type="submit">
+            <SignOut /> Log out
+          </button>
+        </form>
+      </>}
+    </>;
+  }
+
+  function isReservedSystemAppId(appId: string) {
+    return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId) || storePackages.some((item) => item.kind === "system" && storePackageManifest(item, storeInspectionCacheRef.current.get(storePackageKey(item))?.inspection)?.id === appId);
+  }
+
+  const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store").map((item) => {
+    const inspection = storeInspections.get(storePackageKey(item));
+    const inspected = inspection?.status === "ready" ? inspection.value.inspection : undefined;
+    const manifest = storePackageManifest(item, inspected);
+    const digest = item.release?.digest ?? inspected?.digest ?? null;
+    const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
+    return manifest
+      ? { item, name: manifest.name, description: manifest.description ?? "No description provided.", version: manifest.version, appId: manifest.id, digest, loading: inspection?.status === "loading", error: inspection?.status === "error" ? inspection.message : "" }
+      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, digest: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
+  });
+  const storeUpdateCount = storePackageViews.filter((view) => {
+    const installed = view.appId ? installedApps.find((app) => app.appId === view.appId) : installedApps.find((app) => app.source === "store" && app.packageEntryId === view.item.entry.id);
+    return Boolean(installed && !storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
+  }).length;
+  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
+  const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
+  const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
+  const focusedIntegratedApp = focusedApp && (!windowed || appIsMaximized(focusedApp)) ? focusedApp : null;
+  const shellNotifications = <ShellNotifications
+    syncIssue={syncIssue}
+    syncIssueLabels={syncIssue ? outboxAffectedLabels(syncIssue) : []}
+    messages={shellMessages}
+    trashNotifications={trashNotifications}
+    appNotifications={appNotifications}
+    importProgress={importProgress}
+    fileTransfers={fileTransfers}
+    copyDownload={copyDownload}
+    showUpdateToast={showUpdateToast}
+    updateApplying={updateApplying}
+    updateBlocked={updateBlocked}
+    announcement={shellAnnouncement}
+    canViewActivity={canViewActivity}
+    open={notificationsOpen}
+    hideTrigger={Boolean(focusedIntegratedApp)}
+    onOpenChange={setNotificationsOpen}
+    onRestoreFocus={focusedIntegratedApp ? restoreNotificationFocus : undefined}
+    onRetrySyncIssue={retrySyncIssue}
+    onDiscardSyncIssue={discardSyncIssue}
+    onDismissMessage={(id) => setShellMessages((current) => current.filter((message) => message.id !== id))}
+    onOpenFolderImportHelp={() => openHelp("files-and-folders")}
+    onDismissTrash={(id) => setTrashNotifications((current) => dismissTrashNotification(current, id))}
+    onUndoTrash={(notification) => void undoMoveToTrash(notification)}
+    onOpenTrash={(notification) => void openTrashNotification(notification)}
+    onDismissApp={(notification) => appHostServices.notifications.dismiss(notification.owner, notification.id)}
+    onDismissTransfer={dismissFileTransfer}
+    onActivateUpdate={() => void activateUpdate()}
+    onDismissUpdate={() => { setShowUpdateToast(false); setUpdateBlocked(false); }}
+    onViewActivity={openActivityLog}
+  />;
+
+  return (
+    <main className="desktop-shell" data-windowed={windowed || undefined} data-integrated-app={focusedIntegratedApp ? true : undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
+      <header className="menu-bar">
+        <nav className="mobile-window-nav" data-integrated={focusedIntegratedApp ? true : undefined} aria-label={focusedIntegratedApp ? `${runningAppLabel(focusedIntegratedApp)} window controls` : "Desktop navigation"}>
+            <div className="mobile-window-nav__leading">
+              {focusedIntegratedApp ? (!windowed
+                ? <button className="integrated-window-control integrated-window-control--back" type="button" aria-label={`Back from ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => { void navigateBack(); }}><ArrowLeft size={20} /></button>
+                : <div className="integrated-window-controls" role="group" aria-label={`Window controls for ${runningAppLabel(focusedIntegratedApp)}`}>
+                    <button className="integrated-window-control integrated-window-control--close" type="button" aria-label={`Close ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => { void requestCloseApp(focusedIntegratedApp.id); }}><X size={15} /></button>
+                    <button className="integrated-window-control" type="button" aria-label={`Minimize ${runningAppLabel(focusedIntegratedApp)}`} onClick={() => minimizeApp(focusedIntegratedApp.id)}><Minus size={15} /></button>
+                    <button className="integrated-window-control" type="button" data-window-control="restore" data-window-id={focusedIntegratedApp.id} aria-label={`Restore ${runningAppLabel(focusedIntegratedApp)}`} onClick={(event) => {
+                      const restoreFocus = event.currentTarget === document.activeElement;
+                      toggleMaximizeApp(focusedIntegratedApp.id);
+                      if (restoreFocus) requestAnimationFrame(() => document.querySelector<HTMLButtonElement>(`[data-app-window="${CSS.escape(focusedIntegratedApp.id)}"] [data-window-control="maximize"]`)?.focus());
+                    }}><ArrowsIn size={15} /></button>
+                  </div>)
+                : <MobileHeaderMenu
+                    label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
+                    icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
+                  >
+                    {renderMobileStartMenu}
+                  </MobileHeaderMenu>}
+            </div>
+            {focusedApp
+              ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
+              : activeDesktopId && <button className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
+        </nav>
+        <div className="menu-bar__actions">
+          {focusedIntegratedApp ? <>
+            <div ref={setMobileHeaderActionsElement} className="mobile-global-actions" />
+            <MobileHeaderMenu label="System" icon={<><GearSix size={18} /><span className="chrome-menu-label">System</span></>} onTriggerElement={(element) => { areaSwitcherTriggerRef.current = element; }}>
+              {(dismiss) => <>
+                <button type="button" onClick={() => launchMobileDestination(dismiss, () => setActivePanel("search"))}><MagnifyingGlass size={17} /> Search</button>
+                <button type="button" onClick={() => launchMobileDestination(dismiss, toggleAreaSwitcher)}><Desktop size={17} /> Desktops and areas</button>
+                <button type="button" onClick={() => { dismiss(false); setNotificationsOpen(true); }}><Bell size={17} /> Notifications</button>
+                <span className="mobile-header-menu__separator" />
+                {renderMobileStartMenu(dismiss)}
+              </>}
+            </MobileHeaderMenu>
+            {shellNotifications}
+          </> : <>
+            <button type="button" aria-label="Search apps, files, windows, and commands" title="Search" onClick={() => setActivePanel("search")}>
+              <MagnifyingGlass size={17} />
+              <span className="desktop-action-label">Search</span>
+            </button>
+            {shellNotifications}
+            <button ref={areaSwitcherTriggerRef} className="mobile-area-switcher-trigger" type="button" aria-label={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher, current desktop ${activeDesktopName}, current area ${homeRelativeAreaLabel(activeSegment)}`} title={`${minimapDetailed ? "Collapse" : "Open"} desktop and area switcher`} aria-controls="area-switcher" aria-expanded={minimapDetailed} onClick={toggleAreaSwitcher} onPointerUp={handleMobileAreaSwitcherTap} onPointerCancel={() => { areaSwitcherTapRef.current = null; }}>
+              <SquaresFour size={20} weight={minimapDetailed ? "fill" : "regular"} />
+            </button>
+            <DesktopClock />
+          </>}
+        </div>
+      </header>
+      <DesktopSwitcher desktops={desktopChoices} activeDesktopId={activeDesktopId} onSwitch={(id) => { void activateDesktop(id); }} />
+
+      <section
+        className="desktop"
+        data-browser-pinch-zoom={allowBrowserPinchZoom || undefined}
+        data-area-transitioning={areaTransition || undefined}
+        data-area-transition-phase={areaTransition?.phase}
+        data-area-transition-kind={areaTransition?.kind}
+        data-loading={loading || undefined}
+        data-wallpaper-pending={wallpaperSelectionPending || undefined}
+        data-wallpaper={wallpaperFile && isSceneFile(wallpaperFile) ? "scene" : layout.wallpaper.source.startsWith("file:") ? "file" : layout.wallpaper.source.startsWith("theme:") ? "theme" : layout.wallpaper.source}
+        data-custom-loaded={wallpaperUrl ? true : undefined}
+        data-custom-failed={wallpaperFailed || undefined}
+        style={
+          {
+            "--wallpaper-image": wallpaperUrl ? `url(${wallpaperUrl})` : "none",
+            "--wallpaper-fit": layout.wallpaper.fit,
+            "--wallpaper-position": `${layout.wallpaper.positionX}% ${layout.wallpaper.positionY}%`,
+            "--wallpaper-blur": `${layout.wallpaper.blur}px`,
+          } as React.CSSProperties
+        }
+        ref={desktopRef}
+        aria-label={`${activeDesktopName} desktop`}
+        onClickCapture={(event) => {
+          if (!suppressClickRef.current) return;
+          suppressClickRef.current = false;
+          event.preventDefault();
+          event.stopPropagation();
+        }}
+        onPointerDownCapture={observeDesktopPointer}
+        onPointerMoveCapture={observeDesktopPointer}
+        onPointerUpCapture={observeDesktopPointer}
+        onPointerCancelCapture={observeDesktopPointer}
+        onContextMenuCapture={observeDesktopContextMenu}
+        onClick={(event) => {
+          if (!(event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) {
+            replaceSelection("desktop", []);
+          }
+        }}
+        onContextMenu={(event) => {
+          if ((event.target as Element).closest(".file-icon, .shell-item, .empty-state__actions, .app-window")) return;
+          event.preventDefault();
+          const press = desktopPressRef.current;
+          if (press) {
+            window.clearTimeout(press.timer);
+            press.activated = true;
+          }
+          swipeRef.current = null;
+          openDesktopContextMenu(event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
+        }}
+        onDragOver={(event) => {
+          if (!canMutate) return;
+          event.preventDefault();
+          event.currentTarget.dataset.dropActive = "true";
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node)) delete event.currentTarget.dataset.dropActive;
+        }}
+        onDrop={(event) => {
+          if (!canMutate) return;
+          event.preventDefault();
+          delete event.currentTarget.dataset.dropActive;
+          const bounds = event.currentTarget.getBoundingClientRect();
+          void handleExternalDrop(event.dataTransfer, null, {
+            x: event.clientX - bounds.left - iconMetrics.width / 2,
+            y: event.clientY - bounds.top - iconMetrics.height / 2,
+          });
+        }}
+        onPointerDown={handleDesktopPointerDown}
+        onPointerMove={handleDesktopPointerMove}
+        onPointerUp={(event) => finishDesktopSwipe(event)}
+        onPointerCancel={(event) => finishDesktopSwipe(event, true)}
+        onWheel={handleDesktopWheel}
+      >
+        {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
+          const themeId = layout.wallpaper.source.slice(6);
+          const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+        })() || <div className="wallpaper-image" aria-hidden="true" />}
+        {wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperContentRevision} readContent={(file) => readFile(file.id)} mode="wallpaper" onWallpaperTarget={registerWallpaperScene} /></div></Suspense>}
+        <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
+        <div
+          className="wallpaper-color-overlay"
+          aria-hidden="true"
+          style={{
+            backgroundColor: layout.wallpaper.overlayColor,
+            opacity: layout.wallpaper.overlayOpacity,
+          }}
+        />
+        <div className="wallpaper-grain" aria-hidden="true" />
+        <div className="desktop-area-stage desktop-area-stage--icons">
+          <div
+            className="desktop-canvas desktop-area-track"
+            ref={canvasRef}
+            style={{
+              width: iconArea.width,
+              height: iconArea.height,
+              transform: `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)`,
+            }}
+          >
+          {responsive.segments.map((desktopSegment) => {
+            const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
+            const segmentActive = desktopSegment.key === activeSegmentKey;
+            const segmentDragging = desktopSegment.entries.some((entry) => entry.id === edgeNavigationRef.current?.draftEntryId);
+            const segmentInteractive = segmentDragging || desktopSegment.entries.some((entry) => boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea));
+            const segmentVisible = segmentInteractive || transitionSegmentKeys.has(desktopSegment.key);
+            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
+            {desktopSegment.entries.map((entry) => {
+              const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
+              const renderedEntry = { ...entry, position: projectedPosition };
+              const entryInteractive = segmentDragging || boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea);
+              return (
+                <FileIcon
+                  allowBrowserPinchZoom={allowBrowserPinchZoom}
+                  key={entry.id}
+                  entry={renderedEntry}
+                  readOnly={isProtectedShellEntry(entry)}
+                  interactive={entryInteractive}
+                  loadPreview={entryInteractive ? thumbnailFile : undefined}
+                  offlineAvailability={offlineModel.entries[entry.id]}
+                  selected={selectedIdSet.has(entry.id)}
+                  onSelect={(event) =>
+                    selectEntry("desktop", entry, {
+                      toggle: event.metaKey || event.ctrlKey,
+                    })
+                  }
+                  onTouchSelect={() =>
+                    selectEntry("desktop", entry, {
+                      toggle: mobileMultiSelectScope === "desktop",
+                    })
+                  }
+                  onOpen={() => {
+                    replaceSelection("desktop", []);
+                    handleOpen(entry);
+                  }}
+                  onMove={(position, destination) => canMutateShellDrop(entry, destination.parentId) ? handleDesktopMove(entry, position, destination) : Promise.resolve(false)}
+                  onDragMove={(position, destination) => previewDesktopMove(entry, position, destination)}
+                  dragEdgeAt={edgeAt}
+                  onDragAtEdge={(direction) => handleIconDragAtEdge(entry, direction)}
+                  onEdgeDwellChange={handleEdgeDwellChange}
+                  onDragEnd={finishEdgeNavigation}
+                  getSnapPreview={layout.snapToGrid ? (position) => {
+                    const snapped = snapRootEntryPosition(desktopMovePosition(entry, position).logicalPosition);
+                    return { x: snapped.x - origin.x, y: snapped.y - origin.y };
+                  } : undefined}
+                  gridSize={layout.snapToGrid ? layout.gridSize : undefined}
+                  onExternalDrop={isProtectedShellEntry(entry) ? undefined : (dataTransfer) => void handleExternalDrop(dataTransfer, entry.id)}
+                  allowFolderDrop={selectionScope !== "desktop" || !selectedEntityIdSet.has(entryEntityId(entry.id)) || desktopSelectionCanDropIntoFolder(desktopEntityList, selectedEntityIdSet)}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    if (isProtectedShellEntry(entry)) return;
+                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entryEntityId(entry.id)]);
+                    openEntryContextMenu(entry.id, event.clientX, event.clientY, (event.nativeEvent as PointerEvent).pointerType === "touch" ? "sheet" : "menu");
+                  }}
+                  onContextMenuAt={(x, y, presentation) => {
+                    if (isProtectedShellEntry(entry)) return;
+                    if (!selectedIdSet.has(entry.id)) replaceSelection("desktop", [entryEntityId(entry.id)]);
+                    openEntryContextMenu(entry.id, x, y, presentation);
+                  }}
+                />
+              );
+            })}
+            </div>;
+          })}
+          </div>
+        </div>
+        <div className="desktop-area-stage desktop-area-stage--shell-items">
+          <div
+            className="desktop-canvas desktop-area-track"
+            style={{
+              left: areaTransition ? 0 : iconRestingCamera.x,
+              top: areaTransition ? 0 : iconRestingCamera.y,
+              width: iconArea.width,
+              height: iconArea.height,
+              transform: areaTransition ? `translate3d(var(--icon-area-track-x, ${iconRestingCamera.x}px), var(--icon-area-track-y, ${iconRestingCamera.y}px), 0)` : "none",
+            }}
+          >
+            {visibleSegments.map((shellSegment) => {
+              const origin = areaWorldOrigin(shellSegment.segment, iconArea);
+              return <div className="desktop-area-segment" key={shellSegment.key} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height }}>
+                <ShellItemLayer
+                  widgets={layout.widgets}
+                  groups={layout.iconGroups}
+                  entries={shellEntryList}
+                  activeSegment={activeSegment}
+                  ownerSegment={shellSegment.segment}
+                  areaSize={iconArea}
+                  status={{ syncStatus, isSyncing, outboxCount: outboxRecords.length, quota: catalogQuota }}
+                  renderWidget={(widget) => {
+                    if (widget.kind === "scene") {
+                      const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                      return <Suspense fallback={<div className="scene-state" role="status">Loading Scene...</div>}><SceneFrame file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readContent={(entry) => readFile(entry.id)} mode="widget" onPointerObservation={observeWidgetPointer} /></Suspense>;
+                    }
+                    if (widget.kind !== "todo") return null;
+                    const file = entries.find((entry): entry is FileEntry => entry.id === widget.fileId && entry.kind === "file") ?? null;
+                    return <TodoWidget file={file} contentRevision={file ? contentRevisionsRef.current[file.id] ?? 0 : 0} readOnly={!canMutate} readContent={(entry) => readFile(entry.id)} writeContent={(entry, content, expectedContentRevision) => saveAppFile(entry.id, content, { expectedContentRevision })} onOpen={handleOpen} />;
+                  }}
+                  loadPreview={thumbnailFile}
+                  selectedIds={selectionScope.startsWith("icon-group:") ? selectedIdSet : undefined}
+                  onOpen={(entry) => {
+                    replaceSelection("desktop", []);
+                    handleOpen(entry);
+                  }}
+                  onSelectEntry={(folderId, entry, options) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    const { presentation, ...selectionOptions } = options;
+                    selectEntry(scope, entry, { ...selectionOptions, toggle: presentation === "sheet" ? mobileMultiSelectScope === scope : selectionOptions.toggle });
+                  }}
+                  onEntryContextMenu={(folderId, entry, x, y, presentation) => {
+                    const scope = iconGroupSelectionScope(folderId);
+                    if (selectionScope !== scope || !selectedIdSet.has(entry.id)) replaceSelection(scope, [entry.id]);
+                    openEntryContextMenu(entry.id, x, y, presentation);
+                  }}
+                  onMoveEntry={(folderId, entry, destination, point) => {
+                    if (!canMutateShellDrop(entry, destination.parentId)) return;
+                    const scope = iconGroupSelectionScope(folderId);
+                    const items = selectionScope === scope && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
+                    void (destination.desktop
+                      ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
+                      : handleMoveTo(items, destination.parentId));
+                  }}
+                  getDesktopDropPreview={positionAtDesktopPoint}
+                  isEntryReadOnly={isProtectedShellEntry}
+                  onDrop={(dataTransfer, folderId) => void handleExternalDrop(dataTransfer, folderId)}
+                  onMoveWidget={(widget, position) => updateWidget(widget, position)}
+                  onResizeWidget={(widget, size) => updateWidget(widget, size)}
+                  onPreviewWidget={previewWidgetChange}
+                  onRemoveWidget={removeWidget}
+                  onSelectWidget={(widget, options) => selectEntryId("desktop", widgetEntityId(widget.id), options)}
+                  onActivateWidget={(widget) => {
+                    if (widget.kind !== "todo" && widget.kind !== "scene") return;
+                    const file = entries.find((entry) => entry.id === widget.fileId);
+                    if (file) handleOpen(file);
+                  }}
+                  onWidgetContextMenu={(widget, x, y, presentation) => {
+                    if (!selectedEntityIdSet.has(widgetEntityId(widget.id))) replaceSelection("desktop", [widgetEntityId(widget.id)]);
+                    setContextMenu({ type: "widget", widgetId: widget.id, x, y, presentation });
+                  }}
+                  onSelectGroup={(folder, options) => selectEntryId("desktop", groupEntityId(folder.id), options)}
+                  selectedEntityIds={selectedEntityIdSet}
+                  widgetBusy={widgetMutationPending}
+                  gridSize={layout.snapToGrid ? layout.gridSize : undefined}
+                  onMoveGroup={(folder, position) => void moveIconGroup(folder, position)}
+                  onResizeGroup={updateIconGroup}
+                  onPreviewGroup={previewIconGroupChange}
+                  onUngroup={ungroupIconGroup}
+                  readOnly={!canMutate}
+                />
+              </div>;
+            })}
+          </div>
+        </div>
+        {marquee && (
+          <div
+            className="desktop-marquee"
+            aria-hidden="true"
+            style={{
+              left: marquee.left,
+              top: marquee.top,
+              width: marquee.width,
+              height: marquee.height,
+            }}
+          />
+        )}
+
+        {loading && !warmStart && (
+          <div className="desktop-state desktop-state--loading" role="status">
+            <span className="loading-line" />
+            <span className="loading-line loading-line--short" />
+            <span className="visually-hidden">Loading desktop...</span>
+          </div>
+        )}
+        {!loading && rootEntries.length === 0 && layout.widgets.length === 0 && layout.iconGroups.length === 0 && activeSegment.column === 0 && activeSegment.row === 0 && (
+          <div className="desktop-state empty-state">
+            <span className="empty-state__icon">
+              <HardDrive size={28} weight="duotone" />
+            </span>
+            <h1>Your space is ready.</h1>
+            <p>{offlineSharedNotice || (syncStatus === "local" ? "Create an item, import a folder, or drop files anywhere. Items are saved only in this browser." : canMutate ? "Create an item, import a folder, or drop files anywhere. Items are saved to this shared desktop and synchronized by the Hiraya server." : "This desktop is read only for your account.")}</p>
+            <div className="empty-state__actions">
+              <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: null })}>
+                <Plus size={17} /> New text file
+              </button>
+              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-folder", parentId: null })}>
+                <FolderPlus size={17} /> New folder
+              </button>
+              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseUpload(null)}>
+                <UploadSimple size={17} /> Upload files
+              </button>
+              <button className="button button--quiet" type="button" disabled={!canMutate} onClick={() => chooseFolderImport(null)}>
+                <FolderOpen size={17} /> Import folder
+              </button>
+            </div>
+          </div>
+        )}
+        {!loading && (rootEntries.length > 0 || layout.widgets.length > 0 || layout.iconGroups.length > 0 || activeSegment.column !== 0 || activeSegment.row !== 0) && !occupiedSegments.some((segment) => segment.key === activeSegmentKey) && !activeShellItemOverlap && !runningApps.some((app) => appIsInSegment(app, activeSegment)) && (
+          <div className="desktop-state empty-state area-empty-state">
+            <span className="empty-state__icon">
+              <Desktop size={28} weight="duotone" />
+            </span>
+            <h1>This area is empty.</h1>
+            <p>Place a root item or window here to keep this coordinate region available.</p>
+          </div>
+        )}
+        <div className="drop-message" aria-hidden="true">
+          <UploadSimple size={25} /> Drop files or folders to add them
+        </div>
+
+        <WindowLayer
+          apps={runningApps}
+          activeSegment={activeSegment}
+          desktopSize={desktopSize}
+          focusedAppId={focusedAppId}
+          windowed={windowed}
+          mobileHeaderActionsElement={mobileHeaderActionsElement}
+          restingCamera={restingCamera}
+          trackRef={windowTrackRef}
+          transitionSegmentKeys={transitionSegmentKeys}
+          titleForApp={(app) => {
+            const folderEntry = app.kind === "explorer" && app.folderId ? (shellEntryIndex.byId.get(app.folderId) ?? entryIndex.byId.get(app.folderId)) : null;
+            const folder = folderEntry?.kind === "folder" ? folderEntry : null;
+            const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
+            const file = fileEntry?.kind === "file" ? fileEntry : null;
+            const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (SETTINGS_PARENTS[settingsPage] ? SETTINGS_PAGE_TITLES[settingsPage] : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+          }}
+          isMaximized={appIsMaximized}
+          onExecuteCommand={(id) => { void commandService.execute(id, commandContext); }}
+          onFocus={focusApp}
+          onBoundsChange={updateAppBounds}
+          dragEdgeAt={edgeAt}
+          onDragAtEdge={handleWindowDragAtEdge}
+          onEdgeDwellChange={handleEdgeDwellChange}
+          onDragEnd={finishWindowEdgeNavigation}
+          onMinimize={minimizeApp}
+          onClose={requestCloseApp}
+          onToggleMaximize={toggleMaximizeApp}
+          onShowDesktop={navigateBack}
+        >
+          {(app, headerElements) => {
+            const folderEntry = app.kind === "explorer" && app.folderId ? (shellEntryIndex.byId.get(app.folderId) ?? entryIndex.byId.get(app.folderId)) : null;
+            const folder = folderEntry?.kind === "folder" ? folderEntry : null;
+            const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
+            const mergeReview = app.kind === "merge" ? mergeReviews[app.operationId] : null;
+            const mergeConflicts: MergeTextConflict[] = mergeReview?.mode === "text" ? mergeReview.regions.flatMap((region, index) => region.kind === "unresolved" && !mergeReview.resolutions[String(index)] ? [{ id: String(index), label: `Overlapping edit ${index + 1}`, base: region.base, mine: region.mine, server: region.server, resolution: null }] : []) : [];
+            return (
+              <>
+                    {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? trustedDocumentMediaCsp(session?.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? TRUSTED_DOCUMENT_MEDIA_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
+                    {app.kind === "explorer" && (
+                      <FolderExplorer
+                        folder={folder}
+                        rootLabel={activeDesktopName}
+                        breadcrumbs={folder ? shellEntryIndex.ancestors(folder.id).filter((entry): entry is FolderEntry => entry.kind === "folder") : []}
+                        children={shellEntryIndex.children.get(folder?.id ?? null) ?? []}
+                        selectedIds={selectionScope === app.id ? selectedIdSet : new Set()}
+                        mobileMultiSelect={mobileMultiSelectScope === app.id}
+                        onSelect={(entry, options) => selectEntry(app.id, entry, options)}
+                        onNavigate={(nextFolder) => {
+                          replaceSelection(app.id, []);
+                          navigateExplorerWindow(app.id, nextFolder?.id ?? null);
+                        }}
+                        onOpen={(entry) => {
+                          replaceSelection(app.id, []);
+                          handleOpen(entry);
+                        }}
+                        onCreateFolder={(parentId) => openFileDialog({ type: "create-folder", parentId })}
+                        onCreateFile={(parentId) => openFileDialog({ type: "create-file", parentId })}
+                        onUpload={chooseUpload}
+                        onImportFolder={chooseFolderImport}
+                        onExternalDrop={(dataTransfer, parentId) => void handleExternalDrop(dataTransfer, parentId)}
+                        offlineAvailability={offlineModel.entries}
+                        loadPreview={thumbnailFile}
+                        isEntryReadOnly={isProtectedShellEntry}
+                        protectedStatus={isProtectedShellEntry(folder) ? protectedTreeStatus : undefined}
+                        onMove={(entry, destination, point) => {
+                          if (!canMutateShellDrop(entry, destination.parentId)) return;
+                          const items = selectionScope === app.id && selectedIdSet.has(entry.id) ? selectedEntries : [entry];
+                          void (destination.desktop
+                            ? handleMoveToDesktop(items, entry, point.clientX, point.clientY)
+                            : handleMoveTo(items, destination.parentId));
+                        }}
+                        getDesktopDropPreview={positionAtDesktopPoint}
+                        gridSize={layout.snapToGrid ? layout.gridSize : undefined}
+                        onContextMenu={(entry, x, y, presentation) => {
+                          if (isProtectedShellEntry(entry)) return;
+                          if (selectionScope !== app.id || !selectedIdSet.has(entry.id)) replaceSelection(app.id, [entry.id]);
+                          openEntryContextMenu(entry.id, x, y, presentation);
+                        }}
+                        onBlankContextMenu={(parentId, x, y, presentation) => {
+                          if (isProtectedShellEntry(parentId)) return;
+                          window.getSelection()?.removeAllRanges();
+                          replaceSelection(app.id, []);
+                          setContextMenu({
+                            type: "desktop",
+                            parentId,
+                            x,
+                            y,
+                            position: positionFor(parentId),
+                            presentation,
+                          });
+                        }}
+                        onClearSelection={() => replaceSelection(app.id, [])}
+                        readOnly={!canMutate || isProtectedShellEntry(folder)}
+                        headerElements={headerElements}
+                        view={explorerView}
+                        onViewChange={(view) => void changeExplorerView(view)}
+                        viewChangeDisabled={!preferencesLoaded}
+                      />
+                    )}
+                    {app.kind === "file" && app.transient && app.file && (app.blob ? <FileWindow
+                      file={app.file}
+                      blob={app.blob}
+                      editable={app.editable ?? false}
+                      readOnly
+                      canChangeSettings={false}
+                      headerActionsTarget={headerElements.actions}
+                      editorSettings={appSnapshotRef.current?.editorSettings ?? DEFAULT_EDITOR_SETTINGS}
+                      externalEmbeddedPreviews={false}
+                      theme={activeTheme}
+                      onSave={async () => undefined}
+                      onDownload={() => downloadProtectedBlob(app.blob!, app.file!.name)}
+                      onEdit={() => undefined}
+                      onEditorSettingsChange={() => undefined}
+                      onResolveLink={async () => { throw new Error("Protected files do not expose file links."); }}
+                      onOpenLinkedFile={() => undefined}
+                    /> : app.loadError ? <div className="app-window__loading" role="alert"><span>{app.loadError}</span><button className="button button--primary" type="button" onClick={() => virtualThumbnailSource(app.file!) ? openVirtualThumbnail(app.file!) : openProtectedFile(app.file!)}>Retry</button></div> : <div className="app-window__loading" role="status">Opening {app.file.name}...</div>)}
+                    {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
+                    {app.kind === "merge" && mergeReview && (mergeReview.mode === "text" ? <MergeWindow
+                      mode="text"
+                      active={focusedAppId === app.id}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      conflicts={mergeConflicts}
+                      mergedText={mergeReview.mergedText}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onMergedTextChange={(mergedText) => {
+                        fileDirtyRef.current[app.id] = true;
+                        setDirtyAppIds((current) => new Set(current).add(app.id));
+                        setMergeReviews((current) => current[app.operationId] ? { ...current, [app.operationId]: { ...current[app.operationId], mergedText, error: undefined } } : current);
+                      }}
+                      onResolveConflict={(conflictId, resolution) => resolveMergeTextConflict(app.operationId, conflictId, resolution)}
+                      onSaveMerged={() => void applyMergeResolution(app.operationId, "merged")}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    /> : mergeReview.mode === "media" && mergeReview.mediaKind ? <MergeWindow
+                      mode="media"
+                      active={focusedAppId === app.id}
+                      mediaKind={mergeReview.mediaKind}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    /> : <MergeWindow
+                      mode="binary"
+                      active={focusedAppId === app.id}
+                      state={mergeReview.state}
+                      error={mergeReview.error}
+                      mine={mergeReview.mine}
+                      server={mergeReview.server}
+                      onRetry={() => {
+                        const record = outboxRecords.find((candidate) => candidate.operationId === app.operationId);
+                        if (record) void loadMergeReview(record);
+                      }}
+                      onKeepMine={() => void applyMergeResolution(app.operationId, "mine")}
+                      onKeepServer={() => void applyMergeResolution(app.operationId, "server")}
+                      onKeepBoth={() => void applyMergeResolution(app.operationId, "both")}
+                    />)}
+                    {app.kind === "settings" && (
+                      <SettingsWindow
+                        page={settingsPage}
+                        onPageChange={navigateSettingsPage}
+                        onBack={navigateSettingsBack}
+                        mobileHeaderElements={headerElements}
+                        layout={layout}
+                        activeDesktopId={activeDesktopId}
+                        desktops={desktopChoices}
+                        catalogQuota={catalogQuota}
+                        quotaStale={syncStatus === "offline"}
+                        desktopArrangementDisabled={Boolean(session && syncStatus !== "online" && syncStatus !== "blocked")}
+                        entries={entries}
+                        canMutate={canSettings}
+                        canViewActivity={canViewActivity}
+                        activityScope={activityScope}
+                        restrictionReason={settingsRestrictionReason(activeDesktop, syncStatus)}
+                        exportDisabled={loading}
+                        exporting={exporting}
+                        fullscreenEnabled={document.fullscreenEnabled}
+                        isFullscreen={isFullscreen}
+                        updateSupported={updateSupported}
+                        updateReady={updateReady}
+                        updateChecking={updateChecking}
+                        autoUpdate={autoUpdate}
+                        externalEmbeddedPreviews={externalEmbeddedPreviews === true}
+                        allowBrowserPinchZoom={allowBrowserPinchZoom}
+                        localPreferencesLoaded={externalEmbeddedPreviews !== null}
+                        searchAllDesktops={searchAllDesktops}
+                        showHiddenFiles={showHiddenFiles}
+                        desktopSearchAvailable={desktopSearchAvailable}
+                        shortLinksAvailable={shortLinksAvailable}
+                        shortLinkBaseUrl={session?.shortLinkBaseUrl ?? ""}
+                        sharingAvailable={Boolean(session && activeDesktop?.capabilities.manage)}
+                        sharingDisabled={!canManage}
+                        installState={installState}
+                        serverBuildTimestamp={serverBuildTimestamp}
+                        installedApps={installedApps}
+                        connectionPanel={<ConnectionPanel
+                          embedded
+                          status={syncStatus}
+                          records={outboxRecords}
+                          lastSyncedAt={lastSyncedAt}
+                          affectedLabels={outboxAffectedLabels}
+                          entries={entries}
+                          inventory={offlineInventory}
+                          progress={offlineProgress}
+                          online={syncStatus === "online"}
+                          persistence={storagePersistence}
+                          onRetryRecord={retrySyncIssue}
+                          onDiscardRecord={discardSyncIssue}
+                          onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
+                          onReleaseAll={() => void removeDownloadedCopies()}
+                          onOpenHelp={() => openHelp("offline")}
+                        />}
+                        sharingPanel={activeDesktop?.capabilities.manage ? <SharingDialog desktop={activeDesktop} embedded onClose={() => navigateSettingsPage("sharing")} onOpenHelp={() => openHelp("sharing")} /> : null}
+                        fileAssociations={fileAssociations}
+                        fileCreationTemplates={appSnapshotRef.current?.editorSettings.fileCreationTemplates ?? []}
+                        onSetFileAssociation={(matcher, appId) => void saveAssociation(matcher, appId)}
+                        onRemoveFileAssociation={(matcher) => void deleteAssociation(matcher)}
+                        onResetFileAssociations={() => void clearAssociations()}
+                        onFileCreationTemplatesChange={async (templates) => {
+                          const snapshot = appSnapshotRef.current;
+                          if (!snapshot) throw new Error("The desktop is unavailable.");
+                          await saveEditorSettings({ ...snapshot.editorSettings, fileCreationTemplates: templates });
+                        }}
+                        onListShortLinks={listShortLinks}
+                        onCreateShortLink={createShortLink}
+                        onUpdateShortLink={updateShortLink}
+                        onDeleteShortLink={deleteShortLink}
+                        onConfirmShortLinkDelete={(link) => requestConfirmation({ title: `Delete ${link.slug}?`, message: `Delete “${link.url}”? Existing visits will stop redirecting.`, confirmLabel: "Delete link", danger: true })}
+                        onListActivity={
+                          canViewActivity
+                            ? (query) => listActivity({ ...query, ...(activityScope === "desktop" ? { desktopId: activeDesktopId } : {}) })
+                            : async () => {
+                                throw new Error("Activity is unavailable for your role.");
+                              }
+                        }
+                        onSubscribeToActivity={canViewActivity ? subscribeToActivityChanges : () => () => undefined}
+                        canOpenAffectedEntries={(activity) =>
+                          canOpenActivity(
+                            activity,
+                            activeDesktopIdRef.current,
+                            entriesRef.current,
+                            desktops.map((desktop) => desktop.id),
+                          )
+                        }
+                        onOpenAffectedEntries={async (activity, ids) => {
+                          if (!activity.desktopId) return;
+                          if (activity.desktopId !== activeDesktopIdRef.current && !(await activateDesktop(activity.desktopId))) return;
+                          const affected = ids.map((id) => entriesRef.current.find((entry) => entry.id === id)).filter((entry): entry is DesktopEntry => Boolean(entry));
+                          if (affected.length === 1) handleOpen(affected[0]);
+                          else if (affected.length > 1) {
+                            replaceSelection(
+                              "desktop",
+                              affected.map((entry) => entry.parentId === null ? entryEntityId(entry.id) : entry.id),
+                            );
+                            const root = affected.find((entry) => entry.parentId === null);
+                            if (root) goToSegment(projectLogicalPosition(root.position, iconAreaSizeRef.current).segment);
+                          } else setError("The entries affected by this activity no longer exist.");
+                        }}
+                        onOpenThemeEditor={() => {
+                          const install = installedApps.find((candidate) => candidate.source === "system" && candidate.appId === SYSTEM_APP_IDS.themeEditor);
+                          if (install) void launchInstalledAppRef.current(install);
+                          else setError("Theme Editor is still being installed. Try again in a moment.");
+                        }}
+                        onLayoutChange={persistLayout}
+                        onExport={() => void handleExport()}
+                        onToggleFullscreen={() => void toggleFullscreen()}
+                        onCheckForUpdate={() => void checkForUpdate()}
+                        onAutoUpdateChange={(enabled) => void changeAutoUpdate(enabled)}
+                        onExternalEmbeddedPreviewsChange={(enabled) => void changeExternalEmbeddedPreviews(enabled)}
+                        onAllowBrowserPinchZoomChange={(enabled) => void changeAllowBrowserPinchZoom(enabled)}
+                        onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
+                        onShowHiddenFilesChange={(enabled) => void changeShowHiddenFiles(enabled)}
+                        onInstall={() => void installPwa()}
+                        onOpenHelp={openHelp}
+                        onCreateDesktop={createDesktop}
+                        onRenameDesktop={renameDesktop}
+                        onDeleteDesktop={deleteDesktop}
+                        onArrangeDesktops={arrangeDesktopCatalog}
+                        canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online" || syncStatus === "blocked"}
+                      />
+                    )}
+                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} canAddToDesktop={canMutate} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onAddToDesktop={(installed) => void addAppShortcut(installed).catch((reason) => setError(reason instanceof Error ? reason.message : "The application shortcut could not be created."))} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
+                      void requestConfirmation({
+                        title: `Reset ${installed.manifest.name}?`,
+                        message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",
+                        confirmLabel: "Reset data",
+                        danger: true,
+                      }).then(async (confirmed) => {
+                        if (confirmed) {
+                          await clearAppData(installed.appId);
+                          setNotice(`${installed.manifest.name} data reset`);
+                        }
+                      })
+                    } />}
+              </>
+            );
+          }}
+        </WindowLayer>
+        {areaTransition && (
+          <div className="desktop-area-stage desktop-area-stage--frames" aria-hidden="true">
+            <div
+              className="desktop-area-frame-track desktop-area-track"
+              ref={frameTrackRef}
+              style={{
+                width: desktopSize.width,
+                height: desktopSize.height,
+                transform: `translate3d(var(--area-track-x, ${restingCamera.x}px), var(--area-track-y, ${restingCamera.y}px), 0)`,
+              }}
+            >
+              {[areaTransition.source, areaTransition.target].filter((segment, index, segments) => segments.findIndex((candidate) => segmentKey(candidate) === segmentKey(segment)) === index).map((segment) => (
+                <div
+                  className="desktop-area-frame"
+                  key={segmentKey(segment)}
+                  style={{
+                    left: segment.column * desktopSize.width,
+                    top: segment.row * desktopSize.height,
+                    width: desktopSize.width,
+                    height: desktopSize.height,
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
+        {swipePreview && (
+          <div className="desktop-swipe-preview" role="status">
+            <SquaresFour size={20} weight="duotone" />
+            <span>
+              Release for <strong>{homeRelativeAreaLabel(swipePreview)}</strong>
+            </span>
+          </div>
+        )}
+        {edgeDwell && (() => {
+          const target = adjacentArea(activeSegment, edgeDwell.direction);
+          return <div key={edgeDwell.id} className="desktop-edge-dwell" data-direction={edgeDwell.direction} aria-hidden="true" style={{ "--edge-dwell-duration": `${EDGE_DWELL_MS}ms` } as React.CSSProperties}>
+            <span className="desktop-edge-dwell__rail"><span /></span>
+            <span className="desktop-edge-dwell__label">Move to <strong>{areaDirectionalLabel(target, activeSegment)}</strong></span>
+          </div>;
+        })()}
+      </section>
+
+      {minimapExpanded && <AreaSwitcher
+        activeSegment={activeSegment}
+        activeSegmentKey={activeSegmentKey}
+        apps={runningApps}
+        desktopName={activeDesktopName}
+        desktopSize={iconArea}
+        detailed={minimapDetailed}
+        dirtyAppIds={dirtyAppIds}
+        focusedApp={focusedApp}
+        focusedAppId={focusedAppId}
+        obscured={minimapObscured}
+        occupiedSegmentKeys={new Set(occupiedSegments.map((segment) => segment.key))}
+        positions={responsive.positions}
+        rootRef={areaSwitcherRef}
+        segments={minimapSegments}
+        swipePreview={swipePreview}
+        windowLimit={minimapWindowLimit}
+        getAppEntry={(app) => app.kind === "file" ? (entryIndex.byId.get(app.fileId) ?? null) : app.kind === "properties" ? (entryIndex.byId.get(app.entryId) ?? null) : app.kind === "explorer" && app.folderId ? (entryIndex.byId.get(app.folderId) ?? null) : null}
+        getAppLabel={runningAppLabel}
+        getAppSegment={segmentForApp}
+        onBeginGridSwipe={beginExpandedMinimapSwipe}
+        onMoveGridSwipe={moveExpandedMinimapSwipe}
+        onFinishGridSwipe={finishExpandedMinimapSwipe}
+        onSelectArea={(segment, event) => {
+          if (suppressMinimapClickRef.current) {
+            suppressMinimapClickRef.current = false;
+            event.preventDefault();
+            return;
+          }
+          selectAreaFromSwitcher(segment);
+        }}
+        onFocusApp={(id) => { collapseAreaMap(false); focusApp(id); }}
+        onShowDesktop={() => { collapseAreaMap(false); showDesktop(); }}
+        onMinimizeApp={(id) => { collapseAreaMap(false); minimizeApp(id); }}
+        onCloseApp={(id) => { collapseAreaMap(false); void requestCloseApp(id); }}
+      />}
+      {backPrompt && <div className="shell-back-prompt" role="status" aria-live="polite" aria-atomic="true">{backPrompt}</div>}
+      <span className="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {areaAnnouncement}
+      </span>
+
+      <input
+        ref={uploadRef}
+        className="visually-hidden"
+        type="file"
+        tabIndex={-1}
+        aria-hidden="true"
+        multiple
+        onChange={(event) => {
+          const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
+          uploadPositionRef.current = undefined;
+          const files = Array.from(event.target.files ?? []);
+          if (files.length)
+            void handleImportSources(
+              files.map((file) => ({ relativePath: file.name, file })),
+              context,
+            );
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={(element) => {
+          directoryRef.current = element;
+          element?.setAttribute("webkitdirectory", "");
+        }}
+        className="visually-hidden"
+        type="file"
+        tabIndex={-1}
+        aria-hidden="true"
+        multiple
+        onChange={(event) => {
+          const context = importOperationRef.current ?? captureImportOperation(uploadParentRef.current, uploadPositionRef.current);
+          uploadPositionRef.current = undefined;
+          const files = Array.from(event.target.files ?? []);
+          if (files.length) void handleImportSources(sourcesFromDirectoryPicker(files), context);
+          else reportFolderImportError("No files were selected. This browser fallback cannot represent empty folders; use a browser with the File System Access folder picker or drag the folder onto Hiraya.");
+          event.target.value = "";
+        }}
+      />
+
+      {showMobileSelectionToolbar && (
+        <MobileSelectionToolbar
+          count={mobileFileSelection.length}
+          contentKey={mobileFileSelection.length > 0 ? (mobileSelectionMode ? "selection-mode" : "selection-actions") : (canMutate && clipboardOffer && !clipboardOffer.dismissed ? "paste-actions" : "file-actions")}
+          selectionMode={mobileSelectionMode}
+          onBeginSelectionMode={() => beginMobileMultiSelect(mobileFileSurface)}
+        >
+          {mobileFileSelection.length > 0 ? <>
+          <button type="button" title="Copy" aria-label={`Copy ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`} onClick={() => void copySelection()}>
+            <Copy size={20} />
+          </button>
+          <button
+            type="button"
+            title="Move"
+            aria-label={`Move ${mobileFileSelection.length} selected ${mobileFileSelection.length === 1 ? "item" : "items"}`}
+            disabled={!canMutate}
+            onClick={() => {
+              setMoveDialogSubmitting(false);
+              setMoveDialogEntryIds(mobileFileSelection.map((entry) => entry.id));
+            }}
+          >
+            <ArrowsLeftRight size={20} />
+          </button>
+          <button type="button" title="More actions" aria-label="More actions" onClick={(event) => {
+            const pointerType = event.nativeEvent instanceof PointerEvent ? event.nativeEvent.pointerType : "";
+            const presentation = pointerType === "touch" ? "sheet" : "menu";
+            const bounds = event.currentTarget.getBoundingClientRect();
+            openEntryContextMenu(
+              mobileFileSelection[0].id,
+              presentation === "sheet" ? window.innerWidth / 2 : bounds.left + bounds.width / 2,
+              presentation === "sheet" ? window.innerHeight - 20 : bounds.top,
+              presentation,
+            );
+          }}>
+            <DotsThree size={22} weight="bold" />
+          </button>
+          </> : <>
+          {canMutate && clipboardOffer && !clipboardOffer.dismissed && <>
+            <button className="mobile-selection-toolbar__primary" type="button" onClick={() => void beginPaste(focusedExplorer?.folderId ?? null)}>
+              <ClipboardText size={20} />
+              <span>Paste</span>
+            </button>
+            <button type="button" title="Dismiss paste action" aria-label="Dismiss paste action" onClick={() => setClipboardOffer((current) => dismissClipboardOffer(current))}>
+              <X size={19} />
+            </button>
+          </>}
+          <button type="button" title="New text file" aria-label="New text file" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: focusedExplorer?.folderId ?? null })}>
+            <FileGlyph size={20} />
+          </button>
+          <button type="button" title="New folder" aria-label="New folder" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-folder", parentId: focusedExplorer?.folderId ?? null })}>
+            <FolderPlus size={20} />
+          </button>
+          <button type="button" title="Upload files" aria-label="Upload files" disabled={!canMutate} onClick={() => chooseUpload(focusedExplorer?.folderId ?? null)}>
+            <UploadSimple size={20} />
+          </button>
+          <button type="button" title="Import folder" aria-label="Import folder" disabled={!canMutate} onClick={() => chooseFolderImport(focusedExplorer?.folderId ?? null)}>
+            <FolderOpen size={20} />
+          </button>
+          </>}
+        </MobileSelectionToolbar>
+      )}
+
+      {contextMenu?.type === "entry" && contextMenuEntry && (
+        <ContextMenu
+          menu={contextMenu}
+          entry={contextMenuEntry}
+          onOpen={() => {
+            replaceSelection(selectionScope, []);
+            handleOpen(contextMenuEntry);
+          }}
+          onEditFile={contextMenuEntry.kind === "file" && fileCapabilities(contextMenuEntry).editable ? () => {
+            replaceSelection(selectionScope, []);
+            handleEditFile(contextMenuEntry);
+          } : undefined}
+          openWith={
+            contextMenuEntry.kind === "file"
+              ? matchingInstalledApps(installedApps, entries, contextMenuEntry).map((app) => ({
+                  id: app.appId,
+                  label: app.manifest.name,
+                  preferred: resolveFileApp(contextMenuEntry, installedApps, entries, fileAssociations)?.app.appId === app.appId,
+                  onOpen: () => {
+                    replaceSelection(selectionScope, []);
+                    void openFileWithApp(app, contextMenuEntry);
+                  },
+                  onSetPreferred: () => {
+                    const matcher = associationCandidates(contextMenuEntry)[0];
+                    setContextMenu(null);
+                    if (!matcher) return;
+                    void saveAssociation(matcher, app.appId).then(() => {
+                      setNotice(`${app.manifest.name} will open ${matcher} files`);
+                    });
+                  },
+                }))
+              : undefined
+          }
+          onRename={() => {
+            openFileDialog({ type: "rename", entryId: contextMenuEntry.id });
+            setContextMenu(null);
+          }}
+          onDownload={contextMenuEntry.kind === "file" ? () => void download(contextMenuEntry) : undefined}
+          onSetAsWallpaper={contextMenuEntries.length === 1 && canSettings && isWallpaperFile(contextMenuEntry) ? () => {
+            const entry = contextMenuEntry;
+            clearWallpaperPreview();
+            setContextMenu(null);
+            setError("");
+            void selectWallpaperFile(entry.id, layoutRef.current, activeDesktopIdRef.current)
+              .then(() => setNotice(`${entry.name} set as desktop wallpaper`))
+              .catch((wallpaperError) => setError(wallpaperError instanceof Error ? wallpaperError.message : "The wallpaper could not be saved."));
+          } : undefined}
+          onCopy={() => void copySelection()}
+          onCopyLink={contextMenuEntries.length === 1 ? () => void copyDeepLink(contextMenuEntry) : undefined}
+          onPublish={contextMenuEntries.length === 1 && activeDesktop?.capabilities.manage && publicationsAvailable ? () => { setPublishEntryId(contextMenuEntry.id); setContextMenu(null); } : undefined}
+          publishDisabled={!canManage}
+          onMakeAvailableOffline={syncStatus !== "local" && contextMenuEntries.some((entry) => ["partial", "online-only"].includes(offlineModel.entries[entry.id]?.status)) ? () => void makeAvailableOffline(contextMenuEntries.map((entry) => entry.id)) : undefined}
+          onRemoveOfflineCopy={
+            syncStatus !== "local" &&
+            contextMenuEntries.some((entry) => {
+              const availability = offlineModel.entries[entry.id];
+              return availability?.cached && !availability.protected;
+            })
+              ? () => void removeDownloadedCopies(contextMenuEntries.map((entry) => entry.id))
+              : undefined
+          }
+          onOpenOfflineStorage={() => {
+            setActivePanel("offline");
+            setContextMenu(null);
+          }}
+          offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"}
+          onPasteInto={contextMenuEntry.kind === "folder" ? () => void pasteFromContextMenu(contextMenuEntry.id) : undefined}
+          onUploadInto={
+            contextMenuEntry.kind === "folder"
+              ? () => {
+                  chooseUpload(contextMenuEntry.id);
+                  setContextMenu(null);
+                }
+              : undefined
+          }
+          onImportFolderInto={
+            contextMenuEntry.kind === "folder"
+              ? () => {
+                  chooseFolderImport(contextMenuEntry.id);
+                  setContextMenu(null);
+                }
+              : undefined
+          }
+          onGroup={contextMenuEntry.kind === "folder" && contextMenuEntry.parentId === null && !groupedFolderIds.has(contextMenuEntry.id) ? () => addIconGroup(contextMenuEntry) : undefined}
+          onMove={() => {
+            setMoveDialogSubmitting(false);
+            setMoveDialogEntryIds(contextMenuEntries.map((entry) => entry.id));
+            setContextMenu(null);
+          }}
+          onProperties={() => {
+            openPropertiesWindow(contextMenuEntry.id);
+            setContextMenu(null);
+          }}
+          onDelete={() => {
+            openFileDialog({
+              type: "delete",
+              entryIds: contextMenuEntries.map((entry) => entry.id),
+            });
+            setContextMenu(null);
+          }}
+          selectionCount={contextMenuEntries.length}
+          trashSupported={syncStatus !== "local"}
+          readOnly={!canMutate}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {contextMenu?.type === "widget" && contextMenuWidget && (
+        <WidgetContextMenu
+          menu={contextMenu}
+          label={contextMenuWidget.kind === "clock" ? "Clock" : contextMenuWidget.kind === "calendar" ? "Calendar" : contextMenuWidget.kind === "status" ? "Status" : contextMenuWidget.kind === "scene" ? "Scene" : "Todo list"}
+          onOpen={(contextMenuWidget.kind === "todo" || contextMenuWidget.kind === "scene") ? () => {
+            const file = entries.find((entry) => entry.id === contextMenuWidget.fileId);
+            setContextMenu(null);
+            if (file) handleOpen(file);
+          } : undefined}
+          onResize={() => {
+            setContextMenu(null);
+            requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-desktop-entity-id="${CSS.escape(widgetEntityId(contextMenuWidget.id))}"] .shell-item__resize`)?.focus());
+          }}
+          onRemove={() => { setContextMenu(null); void removeWidget(contextMenuWidget); }}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {contextMenu?.type === "desktop" && (
+        <DesktopContextMenu
+          menu={contextMenu}
+          onCreateFile={() => {
+            openFileDialog({
+              type: "create-file",
+              parentId: contextMenu.parentId,
+              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) : contextMenu.position,
+            });
+            setContextMenu(null);
+          }}
+          onCreateFolder={() => {
+            openFileDialog({
+              type: "create-folder",
+              parentId: contextMenu.parentId,
+              position: contextMenu.parentId === null ? restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) : contextMenu.position,
+            });
+            setContextMenu(null);
+          }}
+          onCreateIconGroup={contextMenu.parentId === null ? () => {
+            groupCreatedFolderRef.current = true;
+            openFileDialog({ type: "create-folder", parentId: null, position: restoreLogicalPosition(contextMenu.position, activeSegment, iconArea) });
+            setContextMenu(null);
+          } : undefined}
+          onAddWidget={contextMenu.parentId === null ? (kind) => addWidget(kind, restoreLogicalPosition(contextMenu.position, activeSegment, iconArea)) : undefined}
+          onUpload={() => {
+            chooseUpload(contextMenu.parentId, contextMenu.position);
+            setContextMenu(null);
+          }}
+          onImportFolder={() => {
+            chooseFolderImport(contextMenu.parentId, contextMenu.position);
+            setContextMenu(null);
+          }}
+          onSettings={() => {
+            openSettingsWindow();
+            setContextMenu(null);
+          }}
+          onPaste={() => void pasteFromContextMenu(contextMenu.parentId, contextMenu.parentId === null ? contextMenu.position : undefined)}
+          readOnly={!canMutate}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
+      {dialog && (!(dialog.type === "rename" || dialog.type === "delete") || dialogEntry) && <FileDialog dialog={dialog} entry={dialogEntry} entryCount={dialog.type === "delete" ? dialog.entryIds.length : 1} trashSupported={syncStatus !== "local"} onClose={() => { groupCreatedFolderRef.current = false; setDialog(null); }} onSubmit={handleDialogSubmit} restoreFocus={restoreFileDialogFocus} />}
+      {todoWidgetPosition && <AppPickerDialog request={{ kind: "pickFile", params: { mimeTypes: [TODO_EXTENSION, TODO_MIME_TYPE], title: "Choose a Todo list", actionLabel: "Add widget" } }} entries={entries} onCancel={() => setTodoWidgetPosition(null)} onOpenFiles={(files) => files[0] && addTodoWidget(files[0])} onOpenFolder={() => undefined} onSave={async () => undefined} />}
+      {sceneWidgetPosition && <AppPickerDialog request={{ kind: "pickFile", params: { mimeTypes: [HIRAYA_SCENE_EXTENSION, HIRAYA_SCENE_MIME_TYPE], title: "Choose a Scene", actionLabel: "Add widget" } }} entries={entries} onCancel={() => setSceneWidgetPosition(null)} onOpenFiles={(files) => files[0] && addSceneWidget(files[0])} onOpenFolder={() => undefined} onSave={async () => undefined} />}
+      {appDialogRequests[0] && appDialogRequests[0].kind !== "confirm" && (
+        <AppPickerDialog
+          key={appDialogRequests[0].id}
+          request={appDialogRequests[0]}
+          entries={entries}
+          onCancel={() => appHostServices.dialogs.reject(appDialogRequests[0].id)}
+          onOpenFiles={(files) => {
+            const request = appDialogRequests[0];
+            const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
+            if (!running) {
+              appHostServices.dialogs.reject(request.id);
+              return;
+            }
+            appCapabilities.setInstanceMutationAllowed(request.owner.instanceId, canMutateRef.current);
+            const handles = running.install.source === "system" && running.install.appId === SYSTEM_APP_IDS.mediaViewer
+              ? grantPickedFilesWithParentScope(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files, entries)
+              : grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, files);
+            appHostServices.dialogs.respond(request.id, handles);
+          }}
+          onOpenFolder={(folder) => {
+            const request = appDialogRequests[0];
+            const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
+            if (!running) {
+              appHostServices.dialogs.reject(request.id);
+              return;
+            }
+            appCapabilities.setInstanceMutationAllowed(request.owner.instanceId, canMutateRef.current);
+            appHostServices.dialogs.respond(request.id, grantPickedFolder(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, folder));
+          }}
+          onSave={async (name, folder) => {
+            const request = appDialogRequests[0];
+            if (request.kind !== "saveFile") return;
+            const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
+            if (!running) {
+              appHostServices.dialogs.reject(request.id);
+              return;
+            }
+            if (!running.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create files on this desktop right now.", "PERMISSION_DENIED");
+            const file = await createAppFile(
+              name,
+              folder?.id ?? null,
+              positionFor(folder?.id ?? null),
+              new Blob([], {
+                type: request.params.mimeType ?? "application/octet-stream",
+              }),
+              request.params.mimeType,
+              true,
+            );
+            appHostServices.dialogs.respond(request.id, grantPickedFiles(appCapabilities, request.owner.instanceId, running.package.manifest.permissions, [file])[0]);
+          }}
+          onCreateFolder={canCreatePickerFolder ? async (name, parentId) => {
+            const request = appDialogRequests[0];
+            const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
+            if (!running?.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create folders on this desktop right now.", "PERMISSION_DENIED");
+            const folder = await createFolder(name, parentId, positionFor(parentId));
+            setEntries((current) => current.some((entry) => entry.id === folder.id) ? current : [...current, folder]);
+            return folder;
+          } : undefined}
+        />
+      )}
+      {moveDialogEntries.length > 0 && (
+        <MoveDialog
+          desktops={desktops
+            .filter((desktop) => desktop.capabilities.write && (desktop.ownership === "owned" || syncStatus === "online"))
+            .map((desktop) => ({
+              ...desktop,
+              folders: (desktopMoveFolders[desktop.id] ?? []).filter((entry): entry is Extract<DesktopEntry, { kind: "folder" }> => entry.kind === "folder"),
+            }))}
+          activeDesktopId={activeDesktopId}
+          entries={moveDialogEntries}
+          invalidIds={invalidMoveIds(moveDialogEntries)}
+          loading={moveDestinationsLoading}
+          onClose={() => {
+            setMoveDialogSubmitting(false);
+            setMoveDialogEntryIds([]);
+          }}
+          onMove={async (desktopId, parentId) => {
+            const destination = desktops.find((desktop) => desktop.id === desktopId);
+            if (!destination?.capabilities.write || (destination.ownership === "shared" && syncStatus !== "online")) throw new Error("You cannot write to that destination desktop right now.");
+            if (desktopId === activeDesktopId) await handleMoveTo(moveDialogEntries, parentId, true);
+            else {
+              const next = await transferEntries(
+                desktopId,
+                moveDialogEntries.map((entry) => entry.id),
+                parentId,
+              );
+              entriesRef.current = next.entries;
+              layoutRef.current = next.layout;
+              setEntries(next.entries);
+              setLayout(next.layout);
+              replaceSelection(selectionScope, []);
+            }
+            setMoveDialogSubmitting(false);
+            setMoveDialogEntryIds([]);
+          }}
+          onSubmittingChange={setMoveDialogSubmitting}
+        />
+      )}
+      {pendingPaste && <PasteConflictDialog roots={pendingPaste.snapshot.selectedRootIds.map((id) => pendingPaste.snapshot.entries.find((entry) => entry.id === id)!)} existingNames={entries.filter((entry) => entry.parentId === pendingPaste.parentId).map((entry) => entry.name)} onClose={() => setPendingPaste(null)} onPaste={(names) => commitPaste(pendingPaste.snapshot, pendingPaste.parentId, pendingPaste.position, names)} />}
+      {pendingDevicePaste && <PasteFromDeviceDialog error={pendingDevicePaste.error} onClose={() => setPendingDevicePaste(null)} />}
+      {activePanel === "search" && (
+        <SearchCommandPalette
+          entries={entries}
+          activeDesktopId={activeDesktopId}
+          activeDesktopName={activeDesktopName}
+          activeAuthorityCatalogId={activeDesktop?.authorityCatalogId ?? null}
+          cachedDesktopResults={cachedSearchResults}
+          searchAllDesktops={searchAllDesktops}
+          allDesktopsAvailable={desktopSearchAvailable}
+          online={syncStatus === "online"}
+          onSearchAllDesktops={searchAccessibleDesktops}
+          onSearchAllDesktopsChange={(enabled) => void changeSearchAllDesktops(enabled)}
+          apps={installedApps.map((app) => ({
+            id: app.appId,
+            name: app.manifest.name,
+            description: app.manifest.description,
+            source: app.source,
+            fileTypes: app.manifest.fileTypes,
+            available: installedAppIsAvailable(app, entries),
+          }))}
+          windows={windowSearchItems}
+          commands={searchCommands}
+          onOpenEntry={(result) => void openSearchResult(result)}
+          onLaunchApp={(appId) => {
+            const app = installedApps.find((candidate) => candidate.appId === appId);
+            if (app) launchApp(app);
+          }}
+          onFocusWindow={focusApp}
+          onRunCommand={runSearchCommand}
+          onClose={() => setActivePanel(null)}
+        />
+      )}
+      {(activePanel === "sync" || activePanel === "offline") && (
+        <PanelDialog title="Connection and Offline" onClose={() => setActivePanel(null)} restoreFocus={restoreMobileDestinationFocus}>
+          <ConnectionPanel
+            status={syncStatus}
+            records={outboxRecords}
+            lastSyncedAt={lastSyncedAt}
+            affectedLabels={outboxAffectedLabels}
+            entries={entries}
+            inventory={offlineInventory}
+            progress={offlineProgress}
+            online={syncStatus === "online"}
+            persistence={storagePersistence}
+            onRetryRecord={retrySyncIssue}
+            onDiscardRecord={discardSyncIssue}
+            onRetryDownloads={() => void downloadOfflineCopies(offlineProgress ? [...offlineProgress.errors.keys()] : [])}
+            onReleaseAll={() => void removeDownloadedCopies()}
+            onOpenHelp={() => openHelp("offline")}
+          />
+        </PanelDialog>
+      )}
+      {activePanel === "help" && (
+        <PanelDialog title="User Guide" onClose={() => setActivePanel(null)} restoreFocus={restoreMobileDestinationFocus}>
+          <HelpPanel section={helpSection} onSectionChange={setHelpSection} />
+        </PanelDialog>
+      )}
+      {activePanel === "shortcuts" && (
+        <PanelDialog title="Keyboard shortcuts" onClose={() => setActivePanel(null)} restoreFocus={restoreMobileDestinationFocus}>
+          <KeyboardShortcutsPanel shortcuts={keyboardShortcuts} />
+        </PanelDialog>
+      )}
+      {activePanel === "trash" && activeDesktop?.capabilities.read && syncStatus !== "local" && (
+        <PanelDialog title="Trash" onClose={() => setActivePanel(null)} restoreFocus={restoreMobileDestinationFocus}>
+          <TrashWindow
+            readOnly={!canMutate}
+            onListTrash={() => listTrash(activeDesktopId)}
+            onRestore={async (item, destination) => { await restoreTrash(activeDesktopId, item.entry.id, destination, item.entry.revision); invalidateShellTrashRoot(item.entry.id); }}
+            onPermanentlyDelete={async (item) => { await permanentlyDeleteTrash(activeDesktopId, item.entry.id, item.entry.revision); invalidateShellTrashRoot(item.entry.id); }}
+            onRequestPermanentDelete={(item: TrashItem, confirmedDelete) => {
+              void requestConfirmation({
+                title: `Delete ${item.entry.name} permanently?`,
+                message: "This item and everything inside it will be permanently deleted. This cannot be undone.",
+                confirmLabel: "Delete permanently",
+                danger: true,
+              }).then((confirmed) => {
+                if (confirmed) void confirmedDelete().catch(() => undefined);
+              });
+            }}
+          />
+        </PanelDialog>
+      )}
+      {publishEntryId && activeDesktop?.capabilities.manage && entries.find((entry) => entry.id === publishEntryId) && <PublishDialog desktop={activeDesktop} entry={entries.find((entry) => entry.id === publishEntryId)!} onClose={() => setPublishEntryId(null)} />}
+      {confirmation && <ConfirmationDialog {...confirmation} onClose={resolveConfirmation} />}
+      {showGettingStarted && <GettingStartedDialog local={syncStatus === "local"} installState={installState} onInstall={() => void installPwa()} onClose={() => void closeGettingStarted()} />}
+    </main>
+  );
+}
+
+export default App;

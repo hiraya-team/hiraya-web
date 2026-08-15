@@ -1,0 +1,17 @@
+{
+  "name": "@hiraya/apps-ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./elements": "./src/elements/index.ts",
+    "./elements/image-viewer": "./src/elements/image-viewer.ts",
+    "./elements/item-list": "./src/elements/item-list.ts",
+    "./styles.css": "./src/styles.css"
+  },
+  "types": "./src/index.ts",
+  "dependencies": {
+    "@hiraya-team/apps-contracts": "2.2.0"
+  }
+}

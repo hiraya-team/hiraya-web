@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Hiraya app components</title>
+  </head>
+  <body class="hiraya-app">
+    <main>
+      <h1>Hiraya app components</h1>
+      <hiraya-panel>
+        <strong slot="header">Core primitives</strong>
+        <div class="row">
+          <hiraya-button id="primary" variant="primary">Primary action</hiraya-button>
+          <hiraya-button variant="danger">Danger action</hiraya-button>
+          <hiraya-badge tone="accent">Connected</hiraya-badge>
+          <hiraya-badge tone="readonly">Read only</hiraya-badge>
+        </div>
+        <hiraya-notice dismissible><strong slot="title">Saved locally</strong><span>The draft remains available offline.</span></hiraya-notice>
+      </hiraya-panel>
+      <hiraya-panel id="body-only-panel"><span>Body only</span></hiraya-panel>
+
+      <hiraya-popover id="popover" label="Example actions">
+        <hiraya-button slot="trigger">Open popover</hiraya-button>
+        <hiraya-menu slot="content">
+          <hiraya-menu-item value="open">Open</hiraya-menu-item>
+          <hiraya-menu-item value="disabled" disabled>Unavailable</hiraya-menu-item>
+          <hiraya-menu-item value="rename">Rename</hiraya-menu-item>
+        </hiraya-menu>
+      </hiraya-popover>
+      <output id="selection">No menu action</output>
+
+      <hiraya-button id="dialog-trigger">Open dialog</hiraya-button>
+      <hiraya-dialog id="dialog">
+        <span slot="title">App dialog</span>
+        <p>Native modal behavior with Hiraya styling.</p>
+        <hiraya-button slot="actions" data-close>Close</hiraya-button>
+      </hiraya-dialog>
+
+      <hiraya-button id="sheet-trigger">Open action sheet</hiraya-button>
+      <hiraya-action-sheet id="sheet" label="File actions">
+        <hiraya-menu-item value="download">Download</hiraya-menu-item>
+        <hiraya-menu-item value="delete">Delete</hiraya-menu-item>
+      </hiraya-action-sheet>
+
+      <hiraya-selection-toolbar count="3" mode>
+        <div slot="actions"><hiraya-button>Move</hiraya-button><hiraya-button>Delete</hiraya-button></div>
+      </hiraya-selection-toolbar>
+
+      <hiraya-item-list id="item-list" label="Example items" list-role="listbox">
+        <button type="button" role="option" data-item-id="first" data-item-select data-item-activate data-item-context>First item</button>
+        <button type="button" role="option" data-item-id="second" data-item-select data-item-activate data-item-context><span>Second item</span></button>
+      </hiraya-item-list>
+      <hiraya-item-list id="reorder-list" label="Ordered items">
+        <div role="listitem" data-item-id="other"><label>Other setting <select><option value="a">A</option><option value="b">B</option></select></label></div>
+        <div role="listitem" data-item-id="third"><button type="button" data-item-reorder-handle aria-label="Reorder third item">Reorder</button><span>Third item</span></div>
+      </hiraya-item-list>
+      <output id="item-event">No item action</output>
+
+      <hiraya-image-viewer id="image" alt="Green and amber test pattern" zoom="fit"></hiraya-image-viewer>
+      <hiraya-status-bar live="polite">Component fixture ready</hiraya-status-bar>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

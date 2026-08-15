@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Integrated Editor</title>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-sidebar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9 4v16" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M3.5 18.5l2.2-8h15.1l-2.3 8H3.5Zm.5 0V6.2h6l2 2.3h7v2" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M6 3.5h8l4 4V20H6V3.5Z" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M14 3.5v4h4" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24"><path d="m9 8-4 4 4 4m6-8 4 4-4 4m-2.5-10-2 12" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="m15.5 15.5 5 5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M4 7h10m4 0h2M4 17h2m4 0h10M14 4v6M6 14v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="8" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+      <symbol id="icon-plus-file" viewBox="0 0 24 24"><path d="M5 3.5h8l4 4V12M13 3.5v4h4M5 3.5V20h7" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-plus-folder" viewBox="0 0 24 24"><path d="M3.5 19V5.5h6l2 2h9V12" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/><path d="M17 14v7m-3.5-3.5h7" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m5 16-1 4 4-1L19 8l-3-3L5 16Zm9-9 3 3" fill="none" stroke="currentColor" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-trash" viewBox="0 0 24 24"><path d="M4 7h16M9 3h6l1 4H8l1-4Zm-2 4 1 14h8l1-14M10 11v6m4-6v6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M19 8a8 8 0 1 0 .5 7M19 4v4h-4" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-upload" viewBox="0 0 24 24"><path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M5 14v5h14v-5" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8"/></symbol>
+      <symbol id="icon-x" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="1.8"/></symbol>
+    </svg>
+    <main class="app-shell">
+      <div id="content" class="app-content" aria-busy="true">
+        <hiraya-loading-state id="loading"><strong slot="title">Starting Integrated Editor...</strong><span>Preparing the file workspace.</span></hiraya-loading-state>
+        <div id="workbench" class="workbench" inert aria-hidden="true">
+          <nav class="activity-bar" aria-label="Integrated Editor views">
+            <button id="explorer-view" class="activity-button" type="button" aria-label="Explorer" title="Explorer (Ctrl+Shift+E)" aria-pressed="true" aria-expanded="true"><svg><use href="#icon-sidebar"></use></svg></button>
+            <button id="search-view" class="activity-button" type="button" aria-label="Search workspace" title="Search workspace (Ctrl+P)" aria-pressed="false" aria-expanded="false"><svg><use href="#icon-search"></use></svg></button>
+            <button id="settings-view" class="activity-button activity-button--bottom" type="button" aria-label="Settings" title="Settings" aria-pressed="false" aria-expanded="false"><svg><use href="#icon-settings"></use></svg></button>
+          </nav>
+          <button id="sidebar-backdrop" class="sidebar-backdrop" type="button" aria-label="Close sidebar" hidden></button>
+          <aside id="sidebar" class="sidebar" aria-label="Workspace sidebar">
+            <header class="sidebar-header">
+              <strong id="sidebar-title">Explorer</strong>
+              <div class="sidebar-actions" id="explorer-actions">
+                <button id="new-file" type="button" aria-label="New file" title="New file" disabled><svg><use href="#icon-plus-file"></use></svg></button>
+                 <button id="new-folder" type="button" aria-label="New folder" title="New folder" disabled><svg><use href="#icon-plus-folder"></use></svg></button>
+                 <button id="import-assets" type="button" aria-label="Import Scene assets" title="Import Scene assets" hidden disabled><svg><use href="#icon-upload"></use></svg></button>
+                <button id="rename-entry" type="button" aria-label="Rename selected item" title="Rename selected item (F2)" disabled><svg><use href="#icon-pencil"></use></svg></button>
+                <button id="delete-entry" type="button" aria-label="Delete selected item" title="Delete selected item" disabled><svg><use href="#icon-trash"></use></svg></button>
+                <button id="refresh-tree" type="button" aria-label="Refresh explorer" title="Refresh explorer" disabled><svg><use href="#icon-refresh"></use></svg></button>
+              </div>
+              <button id="close-sidebar" type="button" aria-label="Close sidebar" title="Close sidebar"><svg><use href="#icon-x"></use></svg></button>
+            </header>
+            <section id="explorer-panel" class="sidebar-panel">
+              <button id="open-workspace" class="workspace-picker" type="button" disabled><svg><use href="#icon-folder-open"></use></svg><span>Open workspace</span></button>
+              <button id="workspace-heading" class="workspace-heading" type="button" hidden></button>
+              <div id="file-tree" class="file-tree" role="tree" aria-label="Workspace files"></div>
+            </section>
+            <section id="search-panel" class="sidebar-panel search-panel" hidden>
+              <label class="search-box"><svg><use href="#icon-search"></use></svg><input id="workspace-search" type="search" placeholder="Search files by name" aria-label="Search files by name" autocomplete="off" spellcheck="false"></label>
+              <hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files"></hiraya-item-list>
+            </section>
+            <section id="settings-panel" class="sidebar-panel settings-page" aria-labelledby="settings-title" hidden>
+              <div class="settings-group">
+                <strong id="settings-title">Text editing</strong>
+                <label>Font size <select id="font-size" aria-label="Editor font size" disabled><option>11</option><option>13</option><option>15</option><option>18</option><option>22</option></select></label>
+                <label><input id="line-wrap" type="checkbox" disabled> Wrap long lines</label>
+                <label><input id="auto-save" type="checkbox" disabled> Auto-save changes</label>
+                <label><input id="auto-format" type="checkbox" disabled> Format on save</label>
+              </div>
+            </section>
+          </aside>
+          <section class="editor-stage">
+            <div id="tabs" class="editor-tabs" role="toolbar" aria-label="Open files"></div>
+            <nav id="breadcrumbs" class="breadcrumbs" aria-label="Current folder path" hidden></nav>
+            <div id="stage-content" class="stage-content">
+              <div id="editor"></div>
+              <div id="preview" class="file-preview" tabindex="-1" hidden></div>
+              <section id="scene-preview-pane" class="scene-preview-pane" aria-labelledby="scene-preview-title" hidden>
+                <header><strong id="scene-preview-title">Live preview</strong><span id="scene-preview-state">Waiting</span></header>
+                <div id="scene-preview"><div class="scene-preview-empty">Open a Scene file to preview it.</div></div>
+                <p id="scene-validation" role="status">Draft validation appears here.</p>
+              </section>
+            </div>
+          </section>
+        </div>
+      </div>
+      <hiraya-status-bar live="polite"><span id="status">Connecting...</span><hiraya-badge tone="warning" id="scene-conflict" hidden>Remote conflict</hiraya-badge><hiraya-badge tone="readonly" id="write-state" hidden>Read-only</hiraya-badge></hiraya-status-bar>
+    </main>
+    <dialog id="entry-dialog" class="entry-dialog" aria-labelledby="entry-dialog-title">
+      <form method="dialog">
+        <strong id="entry-dialog-title">New file</strong>
+        <label><span id="entry-dialog-label">File name</span><input id="entry-name" required autocomplete="off" spellcheck="false"></label>
+        <p id="entry-dialog-error" class="dialog-error" role="alert" hidden></p>
+        <div class="dialog-actions"><button value="cancel">Cancel</button><button id="entry-submit" value="confirm">Create</button></div>
+      </form>
+    </dialog>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
