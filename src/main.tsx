@@ -1,0 +1,71 @@
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { bootstrapSession, readCachedSession } from "./lib/auth";
+import { UpgradeRequiredError } from "./lib/wire-authority";
+import { publicAuthorityFromPath } from "./lib/public-desktop";
+import "./styles/index.css";
+
+const frontendOnly = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
+
+const root = document.getElementById("root")!;
+const cachedSession = frontendOnly ? null : readCachedSession();
+if (!cachedSession) root.innerHTML = `<main class="startup-state" role="status"><img class="brand-mark__shape" src="${import.meta.env.BASE_URL}pwa-192x192.png" alt=""><div><strong>Hiraya</strong><span>Opening your desktop...</span></div></main>`;
+
+async function retireUnscopedServiceWorker() {
+  if (!import.meta.env.PROD || frontendOnly || localStorage.getItem("hiraya-auth-pwa-rollout-v1") === "complete") return;
+  if (localStorage.getItem("hiraya-auth-pwa-rollout-v1") === "reloading") {
+    localStorage.setItem("hiraya-auth-pwa-rollout-v1", "complete");
+    return;
+  }
+  const controlled = "serviceWorker" in navigator && navigator.serviceWorker.controller !== null;
+  if ("serviceWorker" in navigator) {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map((registration) => registration.unregister()));
+  }
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((key) => caches.delete(key)));
+  }
+  if (controlled) {
+    localStorage.setItem("hiraya-auth-pwa-rollout-v1", "reloading");
+    window.location.reload();
+    await new Promise<never>(() => undefined);
+  }
+  localStorage.setItem("hiraya-auth-pwa-rollout-v1", "complete");
+}
+
+async function start() {
+  if (import.meta.env.DEV) {
+    if ("serviceWorker" in navigator) void navigator.serviceWorker.getRegistrations().then((registrations) => Promise.all(registrations.map((registration) => registration.unregister())));
+    if ("caches" in window) void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))));
+  }
+	const publicAuthority = publicAuthorityFromPath(window.location.pathname);
+	if (publicAuthority) {
+		const { default: PublicDesktop } = await import("./PublicDesktop");
+		createRoot(root).render(<StrictMode><PublicDesktop authority={publicAuthority} /></StrictMode>);
+    return;
+  }
+  await retireUnscopedServiceWorker();
+  const sessionRequest = bootstrapSession(frontendOnly);
+  const session = cachedSession ?? await sessionRequest;
+  const { configureSyncAuthority } = await import("./lib/sync");
+  configureSyncAuthority(session?.catalogId ?? null, session?.directBlobOrigin, session?.capabilities.thumbnails === "thumbnail-v1");
+  const { configureStorageNamespace, LOCAL_STORAGE_ID } = await import("./platform/storage/namespace");
+  await configureStorageNamespace(session?.storageId ?? LOCAL_STORAGE_ID);
+  const { default: App } = await import("./App");
+  createRoot(root).render(
+    <StrictMode>
+      <App session={session} warmStart={cachedSession !== null} />
+    </StrictMode>,
+  );
+  if (cachedSession) void sessionRequest.then((fresh) => {
+    if (fresh && JSON.stringify(fresh) !== JSON.stringify(cachedSession)) window.location.reload();
+  }).catch(() => undefined);
+}
+
+void start().catch((error: unknown) => {
+  if (error instanceof Error && error.name === "AuthenticationRequiredError") return;
+  const upgradeRequired = error instanceof UpgradeRequiredError;
+  root.innerHTML = `<main class="startup-error"><h1>${upgradeRequired ? "Hiraya must be updated" : "Hiraya could not start"}</h1><p>${String(error instanceof Error ? error.message : error).replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" })[character]!)}</p><button class="button button--primary" type="button">${upgradeRequired ? "Check again" : "Reload Hiraya"}</button></main>`;
+  root.querySelector("button")?.addEventListener("click", () => window.location.reload());
+});

@@ -1,15 +1,21 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable", "WebWorker"],
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "skipLibCheck": true,
+    "esModuleInterop": true,
     "module": "ESNext",
     "moduleResolution": "Bundler",
-    "jsx": "preserve",
-    "jsxImportSource": "@solidjs/web",
-    "strict": true,
-    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "types": ["node"],
     "noEmit": true,
-    "types": ["vite/client"]
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true
   },
-  "include": ["src", "build", "tests", "e2e", "vite.config.ts", "playwright.config.ts"]
+  "include": ["src", "build/**/*.ts", "vite.config.ts", "packages/app-runtime/src", "packages/apps-ui/src"],
+  "exclude": ["packages/app-runtime/src/**/*.test.ts", "packages/apps-ui/src/**/*.test.ts"]
 }

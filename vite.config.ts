@@ -1,17 +1,70 @@
-import solid from "@solidjs/vite-plugin";
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
+import react from "@vitejs/plugin-react";
+import { VitePWA } from "vite-plugin-pwa";
+import { seededDesktopPlugin } from "./build/seeded";
+import { systemAppsPlugin } from "./build/system-apps";
+import { navigationFallbackDenylist } from "./build/navigation";
+import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
 
-export default defineConfig(() => {
-  const base = process.env.HIRAYA_BASE_PATH || "/";
-  if (!base.startsWith("/") || !base.endsWith("/")) throw new Error("HIRAYA_BASE_PATH must start and end with '/'.");
+export default defineConfig(({ mode }) => {
+  const env = { ...loadEnv(mode, process.cwd(), "HIRAYA_"), ...process.env };
+  const historyLimit = env.HIRAYA_HISTORY_LIMIT ? Number(env.HIRAYA_HISTORY_LIMIT) : 1000;
+  if (!Number.isSafeInteger(historyLimit) || historyLimit <= 0) throw new Error("HIRAYA_HISTORY_LIMIT must be a positive integer.");
+  const base = env.HIRAYA_BASE_PATH || "/";
   return {
     base,
-    plugins: [solid()],
+    define: {
+      "import.meta.env.HIRAYA_BUILD_TIMESTAMP": JSON.stringify(new Date().toISOString()),
+      "import.meta.env.HIRAYA_FRONTEND_ONLY": JSON.stringify(env.HIRAYA_FRONTEND_ONLY === "true" ? "true" : "false"),
+      "import.meta.env.HIRAYA_HISTORY_LIMIT": JSON.stringify(String(historyLimit)),
+    },
+    plugins: [
+      appsUiRuntimePlugin(process.cwd()),
+      seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
+      systemAppsPlugin(process.cwd()),
+      react(),
+      VitePWA({
+        useCredentials: true,
+        includeAssets: ["favicon.png", "apple-touch-icon.png", "logo.png"],
+        manifest: {
+          name: "Hiraya Desktop",
+          short_name: "Hiraya",
+          description: "A private, browser-native desktop for your files.",
+          theme_color: "#24333b",
+          background_color: "#172329",
+          start_url: ".",
+          scope: ".",
+          icons: [
+            { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
+            { src: "logo.png", sizes: "512x512", type: "image/png" },
+            { src: "pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          ],
+        },
+        workbox: {
+          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
+          navigateFallbackDenylist: navigationFallbackDenylist(),
+        },
+      }),
+    ],
     server: {
       allowedHosts: [".exe.xyz"],
-      headers: { "Cache-Control": "no-store" },
-      proxy: { "/api": "http://127.0.0.1:8080" },
+      headers: {
+        "Cache-Control": "no-store",
+      },
+      proxy: {
+        "/api": "http://127.0.0.1:8080",
+        "/r": "http://127.0.0.1:8080",
+      },
     },
-    build: { manifest: true },
+    build: {
+      manifest: true,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes("/node_modules/") && (id.includes("/@codemirror/") || id.includes("/codemirror/") || id.includes("/@lezer/"))) return "editor-runtime";
+          },
+        },
+      },
+    },
   };
 });

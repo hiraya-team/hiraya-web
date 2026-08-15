@@ -1,0 +1,108 @@
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { registerTransientDismiss } from "../ui/transient-dismiss";
+
+type Props = {
+  label: string;
+  icon: ReactNode;
+  onTriggerElement?: (element: HTMLButtonElement | null) => void;
+  children: (dismiss: (restoreFocus?: boolean) => void) => ReactNode;
+};
+
+export function MobileHeaderMenu({ label, icon, onTriggerElement, children }: Props) {
+  const menuRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
+  const dismiss = (restoreFocus = true) => {
+    setOpen(false);
+    if (restoreFocus) requestAnimationFrame(() => triggerRef.current?.focus());
+  };
+
+  const positionPanel = useCallback(() => {
+    const trigger = triggerRef.current;
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    const viewportLeft = viewport?.offsetLeft ?? 0;
+    const viewportTop = viewport?.offsetTop ?? 0;
+    const viewportWidth = viewport?.width ?? window.innerWidth;
+    const viewportHeight = viewport?.height ?? window.innerHeight;
+    const gap = 4;
+    const edge = 10;
+    const width = Math.min(280, viewportWidth - edge * 2);
+    const spaceBelow = viewportTop + viewportHeight - rect.bottom - gap - edge;
+    const spaceAbove = rect.top - viewportTop - gap - edge;
+    const openAbove = spaceBelow < 180 && spaceAbove > spaceBelow;
+    setPanelStyle({
+      left: Math.min(Math.max(viewportLeft + edge, rect.right - width), viewportLeft + viewportWidth - width - edge),
+      ...(openAbove ? { top: Math.max(viewportTop + edge, rect.top - gap - (panelRef.current?.offsetHeight ?? Math.min(360, spaceAbove))) } : { top: rect.bottom + gap }),
+      maxHeight: Math.max(100, openAbove ? spaceAbove : spaceBelow),
+    });
+  }, []);
+
+  useEffect(() => {
+    const handlePointerDown = (event: PointerEvent) => {
+      if (open && !menuRef.current?.contains(event.target as Node)) dismiss();
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && open) {
+        event.preventDefault();
+        event.stopPropagation();
+        dismiss();
+        triggerRef.current?.focus();
+      } else if (event.key === "Tab" && open && panelRef.current) {
+        const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>("summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex='-1'])"));
+        const first = focusable[0];
+        const last = focusable.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const unregisterDismiss = registerTransientDismiss(dismiss);
+    const reposition = () => positionPanel();
+    window.addEventListener("resize", reposition);
+    window.addEventListener("scroll", reposition, true);
+    window.visualViewport?.addEventListener("resize", reposition);
+    window.visualViewport?.addEventListener("scroll", reposition);
+    return () => {
+      unregisterDismiss();
+      window.removeEventListener("resize", reposition);
+      window.removeEventListener("scroll", reposition, true);
+      window.visualViewport?.removeEventListener("resize", reposition);
+      window.visualViewport?.removeEventListener("scroll", reposition);
+    };
+  }, [open, positionPanel]);
+
+  useEffect(() => {
+    if (open) requestAnimationFrame(() => {
+      positionPanel();
+      panelRef.current?.querySelector<HTMLElement>("summary, button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled)")?.focus();
+    });
+  }, [open, positionPanel]);
+
+  return (
+    <div className="mobile-header-menu" ref={menuRef}>
+      <button ref={(element) => { triggerRef.current = element; onTriggerElement?.(element); }} className="mobile-header-menu__trigger" type="button" aria-label={label} title={label} aria-haspopup="dialog" aria-expanded={open} onClick={() => {
+        if (open) dismiss();
+        else {
+          positionPanel();
+          setOpen(true);
+        }
+      }}>{icon}</button>
+      {open && <div ref={panelRef} className="mobile-header-menu__panel" role="dialog" aria-label={label} style={panelStyle}>
+        {children(dismiss)}
+      </div>}
+    </div>
+  );
+}

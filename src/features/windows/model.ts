@@ -1,0 +1,56 @@
+import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
+import type { RpcDispatcher } from "@hiraya/app-runtime";
+import type { FileService } from "../../apps/host";
+import type { InstalledApp } from "../../apps/installed-apps";
+import type { AppCommandContext, RuntimeCommandContributions } from "../../apps/commands";
+import { extractBuiltinAppTarget } from "../../apps/registry";
+import type { SystemAppTarget } from "../../apps/types";
+import type { BuiltinAppWindow } from "../../apps/types";
+import type { FileEntry } from "../../types";
+import { projectLogicalPosition, type SurfaceSegment } from "../../ui/desktop-geometry";
+import type { WindowBounds } from "../../ui/window-manager";
+import type { WindowTarget } from "../../lib/window-session";
+
+export type BaseRunningApp = { id: string; bounds: WindowBounds; minimized: boolean; zIndex: number; transient?: boolean };
+export type FileApp = BaseRunningApp & { kind: "file"; fileId: string; file?: FileEntry; blob?: File; editable?: boolean; loadError?: string; editMode: boolean; contentRevision: number; remoteChanged: boolean };
+export type ExplorerApp = BaseRunningApp & { kind: "explorer"; folderId: string | null };
+export type SettingsApp = BaseRunningApp & { kind: "settings" };
+export type StoreApp = BaseRunningApp & { kind: "store" };
+export type PropertiesApp = BaseRunningApp & { kind: "properties"; entryId: string };
+export type MergeApp = BaseRunningApp & { kind: "merge"; operationId: string };
+export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; commands: RuntimeCommandContributions<AppCommandContext>; systemTarget?: SystemAppTarget };
+export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | MergeApp | SandboxApp;
+
+export const MERGE_APP_WINDOW: BuiltinAppWindow = { width: 960, height: 700, minWidth: 420, minHeight: 360 };
+
+export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
+  return apps.flatMap((app): WindowTarget[] => {
+    if (app.transient) return [];
+    if (app.kind === "sandbox" && app.systemTarget) return [app.systemTarget];
+    const target = extractBuiltinAppTarget(app);
+    return target ? [target] : [];
+  });
+}
+
+export function runningAppIds(apps: readonly RunningApp[]) {
+  return apps.filter((app) => !app.transient).map((app) => app.id);
+}
+
+export function windowsForHiddenFilePreference(apps: readonly RunningApp[], showHiddenFiles: boolean) {
+  return showHiddenFiles ? [...apps] : apps.filter((app) => !app.transient);
+}
+
+export function runningAppSegment(app: RunningApp, size: { width: number; height: number }) {
+  return projectLogicalPosition(app.bounds, size).segment;
+}
+
+export function runningAppIsInSegment(app: RunningApp, segment: SurfaceSegment, size: { width: number; height: number }) {
+  const projected = runningAppSegment(app, size);
+  return projected.column === segment.column && projected.row === segment.row;
+}
+
+export function topRunningAppInSegment(apps: readonly RunningApp[], segment: SurfaceSegment, size: { width: number; height: number }, excludedId?: string) {
+  return [...apps]
+    .filter((app) => app.id !== excludedId && !app.minimized && runningAppIsInSegment(app, segment, size))
+    .sort((left, right) => right.zIndex - left.zIndex)[0] ?? null;
+}

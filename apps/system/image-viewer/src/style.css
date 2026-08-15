@@ -1,0 +1,10 @@
+@import "@hiraya/system-apps-shared/styles.css";
+.stage { position: relative; display: grid; min-height: 0; overflow: hidden; }
+.image-content { position: relative; display: grid; min-width: 0; min-height: 0; }
+.image-content > * { min-width: 0; min-height: 0; grid-area: 1 / 1; }
+.stage-toolbar { position: absolute; z-index: 1; inset: .65rem .65rem auto auto; display: flex; align-items: center; gap: .35rem; padding: .3rem; border: 1px solid var(--hiraya-border); border-radius: .55rem; background: var(--hiraya-surface-elevated); box-shadow: 0 .25rem .8rem rgb(0 0 0 / 14%); }
+.stage-toolbar hiraya-button::part(button) { min-width: 2.25rem; padding-inline: .55rem; }
+#viewer { width: 100%; height: 100%; min-height: 0; background-color: var(--hiraya-background); background-image: linear-gradient(45deg,var(--hiraya-surface) 25%,transparent 25%),linear-gradient(-45deg,var(--hiraya-surface) 25%,transparent 25%),linear-gradient(45deg,transparent 75%,var(--hiraya-surface) 75%),linear-gradient(-45deg,transparent 75%,var(--hiraya-surface) 75%); background-position: 0 0,0 8px,8px -8px,-8px 0; background-size: 16px 16px; }
+#empty { height: 100%; }
+#zoom { min-width: 3.5rem; text-align: center; color: var(--hiraya-text-muted); }
+@media (max-width: 520px) { .stage-toolbar { inset: .45rem .45rem auto; overflow-x: auto; } .stage-toolbar hiraya-button::part(button) { min-height: 44px; } }

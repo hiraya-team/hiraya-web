@@ -1,0 +1,67 @@
+:root {
+  font-family: "Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  color: #f4f6f1;
+  background: #172329;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --accent: #e7b964;
+  --ink: #192229;
+  --glass: rgba(22, 31, 35, 0.7);
+  --window: #f2f1eb;
+  --window-muted: #6f7674;
+  --radius: 14px;
+  --radius-control: 8px;
+  --radius-panel: 14px;
+  --touch-target: 44px;
+  --layer-chrome: 20;
+  --layer-notification: 4900;
+  --layer-popover: 5000;
+  --layer-switcher: 5200;
+  --layer-shell-popover: 5300;
+  --layer-panel: 6000;
+  --layer-command: 6100;
+  --layer-confirmation: 6200;
+  --layer-onboarding: 6250;
+  --layer-modal: 6300;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+button {
+  color: inherit;
+}
+
+hiraya-item-list {
+  display: grid;
+  min-width: 0;
+}
+
+.item-list__items {
+  display: contents;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+a:focus-visible {
+  outline: 2px solid #e7b964;
+  outline-offset: 2px;
+}

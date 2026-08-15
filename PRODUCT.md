@@ -8,37 +8,48 @@ web
 
 ## Users
 
-People preparing to use a self-hosted, local-first Hiraya workspace in a current Chromium browser.
+People using a self-hosted Hiraya desktop to spatially organize files, personalize shared desktops, and publish read-only desktops.
 
 ## Product Purpose
 
-Hiraya is rebuilding its browser workspace around independent durable file records and selective synchronization. The current milestone proves a small installable shell, required storage capabilities, and safe offline startup before any file data is created.
+Hiraya is a local-first browser desktop whose server is authoritative when synchronization is enabled. A desktop owns its files, hierarchy, layout, appearance, sharing, and permissions.
 
 ## Positioning
 
-Hiraya treats offline durability as the foundation rather than a fallback. This build is intentionally a foundation shell, not the previous desktop product.
+Hiraya combines a spatial desktop interaction model with synchronized, server-authoritative files and appearance that remain usable through short outages.
+
+## Operating Context
+
+Hiraya runs as an installable PWA or browser tab. Users open files and `.hiraya.app` packages from the desktop, customize appearance in Settings, and may publish a desktop for anonymous read-only access.
 
 ## Capabilities and Constraints
 
-- Starts as a SolidJS shell in current Chromium.
-- Reports unsupported browser storage capabilities explicitly.
-- Reloads offline after one successful online load.
-- Keeps API and server routes out of service-worker caches.
-- Contains no application platform, public desktop, sharing, editor, viewer, themes, widgets, or legacy data compatibility.
-- Does not create or inspect browser workspace storage yet.
+- `.hiraya.app` packages may contain sandboxed apps or importable themes.
+- Importing a theme applies it to the current desktop; there is no separate installed-theme package manager.
+- Theme packages may include static, animated, or sandboxed executable wallpaper scenes.
+- Packaged wallpaper assets are hidden, synchronized desktop resources owned by the imported custom theme and cleaned up with it.
+- Wallpaper scenes have no Hiraya host API, file access, or network access. They may observe normalized pointer activity below app windows, while the desktop shell remains the native event owner.
+- Public desktops run the selected scene for anonymous visitors.
+- Animated and scene wallpapers may omit a poster; reduced-motion and failure states use the built-in Hiraya Dusk wallpaper.
+- The original visible package file is independent of the imported hidden resource.
+- The server remains authoritative in synchronized mode; browser OPFS is a cache and projected offline desktop.
 
 ## Brand Commitments
 
-Preserve the Hiraya name, dusk-green environment, amber accent, restrained chrome, familiar controls, and direct language.
+Preserve the Hiraya name, dusk-green wallpaper, amber accent, translucent menu bar, restrained desktop chrome, Phosphor icons, and familiar desktop interaction model.
+
+## Evidence on Hand
+
+The repository contains the production React desktop, strict app package parser and sandbox, custom theme editor, wallpaper controls, public desktop renderer, synchronized Go API, durable blob storage, and operational backup and migration paths.
 
 ## Product Principles
 
-- Durable local work comes before broad features.
-- Never imply data exists before it is committed.
-- Keep network and cache authority explicit.
-- Prefer browser-native controls and capabilities.
-- Make unavailable states exact and actionable.
+- Keep desktop behavior familiar and predictable.
+- Validate untrusted packages before any state becomes visible.
+- Persist bytes before metadata and publish synchronized changes only after commit.
+- Keep package execution isolated and capabilities explicit.
+- Preserve accessibility, including keyboard operation and reduced-motion behavior.
 
 ## Accessibility & Inclusion
 
-Meet WCAG AA contrast, preserve keyboard operation and visible focus, provide approximately 44-pixel targets, support 200% zoom and narrow screens, and honor reduced-motion and forced-color preferences.
+Meet WCAG AA contrast, preserve keyboard and Escape behavior, keep controls usable at mobile widths, and never run animated or executable wallpaper when `prefers-reduced-motion` is active.

@@ -1,0 +1,61 @@
+{
+  "themes": [
+    {
+      "name": "accessible dusk",
+      "valid": true,
+      "theme": {
+        "id": "fixture-dusk",
+        "name": "Fixture Dusk",
+        "definition": {
+          "colors": {
+            "shell": "#25383d", "chrome": "#141c1f", "chromeText": "#f4f6f1", "window": "#f2f1eb", "windowMuted": "#e4e4dd",
+            "text": "#192229", "textMuted": "#59625f", "accent": "#e7b964", "accentText": "#20261f", "border": "#c6c9c1",
+            "danger": "#983c34", "dangerSurface": "#f3dfdc", "desktopText": "#ffffff", "selection": "#96651d"
+          },
+          "shape": { "radius": 14, "borderWidth": 1 },
+          "effects": { "blur": 22, "opacity": 0.9, "shadow": 0.55 },
+          "treatment": { "gradientStrength": 0.6, "gradientAngle": 135, "texture": "halftone", "textureStrength": 0.7, "textureScale": 6, "pixelated": true },
+          "typography": { "family": "humanist", "scale": 1, "weight": 600 },
+          "density": 1, "motion": 1, "iconSize": 60
+        }
+      }
+    },
+    {
+      "name": "collapsed semantic surfaces",
+      "valid": false,
+      "theme": {
+        "id": "fixture-gray",
+        "name": "Fixture Gray",
+        "definition": {
+          "colors": {
+            "shell": "#777777", "chrome": "#777777", "chromeText": "#777777", "window": "#777777", "windowMuted": "#777777",
+            "text": "#777777", "textMuted": "#777777", "accent": "#777777", "accentText": "#777777", "border": "#777777",
+            "danger": "#777777", "dangerSurface": "#777777", "desktopText": "#777777", "selection": "#777777"
+          },
+          "shape": { "radius": 14, "borderWidth": 1 },
+          "effects": { "blur": 22, "opacity": 0.9, "shadow": 0.55 },
+          "typography": { "family": "humanist", "scale": 1, "weight": 600 },
+          "density": 1, "motion": 1, "iconSize": 60
+        }
+      }
+    }
+  ],
+  "mimeTypes": [
+    { "value": "application/octet-stream", "valid": true },
+    { "value": "application/vnd.api+json", "valid": true },
+    { "value": "text/plain; charset=utf-8", "valid": true },
+    { "value": "text/plain; title=\"a b\"", "valid": true },
+    { "value": " text/plain", "valid": false },
+    { "value": "text", "valid": false },
+    { "value": "text/pla(in", "valid": false },
+    { "value": "text/plain; charset=utf-8; CHARSET=ascii", "valid": false },
+    { "value": "text/plain\n", "valid": false },
+    { "value": "text/plain; title=\"unterminated", "valid": false }
+  ],
+  "revisions": [
+    { "value": 0, "valid": true },
+    { "value": 9007199254740991, "valid": true },
+    { "value": -1, "valid": false },
+    { "value": 9007199254740992, "valid": false }
+  ]
+}

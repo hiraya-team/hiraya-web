@@ -1,0 +1,73 @@
+import { describe, expect, test } from "bun:test";
+import {
+  createInternetShortcut,
+  parseInternetShortcut,
+  parseShortcutUrl,
+} from "../src/lib/internet-shortcut";
+import { fileCapabilities } from "../src/ui/file-capabilities";
+
+describe("internet shortcuts", () => {
+  test("creates a domain-named Windows Internet Shortcut", () => {
+    const shortcut = createInternetShortcut("  https://example.com/search?q=a=b  ");
+    expect(shortcut.name).toBe("example.com.url");
+    expect(shortcut.content).toBe("[InternetShortcut]\r\nURL=https://example.com/search?q=a=b\r\n");
+    expect(parseInternetShortcut(shortcut.content).url).toBe(shortcut.url);
+  });
+
+  test("uses the scheme when a custom URL has no hostname", () => {
+    expect(createInternetShortcut("mailto:user@example.com").name).toBe("mailto.url");
+  });
+
+  test("parses BOM, case-insensitive sections, CRLF, and equals signs", () => {
+    const shortcut = parseInternetShortcut("\uFEFF[internetshortcut]\r\nurl=https://example.com/search?q=a=b\r\n");
+    expect(shortcut).toEqual({ url: "https://example.com/search?q=a=b", scheme: "https" });
+  });
+
+  test("ignores URL settings outside the InternetShortcut section", () => {
+    const content = "[Other]\nURL=https://wrong.example\n[InternetShortcut]\nURL=mailto:user@example.com\n";
+    expect(parseInternetShortcut(content).url).toBe("mailto:user@example.com");
+  });
+
+  test("accepts custom schemes and rejects executable or local schemes", () => {
+    expect(parseShortcutUrl("steam://run/123")).toMatchObject({ scheme: "steam" });
+    for (const url of ["javascript:alert(1)", "JaVaScRiPt:alert(1)", "vbscript:msgbox(1)", "data:text/plain,hello", "blob:https://example.com/id", "file:///tmp/file.txt", "filesystem:https://example.com/temporary/file"]) {
+      expect(() => parseShortcutUrl(url)).toThrow("cannot be opened");
+    }
+  });
+
+  test("rejects missing, relative, and malformed URLs", () => {
+    expect(() => parseInternetShortcut("[InternetShortcut]\nURL=\n")).toThrow("complete URL");
+    expect(() => parseShortcutUrl("example.com")).toThrow("complete URL");
+    expect(() => parseShortcutUrl("https://exa mple.com")).toThrow("valid URL");
+    expect(() => parseShortcutUrl("https://example.com\nIconFile=unsafe")).toThrow("control characters");
+  });
+
+  test("recognizes URL shortcuts without relying on their MIME type", () => {
+    const capabilities = fileCapabilities({
+      kind: "file",
+      id: "shortcut",
+      name: "Website.URL",
+      parentId: null,
+      mimeType: "application/octet-stream",
+      size: 0,
+      modifiedAt: 1,
+      position: { x: 0, y: 0 },
+    });
+    expect(capabilities).toEqual({ editable: true, preview: "url", icon: "url" });
+  });
+
+  test("renders Markdown by default while keeping it text-editable", () => {
+    for (const [name, mimeType] of [["README.md", "application/octet-stream"], ["README.markdown", "text/plain"], ["README", "text/markdown; charset=utf-8"]]) {
+      expect(fileCapabilities({
+        kind: "file",
+        id: name,
+        name,
+        parentId: null,
+        mimeType,
+        size: 0,
+        modifiedAt: 1,
+        position: { x: 0, y: 0 },
+      }).preview).toBe("markdown");
+    }
+  });
+});
