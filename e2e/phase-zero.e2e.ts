@@ -1,11 +1,22 @@
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+
+async function openShell(page: Page) {
+  await page.goto("/");
+  if (new URL(page.url()).pathname !== "/login") return;
+  const email = process.env.HIRAYA_E2E_EMAIL;
+  const password = process.env.HIRAYA_E2E_PASSWORD;
+  if (!email || !password) throw new Error("The server redirected to login without HIRAYA_E2E_EMAIL and HIRAYA_E2E_PASSWORD.");
+  await page.locator('input[name="email"]').fill(email);
+  await page.locator('input[name="password"]').fill(password);
+  await Promise.all([page.waitForURL((url) => url.pathname === "/"), page.getByRole("button", { name: "Sign in" }).click()]);
+}
 
 test("renders an accessible responsive shell", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/");
+  await openShell(page);
   await expect(page.getByRole("heading", { name: "Your local workspace is ready." })).toBeVisible();
   const control = page.getByRole("button", { name: "Reload shell" });
   await control.focus();
@@ -25,7 +36,7 @@ test("shows an explicit unsupported-storage state", async ({ browser }) => {
   const context = await browser.newContext();
   await context.addInitScript(() => Object.defineProperty(navigator.storage, "getDirectory", { configurable: true, value: undefined }));
   const page = await context.newPage();
-  await page.goto("/");
+  await openShell(page);
   await expect(page.getByRole("heading", { name: "This browser cannot open Hiraya yet." })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("origin-private file storage");
   await context.close();
@@ -34,7 +45,7 @@ test("shows an explicit unsupported-storage state", async ({ browser }) => {
 test("reports service-worker installation failure", async ({ browser }) => {
   const context = await browser.newContext({ serviceWorkers: "block" });
   const page = await context.newPage();
-  await page.goto("/");
+  await openShell(page);
   await expect(page.getByRole("heading", { name: "Offline setup needs attention." })).toBeVisible();
   await expect(page.getByRole("status")).toContainText("could not be installed");
   await context.close();
@@ -43,7 +54,7 @@ test("reports service-worker installation failure", async ({ browser }) => {
 test("preserves caches outside this shell scope", async ({ page }) => {
   await page.goto("/icon.svg");
   await page.evaluate(async () => { await caches.open("hiraya-shell-unrelated-scope"); });
-  await page.goto("/");
+  await openShell(page);
   await expect(page.getByRole("heading", { name: "Your local workspace is ready." })).toBeVisible();
   expect(await page.evaluate(async () => (await caches.keys()).includes("hiraya-shell-unrelated-scope"))).toBe(true);
 });
@@ -51,7 +62,7 @@ test("preserves caches outside this shell scope", async ({ page }) => {
 test("installs the manifest and reloads offline without caching API requests", async ({ page, context }) => {
   const failures: string[] = [];
   page.on("requestfailed", (request) => failures.push(`${new URL(request.url()).pathname}: ${request.failure()?.errorText}`));
-  await page.goto("/");
+  await openShell(page);
   const manifest = await page.request.get("/manifest.webmanifest");
   expect(manifest.ok()).toBe(true);
   expect((await manifest.json()).icons[0].src).toBe("icon.svg");
@@ -77,6 +88,6 @@ test("installs the manifest and reloads offline without caching API requests", a
 
 test("removes nonessential motion when requested", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
-  await page.goto("/");
+  await openShell(page);
   expect(await page.getByRole("button").evaluate((element) => getComputedStyle(element).transitionDuration)).toBe("0s");
 });
