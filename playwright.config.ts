@@ -1,12 +1,11 @@
 import { defineConfig, devices } from "@playwright/test";
 
-const port = process.env.PLAYWRIGHT_PORT ?? "4173";
+const port = process.env.PLAYWRIGHT_PORT ?? "4187";
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
-  testIgnore: "**/server-integration.e2e.ts",
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? "github" : "list",
@@ -15,11 +14,11 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [{ name: "chromium-desktop", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `bun run preview -- --host 127.0.0.1 --port ${port}`,
     url: `http://127.0.0.1:${port}`,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 });
