@@ -1,0 +1,11 @@
+{
+  "name": "Hiraya",
+  "short_name": "Hiraya",
+  "description": "A local-first workspace for your files.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#142426",
+  "theme_color": "#1d3032",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
