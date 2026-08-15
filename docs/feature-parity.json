@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "webCommit": "d4ea4390d9bb3ac4ad2080eb331b3e084f8bc13c",
+    "description": "React desktop before web2-sync-v1 adoption"
+  },
+  "gates": [
+    {
+      "id": "web-local",
+      "command": "bun run test:e2e"
+    },
+    {
+      "id": "server-backed",
+      "command": "../scripts/server-browser-e2e.sh"
+    }
+  ],
+  "suites": [
+    {
+      "id": "desktop",
+      "gate": "web-local",
+      "file": "e2e/desktop.e2e.ts"
+    },
+    {
+      "id": "public-desktop",
+      "gate": "web-local",
+      "file": "e2e/public-desktop.e2e.ts"
+    },
+    {
+      "id": "server-integration",
+      "gate": "server-backed",
+      "file": "e2e/server-integration.e2e.ts"
+    }
+  ],
+  "capabilities": [
+    {
+      "id": "shell.windows-keyboard-focus",
+      "name": "Window, keyboard, focus, and fine-pointer behavior",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "keyboard modal traps focus, closes with Escape, and restores its invoker" },
+          { "suite": "desktop", "test": "close-window shortcut closes the focused window without claiming the empty desktop" },
+          { "suite": "desktop", "test": "clicking inside a sandbox app focuses and raises its window" },
+          { "suite": "desktop", "test": "fine pointers use overlapping window chrome and positioned context menus" }
+        ]
+      }
+    },
+    {
+      "id": "apps.system-and-file-services",
+      "name": "System apps, launch, file pickers, editing, and formatting",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "search launches installed apps" },
+          { "suite": "desktop", "test": "application shortcuts launch from the desktop and persist" },
+          { "suite": "desktop", "test": "terminal runs pipelines against Hiraya files and stops foreground work" },
+          { "suite": "desktop", "test": "app file picker expands folders and keeps hidden selections" },
+          { "suite": "desktop", "test": "Integrated Editor browses and manages a selected workspace" },
+          { "suite": "desktop", "test": "Integrated Editor preserves expanded folders on save and toggles every sidebar view" },
+          { "suite": "desktop", "test": "app save picker creates and selects a folder" },
+          { "suite": "desktop", "test": "opens text MIME as editable text in Integrated Editor" },
+          { "suite": "desktop", "test": "formats JavaScript in Integrated Editor" },
+          { "suite": "desktop", "test": "edits structured text without changing its MIME type" }
+        ]
+      }
+    },
+    {
+      "id": "search.commands-and-results",
+      "name": "Search combines commands, applications, and desktop results",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "search combines commands with other results" }
+        ]
+      }
+    },
+    {
+      "id": "desktop.spatial-layout",
+      "name": "Spatial layout, areas, snapping, movement, and persistence",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "auto-arrange packs current-area icons and persists their positions" },
+          { "suite": "desktop", "test": "dragging shifts overlapping icons live and persists the arrangement" },
+          { "suite": "desktop", "test": "snap to grid remains active beside another icon" },
+          { "suite": "desktop", "test": "auto-arrange keeps folders available as desktop drop targets" },
+          { "suite": "desktop", "test": "auto-arrange while dragging defaults on and persists an opt-out" },
+          { "suite": "desktop", "test": "rapid icon releases cannot accumulate snap previews" },
+          { "suite": "desktop", "test": "moves selected items between the desktop and folder explorer" },
+          { "suite": "desktop", "test": "edge dwell guards item and window moves between areas" },
+          { "suite": "desktop", "test": "desktop wheel gestures switch one area while app scrolling stays native" },
+          { "suite": "desktop", "test": "desktop switcher rows use their full width" }
+        ]
+      }
+    },
+    {
+      "id": "storage.persistence-and-media",
+      "name": "Local persistence, media access, previews, and wallpaper",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "local mutation persists through reload" },
+          { "suite": "desktop", "test": "concurrent tabs serialize the first IndexedDB reset" },
+          { "suite": "desktop", "test": "shows image thumbnails on the desktop and in folders" },
+          { "suite": "desktop", "test": "sets an image as wallpaper from its context menu and keeps it after reload" },
+          { "suite": "desktop", "test": "opens an imported RTF document in the document viewer" },
+          { "suite": "desktop", "test": "opens GFM Markdown with safe relative and external images in the document viewer" },
+          { "suite": "desktop", "test": "opens imported audio from a local Blob preview source" },
+          { "suite": "desktop", "test": "opening and restoring a text file preserves its loaded contents" }
+        ]
+      }
+    },
+    {
+      "id": "clipboard.links-and-shortcuts",
+      "name": "Deep links, clipboard URL paste, and Internet Shortcuts",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "copy-link shortcut copies a deep link for the selected item" },
+          { "suite": "desktop", "test": "pastes clipboard URL text as a named Internet Shortcut" },
+          { "suite": "desktop", "test": "edits an Internet Shortcut as text while normal open follows its URL" }
+        ]
+      }
+    },
+    {
+      "id": "desktop.widgets-groups-themes-scenes",
+      "name": "Widgets, icon groups, custom themes, and scenes",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "desktop widgets and icon groups persist and remain usable on mobile" },
+          { "suite": "desktop", "test": "mobile non-home widgets stop moving when the area transition settles" },
+          { "suite": "desktop", "test": "adding a widget rearranges overlapping icons and persists both positions" },
+          { "suite": "desktop", "test": "folder icon group children inherit explorer interactions" },
+          { "suite": "desktop", "test": "icon groups reserve space, follow the grid, and persist arranged icons" },
+          { "suite": "desktop", "test": "widgets and icon groups preview snapped pointer placement" },
+          { "suite": "desktop", "test": "Theme Editor selects a wallpaper with the Hiraya file picker" },
+          { "suite": "desktop", "test": "Scene widgets and wallpaper receive input without covering desktop chrome" },
+          { "suite": "desktop", "test": "Theme Editor applies a selected theme and preserves it after reload" }
+        ]
+      }
+    },
+    {
+      "id": "settings.routing-preferences-updates",
+      "name": "Settings routing, persisted preferences, motion, and service-worker boundaries",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "Settings adapts to its window and preserves subpage navigation" },
+          { "suite": "desktop", "test": "Settings routes survive history navigation and reload" },
+          { "suite": "desktop", "test": "Show hidden files persists in the account IndexedDB preferences" },
+          { "suite": "desktop", "test": "reduced motion disables desktop transitions and animations" },
+          { "suite": "desktop", "test": "service worker excludes API responses from navigation fallback and caches" }
+        ]
+      }
+    },
+    {
+      "id": "mobile.navigation-gestures-actions",
+      "name": "Mobile navigation, gestures, selection, and action surfaces",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "mobile Start and the unified switcher own distinct shell actions" },
+          { "suite": "desktop", "test": "mobile Back climbs Settings before closing it" },
+          { "suite": "desktop", "test": "mobile Back closes Explorer without reopening its folder" },
+          { "suite": "desktop", "test": "mobile Back dismisses transient surfaces before navigating" },
+          { "suite": "desktop", "test": "mobile root Back requires two additional presses and resets" },
+          { "suite": "desktop", "test": "mobile taps select the full desktop icon footprint" },
+          { "suite": "desktop", "test": "mobile folder double taps cannot activate newly mounted contents" },
+          { "suite": "desktop", "test": "mobile touch drags selected items and swipes areas from unselected items and widgets" },
+          { "suite": "desktop", "test": "touch More actions uses an action sheet and browser history" },
+          { "suite": "desktop", "test": "shell popups stay above the file action pill" }
+        ]
+      }
+    },
+    {
+      "id": "public.desktop-full-surface",
+      "name": "Responsive read-only public desktop behavior",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "public-desktop", "test": "public desktop reflows without page overflow at 390px" },
+          { "suite": "public-desktop", "test": "public desktop hides descendants of dot-prefixed folders" },
+          { "suite": "public-desktop", "test": "public desktop preserves positions and navigates to a non-Home area" },
+          { "suite": "public-desktop", "test": "fine pointers open draggable and resizable public windows" },
+          { "suite": "public-desktop", "test": "coarse-only public windows use the focused full-surface header" },
+          { "suite": "public-desktop", "test": "public desktop reflows at 200 percent zoom" },
+          { "suite": "public-desktop", "test": "whole public desktops render widgets and folder-backed groups read only" },
+          { "suite": "public-desktop", "test": "public desktop keeps overlapping icons and shell items usable in each area" },
+          { "suite": "public-desktop", "test": "whole public desktops render linked Todo widgets read only" },
+          { "suite": "public-desktop", "test": "whole public desktops run Scene widgets and interactive Scene wallpaper" }
+        ]
+      }
+    },
+    {
+      "id": "sync.current-server-integration",
+      "name": "Current authentication, synchronization, publication, app data, and restart behavior",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-integration", "test": "server-backed authentication, convergence, replay, conflict, and restart persistence" }
+        ]
+      }
+    },
+    {
+      "id": "workspace.lifecycle",
+      "name": "Create, rename, order, pin, transfer, switch, and delete workspaces",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "filesystem.import-copy-trash",
+      "name": "Directory import, file and folder copy, Trash, restore, and purge",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "filesystem.activity",
+      "name": "Activity records remain complete and navigable",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "sharing.members-invitations",
+      "name": "Owners manage members, invitations, and role transitions",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "themes.packages-animated-wallpaper",
+      "name": "Custom theme import, authoring, packages, and animated wallpaper",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "viewers.image-video-fallback",
+      "name": "Image, video, document, media, and fallback viewers retain full behavior",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "thumbnails.ffmpeg",
+      "name": "Server ffmpeg thumbnails remain verified and retryable",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "packages.seeded-import-export",
+      "name": "Seeded desktop import and export remain compatible",
+      "owners": ["web", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "packages.browser-extension",
+      "name": "Browser extension packaging and new-tab startup remain functional",
+      "owners": ["web", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "pwa.install-controlled-update",
+      "name": "Installable PWA updates without discarding dirty or queued work",
+      "owners": ["web", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "accessibility.authenticated-zoom-forced-colors",
+      "name": "Authenticated shell works at 200 percent zoom and in forced colors",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "history.undo-redo-versions",
+      "name": "Undo, redo, retained versions, comparison, keep-both, and restore survive reload",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "sync.both-reconnect-orders",
+      "name": "Two offline devices converge in both reconnect orders",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "sync.cursor-reset-hydration",
+      "name": "Pinned hydration and cursor reset preserve pending local overlays",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "multitab.revision-and-leadership",
+      "name": "Multiple tabs replay revisions with one synchronization leader",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "web-local" }
+    },
+    {
+      "id": "storage.crash-recovery",
+      "name": "Chunk and metadata commits recover across every defined crash point",
+      "owners": ["web", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    },
+    {
+      "id": "scale.exact-transfer-footprints",
+      "name": "Large workspaces retain bounded bootstrap, hydration, mutation, and outbox work",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+    }
+  ]
+}
