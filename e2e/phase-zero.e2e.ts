@@ -64,6 +64,7 @@ test("installs the manifest and reloads offline without caching API requests", a
   const failures: string[] = [];
   page.on("requestfailed", (request) => failures.push(`${new URL(request.url()).pathname}: ${request.failure()?.errorText}`));
   await openShell(page);
+  await expect(page.locator('link[rel="manifest"]')).toHaveAttribute("crossorigin", "use-credentials");
   const manifest = await page.request.get("/manifest.webmanifest");
   expect(manifest.ok()).toBe(true);
   expect((await manifest.json()).icons[0].src).toBe("icon.svg");
