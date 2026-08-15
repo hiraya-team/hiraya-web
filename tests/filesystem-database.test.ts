@@ -73,14 +73,24 @@ function createDraft(operationId: string, nodes: ReturnType<typeof folder | type
   return { schemaVersion: 1, kind: "create", operationId, workspaceId, deviceId: DEVICE, nodes };
 }
 
-function writeDraft(operationId: string, nodeId: string, manifest: Awaited<ReturnType<typeof verifiedManifest>>, modifiedAt: number): WorkspaceOperationDraft {
+function writeDraft(operationId: string, nodeId: string, manifest: Awaited<ReturnType<typeof verifiedManifest>>, modifiedAt: number): Extract<WorkspaceOperationDraft, { kind: "write" }> {
   return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, mimeType: "text/markdown", size: manifest.manifest.size, manifestHash: manifest.hash, modifiedAt };
+}
+
+function versionDraft(operationId: string, nodeId: string, version: { mimeType: string; size: number; manifestHash: string; modifiedAt: number }): WorkspaceOperationDraft {
+  return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, ...version };
 }
 
 async function workspaceDatabase(factory: IDBFactory, now?: () => number, id = WORKSPACE) {
   const database = await openFilesystemDatabase(ACCOUNT, environment(factory, now));
   await database.createWorkspace({ id, name: "Workspace", pinned: true, deviceId: DEVICE });
   return database;
+}
+
+async function commitWrite(database: FilesystemDatabase, operation: Extract<WorkspaceOperationDraft, { kind: "write" }>, manifests: Array<Awaited<ReturnType<typeof verifiedManifest>>>) {
+  const node = await database.getNode(operation.nodeId);
+  if (!node || node.kind !== "file") throw new Error("The test file does not exist.");
+  return database.commitOperation({ operation, manifests, expectedContentTuple: node.fieldTuples.content! });
 }
 
 async function expectEmptyCommit(database: FilesystemDatabase, factory: IDBFactory, expectedRevision = 0) {
@@ -167,6 +177,18 @@ describe("web2 filesystem database", () => {
     reopened.close();
   });
 
+  test("recovers validated device state and one operation by identity", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 90);
+    const operationId = stableId(9);
+    expect(await database.getSyncState(WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
+    expect(await database.getOperation(operationId)).toBeUndefined();
+    const committed = await database.commitOperation({ operation: createDraft(operationId, [folder(stableId(8), "Lookup")]) });
+    expect(await database.getOperation(operationId)).toEqual(committed);
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ workspaceId: WORKSPACE, deviceId: DEVICE, lastLocalLogicalTime: 90 });
+    database.close();
+  });
+
   test("commits a folder and file forest with exact records, inverse, change, and clocks", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 100);
@@ -212,6 +234,7 @@ describe("web2 filesystem database", () => {
     const draft = createDraft(stableId(30), [file(stableId(31), "File.txt", manifest)]);
     await expect(database.commitOperation({ operation: draft })).rejects.toThrow("missing manifest");
     await expect(database.commitOperation({ operation: draft, manifests: [{ hash: "f".repeat(64), manifest: manifest.manifest }] })).rejects.toThrow("canonical bytes");
+    await expect(database.commitOperation({ operation: createDraft(stableId(34), [folder(stableId(35), "Folder")]), manifests: [manifest] })).rejects.toThrow("unreferenced manifest");
     await expect(database.commitOperation({ operation: createDraft(stableId(32), [{ ...file(stableId(33), "Wrong.txt", manifest), size: 4 }]), manifests: [manifest] })).rejects.toThrow("size does not match");
     await expectEmptyCommit(database, factory);
     expect(await database.getNode(stableId(31))).toBeUndefined();
@@ -261,11 +284,11 @@ describe("web2 filesystem database", () => {
     const writeId = stableId(62);
     await database.commitOperation({ operation: createDraft(createId, [file(nodeId, "Notes.txt", originalManifest)]), manifests: [originalManifest] });
     const before = await database.getNode(nodeId);
-    const stored = await database.commitOperation({ operation: writeDraft(writeId, nodeId, nextManifest, 99), manifests: [nextManifest], intent: "restore", compensatesOperationId: createId });
+    const stored = await database.commitOperation({ operation: writeDraft(writeId, nodeId, nextManifest, 99), manifests: [nextManifest], expectedContentTuple: before!.fieldTuples.content });
     const after = await database.getNode(nodeId);
 
     expect(stored.inverse).toEqual({ kind: "write", nodeId, mimeType: "text/plain", size: 1, manifestHash: originalManifest.hash, modifiedAt: 10 });
-    expect(stored).toMatchObject({ localRevision: 2, intent: "restore", compensatesOperationId: createId, versionNodeIds: [nodeId] });
+    expect(stored).toMatchObject({ localRevision: 2, intent: "forward", compensatesOperationId: null, versionNodeIds: [nodeId] });
     expect(after).toEqual({
       ...before,
       mimeType: "text/markdown",
@@ -277,6 +300,71 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("atomically enforces an exact expected content tuple", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 300);
+    const nodeId = stableId(63);
+    const initial = await verifiedManifest(1, 4);
+    const next = await verifiedManifest(2, 5);
+    const stale = await verifiedManifest(3, 6);
+    await database.commitOperation({ operation: createDraft(stableId(64), [file(nodeId, "Expected.txt", initial)]), manifests: [initial] });
+    const expectedContentTuple = (await database.getNode(nodeId))!.fieldTuples.content!;
+    const accepted = await database.commitOperation({ operation: writeDraft(stableId(65), nodeId, next, 20), manifests: [next], expectedContentTuple });
+    const after = await database.getNode(nodeId);
+
+    expect(accepted.expectedContentTuple).toEqual(expectedContentTuple);
+    await expect(database.commitOperation({ operation: writeDraft(stableId(149), nodeId, stale, 21), manifests: [stale] } as never)).rejects.toThrow("exact expected content tuple");
+    await expect(database.commitOperation({ operation: writeDraft(stableId(66), nodeId, stale, 21), manifests: [stale], expectedContentTuple })).rejects.toThrow("content changed");
+    expect(await database.getNode(nodeId)).toEqual(after);
+    expect(await database.getOperation(stableId(66))).toBeUndefined();
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(2);
+    database.close();
+  });
+
+  test("accepts durable write compensation chains and rejects invalid metadata atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 400);
+    const nodeId = stableId(67);
+    const initial = await verifiedManifest(1, 7);
+    const next = await verifiedManifest(2, 8);
+    const createId = stableId(68);
+    const writeId = stableId(69);
+    await database.commitOperation({ operation: createDraft(createId, [file(nodeId, "Compensation.txt", initial)]), manifests: [initial] });
+    const createTuple = (await database.getNode(nodeId))!.fieldTuples.content!;
+    const write = await database.commitOperation({ operation: writeDraft(writeId, nodeId, next, 20), manifests: [next], expectedContentTuple: createTuple });
+    const writeTuple = { logicalTime: write.operation.logicalTime, operationId: write.operationId };
+    const inverse = write.inverse.kind === "write" ? write.inverse : undefined;
+    expect(inverse).toBeDefined();
+
+    await expect(database.commitOperation({ operation: versionDraft(stableId(150), nodeId, inverse!), intent: "forward", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("forward operation");
+    await expect(database.commitOperation({ operation: versionDraft(stableId(151), nodeId, inverse!), intent: "undo", compensatesOperationId: stableId(999), expectedContentTuple: writeTuple })).rejects.toThrow("existing operation");
+    await expect(database.commitOperation({ operation: versionDraft(stableId(152), nodeId, inverse!), intent: "undo", compensatesOperationId: createId, expectedContentTuple: writeTuple })).rejects.toThrow("Create undo");
+    await expect(database.commitOperation({ operation: versionDraft(stableId(153), nodeId, inverse!), intent: "redo", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("undo inverse");
+
+    const otherWorkspace = stableId(154);
+    const otherOperationId = stableId(155);
+    await database.createWorkspace({ id: otherWorkspace, name: "Other", pinned: false, deviceId: DEVICE });
+    await database.commitOperation({ operation: createDraft(otherOperationId, [folder(stableId(156), "Elsewhere")], otherWorkspace) });
+    await expect(database.commitOperation({ operation: versionDraft(stableId(157), nodeId, inverse!), intent: "undo", compensatesOperationId: otherOperationId, expectedContentTuple: writeTuple })).rejects.toThrow("same workspace");
+
+    const undoId = stableId(158);
+    const undo = await database.commitOperation({ operation: versionDraft(undoId, nodeId, inverse!), intent: "undo", compensatesOperationId: writeId, expectedContentTuple: writeTuple });
+    expect(undo).toMatchObject({ intent: "undo", compensatesOperationId: writeId });
+    const redoId = stableId(159);
+    const redoInverse = undo.inverse.kind === "write" ? undo.inverse : undefined;
+    const redoInput = { operation: versionDraft(redoId, nodeId, redoInverse!), intent: "redo" as const, compensatesOperationId: undoId, expectedContentTuple: { logicalTime: undo.operation.logicalTime, operationId: undoId } };
+    const redo = await database.commitOperation(redoInput);
+    expect(redo).toMatchObject({ intent: "redo", compensatesOperationId: undoId });
+    expect(await database.commitOperation(redoInput)).toEqual(redo);
+    await expect(database.commitOperation({ ...redoInput, intent: "restore", compensatesOperationId: createId })).rejects.toThrow("cannot be reused");
+    await expect(database.commitOperation({ ...redoInput, compensatesOperationId: createId })).rejects.toThrow("cannot be reused");
+    expect((await database.getNode(nodeId))?.manifestHash).toBe(next.hash);
+    const restore = await database.commitOperation({ operation: versionDraft(stableId(163), nodeId, inverse!), intent: "restore", compensatesOperationId: createId, expectedContentTuple: { logicalTime: redo.operation.logicalTime, operationId: redoId } });
+    expect(restore).toMatchObject({ intent: "restore", compensatesOperationId: createId });
+    expect((await database.getNode(nodeId))?.manifestHash).toBe(initial.hash);
+    database.close();
+  });
+
   test("advances the logical clock monotonically when wall time does not move", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 500);
@@ -285,8 +373,8 @@ describe("web2 filesystem database", () => {
     const third = await verifiedManifest(3, 8);
     const nodeId = stableId(70);
     const one = await database.commitOperation({ operation: createDraft(stableId(71), [file(nodeId, "Clock.txt", first)]), manifests: [first] });
-    const two = await database.commitOperation({ operation: writeDraft(stableId(72), nodeId, second, 11), manifests: [second] });
-    const three = await database.commitOperation({ operation: writeDraft(stableId(73), nodeId, third, 12), manifests: [third] });
+    const two = await commitWrite(database, writeDraft(stableId(72), nodeId, second, 11), [second]);
+    const three = await commitWrite(database, writeDraft(stableId(73), nodeId, third, 12), [third]);
     expect([one.operation.logicalTime, two.operation.logicalTime, three.operation.logicalTime]).toEqual([500, 501, 502]);
     expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "sync", WORKSPACE)).toMatchObject({ cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 502 });
     database.close();
@@ -316,7 +404,7 @@ describe("web2 filesystem database", () => {
     await database.commitOperation({ operation: createDraft(createId, [file(nodeId, "History.txt", initial)]), manifests: [initial] });
     const second = await verifiedManifest(2, 10);
     const secondId = stableId(92);
-    await database.commitOperation({ operation: writeDraft(secondId, nodeId, second, 20), manifests: [second] });
+    await commitWrite(database, writeDraft(secondId, nodeId, second, 20), [second]);
     expect((await database.listFileVersions(WORKSPACE, nodeId)).map(({ operationId, current }) => ({ operationId, current }))).toEqual([
       { operationId: secondId, current: true },
       { operationId: createId, current: false },
@@ -327,7 +415,7 @@ describe("web2 filesystem database", () => {
       const manifest = await verifiedManifest(index + 3, index % 5 + 10);
       const operationId = stableId(100 + index);
       writeIds.push(operationId);
-      await database.commitOperation({ operation: writeDraft(operationId, nodeId, manifest, 21 + index), manifests: [manifest] });
+      await commitWrite(database, writeDraft(operationId, nodeId, manifest, 21 + index), [manifest]);
     }
     const versions = await database.listFileVersions(WORKSPACE, nodeId);
     expect(versions).toHaveLength(21);
@@ -369,6 +457,27 @@ describe("web2 filesystem database", () => {
     await idbRequest(raw.transaction("nodes", "readwrite").objectStore("nodes").put({ id: malformedId, parentKey: "", lifecycleKey: "active" }));
     raw.close();
     await expect(database.getNode(malformedId)).rejects.toThrow("unsupported shape");
+    database.close();
+  });
+
+  test("enumerates retained chunk hashes and rejects noncanonical stored manifests", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const first = await verifiedManifest(1, 1);
+    const second = await verifiedManifest(2, 2);
+    const firstNodeId = stableId(161);
+    const operation = createDraft(stableId(160), [file(firstNodeId, "First.txt", first), file(stableId(162), "Second.txt", second)]);
+    const committed = await database.commitOperation({ operation, manifests: [first, second] });
+    expect(await database.listRetainedChunkHashes()).toEqual(["1".repeat(64), "2".repeat(64)]);
+
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("manifests", "readwrite").objectStore("manifests").put({ hash: first.hash, manifest: { ...first.manifest, chunks: [{ hash: "3".repeat(64), size: 1 }] } }));
+    raw.close();
+    expect(await database.commitOperation({ operation })).toEqual(committed);
+    await expect(database.getManifest(first.hash)).rejects.toThrow("canonical bytes");
+    await expect(database.listFileVersions(WORKSPACE, firstNodeId)).rejects.toThrow("canonical bytes");
+    await expect(database.commitOperation({ operation: writeDraft(stableId(164), firstNodeId, first, 20), expectedContentTuple: (await database.getNode(firstNodeId))!.fieldTuples.content })).rejects.toThrow("canonical bytes");
+    await expect(database.listRetainedChunkHashes()).rejects.toThrow("canonical bytes");
     database.close();
   });
 

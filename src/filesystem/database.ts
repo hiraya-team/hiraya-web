@@ -9,12 +9,14 @@ import {
   parseMimeType,
   parseNode,
   parseNonNegativeSafeInteger,
+  parseOperationTuple,
   parsePositiveSafeInteger,
   parseSha256,
   parseStableId,
   sha256Hex,
   type Manifest,
   type Node,
+  type OperationTuple,
 } from "./model";
 import {
   operationAffectedIdentities,
@@ -83,6 +85,7 @@ export type StoredOperation = {
   stateKind: "pending";
   intent: OperationIntent;
   compensatesOperationId: string | null;
+  expectedContentTuple: OperationTuple | null;
   operation: Extract<WorkspaceOperation, { kind: "create" | "write" }>;
   inverse: OperationInverse;
   affectedIdentities: string[];
@@ -113,12 +116,15 @@ export type FilesystemDatabaseEnvironment = {
   now?: () => number;
 };
 
-export type CommitOperationInput = {
-  operation: WorkspaceOperationDraft;
+type CommitOperationBase = {
   manifests?: Array<{ hash: string; manifest: Manifest }>;
   intent?: OperationIntent;
   compensatesOperationId?: string | null;
 };
+export type CommitOperationInput = CommitOperationBase & (
+  | { operation: Extract<WorkspaceOperationDraft, { kind: "create" }>; expectedContentTuple?: never }
+  | { operation: Extract<WorkspaceOperationDraft, { kind: "write" }>; expectedContentTuple: OperationTuple }
+);
 
 export type FilesystemDatabase = {
   close(): void;
@@ -126,10 +132,13 @@ export type FilesystemDatabase = {
   listWorkspaces(): Promise<Workspace[]>;
   getNode(id: string): Promise<Node | undefined>;
   listChildren(workspaceId: string, parentId: string | null): Promise<Node[]>;
+  getSyncState(workspaceId: string): Promise<SyncState>;
   getManifest(hash: string): Promise<Manifest | undefined>;
+  getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
   listOperations(workspaceId: string, limit?: number): Promise<StoredOperation[]>;
   listFileVersions(workspaceId: string, nodeId: string): Promise<FileVersion[]>;
+  listRetainedChunkHashes(): Promise<string[]>;
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
@@ -219,6 +228,13 @@ function parseStoredManifest(value: unknown): StoredManifest {
   return { hash: parseSha256(value.hash, "A stored manifest hash is invalid."), manifest: parseManifest(value.manifest) };
 }
 
+async function validateStoredManifest(value: unknown, expectedHash?: string) {
+  const record = parseStoredManifest(value);
+  if (expectedHash !== undefined && record.hash !== expectedHash) throw new Error("Stored manifest identity metadata is inconsistent.");
+  if (await canonicalManifestSha256(record.manifest) !== record.hash) throw new Error("A stored manifest hash does not match its canonical bytes.");
+  return record;
+}
+
 function parseIntent(value: unknown): OperationIntent {
   if (value !== "forward" && value !== "undo" && value !== "redo" && value !== "restore") throw new Error("An operation intent is invalid.");
   return value;
@@ -266,7 +282,7 @@ function equalValues(left: unknown, right: unknown) {
 
 function parseStoredOperation(value: unknown): StoredOperation {
   if (!isRecord(value)) throw new Error("A stored operation has an unsupported shape.");
-  assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "stateKind", "intent", "compensatesOperationId", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
+  assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "stateKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
   if (value.stateKind !== "pending") throw new Error("A stored operation state is invalid.");
   const operation = parseWorkspaceOperation(value.operation);
   if (operation.kind !== "create" && operation.kind !== "write") throw new Error("A stored operation kind is unsupported by this database slice.");
@@ -277,12 +293,15 @@ function parseStoredOperation(value: unknown): StoredOperation {
     stateKind: "pending" as const,
     intent: parseIntent(value.intent),
     compensatesOperationId: value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid."),
+    expectedContentTuple: value.expectedContentTuple === null ? null : parseOperationTuple(value.expectedContentTuple),
     operation,
     inverse: parseOperationInverse(value.inverse),
     affectedIdentities: parseStringSet(value.affectedIdentities, "Stored operation identities are invalid."),
     versionNodeIds: parseStringSet(value.versionNodeIds, "Stored operation version node IDs are invalid.").map((id) => parseStableId(id, "A stored operation version node ID is invalid.")),
   };
   if (stored.operationId !== operation.operationId || stored.workspaceId !== operation.workspaceId) throw new Error("Stored operation identity metadata is inconsistent.");
+  if (stored.intent === "forward" && stored.compensatesOperationId !== null || stored.intent !== "forward" && stored.compensatesOperationId === null) throw new Error("Stored operation compensation metadata is inconsistent.");
+  if (operation.kind === "write" && stored.expectedContentTuple === null || operation.kind === "create" && stored.expectedContentTuple !== null) throw new Error("Stored operation expectation metadata is inconsistent.");
   if (!equalValues(stored.affectedIdentities, operationAffectedIdentities(operation)) || !equalValues(stored.versionNodeIds, operationVersionNodeIds(operation))) throw new Error("Stored operation derived metadata is inconsistent.");
   if (operation.kind === "create") {
     if (stored.inverse.kind !== "create" || !equalValues(stored.inverse.rootNodeIds, createRootIds(operation))) throw new Error("Stored operation inverse metadata is inconsistent.");
@@ -387,7 +406,7 @@ function nextSafeInteger(value: number, message: string) {
 }
 
 async function normalizeCommitInput(value: CommitOperationInput) {
-  if (!isRecord(value) || !("operation" in value) || Object.keys(value).some((key) => !["operation", "manifests", "intent", "compensatesOperationId"].includes(key))) throw new Error("A filesystem commit has an unsupported shape.");
+  if (!isRecord(value) || !("operation" in value) || Object.keys(value).some((key) => !["operation", "manifests", "intent", "compensatesOperationId", "expectedContentTuple"].includes(key))) throw new Error("A filesystem commit has an unsupported shape.");
   if (!isRecord(value.operation) || Object.prototype.hasOwnProperty.call(value.operation, "logicalTime")) throw new Error("An operation draft must not supply a logical time.");
   const operation = parseWorkspaceOperation({ ...value.operation, logicalTime: 0 });
   if (operation.kind !== "create" && operation.kind !== "write") throw new Error("Only create and write operations are supported by this database slice.");
@@ -401,11 +420,21 @@ async function normalizeCommitInput(value: CommitOperationInput) {
     return record;
   }));
   if (new Set(manifests.map(({ hash }) => hash)).size !== manifests.length) throw new Error("A commit manifest batch contains duplicate hashes.");
+  const referencedHashes = new Set(manifestHashes(operation));
+  if (manifests.some(({ hash }) => !referencedHashes.has(hash))) throw new Error("A commit includes an unreferenced manifest.");
+  const intent = parseIntent(value.intent ?? "forward");
+  const compensatesOperationId = value.compensatesOperationId === undefined || value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid.");
+  const expectedContentTuple = value.expectedContentTuple === undefined || value.expectedContentTuple === null ? null : parseOperationTuple(value.expectedContentTuple);
+  if (intent === "forward" && compensatesOperationId !== null) throw new Error("A forward operation cannot compensate another operation.");
+  if (intent !== "forward" && compensatesOperationId === null) throw new Error("A compensating operation must reference an existing operation.");
+  if (operation.kind === "create" && (intent !== "forward" || expectedContentTuple !== null)) throw new Error("Create undo is unsupported until lifecycle projection exists.");
+  if (operation.kind === "write" && expectedContentTuple === null) throw new Error("A write requires an exact expected content tuple.");
   return {
     operation,
     manifests,
-    intent: parseIntent(value.intent ?? "forward"),
-    compensatesOperationId: value.compensatesOperationId === undefined || value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid."),
+    intent,
+    compensatesOperationId,
+    expectedContentTuple,
   };
 }
 
@@ -435,6 +464,15 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
   if (!factory || !keyRange) throw new Error("IndexedDB filesystem storage is unavailable.");
   const db = await openDatabase(factory, await filesystemDatabaseName(accountId));
   const now = environment.now ?? Date.now;
+  const readStoredManifests = async (hashes: readonly string[]) => {
+    const values = await transact(db, "manifests", "readonly", (transaction) => Promise.all(hashes.map((hash) => request(transaction.objectStore("manifests").get(hash)))));
+    const records = new Map<string, StoredManifest>();
+    for (let index = 0; index < hashes.length; index += 1) {
+      const value = values[index];
+      if (value !== undefined) records.set(hashes[index]!, await validateStoredManifest(value, hashes[index]));
+    }
+    return records;
+  };
 
   return {
     close: () => db.close(),
@@ -482,25 +520,51 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    getSyncState: async (workspaceId) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      return transact(db, ["workspaces", "sync"], "readonly", async (transaction) => {
+        const [workspaceValue, syncValue] = await Promise.all([
+          request(transaction.objectStore("workspaces").get(canonicalWorkspaceId)),
+          request(transaction.objectStore("sync").get(canonicalWorkspaceId)),
+        ]);
+        if (workspaceValue === undefined || syncValue === undefined) throw new Error("That workspace does not exist.");
+        const workspace = parseWorkspace(workspaceValue);
+        const sync = parseSyncState(syncValue);
+        if (workspace.id !== sync.workspaceId) throw new Error("Stored synchronization state does not match its workspace.");
+        return sync;
+      });
+    },
+
     getManifest: async (hash) => {
       const canonicalHash = parseSha256(hash, "A manifest hash is invalid.");
-      return transact(db, "manifests", "readonly", async (transaction) => {
-        const value = await request(transaction.objectStore("manifests").get(canonicalHash));
-        if (value === undefined) return undefined;
-        const record = parseStoredManifest(value);
-        if (record.hash !== canonicalHash) throw new Error("Stored manifest identity metadata is inconsistent.");
-        return record.manifest;
+      return (await readStoredManifests([canonicalHash])).get(canonicalHash)?.manifest;
+    },
+
+    getOperation: async (operationId) => {
+      const canonicalOperationId = parseStableId(operationId, "An operation ID is invalid.");
+      return transact(db, "operations", "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("operations").get(canonicalOperationId));
+        return value === undefined ? undefined : parseStoredOperation(value);
       });
     },
 
     commitOperation: async (value) => {
       const normalized = await normalizeCommitInput(value);
+      const replayedValue = await transact(db, "operations", "readonly", (transaction) => request(transaction.objectStore("operations").get(normalized.operation.operationId)));
+      if (replayedValue !== undefined) {
+        const replayed = parseStoredOperation(replayedValue);
+        if (!equalValues(replayOperation(replayed.operation), normalized.operation) || replayed.intent !== normalized.intent || replayed.compensatesOperationId !== normalized.compensatesOperationId || !equalValues(replayed.expectedContentTuple, normalized.expectedContentTuple)) throw new Error("An operation ID cannot be reused with different input.");
+        return replayed;
+      }
+      const suppliedManifests = new Map(normalized.manifests.map((record) => [record.hash, record]));
+      const hashes = [...new Set([...suppliedManifests.keys(), ...manifestHashes(normalized.operation)])];
+      const validatedStoredManifests = await readStoredManifests(hashes);
       return transact(db, ["workspaces", "nodes", "manifests", "operations", "changes", "sync"], "readwrite", async (transaction) => {
         const operations = transaction.objectStore("operations");
         const existingValue = await request(operations.get(normalized.operation.operationId));
         if (existingValue !== undefined) {
           const existing = parseStoredOperation(existingValue);
-          if (!equalValues(replayOperation(existing.operation), normalized.operation) || existing.intent !== normalized.intent || existing.compensatesOperationId !== normalized.compensatesOperationId) throw new Error("An operation ID cannot be reused with different input.");
+          if (!equalValues(replayOperation(existing.operation), normalized.operation) || existing.intent !== normalized.intent || existing.compensatesOperationId !== normalized.compensatesOperationId || !equalValues(existing.expectedContentTuple, normalized.expectedContentTuple)) throw new Error("An operation ID cannot be reused with different input.");
           return existing;
         }
 
@@ -511,14 +575,46 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const sync = parseSyncState(syncValue);
         if (sync.workspaceId !== workspace.id || sync.deviceId !== normalized.operation.deviceId) throw new Error("The operation device does not own this local workspace state.");
 
-        const suppliedManifests = new Map(normalized.manifests.map((record) => [record.hash, record]));
-        const hashes = [...new Set([...suppliedManifests.keys(), ...manifestHashes(normalized.operation)])];
+        let compensated: StoredOperation | undefined;
+        if (normalized.compensatesOperationId !== null) {
+          const compensatedValue = await request(operations.get(normalized.compensatesOperationId));
+          if (compensatedValue === undefined) throw new Error("A compensating operation must reference an existing operation.");
+          compensated = parseStoredOperation(compensatedValue);
+          if (compensated.workspaceId !== workspace.id) throw new Error("A compensating operation must reference the same workspace.");
+          if (normalized.operation.kind !== "write") throw new Error("Only writes can compensate filesystem operations.");
+          const compensatingWrite = normalized.operation;
+          const matchesContent = (version: Pick<FileVersion, "nodeId" | "mimeType" | "size" | "manifestHash">) => equalValues({
+            nodeId: compensatingWrite.nodeId,
+            mimeType: compensatingWrite.mimeType,
+            size: compensatingWrite.size,
+            manifestHash: compensatingWrite.manifestHash,
+          }, { nodeId: version.nodeId, mimeType: version.mimeType, size: version.size, manifestHash: version.manifestHash });
+          const matchesVersion = (version: Pick<FileVersion, "nodeId" | "mimeType" | "size" | "manifestHash" | "modifiedAt">) => equalValues({
+            nodeId: compensatingWrite.nodeId,
+            mimeType: compensatingWrite.mimeType,
+            size: compensatingWrite.size,
+            manifestHash: compensatingWrite.manifestHash,
+            modifiedAt: compensatingWrite.modifiedAt,
+          }, { nodeId: version.nodeId, mimeType: version.mimeType, size: version.size, manifestHash: version.manifestHash, modifiedAt: version.modifiedAt });
+          if (normalized.intent === "undo") {
+            if (compensated.operation.kind === "create") throw new Error("Create undo is unsupported until lifecycle projection exists.");
+            if (compensated.intent !== "forward" && compensated.intent !== "redo" && compensated.intent !== "restore" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesVersion(compensated.inverse)) throw new Error("An undo must apply a write inverse for that file.");
+          }
+          if (normalized.intent === "redo" && (compensated.intent !== "undo" || compensated.operation.kind !== "write" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesVersion(compensated.inverse))) throw new Error("A redo must apply an undo inverse for that file.");
+          const restoredVersion = normalized.intent === "restore" ? fileVersionFromOperation(compensated.operation, normalized.operation.nodeId) : undefined;
+          if (normalized.intent === "restore" && (!restoredVersion || !matchesContent(restoredVersion))) throw new Error("A restore must apply the referenced version of that file.");
+        }
+
         const storedManifests = new Map<string, StoredManifest>();
         await Promise.all(hashes.map(async (hash) => {
           const storedValue = await request(transaction.objectStore("manifests").get(hash));
-          if (storedValue === undefined) return;
+          const validated = validatedStoredManifests.get(hash);
+          if (storedValue === undefined) {
+            if (validated) throw new Error("A stored manifest changed during the filesystem commit.");
+            return;
+          }
           const stored = parseStoredManifest(storedValue);
-          if (stored.hash !== hash) throw new Error("Stored manifest identity metadata is inconsistent.");
+          if (!validated || !equalValues(stored, validated)) throw new Error("A stored manifest changed during the filesystem commit.");
           const supplied = suppliedManifests.get(hash);
           if (supplied && !equalValues(stored.manifest, supplied.manifest)) throw new Error("A manifest hash is already stored with different content.");
           storedManifests.set(hash, stored);
@@ -562,6 +658,11 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           if (nodeValue === undefined) throw new Error("The written file does not exist.");
           const node = parseStoredNode(nodeValue);
           if (node.workspaceId !== workspace.id || node.kind !== "file" || node.lifecycle.kind !== "active") throw new Error("A write requires an active file in its workspace.");
+          if (normalized.expectedContentTuple !== null && !equalValues(node.fieldTuples.content, normalized.expectedContentTuple)) throw new Error("The file content changed before this write could commit.");
+          if (compensated && (normalized.intent === "undo" || normalized.intent === "redo")) {
+            const compensatedVersion = fileVersionFromOperation(compensated.operation, node.id);
+            if (!compensatedVersion || !equalValues({ mimeType: node.mimeType, size: node.size, manifestHash: node.manifestHash, modifiedAt: node.modifiedAt }, { mimeType: compensatedVersion.mimeType, size: compensatedVersion.size, manifestHash: compensatedVersion.manifestHash, modifiedAt: compensatedVersion.modifiedAt })) throw new Error("The compensated operation is not the current file version.");
+          }
           if (resolvedManifest(normalized.operation.manifestHash)!.manifest.size !== normalized.operation.size) throw new Error("A written file size does not match its manifest.");
           inverse = { kind: "write", nodeId: node.id, mimeType: node.mimeType, size: node.size, manifestHash: node.manifestHash, modifiedAt: node.modifiedAt };
           projectedNodes = [node];
@@ -596,6 +697,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           stateKind: "pending",
           intent: normalized.intent,
           compensatesOperationId: normalized.compensatesOperationId,
+          expectedContentTuple: normalized.expectedContentTuple,
           operation,
           inverse,
           affectedIdentities,
@@ -639,7 +741,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
     listFileVersions: async (workspaceId, nodeId) => {
       const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
       const canonicalNodeId = parseStableId(nodeId, "A node ID is invalid.");
-      return transact(db, ["nodes", "operations", "manifests"], "readonly", async (transaction) => {
+      const versions = await transact(db, ["nodes", "operations"], "readonly", async (transaction) => {
         const nodeValue = await request(transaction.objectStore("nodes").get(canonicalNodeId));
         if (nodeValue === undefined) throw new Error("That file does not exist.");
         const node = parseStoredNode(nodeValue);
@@ -674,14 +776,22 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             }
           };
         });
-        for (const version of [current, ...older]) {
-          const manifestValue = await request(transaction.objectStore("manifests").get(version.manifestHash));
-          if (manifestValue === undefined) throw new Error("A file version references a missing manifest.");
-          const manifest = parseStoredManifest(manifestValue);
-          if (manifest.hash !== version.manifestHash || manifest.manifest.size !== version.size) throw new Error("A file version has inconsistent manifest metadata.");
-        }
         return [current, ...older];
       });
+      const manifests = await readStoredManifests([...new Set(versions.map(({ manifestHash }) => manifestHash))]);
+      for (const version of versions) {
+        const manifest = manifests.get(version.manifestHash);
+        if (!manifest) throw new Error("A file version references a missing manifest.");
+        if (manifest.manifest.size !== version.size) throw new Error("A file version has inconsistent manifest metadata.");
+      }
+      return versions;
+    },
+
+    listRetainedChunkHashes: async () => {
+      const values = await transact(db, "manifests", "readonly", (transaction) => request(transaction.objectStore("manifests").getAll()));
+      const hashes = new Set<string>();
+      for (const value of values) for (const chunk of (await validateStoredManifest(value)).manifest.chunks) hashes.add(chunk.hash);
+      return [...hashes].sort();
     },
   };
 }

@@ -1,96 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { getAccountOpfsRoot, readChunk, reconstructBlob, removeOrphanChunks, stageBlob, writeChunk } from "../src/filesystem/chunks";
 import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, type ChunkRef, type Manifest } from "../src/filesystem/model";
-
-class MemoryFile {
-  content: Blob;
-  reads = 0;
-  writes = 0;
-  corruptNextClose = false;
-
-  constructor(content = new Blob()) {
-    this.content = content;
-  }
-}
-
-class MemoryFileHandle {
-  readonly kind = "file";
-
-  constructor(readonly name: string, readonly entry: MemoryFile) {}
-
-  async getFile() {
-    this.entry.reads += 1;
-    return this.entry.content as File;
-  }
-
-  async createWritable() {
-    let pending = this.entry.content;
-    return {
-      write: async (content: FileSystemWriteChunkType) => {
-        if (!(content instanceof Blob)) throw new TypeError("The test OPFS fake accepts Blob writes only.");
-        pending = content;
-      },
-      close: async () => {
-        this.entry.writes += 1;
-        if (this.entry.corruptNextClose) {
-          this.entry.corruptNextClose = false;
-          pending = new Blob([new Uint8Array(pending.size).fill(255)]);
-        }
-        this.entry.content = pending;
-      },
-    } as unknown as FileSystemWritableFileStream;
-  }
-}
-
-class MemoryDirectory {
-  readonly kind = "directory";
-  readonly directories = new Map<string, MemoryDirectory>();
-  readonly files = new Map<string, MemoryFile>();
-  readonly directoryRequests: string[] = [];
-  directoryReads = 0;
-
-  constructor(readonly name = "") {}
-
-  directory(name: string) {
-    const directory = new MemoryDirectory(name);
-    this.directories.set(name, directory);
-    return directory;
-  }
-
-  file(name: string, content = new Blob()) {
-    const file = new MemoryFile(content);
-    this.files.set(name, file);
-    return file;
-  }
-
-  async getDirectoryHandle(name: string, options?: FileSystemGetDirectoryOptions) {
-    this.directoryReads += 1;
-    this.directoryRequests.push(name);
-    const existing = this.directories.get(name);
-    if (existing) return existing as unknown as FileSystemDirectoryHandle;
-    if (!options?.create) throw new DOMException("Not found", "NotFoundError");
-    return this.directory(name) as unknown as FileSystemDirectoryHandle;
-  }
-
-  async getFileHandle(name: string, options?: FileSystemGetFileOptions) {
-    let entry = this.files.get(name);
-    if (!entry && !options?.create) throw new DOMException("Not found", "NotFoundError");
-    entry ??= this.file(name);
-    return new MemoryFileHandle(name, entry) as unknown as FileSystemFileHandle;
-  }
-
-  async removeEntry(name: string, options?: FileSystemRemoveOptions) {
-    if (this.files.delete(name)) return;
-    const directory = this.directories.get(name);
-    if (!directory || !options?.recursive && (directory.files.size > 0 || directory.directories.size > 0)) throw new DOMException("Not found", "NotFoundError");
-    this.directories.delete(name);
-  }
-
-  async *entries(): AsyncIterableIterator<[string, FileSystemHandle]> {
-    for (const [name, directory] of [...this.directories]) yield [name, directory as unknown as FileSystemDirectoryHandle];
-    for (const [name, entry] of [...this.files]) yield [name, new MemoryFileHandle(name, entry) as unknown as FileSystemFileHandle];
-  }
-}
+import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
 
 const ACCOUNT_A = "00000000-0000-4000-8000-000000000001";
 const ACCOUNT_B = "00000000-0000-4000-8000-000000000002";
@@ -101,19 +12,15 @@ const TAIL_HASH = "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b5
 const MULTI_MANIFEST_HASH = "2c2304e63694f4365904a54a2fa9f883c45dd0e3c3080f8f53ba0329e28f0dd6";
 const STABLE_HASH = "f379ccb92b9116442dc65bdc35648a85d3786b34779db7f704a901fa07b00cb6";
 
-function handle(directory: MemoryDirectory) {
-  return directory as unknown as FileSystemDirectoryHandle;
-}
-
 function chunkPath(root: MemoryDirectory, ref: ChunkRef) {
-  return root.directories.get("chunks")?.directories.get(ref.hash.slice(0, 2))?.files.get(ref.hash);
+  return memoryChunk(root, ref.hash);
 }
 
 describe("web2 filesystem chunks", () => {
   test("isolates canonical account UUIDs in only the fresh full-hash namespace", async () => {
     const origin = new MemoryDirectory();
-    const first = await getAccountOpfsRoot(ACCOUNT_A, handle(origin));
-    const second = await getAccountOpfsRoot(ACCOUNT_B, handle(origin));
+    const first = await getAccountOpfsRoot(ACCOUNT_A, memoryOpfsHandle(origin));
+    const second = await getAccountOpfsRoot(ACCOUNT_B, memoryOpfsHandle(origin));
 
     expect(first).not.toBe(second);
     expect([...origin.directories.keys()]).toEqual([
@@ -125,7 +32,7 @@ describe("web2 filesystem chunks", () => {
       `${WEB2_OPFS_PREFIX}${ACCOUNT_A_HASH}`,
       `${WEB2_OPFS_PREFIX}${ACCOUNT_B_HASH}`,
     ]);
-    await expect(getAccountOpfsRoot("00000000-0000-4000-8000-00000000000A", handle(origin))).rejects.toThrow("account ID");
+    await expect(getAccountOpfsRoot("00000000-0000-4000-8000-00000000000A", memoryOpfsHandle(origin))).rejects.toThrow("account ID");
     expect(origin.directories.size).toBe(2);
   });
 
@@ -135,7 +42,7 @@ describe("web2 filesystem chunks", () => {
     bytes.fill(97, 0, WEB2_CHUNK_SIZE);
     bytes.set([0, 1, 2], WEB2_CHUNK_SIZE);
 
-    const staged = await stageBlob(handle(root), new Blob([bytes]));
+    const staged = await stageBlob(memoryOpfsHandle(root), new Blob([bytes]));
     const expected: Manifest = {
       schemaVersion: 1,
       size: WEB2_CHUNK_SIZE + 3,
@@ -152,20 +59,20 @@ describe("web2 filesystem chunks", () => {
 
   test("stages and reconstructs empty content without creating chunk storage", async () => {
     const root = new MemoryDirectory();
-    const { manifest, manifestHash } = await stageBlob(handle(root), new Blob());
+    const { manifest, manifestHash } = await stageBlob(memoryOpfsHandle(root), new Blob());
     expect(manifest).toEqual({ schemaVersion: 1, size: 0, chunkSize: WEB2_CHUNK_SIZE, chunks: [] });
     expect(manifestHash).toBe("d76845a0f6bb357481c9d592f86775f971fa32f78ac09c5e312e2f956e3f538a");
     expect(root.directories.has("chunks")).toBe(false);
-    expect(await reconstructBlob(handle(root), manifest, "application/octet-stream")).toMatchObject({ size: 0, type: "application/octet-stream" });
+    expect(await reconstructBlob(memoryOpfsHandle(root), manifest, "application/octet-stream")).toMatchObject({ size: 0, type: "application/octet-stream" });
   });
 
   test("does not rewrite a valid existing chunk", async () => {
     const root = new MemoryDirectory();
     const content = new Blob(["stable"]);
     const ref = { hash: STABLE_HASH, size: 6 };
-    await writeChunk(handle(root), ref, content);
+    await writeChunk(memoryOpfsHandle(root), ref, content);
     const stored = chunkPath(root, ref)!;
-    await writeChunk(handle(root), ref, content);
+    await writeChunk(memoryOpfsHandle(root), ref, content);
     expect(stored.writes).toBe(1);
   });
 
@@ -176,8 +83,8 @@ describe("web2 filesystem chunks", () => {
       { hash: FULL_HASH.toUpperCase(), size: 1 },
       { hash: FULL_HASH, size: 0 },
       { hash: FULL_HASH, size: WEB2_CHUNK_SIZE + 1 },
-    ]) await expect(readChunk(handle(root), invalid)).rejects.toThrow();
-    await expect(writeChunk(handle(root), ref, new Blob(["abce"]))).rejects.toThrow("Source chunk");
+    ]) await expect(readChunk(memoryOpfsHandle(root), invalid)).rejects.toThrow();
+    await expect(writeChunk(memoryOpfsHandle(root), ref, new Blob(["abce"]))).rejects.toThrow("Source chunk");
     expect(root.directoryReads).toBe(0);
     expect(root.directories.size).toBe(0);
   });
@@ -186,13 +93,13 @@ describe("web2 filesystem chunks", () => {
     const root = new MemoryDirectory();
     const content = new Blob(["stable"]);
     const ref = { hash: STABLE_HASH, size: 6 };
-    await writeChunk(handle(root), ref, content);
+    await writeChunk(memoryOpfsHandle(root), ref, content);
     const stored = chunkPath(root, ref)!;
     stored.content = new Blob(["staple"]);
 
-    await writeChunk(handle(root), ref, content);
+    await writeChunk(memoryOpfsHandle(root), ref, content);
     expect(stored.writes).toBe(2);
-    expect(await (await readChunk(handle(root), ref)).text()).toBe("stable");
+    expect(await (await readChunk(memoryOpfsHandle(root), ref)).text()).toBe("stable");
   });
 
   test("detects corruption applied when the final write closes", async () => {
@@ -200,7 +107,7 @@ describe("web2 filesystem chunks", () => {
     const ref = { hash: STABLE_HASH, size: 6 };
     const shard = root.directory("chunks").directory(ref.hash.slice(0, 2));
     shard.file(ref.hash, new Blob(["broken"])).corruptNextClose = true;
-    await expect(writeChunk(handle(root), ref, new Blob(["stable"]))).rejects.toThrow("Stored chunk");
+    await expect(writeChunk(memoryOpfsHandle(root), ref, new Blob(["stable"]))).rejects.toThrow("Stored chunk");
   });
 
   test("detects read and ordered reconstruction corruption before returning bytes", async () => {
@@ -208,12 +115,12 @@ describe("web2 filesystem chunks", () => {
     const first = new Blob([new Uint8Array(WEB2_CHUNK_SIZE).fill(97)]);
     const firstRef = { hash: FULL_HASH, size: WEB2_CHUNK_SIZE };
     const lastRef = { hash: TAIL_HASH, size: 3 };
-    await writeChunk(handle(root), firstRef, first);
-    await writeChunk(handle(root), lastRef, new Blob([new Uint8Array([0, 1, 2])]));
+    await writeChunk(memoryOpfsHandle(root), firstRef, first);
+    await writeChunk(memoryOpfsHandle(root), lastRef, new Blob([new Uint8Array([0, 1, 2])]));
     chunkPath(root, lastRef)!.content = new Blob([new Uint8Array([0, 1, 3])]);
 
-    await expect(readChunk(handle(root), lastRef)).rejects.toThrow("Stored chunk");
-    await expect(reconstructBlob(handle(root), {
+    await expect(readChunk(memoryOpfsHandle(root), lastRef)).rejects.toThrow("Stored chunk");
+    await expect(reconstructBlob(memoryOpfsHandle(root), {
       schemaVersion: 1,
       size: WEB2_CHUNK_SIZE + 3,
       chunkSize: WEB2_CHUNK_SIZE,
@@ -225,10 +132,10 @@ describe("web2 filesystem chunks", () => {
     const root = new MemoryDirectory();
     const content = new Blob([new Uint8Array(WEB2_CHUNK_SIZE).fill(97)]);
     const ref = { hash: FULL_HASH, size: WEB2_CHUNK_SIZE };
-    await writeChunk(handle(root), ref, content);
+    await writeChunk(memoryOpfsHandle(root), ref, content);
     const stored = chunkPath(root, ref)!;
     const readsBefore = stored.reads;
-    const blob = await reconstructBlob(handle(root), {
+    const blob = await reconstructBlob(memoryOpfsHandle(root), {
       schemaVersion: 1,
       size: WEB2_CHUNK_SIZE * 2,
       chunkSize: WEB2_CHUNK_SIZE,
@@ -254,7 +161,7 @@ describe("web2 filesystem chunks", () => {
     chunks.directory("not-a-shard").file(retained, new Blob(["drop"]));
     chunks.file("cc", new Blob(["drop"]));
 
-    await removeOrphanChunks(handle(root), new Set([retained]));
+    await removeOrphanChunks(memoryOpfsHandle(root), new Set([retained]));
     expect([...chunks.directories.keys()]).toEqual(["aa", "bb"]);
     expect([...shard.files.keys()]).toEqual([retained]);
     expect(shard.directories.size).toBe(0);
@@ -264,9 +171,9 @@ describe("web2 filesystem chunks", () => {
 
   test("validates all retained hashes before cleanup and does not create a missing chunks directory", async () => {
     const root = new MemoryDirectory();
-    await expect(removeOrphanChunks(handle(root), new Set([FULL_HASH, "INVALID"]))).rejects.toThrow("retained chunk hash");
+    await expect(removeOrphanChunks(memoryOpfsHandle(root), new Set([FULL_HASH, "INVALID"]))).rejects.toThrow("retained chunk hash");
     expect(root.directoryReads).toBe(0);
-    await removeOrphanChunks(handle(root), new Set());
+    await removeOrphanChunks(memoryOpfsHandle(root), new Set());
     expect(root.directoryReads).toBe(1);
     expect(root.directories.size).toBe(0);
   });
