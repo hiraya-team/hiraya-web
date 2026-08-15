@@ -26,4 +26,4 @@ bun run test:e2e
 
 ## Current Limits
 
-No files, settings, synchronization, account bootstrap, or applications are available in this milestone. Phase 0 checks required APIs but deliberately does not open IndexedDB or inspect previous browser data.
+No files, settings, synchronization, or account bootstrap are available in this milestone. The previous application platform has been removed. Phase 0 checks required APIs but deliberately does not open IndexedDB or inspect previous browser data.

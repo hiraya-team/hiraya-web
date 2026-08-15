@@ -8,7 +8,7 @@ If Hiraya reports that browser storage is unavailable, update or switch to a cur
 
 ## Not Available Yet
 
-Files, folders, synchronization, settings, applications, sharing, publication, editors, viewers, and themes return only after their new durable architecture is complete.
+Files, folders, synchronization, and settings return only after their new durable architecture is complete. Applications, sharing, publication, editors, viewers, and themes are not part of the current product architecture.
 
 ## Changelog
 
