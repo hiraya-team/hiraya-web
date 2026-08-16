@@ -569,7 +569,7 @@
           "deviceId": "00000000-0000-4000-8000-000000000003",
           "logicalTime": 31,
           "namespace": "desktop-grid",
-          "keys": ["auto-arrange-icons", "grid-size"]
+          "keys": ["grid-size", "auto-arrange-icons"]
         },
         "affected": [
           "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",

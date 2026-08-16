@@ -151,7 +151,7 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("pins the authoritative corpus bytes", async () => {
-    expect(await sha256Hex(corpusBytes)).toBe("cbe8bed90c55cd26213d75369c360f49aa8c189170e1aad4dd4cd962fe38fae5");
+    expect(await sha256Hex(corpusBytes)).toBe("817c63a600b6a19ab886c890fd8c927fb43cac63acbff25558f2a311da53603a");
   });
 
   test("runs every primitive case through production validators", () => {
