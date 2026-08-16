@@ -167,7 +167,7 @@ test("elects one account leader, coalesces wakes, drains work, and catches up af
   expect(streams).toBe(0);
 });
 
-test("wakes the leader from an account revision notification", async () => {
+test("wakes the leader from workspace revision and catalog notifications", async () => {
   const locks = new TestLeaderLocks();
   const broadcasts = new TestBroadcastChannels();
   let runs = 0;
@@ -177,6 +177,8 @@ test("wakes the leader from an account revision notification", async () => {
   await waitFor(() => runs === 1);
   broadcasts.broadcast(filesystemRevisionChannelName(await filesystemDatabaseName(ACCOUNT)), { schemaVersion: 1, workspaceId: stableId(2), revision: 1 });
   await waitFor(() => runs === 2);
+  broadcasts.broadcast(filesystemRevisionChannelName(await filesystemDatabaseName(ACCOUNT)), { schemaVersion: 1, kind: "catalog-change" });
+  await waitFor(() => runs === 3);
   await client.close();
 });
 

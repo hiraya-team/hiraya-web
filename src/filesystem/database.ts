@@ -38,6 +38,7 @@ import {
 
 const DATABASE_VERSION = 1;
 const FILE_VERSION_HISTORY_LIMIT = 20;
+const MAX_WORKSPACES = WEB2_MAX_BATCH_ITEMS;
 const STORES = ["workspaces", "nodes", "manifests", "operations", "changes", "sync", "settings", "hydration-pages"] as const;
 const STORE_SCHEMA = {
   workspaces: { keyPath: "id", indexes: {} },
@@ -66,6 +67,7 @@ export type Workspace = {
   id: string;
   name: string;
   pinned: boolean;
+  ordinal: number;
   headSequence: number;
   snapshotBarrier: number;
   logFloor: number;
@@ -155,6 +157,9 @@ export type FilesystemDatabase = {
   close(): void;
   createWorkspace(value: { id: string; name: string; pinned: boolean; deviceId: string }): Promise<Workspace>;
   listWorkspaces(): Promise<Workspace[]>;
+  renameWorkspace(workspaceId: string, name: string): Promise<Workspace>;
+  setWorkspacePreferences(preferences: Array<{ id: string; pinned: boolean }>): Promise<Workspace[]>;
+  deleteWorkspace(workspaceId: string): Promise<Workspace[]>;
   getNode(id: string): Promise<Node | undefined>;
   listChildren(workspaceId: string, parentId: string | null, limit?: number): Promise<Node[]>;
   assertChildNamesAvailable(workspaceId: string, parentId: string | null, names: string[]): Promise<void>;
@@ -208,12 +213,13 @@ async function transact<T>(db: IDBDatabase, stores: string | string[], mode: IDB
 
 function parseWorkspace(value: unknown): Workspace {
   if (!isRecord(value)) throw new Error("A stored workspace has an unsupported shape.");
-  assertExactKeys(value, ["id", "name", "pinned", "headSequence", "snapshotBarrier", "logFloor", "localRevision"], "A stored workspace has an unsupported shape.");
+  assertExactKeys(value, ["id", "name", "pinned", "ordinal", "headSequence", "snapshotBarrier", "logFloor", "localRevision"], "A stored workspace has an unsupported shape.");
   if (typeof value.pinned !== "boolean") throw new Error("A stored workspace has invalid pinning metadata.");
   const workspace = {
     id: parseStableId(value.id, "A stored workspace ID is invalid."),
     name: parseCanonicalName(value.name, "A stored workspace name is invalid."),
     pinned: value.pinned,
+    ordinal: parseNonNegativeSafeInteger(value.ordinal, "A stored workspace ordinal is invalid."),
     headSequence: parseNonNegativeSafeInteger(value.headSequence, "A stored workspace head is invalid."),
     snapshotBarrier: parseNonNegativeSafeInteger(value.snapshotBarrier, "A stored workspace snapshot barrier is invalid."),
     logFloor: parseNonNegativeSafeInteger(value.logFloor, "A stored workspace log floor is invalid."),
@@ -221,6 +227,17 @@ function parseWorkspace(value: unknown): Workspace {
   };
   if (workspace.logFloor > workspace.snapshotBarrier || workspace.snapshotBarrier > workspace.headSequence) throw new Error("A stored workspace sequence range is invalid.");
   return workspace;
+}
+
+function parseWorkspaceList(values: unknown[]) {
+  const workspaces = values.map(parseWorkspace).sort((left, right) => left.ordinal - right.ordinal);
+  if (workspaces.length > MAX_WORKSPACES || workspaces.some(({ ordinal }, index) => ordinal !== index) || new Set(workspaces.map(({ name }) => name.toLowerCase())).size !== workspaces.length) throw new Error("Stored workspace directory metadata is invalid.");
+  let unpinned = false;
+  for (const workspace of workspaces) {
+    if (!workspace.pinned) unpinned = true;
+    else if (unpinned) throw new Error("Stored workspace directory metadata is invalid.");
+  }
+  return workspaces;
 }
 
 function parseSyncState(value: unknown): SyncState {
@@ -807,25 +824,105 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       if (typeof value.pinned !== "boolean") throw new Error("Workspace pinning metadata is invalid.");
       const id = parseStableId(value.id, "A workspace ID is invalid.");
       const deviceId = parseStableId(value.deviceId, "A workspace device ID is invalid.");
-      const workspace = parseWorkspace({ id, name: parseCanonicalName(value.name, "A workspace name is invalid."), pinned: value.pinned, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 });
+      const name = parseCanonicalName(value.name, "A workspace name is invalid.");
       const sync = parseSyncState({ workspaceId: id, deviceId, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
       return transact(db, ["workspaces", "sync"], "readwrite", async (transaction) => {
-        const existingWorkspace = await request(transaction.objectStore("workspaces").get(id));
+        const workspaces = transaction.objectStore("workspaces");
+        const existingWorkspace = await request(workspaces.get(id));
         const existingSync = await request(transaction.objectStore("sync").get(id));
         if (existingWorkspace !== undefined) { parseWorkspace(existingWorkspace); throw new Error("That workspace already exists."); }
         if (existingSync !== undefined) { parseSyncState(existingSync); throw new Error("Stored synchronization state exists without its workspace."); }
+        const current = parseWorkspaceList(await request(workspaces.getAll()));
+        if (current.length === MAX_WORKSPACES) throw new Error("The workspace directory is full.");
+        if (current.some((workspace) => workspace.name.toLowerCase() === name.toLowerCase())) throw new Error("A workspace already uses that name.");
+        const insertion = value.pinned ? current.findIndex(({ pinned }) => !pinned) : current.length;
+        const ordered = [...current];
+        const workspace = parseWorkspace({ id, name, pinned: value.pinned, ordinal: insertion < 0 ? current.length : insertion, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 });
+        ordered.splice(workspace.ordinal, 0, workspace);
+        const updated = ordered.map((candidate, ordinal) => parseWorkspace({ ...candidate, ordinal }));
         await Promise.all([
-          request(transaction.objectStore("workspaces").add(workspace)),
+          ...updated.map((candidate) => request(candidate.id === id ? workspaces.add(candidate) : workspaces.put(candidate))),
           request(transaction.objectStore("sync").add(sync)),
         ]);
-        return workspace;
+        return updated[workspace.ordinal]!;
       });
     },
 
     listWorkspaces: () => transact(db, "workspaces", "readonly", async (transaction) => {
       const values = await request(transaction.objectStore("workspaces").getAll());
-      return values.map(parseWorkspace);
+      return parseWorkspaceList(values);
     }),
+
+    renameWorkspace: async (workspaceId, name) => {
+      const id = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const canonicalName = parseCanonicalName(name, "A workspace name is invalid.");
+      return transact(db, "workspaces", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("workspaces");
+        const workspaces = parseWorkspaceList(await request(store.getAll()));
+        const workspace = workspaces.find((candidate) => candidate.id === id);
+        if (!workspace) throw new Error("That workspace does not exist.");
+        if (workspaces.some((candidate) => candidate.id !== id && candidate.name.toLowerCase() === canonicalName.toLowerCase())) throw new Error("A workspace already uses that name.");
+        const renamed = parseWorkspace({ ...workspace, name: canonicalName });
+        await request(store.put(renamed));
+        return renamed;
+      });
+    },
+
+    setWorkspacePreferences: async (preferences) => {
+      if (!Array.isArray(preferences) || preferences.length === 0 || preferences.length > MAX_WORKSPACES) throw new Error("Workspace preferences are invalid.");
+      const parsed = preferences.map((preference) => {
+        if (!isRecord(preference)) throw new Error("Workspace preferences are invalid.");
+        assertExactKeys(preference, ["id", "pinned"], "Workspace preferences are invalid.");
+        if (typeof preference.pinned !== "boolean") throw new Error("Workspace preferences are invalid.");
+        return { id: parseStableId(preference.id, "A workspace preference ID is invalid."), pinned: preference.pinned };
+      });
+      if (new Set(parsed.map(({ id }) => id)).size !== parsed.length || parsed.some(({ pinned }, index) => index > 0 && pinned && !parsed[index - 1]!.pinned)) throw new Error("Workspace preferences are invalid.");
+      return transact(db, "workspaces", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("workspaces");
+        const current = parseWorkspaceList(await request(store.getAll()));
+        const byId = new Map(current.map((workspace) => [workspace.id, workspace]));
+        if (parsed.length !== current.length || parsed.some(({ id }) => !byId.has(id))) throw new Error("Workspace preferences must include the complete directory.");
+        const updated = parsed.map(({ id, pinned }, ordinal) => parseWorkspace({ ...byId.get(id)!, pinned, ordinal }));
+        await Promise.all(updated.map((workspace) => request(store.put(workspace))));
+        return updated;
+      });
+    },
+
+    deleteWorkspace: async (workspaceId) => {
+      const id = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const storeNames = ["workspaces", "nodes", "sync", "settings", "changes", "hydration-pages"];
+      return transact(db, storeNames, "readwrite", async (transaction) => {
+        const workspacesStore = transaction.objectStore("workspaces");
+        const current = parseWorkspaceList(await request(workspacesStore.getAll()));
+        if (!current.some((workspace) => workspace.id === id)) throw new Error("That workspace does not exist.");
+        if (current.length === 1) throw new Error("The final workspace cannot be deleted.");
+        const nodes = transaction.objectStore("nodes");
+        const settings = transaction.objectStore("settings");
+        const changes = transaction.objectStore("changes");
+        const hydrationPages = transaction.objectStore("hydration-pages");
+        // ponytail: deletion scans the account to remove malformed index rows; add workspace indexes if measured catalogs make this slow.
+        const [nodeValues, nodeKeys, settingKeys, changeKeys, hydrationKeys] = await Promise.all([
+          request(nodes.getAll()),
+          request(nodes.getAllKeys()),
+          request(settings.getAllKeys()),
+          request(changes.getAllKeys()),
+          request(hydrationPages.getAllKeys()),
+        ]);
+        const nodeIds = nodeKeys.filter((_, index) => isRecord(nodeValues[index]) && nodeValues[index].workspaceId === id);
+        const belongsToWorkspace = (key: IDBValidKey) => Array.isArray(key) && key[0] === id;
+        const remaining = current.filter((workspace) => workspace.id !== id).map((workspace, ordinal) => parseWorkspace({ ...workspace, ordinal }));
+        await Promise.all([
+          ...nodeIds.map((nodeId) => request(nodes.delete(nodeId))),
+          ...settingKeys.filter(belongsToWorkspace).map((key) => request(settings.delete(key))),
+          ...changeKeys.filter(belongsToWorkspace).map((key) => request(changes.delete(key))),
+          ...hydrationKeys.filter(belongsToWorkspace).map((key) => request(hydrationPages.delete(key))),
+          ...remaining.map((workspace) => request(workspacesStore.put(workspace))),
+          request(workspacesStore.delete(id)),
+          request(transaction.objectStore("sync").delete(id)),
+        ]);
+        return remaining;
+      });
+    },
 
     getNode: async (id) => {
       const canonicalId = parseStableId(id, "A node ID is invalid.");

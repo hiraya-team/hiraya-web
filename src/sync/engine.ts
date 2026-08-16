@@ -30,7 +30,7 @@ function isAbortError(error: unknown) {
 }
 
 function isSyncWake(value: unknown) {
-  return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && value.kind === "sync-wake" && Object.keys(value).length === 2;
+  return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && (value.kind === "sync-wake" || value.kind === "catalog-change") && Object.keys(value).length === 2;
 }
 
 function wait(ms: number, signal: AbortSignal) {

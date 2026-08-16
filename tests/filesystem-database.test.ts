@@ -180,7 +180,7 @@ describe("web2 filesystem database", () => {
   test("initializes workspace and sync state atomically and reloads them unchanged", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory);
-    const expected = { id: WORKSPACE, name: "Workspace", pinned: true, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 };
+    const expected = { id: WORKSPACE, name: "Workspace", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 };
     expect(await database.listWorkspaces()).toEqual([expected]);
     const name = await filesystemDatabaseName(ACCOUNT);
     expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
@@ -237,7 +237,7 @@ describe("web2 filesystem database", () => {
     const name = await filesystemDatabaseName(ACCOUNT);
     expect(await readStored(factory, name, "changes", [WORKSPACE, 1])).toEqual({ workspaceId: WORKSPACE, revision: 1, operationId, affectedIdentities: stored.affectedIdentities });
     expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 100 });
-    expect(await database.listWorkspaces()).toEqual([{ id: WORKSPACE, name: "Workspace", pinned: true, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 1 }]);
+    expect(await database.listWorkspaces()).toEqual([{ id: WORKSPACE, name: "Workspace", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 1 }]);
     database.close();
   });
 
