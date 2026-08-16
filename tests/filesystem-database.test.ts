@@ -155,17 +155,18 @@ describe("web2 filesystem database", () => {
     const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
     try {
       expect(raw.version).toBe(1);
-      expect([...raw.objectStoreNames]).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "app-storage", "changes", "device-preferences", "file-associations", "hydration-pages", "installed-apps", "manifests", "nodes", "operations", "settings", "sync", "window-sessions", "workspaces"]);
+      expect([...raw.objectStoreNames]).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "app-storage", "changes", "device-preferences", "file-associations", "hydration-coverage", "hydration-pages", "installed-apps", "manifests", "nodes", "operations", "settings", "sync", "window-sessions", "workspaces"]);
       const transaction = raw.transaction([...raw.objectStoreNames]);
       const expected = {
         workspaces: { keyPath: "id", indexes: [] },
         nodes: { keyPath: "id", indexes: ["by-workspace-lifecycle", "by-workspace-parent-lifecycle"] },
         manifests: { keyPath: "hash", indexes: [] },
         operations: { keyPath: "operationId", indexes: ["by-workspace-revision", "by-workspace-state-revision"] },
-        changes: { keyPath: ["workspaceId", "revision"], indexes: [] },
+        changes: { keyPath: ["workspaceId", "revision"], indexes: ["by-operation-id"] },
         sync: { keyPath: "workspaceId", indexes: [] },
         settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: [] },
         "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: ["by-workspace-kind"] },
+        "hydration-coverage": { keyPath: ["workspaceId", "targetId"], indexes: ["by-workspace-as-of"] },
         "window-sessions": { keyPath: "workspaceId", indexes: [] },
         "device-preferences": { keyPath: "id", indexes: [] },
         "installed-apps": { keyPath: "appId", indexes: [] },
@@ -188,6 +189,7 @@ describe("web2 filesystem database", () => {
       expect(transaction.objectStore("app-storage").index("appId")).toMatchObject({ keyPath: "appId", unique: false, multiEntry: false });
       expect(transaction.objectStore("file-associations").index("appId")).toMatchObject({ keyPath: "appId", unique: false, multiEntry: false });
       expect(transaction.objectStore("account-app-outbox").index("operationId")).toMatchObject({ keyPath: "operationId", unique: true, multiEntry: false });
+      expect(transaction.objectStore("hydration-coverage").index("by-workspace-as-of")).toMatchObject({ keyPath: ["workspaceId", "target.asOf", "targetId"], unique: true, multiEntry: false });
     } finally {
       raw.close();
       database?.close();
@@ -317,7 +319,7 @@ describe("web2 filesystem database", () => {
     const expected = { id: WORKSPACE, name: "Workspace", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 };
     expect(await database.listWorkspaces()).toEqual([expected]);
     const name = await filesystemDatabaseName(ACCOUNT);
-    expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
+    expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
     database.close();
 
     const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
@@ -329,7 +331,7 @@ describe("web2 filesystem database", () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 90);
     const operationId = stableId(9);
-    expect(await database.getSyncState(WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
+    expect(await database.getSyncState(WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
     expect(await database.getOperation(operationId)).toBeUndefined();
     const committed = await database.commitOperation({ operation: createDraft(operationId, [folder(stableId(8), "Lookup")]) });
     expect(await database.getOperation(operationId)).toEqual(committed);
@@ -355,7 +357,7 @@ describe("web2 filesystem database", () => {
     expect(local.operation.logicalTime).toBe(501);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target });
     expect(await database.stageHydrationPage(targetId, "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 1, observedLogicalTime: 700, target, nodes: [remoteNode], settings: [], nextPageToken: null })).toBe(false);
-    expect((await database.getSyncState(WORKSPACE)).lastObservedLogicalTime).toBe(700);
+    expect((await database.getSyncState(WORKSPACE)).lastObservedLogicalTime).toBe(500);
     await expect(database.stageHydrationPage(targetId, "unexpected", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 1, observedLogicalTime: 600, target, nodes: [], settings: [], nextPageToken: null })).rejects.toThrow("out of sequence");
     const finalPage = { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 600, target, nodes: [remoteNode], settings: [], nextPageToken: null };
     expect(await database.stageHydrationPage(targetId, null, finalPage)).toBe(true);
@@ -421,6 +423,246 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("publishes selector replacement while replaying pending local edits", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    const target = (asOf: number) => ({ kind: "folder-page" as const, workspaceId: WORKSPACE, asOf, parentId: null, limit: 100 });
+    const targetId = hydrationTargetId(target(10));
+    const remoteId = stableId(2_340);
+    const omittedId = stableId(2_341);
+    const localId = stableId(2_342);
+    const pendingOmittedId = stableId(2_347);
+    const remoteNode = (id: string, name: string, logicalTime: number) => {
+      const tuple = { logicalTime, operationId: stableId(2_350 + logicalTime) };
+      return { workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    };
+    const firstGeneration = stableId(2_343);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [remoteNode(remoteId, "Remote", 10), remoteNode(omittedId, "Omitted", 10), remoteNode(pendingOmittedId, "Pending", 10)], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, firstGeneration);
+    await expect(database.commitOperation({ operation: createDraft(firstGeneration, [folder(stableId(2_398), "Collision")]) })).rejects.toThrow("hydration generation ID");
+
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_344)), kind: "rename", nodeId: remoteId, name: "Local rename", modifiedAt: 2 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_348)), kind: "rename", nodeId: pendingOmittedId, name: "Pending rename", modifiedAt: 2 } });
+    await database.commitOperation({ operation: createDraft(stableId(2_345), [folder(localId, "Local")]) });
+    const secondGeneration = stableId(2_346);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 20, target: target(20), nodes: [remoteNode(remoteId, "Server base", 20)], settings: [], nextPageToken: null });
+    const change = await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+
+    expect(change).toMatchObject({ kind: "hydration", workspaceId: WORKSPACE, revision: 5, operationId: secondGeneration, targetId });
+    expect(await database.getNode(remoteId)).toMatchObject({ name: "Local rename", lifecycle: { kind: "active" } });
+    expect(await database.getNode(localId)).toMatchObject({ name: "Local" });
+    expect(await database.getNode(pendingOmittedId)).toBeUndefined();
+    expect(await database.getNode(omittedId)).toBeUndefined();
+    expect(await database.getHydrationProgress(WORKSPACE, targetId, secondGeneration)).toBeUndefined();
+    expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toEqual({ workspaceId: WORKSPACE, targetId, generationId: secondGeneration, target: target(20), memberIds: [remoteId] });
+    expect(await database.listChanges(WORKSPACE, 4)).toEqual([change]);
+    const staleGeneration = stableId(2_349);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: staleGeneration, target: target(15) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: staleGeneration, pageIndex: 0, observedLogicalTime: 20, target: target(15), nodes: [remoteNode(omittedId, "Stale", 10)], settings: [], nextPageToken: null });
+    await expect(database.publishHydration(WORKSPACE, targetId, staleGeneration)).rejects.toThrow("older than");
+    expect(await database.getNode(omittedId)).toBeUndefined();
+    database.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await reopened.getHydrationCoverage(WORKSPACE, targetId)).toMatchObject({ generationId: secondGeneration, memberIds: [remoteId] });
+    expect(await reopened.getNode(remoteId)).toMatchObject({ name: "Local rename" });
+    reopened.close();
+  });
+
+  test("replays a pending subtree transfer over a remote source projection", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const rootId = stableId(2_360);
+    const childId = stableId(2_361);
+    const remote = (id: string, name: string, parentId: string | null, logicalTime = 10) => {
+      const tuple = { logicalTime, operationId: stableId(2_352 + logicalTime) };
+      return { workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    };
+    const exactTarget = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: 10, nodeIds: [rootId, childId].sort() };
+    const exactTargetId = hydrationTargetId(exactTarget);
+    const initialGeneration = stableId(2_363);
+    await database.beginHydration(exactTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: initialGeneration, target: exactTarget });
+    await database.stageHydrationPage(exactTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: initialGeneration, pageIndex: 0, observedLogicalTime: 10, target: exactTarget, nodes: [remote(rootId, "Root", null), remote(childId, "Child", rootId)].sort((left, right) => left.id.localeCompare(right.id)), settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, exactTargetId, initialGeneration);
+    await database.commitOperation({ operation: transferDraft(stableId(2_364), [rootId]) });
+    await database.commitOperation({ operation: { schemaVersion: 1, kind: "rename", operationId: stableId(2_398), workspaceId: DESTINATION, deviceId: DEVICE, nodeId: rootId, name: "Destination rename", modifiedAt: 2 } });
+
+    const folderTarget = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 20, parentId: null, limit: 100 };
+    const folderTargetId = hydrationTargetId(folderTarget);
+    const refreshGeneration = stableId(2_365);
+    const refreshedRoot = remote(rootId, "Server renamed", null, 20);
+    refreshedRoot.position = { x: 9, y: 9 };
+    refreshedRoot.fieldTuples.position = { logicalTime: 200, operationId: stableId(2_399) };
+    await database.beginHydration(folderTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: refreshGeneration, target: folderTarget });
+    await database.stageHydrationPage(folderTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: refreshGeneration, pageIndex: 0, observedLogicalTime: 200, target: folderTarget, nodes: [refreshedRoot], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, folderTargetId, refreshGeneration);
+
+    expect(await database.getNode(rootId)).toMatchObject({ workspaceId: DESTINATION, name: "Destination rename", parentId: null, position: { x: 9, y: 9 }, lifecycle: { kind: "active" } });
+    expect(await database.getNode(childId)).toMatchObject({ workspaceId: DESTINATION, parentId: rootId, lifecycle: { kind: "active" } });
+    expect(await database.listChildren(WORKSPACE, null)).toEqual([]);
+    expect((await database.listChildren(DESTINATION, null)).map(({ id }) => id)).toEqual([rootId]);
+    expect((await database.listWorkspaces()).find(({ id }) => id === DESTINATION)?.localRevision).toBe(3);
+    expect(await database.listChanges(DESTINATION, 2)).toMatchObject([{ kind: "hydration", operationId: refreshGeneration, targetId: folderTargetId }]);
+    expect(await database.getSyncState(DESTINATION)).toMatchObject({ lastHydrationAsOf: 0, lastObservedLogicalTime: 200 });
+    const destinationEdit = await database.commitOperation({ operation: { schemaVersion: 1, kind: "rename", operationId: stableId(2_400), workspaceId: DESTINATION, deviceId: DEVICE, nodeId: childId, name: "Child renamed", modifiedAt: 2 } });
+    expect(destinationEdit.operation.logicalTime).toBe(201);
+    database.close();
+  });
+
+  test("preserves an authoritative same-tuple server transformation", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    const nodeId = stableId(2_401);
+    const target = (asOf: number) => ({ kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf, nodeIds: [nodeId] });
+    const targetId = hydrationTargetId(target(10));
+    const baseTuple = { logicalTime: 10, operationId: stableId(2_402) };
+    const base = { workspaceId: WORKSPACE, id: nodeId, kind: "folder" as const, name: "Base", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: baseTuple, parent: baseTuple, lifecycle: baseTuple, position: baseTuple, content: null } };
+    const firstGeneration = stableId(2_403);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [base], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, firstGeneration);
+    const operationId = stableId(2_404);
+    const rename = await database.commitOperation({ operation: { ...operationBase(operationId), kind: "rename", nodeId, name: "Client input", modifiedAt: 2 } });
+
+    const transformed = { ...base, name: "Server transformed", fieldTuples: { ...base.fieldTuples, name: { logicalTime: rename.operation.logicalTime, operationId } } };
+    const secondGeneration = stableId(2_405);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: rename.operation.logicalTime, target: target(20), nodes: [transformed], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Server transformed", fieldTuples: { name: { logicalTime: rename.operation.logicalTime, operationId } } });
+    database.close();
+  });
+
+  test("defers a pending Trash forest without resurrecting exact-negative nodes", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    const rootId = stableId(2_373);
+    const childId = stableId(2_374);
+    const target = (asOf: number) => ({ kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf, nodeIds: [rootId, childId].sort() });
+    const targetId = hydrationTargetId(target(10));
+    const tuple = { logicalTime: 10, operationId: stableId(2_375) };
+    const remote = (id: string, name: string, parentId: string | null) => ({ workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } });
+    const firstGeneration = stableId(2_376);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [remote(rootId, "Root", null), remote(childId, "Child", rootId)].sort((left, right) => left.id.localeCompare(right.id)), settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, firstGeneration);
+    const trashOperationId = stableId(2_377);
+    await database.commitOperation({ operation: { ...operationBase(trashOperationId), kind: "trash", nodeIds: [rootId], trashedAt: 20 } });
+
+    const secondGeneration = stableId(2_378);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 20, target: target(20), nodes: [], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+    expect(await database.getNode(rootId)).toBeUndefined();
+    expect(await database.getNode(childId)).toBeUndefined();
+    expect(await database.listTrash(WORKSPACE)).toEqual([]);
+    expect(await database.getOperation(trashOperationId)).toMatchObject({ overlayKind: "deferred" });
+    const conflictTarget = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: 30, nodeIds: [rootId] };
+    const conflictTargetId = hydrationTargetId(conflictTarget);
+    const conflictGeneration = stableId(2_379);
+    const conflictRoot = remote(rootId, "Root", null);
+    conflictRoot.fieldTuples.lifecycle = { logicalTime: 200, operationId: stableId(2_380) };
+    await database.beginHydration(conflictTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: conflictGeneration, target: conflictTarget });
+    await database.stageHydrationPage(conflictTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: conflictGeneration, pageIndex: 0, observedLogicalTime: 200, target: conflictTarget, nodes: [conflictRoot], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, conflictTargetId, conflictGeneration);
+    expect(await database.getNode(rootId)).toMatchObject({ lifecycle: { kind: "active" }, fieldTuples: { lifecycle: { logicalTime: 200 } } });
+    expect(await database.getNode(childId)).toBeUndefined();
+    database.close();
+  });
+
+  test("records exact-setting negative coverage and removes the stale projection", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const key = "font-size";
+    const target = (asOf: number) => ({ kind: "exact-settings" as const, workspaceId: WORKSPACE, asOf, namespace: "editor" as const, keys: [key] });
+    const targetId = hydrationTargetId(target(10));
+    const firstGeneration = stableId(2_366);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [], settings: [{ workspaceId: WORKSPACE, namespace: "editor", key, deleted: false, value: 16, logicalTime: 10, operationId: stableId(2_367) }], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, firstGeneration);
+    expect(await database.getSetting(WORKSPACE, "editor", key)).toMatchObject({ value: 16 });
+
+    const secondGeneration = stableId(2_368);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 20, target: target(20), nodes: [], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+    expect(await database.getSettingRecord(WORKSPACE, "editor", key)).toBeUndefined();
+    expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toMatchObject({ generationId: secondGeneration, memberIds: [] });
+    database.close();
+  });
+
+  test("publishes ancestry ending at an explicit purge tombstone", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const childId = stableId(2_410);
+    const tombstoneId = stableId(2_411);
+    const tuple = { logicalTime: 10, operationId: stableId(2_412) };
+    const child = { workspaceId: WORKSPACE, id: childId, kind: "folder" as const, name: "Child", parentId: tombstoneId, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    const tombstone = { workspaceId: WORKSPACE, id: tombstoneId, purged: true as const, logicalTime: 10, operationId: stableId(2_413) };
+    const target = { kind: "ancestry" as const, workspaceId: WORKSPACE, asOf: 10, nodeId: childId, maxDepth: 2 };
+    const targetId = hydrationTargetId(target);
+    const generationId = stableId(2_414);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [child, tombstone], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, generationId);
+    expect(await database.getNode(childId)).toMatchObject({ parentId: tombstoneId });
+    expect(await database.getNodeRecord(tombstoneId)).toEqual(tombstone);
+    database.close();
+  });
+
+  test("rolls back projection, coverage, revision, and staged deletion when publication fails", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const nodeId = stableId(2_370);
+    const target = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: 10, nodeIds: [nodeId] };
+    const targetId = hydrationTargetId(target);
+    const generationId = stableId(2_371);
+    const tuple = { logicalTime: 10, operationId: stableId(2_372) };
+    const node = { workspaceId: WORKSPACE, id: nodeId, kind: "folder" as const, name: "Remote", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [node], settings: [], nextPageToken: null });
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "hydration-coverage") throw new DOMException("Injected publication failure", "AbortError");
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    };
+    try {
+      await expect(database.publishHydration(WORKSPACE, targetId, generationId)).rejects.toThrow("Injected publication failure");
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    expect(await database.getNode(nodeId)).toBeUndefined();
+    expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toBeUndefined();
+    expect(await database.getHydrationProgress(WORKSPACE, targetId, generationId)).toEqual({ nextPageIndex: 1, pageToken: null, complete: true });
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(0);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "changes")).toEqual([]);
+    database.close();
+  });
+
+  test("rejects a staged hydration older than the applied pull cursor", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const target = { kind: "exact-settings" as const, workspaceId: WORKSPACE, asOf: 5, namespace: "editor" as const, keys: ["font-size"] };
+    const targetId = hydrationTargetId(target);
+    const generationId = stableId(2_381);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 5, target, nodes: [], settings: [], nextPageToken: null });
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    const syncStore = raw.transaction("sync", "readwrite").objectStore("sync");
+    const sync = await idbRequest(syncStore.get(WORKSPACE)) as Record<string, unknown>;
+    await idbRequest(syncStore.put({ ...sync, cursor: 6 }));
+    raw.close();
+
+    await expect(database.publishHydration(WORKSPACE, targetId, generationId)).rejects.toThrow("older than");
+    expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toBeUndefined();
+    expect(await database.getHydrationProgress(WORKSPACE, targetId, generationId)).toMatchObject({ complete: true });
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(0);
+    database.close();
+  });
+
   test("commits a folder and file forest with exact records, inverse, change, and clocks", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 100);
@@ -453,8 +695,8 @@ describe("web2 filesystem database", () => {
     expect(await database.getManifest(manifest.hash)).toEqual(manifest.manifest);
 
     const name = await filesystemDatabaseName(ACCOUNT);
-    expect(await readStored(factory, name, "changes", [WORKSPACE, 1])).toEqual({ workspaceId: WORKSPACE, revision: 1, operationId, affectedIdentities: stored.affectedIdentities });
-    expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 100 });
+    expect(await readStored(factory, name, "changes", [WORKSPACE, 1])).toEqual({ kind: "operation", workspaceId: WORKSPACE, revision: 1, operationId, affectedIdentities: stored.affectedIdentities });
+    expect(await readStored(factory, name, "sync", WORKSPACE)).toEqual({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 100 });
     expect(await database.listWorkspaces()).toEqual([{ id: WORKSPACE, name: "Workspace", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 1 }]);
     database.close();
   });
@@ -808,8 +1050,8 @@ describe("web2 filesystem database", () => {
     const raw = await openRaw(factory, databaseName);
     const clockTransaction = raw.transaction("sync", "readwrite");
     await Promise.all([
-      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 3_500, lastLocalLogicalTime: 100 })),
-      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: DESTINATION, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 300, lastLocalLogicalTime: 4_000 })),
+      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 3_500, lastLocalLogicalTime: 100 })),
+      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: DESTINATION, deviceId: DEVICE, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 300, lastLocalLogicalTime: 4_000 })),
     ]);
     raw.close();
 
@@ -867,8 +1109,8 @@ describe("web2 filesystem database", () => {
       `folder:${DESTINATION}:${destinationParentId}`,
     ].sort();
     expect(transferred.affectedIdentities).toEqual([...sourceIdentities, ...destinationIdentities].sort());
-    expect(await readStored(factory, databaseName, "changes", [WORKSPACE, 2])).toEqual({ workspaceId: WORKSPACE, revision: 2, operationId, affectedIdentities: sourceIdentities });
-    expect(await readStored(factory, databaseName, "changes", [DESTINATION, 2])).toEqual({ workspaceId: DESTINATION, revision: 2, operationId, affectedIdentities: destinationIdentities });
+    expect(await readStored(factory, databaseName, "changes", [WORKSPACE, 2])).toEqual({ kind: "operation", workspaceId: WORKSPACE, revision: 2, operationId, affectedIdentities: sourceIdentities });
+    expect(await readStored(factory, databaseName, "changes", [DESTINATION, 2])).toEqual({ kind: "operation", workspaceId: DESTINATION, revision: 2, operationId, affectedIdentities: destinationIdentities });
     expect(await database.getSyncState(WORKSPACE)).toMatchObject({ lastObservedLogicalTime: 3_500, lastLocalLogicalTime: 4_001 });
     expect(await database.getSyncState(DESTINATION)).toMatchObject({ lastObservedLogicalTime: 300, lastLocalLogicalTime: 4_001 });
     expect(new Map((await database.listWorkspaces()).map((workspace) => [workspace.id, workspace.localRevision]))).toEqual(new Map([[WORKSPACE, 2], [DESTINATION, 2]]));

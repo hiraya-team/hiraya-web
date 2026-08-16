@@ -187,6 +187,7 @@ test("deleting a workspace preserves transferred files, shared chunks, and desti
     idbRequest(raw.transaction("settings", "readwrite").objectStore("settings").put({ workspaceId: sourceWorkspace.id, namespace: 99, key: "broken" })),
     idbRequest(raw.transaction("changes", "readwrite").objectStore("changes").put({ workspaceId: sourceWorkspace.id, revision: "broken" })),
     idbRequest(raw.transaction("hydration-pages", "readwrite").objectStore("hydration-pages").put({ workspaceId: sourceWorkspace.id, targetId: 99, pageIndex: "broken" })),
+    idbRequest(raw.transaction("hydration-coverage", "readwrite").objectStore("hydration-coverage").put({ workspaceId: sourceWorkspace.id, targetId: 99 })),
   ]);
   raw.close();
 
@@ -208,6 +209,7 @@ test("deleting a workspace preserves transferred files, shared chunks, and desti
   expect(await idbRequest(cleaned.transaction("settings").objectStore("settings").get([sourceWorkspace.id, 99, "broken"]))).toBeUndefined();
   expect(await idbRequest(cleaned.transaction("changes").objectStore("changes").get([sourceWorkspace.id, "broken"]))).toBeUndefined();
   expect(await idbRequest(cleaned.transaction("hydration-pages").objectStore("hydration-pages").get([sourceWorkspace.id, 99, "broken"]))).toBeUndefined();
+  expect(await idbRequest(cleaned.transaction("hydration-coverage").objectStore("hydration-coverage").get([sourceWorkspace.id, 99]))).toBeUndefined();
   cleaned.close();
   source.close();
   destination.close();
