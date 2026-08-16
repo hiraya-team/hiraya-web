@@ -28,11 +28,13 @@ import {
 } from "../../filesystem/model";
 import type { NewNode, SettingChange } from "../../filesystem/operations";
 
+export type FilesystemBroadcastChannel = Pick<BroadcastChannel, "postMessage" | "addEventListener" | "removeEventListener" | "close">;
+
 export type WorkspaceFilesystemEnvironment = FilesystemDatabaseEnvironment & {
   originRoot?: FileSystemDirectoryHandle;
   randomUUID?: () => string;
   locks?: Pick<LockManager, "request">;
-  createBroadcastChannel?: (name: string) => Pick<BroadcastChannel, "postMessage" | "addEventListener" | "removeEventListener" | "close">;
+  createBroadcastChannel?: (name: string) => FilesystemBroadcastChannel;
 };
 
 type CreateForestNodeBase = {
@@ -67,7 +69,7 @@ function parseTransientKey(value: unknown, message: string) {
   return value;
 }
 
-function parseRevisionNotification(value: unknown) {
+export function parseRevisionNotification(value: unknown) {
   if (!isRecord(value)) return;
   try {
     assertShape(value, ["schemaVersion", "workspaceId", "revision"], [], "A revision notification has an unsupported shape.");
@@ -76,6 +78,10 @@ function parseRevisionNotification(value: unknown) {
   } catch {
     return;
   }
+}
+
+export function filesystemRevisionChannelName(databaseName: string) {
+  return `${databaseName}-revisions`;
 }
 
 function prepareForest(value: unknown, timestamp: number) {
@@ -179,7 +185,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
     const databaseName = await filesystemDatabaseName(accountId);
     const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
     if (!createBroadcastChannel) throw new Error("BroadcastChannel is required for fresh filesystem coordination.");
-    const revisionChannel = createBroadcastChannel(`${databaseName}-revisions`);
+    const revisionChannel = createBroadcastChannel(filesystemRevisionChannelName(databaseName));
     const accountLockName = `${databaseName}-storage`;
     const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
     const now = environment.now ?? Date.now;
