@@ -1167,6 +1167,36 @@
           "protocol": "web2-sync-v1",
           "extra": true
         }
+      },
+      {
+        "name": "active bootstrap summary differs from directory",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Other", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": []
+        }
+      },
+      {
+        "name": "pinned bootstrap workspace follows unpinned workspace",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }, { "id": "00000000-0000-4000-8000-000000000002", "name": "Archive", "pinned": true }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": []
+        }
+      },
+      {
+        "name": "bootstrap setting exceeds root watermark",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000111" }]
+        }
       }
     ]
   },
