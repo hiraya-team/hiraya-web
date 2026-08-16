@@ -40,6 +40,17 @@ import { parseWindowSession, type WindowSession } from "../lib/window-session";
 import { parseJsonValue } from "@hiraya-team/apps-contracts";
 import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp } from "../apps/installed-apps";
 import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
+import { parseAccountAppsSnapshot, type AccountAppsSnapshot } from "../lib/account-apps";
+import {
+  parseAccountAppOperation,
+  parseAccountAppOutboxRecord,
+  projectAccountApps,
+  rebaseAccountAppOperation,
+  type AccountAppDataRestoration,
+  type AccountAppOperation,
+  type AccountAppOutboxRecord,
+  type PersistedAccountApps,
+} from "../lib/account-app-outbox";
 
 const DATABASE_VERSION = 1;
 const FILE_VERSION_HISTORY_LIMIT = 20;
@@ -153,6 +164,7 @@ export type FilesystemDatabaseEnvironment = {
   indexedDB?: IDBFactory;
   IDBKeyRange?: typeof IDBKeyRange;
   now?: () => number;
+  randomUUID?: () => string;
 };
 
 type CommitOperationBase = {
@@ -203,11 +215,19 @@ export type FilesystemDatabase = {
   writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number): Promise<void>;
   removeAppStorage(appId: string, key: string): Promise<void>;
   clearAppStorage(appId: string): Promise<void>;
+  readAccountApps(): Promise<{ state: PersistedAccountApps; outbox: AccountAppOutboxRecord[] }>;
+  enqueueAccountAppOperation(operation: AccountAppOperation): Promise<{ state: PersistedAccountApps; record: AccountAppOutboxRecord }>;
+  reconcileAccountApps(snapshot: AccountAppsSnapshot, acknowledgedOperationId?: string): Promise<PersistedAccountApps>;
+  blockAccountAppOperation(operationId: string, error: string, errorCode: string): Promise<void>;
+  retryAccountAppOperation(operationId: string): Promise<AccountAppOutboxRecord>;
+  discardAccountAppOperation(operationId: string, restoration?: AccountAppDataRestoration): Promise<void>;
+  recordAccountAppAttempt(operationId: string, attemptedAt: number): Promise<void>;
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
+type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
 
 const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 
@@ -246,6 +266,101 @@ async function clearAppDataRows(transaction: IDBTransaction, appId: string) {
     ...((await request(storage.index("appId").getAllKeys(appId))).map((key) => request(storage.delete(key)))),
     ...((await request(associations.index("appId").getAllKeys(appId))).map((key) => request(associations.delete(key)))),
   ]);
+}
+
+function parseAccountAppOperationId(value: unknown) {
+  if (typeof value !== "string" || !/^\d{16}$/.test(value)) throw new Error("An account app operation ID is invalid.");
+  return value;
+}
+
+async function readAccountAppOutbox(store: IDBObjectStore) {
+  return (await request(store.getAll())).map((value) => {
+    const record = parseAccountAppOutboxRecord(value);
+    if (record.operationId !== record.sequence.toString().padStart(16, "0")) throw new Error("The account app outbox contains inconsistent identity metadata.");
+    return { ...record, clientId: parseStableId(record.clientId, "The account app outbox client ID is invalid.") };
+  }).sort((left, right) => left.sequence - right.sequence);
+}
+
+async function readAccountAppState(store: IDBObjectStore, outbox: readonly AccountAppOutboxRecord[]): Promise<PersistedAccountApps> {
+  const value = await request(store.get("singleton"));
+  if (value === undefined) return { id: "singleton", baseline: null, projection: projectAccountApps(null, outbox) };
+  if (!isRecord(value)) throw new Error("Stored account apps have an unsupported shape.");
+  assertExactKeys(value, ["id", "baseline", "projection"], "Stored account apps have an unsupported shape.");
+  if (value.id !== "singleton") throw new Error("Stored account apps have an invalid identity.");
+  const baseline = value.baseline === null ? null : parseAccountAppsSnapshot(value.baseline);
+  const projection = projectAccountApps(baseline, outbox);
+  if (JSON.stringify(value.projection) !== JSON.stringify(projection)) throw new Error("The account app projection does not match its baseline and outbox.");
+  return { id: "singleton", baseline, projection };
+}
+
+async function reserveAccountAppOperation(store: IDBObjectStore, randomUUID: () => string) {
+  const value = await request(store.get("singleton"));
+  let state: AccountAppClientState;
+  if (value === undefined) state = { id: "singleton", clientId: parseStableId(randomUUID(), "The account app client ID is invalid."), nextSequence: 1 };
+  else {
+    if (!isRecord(value)) throw new Error("The account app operation identity is invalid.");
+    assertExactKeys(value, ["id", "clientId", "nextSequence"], "The account app operation identity is invalid.");
+    if (value.id !== "singleton") throw new Error("The account app operation identity is invalid.");
+    state = { id: "singleton", clientId: parseStableId(value.clientId, "The account app client ID is invalid."), nextSequence: parsePositiveSafeInteger(value.nextSequence, "The account app operation sequence is invalid.") };
+  }
+  const sequence = state.nextSequence;
+  await request(store.put({ ...state, nextSequence: nextSafeInteger(sequence, "The account app operation sequence is exhausted.") } satisfies AccountAppClientState));
+  return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
+}
+
+async function writeLocalAccountAppData(transaction: IDBTransaction, operation: Extract<AccountAppOperation, { kind: "put-data" | "delete-data" | "clear-data" }>) {
+  const store = transaction.objectStore("app-storage");
+  if (operation.kind === "delete-data") {
+    await request(store.delete([operation.appId, operation.key]));
+    return;
+  }
+  if (operation.kind === "clear-data") {
+    const keys = await request(store.index("appId").getAllKeys(operation.appId));
+    await Promise.all(keys.map((key) => request(store.delete(key))));
+    return;
+  }
+  const key = parseAppStorageKey(operation.key);
+  const value = parseJsonValue(operation.value);
+  const bytes = appStorageBytes(key, value);
+  const records = (await request(store.index("appId").getAll(operation.appId))).map((record) => parseAppStorageRecord(record, operation.appId));
+  const existing = records.find((record) => record.key === key);
+  if (!existing && records.length >= 128) throw new Error("App storage entry quota exceeded.");
+  if (records.reduce((sum, record) => sum + record.bytes, 0) - (existing?.bytes ?? 0) + bytes > 64 * 1024) throw new Error("App storage quota exceeded.");
+  await request(store.put({ appId: operation.appId, key, value, bytes } satisfies AppStorageRecord));
+}
+
+async function restoreLocalAccountAppData(transaction: IDBTransaction, operation: AccountAppOperation, restoration?: AccountAppDataRestoration) {
+  if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") {
+    if (restoration) throw new Error("That account app change does not restore local data.");
+    return;
+  }
+  if (!restoration || parseAppId(restoration.appId) !== operation.appId) throw new Error("Local app data must be restored before discarding this change.");
+  const store = transaction.objectStore("app-storage");
+  if (restoration.kind === "replace") {
+    if (restoration.values.length > 128 || new Set(restoration.values.map(([key]) => key)).size !== restoration.values.length) throw new Error("The local app data restoration is invalid.");
+    const values = restoration.values.map(([keyValue, value]) => {
+      const key = parseAppStorageKey(keyValue);
+      const parsed = parseJsonValue(value);
+      return { key, value: parsed, bytes: appStorageBytes(key, parsed) };
+    });
+    if (values.reduce((sum, item) => sum + item.bytes, 0) > 64 * 1024) throw new Error("App storage quota exceeded.");
+    const keys = await request(store.index("appId").getAllKeys(operation.appId));
+    await Promise.all(keys.map((key) => request(store.delete(key))));
+    await Promise.all(values.map(({ key, value, bytes }) => request(store.put({ appId: operation.appId, key, value, bytes } satisfies AppStorageRecord))));
+    return;
+  }
+  if (operation.kind === "clear-data" || parseAppStorageKey(restoration.key) !== operation.key) throw new Error("The local app data restoration does not match the discarded change.");
+  if (restoration.kind === "delete") {
+    await request(store.delete([operation.appId, operation.key]));
+    return;
+  }
+  const value = parseJsonValue(restoration.value);
+  const bytes = appStorageBytes(operation.key, value);
+  const records = (await request(store.index("appId").getAll(operation.appId))).map((record) => parseAppStorageRecord(record, operation.appId));
+  const existing = records.find((record) => record.key === operation.key);
+  if (!existing && records.length >= 128) throw new Error("App storage entry quota exceeded.");
+  if (records.reduce((sum, record) => sum + record.bytes, 0) - (existing?.bytes ?? 0) + bytes > 64 * 1024) throw new Error("App storage quota exceeded.");
+  await request(store.put({ appId: operation.appId, key: operation.key, value, bytes } satisfies AppStorageRecord));
 }
 
 function parseStoredWindowSession(value: unknown, expectedWorkspaceId: string) {
@@ -862,6 +977,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
   if (!factory || !keyRange) throw new Error("IndexedDB filesystem storage is unavailable.");
   const db = await openDatabase(factory, await filesystemDatabaseName(accountId));
   const now = environment.now ?? Date.now;
+  const randomUUID = environment.randomUUID ?? (() => crypto.randomUUID());
   const readStoredManifests = async (hashes: readonly string[]) => {
     const values = await transact(db, "manifests", "readonly", (transaction) => Promise.all(hashes.map((hash) => request(transaction.objectStore("manifests").get(hash)))));
     const records = new Map<string, StoredManifest>();
@@ -1157,6 +1273,115 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const store = transaction.objectStore("app-storage");
         const keys = await request(store.index("appId").getAllKeys(appId));
         await Promise.all(keys.map((key) => request(store.delete(key))));
+      });
+    },
+
+    readAccountApps: () => transact(db, ["account-apps", "account-app-outbox"], "readonly", async (transaction) => {
+      const outbox = await readAccountAppOutbox(transaction.objectStore("account-app-outbox"));
+      return { state: await readAccountAppState(transaction.objectStore("account-apps"), outbox), outbox };
+    }),
+
+    enqueueAccountAppOperation: async (value) => {
+      let operation = parseAccountAppOperation(value);
+      return transact(db, ["account-apps", "account-app-outbox", "account-app-client-state", "app-storage"], "readwrite", async (transaction) => {
+        const outboxStore = transaction.objectStore("account-app-outbox");
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const current = await readAccountAppState(transaction.objectStore("account-apps"), outbox);
+        if (operation.kind !== "install" && operation.kind !== "handlers") {
+          const operationAppId = operation.appId;
+          const app = current.projection.apps.find((candidate) => candidate.appId === operationAppId);
+          if (!app) throw new Error("That app is not installed for this account.");
+          if (operation.kind === "uninstall") {
+            if (app.installationGeneration === null) throw new Error("Wait for this app to finish installing before uninstalling it.");
+            operation = { ...operation, installationGeneration: app.installationGeneration };
+          } else operation = { ...operation, dataGeneration: app.dataGeneration };
+        }
+        const reserved = await reserveAccountAppOperation(transaction.objectStore("account-app-client-state"), randomUUID);
+        const record = parseAccountAppOutboxRecord({ ...reserved, operation, status: "pending", error: null, errorCode: null, attemptCount: 0, lastAttemptAt: null });
+        if (operation.kind === "put-data" || operation.kind === "delete-data" || operation.kind === "clear-data") await writeLocalAccountAppData(transaction, operation);
+        await request(outboxStore.add(record));
+        const state = { id: "singleton" as const, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
+        await request(transaction.objectStore("account-apps").put(state));
+        return { state, record };
+      });
+    },
+
+    reconcileAccountApps: async (value, acknowledgedOperationId) => {
+      const snapshot = parseAccountAppsSnapshot(value);
+      const operationId = acknowledgedOperationId === undefined ? undefined : parseAccountAppOperationId(acknowledgedOperationId);
+      return transact(db, ["account-apps", "account-app-outbox"], "readwrite", async (transaction) => {
+        const outboxStore = transaction.objectStore("account-app-outbox");
+        if (operationId) {
+          const selected = await request(outboxStore.index("operationId").get(operationId));
+          if (selected !== undefined) await request(outboxStore.delete(parseAccountAppOutboxRecord(selected).sequence));
+        }
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const state = { id: "singleton" as const, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
+        await request(transaction.objectStore("account-apps").put(state));
+        return state;
+      });
+    },
+
+    blockAccountAppOperation: async (operationIdValue, error, errorCode) => {
+      const operationId = parseAccountAppOperationId(operationIdValue);
+      if (typeof error !== "string" || !error || typeof errorCode !== "string" || !errorCode) throw new Error("A blocked account app error is invalid.");
+      await transact(db, ["account-apps", "account-app-outbox"], "readwrite", async (transaction) => {
+        const store = transaction.objectStore("account-app-outbox");
+        const value = await request(store.index("operationId").get(operationId));
+        if (value === undefined) return;
+        const selected = parseAccountAppOutboxRecord(value);
+        await request(store.put({ ...selected, status: "blocked", error, errorCode }));
+        const outbox = await readAccountAppOutbox(store);
+        const current = await readAccountAppState(transaction.objectStore("account-apps"), outbox.map((candidate) => candidate.operationId === operationId ? { ...candidate, status: "pending" as const } : candidate));
+        await request(transaction.objectStore("account-apps").put({ id: "singleton", baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
+      });
+    },
+
+    retryAccountAppOperation: async (operationIdValue) => {
+      const operationId = parseAccountAppOperationId(operationIdValue);
+      return transact(db, ["account-apps", "account-app-outbox"], "readwrite", async (transaction) => {
+        const outboxStore = transaction.objectStore("account-app-outbox");
+        const value = await request(outboxStore.index("operationId").get(operationId));
+        if (value === undefined) throw new Error("That blocked account app change no longer exists.");
+        const selected = parseAccountAppOutboxRecord(value);
+        if (selected.status !== "blocked") throw new Error("That blocked account app change no longer exists.");
+        const accountStore = transaction.objectStore("account-apps");
+        const stored = await readAccountAppState(accountStore, await readAccountAppOutbox(outboxStore));
+        if (!stored.baseline) throw new Error("Refresh account apps before retrying this change.");
+        const changed = parseAccountAppOutboxRecord({ ...selected, operation: rebaseAccountAppOperation(selected.operation, stored.baseline), status: "pending", error: null, errorCode: null });
+        await request(outboxStore.put(changed));
+        const outbox = await readAccountAppOutbox(outboxStore);
+        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        return changed;
+      });
+    },
+
+    discardAccountAppOperation: async (operationIdValue, restoration) => {
+      const operationId = parseAccountAppOperationId(operationIdValue);
+      await transact(db, ["account-apps", "account-app-outbox", "app-storage"], "readwrite", async (transaction) => {
+        const outboxStore = transaction.objectStore("account-app-outbox");
+        const value = await request(outboxStore.index("operationId").get(operationId));
+        if (value === undefined) throw new Error("That blocked account app change no longer exists.");
+        const selected = parseAccountAppOutboxRecord(value);
+        if (selected.status !== "blocked") throw new Error("That blocked account app change no longer exists.");
+        await restoreLocalAccountAppData(transaction, selected.operation, restoration);
+        await request(outboxStore.delete(selected.sequence));
+        const accountStore = transaction.objectStore("account-apps");
+        const outbox = await readAccountAppOutbox(outboxStore);
+        const stored = await readAccountAppState(accountStore, [...outbox, selected]);
+        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+      });
+    },
+
+    recordAccountAppAttempt: async (operationIdValue, attemptedAtValue) => {
+      const operationId = parseAccountAppOperationId(operationIdValue);
+      const attemptedAt = parseNonNegativeSafeInteger(attemptedAtValue, "An account app attempt time is invalid.");
+      await transact(db, "account-app-outbox", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("account-app-outbox");
+        const value = await request(store.index("operationId").get(operationId));
+        if (value === undefined) return;
+        const record = parseAccountAppOutboxRecord(value);
+        await request(store.put({ ...record, attemptCount: nextSafeInteger(record.attemptCount, "The account app attempt count is exhausted."), lastAttemptAt: attemptedAt }));
       });
     },
 
