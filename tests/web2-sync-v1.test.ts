@@ -216,6 +216,20 @@ describe("web2-sync-v1 corpus", () => {
     for (const item of corpus.pushRequests.invalid) expect(() => parsePushRequest(item.value), item.name).toThrow();
   });
 
+  test("bounds total authoritative records across an operation pull", () => {
+    const operationId = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+    const settings = (start: number, count: number, operation: string) => Array.from({ length: count }, (_, index) => ({ workspaceId: operationId(1), namespace: "editor", key: `bulk-${(start + index).toString().padStart(3, "0")}`, deleted: false, value: index, logicalTime: 13, operationId: operation }));
+    const firstOperation = operationId(104);
+    const secondOperation = operationId(105);
+    const result = { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, kind: "operations", workspaceId: operationId(1), deviceId: operationId(3), fromCursor: 10, cursor: 12, headSequence: 12, snapshotBarrier: 8, logFloor: 2, observedLogicalTime: 13, operations: [
+      { sequence: 11, operationId: firstOperation, companion: null, nodes: [], settings: settings(0, 128, firstOperation) },
+      { sequence: 12, operationId: secondOperation, companion: null, nodes: [], settings: settings(128, 129, secondOperation) },
+    ] };
+    expect(() => parsePullResult(result)).toThrow();
+    result.operations[1]!.settings.pop();
+    expect(() => parsePullResult(result)).not.toThrow();
+  });
+
   test("uses logical time then operation ID as the winner tuple", () => {
     for (const item of corpus.tupleOrdering) expect(winningOperationTuple(item.left, item.right), item.name).toBe(item.winner === "left" ? item.left : item.right);
   });
