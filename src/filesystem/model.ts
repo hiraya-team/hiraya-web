@@ -72,6 +72,8 @@ type NodeBase = {
 export type Node =
   | NodeBase & { kind: "folder" }
   | NodeBase & { kind: "file"; mimeType: string; size: number; manifestHash: string };
+export type PurgeTombstone = { workspaceId: string; id: string; purged: true; logicalTime: number; operationId: string };
+export type NodeRecord = Node | PurgeTombstone;
 type SettingBase = {
   workspaceId: string;
   namespace: SettingNamespace;
@@ -256,6 +258,23 @@ export function parseNode(value: unknown): Node {
   };
 }
 
+export function parsePurgeTombstone(value: unknown): PurgeTombstone {
+  if (!isRecord(value)) throw new Error("A purge tombstone has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "id", "purged", "logicalTime", "operationId"], "A purge tombstone has an unsupported shape.");
+  if (value.purged !== true) throw new Error("A purge tombstone has invalid metadata.");
+  return {
+    workspaceId: parseStableId(value.workspaceId, "A purge tombstone workspace ID is invalid."),
+    id: parseStableId(value.id, "A purge tombstone node ID is invalid."),
+    purged: true,
+    logicalTime: parseNonNegativeSafeInteger(value.logicalTime, "A purge tombstone logical time is invalid."),
+    operationId: parseStableId(value.operationId, "A purge tombstone operation ID is invalid."),
+  };
+}
+
+export function parseNodeRecord(value: unknown): NodeRecord {
+  return isRecord(value) && "purged" in value ? parsePurgeTombstone(value) : parseNode(value);
+}
+
 export function parseSetting(value: unknown): Setting {
   if (!isRecord(value)) throw new Error("A setting has an unsupported shape.");
   if (typeof value.deleted !== "boolean") throw new Error("A setting has an unsupported shape.");
@@ -352,8 +371,8 @@ function resolveTupleWrite<T>(current: ConflictWrite<T>, incoming: ConflictWrite
 }
 
 function resolveLifecycleWrite(current: ConflictWrite<LifecycleState>, incoming: ConflictWrite<LifecycleState>) {
-  if (current.value === "purged") return { winner: "current", ...current } as const;
-  if (incoming.value === "purged") return { winner: "incoming", ...incoming } as const;
+  if (current.value === "purged" && incoming.value !== "purged") return { winner: "current", ...current } as const;
+  if (incoming.value === "purged" && current.value !== "purged") return { winner: "incoming", ...incoming } as const;
   return resolveTupleWrite(current, incoming);
 }
 

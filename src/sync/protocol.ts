@@ -8,7 +8,7 @@ import {
   isRecord,
   parseCanonicalName,
   parseManifest,
-  parseNode,
+  parseNodeRecord,
   parseNonNegativeSafeInteger,
   parsePositiveSafeInteger,
   parseSetting,
@@ -17,7 +17,7 @@ import {
   parseSha256,
   parseStableId,
   type Manifest,
-  type Node,
+  type NodeRecord,
   type Setting,
   type SettingNamespace,
 } from "../filesystem/model";
@@ -40,7 +40,7 @@ export type HydrationPage = {
   workspaceId: string;
   deviceId: string;
   target: HydrationTarget;
-  nodes: Node[];
+  nodes: NodeRecord[];
   settings: Setting[];
   nextPageToken: string | null;
 };
@@ -206,7 +206,7 @@ export function parseHydrationPage(value: unknown): HydrationPage {
   const workspaceId = parseStableId(value.workspaceId, "A hydration page workspace ID is invalid.");
   const deviceId = parseStableId(value.deviceId, "A hydration page device ID is invalid.");
   const target = parseHydrationTarget(value.target);
-  const nodes = parseBoundedRecords(value.nodes, parseNode, "A hydration node page is invalid.");
+  const nodes = parseBoundedRecords(value.nodes, parseNodeRecord, "A hydration node page is invalid.");
   const settings = parseBoundedRecords(value.settings, parseSetting, "A hydration setting page is invalid.");
   if (target.workspaceId !== workspaceId || nodes.some((node) => node.workspaceId !== workspaceId) || settings.some((setting) => setting.workspaceId !== workspaceId)) throw new Error("A hydration page mixes workspaces.");
   if (new Set(nodes.map(({ id }) => id)).size !== nodes.length) throw new Error("A hydration page contains duplicate node IDs.");

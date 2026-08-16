@@ -692,7 +692,7 @@ describe("web2 filesystem database", () => {
     }).toEqual(beforeReopen);
     await reopened.commitOperation({ operation: { ...operationBase(stableId(181)), kind: "trash", nodeIds: [copiedRootId], trashedAt: 80 } });
     await reopened.commitOperation({ operation: { ...operationBase(stableId(182)), kind: "purge", nodeIds: [copiedRootId] } });
-    await expect(reopened.commitOperation({ operation: createDraft(stableId(183), [folder(copiedFileId, "Reused")]) })).rejects.toThrow("retained operation history");
+    await expect(reopened.commitOperation({ operation: createDraft(stableId(183), [folder(copiedFileId, "Reused")]) })).rejects.toThrow("already exists");
     reopened.close();
   });
 
@@ -943,7 +943,8 @@ describe("web2 filesystem database", () => {
     expect((await database.listFileVersions(WORKSPACE, fileId)).map(({ operationId, modifiedAt }) => ({ operationId, modifiedAt }))).toEqual([{ operationId: createId, modifiedAt: 10 }]);
 
     await database.commitOperation({ operation: { ...operationBase(stableId(216)), kind: "trash", nodeIds: [treeId], trashedAt: 60 } });
-    const purge = await database.commitOperation({ operation: { ...operationBase(stableId(217)), kind: "purge", nodeIds: [treeId] } });
+    const purgeId = stableId(217);
+    const purge = await database.commitOperation({ operation: { ...operationBase(purgeId), kind: "purge", nodeIds: [treeId] } });
     expect(purge.inverse).toEqual({ kind: "purge", nodeIds: [treeId, fileId].sort(), reason: "Permanent purge cannot be undone." });
     expect(purge.affectedIdentities).toEqual([
       `folder:${WORKSPACE}:root`,
@@ -952,7 +953,18 @@ describe("web2 filesystem database", () => {
       `trash:${WORKSPACE}`,
     ].sort());
     expect(await database.getNode(treeId)).toBeUndefined();
-    await expect(database.commitOperation({ operation: createDraft(stableId(218), [folder(treeId, "Reused")]) })).rejects.toThrow("retained operation history");
+    const treeTombstone = { workspaceId: WORKSPACE, id: treeId, purged: true as const, logicalTime: purge.operation.logicalTime, operationId: purgeId };
+    const fileTombstone = { ...treeTombstone, id: fileId };
+    expect(await database.getNodeRecord(treeId)).toEqual(treeTombstone);
+    expect(await database.getNodeRecord(fileId)).toEqual(fileTombstone);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "nodes", treeId)).toEqual(treeTombstone);
+    await expect(database.listFileVersions(WORKSPACE, fileId)).rejects.toThrow("does not exist");
+    const rawAfterPurge = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(rawAfterPurge.transaction("operations", "readwrite").objectStore("operations").delete(createId));
+    const nodeStore = rawAfterPurge.transaction("nodes").objectStore("nodes");
+    expect(await idbRequest(nodeStore.index("by-workspace-lifecycle").getAllKeys(IDBKeyRange.bound([WORKSPACE, "purged"], [WORKSPACE, "purged"])))).toEqual([]);
+    rawAfterPurge.close();
+    await expect(database.commitOperation({ operation: createDraft(stableId(218), [folder(treeId, "Reused")]) })).rejects.toThrow("already exists");
 
     const setNullId = stableId(219);
     const setNull = await database.commitOperation({ operation: { ...operationBase(setNullId), kind: "set", namespace: "editor", key: "theme", value: null } });
@@ -987,6 +999,7 @@ describe("web2 filesystem database", () => {
     const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
     expect({ active: await reopened.listChildren(WORKSPACE, null), trash: await reopened.listTrash(WORKSPACE), settings: await reopened.listSettings(WORKSPACE, "editor"), operations: await reopened.listOperations(WORKSPACE) }).toEqual(beforeReopen);
     expect(await reopened.getNode(treeId)).toBeUndefined();
+    expect(await reopened.getNodeRecord(treeId)).toEqual(treeTombstone);
     reopened.close();
   });
 

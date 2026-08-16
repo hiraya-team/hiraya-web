@@ -9,6 +9,7 @@ import {
   parseManifest,
   parseMimeType,
   parseNode,
+  parseNodeRecord,
   parseNodeLifecycle,
   parseNonNegativeSafeInteger,
   parseOperationTuple,
@@ -25,9 +26,11 @@ import {
   type ActiveSetting,
   type Manifest,
   type Node,
+  type NodeRecord,
   type NodeLifecycle,
   type OperationTuple,
   type Position,
+  type PurgeTombstone,
   type Setting,
   type SettingNamespace,
 } from "./model";
@@ -189,6 +192,7 @@ export type FilesystemDatabase = {
   setWorkspacePreferences(preferences: Array<{ id: string; pinned: boolean }>): Promise<Workspace[]>;
   deleteWorkspace(workspaceId: string): Promise<Workspace[]>;
   getNode(id: string): Promise<Node | undefined>;
+  getNodeRecord(id: string): Promise<NodeRecord | undefined>;
   listChildren(workspaceId: string, parentId: string | null, limit?: number): Promise<Node[]>;
   assertChildNamesAvailable(workspaceId: string, parentId: string | null, names: string[]): Promise<void>;
   assertNodeIdsAvailable(ids: string[]): Promise<void>;
@@ -231,6 +235,7 @@ export type FilesystemDatabase = {
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
+type StoredNodeRecord = StoredNode | Extract<NodeRecord, { purged: true }>;
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
 type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
@@ -470,6 +475,15 @@ function parseStoredNode(value: unknown): StoredNode {
   const parentKey = node.parentId ?? "";
   if (value.parentKey !== parentKey || value.lifecycleKey !== node.lifecycle.kind) throw new Error("A stored node has inconsistent index metadata.");
   return { ...node, parentKey, lifecycleKey: node.lifecycle.kind };
+}
+
+function parseStoredNodeRecord(value: unknown): StoredNodeRecord {
+  if (isRecord(value) && value.purged === true) return parseNodeRecord(value) as Extract<NodeRecord, { purged: true }>;
+  return parseStoredNode(value);
+}
+
+function isPurgeTombstone(value: NodeRecord): value is PurgeTombstone {
+  return "purged" in value;
 }
 
 function nodeRecord(value: StoredNode) {
@@ -1049,7 +1063,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
     const nodes = transaction.objectStore("nodes");
     for (const id of ids) if (await request(nodes.get(id)) !== undefined) throw new Error("A node ID already exists.");
     const pending = new Set(ids);
-    // ponytail: retained-ID lookup is O(operation history); add a dedicated reservation index when history size makes this measurable.
+    // Workspace deletion removes node records but retains operation history, so globally used IDs remain reserved here.
     await new Promise<void>((resolve, reject) => {
       const cursor = transaction.objectStore("operations").openCursor();
       cursor.onerror = () => reject(cursor.error ?? new Error("Filesystem operation history could not be read."));
@@ -1435,7 +1449,19 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const canonicalId = parseStableId(id, "A node ID is invalid.");
       return transact(db, "nodes", "readonly", async (transaction) => {
         const value = await request(transaction.objectStore("nodes").get(canonicalId));
-        return value === undefined ? undefined : nodeRecord(parseStoredNode(value));
+        if (value === undefined) return undefined;
+        const record = parseStoredNodeRecord(value);
+        return isPurgeTombstone(record) ? undefined : nodeRecord(record);
+      });
+    },
+
+    getNodeRecord: async (id) => {
+      const canonicalId = parseStableId(id, "A node ID is invalid.");
+      return transact(db, "nodes", "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("nodes").get(canonicalId));
+        if (value === undefined) return undefined;
+        const record = parseStoredNodeRecord(value);
+        return isPurgeTombstone(record) ? record : nodeRecord(record);
       });
     },
 
@@ -1651,7 +1677,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const readNode = async (id: string) => {
           if (nodeCache.has(id)) return nodeCache.get(id);
           const value = await request(nodes.get(id));
-          const node = value === undefined ? undefined : parseStoredNode(value);
+          const record = value === undefined ? undefined : parseStoredNodeRecord(value);
+          const node = record === undefined || isPurgeTombstone(record) ? undefined : record;
           nodeCache.set(id, node);
           return node;
         };
@@ -1717,7 +1744,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         let inverse: OperationInverse;
         const projectedNodes = new Map<string, StoredNode>();
         const addedNodeIds = new Set<string>();
-        const deletedNodeIds: string[] = [];
+        const purgedNodeIds: string[] = [];
         const projectedSettings: Setting[] = [];
         let copySourceNodes: StoredNode[] = [];
         switch (operation.kind) {
@@ -1976,8 +2003,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
               return node;
             }));
             const expanded = await expandSubtrees(roots, "trashed", "A purge subtree batch is too large.");
-            deletedNodeIds.push(...expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node.id)).sort());
-            inverse = { kind: "purge", nodeIds: [...deletedNodeIds], reason: "Permanent purge cannot be undone." };
+            purgedNodeIds.push(...expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node.id)).sort());
+            inverse = { kind: "purge", nodeIds: [...purgedNodeIds], reason: "Permanent purge cannot be undone." };
             break;
           }
           case "set": {
@@ -2036,7 +2063,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const writes: IDBRequest[] = [];
         for (const manifest of normalized.manifests) if (!storedManifests.has(manifest.hash)) writes.push(transaction.objectStore("manifests").add(manifest));
         for (const node of projectedNodes.values()) writes.push(addedNodeIds.has(node.id) ? nodes.add(node) : nodes.put(node));
-        for (const nodeId of deletedNodeIds) writes.push(nodes.delete(nodeId));
+        for (const nodeId of purgedNodeIds) writes.push(nodes.put(parseNodeRecord({ workspaceId: workspace.id, id: nodeId, purged: true, logicalTime, operationId: operation.operationId })));
         for (const setting of projectedSettings) writes.push(settingsStore.put(setting));
         writes.push(operations.add(stored));
         for (const change of changes) writes.push(transaction.objectStore("changes").add(change));
@@ -2103,7 +2130,9 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const versions = await transact(db, ["nodes", "operations"], "readonly", async (transaction) => {
         const nodeValue = await request(transaction.objectStore("nodes").get(canonicalNodeId));
         if (nodeValue === undefined) throw new Error("That file does not exist.");
-        const node = parseStoredNode(nodeValue);
+        const record = parseStoredNodeRecord(nodeValue);
+        if (isPurgeTombstone(record)) throw new Error("That file does not exist.");
+        const node = record;
         if (node.workspaceId !== canonicalWorkspaceId || node.kind !== "file") throw new Error("File versions require a file in its workspace.");
         if (node.fieldTuples.content === null) throw new Error("A stored file is missing its content tuple.");
         const contentTuple = node.fieldTuples.content;

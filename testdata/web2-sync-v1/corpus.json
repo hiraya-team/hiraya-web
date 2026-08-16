@@ -1162,6 +1162,32 @@
           "settings": [],
           "nextPageToken": null
         }
+      },
+      {
+        "name": "purged node page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "target": {
+            "kind": "exact-nodes",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "asOf": 11,
+            "nodeIds": ["00000000-0000-4000-8000-000000000202"]
+          },
+          "nodes": [
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "id": "00000000-0000-4000-8000-000000000202",
+              "purged": true,
+              "logicalTime": 11,
+              "operationId": "00000000-0000-4000-8000-000000000103"
+            }
+          ],
+          "settings": [],
+          "nextPageToken": null
+        }
       }
     ],
     "invalid": [
@@ -1220,6 +1246,19 @@
           "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
           "nodes": [],
           "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "purge tombstone has false discriminator",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": false, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }],
+          "settings": [],
           "nextPageToken": null
         }
       }
@@ -1764,6 +1803,35 @@
           "tuple": {
             "logicalTime": 1,
             "operationId": "00000000-0000-4000-8000-000000000101"
+          }
+        }
+      },
+      {
+        "name": "newer purge advances an existing purge",
+        "category": "delete-restore-purge",
+        "input": {
+          "category": "delete-restore-purge",
+          "current": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": "purged",
+          "tuple": {
+            "logicalTime": 2,
+            "operationId": "00000000-0000-4000-8000-000000000102"
           }
         }
       }
