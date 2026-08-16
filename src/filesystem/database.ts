@@ -166,6 +166,7 @@ export type FilesystemDatabase = {
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
+  listChanges(workspaceId: string, afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
   listOperations(workspaceId: string, limit?: number): Promise<StoredOperation[]>;
   listFileVersions(workspaceId: string, nodeId: string): Promise<FileVersion[]>;
   listRetainedChunkHashes(): Promise<string[]>;
@@ -481,6 +482,17 @@ function transferAffectedIdentities(operation: Extract<LocallyCommittableOperati
   }
   destination.add(`folder:${operation.destinationWorkspaceId}:${operation.parentId ?? "root"}`);
   return { source: [...source].sort(), destination: [...destination].sort() };
+}
+
+function changeForWorkspace(stored: StoredOperation, workspaceId: string): ChangeRecord | undefined {
+  if (stored.operation.kind === "transfer" && stored.inverse.kind === "transfer") {
+    const identities = transferAffectedIdentities(stored.operation, stored.inverse);
+    if (workspaceId === stored.workspaceId) return { workspaceId, revision: stored.localRevision, operationId: stored.operationId, affectedIdentities: identities.source };
+    if (workspaceId === stored.operation.destinationWorkspaceId && stored.destinationLocalRevision !== null) return { workspaceId, revision: stored.destinationLocalRevision, operationId: stored.operationId, affectedIdentities: identities.destination };
+    return;
+  }
+  if (workspaceId !== stored.workspaceId) return;
+  return { workspaceId, revision: stored.localRevision, operationId: stored.operationId, affectedIdentities: stored.affectedIdentities };
 }
 
 function parseStoredOperation(value: unknown): StoredOperation {
@@ -1401,6 +1413,32 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
         await Promise.all(writes.map((write) => request(write)));
         return stored;
+      });
+    },
+
+    listChanges: async (workspaceId, afterRevision, limit = WEB2_MAX_BATCH_ITEMS) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const canonicalRevision = parseNonNegativeSafeInteger(afterRevision, "A change replay revision is invalid.");
+      const boundedLimit = parsePositiveSafeInteger(limit, "A change replay limit is invalid.");
+      if (boundedLimit > WEB2_MAX_BATCH_ITEMS) throw new Error("A change replay limit is too large.");
+      return transact(db, ["workspaces", "changes", "operations"], "readonly", async (transaction) => {
+        const workspaceValue = await request(transaction.objectStore("workspaces").get(canonicalWorkspaceId));
+        if (workspaceValue === undefined) throw new Error("That workspace does not exist.");
+        const workspace = parseWorkspace(workspaceValue);
+        if (canonicalRevision > workspace.localRevision) throw new Error("A change replay revision is ahead of the workspace.");
+        if (canonicalRevision === workspace.localRevision) return [];
+        const firstRevision = nextSafeInteger(canonicalRevision, "The change replay revision is exhausted.");
+        const values = await request(transaction.objectStore("changes").getAll(keyRange.bound([canonicalWorkspaceId, firstRevision], [canonicalWorkspaceId, Number.MAX_SAFE_INTEGER]), boundedLimit));
+        const changes = values.map(parseChangeRecord);
+        const expectedCount = Math.min(boundedLimit, workspace.localRevision - canonicalRevision);
+        if (changes.length !== expectedCount || changes.some((change, index) => change.workspaceId !== canonicalWorkspaceId || change.revision !== firstRevision + index)) throw new Error("Stored workspace changes are not contiguous.");
+        const operations = transaction.objectStore("operations");
+        await Promise.all(changes.map(async (change) => {
+          const operationValue = await request(operations.get(change.operationId));
+          const expected = operationValue === undefined ? undefined : changeForWorkspace(parseStoredOperation(operationValue), canonicalWorkspaceId);
+          if (!expected || !equalValues(change, expected)) throw new Error("A stored workspace change does not match its operation.");
+        }));
+        return changes;
       });
     },
 

@@ -3,7 +3,7 @@ import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { getAccountOpfsRoot } from "../src/filesystem/chunks";
 import { openFilesystemDatabase } from "../src/filesystem/database";
 import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, sha256Hex } from "../src/filesystem/model";
-import { openWorkspaceFilesystem } from "../src/platform/storage/workspace-filesystem";
+import { openWorkspaceFilesystem, type WorkspaceFilesystemEnvironment } from "../src/platform/storage/workspace-filesystem";
 import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
 
 const ACCOUNT = stableId(1);
@@ -77,6 +77,45 @@ class TestLocks {
     else while (state.queue[0]?.mode === "shared" && !state.writer) start(state.queue.shift()!);
   }
 }
+
+class TestBroadcastChannels {
+  readonly names: string[] = [];
+  private readonly channels = new Map<string, Set<Set<(event: MessageEvent<unknown>) => void>>>();
+
+  readonly create: NonNullable<WorkspaceFilesystemEnvironment["createBroadcastChannel"]> = (name) => {
+    this.names.push(name);
+    const listeners = new Set<(event: MessageEvent<unknown>) => void>();
+    const peers = this.channels.get(name) ?? new Set();
+    let closed = false;
+    peers.add(listeners);
+    this.channels.set(name, peers);
+    return {
+      postMessage: (value: unknown) => {
+        if (closed) throw new Error("The broadcast channel is closed.");
+        for (const peer of peers) if (peer !== listeners) setTimeout(() => {
+          if (peers.has(peer)) for (const listener of peer) listener({ data: value } as MessageEvent<unknown>);
+        }, 0);
+      },
+      addEventListener: ((type: string, listener: (event: MessageEvent<unknown>) => void) => { if (!closed && type === "message") listeners.add(listener); }) as BroadcastChannel["addEventListener"],
+      removeEventListener: ((type: string, listener: (event: MessageEvent<unknown>) => void) => { if (type === "message") listeners.delete(listener); }) as BroadcastChannel["removeEventListener"],
+      close: () => {
+        if (closed) return;
+        closed = true;
+        peers.delete(listeners);
+        if (peers.size === 0) this.channels.delete(name);
+      },
+    };
+  };
+
+  broadcast(name: string, value: unknown) {
+    const peers = this.channels.get(name);
+    if (peers) for (const listeners of peers) setTimeout(() => {
+      if (peers.has(listeners)) for (const listener of listeners) listener({ data: value } as MessageEvent<unknown>);
+    }, 0);
+  }
+}
+
+const flushBroadcasts = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("workspace filesystem storage", () => {
   test("persists the locked offline create, write, undo, redo, restore, and cleanup journey", async () => {
@@ -220,6 +259,62 @@ describe("workspace filesystem storage", () => {
     expect(await getAccountOpfsRoot(ACCOUNT, memoryOpfsHandle(origin))).toBe(memoryOpfsHandle(accountRoot));
     competing.close();
     reopened.close();
+  });
+
+  test("broadcasts committed revisions and replays bounded targeted changes across facades", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    const broadcasts = new TestBroadcastChannels();
+    let nextId = 100;
+    const destinationWorkspace = stableId(4);
+    const environment = { indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
+    await database.createWorkspace({ id: destinationWorkspace, name: "Destination", pinned: false, deviceId: DEVICE });
+    database.close();
+
+    const source = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const observer = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const destination = await openWorkspaceFilesystem(ACCOUNT, destinationWorkspace, environment);
+    let sourceWakeups = 0;
+    let destinationWakeups = 0;
+    const stopSource = observer.onChangesAvailable(() => { sourceWakeups += 1; });
+    const stopDestination = destination.onChangesAvailable(() => { destinationWakeups += 1; });
+    const item = await source.createFolder({ name: "Broadcast" });
+    await flushBroadcasts();
+    expect(sourceWakeups).toBe(1);
+    const [createdChange] = await observer.listChanges(0, 1);
+    expect(createdChange).toMatchObject({ workspaceId: WORKSPACE, revision: 1 });
+    expect(createdChange!.affectedIdentities).toContain(`node:${WORKSPACE}:${item.id}`);
+    expect(createdChange!.affectedIdentities).toContain(`folder:${WORKSPACE}:root`);
+
+    await source.transferNodes(destinationWorkspace, [item.id], null);
+    await flushBroadcasts();
+    expect(sourceWakeups).toBe(2);
+    expect(destinationWakeups).toBe(1);
+    expect((await observer.listChanges(1)).map(({ revision }) => revision)).toEqual([2]);
+    const [destinationChange] = await destination.listChanges(0);
+    expect(destinationChange).toMatchObject({ workspaceId: destinationWorkspace, revision: 1 });
+    expect(destinationChange!.affectedIdentities).toContain(`node:${destinationWorkspace}:${item.id}`);
+
+    const channelName = `hiraya-web2-v1-${ACCOUNT_HASH}-revisions`;
+    broadcasts.broadcast(channelName, { schemaVersion: 1, workspaceId: WORKSPACE, revision: -1 });
+    broadcasts.broadcast(channelName, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 99, unexpected: true });
+    broadcasts.broadcast(channelName, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 99 });
+    await flushBroadcasts();
+    expect(sourceWakeups).toBe(3);
+    expect(await observer.listChanges(2)).toEqual([]);
+    stopSource();
+    stopDestination();
+    await source.createFolder({ name: "After unsubscribe" });
+    await flushBroadcasts();
+    expect(sourceWakeups).toBe(3);
+    expect(destinationWakeups).toBe(1);
+    expect(new Set(broadcasts.names)).toEqual(new Set([channelName]));
+    source.close();
+    observer.close();
+    destination.close();
   });
 
   test("creates a bounded multi-root forest atomically in caller order with deduplicated content", async () => {

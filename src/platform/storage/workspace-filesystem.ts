@@ -2,6 +2,8 @@ import { getAccountOpfsRoot, readChunk, reconstructBlob, removeOrphanChunks, sta
 import {
   filesystemDatabaseName,
   openFilesystemDatabase,
+  type ChangeRecord,
+  type CommitOperationInput,
   type FileVersion,
   type FilesystemDatabaseEnvironment,
   type StoredOperation,
@@ -14,6 +16,7 @@ import {
   parseCanonicalName,
   parseMimeType,
   parseNonNegativeSafeInteger,
+  parsePositiveSafeInteger,
   parsePosition,
   parseStableId,
   type JsonValue,
@@ -29,6 +32,7 @@ export type WorkspaceFilesystemEnvironment = FilesystemDatabaseEnvironment & {
   originRoot?: FileSystemDirectoryHandle;
   randomUUID?: () => string;
   locks?: Pick<LockManager, "request">;
+  createBroadcastChannel?: (name: string) => Pick<BroadcastChannel, "postMessage" | "addEventListener" | "removeEventListener" | "close">;
 };
 
 type CreateForestNodeBase = {
@@ -61,6 +65,17 @@ function assertShape(value: Record<string, unknown>, required: readonly string[]
 function parseTransientKey(value: unknown, message: string) {
   if (typeof value !== "string" || value.length === 0) throw new Error(message);
   return value;
+}
+
+function parseRevisionNotification(value: unknown) {
+  if (!isRecord(value)) return;
+  try {
+    assertShape(value, ["schemaVersion", "workspaceId", "revision"], [], "A revision notification has an unsupported shape.");
+    if (value.schemaVersion !== WEB2_SCHEMA_VERSION) return;
+    return { workspaceId: parseStableId(value.workspaceId), revision: parsePositiveSafeInteger(value.revision) };
+  } catch {
+    return;
+  }
 }
 
 function prepareForest(value: unknown, timestamp: number) {
@@ -133,6 +148,8 @@ export type WorkspaceFilesystem = {
   listTrash(): Promise<Node[]>;
   getSetting(namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettings(namespace: SettingNamespace): Promise<Setting[]>;
+  listChanges(afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
+  onChangesAvailable(listener: () => void): () => void;
   readFile(nodeId: string): Promise<{ content: Blob; contentTuple: OperationTuple }>;
   writeFile(nodeId: string, content: Blob, value: { expectedContentTuple: OperationTuple; mimeType?: string }): Promise<StoredOperation>;
   renameNode(nodeId: string, name: string): Promise<StoredOperation>;
@@ -160,10 +177,26 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
     const sync = await database.getSyncState(workspaceId);
     const root = await getAccountOpfsRoot(accountId, environment.originRoot);
     const databaseName = await filesystemDatabaseName(accountId);
+    const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
+    if (!createBroadcastChannel) throw new Error("BroadcastChannel is required for fresh filesystem coordination.");
+    const revisionChannel = createBroadcastChannel(`${databaseName}-revisions`);
     const accountLockName = `${databaseName}-storage`;
     const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
     const now = environment.now ?? Date.now;
     const randomUUID = environment.randomUUID ?? (() => crypto.randomUUID());
+    const notifyRevision = (workspaceId: string, revision: number) => {
+      try {
+        revisionChannel.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, workspaceId, revision });
+      } catch {
+        // The durable change log remains authoritative if a closing tab misses an advisory wake-up.
+      }
+    };
+    const commitOperation = async (value: CommitOperationInput) => {
+      const stored = await database.commitOperation(value);
+      notifyRevision(stored.workspaceId, stored.localRevision);
+      if (stored.operation.kind === "transfer" && stored.destinationLocalRevision !== null) notifyRevision(stored.operation.destinationWorkspaceId, stored.destinationLocalRevision);
+      return stored;
+    };
     const lockedWorkspaces = <T>(workspaceIds: string[], operation: () => Promise<T>) => {
       if (!locks) throw new Error("Web Locks are required for fresh filesystem mutations.");
       const lockNames = [...new Set(workspaceIds.map((id) => parseStableId(id, "A workspace ID is invalid.")))].sort().map((id) => `${databaseName}-workspace-${id}`);
@@ -190,7 +223,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
     };
     const commitVersion = async (nodeId: string, version: Pick<FileVersion, "mimeType" | "size" | "manifestHash">, expectedContentTuple: OperationTuple, intent: "undo" | "redo" | "restore", compensatesOperationId: string) => {
       await content(version.mimeType, version.size, version.manifestHash);
-      return database.commitOperation({
+      return commitOperation({
         operation: {
           schemaVersion: WEB2_SCHEMA_VERSION,
           kind: "write",
@@ -267,7 +300,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         const staged = stagedByKey.get(node.key)!;
         return { ...base, kind: "file", mimeType: node.mimeType, size: staged.manifest.size, manifestHash: staged.manifestHash };
       });
-      await database.commitOperation({
+      await commitOperation({
         operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "create", operationId, workspaceId, deviceId: sync.deviceId, nodes },
         manifests: [...manifests.values()].map(({ manifest, manifestHash }) => ({ hash: manifestHash, manifest })),
       });
@@ -344,7 +377,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
           nodes.push(node.kind === "folder" ? { ...base, kind: "folder" } : { ...base, kind: "file", mimeType: node.mimeType, size: node.size, manifestHash: node.manifestHash });
         }
       }
-      await database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "copy", operationId, workspaceId, deviceId: sync.deviceId, sourceNodeIds: roots.map(({ nodeId }) => nodeId), nodes } });
+      await commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "copy", operationId, workspaceId, deviceId: sync.deviceId, sourceNodeIds: roots.map(({ nodeId }) => nodeId), nodes } });
       return readCreatedNodes(nodes.map(({ id }) => id));
     });
 
@@ -362,6 +395,16 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       listTrash: () => database.listTrash(workspaceId),
       getSetting: (namespace, key) => database.getSetting(workspaceId, namespace, key),
       listSettings: (namespace) => database.listSettings(workspaceId, namespace),
+      listChanges: (afterRevision, limit) => database.listChanges(workspaceId, afterRevision, limit),
+      onChangesAvailable: (listener) => {
+        if (typeof listener !== "function") throw new TypeError("A change listener is required.");
+        const handler = (event: MessageEvent<unknown>) => {
+          const notification = parseRevisionNotification(event.data);
+          if (notification?.workspaceId === workspaceId) listener();
+        };
+        revisionChannel.addEventListener("message", handler);
+        return () => revisionChannel.removeEventListener("message", handler);
+      },
 
       readFile: async (nodeId) => {
         const node = await fileNode(nodeId);
@@ -372,22 +415,22 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         if (!(contentValue instanceof Blob)) throw new TypeError("File content must be a Blob.");
         const node = await fileNode(nodeId);
         const staged = await stageBlob(root, contentValue);
-        return database.commitOperation({
+        return commitOperation({
           operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "write", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeId, mimeType: value.mimeType ?? (contentValue.type || node.mimeType), size: staged.manifest.size, manifestHash: staged.manifestHash, modifiedAt: now() },
           manifests: [{ hash: staged.manifestHash, manifest: staged.manifest }],
           expectedContentTuple: value.expectedContentTuple,
         });
       }),
 
-      renameNode: (nodeId, name) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "rename", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeId, name, modifiedAt: now() } })),
-      moveNodes: (nodeIds, parentId) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "move", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, parentId, modifiedAt: now() } })),
-      transferNodes: (destinationWorkspaceId, nodeIds, parentId) => lockedWorkspaces([workspaceId, destinationWorkspaceId], () => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "transfer", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destinationWorkspaceId, parentId, modifiedAt: now() } })),
-      setNodePositions: (positions) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, positions } })),
-      trashNodes: (nodeIds) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, trashedAt: now() } })),
-      restoreNodes: (nodeIds, destination) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destination, modifiedAt: now() } })),
-      purgeNodes: (nodeIds) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "purge", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds } })),
-      setSetting: (namespace, key, value) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, key, value } })),
-      setSettings: (namespace, settings) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, settings } })),
+      renameNode: (nodeId, name) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "rename", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeId, name, modifiedAt: now() } })),
+      moveNodes: (nodeIds, parentId) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "move", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, parentId, modifiedAt: now() } })),
+      transferNodes: (destinationWorkspaceId, nodeIds, parentId) => lockedWorkspaces([workspaceId, destinationWorkspaceId], () => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "transfer", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destinationWorkspaceId, parentId, modifiedAt: now() } })),
+      setNodePositions: (positions) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, positions } })),
+      trashNodes: (nodeIds) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, trashedAt: now() } })),
+      restoreNodes: (nodeIds, destination) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destination, modifiedAt: now() } })),
+      purgeNodes: (nodeIds) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "purge", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds } })),
+      setSetting: (namespace, key, value) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, key, value } })),
+      setSettings: (namespace, settings) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, settings } })),
 
       listOperations: (limit) => database.listOperations(workspaceId, limit),
       listFileVersions: (nodeId) => database.listFileVersions(workspaceId, nodeId),
@@ -409,7 +452,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
           ? target.inverse.rootNodeIds
           : target.operation.kind === "restore" && target.intent === "redo" && target.inverse.kind === "restore" ? target.operation.nodeIds : undefined;
         if (!rootNodeIds) throw new Error("Only a write, create, copy, or lifecycle redo can be undone.");
-        return database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: rootNodeIds, trashedAt: now() }, intent: "undo", compensatesOperationId: target.operationId });
+        return commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: rootNodeIds, trashedAt: now() }, intent: "undo", compensatesOperationId: target.operationId });
       }),
 
       redoOperation: (operationId) => locked(async () => {
@@ -420,7 +463,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
           return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "redo", target.operationId);
         }
         if (target.operation.kind !== "trash" || target.inverse.kind !== "trash") throw new Error("Only an undo can be redone.");
-        return database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: target.inverse.roots.map(({ nodeId }) => nodeId), destination: "original", modifiedAt: now() }, intent: "redo", compensatesOperationId: target.operationId });
+        return commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: target.inverse.roots.map(({ nodeId }) => nodeId), destination: "original", modifiedAt: now() }, intent: "redo", compensatesOperationId: target.operationId });
       }),
 
       restoreFileVersion: (nodeId, operationId) => locked(async () => {
@@ -432,7 +475,10 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       }),
 
       removeOrphans: () => cleanupLocked(async () => removeOrphanChunks(root, await database.listRetainedChunkHashes())),
-      close: () => database.close(),
+      close: () => {
+        revisionChannel.close();
+        database.close();
+      },
     };
   } catch (error) {
     database.close();

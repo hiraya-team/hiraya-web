@@ -8,6 +8,7 @@ import {
 } from "../src/filesystem/database";
 import {
   WEB2_CHUNK_SIZE,
+  WEB2_MAX_BATCH_ITEMS,
   canonicalManifestSha256,
   type Manifest,
 } from "../src/filesystem/model";
@@ -460,6 +461,39 @@ describe("web2 filesystem database", () => {
     expect((await database.listWorkspaces())[0]!.localRevision).toBe(1);
     await expect(database.commitOperation({ operation: { ...operation, nodes: [folder(stableId(81), "Changed")] } })).rejects.toThrow("cannot be reused");
     expect((await database.listWorkspaces())[0]!.localRevision).toBe(1);
+    database.close();
+  });
+
+  test("replays bounded contiguous workspace changes after an exclusive revision", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 625);
+    const operations = [stableId(82), stableId(83), stableId(84)];
+    for (let index = 0; index < operations.length; index += 1) {
+      await database.commitOperation({ operation: createDraft(operations[index]!, [folder(stableId(85 + index), `Change ${index}`)]) });
+    }
+
+    const firstPage = await database.listChanges(WORKSPACE, 0, 2);
+    expect(firstPage.map(({ revision, operationId }) => ({ revision, operationId }))).toEqual([
+      { revision: 1, operationId: operations[0] },
+      { revision: 2, operationId: operations[1] },
+    ]);
+    const finalPage = await database.listChanges(WORKSPACE, 2);
+    expect(finalPage.map(({ revision, operationId }) => ({ revision, operationId }))).toEqual([{ revision: 3, operationId: operations[2] }]);
+    expect(await database.listChanges(WORKSPACE, 3)).toEqual([]);
+    await expect(database.listChanges(WORKSPACE, 4)).rejects.toThrow("ahead");
+    await expect(database.listChanges(WORKSPACE, 0, WEB2_MAX_BATCH_ITEMS + 1)).rejects.toThrow("too large");
+
+    const databaseName = await filesystemDatabaseName(ACCOUNT);
+    const originalChange = await readStored(factory, databaseName, "changes", [WORKSPACE, 2]) as { workspaceId: string; revision: number; operationId: string; affectedIdentities: string[] };
+    const raw = await openRaw(factory, databaseName);
+    await idbRequest(raw.transaction("changes", "readwrite").objectStore("changes").put({ ...originalChange, affectedIdentities: originalChange.affectedIdentities.slice(1) }));
+    raw.close();
+    await expect(database.listChanges(WORKSPACE, 0)).rejects.toThrow("does not match its operation");
+    const missing = await openRaw(factory, databaseName);
+    const changes = missing.transaction("changes", "readwrite").objectStore("changes");
+    await Promise.all([idbRequest(changes.put(originalChange)), idbRequest(changes.delete([WORKSPACE, 2]))]);
+    missing.close();
+    await expect(database.listChanges(WORKSPACE, 0)).rejects.toThrow("not contiguous");
     database.close();
   });
 
