@@ -5,8 +5,11 @@ import {
   type FilesystemBootstrap,
   type FilesystemDatabaseEnvironment,
   type FilesystemPullOperations,
+  type FilesystemReset,
   type HydrationGeneration,
   type HydrationProgress,
+  type ResetPreparation,
+  type ResetPublication,
 } from "../../filesystem/database";
 import { hydrationTargetId, type HydrationPageData, type HydrationTarget } from "../../filesystem/hydration";
 import { WEB2_SCHEMA_VERSION, parseStableId } from "../../filesystem/model";
@@ -15,6 +18,9 @@ import { filesystemRevisionChannelName, type FilesystemBroadcastChannel } from "
 export type HydrationStorage = {
   bootstrap(value: FilesystemBootstrap, signal: AbortSignal): Promise<ChangeRecord[]>;
   applyPull(value: FilesystemPullOperations, signal: AbortSignal): Promise<ChangeRecord[]>;
+  prepareReset(value: FilesystemReset, createGenerationId: () => string, signal: AbortSignal): Promise<ResetPreparation>;
+  restartResetHydration(resetId: string, targetId: string, createGenerationId: () => string, signal: AbortSignal): Promise<HydrationGeneration>;
+  publishReset(resetId: string, createGenerationId: () => string, signal: AbortSignal): Promise<ResetPublication>;
   start(targetId: string, target: HydrationTarget, createGenerationId: () => string, restart: boolean, signal: AbortSignal): Promise<HydrationGeneration>;
   getProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   getPublishedGeneration(workspaceId: string, targetId: string): Promise<string | undefined>;
@@ -46,6 +52,11 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
       open();
       return locks.request(accountLock, { mode: "shared", signal }, () => locks.request(`${databaseName}-workspace-${workspaceId}`, { mode: "exclusive", signal }, operation));
     };
+    const withAllWorkspaces = <T>(signal: AbortSignal, operation: () => Promise<T>) => locks.request(accountLock, { mode: "shared", signal }, async () => {
+      const lockNames = (await database.listWorkspaces()).map(({ id }) => `${databaseName}-workspace-${id}`).sort();
+      const acquire = (index: number): Promise<T> => index === lockNames.length ? operation() : locks.request(lockNames[index]!, { mode: "exclusive", signal }, () => acquire(index + 1));
+      return acquire(0);
+    });
     const notify = (change: ChangeRecord) => {
       try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, workspaceId: change.workspaceId, revision: change.revision }); } catch { /* The durable change log remains authoritative. */ }
     };
@@ -63,15 +74,37 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
       },
       applyPull: (value, signal) => {
         open();
-        return locks.request(accountLock, { mode: "shared", signal }, async () => {
-          const lockNames = (await database.listWorkspaces()).map(({ id }) => `${databaseName}-workspace-${id}`).sort();
-          const acquire = (index: number): Promise<ChangeRecord[]> => index === lockNames.length
-            ? database.applyPullOperations(value)
-            : locks.request(lockNames[index]!, { mode: "exclusive", signal }, () => acquire(index + 1));
-          const changes = await acquire(0);
+        return withAllWorkspaces(signal, async () => {
+          const changes = await database.applyPullOperations(value);
           notifyCatalog();
           changes.forEach(notify);
           return changes;
+        });
+      },
+      prepareReset: (value, createGenerationId, signal) => {
+        open();
+        return withAllWorkspaces(signal, async () => {
+          const result = await database.prepareReset(value, createGenerationId);
+          if (result.kind === "published") {
+            notifyCatalog();
+            result.changes.forEach(notify);
+          }
+          return result;
+        });
+      },
+      restartResetHydration: (resetId, targetId, createGenerationId, signal) => {
+        open();
+        return withAllWorkspaces(signal, () => database.restartResetHydration(resetId, targetId, createGenerationId));
+      },
+      publishReset: (resetId, createGenerationId, signal) => {
+        open();
+        return withAllWorkspaces(signal, async () => {
+          const result = await database.publishReset(resetId, createGenerationId);
+          if (result.kind === "published") {
+            notifyCatalog();
+            result.changes.forEach(notify);
+          }
+          return result;
         });
       },
       start: (targetId, target, createGenerationId, restart, signal) => withWorkspace(target.workspaceId, signal, async () => {
@@ -91,12 +124,8 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
       publish: (workspaceIdValue, targetId, generationId, signal) => {
         const workspaceId = parseStableId(workspaceIdValue, "A workspace ID is invalid.");
         open();
-        return locks.request(accountLock, { mode: "shared", signal }, async () => {
-          const lockNames = (await database.listWorkspaces()).map(({ id }) => `${databaseName}-workspace-${id}`).sort();
-          const acquire = (index: number): Promise<ChangeRecord[]> => index === lockNames.length
-            ? database.getHydrationCoverage(workspaceId, targetId).then((coverage) => coverage?.generationId === generationId ? database.getHydrationChanges(generationId) : database.publishHydration(workspaceId, targetId, generationId))
-            : locks.request(lockNames[index]!, { mode: "exclusive", signal }, () => acquire(index + 1));
-          const changes = await acquire(0);
+        return withAllWorkspaces(signal, async () => {
+          const changes = await database.getHydrationCoverage(workspaceId, targetId).then((coverage) => coverage?.generationId === generationId ? database.getHydrationChanges(generationId) : database.publishHydration(workspaceId, targetId, generationId));
           changes.forEach(notify);
           return changes;
         });

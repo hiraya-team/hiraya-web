@@ -532,6 +532,231 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("publishes a durable multi-selector reset with pending overlays in one transaction", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    const nodeId = stableId(2_520);
+    const baseTuple = { logicalTime: 0, operationId: stableId(2_521) };
+    const base = { workspaceId: WORKSPACE, id: nodeId, kind: "folder" as const, name: "Base", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: baseTuple, parent: baseTuple, lifecycle: baseTuple, position: baseTuple, content: null } };
+    const staleTarget = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 1 };
+    const staleTargetId = hydrationTargetId(staleTarget);
+    const staleGeneration = stableId(2_522);
+    await database.beginHydration(staleTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: staleGeneration, target: staleTarget });
+    await database.stageHydrationPage(staleTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: staleGeneration, pageIndex: 0, observedLogicalTime: 0, target: staleTarget, nodes: [base], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, staleTargetId, staleGeneration);
+    const renameId = stableId(2_523);
+    await database.commitOperation({ operation: { ...operationBase(renameId), kind: "rename", nodeId, name: "Local rename", modifiedAt: 2 } });
+    const settingId = stableId(2_524);
+    await database.commitOperation({ operation: { ...operationBase(settingId), kind: "set", namespace: "editor", key: "font-size", value: 18 } });
+    const reset = { workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 8, headSequence: 10, snapshotBarrier: 8, logFloor: 1, observedLogicalTime: 50, resetBarrier: 8 };
+    let nextId = 2_525;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    if (prepared.kind !== "plan") throw new Error("Reset plan was not staged.");
+    expect(prepared.plan.generations.map(({ target }) => target.kind).sort()).toEqual(["exact-nodes", "exact-settings", "folder-page"]);
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 101 });
+    for (const generation of prepared.plan.generations) {
+      const targetId = hydrationTargetId(generation.target);
+      await database.stageHydrationPage(targetId, null, { ...generation, pageIndex: 0, observedLogicalTime: 50, nodes: generation.target.kind === "exact-settings" ? [] : [base], settings: [], nextPageToken: null });
+    }
+
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "workspaces" && (value as { headSequence?: number }).headSequence === 10) throw new DOMException("Injected reset failure", "AbortError");
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    };
+    try {
+      await expect(database.publishReset(prepared.plan.resetId, () => stableId(nextId++))).rejects.toThrow("Injected reset failure");
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 0 });
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Local rename" });
+    expect(await database.getOperation(renameId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    expect(await database.getHydrationCoverage(WORKSPACE, staleTargetId)).toMatchObject({ generationId: staleGeneration, target: staleTarget });
+    expect((await database.listWorkspaces())[0]).toMatchObject({ headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 3 });
+    expect((await readStored(factory, await filesystemDatabaseName(ACCOUNT), "hydration-pages") as Array<{ kind: string }>).some(({ kind }) => kind === "reset")).toBe(true);
+
+    const published = await database.publishReset(prepared.plan.resetId, () => stableId(nextId++));
+    expect(published.kind).toBe("published");
+    if (published.kind !== "published") throw new Error("Reset did not publish.");
+    expect(published.changes).toMatchObject([{ kind: "reset", workspaceId: WORKSPACE, revision: 4, fromCursor: 0, cursor: 8, headSequence: 10, snapshotBarrier: 8, logFloor: 1 }]);
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 8, lastHydrationAsOf: 8, lastObservedLogicalTime: 50, lastLocalLogicalTime: 101 });
+    expect((await database.listWorkspaces())[0]).toMatchObject({ headSequence: 10, snapshotBarrier: 8, logFloor: 1, localRevision: 4 });
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Local rename" });
+    expect(await database.getOperation(renameId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    expect(await database.getOperation(settingId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    expect(await database.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
+    expect(await database.listChanges(WORKSPACE, 3)).toEqual(published.changes);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "hydration-pages")).toEqual([]);
+    expect(await database.publishReset(prepared.plan.resetId, () => stableId(nextId++))).toEqual(published);
+    expect(await database.prepareReset(reset, () => stableId(nextId++))).toEqual(published);
+    await expect(database.prepareReset({ ...reset, observedLogicalTime: 51 }, () => stableId(nextId++))).rejects.toThrow("different input");
+    await expect(database.prepareReset({ ...reset, cursor: 7, snapshotBarrier: 7, resetBarrier: 7 }, () => stableId(nextId++))).rejects.toThrow("local cursor");
+    await expect(database.prepareReset({ ...reset, fromCursor: 7, cursor: 9, snapshotBarrier: 9, logFloor: 8, resetBarrier: 9 }, () => stableId(nextId++))).rejects.toThrow("local cursor");
+    database.close();
+  });
+
+  test("retains incoming transfer overlays and workspace-qualified settings through reset", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const destinationSettingId = stableId(2_559);
+    const destinationSetting = await database.commitOperation({ operation: { ...operationBase(destinationSettingId), workspaceId: DESTINATION, kind: "set", namespace: "editor", key: "font-size", value: 20 } });
+    await database.applyPullOperations({ workspaceId: DESTINATION, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: destinationSetting.operation.logicalTime, operations: [{ sequence: 1, operationId: destinationSettingId, companion: null, nodes: [], settings: [{ workspaceId: DESTINATION, namespace: "editor", key: "font-size", deleted: false, value: 20, logicalTime: destinationSetting.operation.logicalTime, operationId: destinationSettingId }] }] });
+    const destinationParentId = stableId(2_560);
+    await database.commitOperation({ operation: createDraft(stableId(2_561), [folder(destinationParentId, "Inbox")], DESTINATION) });
+    const staleTarget = { kind: "folder-page" as const, workspaceId: DESTINATION, asOf: 1, parentId: destinationParentId, limit: 100 };
+    const staleGenerationId = stableId(2_562);
+    await database.beginHydration(hydrationTargetId(staleTarget), { workspaceId: DESTINATION, deviceId: DEVICE, generationId: staleGenerationId, target: staleTarget });
+    await database.stageHydrationPage(hydrationTargetId(staleTarget), null, { workspaceId: DESTINATION, deviceId: DEVICE, generationId: staleGenerationId, pageIndex: 0, observedLogicalTime: 1, target: staleTarget, nodes: [], settings: [], nextPageToken: null });
+    await database.publishHydration(DESTINATION, hydrationTargetId(staleTarget), staleGenerationId);
+
+    const transferredNodeId = stableId(2_563);
+    await database.commitOperation({ operation: createDraft(stableId(2_564), [folder(transferredNodeId, "Transfer")]) });
+    const transferId = stableId(2_565);
+    await database.commitOperation({ operation: transferDraft(transferId, [transferredNodeId], DESTINATION, destinationParentId) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_566)), kind: "set", namespace: "editor", key: "font-size", value: 18 } });
+
+    const reset = { workspaceId: DESTINATION, deviceId: DEVICE, fromCursor: 1, cursor: 200, headSequence: 200, snapshotBarrier: 200, logFloor: 2, observedLogicalTime: 200, resetBarrier: 200 };
+    let nextId = 2_568;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    if (prepared.kind !== "plan") throw new Error("Reset plan was not staged.");
+    expect(prepared.plan.generations.some(({ target }) => target.kind === "exact-settings" && target.namespace === "editor" && target.keys.includes("font-size"))).toBe(true);
+    expect(prepared.plan.generations.some(({ target }) => target.kind === "exact-nodes" && target.nodeIds.includes(transferredNodeId))).toBe(false);
+    for (const generation of prepared.plan.generations) {
+      const settings = generation.target.kind === "exact-settings" ? [{ workspaceId: DESTINATION, namespace: "editor" as const, key: "font-size", deleted: false as const, value: 20, logicalTime: destinationSetting.operation.logicalTime, operationId: destinationSettingId }] : [];
+      await database.stageHydrationPage(hydrationTargetId(generation.target), null, { ...generation, pageIndex: 0, observedLogicalTime: 200, nodes: [], settings, nextPageToken: null });
+    }
+    const published = await database.publishReset(prepared.plan.resetId, () => stableId(nextId++));
+    expect(published.kind).toBe("published");
+    expect(await database.getNode(transferredNodeId)).toMatchObject({ workspaceId: DESTINATION, parentId: destinationParentId });
+    expect(await database.getOperation(transferId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    expect(await database.getSetting(DESTINATION, "editor", "font-size")).toMatchObject({ value: 20 });
+    database.close();
+  });
+
+  test("rejects reset publication when an incoming transfer destination was deleted", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 10);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const destinationParentId = stableId(2_580);
+    const destinationCreateId = stableId(2_581);
+    const destinationCreate = await database.commitOperation({ operation: createDraft(destinationCreateId, [folder(destinationParentId, "Inbox")], DESTINATION) });
+    const destinationParent = await database.getNode(destinationParentId);
+    await database.applyPullOperations({ workspaceId: DESTINATION, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: destinationCreate.operation.logicalTime, operations: [{ sequence: 1, operationId: destinationCreateId, companion: null, nodes: [destinationParent!], settings: [] }] });
+    const sourceNodeId = stableId(2_582);
+    const sourceCreateId = stableId(2_583);
+    const sourceCreate = await database.commitOperation({ operation: createDraft(sourceCreateId, [folder(sourceNodeId, "Transfer")]) });
+    const sourceNode = await database.getNode(sourceNodeId);
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: sourceCreate.operation.logicalTime, operations: [{ sequence: 1, operationId: sourceCreateId, companion: null, nodes: [sourceNode!], settings: [] }] });
+    const staleTarget = { kind: "folder-page" as const, workspaceId: DESTINATION, asOf: 1, parentId: destinationParentId, limit: 100 };
+    const staleGenerationId = stableId(2_584);
+    await database.beginHydration(hydrationTargetId(staleTarget), { workspaceId: DESTINATION, deviceId: DEVICE, generationId: staleGenerationId, target: staleTarget });
+    await database.stageHydrationPage(hydrationTargetId(staleTarget), null, { workspaceId: DESTINATION, deviceId: DEVICE, generationId: staleGenerationId, pageIndex: 0, observedLogicalTime: 20, target: staleTarget, nodes: [], settings: [], nextPageToken: null });
+    await database.publishHydration(DESTINATION, hydrationTargetId(staleTarget), staleGenerationId);
+    const transferId = stableId(2_585);
+    await database.commitOperation({ operation: transferDraft(transferId, [sourceNodeId], DESTINATION, destinationParentId) });
+
+    const reset = { workspaceId: DESTINATION, deviceId: DEVICE, fromCursor: 1, cursor: 30, headSequence: 30, snapshotBarrier: 30, logFloor: 2, observedLogicalTime: 30, resetBarrier: 30 };
+    let nextId = 2_586;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    if (prepared.kind !== "plan") throw new Error("Reset plan was not staged.");
+    for (const generation of prepared.plan.generations) await database.stageHydrationPage(hydrationTargetId(generation.target), null, { ...generation, pageIndex: 0, observedLogicalTime: 30, nodes: [], settings: [], nextPageToken: null });
+    await expect(database.publishReset(prepared.plan.resetId, () => stableId(nextId++))).rejects.toThrow("pending transfer destination");
+    expect(await database.getSyncState(DESTINATION)).toMatchObject({ cursor: 1 });
+    expect(await database.getNode(sourceNodeId)).toMatchObject({ workspaceId: DESTINATION, parentId: destinationParentId });
+    expect(await database.getOperation(transferId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    database.close();
+  });
+
+  test("rejects reset publication when a pending move destination was deleted", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 10);
+    const oldParentId = stableId(2_600);
+    const newParentId = stableId(2_601);
+    const childId = stableId(2_602);
+    const createId = stableId(2_603);
+    const created = await database.commitOperation({ operation: createDraft(createId, [folder(oldParentId, "Old"), folder(newParentId, "New"), folder(childId, "Child", oldParentId)]) });
+    const baseNodes = (await Promise.all([oldParentId, newParentId, childId].map((id) => database.getNode(id)))) as NodeRecord[];
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: created.operation.logicalTime, operations: [{ sequence: 1, operationId: createId, companion: null, nodes: baseNodes, settings: [] }] });
+    const moveId = stableId(2_604);
+    await database.commitOperation({ operation: { ...operationBase(moveId), kind: "move", nodeIds: [childId], parentId: newParentId, modifiedAt: 20 } });
+
+    const reset = { workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 1, cursor: 30, headSequence: 30, snapshotBarrier: 30, logFloor: 2, observedLogicalTime: 30, resetBarrier: 30 };
+    let nextId = 2_605;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    if (prepared.kind !== "plan") throw new Error("Reset plan was not staged.");
+    for (const generation of prepared.plan.generations) {
+      const nodes = generation.target.kind === "exact-nodes" ? baseNodes.filter(({ id }) => id !== newParentId && generation.target.nodeIds.includes(id)) : [];
+      await database.stageHydrationPage(hydrationTargetId(generation.target), null, { ...generation, pageIndex: 0, observedLogicalTime: 30, nodes, settings: [], nextPageToken: null });
+    }
+    await expect(database.publishReset(prepared.plan.resetId, () => stableId(nextId++))).rejects.toThrow("invalid hierarchy");
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 1 });
+    expect(await database.getNode(childId)).toMatchObject({ parentId: newParentId });
+    expect(await database.getOperation(moveId)).toMatchObject({ stateKind: "pending", overlayKind: "active" });
+    database.close();
+  });
+
+  test("rejects pending overlays beneath purge tombstones during ancestry reset", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 10);
+    const oldParentId = stableId(2_620);
+    const newParentId = stableId(2_621);
+    const childId = stableId(2_622);
+    const createId = stableId(2_623);
+    const created = await database.commitOperation({ operation: createDraft(createId, [folder(oldParentId, "Old"), folder(newParentId, "New"), folder(childId, "Child", oldParentId)]) });
+    const baseNodes = (await Promise.all([oldParentId, newParentId, childId].map((id) => database.getNode(id)))) as NodeRecord[];
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: created.operation.logicalTime, operations: [{ sequence: 1, operationId: createId, companion: null, nodes: baseNodes, settings: [] }] });
+    const ancestryTarget = { kind: "ancestry" as const, workspaceId: WORKSPACE, asOf: 1, nodeId: oldParentId, maxDepth: 2 };
+    const ancestryGenerationId = stableId(2_624);
+    await database.beginHydration(hydrationTargetId(ancestryTarget), { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: ancestryGenerationId, target: ancestryTarget });
+    await database.stageHydrationPage(hydrationTargetId(ancestryTarget), null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: ancestryGenerationId, pageIndex: 0, observedLogicalTime: 20, target: ancestryTarget, nodes: [baseNodes[0]!], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, hydrationTargetId(ancestryTarget), ancestryGenerationId);
+    const moveId = stableId(2_625);
+    await database.commitOperation({ operation: { ...operationBase(moveId), kind: "move", nodeIds: [childId], parentId: newParentId, modifiedAt: 20 } });
+
+    const reset = { workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 1, cursor: 30, headSequence: 30, snapshotBarrier: 30, logFloor: 2, observedLogicalTime: 30, resetBarrier: 30 };
+    let nextId = 2_626;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    if (prepared.kind !== "plan") throw new Error("Reset plan was not staged.");
+    const tombstone = { workspaceId: WORKSPACE, id: newParentId, purged: true as const, logicalTime: 30, operationId: stableId(2_630) };
+    for (const generation of prepared.plan.generations) {
+      const nodes = generation.target.kind === "exact-nodes" ? [...baseNodes.filter(({ id }) => id !== newParentId && generation.target.nodeIds.includes(id)), ...(generation.target.nodeIds.includes(newParentId) ? [tombstone] : [])].sort((left, right) => left.id.localeCompare(right.id)) : generation.target.kind === "ancestry" ? [baseNodes[0]!] : [];
+      await database.stageHydrationPage(hydrationTargetId(generation.target), null, { ...generation, pageIndex: 0, observedLogicalTime: 30, nodes, settings: [], nextPageToken: null });
+    }
+    await expect(database.publishReset(prepared.plan.resetId, () => stableId(nextId++))).rejects.toThrow("invalid hierarchy");
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 1 });
+    expect(await database.getNode(childId)).toMatchObject({ parentId: newParentId });
+    database.close();
+  });
+
+  test("fences ordinary publication and rejects stale or gapped reset responses", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const ordinaryTarget = { kind: "exact-nodes" as const, workspaceId: DESTINATION, asOf: 8, nodeIds: [stableId(2_540)] };
+    const ordinaryTargetId = hydrationTargetId(ordinaryTarget);
+    const ordinaryGeneration = stableId(2_541);
+    await database.beginHydration(ordinaryTargetId, { workspaceId: DESTINATION, deviceId: DEVICE, generationId: ordinaryGeneration, target: ordinaryTarget });
+    await database.stageHydrationPage(ordinaryTargetId, null, { workspaceId: DESTINATION, deviceId: DEVICE, generationId: ordinaryGeneration, pageIndex: 0, observedLogicalTime: 8, target: ordinaryTarget, nodes: [], settings: [], nextPageToken: null });
+    const reset = { workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 8, headSequence: 10, snapshotBarrier: 8, logFloor: 1, observedLogicalTime: 8, resetBarrier: 8 };
+    let nextId = 2_542;
+    const prepared = await database.prepareReset(reset, () => stableId(nextId++));
+    expect(prepared.kind).toBe("plan");
+    await expect(database.beginHydration(hydrationTargetId({ ...ordinaryTarget, workspaceId: WORKSPACE }), { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: stableId(2_550), target: { ...ordinaryTarget, workspaceId: WORKSPACE } })).rejects.toThrow("fenced");
+    await expect(database.publishHydration(DESTINATION, ordinaryTargetId, ordinaryGeneration)).rejects.toThrow("fenced");
+    await expect(database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: 0, operations: [] })).rejects.toThrow("fenced");
+    await expect(database.prepareReset({ ...reset, fromCursor: 1, logFloor: 2 }, () => stableId(nextId++))).rejects.toThrow("local cursor");
+    await expect(database.prepareReset({ ...reset, cursor: 9, snapshotBarrier: 9, resetBarrier: 9 }, () => stableId(nextId++))).rejects.toThrow("different cursor reset");
+    expect(await database.getHydrationProgress(DESTINATION, ordinaryTargetId, ordinaryGeneration)).toMatchObject({ complete: true });
+    database.close();
+  });
+
   test("stages only the active hydration generation and advances observed clocks", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 100);

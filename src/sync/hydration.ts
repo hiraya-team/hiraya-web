@@ -1,6 +1,6 @@
 import { hydrationTargetId, parseHydrationTarget, type HydrationTarget } from "../filesystem/hydration";
 import { WEB2_SCHEMA_VERSION } from "../filesystem/model";
-import type { ChangeRecord, FilesystemBootstrap, FilesystemPullOperations } from "../filesystem/database";
+import type { ChangeRecord, FilesystemBootstrap, FilesystemPullOperations, FilesystemReset, HydrationGeneration } from "../filesystem/database";
 import type { HydrationStorage } from "../platform/storage/hydration-storage";
 import {
   WEB2_SYNC_PROTOCOL,
@@ -18,7 +18,7 @@ export type HydrationPageRequester = (request: HydrationRequest, signal: AbortSi
 
 export type HydrationCoordinator = {
   bootstrap(value: unknown, options?: { signal?: AbortSignal }): Promise<{ bootstrap: Bootstrap; changes: ChangeRecord[] }>;
-  applyPull(value: unknown, options?: { signal?: AbortSignal }): Promise<{ pull: Extract<PullResult, { kind: "operations" }>; changes: ChangeRecord[] }>;
+  applyPull(value: unknown, requestPageOrOptions?: HydrationPageRequester | { restart?: boolean; signal?: AbortSignal }, options?: { restart?: boolean; signal?: AbortSignal }): Promise<{ pull: PullResult; changes: ChangeRecord[] }>;
   hydrate(target: HydrationTarget, requestPage: HydrationPageRequester, options?: { restart?: boolean; signal?: AbortSignal }): Promise<ChangeRecord[]>;
   close(): Promise<void>;
 };
@@ -63,11 +63,59 @@ function pullData(value: Extract<PullResult, { kind: "operations" }>): Filesyste
   };
 }
 
+function resetData(value: Extract<PullResult, { kind: "reset" }>): FilesystemReset {
+  return {
+    workspaceId: value.workspaceId,
+    deviceId: value.deviceId,
+    fromCursor: value.fromCursor,
+    cursor: value.cursor,
+    headSequence: value.headSequence,
+    snapshotBarrier: value.snapshotBarrier,
+    logFloor: value.logFloor,
+    observedLogicalTime: value.observedLogicalTime,
+    resetBarrier: value.resetBarrier,
+  };
+}
+
 export function createHydrationCoordinator(storage: HydrationStorage, randomUUID: () => string = () => crypto.randomUUID()): HydrationCoordinator {
-  if (!storage || typeof storage.bootstrap !== "function" || typeof storage.applyPull !== "function" || typeof storage.start !== "function" || typeof randomUUID !== "function") throw new TypeError("Hydration coordinator dependencies are invalid.");
+  if (!storage || typeof storage.bootstrap !== "function" || typeof storage.applyPull !== "function" || typeof storage.prepareReset !== "function" || typeof storage.restartResetHydration !== "function" || typeof storage.publishReset !== "function" || typeof storage.start !== "function" || typeof randomUUID !== "function") throw new TypeError("Hydration coordinator dependencies are invalid.");
   const closeController = new AbortController();
   const running = new Set<Promise<unknown>>();
   let closed = false;
+
+  const receivePages = async (generation: HydrationGeneration, requestPage: HydrationPageRequester, signal: AbortSignal, recoverPublished?: () => Promise<ChangeRecord[] | undefined>) => {
+    const targetId = hydrationTargetId(generation.target);
+    let progress = await storage.getProgress(generation.workspaceId, targetId, generation.generationId);
+    if (!progress) {
+      const recovered = await recoverPublished?.();
+      if (recovered) return recovered;
+      throw new Error("The hydration generation was superseded before it started.");
+    }
+    while (!progress.complete) {
+      signal.throwIfAborted();
+      const request = parseHydrationRequest({
+        schemaVersion: WEB2_SCHEMA_VERSION,
+        protocol: WEB2_SYNC_PROTOCOL,
+        workspaceId: generation.workspaceId,
+        deviceId: generation.deviceId,
+        generationId: generation.generationId,
+        pageIndex: progress.nextPageIndex,
+        target: generation.target,
+        pageToken: progress.pageToken,
+      });
+      const page = parseHydrationPage(await requestPage(request, signal));
+      const complete = await storage.stage(targetId, request.pageToken, pageData(page), signal);
+      const next = await storage.getProgress(generation.workspaceId, targetId, generation.generationId);
+      if (!next) {
+        const recovered = await recoverPublished?.();
+        if (recovered) return recovered;
+        throw new Error("The hydration generation was superseded while receiving pages.");
+      }
+      if (next.nextPageIndex !== request.pageIndex + 1 || next.complete !== complete) throw new Error("The hydration generation was superseded while receiving pages.");
+      progress = next;
+    }
+    return undefined;
+  };
 
   const hydrate = async (targetValue: HydrationTarget, requestPage: HydrationPageRequester, options: { restart?: boolean; signal?: AbortSignal } = {}) => {
     if (closed) throw new Error("The hydration coordinator is closed.");
@@ -80,35 +128,8 @@ export function createHydrationCoordinator(storage: HydrationStorage, randomUUID
     const recoverPublished = async () => await storage.getPublishedGeneration(target.workspaceId, targetId) === generation.generationId
       ? storage.publish(target.workspaceId, targetId, generation.generationId, signal)
       : undefined;
-    let progress = await storage.getProgress(target.workspaceId, targetId, generation.generationId);
-    if (!progress) {
-      const recovered = await recoverPublished();
-      if (recovered) return recovered;
-      throw new Error("The hydration generation was superseded before it started.");
-    }
-    while (!progress.complete) {
-      signal.throwIfAborted();
-      const request = parseHydrationRequest({
-        schemaVersion: WEB2_SCHEMA_VERSION,
-        protocol: WEB2_SYNC_PROTOCOL,
-        workspaceId: target.workspaceId,
-        deviceId: generation.deviceId,
-        generationId: generation.generationId,
-        pageIndex: progress.nextPageIndex,
-        target,
-        pageToken: progress.pageToken,
-      });
-      const page = parseHydrationPage(await requestPage(request, signal));
-      const complete = await storage.stage(targetId, request.pageToken, pageData(page), signal);
-      const next = await storage.getProgress(target.workspaceId, targetId, generation.generationId);
-      if (!next) {
-        const recovered = await recoverPublished();
-        if (recovered) return recovered;
-        throw new Error("The hydration generation was superseded while receiving pages.");
-      }
-      if (next.nextPageIndex !== request.pageIndex + 1 || next.complete !== complete) throw new Error("The hydration generation was superseded while receiving pages.");
-      progress = next;
-    }
+    const recovered = await receivePages(generation, requestPage, signal, recoverPublished);
+    if (recovered) return recovered;
     signal.throwIfAborted();
     return storage.publish(target.workspaceId, targetId, generation.generationId, signal);
   };
@@ -120,14 +141,38 @@ export function createHydrationCoordinator(storage: HydrationStorage, randomUUID
     const changes = await storage.bootstrap(bootstrapData(parsed), signal);
     return { bootstrap: parsed, changes };
   };
-  const applyPull = async (value: unknown, options: { signal?: AbortSignal } = {}) => {
+  const applyPull = async (value: unknown, requestPageOrOptions: HydrationPageRequester | { restart?: boolean; signal?: AbortSignal } = {}, suppliedOptions: { restart?: boolean; signal?: AbortSignal } = {}) => {
     if (closed) throw new Error("The hydration coordinator is closed.");
+    const requestPage = typeof requestPageOrOptions === "function" ? requestPageOrOptions : undefined;
+    const options = typeof requestPageOrOptions === "function" ? suppliedOptions : requestPageOrOptions;
     const signal = options.signal ? AbortSignal.any([options.signal, closeController.signal]) : closeController.signal;
     signal.throwIfAborted();
     const parsed = parsePullResult(value);
-    if (parsed.kind !== "operations") throw new Error("A reset pull requires reset hydration before publication.");
-    const changes = await storage.applyPull(pullData(parsed), signal);
-    return { pull: parsed, changes };
+    if (parsed.kind === "operations") return { pull: parsed, changes: await storage.applyPull(pullData(parsed), signal) };
+    if (!requestPage) throw new TypeError("A reset pull requires a hydration page requester.");
+    const prepared = await storage.prepareReset(resetData(parsed), randomUUID, signal);
+    if (prepared.kind === "published") return { pull: parsed, changes: prepared.changes };
+    let plan = prepared.plan;
+    let restart = options.restart ?? false;
+    while (true) {
+      for (let generation of plan.generations) {
+        const targetId = hydrationTargetId(generation.target);
+        const progress = await storage.getProgress(generation.workspaceId, targetId, generation.generationId);
+        if (restart && progress && !progress.complete && progress.nextPageIndex > 0) {
+          generation = await storage.restartResetHydration(plan.resetId, targetId, randomUUID, signal);
+          restart = false;
+        }
+        const recovered = await receivePages(generation, requestPage, signal, async () => {
+          const publication = await storage.publishReset(plan.resetId, randomUUID, signal);
+          return publication.kind === "published" ? publication.changes : undefined;
+        });
+        if (recovered) return { pull: parsed, changes: recovered };
+      }
+      signal.throwIfAborted();
+      const publication = await storage.publishReset(plan.resetId, randomUUID, signal);
+      if (publication.kind === "published") return { pull: parsed, changes: publication.changes };
+      plan = publication.plan;
+    }
   };
   const track = <T>(task: Promise<T>) => {
     running.add(task);
@@ -137,7 +182,7 @@ export function createHydrationCoordinator(storage: HydrationStorage, randomUUID
 
   return {
     bootstrap: (value, options) => track(bootstrap(value, options)),
-    applyPull: (value, options) => track(applyPull(value, options)),
+    applyPull: (value, requestPageOrOptions, options) => track(applyPull(value, requestPageOrOptions, options)),
     hydrate: (target, requestPage, options) => track(hydrate(target, requestPage, options)),
     close: async () => {
       if (closed) return;

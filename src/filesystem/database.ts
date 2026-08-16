@@ -150,6 +150,24 @@ export type FilesystemPullOperations = {
     settings: Setting[];
   }>;
 };
+export type FilesystemReset = {
+  workspaceId: string;
+  deviceId: string;
+  fromCursor: number;
+  cursor: number;
+  headSequence: number;
+  snapshotBarrier: number;
+  logFloor: number;
+  observedLogicalTime: number;
+  resetBarrier: number;
+};
+export type ResetPlan = {
+  resetId: string;
+  reset: FilesystemReset;
+  generations: HydrationGeneration[];
+};
+export type ResetPreparation = { kind: "plan"; plan: ResetPlan } | { kind: "published"; changes: ChangeRecord[] };
+export type ResetPublication = { kind: "plan"; plan: ResetPlan } | { kind: "published"; changes: ChangeRecord[] };
 
 type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
@@ -211,6 +229,18 @@ export type ChangeRecord = {
   fromCursor: number;
   cursor: number;
   affectedIdentities: string[];
+} | {
+  kind: "reset";
+  workspaceId: string;
+  revision: number;
+  operationId: string;
+  fromCursor: number;
+  cursor: number;
+  headSequence: number;
+  snapshotBarrier: number;
+  logFloor: number;
+  observedLogicalTime: number;
+  affectedIdentities: string[];
 };
 
 export type FileVersion = {
@@ -264,13 +294,16 @@ export type FilesystemDatabase = {
   getSettingRecord(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettingRecords(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
   getSyncState(workspaceId: string): Promise<SyncState>;
-  beginHydration(targetId: string, generation: HydrationGeneration): Promise<void>;
+  beginHydration(targetId: string, generation: HydrationGeneration, resetId?: string): Promise<void>;
   getHydrationGeneration(workspaceId: string, targetId: string): Promise<HydrationGeneration | undefined>;
   getHydrationProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   stageHydrationPage(targetId: string, requestPageToken: string | null, page: HydrationPageData): Promise<boolean>;
   getHydrationCoverage(workspaceId: string, targetId: string): Promise<HydrationCoverage | undefined>;
   getHydrationChanges(generationId: string): Promise<ChangeRecord[]>;
   publishHydration(workspaceId: string, targetId: string, generationId: string, bootstrap?: FilesystemBootstrap): Promise<ChangeRecord[]>;
+  prepareReset(value: FilesystemReset, createGenerationId: () => string): Promise<ResetPreparation>;
+  restartResetHydration(resetId: string, targetId: string, createGenerationId: () => string): Promise<HydrationGeneration>;
+  publishReset(resetId: string, createGenerationId: () => string): Promise<ResetPublication>;
   applyPullOperations(value: FilesystemPullOperations): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
@@ -309,12 +342,14 @@ type StoredNodeRecord = StoredNode | Extract<NodeRecord, { purged: true }>;
 type StoredHydrationHeader = HydrationGeneration & HydrationProgress & { targetId: string; pageIndex: -1; kind: "header"; lastIdentity: string | null };
 type StoredHydrationPage = { workspaceId: string; targetId: string; pageIndex: number; kind: "page"; requestPageToken: string | null; page: HydrationPageData };
 type StoredBootstrap = { workspaceId: string; targetId: string; pageIndex: -2; kind: "bootstrap"; bootstrap: FilesystemBootstrap };
+type StoredResetPlan = { workspaceId: string; targetId: string; pageIndex: -3; kind: "reset"; resetId: string; reset: FilesystemReset; targets: HydrationTarget[] };
 type StoredHydrationCoverage = HydrationCoverage;
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
 type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
 
 const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
+const RESET_TARGET_ID = "0".repeat(64);
 
 function parseAppId(value: unknown) {
   if (typeof value !== "string" || value.length > 256 || !APP_ID.test(value)) throw new Error("An app ID is invalid.");
@@ -619,6 +654,24 @@ function parseFilesystemPullOperations(value: unknown): FilesystemPullOperations
   return { workspaceId, deviceId, fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime, operations };
 }
 
+function parseFilesystemReset(value: unknown): FilesystemReset {
+  if (!isRecord(value)) throw new Error("A filesystem reset has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "resetBarrier"], "A filesystem reset has an unsupported shape.");
+  const reset = {
+    workspaceId: parseStableId(value.workspaceId, "A reset workspace ID is invalid."),
+    deviceId: parseStableId(value.deviceId, "A reset device ID is invalid."),
+    fromCursor: parseNonNegativeSafeInteger(value.fromCursor, "A reset cursor is invalid."),
+    cursor: parseNonNegativeSafeInteger(value.cursor, "A reset cursor is invalid."),
+    headSequence: parseNonNegativeSafeInteger(value.headSequence, "A reset head is invalid."),
+    snapshotBarrier: parseNonNegativeSafeInteger(value.snapshotBarrier, "A reset snapshot barrier is invalid."),
+    logFloor: parseNonNegativeSafeInteger(value.logFloor, "A reset log floor is invalid."),
+    observedLogicalTime: parseNonNegativeSafeInteger(value.observedLogicalTime, "A reset observed logical time is invalid."),
+    resetBarrier: parseNonNegativeSafeInteger(value.resetBarrier, "A reset barrier is invalid."),
+  };
+  if (reset.fromCursor >= reset.logFloor || reset.cursor !== reset.resetBarrier || reset.snapshotBarrier !== reset.resetBarrier || reset.headSequence < reset.cursor || reset.logFloor > reset.snapshotBarrier) throw new Error("A filesystem reset is inconsistent.");
+  return reset;
+}
+
 function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
   if (!isRecord(value)) throw new Error("A stored hydration header has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "deviceId", "generationId", "target", "nextPageIndex", "pageToken", "complete", "lastIdentity"], "A stored hydration header has an unsupported shape.");
@@ -652,6 +705,22 @@ function parseStoredBootstrap(value: unknown): StoredBootstrap {
   const targetId = parseSha256(value.targetId, "A hydration target ID is invalid.");
   if (workspaceId !== bootstrap.workspace.id || hydrationTargetId(bootstrap.rootPage.target) !== targetId) throw new Error("Stored bootstrap metadata is inconsistent.");
   return { workspaceId, targetId, pageIndex: -2, kind: "bootstrap", bootstrap };
+}
+
+function parseStoredResetPlan(value: unknown): StoredResetPlan {
+  if (!isRecord(value)) throw new Error("A stored reset plan has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "resetId", "reset", "targets"], "A stored reset plan has an unsupported shape.");
+  if (value.kind !== "reset" || value.pageIndex !== -3 || value.targetId !== RESET_TARGET_ID || !Array.isArray(value.targets) || value.targets.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A stored reset plan is invalid.");
+  const workspaceId = parseStableId(value.workspaceId, "A reset workspace ID is invalid.");
+  const reset = parseFilesystemReset(value.reset);
+  const targets = value.targets.map(parseHydrationTarget);
+  const targetIds = targets.map(hydrationTargetId);
+  if (reset.workspaceId !== workspaceId || targets.some((target) => target.workspaceId !== workspaceId || target.asOf !== reset.resetBarrier) || new Set(targetIds).size !== targets.length || targetIds.some((targetId, index) => index > 0 && targetIds[index - 1]! >= targetId)) throw new Error("A stored reset plan is inconsistent.");
+  return { workspaceId, targetId: RESET_TARGET_ID, pageIndex: -3, kind: "reset", resetId: parseStableId(value.resetId, "A reset ID is invalid."), reset, targets };
+}
+
+function resetPlans(values: unknown[]) {
+  return values.filter((value) => isRecord(value) && value.kind === "reset").map(parseStoredResetPlan);
 }
 
 function parseStoredHydrationCoverage(value: unknown): StoredHydrationCoverage {
@@ -1104,8 +1173,8 @@ function parseStoredOperation(value: unknown): StoredOperation {
 }
 
 function parseChangeRecord(value: unknown): ChangeRecord {
-  if (!isRecord(value) || value.kind !== "operation" && value.kind !== "hydration" && value.kind !== "pull") throw new Error("A stored change record has an unsupported shape.");
-  assertExactKeys(value, value.kind === "hydration" ? ["kind", "workspaceId", "revision", "operationId", "targetId", "affectedIdentities"] : value.kind === "pull" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "affectedIdentities"] : ["kind", "workspaceId", "revision", "operationId", "affectedIdentities"], "A stored change record has an unsupported shape.");
+  if (!isRecord(value) || value.kind !== "operation" && value.kind !== "hydration" && value.kind !== "pull" && value.kind !== "reset") throw new Error("A stored change record has an unsupported shape.");
+  assertExactKeys(value, value.kind === "hydration" ? ["kind", "workspaceId", "revision", "operationId", "targetId", "affectedIdentities"] : value.kind === "pull" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "affectedIdentities"] : value.kind === "reset" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "affectedIdentities"] : ["kind", "workspaceId", "revision", "operationId", "affectedIdentities"], "A stored change record has an unsupported shape.");
   const base = {
     kind: value.kind,
     workspaceId: parseStableId(value.workspaceId, "A stored change workspace ID is invalid."),
@@ -1119,6 +1188,16 @@ function parseChangeRecord(value: unknown): ChangeRecord {
     const cursor = parsePositiveSafeInteger(value.cursor, "A stored pull cursor is invalid.");
     if (cursor <= fromCursor) throw new Error("A stored pull cursor range is invalid.");
     return { ...base, kind: "pull", fromCursor, cursor };
+  }
+  if (value.kind === "reset") {
+    const fromCursor = parseNonNegativeSafeInteger(value.fromCursor, "A stored reset cursor is invalid.");
+    const cursor = parsePositiveSafeInteger(value.cursor, "A stored reset cursor is invalid.");
+    const headSequence = parseNonNegativeSafeInteger(value.headSequence, "A stored reset head is invalid.");
+    const snapshotBarrier = parseNonNegativeSafeInteger(value.snapshotBarrier, "A stored reset snapshot barrier is invalid.");
+    const logFloor = parseNonNegativeSafeInteger(value.logFloor, "A stored reset log floor is invalid.");
+    const observedLogicalTime = parseNonNegativeSafeInteger(value.observedLogicalTime, "A stored reset observed logical time is invalid.");
+    if (fromCursor >= logFloor || cursor !== snapshotBarrier || cursor > headSequence || logFloor > snapshotBarrier) throw new Error("A stored reset change is inconsistent.");
+    return { ...base, kind: "reset", fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime };
   }
   return { ...base, kind: "operation" };
 }
@@ -1464,10 +1543,13 @@ function validateProjectedNodes(records: Map<string, NodeRecord>, authoritativeI
     for (let depth = 0; current.parentId !== null; depth += 1) {
       if (depth >= WEB2_MAX_ANCESTRY_DEPTH) throw new Error("Hydration overlays create a hierarchy that is too deep.");
       const parent = records.get(current.parentId);
-      if (!parent) break;
+      if (!parent) {
+        if (overlayIds.has(record.id)) throw new Error("Hydration overlays create an invalid hierarchy.");
+        break;
+      }
       if (!overlayIds.has(record.id) && !(authoritativeIds.has(current.id) && authoritativeIds.has(parent.id))) break;
       if (isPurgeTombstone(parent)) {
-        if (allowAuthoritativePurgeParent && authoritativeIds.has(current.id) && authoritativeIds.has(parent.id)) break;
+        if (allowAuthoritativePurgeParent && !overlayIds.has(record.id) && authoritativeIds.has(current.id) && authoritativeIds.has(parent.id)) break;
         throw new Error("Hydration overlays create an invalid hierarchy.");
       }
       if (parent.workspaceId !== current.workspaceId || parent.kind !== "folder" || parent.lifecycle.kind !== current.lifecycle.kind || seen.has(parent.id)) throw new Error("Hydration overlays create an invalid hierarchy.");
@@ -1497,6 +1579,180 @@ function mergePulledNode(remote: NodeRecord, current: NodeRecord | undefined): N
   if (isPurgeTombstone(remote)) return isPurgeTombstone(current) && compareOperationTuples({ logicalTime: current.logicalTime, operationId: current.operationId }, { logicalTime: remote.logicalTime, operationId: remote.operationId }) > 0 ? current : remote;
   if (isPurgeTombstone(current)) return current;
   return mergeCrossWorkspaceNode(remote, current);
+}
+
+function pendingNodeDependencies(stored: StoredOperation) {
+  const operation = stored.operation;
+  switch (operation.kind) {
+    case "create":
+    case "copy": return operation.nodes.map(({ id }) => id);
+    case "write":
+    case "rename": return [operation.nodeId];
+    case "move": return [...operation.nodeIds, ...(operation.parentId === null ? [] : [operation.parentId])];
+    case "position": return operation.positions.map(({ nodeId }) => nodeId);
+    case "transfer": return stored.inverse.kind === "transfer" ? [...stored.inverse.nodes.map(({ nodeId }) => nodeId), ...(operation.parentId === null ? [] : [operation.parentId])] : [];
+    case "trash": return stored.inverse.kind === "trash" ? stored.inverse.nodeIds : [];
+    case "restore": return stored.inverse.kind === "restore" ? [...stored.inverse.nodes.map(({ nodeId }) => nodeId), ...stored.inverse.nodes.flatMap(({ lifecycle }) => lifecycle.originalParentId === null ? [] : [lifecycle.originalParentId])] : [];
+    case "purge": return stored.inverse.kind === "purge" ? stored.inverse.nodeIds : [];
+    case "set":
+    case "set-many":
+    case "unset":
+    case "unset-many": return [];
+  }
+}
+
+function pendingSettingDependencies(stored: StoredOperation) {
+  const operation = stored.operation;
+  if (operation.kind === "set" || operation.kind === "unset") return [{ namespace: operation.namespace, key: operation.key }];
+  if (operation.kind === "set-many") return operation.settings.map(({ key }) => ({ namespace: operation.namespace, key }));
+  if (operation.kind === "unset-many") return operation.keys.map((key) => ({ namespace: operation.namespace, key }));
+  return [];
+}
+
+function incomingTransferOverlayNodeIds(operations: StoredOperation[], workspaceId: string) {
+  return new Set(operations.filter((stored) => stored.stateKind === "pending" && stored.overlayKind === "active" && stored.operation.kind === "transfer" && stored.operation.destinationWorkspaceId === workspaceId && stored.workspaceId !== workspaceId && stored.inverse.kind === "transfer").flatMap(({ inverse }) => inverse.kind === "transfer" ? inverse.nodes.map(({ nodeId }) => nodeId) : []));
+}
+
+function validateIncomingTransferParents(nodes: Map<string, NodeRecord>, operations: StoredOperation[], workspaceId: string, deferredOperations: Set<string>) {
+  for (const stored of operations) {
+    const operation = stored.operation;
+    if (stored.stateKind !== "pending" || stored.overlayKind !== "active" || deferredOperations.has(stored.operationId) || operation.kind !== "transfer" || operation.destinationWorkspaceId !== workspaceId || operation.parentId === null) continue;
+    const parent = nodes.get(operation.parentId);
+    if (!parent || isPurgeTombstone(parent) || parent.workspaceId !== workspaceId || parent.kind !== "folder" || parent.lifecycle.kind !== "active") throw new Error("Cursor reset invalidates a pending transfer destination.");
+  }
+}
+
+function deriveResetTargets(reset: FilesystemReset, coverages: StoredHydrationCoverage[], nodes: NodeRecord[], settings: Setting[], operations: StoredOperation[]) {
+  const targets = new Map<string, HydrationTarget>();
+  const add = (target: HydrationTarget) => targets.set(hydrationTargetId(target), target);
+  const workspaceCoverages = coverages.filter((coverage) => coverage.workspaceId === reset.workspaceId);
+  for (const coverage of workspaceCoverages) add({ ...coverage.target, asOf: reset.resetBarrier });
+
+  const pending = operations.filter(({ stateKind }) => stateKind === "pending");
+  const incomingTransferNodes = incomingTransferOverlayNodeIds(pending, reset.workspaceId);
+  const nodeIds = new Set(nodes.filter((record) => record.workspaceId === reset.workspaceId && !incomingTransferNodes.has(record.id)).map(({ id }) => id));
+  for (const stored of pending) if (stored.workspaceId === reset.workspaceId) pendingNodeDependencies(stored).forEach((id) => nodeIds.add(id));
+  const sortedNodeIds = [...nodeIds].sort(compareCanonicalStrings);
+  for (let index = 0; index < sortedNodeIds.length; index += WEB2_MAX_BATCH_ITEMS) add({ kind: "exact-nodes", workspaceId: reset.workspaceId, asOf: reset.resetBarrier, nodeIds: sortedNodeIds.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
+
+  const settingKeys = new Map<SettingNamespace, Set<string>>();
+  const addSetting = (namespace: SettingNamespace, key: string) => {
+    const keys = settingKeys.get(namespace) ?? new Set<string>();
+    keys.add(key);
+    settingKeys.set(namespace, keys);
+  };
+  for (const setting of settings) if (setting.workspaceId === reset.workspaceId) addSetting(setting.namespace, setting.key);
+  for (const stored of pending) if (stored.workspaceId === reset.workspaceId) pendingSettingDependencies(stored).forEach(({ namespace, key }) => addSetting(namespace, key));
+  for (const namespace of [...settingKeys.keys()].sort(compareCanonicalStrings)) {
+    const keys = [...settingKeys.get(namespace)!].sort(compareCanonicalStrings);
+    for (let index = 0; index < keys.length; index += WEB2_MAX_BATCH_ITEMS) add({ kind: "exact-settings", workspaceId: reset.workspaceId, asOf: reset.resetBarrier, namespace, keys: keys.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
+  }
+  const result = [...targets.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, target]) => target);
+  if (result.length > WEB2_MAX_BATCH_ITEMS) throw new Error("The cursor reset selector plan is too large.");
+  return result;
+}
+
+function resetChangeMatches(change: ChangeRecord, reset: FilesystemReset): change is Extract<ChangeRecord, { kind: "reset" }> {
+  return change.kind === "reset" && change.workspaceId === reset.workspaceId && change.fromCursor === reset.fromCursor && change.cursor === reset.cursor && change.headSequence === reset.headSequence && change.snapshotBarrier === reset.snapshotBarrier && change.logFloor === reset.logFloor && change.observedLogicalTime === reset.observedLogicalTime;
+}
+
+type CompletedHydration = { targetId: string; header: StoredHydrationHeader; staged: StoredHydrationPage[] };
+
+function projectHydrationBases(completed: CompletedHydration[], currentNodes: Map<string, NodeRecord>, currentSettings: Map<string, Setting>, coverages: StoredHydrationCoverage[], protectedNodeIds: ReadonlySet<string> = new Set()) {
+  const projectedNodes = new Map(currentNodes);
+  const projectedSettings = new Map(currentSettings);
+  const authoritativeNodeIds = new Set<string>();
+  const completeSiblingIds = new Set<string>();
+  const coveredNodeIds = new Set<string>();
+  const obsoleteCoverageIds = new Set<string>();
+  const nextCoverages: StoredHydrationCoverage[] = [];
+  const remoteByNode = new Map<string, NodeRecord>();
+  const remoteBySetting = new Map<string, Setting>();
+  let allowAuthoritativePurgeParent = false;
+
+  for (const { targetId, header, staged } of completed) {
+    const generation = parseHydrationGeneration({ workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target });
+    const currentCoverage = coverages.find((coverage) => coverage.workspaceId === generation.workspaceId && coverage.targetId === targetId);
+    if (currentCoverage && currentCoverage.target.asOf > generation.target.asOf) throw new Error("That hydration generation is older than its published coverage.");
+    const remoteNodes = new Map(staged.flatMap(({ page }) => page.nodes).map((record) => [record.id, record]));
+    const remoteSettings = new Map(staged.flatMap(({ page }) => page.settings).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
+    for (const [id, record] of remoteNodes) {
+      const existing = remoteByNode.get(id);
+      if (existing && !equalValues(existing, record)) throw new Error("Hydration selectors disagree about a node record.");
+      remoteByNode.set(id, record);
+      authoritativeNodeIds.add(id);
+    }
+    for (const [key, setting] of remoteSettings) {
+      const existing = remoteBySetting.get(key);
+      if (existing && !equalValues(existing, setting)) throw new Error("Hydration selectors disagree about a setting record.");
+      remoteBySetting.set(key, setting);
+    }
+    const remoteNodeIds = new Set(remoteNodes.keys());
+    const remoteSettingKeys = new Map<string, Set<string>>();
+    for (const setting of remoteSettings.values()) {
+      const keys = remoteSettingKeys.get(setting.namespace) ?? new Set<string>();
+      keys.add(setting.key);
+      remoteSettingKeys.set(setting.namespace, keys);
+    }
+    for (const candidate of coverages) {
+      const target = candidate.target;
+      if (candidate.workspaceId !== generation.workspaceId || target.asOf >= generation.target.asOf) continue;
+      const contradicted = target.kind === "exact-nodes" ? target.nodeIds.some((id) => remoteNodeIds.has(id) && !candidate.memberIds.includes(id))
+        : target.kind === "ancestry" ? remoteNodeIds.has(target.nodeId) && !candidate.memberIds.includes(target.nodeId)
+          : target.kind === "exact-settings" ? target.keys.some((key) => remoteSettingKeys.get(target.namespace)?.has(key) && !candidate.memberIds.includes(key))
+            : target.kind === "setting-namespace" ? [...(remoteSettingKeys.get(target.namespace) ?? [])].some((key) => !candidate.memberIds.includes(key))
+              : false;
+      if (contradicted) obsoleteCoverageIds.add(candidate.targetId);
+    }
+    const newerNodeCoverage = (id: string, record = projectedNodes.get(id)) => coverages.some((coverage) => {
+      if (coverage.workspaceId !== generation.workspaceId || coverage.target.asOf <= generation.target.asOf) return false;
+      if (coverage.target.kind === "exact-nodes") return coverage.target.nodeIds.includes(id);
+      if (coverage.target.kind === "ancestry") return coverage.target.nodeId === id || coverage.memberIds.includes(id);
+      return coverage.target.kind === "folder-page" && record !== undefined && !isPurgeTombstone(record) && record.lifecycle.kind === "active" && record.parentId === coverage.target.parentId;
+    });
+    const newerSettingCoverage = (namespace: string, key: string) => coverages.some((coverage) => coverage.workspaceId === generation.workspaceId && coverage.target.asOf > generation.target.asOf && (coverage.target.kind === "exact-settings" && coverage.target.keys.includes(key) || coverage.target.kind === "setting-namespace") && coverage.target.namespace === namespace);
+
+    switch (generation.target.kind) {
+      case "folder-page":
+        for (const record of [...projectedNodes.values()]) if (!isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && record.lifecycle.kind === "active" && record.parentId === generation.target.parentId && !protectedNodeIds.has(record.id) && !remoteNodes.has(record.id) && !newerNodeCoverage(record.id)) projectedNodes.delete(record.id);
+        remoteNodeIds.forEach((id) => completeSiblingIds.add(id));
+        for (const record of currentNodes.values()) if (!isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && record.lifecycle.kind === "active" && record.parentId === generation.target.parentId) coveredNodeIds.add(record.id);
+        break;
+      case "exact-nodes":
+        for (const id of generation.target.nodeIds) {
+          coveredNodeIds.add(id);
+          const record = projectedNodes.get(id);
+          if (!protectedNodeIds.has(id) && !remoteNodes.has(id) && record && !isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(id)) projectedNodes.delete(id);
+        }
+        break;
+      case "ancestry": {
+        allowAuthoritativePurgeParent = true;
+        coveredNodeIds.add(generation.target.nodeId);
+        const record = projectedNodes.get(generation.target.nodeId);
+        if (!protectedNodeIds.has(generation.target.nodeId) && !remoteNodes.has(generation.target.nodeId) && record && !isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(record.id)) projectedNodes.delete(record.id);
+        break;
+      }
+      case "exact-settings":
+        for (const settingKey of generation.target.keys) {
+          const key = `${generation.workspaceId}\0${generation.target.namespace}\0${settingKey}`;
+          if (!remoteSettings.has(key) && !newerSettingCoverage(generation.target.namespace, settingKey)) projectedSettings.delete(key);
+        }
+        break;
+      case "setting-namespace":
+        for (const [storageKey, setting] of [...projectedSettings]) if (setting.workspaceId === generation.workspaceId && setting.namespace === generation.target.namespace && !remoteSettings.has(storageKey) && !newerSettingCoverage(setting.namespace, setting.key)) projectedSettings.delete(storageKey);
+        break;
+    }
+    for (const [id, record] of remoteNodes) {
+      const current = projectedNodes.get(id);
+      if ((!current || !isPurgeTombstone(current)) && !newerNodeCoverage(id, record)) projectedNodes.set(id, current && !isPurgeTombstone(record) && !isPurgeTombstone(current) && current.workspaceId !== record.workspaceId ? mergeCrossWorkspaceNode(record, current) : record);
+      coveredNodeIds.add(id);
+    }
+    for (const [storageKey, setting] of remoteSettings) if (!newerSettingCoverage(setting.namespace, setting.key)) projectedSettings.set(storageKey, setting);
+    const memberIds = generation.target.kind === "folder-page" || generation.target.kind === "exact-nodes" || generation.target.kind === "ancestry" ? [...remoteNodes.keys()] : [...remoteSettings.values()].map(({ key }) => key);
+    memberIds.sort(compareCanonicalStrings);
+    nextCoverages.push(parseStoredHydrationCoverage({ workspaceId: generation.workspaceId, targetId, generationId: generation.generationId, target: generation.target, memberIds }));
+  }
+  return { projectedNodes, projectedSettings, authoritativeNodeIds, completeSiblingIds, coveredNodeIds, obsoleteCoverageIds, nextCoverages, allowAuthoritativePurgeParent };
 }
 
 function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId: string): FileVersion | undefined {
@@ -2147,9 +2403,100 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
-    beginHydration: async (targetIdValue, generationValue) => {
+    prepareReset: async (value, createGenerationId) => {
+      const reset = parseFilesystemReset(value);
+      if (typeof createGenerationId !== "function") throw new TypeError("A reset generation factory is required.");
+      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage"], "readwrite", async (transaction): Promise<ResetPreparation> => {
+        const pages = transaction.objectStore("hydration-pages");
+        const [workspaceValue, syncValue, pageValues, coverageValues, nodeValues, settingValues, operationValues, changeValues] = await Promise.all([
+          request(transaction.objectStore("workspaces").get(reset.workspaceId)),
+          request(transaction.objectStore("sync").get(reset.workspaceId)),
+          request(pages.getAll()),
+          request(transaction.objectStore("hydration-coverage").getAll()),
+          request(transaction.objectStore("nodes").getAll()),
+          request(transaction.objectStore("settings").getAll()),
+          request(transaction.objectStore("operations").getAll()),
+          request(transaction.objectStore("changes").getAll()),
+        ]);
+        if (workspaceValue === undefined || syncValue === undefined) throw new Error("That workspace does not exist.");
+        const workspace = parseWorkspace(workspaceValue);
+        const sync = parseSyncState(syncValue);
+        if (sync.workspaceId !== workspace.id || sync.deviceId !== reset.deviceId) throw new Error("A reset response does not match the local synchronization device.");
+        const plans = resetPlans(pageValues);
+        if (plans.length > 1) throw new Error("Multiple cursor reset plans are active.");
+        const storedChanges = changeValues.map(parseChangeRecord);
+        const published = storedChanges.find((change) => resetChangeMatches(change, reset));
+        if (sync.cursor === reset.cursor) {
+          if (!published) throw new Error("That reset cursor was already reached with different input.");
+          return { kind: "published", changes: storedChanges.filter((change) => change.kind === "reset" && change.operationId === published.operationId).sort((left, right) => left.workspaceId.localeCompare(right.workspaceId)) };
+        }
+        if (sync.cursor !== reset.fromCursor) throw new Error("A reset response does not start at the local cursor.");
+        if (workspace.headSequence > reset.headSequence || workspace.snapshotBarrier > reset.snapshotBarrier || workspace.logFloor > reset.logFloor) throw new Error("A reset response regresses workspace sequence metadata.");
+        if (plans.length > 0) {
+          const plan = plans[0]!;
+          if (!equalValues(plan.reset, reset)) throw new Error("A different cursor reset is already active.");
+          const generations = await Promise.all(plan.targets.map(async (target) => {
+            const targetId = hydrationTargetId(target);
+            const headerValue = await request(pages.get([plan.workspaceId, targetId, -1]));
+            if (headerValue === undefined) throw new Error("A reset selector generation is missing.");
+            const header = parseStoredHydrationHeader(headerValue);
+            if (header.workspaceId !== plan.workspaceId || !equalValues(header.target, target)) throw new Error("A reset selector generation is inconsistent.");
+            return { workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target };
+          }));
+          return { kind: "plan", plan: { resetId: plan.resetId, reset, generations } };
+        }
+
+        const operations = operationValues.map(parseStoredOperation);
+        const targets = deriveResetTargets(reset, coverageValues.map(parseStoredHydrationCoverage), nodeValues.map(parseStoredNodeRecord).map((record) => isPurgeTombstone(record) ? record : nodeRecord(record)), settingValues.map(parseSetting), operations);
+        const resetId = parseStableId(createGenerationId(), "A generated reset ID is invalid.");
+        const generationIds = targets.map(() => parseStableId(createGenerationId(), "A generated hydration generation ID is invalid."));
+        const reservedIds = new Set([resetId, ...generationIds]);
+        if (reservedIds.size !== generationIds.length + 1 || operations.some(({ operationId }) => reservedIds.has(operationId)) || storedChanges.some(({ operationId }) => reservedIds.has(operationId))) throw new Error("A generated reset identity collides with durable history.");
+        const plan = { workspaceId: reset.workspaceId, targetId: RESET_TARGET_ID, pageIndex: -3, kind: "reset", resetId, reset, targets } satisfies StoredResetPlan;
+        const writes: Promise<unknown>[] = [request(pages.add(plan))];
+        for (let index = 0; index < targets.length; index += 1) {
+          const target = targets[index]!;
+          const targetId = hydrationTargetId(target);
+          const bootstrapValue = await request(pages.get([reset.workspaceId, targetId, -2]));
+          if (bootstrapValue !== undefined) { parseStoredBootstrap(bootstrapValue); throw new Error("A staged bootstrap must finish before cursor reset."); }
+          const keys = await request(pages.getAllKeys(keyRange.bound([reset.workspaceId, targetId, -1], [reset.workspaceId, targetId, Number.MAX_SAFE_INTEGER])));
+          writes.push(...keys.map((key) => request(pages.delete(key))), request(pages.add({ workspaceId: reset.workspaceId, targetId, pageIndex: -1, kind: "header", deviceId: reset.deviceId, generationId: generationIds[index]!, target, nextPageIndex: 0, pageToken: null, complete: false, lastIdentity: null } satisfies StoredHydrationHeader)));
+        }
+        await Promise.all(writes);
+        return { kind: "plan", plan: { resetId, reset, generations: targets.map((target, index) => ({ workspaceId: reset.workspaceId, deviceId: reset.deviceId, generationId: generationIds[index]!, target })) } };
+      });
+    },
+
+    restartResetHydration: async (resetIdValue, targetIdValue, createGenerationId) => {
+      const resetId = parseStableId(resetIdValue, "A reset ID is invalid.");
+      const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
+      if (typeof createGenerationId !== "function") throw new TypeError("A reset generation factory is required.");
+      return transact(db, "hydration-pages", "readwrite", async (transaction) => {
+        const pages = transaction.objectStore("hydration-pages");
+        const planValue = await request(pages.getAll());
+        const plan = resetPlans(planValue).find((candidate) => candidate.resetId === resetId);
+        if (!plan) throw new Error("That cursor reset is no longer active.");
+        const target = plan.targets.find((candidate) => hydrationTargetId(candidate) === targetId);
+        if (!target) throw new Error("That hydration selector is not part of the cursor reset.");
+        const headerValue = await request(pages.get([plan.workspaceId, targetId, -1]));
+        if (headerValue === undefined) throw new Error("That reset hydration generation is missing.");
+        const header = parseStoredHydrationHeader(headerValue);
+        if (header.complete) return { workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target };
+        const generationId = parseStableId(createGenerationId(), "A generated hydration generation ID is invalid.");
+        if (generationId === resetId) throw new Error("A generated hydration generation ID collides with its reset.");
+        const keys = await request(pages.getAllKeys(keyRange.bound([plan.workspaceId, targetId, -1], [plan.workspaceId, targetId, Number.MAX_SAFE_INTEGER])));
+        await Promise.all([
+          ...keys.map((key) => request(pages.delete(key))),
+          request(pages.add({ workspaceId: plan.workspaceId, targetId, pageIndex: -1, kind: "header", deviceId: plan.reset.deviceId, generationId, target, nextPageIndex: 0, pageToken: null, complete: false, lastIdentity: null } satisfies StoredHydrationHeader)),
+        ]);
+        return { workspaceId: plan.workspaceId, deviceId: plan.reset.deviceId, generationId, target };
+      });
+    },
+
+    beginHydration: async (targetIdValue, generationValue, resetIdValue) => {
       const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
       const generation = parseHydrationGeneration(generationValue);
+      const resetId = resetIdValue === undefined ? undefined : parseStableId(resetIdValue, "A reset ID is invalid.");
       if (hydrationTargetId(generation.target) !== targetId) throw new Error("A hydration target ID does not match its selector.");
       await transact(db, ["workspaces", "sync", "hydration-pages"], "readwrite", async (transaction) => {
         const [workspaceValue, syncValue] = await Promise.all([
@@ -2161,6 +2508,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const sync = parseSyncState(syncValue);
         if (workspace.id !== sync.workspaceId || sync.deviceId !== generation.deviceId) throw new Error("A hydration generation does not match its local synchronization state.");
         const pages = transaction.objectStore("hydration-pages");
+        const plans = resetPlans(await request(pages.getAll()));
+        if (plans.length > 0 && (resetId === undefined || !plans.some((plan) => plan.resetId === resetId && plan.targets.some((target) => hydrationTargetId(target) === targetId && equalValues(target, generation.target))))) throw new Error("Ordinary hydration is fenced while cursor reset is active.");
         const [existingValue, bootstrapValue] = await Promise.all([
           request(pages.get([generation.workspaceId, targetId, -1])),
           request(pages.get([generation.workspaceId, targetId, -2])),
@@ -2236,16 +2585,20 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       if (hydrationTargetId(page.target) !== targetId) throw new Error("A hydration target ID does not match its selector.");
       if ((page.pageIndex === 0) !== (requestPageToken === null) || page.pageIndex >= 100_000) throw new Error("A hydration page has invalid request pagination.");
       return transact(db, ["workspaces", "sync", "hydration-pages"], "readwrite", async (transaction) => {
-        const [workspaceValue, syncValue] = await Promise.all([
+        const pages = transaction.objectStore("hydration-pages");
+        const [workspaceValue, syncValue, pageValues] = await Promise.all([
           request(transaction.objectStore("workspaces").get(page.workspaceId)),
           request(transaction.objectStore("sync").get(page.workspaceId)),
+          request(pages.getAll()),
         ]);
         if (workspaceValue === undefined || syncValue === undefined) throw new Error("That workspace does not exist.");
         const workspace = parseWorkspace(workspaceValue);
         const sync = parseSyncState(syncValue);
         if (workspace.id !== sync.workspaceId || sync.deviceId !== page.deviceId) throw new Error("A hydration page does not match its local synchronization state.");
+        const plans = resetPlans(pageValues);
+        const resetGeneration = plans.some((plan) => plan.workspaceId === page.workspaceId && plan.targets.some((target) => hydrationTargetId(target) === targetId) && pageValues.some((value) => isRecord(value) && value.kind === "header" && value.workspaceId === page.workspaceId && value.targetId === targetId && value.generationId === page.generationId));
+        if (plans.length > 0 && !resetGeneration) throw new Error("Ordinary hydration is fenced while cursor reset is active.");
         const nextSync = parseSyncState({ ...sync, lastObservedLogicalTime: Math.max(sync.lastObservedLogicalTime, page.observedLogicalTime) });
-        const pages = transaction.objectStore("hydration-pages");
         const headerValue = await request(pages.get([page.workspaceId, targetId, -1]));
         if (headerValue === undefined) return false;
         const header = parseStoredHydrationHeader(headerValue);
@@ -2256,7 +2609,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           const existing = existingValue === undefined ? undefined : parseStoredHydrationPage(existingValue);
           if (!existing || existing.targetId !== targetId || existing.requestPageToken !== requestPageToken || existing.page.generationId !== header.generationId || !equalValues(existing.page.target, header.target) || !equalValues(existing.page, page)) throw new Error("A hydration page index cannot be reused with different content.");
           await validateCompletedHydrationGeneration(pages, keyRange, header);
-          await request(transaction.objectStore("sync").put(nextSync));
+          if (!resetGeneration) await request(transaction.objectStore("sync").put(nextSync));
           return page.nextPageToken === null;
         }
         if (page.pageIndex !== header.nextPageIndex || header.complete || requestPageToken !== header.pageToken) throw new Error("A hydration page is out of sequence.");
@@ -2275,7 +2628,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         await Promise.all([
           request(pages.add(storedPage)),
           request(pages.put(nextHeader)),
-          request(transaction.objectStore("sync").put(nextSync)),
+          ...(resetGeneration ? [] : [request(transaction.objectStore("sync").put(nextSync))]),
         ]);
         return complete;
       });
@@ -2289,6 +2642,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       if (bootstrap && (bootstrap.accountId !== canonicalAccountId || bootstrap.workspace.id !== workspaceId || bootstrap.rootPage.generationId !== generationId || hydrationTargetId(bootstrap.rootPage.target) !== targetId)) throw new Error("A bootstrap response does not match its storage namespace.");
       return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage", "device-preferences"], "readwrite", async (transaction) => {
         const pages = transaction.objectStore("hydration-pages");
+        if (resetPlans(await request(pages.getAll())).length > 0) throw new Error("Ordinary hydration is fenced while cursor reset is active.");
         if (bootstrap) {
           const [publishedValue, replayValue] = await Promise.all([
             request(transaction.objectStore("hydration-coverage").get([workspaceId, targetId])),
@@ -2402,94 +2756,19 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const staged = pageValues.map(parseStoredHydrationPage).sort((left, right) => left.pageIndex - right.pageIndex);
         validateStoredHydrationGeneration(header, staged);
         const currentNodes = new Map<string, NodeRecord>(nodeValues.map(parseStoredNodeRecord).map((record) => [record.id, isPurgeTombstone(record) ? record : nodeRecord(record)]));
-        const projectedNodes = new Map<string, NodeRecord>(currentNodes);
         const currentSettings = new Map(settingValues.map(parseSetting).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
-        const projectedSettings = new Map(currentSettings);
         const coverages = coverageValues.map(parseStoredHydrationCoverage).filter((coverage) => coverage.workspaceId === generation.workspaceId);
-        const currentCoverage = coverages.find((coverage) => coverage.workspaceId === generation.workspaceId && coverage.targetId === targetId);
-        if (currentCoverage && currentCoverage.target.asOf > generation.target.asOf) throw new Error("That hydration generation is older than its published coverage.");
-        const remoteNodes = new Map(staged.flatMap(({ page }) => page.nodes).map((record) => [record.id, record]));
-        const remoteSettings = new Map(staged.flatMap(({ page }) => page.settings).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
-        const remoteNodeIds = new Set(remoteNodes.keys());
-        const remoteSettingKeys = new Map<string, Set<string>>();
-        for (const setting of remoteSettings.values()) {
-          const keys = remoteSettingKeys.get(setting.namespace) ?? new Set<string>();
-          keys.add(setting.key);
-          remoteSettingKeys.set(setting.namespace, keys);
-        }
-        const obsoleteCoverageIds = new Set(coverages.filter((candidate) => {
-          if (candidate.target.asOf >= generation.target.asOf) return false;
-          switch (candidate.target.kind) {
-            case "exact-nodes": return candidate.target.nodeIds.some((id) => remoteNodeIds.has(id) && !candidate.memberIds.includes(id));
-            case "ancestry": return remoteNodeIds.has(candidate.target.nodeId) && !candidate.memberIds.includes(candidate.target.nodeId);
-            case "exact-settings": {
-              const keys = remoteSettingKeys.get(candidate.target.namespace);
-              return candidate.target.keys.some((key) => keys?.has(key) && !candidate.memberIds.includes(key));
-            }
-            case "setting-namespace": {
-              const keys = remoteSettingKeys.get(candidate.target.namespace);
-              if (!keys) return false;
-              const members = new Set(candidate.memberIds);
-              return [...keys].some((key) => !members.has(key));
-            }
-            case "folder-page": return false;
-          }
-        }).map(({ targetId: obsoleteTargetId }) => obsoleteTargetId));
-        const newerNodeCoverage = (id: string, record = currentNodes.get(id)) => coverages.some((coverage) => {
-          if (coverage.workspaceId !== generation.workspaceId || coverage.target.asOf <= generation.target.asOf) return false;
-          if (coverage.target.kind === "exact-nodes") return coverage.target.nodeIds.includes(id);
-          if (coverage.target.kind === "ancestry") return coverage.target.nodeId === id || coverage.memberIds.includes(id);
-          return coverage.target.kind === "folder-page" && record !== undefined && !isPurgeTombstone(record) && record.lifecycle.kind === "active" && record.parentId === coverage.target.parentId;
-        });
-        const newerSettingCoverage = (namespace: string, key: string) => coverages.some((coverage) => coverage.workspaceId === generation.workspaceId && coverage.target.asOf > generation.target.asOf && (coverage.target.kind === "exact-settings" && coverage.target.keys.includes(key) || coverage.target.kind === "setting-namespace") && coverage.target.namespace === namespace);
-
-        switch (generation.target.kind) {
-          case "folder-page":
-            for (const record of currentNodes.values()) if (!isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && record.lifecycle.kind === "active" && record.parentId === generation.target.parentId && !remoteNodes.has(record.id) && !newerNodeCoverage(record.id)) projectedNodes.delete(record.id);
-            break;
-          case "exact-nodes":
-            for (const id of generation.target.nodeIds) {
-              const record = currentNodes.get(id);
-              if (!remoteNodes.has(id) && record && !isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(id)) projectedNodes.delete(id);
-            }
-            break;
-          case "ancestry": {
-            const record = currentNodes.get(generation.target.nodeId);
-            if (!remoteNodes.has(generation.target.nodeId) && record && !isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(record.id)) projectedNodes.delete(record.id);
-            break;
-          }
-          case "exact-settings": {
-            for (const settingKey of generation.target.keys) {
-              const key = `${generation.workspaceId}\0${generation.target.namespace}\0${settingKey}`;
-              if (!remoteSettings.has(key) && !newerSettingCoverage(generation.target.namespace, settingKey)) projectedSettings.delete(key);
-            }
-            break;
-          }
-          case "setting-namespace":
-            for (const [storageKey, setting] of currentSettings) if (setting.workspaceId === generation.workspaceId && setting.namespace === generation.target.namespace && !remoteSettings.has(storageKey) && !newerSettingCoverage(setting.namespace, setting.key)) projectedSettings.delete(storageKey);
-            break;
-        }
-        for (const [id, record] of remoteNodes) {
-          const current = currentNodes.get(id);
-          if ((!current || !isPurgeTombstone(current)) && !newerNodeCoverage(id, record)) {
-            projectedNodes.set(id, current && !isPurgeTombstone(record) && !isPurgeTombstone(current) && current.workspaceId !== record.workspaceId ? mergeCrossWorkspaceNode(record, current) : record);
-          }
-        }
-        for (const [storageKey, setting] of remoteSettings) if (!newerSettingCoverage(setting.namespace, setting.key)) projectedSettings.set(storageKey, setting);
+        const projected = projectHydrationBases([{ targetId, header, staged }], currentNodes, currentSettings, coverages);
+        const { projectedNodes, projectedSettings, coveredNodeIds, authoritativeNodeIds, completeSiblingIds, obsoleteCoverageIds } = projected;
 
         const operations = operationValues.map(parseStoredOperation);
         if (operations.some(({ operationId }) => operationId === generation.generationId)) throw new Error("A hydration generation ID collides with an operation.");
         const pending = operations.filter(({ stateKind, operation }) => stateKind === "pending" && (operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
-        const coveredNodeIds = new Set(remoteNodes.keys());
-        if (generation.target.kind === "exact-nodes") generation.target.nodeIds.forEach((id) => coveredNodeIds.add(id));
-        if (generation.target.kind === "ancestry") coveredNodeIds.add(generation.target.nodeId);
-        if (generation.target.kind === "folder-page") for (const record of currentNodes.values()) if (!isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && record.lifecycle.kind === "active" && record.parentId === generation.target.parentId) coveredNodeIds.add(record.id);
         const hierarchyNodes = new Set<string>();
         const siblingNodes = new Set<string>();
         const deferredOperations = new Set<string>();
         for (const operation of pending) replayPendingOperation(projectedNodes, projectedSettings, currentSettings, coveredNodeIds, hierarchyNodes, siblingNodes, deferredOperations, operation);
-        const authoritativeNodeIds = new Set(remoteNodes.keys());
-        validateProjectedNodes(projectedNodes, authoritativeNodeIds, hierarchyNodes, new Set([...siblingNodes, ...(generation.target.kind === "folder-page" ? authoritativeNodeIds : [])]), generation.target.kind === "ancestry");
+        validateProjectedNodes(projectedNodes, authoritativeNodeIds, hierarchyNodes, new Set([...siblingNodes, ...completeSiblingIds]), projected.allowAuthoritativePurgeParent);
 
         const nodeStore = transaction.objectStore("nodes");
         const settingStore = transaction.objectStore("settings");
@@ -2547,9 +2826,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
         await Promise.all(writes);
 
-        const memberIds = generation.target.kind === "folder-page" || generation.target.kind === "exact-nodes" || generation.target.kind === "ancestry" ? [...remoteNodes.keys()] : [...remoteSettings.values()].map(({ key }) => key);
-        memberIds.sort(compareCanonicalStrings);
-        const coverage = parseStoredHydrationCoverage({ workspaceId: generation.workspaceId, targetId, generationId: generation.generationId, target: generation.target, memberIds });
+        const coverage = projected.nextCoverages[0]!;
         const coverageStore = transaction.objectStore("hydration-coverage");
         const obsoleteCoverages = coverages.filter((candidate) => obsoleteCoverageIds.has(candidate.targetId) && candidate.targetId !== targetId);
         const workspaceCoverages = coverages.filter((candidate) => candidate.workspaceId === generation.workspaceId && candidate.targetId !== targetId && !obsoleteCoverageIds.has(candidate.targetId)).sort((left, right) => left.target.asOf - right.target.asOf || left.targetId.localeCompare(right.targetId));
@@ -2583,9 +2860,175 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    publishReset: async (resetIdValue, createGenerationId) => {
+      const resetId = parseStableId(resetIdValue, "A reset ID is invalid.");
+      if (typeof createGenerationId !== "function") throw new TypeError("A reset generation factory is required.");
+      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage"], "readwrite", async (transaction): Promise<ResetPublication> => {
+        const pages = transaction.objectStore("hydration-pages");
+        const [workspaceValues, syncValues, pageValues, nodeValues, settingValues, operationValues, coverageValues, changeValues] = await Promise.all([
+          request(transaction.objectStore("workspaces").getAll()),
+          request(transaction.objectStore("sync").getAll()),
+          request(pages.getAll()),
+          request(transaction.objectStore("nodes").getAll()),
+          request(transaction.objectStore("settings").getAll()),
+          request(transaction.objectStore("operations").getAll()),
+          request(transaction.objectStore("hydration-coverage").getAll()),
+          request(transaction.objectStore("changes").getAll()),
+        ]);
+        const storedChanges = changeValues.map(parseChangeRecord);
+        const plan = resetPlans(pageValues).find((candidate) => candidate.resetId === resetId);
+        if (!plan) {
+          const recovered = storedChanges.filter((change) => change.kind === "reset" && change.operationId === resetId).sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
+          if (recovered.length > 0) return { kind: "published", changes: recovered };
+          throw new Error("That cursor reset is no longer active.");
+        }
+        const reset = plan.reset;
+        const workspaces = new Map(workspaceValues.map(parseWorkspace).map((candidate) => [candidate.id, candidate]));
+        const syncs = new Map(syncValues.map(parseSyncState).map((candidate) => [candidate.workspaceId, candidate]));
+        const workspace = workspaces.get(reset.workspaceId);
+        const sync = syncs.get(reset.workspaceId);
+        if (!workspace || !sync || sync.deviceId !== reset.deviceId || sync.cursor !== reset.fromCursor) throw new Error("The active cursor reset no longer matches local synchronization state.");
+        if (workspace.headSequence > reset.headSequence || workspace.snapshotBarrier > reset.snapshotBarrier || workspace.logFloor > reset.logFloor) throw new Error("The active cursor reset regresses workspace sequence metadata.");
+        const currentNodes = new Map<string, NodeRecord>(nodeValues.map(parseStoredNodeRecord).map((record) => [record.id, isPurgeTombstone(record) ? record : nodeRecord(record)]));
+        const currentSettings = new Map(settingValues.map(parseSetting).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
+        const operations = operationValues.map(parseStoredOperation);
+        if (operations.some(({ operationId }) => operationId === resetId)) throw new Error("A cursor reset ID collides with an operation.");
+        const coverages = coverageValues.map(parseStoredHydrationCoverage);
+        const requiredTargets = deriveResetTargets(reset, coverages, [...currentNodes.values()], [...currentSettings.values()], operations);
+        const targetsById = new Map(plan.targets.map((target) => [hydrationTargetId(target), target]));
+        const missingTargets = requiredTargets.filter((target) => !targetsById.has(hydrationTargetId(target)));
+        if (missingTargets.length > 0) {
+          missingTargets.forEach((target) => targetsById.set(hydrationTargetId(target), target));
+          const targets = [...targetsById.entries()].sort(([left], [right]) => left.localeCompare(right)).map(([, target]) => target);
+          if (targets.length > WEB2_MAX_BATCH_ITEMS) throw new Error("The cursor reset selector plan is too large.");
+          const generationByTarget = new Map<string, HydrationGeneration>();
+          for (const target of plan.targets) {
+            const targetId = hydrationTargetId(target);
+            const headerValue = await request(pages.get([reset.workspaceId, targetId, -1]));
+            if (headerValue === undefined) throw new Error("A reset selector generation is missing.");
+            const header = parseStoredHydrationHeader(headerValue);
+            generationByTarget.set(targetId, { workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target });
+          }
+          const writes: Promise<unknown>[] = [request(pages.put({ ...plan, targets } satisfies StoredResetPlan))];
+          for (const target of missingTargets) {
+            const targetId = hydrationTargetId(target);
+            const generationId = parseStableId(createGenerationId(), "A generated hydration generation ID is invalid.");
+            if (generationId === resetId || operations.some(({ operationId }) => operationId === generationId) || storedChanges.some(({ operationId }) => operationId === generationId) || [...generationByTarget.values()].some((generation) => generation.generationId === generationId)) throw new Error("A generated hydration generation ID collides with durable history.");
+            const keys = await request(pages.getAllKeys(keyRange.bound([reset.workspaceId, targetId, -1], [reset.workspaceId, targetId, Number.MAX_SAFE_INTEGER])));
+            writes.push(...keys.map((key) => request(pages.delete(key))), request(pages.add({ workspaceId: reset.workspaceId, targetId, pageIndex: -1, kind: "header", deviceId: reset.deviceId, generationId, target, nextPageIndex: 0, pageToken: null, complete: false, lastIdentity: null } satisfies StoredHydrationHeader)));
+            generationByTarget.set(targetId, { workspaceId: reset.workspaceId, deviceId: reset.deviceId, generationId, target });
+          }
+          await Promise.all(writes);
+          return { kind: "plan", plan: { resetId, reset, generations: targets.map((target) => generationByTarget.get(hydrationTargetId(target))!) } };
+        }
+
+        const completed: CompletedHydration[] = [];
+        const generations: HydrationGeneration[] = [];
+        for (const target of plan.targets) {
+          const targetId = hydrationTargetId(target);
+          const headerValue = await request(pages.get([reset.workspaceId, targetId, -1]));
+          if (headerValue === undefined) throw new Error("A reset selector generation is missing.");
+          const header = parseStoredHydrationHeader(headerValue);
+          if (header.workspaceId !== reset.workspaceId || header.deviceId !== reset.deviceId || !equalValues(header.target, target)) throw new Error("A reset selector generation is inconsistent.");
+          generations.push({ workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target });
+          if (!header.complete) return { kind: "plan", plan: { resetId, reset, generations } };
+          const values = await request(pages.getAll(keyRange.bound([reset.workspaceId, targetId, 0], [reset.workspaceId, targetId, Number.MAX_SAFE_INTEGER])));
+          const staged = values.map(parseStoredHydrationPage).sort((left, right) => left.pageIndex - right.pageIndex);
+          validateStoredHydrationGeneration(header, staged);
+          completed.push({ targetId, header, staged });
+        }
+
+        const resetCoverages = coverages.filter((coverage) => coverage.workspaceId === reset.workspaceId).map((coverage) => ({ ...coverage, target: { ...coverage.target, asOf: Math.min(coverage.target.asOf, reset.resetBarrier) } }));
+        const projected = projectHydrationBases(completed, currentNodes, currentSettings, resetCoverages, incomingTransferOverlayNodeIds(operations, reset.workspaceId));
+        const pending = operations.filter(({ stateKind, operation }) => stateKind === "pending" && (operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        const hierarchyNodes = new Set<string>();
+        const siblingNodes = new Set<string>();
+        const deferredOperations = new Set<string>();
+        for (const operation of pending) replayPendingOperation(projected.projectedNodes, projected.projectedSettings, currentSettings, projected.coveredNodeIds, hierarchyNodes, siblingNodes, deferredOperations, operation);
+        validateIncomingTransferParents(projected.projectedNodes, pending, reset.workspaceId, deferredOperations);
+        validateProjectedNodes(projected.projectedNodes, projected.authoritativeNodeIds, hierarchyNodes, new Set([...siblingNodes, ...projected.completeSiblingIds]), projected.allowAuthoritativePurgeParent);
+
+        const affectedByWorkspace = new Map<string, Set<string>>();
+        const affected = (workspaceId: string) => {
+          const identities = affectedByWorkspace.get(workspaceId) ?? new Set<string>();
+          affectedByWorkspace.set(workspaceId, identities);
+          return identities;
+        };
+        const touchNode = (record: NodeRecord) => {
+          const identities = affected(record.workspaceId);
+          identities.add(`node:${record.workspaceId}:${record.id}`);
+          if (isPurgeTombstone(record)) { identities.add(`trash:${record.workspaceId}`); return; }
+          identities.add(`folder:${record.workspaceId}:${record.parentId ?? "root"}`);
+          if (record.kind === "file") identities.add(`content:${record.workspaceId}:${record.id}`);
+          if (record.lifecycle.kind === "trashed") identities.add(`trash:${record.workspaceId}`);
+        };
+        const resetAffected = affected(reset.workspaceId);
+        plan.targets.forEach((target) => hydrationTargetAffectedIdentities(target).forEach((identity) => resetAffected.add(identity)));
+        const writes: Promise<unknown>[] = [];
+        const operationStore = transaction.objectStore("operations");
+        for (const operation of pending) if (deferredOperations.has(operation.operationId)) writes.push(request(operationStore.put({ ...operation, overlayKind: "deferred" })));
+        const nodeStore = transaction.objectStore("nodes");
+        for (const [id, current] of currentNodes) {
+          const next = projected.projectedNodes.get(id);
+          if (next === undefined) { writes.push(request(nodeStore.delete(id))); touchNode(current); }
+          else if (!equalValues(current, next)) { writes.push(request(nodeStore.put(isPurgeTombstone(next) ? next : storeNode(next)))); touchNode(current); touchNode(next); }
+        }
+        for (const [id, next] of projected.projectedNodes) if (!currentNodes.has(id)) { writes.push(request(nodeStore.add(isPurgeTombstone(next) ? next : storeNode(next)))); touchNode(next); }
+        const settingStore = transaction.objectStore("settings");
+        for (const [key, current] of currentSettings) {
+          const next = projected.projectedSettings.get(key);
+          if (next === undefined) { writes.push(request(settingStore.delete([current.workspaceId, current.namespace, current.key]))); affected(current.workspaceId).add(`setting:${current.workspaceId}:${current.namespace}:${current.key}`); affected(current.workspaceId).add(`setting-namespace:${current.workspaceId}:${current.namespace}`); }
+          else if (!equalValues(current, next)) { writes.push(request(settingStore.put(next))); affected(current.workspaceId).add(`setting:${current.workspaceId}:${current.namespace}:${current.key}`); affected(current.workspaceId).add(`setting-namespace:${current.workspaceId}:${current.namespace}`); }
+        }
+        for (const [key, next] of projected.projectedSettings) if (!currentSettings.has(key)) { writes.push(request(settingStore.add(next))); affected(next.workspaceId).add(`setting:${next.workspaceId}:${next.namespace}:${next.key}`); affected(next.workspaceId).add(`setting-namespace:${next.workspaceId}:${next.namespace}`); }
+
+        const coverageStore = transaction.objectStore("hydration-coverage");
+        const nextCoverageIds = new Set(projected.nextCoverages.map(({ targetId }) => targetId));
+        const retainedCoverages = coverages.filter((coverage) => coverage.workspaceId !== reset.workspaceId || !projected.obsoleteCoverageIds.has(coverage.targetId) && !nextCoverageIds.has(coverage.targetId));
+        for (const coverage of coverages) if (coverage.workspaceId === reset.workspaceId && projected.obsoleteCoverageIds.has(coverage.targetId) && !nextCoverageIds.has(coverage.targetId)) {
+          hydrationTargetAffectedIdentities(coverage.target).forEach((identity) => resetAffected.add(identity));
+          writes.push(request(coverageStore.delete([coverage.workspaceId, coverage.targetId])));
+        }
+        const workspaceRetained = retainedCoverages.filter((coverage) => coverage.workspaceId === reset.workspaceId).sort((left, right) => left.target.asOf - right.target.asOf || left.targetId.localeCompare(right.targetId));
+        while (workspaceRetained.length + projected.nextCoverages.length > WEB2_MAX_BATCH_ITEMS) {
+          const evicted = workspaceRetained.shift();
+          if (!evicted) throw new Error("The cursor reset publishes too many selector coverages.");
+          hydrationTargetAffectedIdentities(evicted.target).forEach((identity) => resetAffected.add(identity));
+          writes.push(request(coverageStore.delete([evicted.workspaceId, evicted.targetId])));
+        }
+        projected.nextCoverages.forEach((coverage) => writes.push(request(coverageStore.put(coverage))));
+        const stageKeys = await Promise.all(plan.targets.map((target) => request(pages.getAllKeys(keyRange.bound([reset.workspaceId, hydrationTargetId(target), -1], [reset.workspaceId, hydrationTargetId(target), Number.MAX_SAFE_INTEGER])))));
+        writes.push(...stageKeys.flat().map((key) => request(pages.delete(key))), request(pages.delete([reset.workspaceId, RESET_TARGET_ID, -3])));
+        await Promise.all(writes);
+
+        const pageObservedLogicalTime = completed.flatMap(({ staged }) => staged.map(({ page }) => page.observedLogicalTime));
+        const observedLogicalTime = Math.max(reset.observedLogicalTime, ...pageObservedLogicalTime);
+        const changes = [...affectedByWorkspace].map(([changedWorkspaceId, identities]) => {
+          const current = workspaces.get(changedWorkspaceId);
+          if (!current || !syncs.has(changedWorkspaceId)) throw new Error("Reset overlays reference a workspace that does not exist.");
+          return parseChangeRecord({ kind: "reset", workspaceId: changedWorkspaceId, revision: current.localRevision + 1, operationId: resetId, fromCursor: reset.fromCursor, cursor: reset.cursor, headSequence: reset.headSequence, snapshotBarrier: reset.snapshotBarrier, logFloor: reset.logFloor, observedLogicalTime: reset.observedLogicalTime, affectedIdentities: [...identities].sort() });
+        });
+        const nextWorkspaces = new Map(workspaces);
+        const nextSyncs = new Map(syncs);
+        nextWorkspaces.set(reset.workspaceId, parseWorkspace({ ...workspace, headSequence: reset.headSequence, snapshotBarrier: reset.snapshotBarrier, logFloor: reset.logFloor }));
+        nextSyncs.set(reset.workspaceId, parseSyncState({ ...sync, cursor: reset.cursor, lastHydrationAsOf: reset.resetBarrier, lastObservedLogicalTime: Math.max(sync.lastObservedLogicalTime, observedLogicalTime) }));
+        for (const change of changes) {
+          nextWorkspaces.set(change.workspaceId, parseWorkspace({ ...nextWorkspaces.get(change.workspaceId)!, localRevision: change.revision }));
+          nextSyncs.set(change.workspaceId, parseSyncState({ ...nextSyncs.get(change.workspaceId)!, lastObservedLogicalTime: Math.max(nextSyncs.get(change.workspaceId)!.lastObservedLogicalTime, observedLogicalTime) }));
+        }
+        await Promise.all([
+          ...nextWorkspaces.values().map((candidate) => request(transaction.objectStore("workspaces").put(candidate))),
+          ...nextSyncs.values().map((candidate) => request(transaction.objectStore("sync").put(candidate))),
+          ...changes.map((change) => request(transaction.objectStore("changes").add(change))),
+        ]);
+        return { kind: "published", changes };
+      });
+    },
+
     applyPullOperations: async (value) => {
       const pull = parseFilesystemPullOperations(value);
-      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-coverage"], "readwrite", async (transaction) => {
+      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage"], "readwrite", async (transaction) => {
+        if (resetPlans(await request(transaction.objectStore("hydration-pages").getAll())).length > 0) throw new Error("Operation pulls are fenced while cursor reset is active.");
         const [workspaceValues, syncValues, nodeValues, settingValues, operationValues, coverageValues, changeValues] = await Promise.all([
           request(transaction.objectStore("workspaces").getAll()),
           request(transaction.objectStore("sync").getAll()),
@@ -3302,8 +3745,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const operations = transaction.objectStore("operations");
         await Promise.all(changes.map(async (change) => {
           const operationValue = await request(operations.get(change.operationId));
-          if (change.kind === "hydration") {
-            if (operationValue !== undefined) throw new Error("A stored hydration change collides with an operation.");
+          if (change.kind === "hydration" || change.kind === "reset") {
+            if (operationValue !== undefined) throw new Error(`A stored ${change.kind} change collides with an operation.`);
             return;
           }
           if (change.kind === "pull") return;
