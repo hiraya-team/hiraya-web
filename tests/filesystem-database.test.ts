@@ -448,7 +448,8 @@ describe("web2 filesystem database", () => {
     const secondGeneration = stableId(2_346);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
     await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 20, target: target(20), nodes: [remoteNode(remoteId, "Server base", 20)], settings: [], nextPageToken: null });
-    const change = await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+    const [change] = await database.publishHydration(WORKSPACE, targetId, secondGeneration);
+    if (!change) throw new Error("Hydration did not publish a change.");
 
     expect(change).toMatchObject({ kind: "hydration", workspaceId: WORKSPACE, revision: 5, operationId: secondGeneration, targetId });
     expect(await database.getNode(remoteId)).toMatchObject({ name: "Local rename", lifecycle: { kind: "active" } });

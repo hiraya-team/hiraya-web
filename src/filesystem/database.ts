@@ -220,10 +220,12 @@ export type FilesystemDatabase = {
   listSettingRecords(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
   getSyncState(workspaceId: string): Promise<SyncState>;
   beginHydration(targetId: string, generation: HydrationGeneration): Promise<void>;
+  getHydrationGeneration(workspaceId: string, targetId: string): Promise<HydrationGeneration | undefined>;
   getHydrationProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   stageHydrationPage(targetId: string, requestPageToken: string | null, page: HydrationPageData): Promise<boolean>;
   getHydrationCoverage(workspaceId: string, targetId: string): Promise<HydrationCoverage | undefined>;
-  publishHydration(workspaceId: string, targetId: string, generationId: string): Promise<ChangeRecord>;
+  getHydrationChanges(generationId: string): Promise<ChangeRecord[]>;
+  publishHydration(workspaceId: string, targetId: string, generationId: string): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
@@ -1924,6 +1926,19 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    getHydrationGeneration: async (workspaceIdValue, targetIdValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A hydration workspace ID is invalid.");
+      const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
+      return transact(db, "hydration-pages", "readonly", async (transaction) => {
+        const pages = transaction.objectStore("hydration-pages");
+        const value = await request(pages.get([workspaceId, targetId, -1]));
+        if (value === undefined) return undefined;
+        const header = parseStoredHydrationHeader(value);
+        await validateCompletedHydrationGeneration(pages, keyRange, header);
+        return { workspaceId: header.workspaceId, deviceId: header.deviceId, generationId: header.generationId, target: header.target };
+      });
+    },
+
     getHydrationProgress: async (workspaceIdValue, targetIdValue, generationIdValue) => {
       const workspaceId = parseStableId(workspaceIdValue, "A hydration workspace ID is invalid.");
       const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
@@ -1944,6 +1959,14 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       return transact(db, "hydration-coverage", "readonly", async (transaction) => {
         const value = await request(transaction.objectStore("hydration-coverage").get([workspaceId, targetId]));
         return value === undefined ? undefined : parseStoredHydrationCoverage(value);
+      });
+    },
+
+    getHydrationChanges: async (generationIdValue) => {
+      const generationId = parseStableId(generationIdValue, "A hydration generation ID is invalid.");
+      return transact(db, "changes", "readonly", async (transaction) => {
+        const values = await request(transaction.objectStore("changes").index("by-operation-id").getAll(generationId));
+        return values.map(parseChangeRecord).filter((change): change is Extract<ChangeRecord, { kind: "hydration" }> => change.kind === "hydration").sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
       });
     },
 
@@ -2174,7 +2197,6 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           if (!changedWorkspace || !syncs.has(changedWorkspaceId)) throw new Error("Hydration overlays reference a workspace that does not exist.");
           return parseChangeRecord({ kind: "hydration", workspaceId: changedWorkspaceId, revision: changedWorkspace.localRevision + 1, operationId: generation.generationId, targetId, affectedIdentities: [...identities].sort() });
         });
-        const change = changes.find((candidate) => candidate.workspaceId === generation.workspaceId)!;
         const observedLogicalTime = Math.max(...staged.map(({ page }) => page.observedLogicalTime));
         await Promise.all([
           request(coverageStore.put(coverage)),
@@ -2183,7 +2205,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           ...changes.map((candidate) => request(transaction.objectStore("sync").put(parseSyncState({ ...syncs.get(candidate.workspaceId)!, lastHydrationAsOf: candidate.workspaceId === generation.workspaceId ? Math.max(syncs.get(candidate.workspaceId)!.lastHydrationAsOf, generation.target.asOf) : syncs.get(candidate.workspaceId)!.lastHydrationAsOf, lastObservedLogicalTime: Math.max(syncs.get(candidate.workspaceId)!.lastObservedLogicalTime, observedLogicalTime) })))),
           ...changes.map((candidate) => request(transaction.objectStore("changes").add(candidate))),
         ]);
-        return change;
+        return changes;
       });
     },
 

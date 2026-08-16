@@ -1,0 +1,289 @@
+import { expect, test } from "bun:test";
+import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
+import { filesystemDatabaseName, openFilesystemDatabase } from "../src/filesystem/database";
+import { hydrationTargetId } from "../src/filesystem/hydration";
+import { openHydrationStorage } from "../src/platform/storage/hydration-storage";
+import { createHydrationCoordinator } from "../src/sync/hydration";
+import { WEB2_SYNC_PROTOCOL, type HydrationRequest } from "../src/sync/protocol";
+import type { FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
+
+const ACCOUNT = stableId(1);
+const WORKSPACE = stableId(2);
+const DEVICE = stableId(3);
+const DESTINATION = stableId(4);
+
+function stableId(value: number) {
+  return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+}
+
+class ImmediateLocks {
+  readonly names: string[] = [];
+  active = 0;
+  private readonly tails = new Map<string, Promise<void>>();
+
+  async request<T>(name: string, _options: LockOptions, callback: (lock: Lock) => Promise<T> | T) {
+    this.names.push(name);
+    _options.signal?.throwIfAborted();
+    const previous = this.tails.get(name) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => { release = resolve; });
+    this.tails.set(name, previous.then(() => current));
+    await previous;
+    try {
+      _options.signal?.throwIfAborted();
+      this.active += 1;
+      try {
+        return await callback({ name, mode: _options.mode ?? "exclusive" } as Lock);
+      } finally {
+        this.active -= 1;
+      }
+    } finally {
+      release();
+    }
+  }
+}
+
+class RevisionRecorder {
+  readonly messages: unknown[] = [];
+  readonly names: string[] = [];
+
+  readonly create = (name: string): FilesystemBroadcastChannel => {
+    this.names.push(name);
+    return {
+      postMessage: (value) => { this.messages.push(value); },
+      addEventListener: (() => undefined) as BroadcastChannel["addEventListener"],
+      removeEventListener: (() => undefined) as BroadcastChannel["removeEventListener"],
+      close: () => undefined,
+    };
+  };
+}
+
+function remoteFolder(id: string, name: string, logicalTime: number) {
+  const tuple = { logicalTime, operationId: stableId(300 + logicalTime) };
+  return { workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+}
+
+function response(request: HydrationRequest, nodes: ReturnType<typeof remoteFolder>[], nextPageToken: string | null, observedLogicalTime = 10) {
+  return {
+    schemaVersion: 1,
+    protocol: WEB2_SYNC_PROTOCOL,
+    workspaceId: request.workspaceId,
+    deviceId: request.deviceId,
+    generationId: request.generationId,
+    pageIndex: request.pageIndex,
+    observedLogicalTime,
+    target: request.target,
+    nodes,
+    settings: [],
+    nextPageToken,
+  };
+}
+
+test("resumes a durable hydration generation and broadcasts its published revision", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  let nextGeneration = 100;
+  const environment = {
+    indexedDB,
+    IDBKeyRange,
+    locks: locks as unknown as Pick<LockManager, "request">,
+    createBroadcastChannel: revisions.create,
+  };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
+  database.close();
+
+  const firstNode = remoteFolder(stableId(200), "First", 10);
+  const secondNode = remoteFolder(stableId(201), "Second", 10);
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 1 };
+  const targetId = hydrationTargetId(target);
+  const requested: HydrationRequest[] = [];
+  const controller = new AbortController();
+  const first = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(nextGeneration++));
+  await expect(first.hydrate(target, async (request) => {
+    expect(locks.active).toBe(0);
+    requested.push(request);
+    if (request.pageIndex === 0) return response(request, [firstNode], "next");
+    throw new Error("injected transport failure");
+  }, { signal: controller.signal })).rejects.toThrow("injected transport failure");
+  await first.close();
+
+  const staged = await openFilesystemDatabase(ACCOUNT, environment);
+  expect(await staged.getNode(firstNode.id)).toBeUndefined();
+  expect(await staged.getHydrationGeneration(WORKSPACE, targetId)).toMatchObject({ generationId: stableId(100), target });
+  expect(await staged.getHydrationProgress(WORKSPACE, targetId, stableId(100))).toEqual({ nextPageIndex: 1, pageToken: "next", complete: false });
+  staged.close();
+
+  const resumed = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(nextGeneration++));
+  const changes = await resumed.hydrate(target, async (request) => {
+    expect(locks.active).toBe(0);
+    requested.push(request);
+    return response(request, [secondNode], null);
+  }, { signal: controller.signal });
+  await resumed.close();
+  const recovered = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(nextGeneration++));
+  const recoveredChanges = await recovered.hydrate(target, async () => { throw new Error("Published hydration must not request another page."); });
+  await recovered.close();
+
+  expect(requested.map(({ generationId, pageIndex, pageToken }) => ({ generationId, pageIndex, pageToken }))).toEqual([
+    { generationId: stableId(100), pageIndex: 0, pageToken: null },
+    { generationId: stableId(100), pageIndex: 1, pageToken: "next" },
+    { generationId: stableId(100), pageIndex: 1, pageToken: "next" },
+  ]);
+  expect(nextGeneration).toBe(101);
+  expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 1, targetId }]);
+  expect(recoveredChanges).toEqual(changes);
+  expect(revisions.messages).toEqual([
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+  ]);
+  expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-storage`);
+  expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-workspace-${WORKSPACE}`);
+  const published = await openFilesystemDatabase(ACCOUNT, environment);
+  expect((await published.listChildren(WORKSPACE, null)).map(({ id }) => id)).toEqual([firstNode.id, secondNode.id]);
+  expect(await published.getHydrationCoverage(WORKSPACE, targetId)).toMatchObject({ generationId: stableId(100), memberIds: [firstNode.id, secondNode.id] });
+  expect(await published.getHydrationGeneration(WORKSPACE, targetId)).toBeUndefined();
+  published.close();
+});
+
+test("restarts an expired continuation with a fresh durable generation", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
+  database.close();
+  let generation = 500;
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(generation++));
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 1 };
+  const requests: HydrationRequest[] = [];
+  await expect(coordinator.hydrate(target, async (request) => {
+    requests.push(request);
+    if (request.pageIndex === 0) return response(request, [remoteFolder(stableId(510), "Expired", 10)], "expired");
+    throw new Error("continuation expired");
+  })).rejects.toThrow("continuation expired");
+
+  let releaseResume!: () => void;
+  const resumeGate = new Promise<void>((resolve) => { releaseResume = resolve; });
+  let resumeStarted!: () => void;
+  const activeResume = new Promise<void>((resolve) => { resumeStarted = resolve; });
+  const staleResume = coordinator.hydrate(target, async (request) => {
+    requests.push(request);
+    resumeStarted();
+    await resumeGate;
+    return response(request, [remoteFolder(stableId(512), "Stale", 10)], null);
+  });
+  await activeResume;
+  await coordinator.hydrate(target, async (request) => {
+    requests.push(request);
+    return response(request, [remoteFolder(stableId(511), "Fresh", 10)], null);
+  }, { restart: true });
+  releaseResume();
+  await expect(staleResume).rejects.toThrow("superseded");
+  await coordinator.close();
+
+  expect(requests.map(({ generationId, pageIndex }) => ({ generationId, pageIndex }))).toEqual([
+    { generationId: stableId(500), pageIndex: 0 },
+    { generationId: stableId(500), pageIndex: 1 },
+    { generationId: stableId(500), pageIndex: 1 },
+    { generationId: stableId(501), pageIndex: 0 },
+  ]);
+  const published = await openFilesystemDatabase(ACCOUNT, environment);
+  expect((await published.listChildren(WORKSPACE, null)).map(({ id }) => id)).toEqual([stableId(511)]);
+  expect(await published.getHydrationGeneration(WORKSPACE, hydrationTargetId(target))).toBeUndefined();
+  published.close();
+});
+
+test("concurrent callers share one generation and publication", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
+  database.close();
+  let nextGeneration = 700;
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(nextGeneration++));
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 1 };
+  let release!: () => void;
+  const responseGate = new Promise<void>((resolve) => { release = resolve; });
+  let started = 0;
+  let bothStarted!: () => void;
+  const ready = new Promise<void>((resolve) => { bothStarted = resolve; });
+  const request = async (value: HydrationRequest) => {
+    started += 1;
+    if (started === 2) bothStarted();
+    await responseGate;
+    return response(value, [remoteFolder(stableId(710), "Shared", 10)], null);
+  };
+  const first = coordinator.hydrate(target, request);
+  const second = coordinator.hydrate(target, request);
+  await ready;
+  release();
+  const results = await Promise.all([first, second]);
+  await coordinator.close();
+
+  expect(nextGeneration).toBe(701);
+  expect(results.map((changes) => changes.length)).toEqual([1, 1]);
+  expect(revisions.messages).toEqual([
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+  ]);
+});
+
+test("broadcasts every workspace revision changed by transfer replay", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, now: () => 100, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
+  await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+  const node = remoteFolder(stableId(720), "Transferred", 10);
+  const exactTarget = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: 10, nodeIds: [node.id] };
+  const exactTargetId = hydrationTargetId(exactTarget);
+  const initialGeneration = stableId(721);
+  await database.beginHydration(exactTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: initialGeneration, target: exactTarget });
+  await database.stageHydrationPage(exactTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: initialGeneration, pageIndex: 0, observedLogicalTime: 10, target: exactTarget, nodes: [node], settings: [], nextPageToken: null });
+  await database.publishHydration(WORKSPACE, exactTargetId, initialGeneration);
+  await database.commitOperation({ operation: { schemaVersion: 1, kind: "transfer", operationId: stableId(722), workspaceId: WORKSPACE, deviceId: DEVICE, nodeIds: [node.id], destinationWorkspaceId: DESTINATION, parentId: null, modifiedAt: 20 } });
+  database.close();
+
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(723));
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 20, parentId: null, limit: 1 };
+  const refreshed = remoteFolder(node.id, node.name, 20);
+  refreshed.position = { x: 9, y: 9 };
+  refreshed.fieldTuples.position = { logicalTime: 200, operationId: stableId(724) };
+  const changes = await coordinator.hydrate(target, async (request) => response(request, [refreshed], null, 200));
+  await coordinator.close();
+
+  expect(changes.map(({ workspaceId }) => workspaceId).sort()).toEqual([WORKSPACE, DESTINATION].sort());
+  expect(revisions.messages).toEqual([
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 3 },
+    { schemaVersion: 1, workspaceId: DESTINATION, revision: 2 },
+  ]);
+});
+
+test("close aborts and drains an in-flight hydration request", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
+  database.close();
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment), () => stableId(600));
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 1 };
+  let started!: () => void;
+  const active = new Promise<void>((resolve) => { started = resolve; });
+  const hydration = coordinator.hydrate(target, async (_request, signal) => {
+    started();
+    await new Promise<void>((_resolve, reject) => signal.addEventListener("abort", () => reject(signal.reason), { once: true }));
+  });
+  await active;
+  await coordinator.close();
+  await expect(hydration).rejects.toMatchObject({ name: "AbortError" });
+  expect(revisions.messages).toEqual([]);
+});
