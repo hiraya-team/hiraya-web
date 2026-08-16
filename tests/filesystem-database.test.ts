@@ -11,8 +11,10 @@ import {
   WEB2_MAX_BATCH_ITEMS,
   canonicalManifestSha256,
   type Manifest,
+  type NodeRecord,
+  type Setting,
 } from "../src/filesystem/model";
-import { hydrationTargetId } from "../src/filesystem/hydration";
+import { hydrationTargetId, type HydrationTarget } from "../src/filesystem/hydration";
 import { DEFAULT_DEVICE_PREFERENCES } from "../src/domain/preferences";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
@@ -166,7 +168,7 @@ describe("web2 filesystem database", () => {
         sync: { keyPath: "workspaceId", indexes: [] },
         settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: [] },
         "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: ["by-workspace-kind"] },
-        "hydration-coverage": { keyPath: ["workspaceId", "targetId"], indexes: ["by-workspace-as-of"] },
+        "hydration-coverage": { keyPath: ["workspaceId", "targetId"], indexes: ["by-ancestry-node", "by-exact-node", "by-member", "by-workspace-as-of", "by-workspace-kind-namespace"] },
         "window-sessions": { keyPath: "workspaceId", indexes: [] },
         "device-preferences": { keyPath: "id", indexes: [] },
         "installed-apps": { keyPath: "appId", indexes: [] },
@@ -190,6 +192,8 @@ describe("web2 filesystem database", () => {
       expect(transaction.objectStore("file-associations").index("appId")).toMatchObject({ keyPath: "appId", unique: false, multiEntry: false });
       expect(transaction.objectStore("account-app-outbox").index("operationId")).toMatchObject({ keyPath: "operationId", unique: true, multiEntry: false });
       expect(transaction.objectStore("hydration-coverage").index("by-workspace-as-of")).toMatchObject({ keyPath: ["workspaceId", "target.asOf", "targetId"], unique: true, multiEntry: false });
+      expect(transaction.objectStore("hydration-coverage").index("by-member")).toMatchObject({ keyPath: "memberIds", unique: false, multiEntry: true });
+      expect(transaction.objectStore("hydration-coverage").index("by-exact-node")).toMatchObject({ keyPath: "target.nodeIds", unique: false, multiEntry: true });
     } finally {
       raw.close();
       database?.close();
@@ -436,6 +440,8 @@ describe("web2 filesystem database", () => {
       const tuple = { logicalTime, operationId: stableId(2_350 + logicalTime) };
       return { workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
     };
+    expect(await database.queryNode(WORKSPACE, remoteId)).toEqual({ availability: "unavailable" });
+    expect(await database.queryFolderChildren(WORKSPACE, null)).toEqual({ availability: "unavailable" });
     const firstGeneration = stableId(2_343);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
     await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [remoteNode(remoteId, "Remote", 10), remoteNode(omittedId, "Omitted", 10), remoteNode(pendingOmittedId, "Pending", 10)], settings: [], nextPageToken: null });
@@ -458,6 +464,11 @@ describe("web2 filesystem database", () => {
     expect(await database.getNode(omittedId)).toBeUndefined();
     expect(await database.getHydrationProgress(WORKSPACE, targetId, secondGeneration)).toBeUndefined();
     expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toEqual({ workspaceId: WORKSPACE, targetId, generationId: secondGeneration, target: target(20), memberIds: [remoteId] });
+    expect(await database.queryNode(WORKSPACE, remoteId)).toMatchObject({ availability: "available", value: { name: "Local rename" } });
+    expect(await database.queryNode(WORKSPACE, localId)).toMatchObject({ availability: "available", value: { name: "Local" } });
+    expect(await database.queryNode(WORKSPACE, omittedId)).toEqual({ availability: "unavailable" });
+    expect(await database.queryNode(WORKSPACE, pendingOmittedId)).toEqual({ availability: "unavailable" });
+    expect(await database.queryFolderChildren(WORKSPACE, null)).toMatchObject({ availability: "available", value: [{ id: remoteId }, { id: localId }] });
     expect(await database.listChanges(WORKSPACE, 4)).toEqual([change]);
     const staleGeneration = stableId(2_349);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: staleGeneration, target: target(15) });
@@ -505,6 +516,10 @@ describe("web2 filesystem database", () => {
     expect(await database.getNode(childId)).toMatchObject({ workspaceId: DESTINATION, parentId: rootId, lifecycle: { kind: "active" } });
     expect(await database.listChildren(WORKSPACE, null)).toEqual([]);
     expect((await database.listChildren(DESTINATION, null)).map(({ id }) => id)).toEqual([rootId]);
+    expect(await database.queryNode(WORKSPACE, rootId)).toEqual({ availability: "available", value: undefined });
+    expect(await database.queryNode(DESTINATION, rootId)).toMatchObject({ availability: "available", value: { workspaceId: DESTINATION } });
+    expect(await database.queryFolderChildren(WORKSPACE, null)).toEqual({ availability: "available", value: [] });
+    expect(await database.queryFolderChildren(DESTINATION, null)).toEqual({ availability: "unavailable" });
     expect((await database.listWorkspaces()).find(({ id }) => id === DESTINATION)?.localRevision).toBe(3);
     expect(await database.listChanges(DESTINATION, 2)).toMatchObject([{ kind: "hydration", operationId: refreshGeneration, targetId: folderTargetId }]);
     expect(await database.getSyncState(DESTINATION)).toMatchObject({ lastHydrationAsOf: 0, lastObservedLogicalTime: 200 });
@@ -580,11 +595,15 @@ describe("web2 filesystem database", () => {
     const key = "font-size";
     const target = (asOf: number) => ({ kind: "exact-settings" as const, workspaceId: WORKSPACE, asOf, namespace: "editor" as const, keys: [key] });
     const targetId = hydrationTargetId(target(10));
+    expect(await database.querySetting(WORKSPACE, "editor", key)).toEqual({ availability: "unavailable" });
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toEqual({ availability: "unavailable" });
     const firstGeneration = stableId(2_366);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target: target(10) });
     await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 10, target: target(10), nodes: [], settings: [{ workspaceId: WORKSPACE, namespace: "editor", key, deleted: false, value: 16, logicalTime: 10, operationId: stableId(2_367) }], nextPageToken: null });
     await database.publishHydration(WORKSPACE, targetId, firstGeneration);
     expect(await database.getSetting(WORKSPACE, "editor", key)).toMatchObject({ value: 16 });
+    expect(await database.querySetting(WORKSPACE, "editor", key)).toMatchObject({ availability: "available", value: { value: 16 } });
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toEqual({ availability: "unavailable" });
 
     const secondGeneration = stableId(2_368);
     await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target: target(20) });
@@ -592,6 +611,94 @@ describe("web2 filesystem database", () => {
     await database.publishHydration(WORKSPACE, targetId, secondGeneration);
     expect(await database.getSettingRecord(WORKSPACE, "editor", key)).toBeUndefined();
     expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toMatchObject({ generationId: secondGeneration, memberIds: [] });
+    expect(await database.querySetting(WORKSPACE, "editor", key)).toEqual({ availability: "available", value: undefined });
+    const namespaceTarget = { kind: "setting-namespace" as const, workspaceId: WORKSPACE, asOf: 30, namespace: "editor" as const, limit: 100 };
+    const namespaceTargetId = hydrationTargetId(namespaceTarget);
+    const namespaceGeneration = stableId(2_369);
+    await database.beginHydration(namespaceTargetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: namespaceGeneration, target: namespaceTarget });
+    await database.stageHydrationPage(namespaceTargetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: namespaceGeneration, pageIndex: 0, observedLogicalTime: 30, target: namespaceTarget, nodes: [], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, namespaceTargetId, namespaceGeneration);
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toEqual({ availability: "available", value: [] });
+    expect(await database.querySetting(WORKSPACE, "editor", "line-height")).toEqual({ availability: "available", value: undefined });
+    const set = await database.commitOperation({ operation: { ...operationBase(stableId(2_370)), kind: "set", namespace: "editor", key, value: 18 } });
+    expect(set.affectedIdentities).toContain(`setting-namespace:${WORKSPACE}:editor`);
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toMatchObject({ availability: "available", value: [{ key, value: 18 }] });
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_371)), kind: "unset", namespace: "editor", key } });
+    expect(await database.querySetting(WORKSPACE, "editor", key)).toEqual({ availability: "available", value: undefined });
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toEqual({ availability: "available", value: [] });
+    database.close();
+  });
+
+  test("scopes contradicted coverage pruning to the hydrated workspace", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const key = "font-size";
+    const publish = async (target: HydrationTarget, generationId: string, settings: Setting[]) => {
+      const targetId = hydrationTargetId(target);
+      await database.beginHydration(targetId, { workspaceId: target.workspaceId, deviceId: DEVICE, generationId, target });
+      await database.stageHydrationPage(targetId, null, { workspaceId: target.workspaceId, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: target.asOf, target, nodes: [], settings, nextPageToken: null });
+      await database.publishHydration(target.workspaceId, targetId, generationId);
+      return targetId;
+    };
+    const sourceNamespace = { kind: "setting-namespace" as const, workspaceId: WORKSPACE, asOf: 10, namespace: "editor" as const, limit: 100 };
+    const sourceSetting = { workspaceId: WORKSPACE, namespace: "editor" as const, key, deleted: false as const, value: 16, logicalTime: 10, operationId: stableId(2_430) };
+    const sourceTargetId = await publish(sourceNamespace, stableId(2_431), [sourceSetting]);
+    await publish({ ...sourceNamespace, workspaceId: DESTINATION, asOf: 5 }, stableId(2_432), []);
+    const refreshed = { ...sourceSetting, value: 18, logicalTime: 20, operationId: stableId(2_433) };
+    await publish({ kind: "exact-settings", workspaceId: WORKSPACE, asOf: 20, namespace: "editor", keys: [key] }, stableId(2_434), [refreshed]);
+
+    expect(await database.getHydrationCoverage(WORKSPACE, sourceTargetId)).toMatchObject({ memberIds: [key] });
+    expect(await database.querySettingNamespace(WORKSPACE, "editor")).toMatchObject({ availability: "available", value: [{ key, value: 18 }] });
+    database.close();
+  });
+
+  test("forgets contradicted exact negatives before folder coverage is replaced", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const firstId = stableId(2_420);
+    const exact = (asOf: number, nodeIds: string[]) => ({ kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf, nodeIds: [...nodeIds].sort() });
+    const publish = async (target: HydrationTarget, generationId: string, nodes: NodeRecord[] = []) => {
+      const targetId = hydrationTargetId(target);
+      await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+      await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: target.asOf, target, nodes, settings: [], nextPageToken: null });
+      await database.publishHydration(WORKSPACE, targetId, generationId);
+    };
+    const exactTarget = exact(10, [firstId]);
+    const exactTargetId = hydrationTargetId(exactTarget);
+    await publish(exactTarget, stableId(2_422));
+    expect(await database.queryNode(WORKSPACE, firstId)).toEqual({ availability: "available", value: undefined });
+
+    const tuple = { logicalTime: 20, operationId: stableId(2_423) };
+    const first = { workspaceId: WORKSPACE, ...folder(firstId, "First"), lifecycle: { kind: "active" as const }, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    await publish({ kind: "folder-page", workspaceId: WORKSPACE, asOf: 20, parentId: null, limit: 100 }, stableId(2_424), [first]);
+    expect(await database.queryNode(WORKSPACE, firstId)).toMatchObject({ availability: "available", value: { id: firstId } });
+    expect(await database.getHydrationCoverage(WORKSPACE, exactTargetId)).toBeUndefined();
+
+    await publish({ kind: "folder-page", workspaceId: WORKSPACE, asOf: 30, parentId: null, limit: 100 }, stableId(2_425));
+    expect(await database.queryNode(WORKSPACE, firstId)).toEqual({ availability: "unavailable" });
+    database.close();
+  });
+
+  test("makes evicted negative coverage unavailable and invalidates its selector", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const firstNodeId = stableId(10_000);
+    let finalChanges = [] as Awaited<ReturnType<FilesystemDatabase["publishHydration"]>>;
+    for (let index = 0; index <= WEB2_MAX_BATCH_ITEMS; index += 1) {
+      const nodeId = stableId(10_000 + index);
+      const target = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: index + 1, nodeIds: [nodeId] };
+      const targetId = hydrationTargetId(target);
+      const generationId = stableId(20_000 + index);
+      await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+      await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: index + 1, target, nodes: [], settings: [], nextPageToken: null });
+      finalChanges = await database.publishHydration(WORKSPACE, targetId, generationId);
+      if (index === WEB2_MAX_BATCH_ITEMS - 1) expect(await database.queryNode(WORKSPACE, firstNodeId)).toEqual({ availability: "available", value: undefined });
+    }
+    expect(await database.queryNode(WORKSPACE, firstNodeId)).toEqual({ availability: "unavailable" });
+    expect(await database.queryNode(WORKSPACE, stableId(10_001))).toEqual({ availability: "available", value: undefined });
+    expect(finalChanges[0]!.affectedIdentities).toContain(`node:${WORKSPACE}:${firstNodeId}`);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "hydration-coverage")).toHaveLength(WEB2_MAX_BATCH_ITEMS);
     database.close();
   });
 
@@ -611,6 +718,7 @@ describe("web2 filesystem database", () => {
     await database.publishHydration(WORKSPACE, targetId, generationId);
     expect(await database.getNode(childId)).toMatchObject({ parentId: tombstoneId });
     expect(await database.getNodeRecord(tombstoneId)).toEqual(tombstone);
+    expect(await database.queryNode(WORKSPACE, tombstoneId)).toEqual({ availability: "available", value: undefined });
     database.close();
   });
 

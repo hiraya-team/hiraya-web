@@ -2,6 +2,7 @@ import { getAccountOpfsRoot, readChunk, reconstructBlob, removeOrphanChunks, sta
 import {
   filesystemDatabaseName,
   openFilesystemDatabase,
+  type CacheQuery,
   type ChangeRecord,
   type CommitOperationInput,
   type FileVersion,
@@ -153,10 +154,14 @@ export type WorkspaceFilesystem = {
   createFile(value: { name: string; content: Blob; mimeType?: string; parentId?: string | null; position?: Position }): Promise<Node>;
   copyNodes(value: { parentId: string | null; roots: CopyNodeRoot[] }): Promise<Node[]>;
   getNode(nodeId: string): Promise<Node | undefined>;
+  queryNode(nodeId: string): Promise<CacheQuery<Node | undefined>>;
   listChildren(parentId: string | null): Promise<Node[]>;
+  queryFolderChildren(parentId: string | null): Promise<CacheQuery<Node[]>>;
   listTrash(): Promise<Node[]>;
   getSetting(namespace: SettingNamespace, key: string): Promise<ActiveSetting | undefined>;
+  querySetting(namespace: SettingNamespace, key: string): Promise<CacheQuery<ActiveSetting | undefined>>;
   listSettings(namespace: SettingNamespace): Promise<ActiveSetting[]>;
+  querySettingNamespace(namespace: SettingNamespace): Promise<CacheQuery<ActiveSetting[]>>;
   readDesktopGridSettings(): Promise<DesktopGridSettings>;
   saveDesktopGridSettings(value: DesktopGridSettings): Promise<StoredOperation>;
   listChanges(afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
@@ -404,10 +409,14 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         const node = await database.getNode(nodeId);
         return node?.workspaceId === workspaceId ? node : undefined;
       },
+      queryNode: (nodeId) => database.queryNode(workspaceId, nodeId),
       listChildren: (parentId) => database.listChildren(workspaceId, parentId),
+      queryFolderChildren: (parentId) => database.queryFolderChildren(workspaceId, parentId),
       listTrash: () => database.listTrash(workspaceId),
       getSetting: (namespace, key) => database.getSetting(workspaceId, namespace, key),
+      querySetting: (namespace, key) => database.querySetting(workspaceId, namespace, key),
       listSettings: (namespace) => database.listSettings(workspaceId, namespace),
+      querySettingNamespace: (namespace) => database.querySettingNamespace(workspaceId, namespace),
       readDesktopGridSettings: async () => {
         const settings = new Map((await database.listSettings(workspaceId, "desktop-grid")).map(({ key, value }) => [key, value]));
         return parseDesktopGridSettings({

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { getAccountOpfsRoot } from "../src/filesystem/chunks";
 import { openFilesystemDatabase } from "../src/filesystem/database";
+import { hydrationTargetId } from "../src/filesystem/hydration";
 import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, sha256Hex } from "../src/filesystem/model";
 import { openWorkspaceFilesystem, type WorkspaceFilesystemEnvironment } from "../src/platform/storage/workspace-filesystem";
 import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
@@ -347,6 +348,34 @@ describe("workspace filesystem storage", () => {
     source.close();
     observer.close();
     destination.close();
+  });
+
+  test("preserves unavailable versus covered results through the workspace facade", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    const broadcasts = new TestBroadcastChannels();
+    const environment = { indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(120), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Coverage", pinned: true, deviceId: DEVICE });
+    database.close();
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const local = await filesystem.createFolder({ name: "Local" });
+    expect(await filesystem.queryNode(local.id)).toMatchObject({ availability: "available", value: { id: local.id } });
+    expect(await filesystem.queryFolderChildren(null)).toEqual({ availability: "unavailable" });
+    expect(await filesystem.querySettingNamespace("editor")).toEqual({ availability: "unavailable" });
+
+    const raw = await openFilesystemDatabase(ACCOUNT, environment);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 100, parentId: null, limit: 100 };
+    const targetId = hydrationTargetId(target);
+    const generationId = stableId(121);
+    await raw.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    await raw.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 100, target, nodes: [], settings: [], nextPageToken: null });
+    await raw.publishHydration(WORKSPACE, targetId, generationId);
+    raw.close();
+
+    expect(await filesystem.queryFolderChildren(null)).toMatchObject({ availability: "available", value: [{ id: local.id }] });
+    filesystem.close();
   });
 
   test("creates a bounded multi-root forest atomically in caller order with deduplicated content", async () => {

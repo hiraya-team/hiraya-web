@@ -83,7 +83,13 @@ const STORE_SCHEMA = {
   sync: { keyPath: "workspaceId", indexes: {} },
   settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: {} },
   "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: { "by-workspace-kind": { keyPath: ["workspaceId", "kind"], unique: false } } },
-  "hydration-coverage": { keyPath: ["workspaceId", "targetId"], indexes: { "by-workspace-as-of": { keyPath: ["workspaceId", "target.asOf", "targetId"], unique: true } } },
+  "hydration-coverage": { keyPath: ["workspaceId", "targetId"], indexes: {
+    "by-workspace-as-of": { keyPath: ["workspaceId", "target.asOf", "targetId"], unique: true },
+    "by-member": { keyPath: "memberIds", unique: false, multiEntry: true },
+    "by-exact-node": { keyPath: "target.nodeIds", unique: false, multiEntry: true },
+    "by-ancestry-node": { keyPath: "target.nodeId", unique: false },
+    "by-workspace-kind-namespace": { keyPath: ["workspaceId", "target.kind", "target.namespace"], unique: false },
+  } },
   "window-sessions": { keyPath: "workspaceId", indexes: {} },
   "device-preferences": { keyPath: "id", indexes: {} },
   "installed-apps": { keyPath: "appId", indexes: {} },
@@ -117,6 +123,7 @@ export type SyncState = {
 export type HydrationGeneration = { workspaceId: string; deviceId: string; generationId: string; target: HydrationTarget };
 export type HydrationProgress = { nextPageIndex: number; pageToken: string | null; complete: boolean };
 export type HydrationCoverage = { workspaceId: string; targetId: string; generationId: string; target: HydrationTarget; memberIds: string[] };
+export type CacheQuery<T> = { availability: "available"; value: T } | { availability: "unavailable" };
 
 type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
@@ -210,12 +217,16 @@ export type FilesystemDatabase = {
   deleteWorkspace(workspaceId: string): Promise<Workspace[]>;
   getNode(id: string): Promise<Node | undefined>;
   getNodeRecord(id: string): Promise<NodeRecord | undefined>;
+  queryNode(workspaceId: string, nodeId: string): Promise<CacheQuery<Node | undefined>>;
   listChildren(workspaceId: string, parentId: string | null, limit?: number): Promise<Node[]>;
+  queryFolderChildren(workspaceId: string, parentId: string | null): Promise<CacheQuery<Node[]>>;
   assertChildNamesAvailable(workspaceId: string, parentId: string | null, names: string[]): Promise<void>;
   assertNodeIdsAvailable(ids: string[]): Promise<void>;
   listTrash(workspaceId: string): Promise<Node[]>;
   getSetting(workspaceId: string, namespace: SettingNamespace, key: string): Promise<ActiveSetting | undefined>;
+  querySetting(workspaceId: string, namespace: SettingNamespace, key: string): Promise<CacheQuery<ActiveSetting | undefined>>;
   listSettings(workspaceId: string, namespace: SettingNamespace): Promise<ActiveSetting[]>;
+  querySettingNamespace(workspaceId: string, namespace: SettingNamespace): Promise<CacheQuery<ActiveSetting[]>>;
   getSettingRecord(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettingRecords(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
   getSyncState(workspaceId: string): Promise<SyncState>;
@@ -547,6 +558,29 @@ function parseStoredHydrationCoverage(value: unknown): StoredHydrationCoverage {
   return { workspaceId, targetId, generationId, target, memberIds };
 }
 
+function available<T>(value: T): CacheQuery<T> {
+  return { availability: "available", value };
+}
+
+function resolveMissingExact(proofs: Array<{ asOf: number; kind: "positive" | "negative" }>): CacheQuery<undefined> {
+  if (proofs.length === 0) return { availability: "unavailable" };
+  const freshest = Math.max(...proofs.map(({ asOf }) => asOf));
+  const current = proofs.filter(({ asOf }) => asOf === freshest);
+  return current.some(({ kind }) => kind === "positive") ? { availability: "unavailable" }
+    : current.some(({ kind }) => kind === "negative") ? available(undefined)
+      : { availability: "unavailable" };
+}
+
+function hydrationTargetAffectedIdentities(target: HydrationTarget) {
+  switch (target.kind) {
+    case "folder-page": return [`folder:${target.workspaceId}:${target.parentId ?? "root"}`];
+    case "exact-nodes": return target.nodeIds.map((id) => `node:${target.workspaceId}:${id}`);
+    case "ancestry": return [`node:${target.workspaceId}:${target.nodeId}`];
+    case "exact-settings": return [...target.keys.map((key) => `setting:${target.workspaceId}:${target.namespace}:${key}`), `setting-namespace:${target.workspaceId}:${target.namespace}`];
+    case "setting-namespace": return [`setting-namespace:${target.workspaceId}:${target.namespace}`];
+  }
+}
+
 function hydrationPageIdentities(page: HydrationPageData) {
   return page.target.kind === "folder-page" ? page.nodes.map(({ id }) => id) : page.target.kind === "setting-namespace" ? page.settings.map(({ key }) => key) : [];
 }
@@ -806,6 +840,7 @@ function localAffectedIdentities(operation: LocallyCommittableOperation, inverse
     return [...new Set([...source, ...destination])].sort();
   }
   const affected = new Set(operationAffectedIdentities(operation));
+  if (operation.kind === "set" || operation.kind === "set-many" || operation.kind === "unset" || operation.kind === "unset-many") affected.add(`setting-namespace:${operation.workspaceId}:${operation.namespace}`);
   const node = (nodeId: string) => affected.add(`node:${operation.workspaceId}:${nodeId}`);
   const content = (nodeId: string) => affected.add(`content:${operation.workspaceId}:${nodeId}`);
   const folder = (parentId: string | null) => affected.add(`folder:${operation.workspaceId}:${parentId ?? "root"}`);
@@ -980,7 +1015,8 @@ function validateSchema(db: IDBDatabase) {
     if (store.autoIncrement || !sameKeyPath(store.keyPath, expected.keyPath) || !equalValues([...store.indexNames], Object.keys(expected.indexes).sort())) throw new Error("The filesystem database schema is malformed.");
     for (const [indexName, indexSchema] of Object.entries(expected.indexes)) {
       const index = store.index(indexName);
-      if (!sameKeyPath(index.keyPath, indexSchema.keyPath) || index.unique !== indexSchema.unique || index.multiEntry) throw new Error("The filesystem database schema is malformed.");
+      const multiEntry = "multiEntry" in indexSchema ? indexSchema.multiEntry : false;
+      if (!sameKeyPath(index.keyPath, indexSchema.keyPath) || index.unique !== indexSchema.unique || index.multiEntry !== multiEntry) throw new Error("The filesystem database schema is malformed.");
     }
   }
 }
@@ -1002,6 +1038,10 @@ function createSchema(db: IDBDatabase) {
   hydrationPages.createIndex("by-workspace-kind", ["workspaceId", "kind"]);
   const hydrationCoverage = db.createObjectStore("hydration-coverage", { keyPath: ["workspaceId", "targetId"] });
   hydrationCoverage.createIndex("by-workspace-as-of", ["workspaceId", "target.asOf", "targetId"], { unique: true });
+  hydrationCoverage.createIndex("by-member", "memberIds", { multiEntry: true });
+  hydrationCoverage.createIndex("by-exact-node", "target.nodeIds", { multiEntry: true });
+  hydrationCoverage.createIndex("by-ancestry-node", "target.nodeId");
+  hydrationCoverage.createIndex("by-workspace-kind-namespace", ["workspaceId", "target.kind", "target.namespace"]);
   db.createObjectStore("window-sessions", { keyPath: "workspaceId" });
   db.createObjectStore("device-preferences", { keyPath: "id" });
   db.createObjectStore("installed-apps", { keyPath: "appId" });
@@ -1806,6 +1846,32 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    queryNode: async (workspaceIdValue, nodeIdValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A workspace ID is invalid.");
+      const nodeId = parseStableId(nodeIdValue, "A node ID is invalid.");
+      return transact(db, ["nodes", "hydration-coverage"], "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("nodes").get(nodeId));
+        if (value !== undefined) {
+          const record = parseStoredNodeRecord(value);
+          return isPurgeTombstone(record) || record.workspaceId !== workspaceId ? available(undefined) : available(nodeRecord(record));
+        }
+        const coverageStore = transaction.objectStore("hydration-coverage");
+        const coverageValues = (await Promise.all([
+          request(coverageStore.index("by-member").getAll(nodeId)),
+          request(coverageStore.index("by-exact-node").getAll(nodeId)),
+          request(coverageStore.index("by-ancestry-node").getAll(nodeId)),
+        ])).flat();
+        const coverages = [...new Map(coverageValues.map(parseStoredHydrationCoverage).filter((coverage) => coverage.workspaceId === workspaceId).map((coverage) => [coverage.targetId, coverage])).values()];
+        const proofs: Array<{ asOf: number; kind: "positive" | "negative" }> = [];
+        for (const coverage of coverages) {
+          if (coverage.target.kind === "exact-nodes" && coverage.target.nodeIds.includes(nodeId)) proofs.push({ asOf: coverage.target.asOf, kind: coverage.memberIds.includes(nodeId) ? "positive" : "negative" });
+          else if (coverage.target.kind === "ancestry" && coverage.target.nodeId === nodeId) proofs.push({ asOf: coverage.target.asOf, kind: coverage.memberIds.includes(nodeId) ? "positive" : "negative" });
+          else if ((coverage.target.kind === "folder-page" || coverage.target.kind === "ancestry") && coverage.memberIds.includes(nodeId)) proofs.push({ asOf: coverage.target.asOf, kind: "positive" });
+        }
+        return resolveMissingExact(proofs);
+      });
+    },
+
     listChildren: async (workspaceId, parentId, limit) => {
       const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
       const canonicalParentId = parentId === null ? null : parseStableId(parentId, "A parent node ID is invalid.");
@@ -1816,6 +1882,23 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const range = keyRange.only([canonicalWorkspaceId, canonicalParentId ?? "", "active"]);
         const values = await request(boundedLimit === undefined ? index.getAll(range) : index.getAll(range, boundedLimit));
         return values.map((value) => nodeRecord(parseStoredNode(value)));
+      });
+    },
+
+    queryFolderChildren: async (workspaceIdValue, parentIdValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A workspace ID is invalid.");
+      const parentId = parentIdValue === null ? null : parseStableId(parentIdValue, "A parent node ID is invalid.");
+      return transact(db, ["nodes", "hydration-coverage"], "readonly", async (transaction) => {
+        const range = keyRange.only([workspaceId, parentId ?? "", "active"]);
+        const targetId = hydrationTargetId({ kind: "folder-page", workspaceId, asOf: 0, parentId, limit: 1 });
+        const [values, coverageValue] = await Promise.all([
+          request(transaction.objectStore("nodes").index("by-workspace-parent-lifecycle").getAll(range)),
+          request(transaction.objectStore("hydration-coverage").get([workspaceId, targetId])),
+        ]);
+        const nodes = values.map((value) => nodeRecord(parseStoredNode(value)));
+        if (coverageValue === undefined) return { availability: "unavailable" };
+        const coverage = parseStoredHydrationCoverage(coverageValue);
+        return coverage.target.kind === "folder-page" && coverage.target.parentId === parentId ? available(nodes) : { availability: "unavailable" };
       });
     },
 
@@ -1853,6 +1936,29 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    querySetting: async (workspaceIdValue, namespaceValue, keyValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A workspace ID is invalid.");
+      const { namespace, key } = parseSettingKeyForNamespace(namespaceValue, keyValue);
+      return transact(db, ["settings", "hydration-coverage"], "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("settings").get([workspaceId, namespace, key]));
+        if (value !== undefined) {
+          const setting = parseSetting(value);
+          return setting.deleted ? available(undefined) : available(setting);
+        }
+        const coverageStore = transaction.objectStore("hydration-coverage");
+        const coverageValues = (await Promise.all([
+          request(coverageStore.index("by-workspace-kind-namespace").getAll(keyRange.only([workspaceId, "exact-settings", namespace]))),
+          request(coverageStore.index("by-workspace-kind-namespace").getAll(keyRange.only([workspaceId, "setting-namespace", namespace]))),
+        ])).flat();
+        const coverages = [...new Map(coverageValues.map(parseStoredHydrationCoverage).filter((coverage) => coverage.workspaceId === workspaceId).map((coverage) => [coverage.targetId, coverage])).values()];
+        const proofs: Array<{ asOf: number; kind: "positive" | "negative" }> = [];
+        for (const coverage of coverages) {
+          if (coverage.target.kind === "exact-settings" && coverage.target.namespace === namespace && coverage.target.keys.includes(key) || coverage.target.kind === "setting-namespace" && coverage.target.namespace === namespace) proofs.push({ asOf: coverage.target.asOf, kind: coverage.memberIds.includes(key) ? "positive" : "negative" });
+        }
+        return resolveMissingExact(proofs);
+      });
+    },
+
     getSettingRecord: async (workspaceId, namespace, key) => {
       const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
       const { namespace: canonicalNamespace, key: canonicalKey } = parseSettingKeyForNamespace(namespace, key);
@@ -1868,6 +1974,23 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       return transact(db, "settings", "readonly", async (transaction) => {
         const values = await request(transaction.objectStore("settings").getAll(keyRange.bound([canonicalWorkspaceId, canonicalNamespace, ""], [canonicalWorkspaceId, canonicalNamespace, "\uffff"])));
         return values.map(parseSetting).filter((setting): setting is Extract<Setting, { deleted: false }> => !setting.deleted);
+      });
+    },
+
+    querySettingNamespace: async (workspaceIdValue, namespaceValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A workspace ID is invalid.");
+      const namespace = parseSettingNamespace(namespaceValue);
+      return transact(db, ["settings", "hydration-coverage"], "readonly", async (transaction) => {
+        const range = keyRange.bound([workspaceId, namespace, ""], [workspaceId, namespace, "\uffff"]);
+        const targetId = hydrationTargetId({ kind: "setting-namespace", workspaceId, asOf: 0, namespace, limit: 1 });
+        const [values, coverageValue] = await Promise.all([
+          request(transaction.objectStore("settings").getAll(range)),
+          request(transaction.objectStore("hydration-coverage").get([workspaceId, targetId])),
+        ]);
+        const settings = values.map(parseSetting).filter((setting): setting is ActiveSetting => !setting.deleted);
+        if (coverageValue === undefined) return { availability: "unavailable" };
+        const coverage = parseStoredHydrationCoverage(coverageValue);
+        return coverage.target.kind === "setting-namespace" && coverage.target.namespace === namespace ? available(settings) : { availability: "unavailable" };
       });
     },
 
@@ -2059,11 +2182,36 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const projectedNodes = new Map<string, NodeRecord>(currentNodes);
         const currentSettings = new Map(settingValues.map(parseSetting).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
         const projectedSettings = new Map(currentSettings);
-        const coverages = coverageValues.map(parseStoredHydrationCoverage);
+        const coverages = coverageValues.map(parseStoredHydrationCoverage).filter((coverage) => coverage.workspaceId === generation.workspaceId);
         const currentCoverage = coverages.find((coverage) => coverage.workspaceId === generation.workspaceId && coverage.targetId === targetId);
         if (currentCoverage && currentCoverage.target.asOf > generation.target.asOf) throw new Error("That hydration generation is older than its published coverage.");
         const remoteNodes = new Map(staged.flatMap(({ page }) => page.nodes).map((record) => [record.id, record]));
         const remoteSettings = new Map(staged.flatMap(({ page }) => page.settings).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
+        const remoteNodeIds = new Set(remoteNodes.keys());
+        const remoteSettingKeys = new Map<string, Set<string>>();
+        for (const setting of remoteSettings.values()) {
+          const keys = remoteSettingKeys.get(setting.namespace) ?? new Set<string>();
+          keys.add(setting.key);
+          remoteSettingKeys.set(setting.namespace, keys);
+        }
+        const obsoleteCoverageIds = new Set(coverages.filter((candidate) => {
+          if (candidate.target.asOf >= generation.target.asOf) return false;
+          switch (candidate.target.kind) {
+            case "exact-nodes": return candidate.target.nodeIds.some((id) => remoteNodeIds.has(id) && !candidate.memberIds.includes(id));
+            case "ancestry": return remoteNodeIds.has(candidate.target.nodeId) && !candidate.memberIds.includes(candidate.target.nodeId);
+            case "exact-settings": {
+              const keys = remoteSettingKeys.get(candidate.target.namespace);
+              return candidate.target.keys.some((key) => keys?.has(key) && !candidate.memberIds.includes(key));
+            }
+            case "setting-namespace": {
+              const keys = remoteSettingKeys.get(candidate.target.namespace);
+              if (!keys) return false;
+              const members = new Set(candidate.memberIds);
+              return [...keys].some((key) => !members.has(key));
+            }
+            case "folder-page": return false;
+          }
+        }).map(({ targetId: obsoleteTargetId }) => obsoleteTargetId));
         const newerNodeCoverage = (id: string, record = currentNodes.get(id)) => coverages.some((coverage) => {
           if (coverage.workspaceId !== generation.workspaceId || coverage.target.asOf <= generation.target.asOf) return false;
           if (coverage.target.kind === "exact-nodes") return coverage.target.nodeIds.includes(id);
@@ -2137,17 +2285,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           if (record.lifecycle.kind === "trashed") identities.add(`trash:${record.workspaceId}`);
         };
         const targetAffected = affected(generation.workspaceId);
-        switch (generation.target.kind) {
-          case "folder-page": targetAffected.add(`folder:${generation.workspaceId}:${generation.target.parentId ?? "root"}`); break;
-          case "exact-nodes": generation.target.nodeIds.forEach((id) => targetAffected.add(`node:${generation.workspaceId}:${id}`)); break;
-          case "ancestry": targetAffected.add(`node:${generation.workspaceId}:${generation.target.nodeId}`); break;
-          case "exact-settings": {
-            const namespace = generation.target.namespace;
-            generation.target.keys.forEach((key) => targetAffected.add(`setting:${generation.workspaceId}:${namespace}:${key}`));
-            break;
-          }
-          case "setting-namespace": targetAffected.add(`setting-namespace:${generation.workspaceId}:${generation.target.namespace}`); break;
-        }
+        hydrationTargetAffectedIdentities(generation.target).forEach((identity) => targetAffected.add(identity));
         const writes: Promise<unknown>[] = [];
         for (const operation of pending) if (deferredOperations.has(operation.operationId)) writes.push(request(transaction.objectStore("operations").put({ ...operation, overlayKind: "deferred" })));
         for (const [id, current] of currentNodes) {
@@ -2186,9 +2324,18 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         memberIds.sort(compareCanonicalStrings);
         const coverage = parseStoredHydrationCoverage({ workspaceId: generation.workspaceId, targetId, generationId: generation.generationId, target: generation.target, memberIds });
         const coverageStore = transaction.objectStore("hydration-coverage");
-        const workspaceCoverages = coverages.filter((candidate) => candidate.workspaceId === generation.workspaceId && candidate.targetId !== targetId).sort((left, right) => left.target.asOf - right.target.asOf || left.targetId.localeCompare(right.targetId));
+        const obsoleteCoverages = coverages.filter((candidate) => obsoleteCoverageIds.has(candidate.targetId) && candidate.targetId !== targetId);
+        const workspaceCoverages = coverages.filter((candidate) => candidate.workspaceId === generation.workspaceId && candidate.targetId !== targetId && !obsoleteCoverageIds.has(candidate.targetId)).sort((left, right) => left.target.asOf - right.target.asOf || left.targetId.localeCompare(right.targetId));
         const evictions: Promise<unknown>[] = [];
-        while (workspaceCoverages.length >= WEB2_MAX_BATCH_ITEMS) evictions.push(request(coverageStore.delete([generation.workspaceId, workspaceCoverages.shift()!.targetId])));
+        for (const obsolete of obsoleteCoverages) {
+          hydrationTargetAffectedIdentities(obsolete.target).forEach((identity) => targetAffected.add(identity));
+          evictions.push(request(coverageStore.delete([generation.workspaceId, obsolete.targetId])));
+        }
+        while (workspaceCoverages.length >= WEB2_MAX_BATCH_ITEMS) {
+          const evicted = workspaceCoverages.shift()!;
+          hydrationTargetAffectedIdentities(evicted.target).forEach((identity) => targetAffected.add(identity));
+          evictions.push(request(coverageStore.delete([generation.workspaceId, evicted.targetId])));
+        }
         await Promise.all(evictions);
         const stageKeys = await request(pages.getAllKeys(keyRange.bound([generation.workspaceId, targetId, -1], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER])));
 
