@@ -113,13 +113,13 @@ describe("workspace filesystem storage", () => {
     await expect(filesystem.writeFile(file.id, rejected, { expectedContentTuple: file.fieldTuples.content! })).rejects.toThrow("content changed");
     const secondWrite = await filesystem.writeFile(file.id, newest, { expectedContentTuple: { logicalTime: firstWrite.operation.logicalTime, operationId: firstWrite.operationId } });
     expect(await blobHash((await filesystem.readFile(file.id)).content)).toBe(await blobHash(newest));
-    const undoNewest = await filesystem.undoWrite(secondWrite.operationId);
+    const undoNewest = await filesystem.undoOperation(secondWrite.operationId);
     expect(await blobHash((await filesystem.readFile(file.id)).content)).toBe(await blobHash(middle));
-    const undoMiddle = await filesystem.undoWrite(firstWrite.operationId);
+    const undoMiddle = await filesystem.undoOperation(firstWrite.operationId);
     expect(await blobHash((await filesystem.readFile(file.id)).content)).toBe(await blobHash(oldest));
-    const redoMiddle = await filesystem.redoWrite(undoMiddle.operationId);
+    const redoMiddle = await filesystem.redoOperation(undoMiddle.operationId);
     expect(await blobHash((await filesystem.readFile(file.id)).content)).toBe(await blobHash(middle));
-    const redoNewest = await filesystem.redoWrite(undoNewest.operationId);
+    const redoNewest = await filesystem.redoOperation(undoNewest.operationId);
     expect(await blobHash((await filesystem.readFile(file.id)).content)).toBe(await blobHash(newest));
     expect(redoMiddle).toMatchObject({ intent: "redo", compensatesOperationId: undoMiddle.operationId });
     expect(redoNewest).toMatchObject({ intent: "redo", compensatesOperationId: undoNewest.operationId });
@@ -180,7 +180,7 @@ describe("workspace filesystem storage", () => {
     expect(restore).toMatchObject({ intent: "restore", compensatesOperationId: oldestVersion.operationId });
     expect(restore.operation).toMatchObject({ kind: "write", modifiedAt: 2_000 });
     expect(await blobHash((await reopened.readFile(file.id)).content)).toBe(await blobHash(oldest));
-    const undoRestore = await reopened.undoWrite(restore.operationId);
+    const undoRestore = await reopened.undoOperation(restore.operationId);
     expect(await blobHash((await reopened.readFile(file.id)).content)).toBe(await blobHash(newest));
 
     const orphanHash = await sha256Hex(new TextEncoder().encode("rejected"));
@@ -377,6 +377,67 @@ describe("workspace filesystem storage", () => {
     expect((await filesystem.listOperations())[0]!.localRevision).toBe(revision);
     expect(chunk.writes).toBe(writesBeforeCopy);
     filesystem.close();
+  });
+
+  test("undoes and redoes created and copied forests across reload without rewriting chunks", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 10_000;
+    let timestamp = 700;
+    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Lifecycle history", pinned: true, deviceId: DEVICE });
+    database.close();
+
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const created = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Original", parentKey: null, position: { x: 1, y: 2 } },
+      { key: "file", kind: "file", name: "History.txt", parentKey: "root", position: { x: 3, y: 4 }, content: new Blob(["retained bytes"], { type: "text/plain" }) },
+      { key: "second-root", kind: "folder", name: "Second", parentKey: null, position: { x: 7, y: 8 } },
+    ] });
+    const originalRoot = created.find(({ name }) => name === "Original")!;
+    const secondRoot = created.find(({ name }) => name === "Second")!;
+    const originalFile = created.find(({ kind }) => kind === "file")!;
+    const createOperation = (await filesystem.listOperations()).find(({ operation }) => operation.kind === "create")!;
+    const copied = await filesystem.copyNodes({ parentId: null, roots: [{ nodeId: originalRoot.id, name: "Copy", position: { x: 5, y: 6 } }] });
+    const copiedRoot = copied.find(({ kind }) => kind === "folder")!;
+    const copiedFile = copied.find(({ kind }) => kind === "file")!;
+    const copyOperation = (await filesystem.listOperations()).find(({ operation }) => operation.kind === "copy")!;
+    await filesystem.moveNodes([secondRoot.id], originalRoot.id);
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const chunkEntries = [...accountRoot.directories.get("chunks")!.directories.values()].flatMap((directory) => [...directory.files.values()]);
+    const writesBeforeHistory = chunkEntries.map(({ writes }) => writes);
+
+    timestamp = 800;
+    const undoCopy = await filesystem.undoOperation(copyOperation.operationId);
+    const undoCreate = await filesystem.undoOperation(createOperation.operationId);
+    expect(new Set((await filesystem.listTrash()).map(({ id }) => id))).toEqual(new Set([originalRoot.id, copiedRoot.id]));
+    expect((await filesystem.getNode(originalFile.id))?.lifecycle.kind).toBe("trashed");
+    expect((await filesystem.getNode(copiedFile.id))?.lifecycle.kind).toBe("trashed");
+    filesystem.close();
+
+    const reopened = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    timestamp = 900;
+    const redoCreate = await reopened.redoOperation(undoCreate.operationId);
+    const redoCopy = await reopened.redoOperation(undoCopy.operationId);
+    expect(redoCreate).toMatchObject({ intent: "redo", compensatesOperationId: undoCreate.operationId, operation: { kind: "restore", nodeIds: [originalRoot.id], destination: "original" } });
+    expect(redoCopy).toMatchObject({ intent: "redo", compensatesOperationId: undoCopy.operationId, operation: { kind: "restore", nodeIds: [copiedRoot.id], destination: "original" } });
+    expect(await reopened.listTrash()).toEqual([]);
+    expect(await reopened.getNode(originalFile.id)).toMatchObject({ parentId: originalRoot.id, lifecycle: { kind: "active" } });
+    expect(await reopened.getNode(secondRoot.id)).toMatchObject({ parentId: originalRoot.id, lifecycle: { kind: "active" } });
+    expect(await reopened.getNode(copiedFile.id)).toMatchObject({ parentId: copiedRoot.id, lifecycle: { kind: "active" } });
+    expect(await (await reopened.readFile(originalFile.id)).content.text()).toBe("retained bytes");
+    expect(await (await reopened.readFile(copiedFile.id)).content.text()).toBe("retained bytes");
+
+    const undoRedo = await reopened.undoOperation(redoCopy.operationId);
+    expect((await reopened.getNode(copiedRoot.id))?.lifecycle.kind).toBe("trashed");
+    await reopened.redoOperation(undoRedo.operationId);
+    expect((await reopened.getNode(copiedRoot.id))?.lifecycle.kind).toBe("active");
+    await reopened.trashNodes([copiedRoot.id]);
+    await expect(reopened.redoOperation(undoRedo.operationId)).rejects.toThrow("no longer current");
+    expect(chunkEntries.map(({ writes }) => writes)).toEqual(writesBeforeHistory);
+    reopened.close();
   });
 
   test("preflights missing, trashed, overlapping, deep, and 257-node copies without OPFS", async () => {

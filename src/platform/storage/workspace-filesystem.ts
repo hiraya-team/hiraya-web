@@ -147,8 +147,8 @@ export type WorkspaceFilesystem = {
   listOperations(limit?: number): Promise<StoredOperation[]>;
   listFileVersions(nodeId: string): Promise<FileVersion[]>;
   readFileVersion(nodeId: string, operationId: string): Promise<Blob>;
-  undoWrite(operationId: string): Promise<StoredOperation>;
-  redoWrite(operationId: string): Promise<StoredOperation>;
+  undoOperation(operationId: string): Promise<StoredOperation>;
+  redoOperation(operationId: string): Promise<StoredOperation>;
   restoreFileVersion(nodeId: string, operationId: string): Promise<StoredOperation>;
   removeOrphans(): Promise<void>;
   close(): void;
@@ -398,20 +398,29 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         return content(version.mimeType, version.size, version.manifestHash);
       },
 
-      undoWrite: (operationId) => locked(async () => {
+      undoOperation: (operationId) => locked(async () => {
         const target = await database.getOperation(operationId);
         if (!target || target.workspaceId !== workspaceId) throw new Error("That operation does not exist in this workspace.");
-        if (target.operation.kind === "create" || target.operation.kind === "copy") throw new Error("Create and copy undo are unsupported until lifecycle projection exists.");
-        if (target.operation.kind !== "write" || target.intent !== "forward" && target.intent !== "redo" && target.intent !== "restore" || target.inverse.kind !== "write") throw new Error("Only a write, redo, or restore can be undone.");
-        const current = await fileNode(target.operation.nodeId);
-        return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "undo", target.operationId);
+        if (target.operation.kind === "write" && (target.intent === "forward" || target.intent === "redo" || target.intent === "restore") && target.inverse.kind === "write") {
+          const current = await fileNode(target.operation.nodeId);
+          return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "undo", target.operationId);
+        }
+        const rootNodeIds = (target.operation.kind === "create" || target.operation.kind === "copy") && target.intent === "forward" && (target.inverse.kind === "create" || target.inverse.kind === "copy")
+          ? target.inverse.rootNodeIds
+          : target.operation.kind === "restore" && target.intent === "redo" && target.inverse.kind === "restore" ? target.operation.nodeIds : undefined;
+        if (!rootNodeIds) throw new Error("Only a write, create, copy, or lifecycle redo can be undone.");
+        return database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: rootNodeIds, trashedAt: now() }, intent: "undo", compensatesOperationId: target.operationId });
       }),
 
-      redoWrite: (operationId) => locked(async () => {
+      redoOperation: (operationId) => locked(async () => {
         const target = await database.getOperation(operationId);
-        if (!target || target.workspaceId !== workspaceId || target.intent !== "undo" || target.operation.kind !== "write" || target.inverse.kind !== "write") throw new Error("Only an undo can be redone.");
-        const current = await fileNode(target.operation.nodeId);
-        return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "redo", target.operationId);
+        if (!target || target.workspaceId !== workspaceId || target.intent !== "undo") throw new Error("Only an undo can be redone.");
+        if (target.operation.kind === "write" && target.inverse.kind === "write") {
+          const current = await fileNode(target.operation.nodeId);
+          return commitVersion(target.operation.nodeId, target.inverse, current.fieldTuples.content!, "redo", target.operationId);
+        }
+        if (target.operation.kind !== "trash" || target.inverse.kind !== "trash") throw new Error("Only an undo can be redone.");
+        return database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds: target.inverse.roots.map(({ nodeId }) => nodeId), destination: "original", modifiedAt: now() }, intent: "redo", compensatesOperationId: target.operationId });
       }),
 
       restoreFileVersion: (nodeId, operationId) => locked(async () => {

@@ -506,7 +506,8 @@ function parseStoredOperation(value: unknown): StoredOperation {
   if (operation.kind === "transfer" && stored.destinationLocalRevision === null || operation.kind !== "transfer" && stored.destinationLocalRevision !== null) throw new Error("Stored operation destination revision metadata is inconsistent.");
   if (stored.intent === "forward" && stored.compensatesOperationId !== null || stored.intent !== "forward" && stored.compensatesOperationId === null) throw new Error("Stored operation compensation metadata is inconsistent.");
   if (operation.kind === "write" && stored.expectedContentTuple === null || operation.kind !== "write" && stored.expectedContentTuple !== null) throw new Error("Stored operation expectation metadata is inconsistent.");
-  if (operation.kind !== "write" && (stored.intent !== "forward" || stored.compensatesOperationId !== null)) throw new Error("Stored operation intent is unsupported for metadata projection.");
+  const lifecycleCompensation = operation.kind === "trash" && stored.intent === "undo" || operation.kind === "restore" && stored.intent === "redo";
+  if (operation.kind !== "write" && stored.intent !== "forward" && !lifecycleCompensation) throw new Error("Stored operation intent is unsupported for metadata projection.");
   if (!equalValues(stored.affectedIdentities, localAffectedIdentities(operation, stored.inverse)) || !equalValues(stored.versionNodeIds, operationVersionNodeIds(operation))) throw new Error("Stored operation derived metadata is inconsistent.");
   switch (operation.kind) {
     case "create":
@@ -677,9 +678,10 @@ async function normalizeCommitInput(value: CommitOperationInput) {
   const expectedContentTuple = value.expectedContentTuple === undefined || value.expectedContentTuple === null ? null : parseOperationTuple(value.expectedContentTuple);
   if (intent === "forward" && compensatesOperationId !== null) throw new Error("A forward operation cannot compensate another operation.");
   if (intent !== "forward" && compensatesOperationId === null) throw new Error("A compensating operation must reference an existing operation.");
-  if ((operation.kind === "create" || operation.kind === "copy") && (intent !== "forward" || expectedContentTuple !== null)) throw new Error("Create and copy undo are unsupported until lifecycle projection exists.");
   if (operation.kind === "write" && expectedContentTuple === null) throw new Error("A write requires an exact expected content tuple.");
-  if (operation.kind !== "create" && operation.kind !== "write" && (intent !== "forward" || compensatesOperationId !== null || expectedContentTuple !== null)) throw new Error("Metadata operations currently support forward intent only.");
+  if (operation.kind !== "write" && expectedContentTuple !== null) throw new Error("Metadata operations cannot use a content expectation.");
+  const lifecycleCompensation = operation.kind === "trash" && intent === "undo" || operation.kind === "restore" && intent === "redo";
+  if (operation.kind !== "write" && intent !== "forward" && !lifecycleCompensation) throw new Error("That metadata operation intent is unsupported.");
   return {
     operation,
     manifests,
@@ -707,6 +709,24 @@ function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId
   const node = operation.nodes.find((candidate) => candidate.id === nodeId);
   if (!node || node.kind !== "file") return undefined;
   return { nodeId, operationId: operation.operationId, logicalTime: operation.logicalTime, mimeType: node.mimeType, size: node.size, manifestHash: node.manifestHash, modifiedAt: node.modifiedAt, current: false };
+}
+
+type LifecycleUndoExpectation = { rootNodeIds: string[]; nodeIds: string[] };
+
+async function lifecycleUndoExpectation(target: StoredOperation, readOperation: (operationId: string) => Promise<StoredOperation | undefined>, seen = new Set<string>()): Promise<LifecycleUndoExpectation | undefined> {
+  if (seen.has(target.operationId)) return undefined;
+  seen.add(target.operationId);
+  if ((target.operation.kind === "create" || target.operation.kind === "copy") && target.intent === "forward" && (target.inverse.kind === "create" || target.inverse.kind === "copy")) {
+    return { rootNodeIds: target.inverse.rootNodeIds, nodeIds: target.operation.nodes.map(({ id }) => id).sort() };
+  }
+  if (target.operation.kind !== "restore" || target.intent !== "redo" || target.inverse.kind !== "restore" || target.operation.destination !== "original") return undefined;
+  const undo = await readOperation(target.compensatesOperationId!);
+  if (!undo || undo.workspaceId !== target.workspaceId || undo.operation.kind !== "trash" || undo.intent !== "undo" || undo.inverse.kind !== "trash") return undefined;
+  const previous = await readOperation(undo.compensatesOperationId!);
+  if (!previous || previous.workspaceId !== target.workspaceId) return undefined;
+  const expectation = await lifecycleUndoExpectation(previous, readOperation, seen);
+  if (!expectation || !equalValues(undo.operation.nodeIds, expectation.rootNodeIds) || !equalValues(undo.inverse.nodeIds, expectation.nodeIds) || !equalValues(target.operation.nodeIds, undo.inverse.roots.map(({ nodeId }) => nodeId)) || !equalValues(target.inverse.nodes.map(({ nodeId }) => nodeId), undo.inverse.nodeIds)) return undefined;
+  return { rootNodeIds: target.operation.nodeIds, nodeIds: target.inverse.nodes.map(({ nodeId }) => nodeId).sort() };
 }
 
 export async function openFilesystemDatabase(accountId: string, environment: FilesystemDatabaseEnvironment = {}): Promise<FilesystemDatabase> {
@@ -926,26 +946,43 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
 
         let compensated: StoredOperation | undefined;
+        let expectedLifecycleNodeIds: string[] | undefined;
+        let expectedLifecycleTuple: OperationTuple | undefined;
+        const readOperation = async (operationId: string) => {
+          const value = await request(operations.get(operationId));
+          return value === undefined ? undefined : parseStoredOperation(value);
+        };
         if (normalized.compensatesOperationId !== null) {
-          const compensatedValue = await request(operations.get(normalized.compensatesOperationId));
-          if (compensatedValue === undefined) throw new Error("A compensating operation must reference an existing operation.");
-          compensated = parseStoredOperation(compensatedValue);
+          compensated = await readOperation(normalized.compensatesOperationId);
+          if (!compensated) throw new Error("A compensating operation must reference an existing operation.");
           if (compensated.workspaceId !== workspace.id) throw new Error("A compensating operation must reference the same workspace.");
-          if (normalized.operation.kind !== "write") throw new Error("Only writes can compensate filesystem operations.");
-          const compensatingWrite = normalized.operation;
-          const matchesContent = (version: Pick<FileVersion, "nodeId" | "mimeType" | "size" | "manifestHash">) => equalValues({
-            nodeId: compensatingWrite.nodeId,
-            mimeType: compensatingWrite.mimeType,
-            size: compensatingWrite.size,
-            manifestHash: compensatingWrite.manifestHash,
-          }, { nodeId: version.nodeId, mimeType: version.mimeType, size: version.size, manifestHash: version.manifestHash });
-          if (normalized.intent === "undo") {
-            if (compensated.operation.kind === "create" || compensated.operation.kind === "copy") throw new Error("Create and copy undo are unsupported until lifecycle projection exists.");
-            if (compensated.operation.kind !== "write" || compensated.intent !== "forward" && compensated.intent !== "redo" && compensated.intent !== "restore" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse)) throw new Error("An undo must apply a write inverse for that file.");
+          if (normalized.operation.kind === "write") {
+            const compensatingWrite = normalized.operation;
+            const matchesContent = (version: Pick<FileVersion, "nodeId" | "mimeType" | "size" | "manifestHash">) => equalValues({
+              nodeId: compensatingWrite.nodeId,
+              mimeType: compensatingWrite.mimeType,
+              size: compensatingWrite.size,
+              manifestHash: compensatingWrite.manifestHash,
+            }, { nodeId: version.nodeId, mimeType: version.mimeType, size: version.size, manifestHash: version.manifestHash });
+            if (normalized.intent === "undo" && (compensated.operation.kind !== "write" || compensated.intent !== "forward" && compensated.intent !== "redo" && compensated.intent !== "restore" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse))) throw new Error("An undo must apply a write inverse for that file.");
+            if (normalized.intent === "redo" && (compensated.intent !== "undo" || compensated.operation.kind !== "write" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse))) throw new Error("A redo must apply an undo inverse for that file.");
+            const restoredVersion = normalized.intent === "restore" ? fileVersionFromOperation(compensated.operation, normalized.operation.nodeId) : undefined;
+            if (normalized.intent === "restore" && (!restoredVersion || !matchesContent(restoredVersion))) throw new Error("A restore must apply the referenced version of that file.");
+          } else if (normalized.operation.kind === "trash" && normalized.intent === "undo") {
+            const expectation = await lifecycleUndoExpectation(compensated, readOperation);
+            if (!expectation || !equalValues(normalized.operation.nodeIds, expectation.rootNodeIds)) throw new Error("An undo must move the exact created forest to Trash.");
+            expectedLifecycleNodeIds = expectation.nodeIds;
+            expectedLifecycleTuple = { logicalTime: compensated.operation.logicalTime, operationId: compensated.operationId };
+          } else if (normalized.operation.kind === "restore" && normalized.intent === "redo") {
+            if (compensated.operation.kind !== "trash" || compensated.intent !== "undo" || compensated.inverse.kind !== "trash") throw new Error("A redo must restore the exact forest from its undo.");
+            const target = await readOperation(compensated.compensatesOperationId!);
+            const expectation = target && target.workspaceId === workspace.id ? await lifecycleUndoExpectation(target, readOperation) : undefined;
+            if (!expectation || !equalValues(compensated.operation.nodeIds, expectation.rootNodeIds) || !equalValues(compensated.inverse.nodeIds, expectation.nodeIds) || normalized.operation.destination !== "original" || !equalValues(normalized.operation.nodeIds, compensated.inverse.roots.map(({ nodeId }) => nodeId))) throw new Error("A redo must restore the exact forest from its undo.");
+            expectedLifecycleNodeIds = compensated.inverse.nodeIds;
+            expectedLifecycleTuple = { logicalTime: compensated.operation.logicalTime, operationId: compensated.operationId };
+          } else {
+            throw new Error("That operation cannot compensate filesystem history.");
           }
-          if (normalized.intent === "redo" && (compensated.intent !== "undo" || compensated.operation.kind !== "write" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse))) throw new Error("A redo must apply an undo inverse for that file.");
-          const restoredVersion = normalized.intent === "restore" ? fileVersionFromOperation(compensated.operation, normalized.operation.nodeId) : undefined;
-          if (normalized.intent === "restore" && (!restoredVersion || !matchesContent(restoredVersion))) throw new Error("A restore must apply the referenced version of that file.");
         }
 
         const storedManifests = new Map<string, StoredManifest>();
@@ -1238,6 +1275,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             for (const node of selectedNodes) if (!(await ancestors(node)).some(({ id }) => selected.has(id))) roots.push(node);
             const expanded = await expandSubtrees(roots, "active", "A Trash subtree batch is too large.");
             const expandedNodes = expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node));
+            if (expectedLifecycleTuple && expandedNodes.some(({ fieldTuples }) => !equalValues(fieldTuples.lifecycle, expectedLifecycleTuple))) throw new Error("The compensated lifecycle operation is no longer current.");
             const rootIds = new Set(roots.map(({ id }) => id));
             inverse = { kind: "trash", roots: roots.map(({ id, parentId }) => ({ nodeId: id, parentId })), nodeIds: expandedNodes.map(({ id }) => id).sort() };
             for (const node of expandedNodes) projectedNodes.set(node.id, storeNode({ ...node, parentId: rootIds.has(node.id) ? null : node.parentId, lifecycle: { kind: "trashed", trashedAt: operation.trashedAt, originalParentId: node.parentId }, fieldTuples: { ...node.fieldTuples, parent: rootIds.has(node.id) ? tuple : node.fieldTuples.parent, lifecycle: tuple } }));
@@ -1251,6 +1289,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             }));
             const expanded = await expandSubtrees(roots, "trashed", "A restore subtree batch is too large.");
             const expandedNodes = expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node)).sort((left, right) => left.id.localeCompare(right.id));
+            if (expectedLifecycleTuple && expandedNodes.some(({ fieldTuples }) => !equalValues(fieldTuples.lifecycle, expectedLifecycleTuple))) throw new Error("The compensated lifecycle operation is no longer current.");
             const restoringById = new Map(expandedNodes.map((node) => [node.id, node]));
             const destinations = new Map<string, string | null>();
             for (const root of roots) {
@@ -1318,6 +1357,11 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             projectedSettings.push(...operation.settings.map(({ key, value }) => parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key, value, logicalTime, operationId: operation.operationId })));
             break;
           }
+        }
+
+        if (expectedLifecycleNodeIds) {
+          const actualNodeIds = inverse.kind === "trash" ? inverse.nodeIds : inverse.kind === "restore" ? inverse.nodes.map(({ nodeId }) => nodeId) : [];
+          if (!equalValues(actualNodeIds, expectedLifecycleNodeIds)) throw new Error("A lifecycle compensation must cover the exact original forest.");
         }
 
         const localRevision = nextSafeInteger(workspace.localRevision, "The workspace revision is exhausted.");

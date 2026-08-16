@@ -351,7 +351,7 @@ describe("web2 filesystem database", () => {
 
     await expect(database.commitOperation({ operation: versionDraft(stableId(150), nodeId, inverse!), intent: "forward", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("forward operation");
     await expect(database.commitOperation({ operation: versionDraft(stableId(151), nodeId, inverse!), intent: "undo", compensatesOperationId: stableId(999), expectedContentTuple: writeTuple })).rejects.toThrow("existing operation");
-    await expect(database.commitOperation({ operation: versionDraft(stableId(152), nodeId, inverse!), intent: "undo", compensatesOperationId: createId, expectedContentTuple: writeTuple })).rejects.toThrow("Create and copy undo");
+    await expect(database.commitOperation({ operation: versionDraft(stableId(152), nodeId, inverse!), intent: "undo", compensatesOperationId: createId, expectedContentTuple: writeTuple })).rejects.toThrow("write inverse");
     await expect(database.commitOperation({ operation: versionDraft(stableId(153), nodeId, inverse!), intent: "redo", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("undo inverse");
 
     const otherWorkspace = stableId(154);
@@ -378,6 +378,60 @@ describe("web2 filesystem database", () => {
     expect(restore).toMatchObject({ intent: "restore", compensatesOperationId: createId });
     expect((await database.getNode(nodeId))?.manifestHash).toBe(initial.hash);
     database.close();
+  });
+
+  test("compensates only the exact created forest and durably redoes its lifecycle", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 450);
+    const rootId = stableId(164);
+    const nestedId = stableId(165);
+    const laterId = stableId(166);
+    const createId = stableId(167);
+    const laterCreateId = stableId(168);
+    const laterTrashId = stableId(169);
+    const undoId = stableId(170);
+    const redoId = stableId(171);
+    const created = await database.commitOperation({ operation: createDraft(createId, [folder(rootId, "Created"), folder(nestedId, "Nested", rootId)]) });
+    await database.commitOperation({ operation: createDraft(laterCreateId, [folder(laterId, "Later", rootId)]) });
+    const undoInput = { operation: { ...operationBase(undoId), kind: "trash" as const, nodeIds: [rootId], trashedAt: 20 }, intent: "undo" as const, compensatesOperationId: createId };
+
+    await expect(database.commitOperation({ ...undoInput, operation: { ...undoInput.operation, nodeIds: [nestedId] } })).rejects.toThrow("exact created forest");
+    await expect(database.commitOperation(undoInput)).rejects.toThrow("no longer current");
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(2);
+    expect((await database.getNode(rootId))?.lifecycle.kind).toBe("active");
+
+    await database.commitOperation({ operation: { ...operationBase(laterTrashId), kind: "trash", nodeIds: [laterId], trashedAt: 21 } });
+    const undo = await database.commitOperation(undoInput);
+    expect(undo).toMatchObject({ intent: "undo", compensatesOperationId: createId, inverse: { kind: "trash", nodeIds: [rootId, nestedId].sort() } });
+    expect(await database.commitOperation(undoInput)).toEqual(undo);
+    expect((await database.getNode(rootId))?.lifecycle.kind).toBe("trashed");
+    expect((await database.getNode(nestedId))?.lifecycle.kind).toBe("trashed");
+
+    const redoInput = { operation: { ...operationBase(redoId), kind: "restore" as const, nodeIds: [rootId], destination: "original" as const, modifiedAt: 30 }, intent: "redo" as const, compensatesOperationId: undoId };
+    await expect(database.commitOperation({ ...redoInput, operation: { ...redoInput.operation, destination: "root" } })).rejects.toThrow("exact forest");
+    const redo = await database.commitOperation(redoInput);
+    expect(redo).toMatchObject({ intent: "redo", compensatesOperationId: undoId, inverse: { kind: "restore" } });
+    expect(await database.getNode(rootId)).toMatchObject({ lifecycle: { kind: "active" }, parentId: null });
+    expect(await database.getNode(nestedId)).toMatchObject({ lifecycle: { kind: "active" }, parentId: rootId });
+    expect(created.inverse).toEqual({ kind: "create", rootNodeIds: [rootId] });
+    database.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, { indexedDB: factory, IDBKeyRange });
+    expect((await reopened.listOperations(WORKSPACE)).slice(0, 2)).toEqual([redo, undo]);
+    expect((await reopened.getNode(nestedId))?.lifecycle.kind).toBe("active");
+    expect((await reopened.getNode(laterId))?.lifecycle.kind).toBe("trashed");
+    expect((await reopened.listWorkspaces())[0]!.localRevision).toBe(5);
+    reopened.close();
+
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    const operationStore = raw.transaction("operations", "readwrite").objectStore("operations");
+    const storedRedo = await idbRequest(operationStore.get(redoId));
+    await idbRequest(operationStore.put({ ...storedRedo, compensatesOperationId: laterTrashId }));
+    raw.close();
+    const corrupted = await openFilesystemDatabase(ACCOUNT, { indexedDB: factory, IDBKeyRange });
+    await expect(corrupted.commitOperation({ operation: { ...operationBase(stableId(172)), kind: "trash", nodeIds: [rootId], trashedAt: 40 }, intent: "undo", compensatesOperationId: redoId })).rejects.toThrow("exact created forest");
+    expect((await corrupted.getNode(rootId))?.lifecycle.kind).toBe("active");
+    corrupted.close();
   });
 
   test("advances the logical clock monotonically when wall time does not move", async () => {
@@ -782,7 +836,7 @@ describe("web2 filesystem database", () => {
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(240)), kind: "move", nodeIds: [firstId], parentId: destinationFileId, modifiedAt: 22 } })).rejects.toThrow("active folder");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(241)), kind: "move", nodeIds: [firstId], parentId: childId, modifiedAt: 22 } })).rejects.toThrow("descendant");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(242)), kind: "move", nodeIds: [firstId, childId], parentId: null, modifiedAt: 22 } })).rejects.toThrow("overlap");
-    await expect(database.commitOperation({ operation: { ...operationBase(stableId(246)), kind: "rename", nodeId: secondId, name: "Changed", modifiedAt: 22 }, intent: "undo", compensatesOperationId: stableId(235) } as never)).rejects.toThrow("forward intent only");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(246)), kind: "rename", nodeId: secondId, name: "Changed", modifiedAt: 22 }, intent: "undo", compensatesOperationId: stableId(235) } as never)).rejects.toThrow("unsupported");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(247)), kind: "copy", sourceNodeIds: [firstId], nodes: [folder(stableId(248), "Copy")] } })).rejects.toThrow("complete source forest");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(243)), kind: "position", positions: [{ nodeId: firstId, position: { x: 100, y: 100 } }, { nodeId: stableId(998), position: { x: 0, y: 0 } }] } })).rejects.toThrow("active nodes");
     expect(await database.getNode(firstId)).toEqual(beforeFirst);
