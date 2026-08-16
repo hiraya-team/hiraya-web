@@ -12,6 +12,7 @@ import {
   canonicalManifestSha256,
   type Manifest,
 } from "../src/filesystem/model";
+import { DEFAULT_DEVICE_PREFERENCES } from "../src/domain/preferences";
 
 const ACCOUNT = stableId(1);
 const WORKSPACE = stableId(2);
@@ -147,7 +148,7 @@ describe("web2 filesystem database", () => {
     const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
     try {
       expect(raw.version).toBe(1);
-      expect([...raw.objectStoreNames]).toEqual(["changes", "hydration-pages", "manifests", "nodes", "operations", "settings", "sync", "workspaces"]);
+      expect([...raw.objectStoreNames]).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "app-storage", "changes", "device-preferences", "file-associations", "hydration-pages", "installed-apps", "manifests", "nodes", "operations", "settings", "sync", "window-sessions", "workspaces"]);
       const transaction = raw.transaction([...raw.objectStoreNames]);
       const expected = {
         workspaces: { keyPath: "id", indexes: [] },
@@ -158,6 +159,14 @@ describe("web2 filesystem database", () => {
         sync: { keyPath: "workspaceId", indexes: [] },
         settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: [] },
         "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: [] },
+        "window-sessions": { keyPath: "workspaceId", indexes: [] },
+        "device-preferences": { keyPath: "id", indexes: [] },
+        "installed-apps": { keyPath: "appId", indexes: [] },
+        "app-storage": { keyPath: ["appId", "key"], indexes: ["appId"] },
+        "file-associations": { keyPath: "matcher", indexes: ["appId"] },
+        "account-apps": { keyPath: "id", indexes: [] },
+        "account-app-outbox": { keyPath: "sequence", indexes: ["operationId"] },
+        "account-app-client-state": { keyPath: "id", indexes: [] },
       };
       for (const [name, schema] of Object.entries(expected)) {
         const store = transaction.objectStore(name);
@@ -169,12 +178,55 @@ describe("web2 filesystem database", () => {
       expect(transaction.objectStore("nodes").index("by-workspace-lifecycle")).toMatchObject({ keyPath: ["workspaceId", "lifecycleKey"], unique: false, multiEntry: false });
       expect(transaction.objectStore("operations").index("by-workspace-revision")).toMatchObject({ keyPath: ["workspaceId", "localRevision"], unique: true, multiEntry: false });
       expect(transaction.objectStore("operations").index("by-workspace-state-revision")).toMatchObject({ keyPath: ["workspaceId", "stateKind", "localRevision"], unique: false, multiEntry: false });
+      expect(transaction.objectStore("app-storage").index("appId")).toMatchObject({ keyPath: "appId", unique: false, multiEntry: false });
+      expect(transaction.objectStore("file-associations").index("appId")).toMatchObject({ keyPath: "appId", unique: false, multiEntry: false });
+      expect(transaction.objectStore("account-app-outbox").index("operationId")).toMatchObject({ keyPath: "operationId", unique: true, multiEntry: false });
     } finally {
       raw.close();
       database?.close();
     }
     expect(durabilities.length).toBeGreaterThan(0);
     expect(durabilities.every((durability) => durability === "strict")).toBe(true);
+  });
+
+  test("persists exact device preferences and workspace window sessions", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    expect(await database.readDevicePreferences()).toEqual(DEFAULT_DEVICE_PREFERENCES);
+    const emptySession = await database.readWindowSession(WORKSPACE);
+    expect(emptySession).toEqual({ schemaVersion: 1, apps: [] });
+
+    const preferences = { ...DEFAULT_DEVICE_PREFERENCES, autoUpdate: false, explorerView: "grid" as const, showHiddenFiles: true, onboardingVersion: 2 };
+    const session = { schemaVersion: 1 as const, apps: [{ kind: "settings" as const, bounds: { x: 10, y: 20, width: 500, height: 400 }, minimized: false, zIndex: 1 }] };
+    emptySession.apps.push(session.apps[0]!);
+    expect(await database.readWindowSession(DESTINATION)).toEqual({ schemaVersion: 1, apps: [] });
+    await database.writeDevicePreferences(preferences);
+    await database.writeWindowSession(WORKSPACE, session);
+    await expect(database.writeWindowSession(stableId(99), session)).rejects.toThrow("does not exist");
+    database.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await reopened.readDevicePreferences()).toEqual(preferences);
+    expect(await reopened.readWindowSession(WORKSPACE)).toEqual(session);
+    await reopened.deleteWorkspace(WORKSPACE);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "window-sessions", WORKSPACE)).toBeUndefined();
+    reopened.close();
+  });
+
+  test("rejects malformed fresh local-only records", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    database.close();
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("device-preferences", "readwrite").objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: { ...DEFAULT_DEVICE_PREFERENCES, extra: true } }));
+    await idbRequest(raw.transaction("window-sessions", "readwrite").objectStore("window-sessions").put({ workspaceId: WORKSPACE, session: { schemaVersion: 1, apps: "invalid" } }));
+    raw.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    await expect(reopened.readDevicePreferences()).rejects.toThrow("unsupported format");
+    await expect(reopened.readWindowSession(WORKSPACE)).rejects.toThrow("unsupported format");
+    reopened.close();
   });
 
   test("initializes workspace and sync state atomically and reloads them unchanged", async () => {

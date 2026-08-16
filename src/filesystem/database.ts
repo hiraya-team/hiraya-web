@@ -35,11 +35,13 @@ import {
   parseWorkspaceOperation,
   type WorkspaceOperation,
 } from "./operations";
+import { DEFAULT_DEVICE_PREFERENCES, parseDevicePreferences, type DevicePreferences } from "../domain/preferences";
+import { parseWindowSession, type WindowSession } from "../lib/window-session";
 
 const DATABASE_VERSION = 1;
 const FILE_VERSION_HISTORY_LIMIT = 20;
 const MAX_WORKSPACES = WEB2_MAX_BATCH_ITEMS;
-const STORES = ["workspaces", "nodes", "manifests", "operations", "changes", "sync", "settings", "hydration-pages"] as const;
+const STORES = ["workspaces", "nodes", "manifests", "operations", "changes", "sync", "settings", "hydration-pages", "window-sessions", "device-preferences", "installed-apps", "app-storage", "file-associations", "account-apps", "account-app-outbox", "account-app-client-state"] as const;
 const STORE_SCHEMA = {
   workspaces: { keyPath: "id", indexes: {} },
   nodes: {
@@ -61,6 +63,14 @@ const STORE_SCHEMA = {
   sync: { keyPath: "workspaceId", indexes: {} },
   settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: {} },
   "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: {} },
+  "window-sessions": { keyPath: "workspaceId", indexes: {} },
+  "device-preferences": { keyPath: "id", indexes: {} },
+  "installed-apps": { keyPath: "appId", indexes: {} },
+  "app-storage": { keyPath: ["appId", "key"], indexes: { appId: { keyPath: "appId", unique: false } } },
+  "file-associations": { keyPath: "matcher", indexes: { appId: { keyPath: "appId", unique: false } } },
+  "account-apps": { keyPath: "id", indexes: {} },
+  "account-app-outbox": { keyPath: "sequence", indexes: { operationId: { keyPath: "operationId", unique: true } } },
+  "account-app-client-state": { keyPath: "id", indexes: {} },
 } as const;
 
 export type Workspace = {
@@ -175,10 +185,29 @@ export type FilesystemDatabase = {
   listOperations(workspaceId: string, limit?: number): Promise<StoredOperation[]>;
   listFileVersions(workspaceId: string, nodeId: string): Promise<FileVersion[]>;
   listRetainedChunkHashes(): Promise<string[]>;
+  readWindowSession(workspaceId: string): Promise<WindowSession>;
+  writeWindowSession(workspaceId: string, session: WindowSession): Promise<void>;
+  readDevicePreferences(): Promise<DevicePreferences>;
+  writeDevicePreferences(preferences: DevicePreferences): Promise<void>;
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
 type StoredManifest = { hash: string; manifest: Manifest };
+
+function parseStoredWindowSession(value: unknown, expectedWorkspaceId: string) {
+  if (!isRecord(value)) throw new Error("A stored window session has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "session"], "A stored window session has an unsupported shape.");
+  const workspaceId = parseStableId(value.workspaceId, "A stored window session workspace ID is invalid.");
+  if (workspaceId !== expectedWorkspaceId) throw new Error("A stored window session has an inconsistent identity.");
+  return parseWindowSession(value.session);
+}
+
+function parseStoredDevicePreferences(value: unknown) {
+  if (!isRecord(value)) throw new Error("Stored device preferences have an unsupported shape.");
+  assertExactKeys(value, ["id", "schemaVersion", "preferences"], "Stored device preferences have an unsupported shape.");
+  if (value.id !== "singleton" || value.schemaVersion !== 1) throw new Error("Stored device preferences have an unsupported format.");
+  return parseDevicePreferences(value.preferences);
+}
 
 function request<T>(value: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -635,6 +664,17 @@ function createSchema(db: IDBDatabase) {
   db.createObjectStore("sync", { keyPath: "workspaceId" });
   db.createObjectStore("settings", { keyPath: ["workspaceId", "namespace", "key"] });
   db.createObjectStore("hydration-pages", { keyPath: ["workspaceId", "targetId", "pageIndex"] });
+  db.createObjectStore("window-sessions", { keyPath: "workspaceId" });
+  db.createObjectStore("device-preferences", { keyPath: "id" });
+  db.createObjectStore("installed-apps", { keyPath: "appId" });
+  const appStorage = db.createObjectStore("app-storage", { keyPath: ["appId", "key"] });
+  appStorage.createIndex("appId", "appId");
+  const fileAssociations = db.createObjectStore("file-associations", { keyPath: "matcher" });
+  fileAssociations.createIndex("appId", "appId");
+  db.createObjectStore("account-apps", { keyPath: "id" });
+  const accountAppOutbox = db.createObjectStore("account-app-outbox", { keyPath: "sequence" });
+  accountAppOutbox.createIndex("operationId", "operationId", { unique: true });
+  db.createObjectStore("account-app-client-state", { keyPath: "id" });
 }
 
 function openDatabase(factory: IDBFactory, name: string) {
@@ -894,7 +934,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
     deleteWorkspace: async (workspaceId) => {
       const id = parseStableId(workspaceId, "A workspace ID is invalid.");
-      const storeNames = ["workspaces", "nodes", "sync", "settings", "changes", "hydration-pages"];
+      const storeNames = ["workspaces", "nodes", "sync", "settings", "changes", "hydration-pages", "window-sessions"];
       return transact(db, storeNames, "readwrite", async (transaction) => {
         const workspacesStore = transaction.objectStore("workspaces");
         const current = parseWorkspaceList(await request(workspacesStore.getAll()));
@@ -923,8 +963,40 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           ...remaining.map((workspace) => request(workspacesStore.put(workspace))),
           request(workspacesStore.delete(id)),
           request(transaction.objectStore("sync").delete(id)),
+          request(transaction.objectStore("window-sessions").delete(id)),
         ]);
         return remaining;
+      });
+    },
+
+    readWindowSession: async (workspaceId) => {
+      const id = parseStableId(workspaceId, "A workspace ID is invalid.");
+      return transact(db, "window-sessions", "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("window-sessions").get(id));
+        return value === undefined ? { schemaVersion: 1, apps: [] } : parseStoredWindowSession(value, id);
+      });
+    },
+
+    writeWindowSession: async (workspaceId, session) => {
+      const id = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const parsed = parseWindowSession(session);
+      await transact(db, ["workspaces", "window-sessions"], "readwrite", async (transaction) => {
+        const workspace = await request(transaction.objectStore("workspaces").get(id));
+        if (workspace === undefined) throw new Error("That workspace does not exist.");
+        parseWorkspace(workspace);
+        await request(transaction.objectStore("window-sessions").put({ workspaceId: id, session: parsed }));
+      });
+    },
+
+    readDevicePreferences: () => transact(db, "device-preferences", "readonly", async (transaction) => {
+      const value = await request(transaction.objectStore("device-preferences").get("singleton"));
+      return value === undefined ? { ...DEFAULT_DEVICE_PREFERENCES } : parseStoredDevicePreferences(value);
+    }),
+
+    writeDevicePreferences: async (preferences) => {
+      const parsed = parseDevicePreferences(preferences);
+      await transact(db, "device-preferences", "readwrite", async (transaction) => {
+        await request(transaction.objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: parsed }));
       });
     },
 
