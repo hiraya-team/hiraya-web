@@ -124,6 +124,15 @@ export type HydrationGeneration = { workspaceId: string; deviceId: string; gener
 export type HydrationProgress = { nextPageIndex: number; pageToken: string | null; complete: boolean };
 export type HydrationCoverage = { workspaceId: string; targetId: string; generationId: string; target: HydrationTarget; memberIds: string[] };
 export type CacheQuery<T> = { availability: "available"; value: T } | { availability: "unavailable" };
+export type FilesystemBootstrap = {
+  accountId: string;
+  deviceId: string;
+  cursor: number;
+  workspaces: Array<{ id: string; name: string; pinned: boolean }>;
+  workspace: { id: string; name: string; pinned: boolean; headSequence: number; snapshotBarrier: number; logFloor: number };
+  rootPage: HydrationPageData;
+  workspaceSettings: Setting[];
+};
 
 type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
@@ -236,7 +245,7 @@ export type FilesystemDatabase = {
   stageHydrationPage(targetId: string, requestPageToken: string | null, page: HydrationPageData): Promise<boolean>;
   getHydrationCoverage(workspaceId: string, targetId: string): Promise<HydrationCoverage | undefined>;
   getHydrationChanges(generationId: string): Promise<ChangeRecord[]>;
-  publishHydration(workspaceId: string, targetId: string, generationId: string): Promise<ChangeRecord[]>;
+  publishHydration(workspaceId: string, targetId: string, generationId: string, bootstrap?: FilesystemBootstrap): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
@@ -273,6 +282,7 @@ type StoredNode = Node & { parentKey: string; lifecycleKey: string };
 type StoredNodeRecord = StoredNode | Extract<NodeRecord, { purged: true }>;
 type StoredHydrationHeader = HydrationGeneration & HydrationProgress & { targetId: string; pageIndex: -1; kind: "header"; lastIdentity: string | null };
 type StoredHydrationPage = { workspaceId: string; targetId: string; pageIndex: number; kind: "page"; requestPageToken: string | null; page: HydrationPageData };
+type StoredBootstrap = { workspaceId: string; targetId: string; pageIndex: -2; kind: "bootstrap"; bootstrap: FilesystemBootstrap };
 type StoredHydrationCoverage = HydrationCoverage;
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
@@ -516,6 +526,40 @@ function parseHydrationGeneration(value: unknown): HydrationGeneration {
   return { workspaceId, deviceId: parseStableId(value.deviceId, "A hydration device ID is invalid."), generationId: parseStableId(value.generationId, "A hydration generation ID is invalid."), target };
 }
 
+function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
+  if (!isRecord(value)) throw new Error("A filesystem bootstrap has an unsupported shape.");
+  assertExactKeys(value, ["accountId", "deviceId", "cursor", "workspaces", "workspace", "rootPage", "workspaceSettings"], "A filesystem bootstrap has an unsupported shape.");
+  const accountId = parseStableId(value.accountId, "A bootstrap account ID is invalid.");
+  const deviceId = parseStableId(value.deviceId, "A bootstrap device ID is invalid.");
+  const cursor = parseNonNegativeSafeInteger(value.cursor, "A bootstrap cursor is invalid.");
+  if (!Array.isArray(value.workspaces) || value.workspaces.length === 0 || value.workspaces.length > MAX_WORKSPACES) throw new Error("A bootstrap workspace directory is invalid.");
+  const parseSummary = (candidate: unknown) => {
+    if (!isRecord(candidate)) throw new Error("A bootstrap workspace summary has an unsupported shape.");
+    assertExactKeys(candidate, ["id", "name", "pinned"], "A bootstrap workspace summary has an unsupported shape.");
+    if (typeof candidate.pinned !== "boolean") throw new Error("A bootstrap workspace summary has invalid pinning metadata.");
+    return { id: parseStableId(candidate.id, "A bootstrap workspace ID is invalid."), name: parseCanonicalName(candidate.name, "A bootstrap workspace name is invalid."), pinned: candidate.pinned };
+  };
+  const workspaces = value.workspaces.map(parseSummary);
+  if (!isRecord(value.workspace)) throw new Error("A bootstrap workspace state has an unsupported shape.");
+  assertExactKeys(value.workspace, ["id", "name", "pinned", "headSequence", "snapshotBarrier", "logFloor"], "A bootstrap workspace state has an unsupported shape.");
+  const summary = parseSummary({ id: value.workspace.id, name: value.workspace.name, pinned: value.workspace.pinned });
+  const workspace = {
+    ...summary,
+    headSequence: parseNonNegativeSafeInteger(value.workspace.headSequence, "A bootstrap workspace head is invalid."),
+    snapshotBarrier: parseNonNegativeSafeInteger(value.workspace.snapshotBarrier, "A bootstrap workspace snapshot barrier is invalid."),
+    logFloor: parseNonNegativeSafeInteger(value.workspace.logFloor, "A bootstrap workspace log floor is invalid."),
+  };
+  const rootPage = parseHydrationPageData(value.rootPage);
+  if (!Array.isArray(value.workspaceSettings) || value.workspaceSettings.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Bootstrap workspace settings are invalid.");
+  const workspaceSettings = value.workspaceSettings.map(parseSetting);
+  const activeSummary = workspaces.find(({ id }) => id === workspace.id);
+  if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || new Set(workspaces.map(({ name }) => name.toLowerCase())).size !== workspaces.length || workspaces.some(({ pinned }, index) => index > 0 && pinned && !workspaces[index - 1]!.pinned) || !activeSummary || !equalValues(activeSummary, summary)) throw new Error("A bootstrap workspace directory is inconsistent.");
+  if (workspace.logFloor > workspace.snapshotBarrier || workspace.snapshotBarrier > workspace.headSequence || cursor > workspace.headSequence) throw new Error("A bootstrap workspace sequence range is invalid.");
+  if (rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
+  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
+  return { accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
+}
+
 function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
   if (!isRecord(value)) throw new Error("A stored hydration header has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "deviceId", "generationId", "target", "nextPageIndex", "pageToken", "complete", "lastIdentity"], "A stored hydration header has an unsupported shape.");
@@ -538,6 +582,17 @@ function parseStoredHydrationPage(value: unknown): StoredHydrationPage {
   const page = parseHydrationPageData(value.page);
   if (page.workspaceId !== workspaceId || page.pageIndex !== pageIndex) throw new Error("Stored hydration page metadata is inconsistent.");
   return { workspaceId, targetId: parseSha256(value.targetId, "A hydration target ID is invalid."), pageIndex, kind: "page", requestPageToken, page };
+}
+
+function parseStoredBootstrap(value: unknown): StoredBootstrap {
+  if (!isRecord(value)) throw new Error("A stored bootstrap has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "bootstrap"], "A stored bootstrap has an unsupported shape.");
+  if (value.kind !== "bootstrap" || value.pageIndex !== -2) throw new Error("A stored bootstrap is invalid.");
+  const bootstrap = parseFilesystemBootstrap(value.bootstrap);
+  const workspaceId = parseStableId(value.workspaceId, "A bootstrap workspace ID is invalid.");
+  const targetId = parseSha256(value.targetId, "A hydration target ID is invalid.");
+  if (workspaceId !== bootstrap.workspace.id || hydrationTargetId(bootstrap.rootPage.target) !== targetId) throw new Error("Stored bootstrap metadata is inconsistent.");
+  return { workspaceId, targetId, pageIndex: -2, kind: "bootstrap", bootstrap };
 }
 
 function parseStoredHydrationCoverage(value: unknown): StoredHydrationCoverage {
@@ -1404,7 +1459,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
   const factory = environment.indexedDB ?? globalThis.indexedDB;
   const keyRange = environment.IDBKeyRange ?? globalThis.IDBKeyRange;
   if (!factory || !keyRange) throw new Error("IndexedDB filesystem storage is unavailable.");
-  const db = await openDatabase(factory, await filesystemDatabaseName(accountId));
+  const canonicalAccountId = parseStableId(accountId, "A filesystem account ID is invalid.");
+  const db = await openDatabase(factory, await filesystemDatabaseName(canonicalAccountId));
   const now = environment.now ?? Date.now;
   const randomUUID = environment.randomUUID ?? (() => crypto.randomUUID());
   const readStoredManifests = async (hashes: readonly string[]) => {
@@ -2032,18 +2088,25 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const sync = parseSyncState(syncValue);
         if (workspace.id !== sync.workspaceId || sync.deviceId !== generation.deviceId) throw new Error("A hydration generation does not match its local synchronization state.");
         const pages = transaction.objectStore("hydration-pages");
-        const existingValue = await request(pages.get([generation.workspaceId, targetId, -1]));
+        const [existingValue, bootstrapValue] = await Promise.all([
+          request(pages.get([generation.workspaceId, targetId, -1])),
+          request(pages.get([generation.workspaceId, targetId, -2])),
+        ]);
         if (existingValue !== undefined) {
           const existing = parseStoredHydrationHeader(existingValue);
           if (existing.generationId === generation.generationId && existing.deviceId === generation.deviceId && equalValues(existing.target, generation.target)) {
             await validateCompletedHydrationGeneration(pages, keyRange, existing);
             return;
           }
+          if (bootstrapValue !== undefined) {
+            parseStoredBootstrap(bootstrapValue);
+            throw new Error("A staged bootstrap root must be completed or replaced by another bootstrap response.");
+          }
         } else {
           const count = await request(pages.index("by-workspace-kind").count(keyRange.only([generation.workspaceId, "header"])));
           if (count >= WEB2_MAX_BATCH_ITEMS) throw new Error("Too many hydration generations are active.");
         }
-        const range = keyRange.bound([generation.workspaceId, targetId, -1], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
+        const range = keyRange.bound([generation.workspaceId, targetId, -2], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
         const keys = await request(pages.getAllKeys(range));
         await Promise.all([...keys.map((key) => request(pages.delete(key))), request(pages.add({ ...generation, targetId, pageIndex: -1, kind: "header", nextPageIndex: 0, pageToken: null, complete: false, lastIdentity: null } satisfies StoredHydrationHeader))]);
       });
@@ -2145,16 +2208,99 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
-    publishHydration: async (workspaceIdValue, targetIdValue, generationIdValue) => {
+    publishHydration: async (workspaceIdValue, targetIdValue, generationIdValue, bootstrapValue) => {
       const workspaceId = parseStableId(workspaceIdValue, "A hydration workspace ID is invalid.");
       const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
       const generationId = parseStableId(generationIdValue, "A hydration generation ID is invalid.");
-      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage"], "readwrite", async (transaction) => {
+      const bootstrap = bootstrapValue === undefined ? undefined : parseFilesystemBootstrap(bootstrapValue);
+      if (bootstrap && (bootstrap.accountId !== canonicalAccountId || bootstrap.workspace.id !== workspaceId || bootstrap.rootPage.generationId !== generationId || hydrationTargetId(bootstrap.rootPage.target) !== targetId)) throw new Error("A bootstrap response does not match its storage namespace.");
+      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage", "device-preferences"], "readwrite", async (transaction) => {
         const pages = transaction.objectStore("hydration-pages");
-        const [workspaceValues, syncValues, headerValue] = await Promise.all([
+        if (bootstrap) {
+          const [publishedValue, replayValue] = await Promise.all([
+            request(transaction.objectStore("hydration-coverage").get([workspaceId, targetId])),
+            request(pages.get([workspaceId, targetId, -2])),
+          ]);
+          if (publishedValue !== undefined && parseStoredHydrationCoverage(publishedValue).generationId === generationId) {
+            if (replayValue === undefined || !equalValues(parseStoredBootstrap(replayValue).bootstrap, bootstrap)) throw new Error("A bootstrap generation cannot be reused with different input.");
+            return (await request(transaction.objectStore("changes").index("by-operation-id").getAll(generationId))).map(parseChangeRecord).filter((change): change is Extract<ChangeRecord, { kind: "hydration" }> => change.kind === "hydration").sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
+          }
+          const deviceValue = await request(transaction.objectStore("device-preferences").get("device"));
+          if (deviceValue === undefined || parseStoredDeviceIdentity(deviceValue) !== bootstrap.deviceId) throw new Error("A bootstrap response does not match the durable device identity.");
+          const [currentWorkspaceValues, currentSyncValues, storedBootstrapValue, existingHeaderValue] = await Promise.all([
+            request(transaction.objectStore("workspaces").getAll()),
+            request(transaction.objectStore("sync").getAll()),
+            request(pages.get([workspaceId, targetId, -2])),
+            request(pages.get([workspaceId, targetId, -1])),
+          ]);
+          const current = parseWorkspaceList(currentWorkspaceValues);
+          const currentById = new Map(current.map((candidate) => [candidate.id, candidate]));
+          const syncById = new Map(currentSyncValues.map(parseSyncState).map((candidate) => [candidate.workspaceId, candidate]));
+          if (current.some(({ id }) => !syncById.has(id)) || [...syncById.values()].some((state) => state.deviceId !== bootstrap.deviceId || !currentById.has(state.workspaceId))) throw new Error("Stored synchronization state does not match the bootstrap device and directory.");
+          const activeCurrent = currentById.get(workspaceId);
+          const activeSync = syncById.get(workspaceId);
+          if ((activeCurrent === undefined) !== (activeSync === undefined)) throw new Error("Stored bootstrap workspace state is incomplete.");
+          if (activeCurrent && activeSync) {
+            const unhydrated = activeCurrent.headSequence === 0 && activeSync.cursor === 0 && activeSync.lastHydrationAsOf === 0;
+            if (!unhydrated && activeSync.cursor !== bootstrap.cursor) throw new Error("A bootstrap cursor diverges from the local workspace projection.");
+            if (activeCurrent.headSequence > bootstrap.workspace.headSequence || activeCurrent.snapshotBarrier > bootstrap.workspace.snapshotBarrier || activeCurrent.logFloor > bootstrap.workspace.logFloor || activeSync.lastHydrationAsOf > bootstrap.workspace.headSequence) throw new Error("A bootstrap response regresses the local workspace projection.");
+          }
+          const previousBootstrap = storedBootstrapValue === undefined ? undefined : parseStoredBootstrap(storedBootstrapValue);
+          if (previousBootstrap?.bootstrap.rootPage.generationId === generationId && !equalValues(previousBootstrap.bootstrap, bootstrap)) throw new Error("A bootstrap generation cannot be reused with different input.");
+
+          const remoteIds = new Set(bootstrap.workspaces.map(({ id }) => id));
+          const retained = current.filter(({ id }) => !remoteIds.has(id));
+          const orderedSummaries = [
+            ...bootstrap.workspaces.filter(({ pinned }) => pinned),
+            ...retained.filter(({ pinned }) => pinned),
+            ...bootstrap.workspaces.filter(({ pinned }) => !pinned),
+            ...retained.filter(({ pinned }) => !pinned),
+          ];
+          if (orderedSummaries.length > MAX_WORKSPACES || new Set(orderedSummaries.map(({ name }) => name.toLowerCase())).size !== orderedSummaries.length) throw new Error("The bootstrap workspace directory conflicts with retained local workspaces.");
+          const nextWorkspaces = orderedSummaries.map((summary, ordinal) => {
+            const existing = currentById.get(summary.id);
+            const sequence = summary.id === workspaceId ? bootstrap.workspace : existing ?? { headSequence: 0, snapshotBarrier: 0, logFloor: 0 };
+            return parseWorkspace({ ...summary, ordinal, headSequence: sequence.headSequence, snapshotBarrier: sequence.snapshotBarrier, logFloor: sequence.logFloor, localRevision: existing?.localRevision ?? 0 });
+          });
+          const nextSyncs = bootstrap.workspaces.map(({ id }) => {
+            const existing = syncById.get(id);
+            if (id === workspaceId) return parseSyncState({
+              workspaceId: id,
+              deviceId: bootstrap.deviceId,
+              cursor: bootstrap.cursor,
+              lastHydrationAsOf: existing?.lastHydrationAsOf ?? 0,
+              lastObservedLogicalTime: Math.max(existing?.lastObservedLogicalTime ?? 0, bootstrap.rootPage.observedLogicalTime),
+              lastLocalLogicalTime: existing?.lastLocalLogicalTime ?? 0,
+            });
+            return existing ?? parseSyncState({ workspaceId: id, deviceId: bootstrap.deviceId, cursor: 0, lastHydrationAsOf: 0, lastObservedLogicalTime: 0, lastLocalLogicalTime: 0 });
+          });
+          const header = existingHeaderValue === undefined ? undefined : parseStoredHydrationHeader(existingHeaderValue);
+          const replacingGeneration = header !== undefined && header.generationId !== generationId;
+          if (header && !replacingGeneration && (header.deviceId !== bootstrap.deviceId || !equalValues(header.target, bootstrap.rootPage.target))) throw new Error("A bootstrap root conflicts with an active hydration generation.");
+          const storedPageValue = await request(pages.get([workspaceId, targetId, 0]));
+          if (!replacingGeneration && storedPageValue !== undefined && !equalValues(parseStoredHydrationPage(storedPageValue).page, bootstrap.rootPage)) throw new Error("A bootstrap root page cannot be reused with different input.");
+          const preserveProgress = header !== undefined && !replacingGeneration && storedPageValue !== undefined;
+          const complete = preserveProgress ? header.complete : bootstrap.rootPage.nextPageToken === null;
+          const identities = hydrationPageIdentities(bootstrap.rootPage);
+          const storedBootstrap = { workspaceId, targetId, pageIndex: -2, kind: "bootstrap", bootstrap } satisfies StoredBootstrap;
+          const nextHeader = { workspaceId, targetId, pageIndex: -1, kind: "header", deviceId: bootstrap.deviceId, generationId, target: bootstrap.rootPage.target, nextPageIndex: 1, pageToken: bootstrap.rootPage.nextPageToken, complete, lastIdentity: identities.at(-1) ?? null } satisfies StoredHydrationHeader;
+          const storedPage = { workspaceId, targetId, pageIndex: 0, kind: "page", requestPageToken: null, page: bootstrap.rootPage } satisfies StoredHydrationPage;
+          if (!preserveProgress && complete) validateStoredHydrationGeneration(nextHeader, [storedPage]);
+          const replacedKeys = replacingGeneration ? await request(pages.getAllKeys(keyRange.bound([workspaceId, targetId, -2], [workspaceId, targetId, Number.MAX_SAFE_INTEGER]))) : [];
+          await Promise.all([
+            ...nextWorkspaces.map((candidate) => request(transaction.objectStore("workspaces").put(candidate))),
+            ...nextSyncs.map((candidate) => request(transaction.objectStore("sync").put(candidate))),
+            ...replacedKeys.map((key) => request(pages.delete(key))),
+            request(pages.put(storedBootstrap)),
+            ...(preserveProgress ? [] : [request(pages.put(nextHeader)), request(pages.put(storedPage))]),
+          ]);
+          if (!complete) return [];
+        }
+        const [workspaceValues, syncValues, headerValue, storedBootstrapValue] = await Promise.all([
           request(transaction.objectStore("workspaces").getAll()),
           request(transaction.objectStore("sync").getAll()),
           request(pages.get([workspaceId, targetId, -1])),
+          request(pages.get([workspaceId, targetId, -2])),
         ]);
         const workspaces = new Map(workspaceValues.map(parseWorkspace).map((candidate) => [candidate.id, candidate]));
         const syncs = new Map(syncValues.map(parseSyncState).map((candidate) => [candidate.workspaceId, candidate]));
@@ -2167,6 +2313,10 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         if (workspace.id !== sync.workspaceId || header.targetId !== targetId || header.workspaceId !== workspaceId || header.deviceId !== sync.deviceId || header.generationId !== generationId || hydrationTargetId(header.target) !== targetId) throw new Error("That hydration generation does not match its staged projection.");
         const generation = parseHydrationGeneration({ workspaceId, deviceId: sync.deviceId, generationId, target: header.target });
         if (generation.target.asOf < Math.max(sync.cursor, sync.lastHydrationAsOf)) throw new Error("That hydration generation is older than the published workspace projection.");
+
+        const storedBootstrap = storedBootstrapValue === undefined ? undefined : parseStoredBootstrap(storedBootstrapValue);
+        if (storedBootstrap && (storedBootstrap.bootstrap.deviceId !== sync.deviceId || storedBootstrap.bootstrap.rootPage.generationId !== generationId || !equalValues(storedBootstrap.bootstrap.rootPage.target, generation.target))) throw new Error("The staged bootstrap does not match its hydration generation.");
+        if (storedBootstrap) await Promise.all(storedBootstrap.bootstrap.workspaceSettings.map((setting) => request(transaction.objectStore("settings").put(setting))));
 
         const pageRange = keyRange.bound([generation.workspaceId, targetId, 0], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
         const [pageValues, nodeValues, settingValues, operationValues, coverageValues] = await Promise.all([
@@ -2286,6 +2436,10 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         };
         const targetAffected = affected(generation.workspaceId);
         hydrationTargetAffectedIdentities(generation.target).forEach((identity) => targetAffected.add(identity));
+        if (storedBootstrap) for (const setting of storedBootstrap.bootstrap.workspaceSettings) {
+          targetAffected.add(`setting:${setting.workspaceId}:${setting.namespace}:${setting.key}`);
+          targetAffected.add(`setting-namespace:${setting.workspaceId}:${setting.namespace}`);
+        }
         const writes: Promise<unknown>[] = [];
         for (const operation of pending) if (deferredOperations.has(operation.operationId)) writes.push(request(transaction.objectStore("operations").put({ ...operation, overlayKind: "deferred" })));
         for (const [id, current] of currentNodes) {

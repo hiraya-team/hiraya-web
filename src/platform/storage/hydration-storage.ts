@@ -2,16 +2,17 @@ import {
   filesystemDatabaseName,
   openFilesystemDatabase,
   type ChangeRecord,
+  type FilesystemBootstrap,
   type FilesystemDatabaseEnvironment,
   type HydrationGeneration,
   type HydrationProgress,
 } from "../../filesystem/database";
-import type { HydrationPageData } from "../../filesystem/hydration";
-import type { HydrationTarget } from "../../filesystem/hydration";
+import { hydrationTargetId, type HydrationPageData, type HydrationTarget } from "../../filesystem/hydration";
 import { WEB2_SCHEMA_VERSION, parseStableId } from "../../filesystem/model";
 import { filesystemRevisionChannelName, type FilesystemBroadcastChannel } from "./workspace-filesystem";
 
 export type HydrationStorage = {
+  bootstrap(value: FilesystemBootstrap, signal: AbortSignal): Promise<ChangeRecord[]>;
   start(targetId: string, target: HydrationTarget, createGenerationId: () => string, restart: boolean, signal: AbortSignal): Promise<HydrationGeneration>;
   getProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   getPublishedGeneration(workspaceId: string, targetId: string): Promise<string | undefined>;
@@ -46,8 +47,18 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
     const notify = (change: ChangeRecord) => {
       try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, workspaceId: change.workspaceId, revision: change.revision }); } catch { /* The durable change log remains authoritative. */ }
     };
+    const notifyCatalog = () => {
+      try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, kind: "catalog-change" }); } catch { /* A later catalog read recovers a missed advisory wake-up. */ }
+    };
 
     return {
+      bootstrap: async (value, signal) => {
+        open();
+        const changes = await locks.request(accountLock, { mode: "exclusive", signal }, () => database.publishHydration(value.workspace.id, hydrationTargetId(value.rootPage.target), value.rootPage.generationId, value));
+        notifyCatalog();
+        changes.forEach(notify);
+        return changes;
+      },
       start: (targetId, target, createGenerationId, restart, signal) => withWorkspace(target.workspaceId, signal, async () => {
         const sync = await database.getSyncState(target.workspaceId);
         const staged = restart ? undefined : await database.getHydrationGeneration(target.workspaceId, targetId);

@@ -343,6 +343,83 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("publishes bootstrap directory, root, settings, and pending overlays atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory, () => 100), randomUUID: () => DEVICE });
+    expect(await database.getOrCreateDeviceId()).toBe(DEVICE);
+    await database.createWorkspace({ id: WORKSPACE, name: "Local main", pinned: true, deviceId: DEVICE });
+    await database.createWorkspace({ id: DESTINATION, name: "Local only", pinned: true, deviceId: DEVICE });
+    const localId = stableId(2_290);
+    await database.commitOperation({ operation: createDraft(stableId(2_291), [folder(localId, "Local pending")]) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_292)), kind: "set", namespace: "editor", key: "font-size", value: 18 } });
+
+    const remoteId = stableId(2_293);
+    const remoteTuple = { logicalTime: 10, operationId: stableId(2_294) };
+    const remote = { workspaceId: WORKSPACE, id: remoteId, kind: "folder" as const, name: "Remote", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: remoteTuple, parent: remoteTuple, lifecycle: remoteTuple, position: remoteTuple, content: null } };
+    const generationId = stableId(2_295);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = hydrationTargetId(target);
+    const bootstrap = {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      cursor: 9,
+      workspaces: [
+        { id: WORKSPACE, name: "Main", pinned: true },
+        { id: stableId(2_296), name: "Archive", pinned: false },
+      ],
+      workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+      rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [remote], settings: [], nextPageToken: null },
+      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor" as const, key: "font-size", deleted: false as const, value: 16, logicalTime: 10, operationId: stableId(2_297) }],
+    };
+    const changes = await database.publishHydration(WORKSPACE, targetId, generationId, bootstrap);
+
+    expect((await database.listWorkspaces()).map(({ id, name, ordinal, headSequence }) => ({ id, name, ordinal, headSequence }))).toEqual([
+      { id: WORKSPACE, name: "Main", ordinal: 0, headSequence: 10 },
+      { id: DESTINATION, name: "Local only", ordinal: 1, headSequence: 0 },
+      { id: stableId(2_296), name: "Archive", ordinal: 2, headSequence: 0 },
+    ]);
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 9, lastHydrationAsOf: 10, lastObservedLogicalTime: 10 });
+    expect((await database.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([localId, remoteId].sort());
+    expect(await database.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
+    expect((await database.listOperations(WORKSPACE)).map(({ operationId }) => operationId).sort()).toEqual([stableId(2_291), stableId(2_292)].sort());
+    expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 3, operationId: generationId, targetId }]);
+    expect(changes[0]!.affectedIdentities).toContain(`setting:${WORKSPACE}:editor:font-size`);
+    expect(await database.publishHydration(WORKSPACE, targetId, generationId, bootstrap)).toEqual(changes);
+    database.close();
+  });
+
+  test("rolls back the complete bootstrap transaction when projection publication fails", async () => {
+    const factory = new IDBFactory();
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory), randomUUID: () => DEVICE });
+    await database.getOrCreateDeviceId();
+    const generationId = stableId(2_280);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = hydrationTargetId(target);
+    const bootstrap = {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      cursor: 9,
+      workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }],
+      workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+      rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [], settings: [], nextPageToken: null },
+      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor" as const, key: "font-size", deleted: false as const, value: 16, logicalTime: 1, operationId: stableId(2_281) }],
+    };
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "hydration-coverage") throw new DOMException("Injected bootstrap failure", "AbortError");
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    };
+    try {
+      await expect(database.publishHydration(WORKSPACE, targetId, generationId, bootstrap)).rejects.toThrow("Injected bootstrap failure");
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    const name = await filesystemDatabaseName(ACCOUNT);
+    expect(await database.listWorkspaces()).toEqual([]);
+    for (const store of ["sync", "nodes", "settings", "changes", "hydration-pages", "hydration-coverage"]) expect(await readStored(factory, name, store)).toEqual([]);
+    database.close();
+  });
+
   test("stages only the active hydration generation and advances observed clocks", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 100);

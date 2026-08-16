@@ -79,6 +79,61 @@ function response(request: HydrationRequest, nodes: ReturnType<typeof remoteFold
   };
 }
 
+test("publishes bootstrap metadata and resumes its private root generation", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  expect(await database.getOrCreateDeviceId()).toBe(DEVICE);
+  database.close();
+  const generationId = stableId(90);
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 1 };
+  const firstNode = remoteFolder(stableId(91), "First", 10);
+  const secondNode = remoteFolder(stableId(92), "Second", 10);
+  const finalNode = remoteFolder(stableId(94), "Final", 10);
+  const bootstrapResponse = {
+    schemaVersion: 1,
+    protocol: WEB2_SYNC_PROTOCOL,
+    accountId: ACCOUNT,
+    deviceId: DEVICE,
+    cursor: 9,
+    workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }, { id: DESTINATION, name: "Archive", pinned: false }],
+    workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+    rootPage: { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [firstNode], settings: [], nextPageToken: "next" },
+    workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor", key: "font-size", deleted: false, value: 16, logicalTime: 1, operationId: stableId(93) }],
+  };
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment));
+  const bootstrapped = await coordinator.bootstrap(bootstrapResponse);
+  expect(bootstrapped.changes).toEqual([]);
+
+  const staged = await openFilesystemDatabase(ACCOUNT, environment);
+  expect((await staged.listWorkspaces()).map(({ name }) => name)).toEqual(["Main", "Archive"]);
+  expect(await staged.queryFolderChildren(WORKSPACE, null)).toEqual({ availability: "unavailable" });
+  expect(await staged.getSetting(WORKSPACE, "editor", "font-size")).toBeUndefined();
+  expect(await staged.getHydrationProgress(WORKSPACE, hydrationTargetId(target), generationId)).toEqual({ nextPageIndex: 1, pageToken: "next", complete: false });
+  await staged.stageHydrationPage(hydrationTargetId(target), "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 1, observedLogicalTime: 10, target, nodes: [secondNode], settings: [], nextPageToken: "last" });
+  staged.close();
+  await coordinator.bootstrap(bootstrapResponse);
+  const retried = await openFilesystemDatabase(ACCOUNT, environment);
+  expect(await retried.getHydrationProgress(WORKSPACE, hydrationTargetId(target), generationId)).toEqual({ nextPageIndex: 2, pageToken: "last", complete: false });
+  retried.close();
+
+  const changes = await coordinator.hydrate(target, async (request) => response(request, [finalNode], null));
+  await coordinator.close();
+  expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 1, operationId: generationId }]);
+  expect(revisions.messages).toEqual([
+    { schemaVersion: 1, kind: "catalog-change" },
+    { schemaVersion: 1, kind: "catalog-change" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+  ]);
+  const published = await openFilesystemDatabase(ACCOUNT, environment);
+  expect((await published.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([firstNode.id, secondNode.id, finalNode.id].sort());
+  expect(await published.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 16 });
+  expect(await published.getSyncState(WORKSPACE)).toMatchObject({ cursor: 9, lastHydrationAsOf: 10 });
+  published.close();
+});
+
 test("resumes a durable hydration generation and broadcasts its published revision", async () => {
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();

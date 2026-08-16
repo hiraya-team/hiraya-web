@@ -1,11 +1,13 @@
 import { hydrationTargetId, parseHydrationTarget, type HydrationTarget } from "../filesystem/hydration";
 import { WEB2_SCHEMA_VERSION } from "../filesystem/model";
-import type { ChangeRecord } from "../filesystem/database";
+import type { ChangeRecord, FilesystemBootstrap } from "../filesystem/database";
 import type { HydrationStorage } from "../platform/storage/hydration-storage";
 import {
   WEB2_SYNC_PROTOCOL,
+  parseBootstrap,
   parseHydrationPage,
   parseHydrationRequest,
+  type Bootstrap,
   type HydrationPage,
   type HydrationRequest,
 } from "./protocol";
@@ -13,6 +15,7 @@ import {
 export type HydrationPageRequester = (request: HydrationRequest, signal: AbortSignal) => Promise<unknown>;
 
 export type HydrationCoordinator = {
+  bootstrap(value: unknown, options?: { signal?: AbortSignal }): Promise<{ bootstrap: Bootstrap; changes: ChangeRecord[] }>;
   hydrate(target: HydrationTarget, requestPage: HydrationPageRequester, options?: { restart?: boolean; signal?: AbortSignal }): Promise<ChangeRecord[]>;
   close(): Promise<void>;
 };
@@ -31,8 +34,20 @@ function pageData(page: HydrationPage) {
   };
 }
 
+function bootstrapData(value: Bootstrap): FilesystemBootstrap {
+  return {
+    accountId: value.accountId,
+    deviceId: value.deviceId,
+    cursor: value.cursor,
+    workspaces: value.workspaces,
+    workspace: value.workspace,
+    rootPage: pageData(value.rootPage),
+    workspaceSettings: value.workspaceSettings,
+  };
+}
+
 export function createHydrationCoordinator(storage: HydrationStorage, randomUUID: () => string = () => crypto.randomUUID()): HydrationCoordinator {
-  if (!storage || typeof storage.start !== "function" || typeof randomUUID !== "function") throw new TypeError("Hydration coordinator dependencies are invalid.");
+  if (!storage || typeof storage.bootstrap !== "function" || typeof storage.start !== "function" || typeof randomUUID !== "function") throw new TypeError("Hydration coordinator dependencies are invalid.");
   const closeController = new AbortController();
   const running = new Set<Promise<unknown>>();
   let closed = false;
@@ -80,14 +95,23 @@ export function createHydrationCoordinator(storage: HydrationStorage, randomUUID
     signal.throwIfAborted();
     return storage.publish(target.workspaceId, targetId, generation.generationId, signal);
   };
+  const bootstrap = async (value: unknown, options: { signal?: AbortSignal } = {}) => {
+    if (closed) throw new Error("The hydration coordinator is closed.");
+    const signal = options.signal ? AbortSignal.any([options.signal, closeController.signal]) : closeController.signal;
+    signal.throwIfAborted();
+    const parsed = parseBootstrap(value);
+    const changes = await storage.bootstrap(bootstrapData(parsed), signal);
+    return { bootstrap: parsed, changes };
+  };
+  const track = <T>(task: Promise<T>) => {
+    running.add(task);
+    void task.finally(() => running.delete(task)).catch(() => undefined);
+    return task;
+  };
 
   return {
-    hydrate: (target, requestPage, options) => {
-      const task = hydrate(target, requestPage, options);
-      running.add(task);
-      void task.finally(() => running.delete(task)).catch(() => undefined);
-      return task;
-    },
+    bootstrap: (value, options) => track(bootstrap(value, options)),
+    hydrate: (target, requestPage, options) => track(hydrate(target, requestPage, options)),
     close: async () => {
       if (closed) return;
       closed = true;
