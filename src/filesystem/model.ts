@@ -21,13 +21,11 @@ export const SETTING_NAMESPACES = [
   "icon-groups",
   "theme-selection",
   "custom-themes",
-  "workspace-directory",
-  "shell",
-  "file-associations",
-  "handler-preferences",
 ] as const;
 
 export type SettingNamespace = typeof SETTING_NAMESPACES[number];
+export type DesktopGridSettings = { autoArrangeIcons: boolean; snapToGrid: boolean; gridSize: 12 | 24 | 36 | 48 };
+export const DEFAULT_DESKTOP_GRID_SETTINGS: DesktopGridSettings = { autoArrangeIcons: true, snapToGrid: false, gridSize: 24 };
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type Position = { x: number; y: number };
 export type ChunkRef = { hash: string; size: number };
@@ -155,6 +153,13 @@ export function parseSettingKey(value: unknown) {
   return value;
 }
 
+export function parseSettingKeyForNamespace(namespaceValue: unknown, keyValue: unknown) {
+  const namespace = parseSettingNamespace(namespaceValue);
+  const key = parseSettingKey(keyValue);
+  if (namespace === "desktop-grid" && key !== "auto-arrange-icons" && key !== "snap-to-grid" && key !== "grid-size") throw new Error("A desktop grid setting key is invalid.");
+  return { namespace, key };
+}
+
 function parseJsonValueAt(value: unknown, depth: number): JsonValue {
   if (depth > 32) throw new Error("A setting value is too deeply nested.");
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;
@@ -171,6 +176,25 @@ export function parseSettingValue(value: unknown): JsonValue {
   const result = parseJsonValueAt(value, 0);
   if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 64 * 1024) throw new Error("A setting value is too large.");
   return result;
+}
+
+export function parseWorkspaceSetting(namespaceValue: unknown, keyValue: unknown, value: unknown) {
+  const { namespace, key } = parseSettingKeyForNamespace(namespaceValue, keyValue);
+  const parsed = parseSettingValue(value);
+  if (namespace === "desktop-grid") {
+    if ((key === "auto-arrange-icons" || key === "snap-to-grid") && typeof parsed !== "boolean") throw new Error("A desktop grid boolean setting is invalid.");
+    if (key === "grid-size" && parsed !== 12 && parsed !== 24 && parsed !== 36 && parsed !== 48) throw new Error("A desktop grid size setting is invalid.");
+  }
+  return { namespace, key, value: parsed };
+}
+
+export function parseDesktopGridSettings(value: unknown): DesktopGridSettings {
+  if (!isRecord(value)) throw new Error("Desktop grid settings have an unsupported shape.");
+  assertExactKeys(value, ["autoArrangeIcons", "snapToGrid", "gridSize"], "Desktop grid settings have an unsupported shape.");
+  const autoArrangeIcons = parseWorkspaceSetting("desktop-grid", "auto-arrange-icons", value.autoArrangeIcons).value;
+  const snapToGrid = parseWorkspaceSetting("desktop-grid", "snap-to-grid", value.snapToGrid).value;
+  const gridSize = parseWorkspaceSetting("desktop-grid", "grid-size", value.gridSize).value;
+  return { autoArrangeIcons: autoArrangeIcons as boolean, snapToGrid: snapToGrid as boolean, gridSize: gridSize as DesktopGridSettings["gridSize"] };
 }
 
 export function parseNodeLifecycle(value: unknown): NodeLifecycle {
@@ -233,11 +257,10 @@ export function parseNode(value: unknown): Node {
 export function parseSetting(value: unknown): Setting {
   if (!isRecord(value)) throw new Error("A setting has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "namespace", "key", "value", "logicalTime", "operationId"], "A setting has an unsupported shape.");
+  const setting = parseWorkspaceSetting(value.namespace, value.key, value.value);
   return {
     workspaceId: parseStableId(value.workspaceId, "A setting workspace ID is invalid."),
-    namespace: parseSettingNamespace(value.namespace),
-    key: parseSettingKey(value.key),
-    value: parseSettingValue(value.value),
+    ...setting,
     logicalTime: parseNonNegativeSafeInteger(value.logicalTime, "A setting logical time is invalid."),
     operationId: parseStableId(value.operationId, "A setting operation ID is invalid."),
   };

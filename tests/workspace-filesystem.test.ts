@@ -261,6 +261,36 @@ describe("workspace filesystem storage", () => {
     reopened.close();
   });
 
+  test("persists the exact desktop grid settings contract", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 80;
+    const environment = { indexedDB, IDBKeyRange, now: () => 40, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Desktop grid", pinned: true, deviceId: DEVICE });
+    database.close();
+
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    expect(await filesystem.readDesktopGridSettings()).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: 24 });
+    const operation = await filesystem.saveDesktopGridSettings({ autoArrangeIcons: false, snapToGrid: true, gridSize: 36 });
+    expect(operation.operation).toMatchObject({ kind: "set-many", namespace: "desktop-grid", settings: [
+      { key: "auto-arrange-icons", value: false },
+      { key: "snap-to-grid", value: true },
+      { key: "grid-size", value: 36 },
+    ] });
+    expect(await filesystem.readDesktopGridSettings()).toEqual({ autoArrangeIcons: false, snapToGrid: true, gridSize: 36 });
+    await expect(filesystem.setSetting("desktop-grid", "unknown", true)).rejects.toThrow();
+    await expect(filesystem.setSetting("desktop-grid", "grid-size", 16)).rejects.toThrow();
+    await expect(filesystem.saveDesktopGridSettings({ autoArrangeIcons: false, snapToGrid: true, gridSize: 16 as 24 })).rejects.toThrow();
+    filesystem.close();
+
+    const reopened = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    expect(await reopened.readDesktopGridSettings()).toEqual({ autoArrangeIcons: false, snapToGrid: true, gridSize: 36 });
+    expect(await reopened.listOperations()).toHaveLength(1);
+    reopened.close();
+  });
+
   test("broadcasts committed revisions and replays bounded targeted changes across facades", async () => {
     const indexedDB = new IDBFactory();
     const origin = new MemoryDirectory();

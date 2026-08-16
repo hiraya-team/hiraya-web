@@ -7,9 +7,8 @@ import {
   parseMimeType,
   parseNonNegativeSafeInteger,
   parsePosition,
-  parseSettingKey,
   parseSettingNamespace,
-  parseSettingValue,
+  parseWorkspaceSetting,
   parseSha256,
   parseStableId,
   type JsonValue,
@@ -133,11 +132,12 @@ function parsePositions(value: unknown) {
   return positions;
 }
 
-function parseSettings(value: unknown) {
+function parseSettings(value: unknown, namespace: SettingNamespace) {
   const settings = boundedNonemptyArray(value, "A setting batch is invalid.").map((candidate): SettingChange => {
     if (!isRecord(candidate)) throw new Error("A setting change has an unsupported shape.");
     assertExactKeys(candidate, ["key", "value"], "A setting change has an unsupported shape.");
-    return { key: parseSettingKey(candidate.key), value: parseSettingValue(candidate.value) };
+    const setting = parseWorkspaceSetting(namespace, candidate.key, candidate.value);
+    return { key: setting.key, value: setting.value };
   });
   if (new Set(settings.map(({ key }) => key)).size !== settings.length) throw new Error("A setting batch contains duplicate keys.");
   return settings;
@@ -193,10 +193,12 @@ export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
       return { ...base, kind: "purge", nodeIds: parseIdArray(value.nodeIds, "A purge batch is invalid.") };
     case "set":
       exactOperation(value, ["namespace", "key", "value"]);
-      return { ...base, kind: "set", namespace: parseSettingNamespace(value.namespace), key: parseSettingKey(value.key), value: parseSettingValue(value.value) };
-    case "set-many":
+      return { ...base, kind: "set", ...parseWorkspaceSetting(value.namespace, value.key, value.value) };
+    case "set-many": {
       exactOperation(value, ["namespace", "settings"]);
-      return { ...base, kind: "set-many", namespace: parseSettingNamespace(value.namespace), settings: parseSettings(value.settings) };
+      const namespace = parseSettingNamespace(value.namespace);
+      return { ...base, kind: "set-many", namespace, settings: parseSettings(value.settings, namespace) };
+    }
     default:
       throw new Error("An operation kind is unsupported.");
   }

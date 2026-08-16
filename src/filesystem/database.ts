@@ -17,9 +17,9 @@ import {
   parseSha256,
   parseStableId,
   parseSetting,
-  parseSettingKey,
+  parseSettingKeyForNamespace,
   parseSettingNamespace,
-  parseSettingValue,
+  parseWorkspaceSetting,
   sha256Hex,
   type JsonValue,
   type Manifest,
@@ -312,14 +312,14 @@ function parseInverseRoot(value: unknown, message: string) {
   return { nodeId: parseStableId(value.nodeId, message), parentId: value.parentId === null ? null : parseStableId(value.parentId, message) };
 }
 
-function parsePreviousSetting(value: unknown): PreviousSetting {
+function parsePreviousSetting(value: unknown, namespace: SettingNamespace, key: string): PreviousSetting {
   if (!isRecord(value) || typeof value.exists !== "boolean") throw new Error("Stored setting inverse metadata has an unsupported shape.");
   if (!value.exists) {
     assertExactKeys(value, ["exists"], "Stored setting inverse metadata has an unsupported shape.");
     return { exists: false };
   }
   assertExactKeys(value, ["exists", "value"], "Stored setting inverse metadata has an unsupported shape.");
-  return { exists: true, value: parseSettingValue(value.value) };
+  return { exists: true, value: parseWorkspaceSetting(namespace, key, value.value).value };
 }
 
 function parseOperationInverse(value: unknown): OperationInverse {
@@ -410,19 +410,23 @@ function parseOperationInverse(value: unknown): OperationInverse {
       if (!isSorted(nodeIds)) throw new Error("Stored purge inverse node IDs are invalid.");
       return { kind: "purge", nodeIds, reason: value.reason };
     }
-    case "set":
+    case "set": {
       assertExactKeys(value, ["kind", "namespace", "key", "previous"], "Stored operation inverse metadata has an unsupported shape.");
-      return { kind: "set", namespace: parseSettingNamespace(value.namespace), key: parseSettingKey(value.key), previous: parsePreviousSetting(value.previous) };
+      const { namespace, key } = parseSettingKeyForNamespace(value.namespace, value.key);
+      return { kind: "set", namespace, key, previous: parsePreviousSetting(value.previous, namespace, key) };
+    }
     case "set-many": {
       assertExactKeys(value, ["kind", "namespace", "settings"], "Stored operation inverse metadata has an unsupported shape.");
       if (!Array.isArray(value.settings) || value.settings.length === 0 || value.settings.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Stored setting batch inverse metadata is invalid.");
+      const namespace = parseSettingNamespace(value.namespace);
       const settings = value.settings.map((candidate) => {
         if (!isRecord(candidate)) throw new Error("Stored setting batch inverse metadata is invalid.");
         assertExactKeys(candidate, ["key", "previous"], "Stored setting batch inverse metadata is invalid.");
-        return { key: parseSettingKey(candidate.key), previous: parsePreviousSetting(candidate.previous) };
+        const key = parseSettingKeyForNamespace(namespace, candidate.key).key;
+        return { key, previous: parsePreviousSetting(candidate.previous, namespace, key) };
       });
       if (new Set(settings.map(({ key }) => key)).size !== settings.length) throw new Error("Stored setting batch inverse metadata is invalid.");
-      return { kind: "set-many", namespace: parseSettingNamespace(value.namespace), settings };
+      return { kind: "set-many", namespace, settings };
     }
     default:
       throw new Error("Stored operation inverse metadata has an unsupported shape.");
@@ -970,8 +974,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
     getSetting: async (workspaceId, namespace, key) => {
       const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
-      const canonicalNamespace = parseSettingNamespace(namespace);
-      const canonicalKey = parseSettingKey(key);
+      const { namespace: canonicalNamespace, key: canonicalKey } = parseSettingKeyForNamespace(namespace, key);
       return transact(db, "settings", "readonly", async (transaction) => {
         const value = await request(transaction.objectStore("settings").get([canonicalWorkspaceId, canonicalNamespace, canonicalKey]));
         return value === undefined ? undefined : parseSetting(value);

@@ -12,14 +12,17 @@ import {
   WEB2_MAX_ANCESTRY_DEPTH,
   WEB2_MAX_BATCH_ITEMS,
   WEB2_SCHEMA_VERSION,
+  DEFAULT_DESKTOP_GRID_SETTINGS,
   isRecord,
   parseCanonicalName,
+  parseDesktopGridSettings,
   parseMimeType,
   parseNonNegativeSafeInteger,
   parsePositiveSafeInteger,
   parsePosition,
   parseStableId,
   type JsonValue,
+  type DesktopGridSettings,
   type Node,
   type OperationTuple,
   type Position,
@@ -154,6 +157,8 @@ export type WorkspaceFilesystem = {
   listTrash(): Promise<Node[]>;
   getSetting(namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettings(namespace: SettingNamespace): Promise<Setting[]>;
+  readDesktopGridSettings(): Promise<DesktopGridSettings>;
+  saveDesktopGridSettings(value: DesktopGridSettings): Promise<StoredOperation>;
   listChanges(afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
   onChangesAvailable(listener: () => void): () => void;
   readFile(nodeId: string): Promise<{ content: Blob; contentTuple: OperationTuple }>;
@@ -401,6 +406,22 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       listTrash: () => database.listTrash(workspaceId),
       getSetting: (namespace, key) => database.getSetting(workspaceId, namespace, key),
       listSettings: (namespace) => database.listSettings(workspaceId, namespace),
+      readDesktopGridSettings: async () => {
+        const settings = new Map((await database.listSettings(workspaceId, "desktop-grid")).map(({ key, value }) => [key, value]));
+        return parseDesktopGridSettings({
+          autoArrangeIcons: settings.get("auto-arrange-icons") ?? DEFAULT_DESKTOP_GRID_SETTINGS.autoArrangeIcons,
+          snapToGrid: settings.get("snap-to-grid") ?? DEFAULT_DESKTOP_GRID_SETTINGS.snapToGrid,
+          gridSize: settings.get("grid-size") ?? DEFAULT_DESKTOP_GRID_SETTINGS.gridSize,
+        });
+      },
+      saveDesktopGridSettings: async (value) => locked(() => {
+        const settings = parseDesktopGridSettings(value);
+        return commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace: "desktop-grid", settings: [
+          { key: "auto-arrange-icons", value: settings.autoArrangeIcons },
+          { key: "snap-to-grid", value: settings.snapToGrid },
+          { key: "grid-size", value: settings.gridSize },
+        ] } });
+      }),
       listChanges: (afterRevision, limit) => database.listChanges(workspaceId, afterRevision, limit),
       onChangesAvailable: (listener) => {
         if (typeof listener !== "function") throw new TypeError("A change listener is required.");

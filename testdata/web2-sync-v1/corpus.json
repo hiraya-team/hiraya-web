@@ -517,12 +517,12 @@
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
           "logicalTime": 20,
-          "namespace": "theme-selection",
-          "key": "value",
-          "value": "hiraya-dusk"
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid",
+          "value": true
         },
         "affected": [
-          "setting:00000000-0000-4000-8000-000000000001:theme-selection:value"
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:snap-to-grid"
         ]
       },
       {
@@ -534,15 +534,15 @@
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
           "logicalTime": 21,
-          "namespace": "widgets",
+          "namespace": "desktop-grid",
           "settings": [
-            { "key": "clock", "value": { "x": 10, "y": 20 } },
-            { "key": "calendar", "value": null }
+            { "key": "auto-arrange-icons", "value": false },
+            { "key": "grid-size", "value": 36 }
           ]
         },
         "affected": [
-          "setting:00000000-0000-4000-8000-000000000001:widgets:calendar",
-          "setting:00000000-0000-4000-8000-000000000001:widgets:clock"
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:grid-size"
         ]
       }
     ],
@@ -702,6 +702,125 @@
           "logicalTime": 1,
           "extra": true
         }
+      },
+      {
+        "name": "invalid desktop grid key",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000113",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 22,
+          "namespace": "desktop-grid",
+          "key": "unknown",
+          "value": true
+        }
+      },
+      {
+        "name": "invalid desktop grid boolean",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000114",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 23,
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid",
+          "value": null
+        }
+      },
+      {
+        "name": "invalid desktop grid size",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000115",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 24,
+          "namespace": "desktop-grid",
+          "key": "grid-size",
+          "value": 16
+        }
+      },
+      {
+        "name": "device setting is not a workspace operation",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000116",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 25,
+          "namespace": "shell",
+          "key": "show-hidden-files",
+          "value": false
+        }
+      },
+      {
+        "name": "workspace directory is not a replicated setting",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000117",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 26,
+          "namespace": "workspace-directory",
+          "key": "value",
+          "value": null
+        }
+      },
+      {
+        "name": "file associations are not replicated settings",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000118",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 27,
+          "namespace": "file-associations",
+          "key": "text-plain",
+          "value": "app"
+        }
+      },
+      {
+        "name": "handler preferences are not replicated settings",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000119",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 28,
+          "namespace": "handler-preferences",
+          "key": "text-plain",
+          "value": "app"
+        }
+      },
+      {
+        "name": "invalid desktop grid batch value",
+        "kind": "set-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set-many",
+          "operationId": "00000000-0000-4000-8000-000000000120",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 29,
+          "namespace": "desktop-grid",
+          "settings": [{ "key": "grid-size", "value": 16 }]
+        }
       }
     ]
   },
@@ -745,8 +864,8 @@
           "kind": "exact-settings",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "asOf": 10,
-          "namespace": "widgets",
-          "keys": ["clock", "calendar"]
+          "namespace": "desktop-grid",
+          "keys": ["auto-arrange-icons", "grid-size"]
         }
       },
       {
@@ -800,8 +919,8 @@
           "kind": "exact-settings",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "asOf": 10,
-          "namespace": "widgets",
-          "keys": ["clock", "clock"]
+          "namespace": "desktop-grid",
+          "keys": ["unknown"]
         }
       },
       {
@@ -882,12 +1001,12 @@
             "settings": [],
             "nextPageToken": null
           },
-          "shellSettings": [
+          "workspaceSettings": [
             {
               "workspaceId": "00000000-0000-4000-8000-000000000001",
-              "namespace": "shell",
-              "key": "value",
-              "value": { "showHiddenFiles": false },
+              "namespace": "desktop-grid",
+              "key": "auto-arrange-icons",
+              "value": true,
               "logicalTime": 1,
               "operationId": "00000000-0000-4000-8000-000000000111"
             }

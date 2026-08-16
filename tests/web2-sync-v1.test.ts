@@ -4,6 +4,7 @@ import {
   WEB2_INDEXED_DB_PREFIX,
   WEB2_OPFS_PREFIX,
   WEB2_SCHEMA_VERSION,
+  SETTING_NAMESPACES,
   canonicalManifestBytes,
   canonicalManifestSha256,
   isRecord,
@@ -14,7 +15,9 @@ import {
   parsePosition,
   parseSha256,
   parseStableId,
+  parseSettingNamespace,
   resolveFieldConflict,
+  sha256Hex,
   winningOperationTuple,
   type OperationTuple,
 } from "../src/filesystem/model";
@@ -66,7 +69,8 @@ type Corpus = {
   };
 };
 
-const raw = await Bun.file(new URL("../testdata/web2-sync-v1/corpus.json", import.meta.url)).json() as unknown;
+const corpusBytes = new Uint8Array(await Bun.file(new URL("../testdata/web2-sync-v1/corpus.json", import.meta.url)).arrayBuffer());
+const raw = JSON.parse(new TextDecoder().decode(corpusBytes)) as unknown;
 
 function exact(value: unknown, keys: readonly string[], label: string): asserts value is Record<string, unknown> {
   expect(isRecord(value), `${label} must be an object`).toBe(true);
@@ -136,6 +140,12 @@ describe("web2-sync-v1 corpus", () => {
     expect(corpus.schemaVersion).toBe(WEB2_SCHEMA_VERSION);
     expect(corpus.protocol).toBe(WEB2_SYNC_PROTOCOL);
     expect(corpus.constants).toEqual({ indexedDbPrefix: WEB2_INDEXED_DB_PREFIX, opfsPrefix: WEB2_OPFS_PREFIX, chunkSize: WEB2_CHUNK_SIZE });
+    expect(SETTING_NAMESPACES).toEqual(["desktop-grid", "wallpaper", "editor", "file-templates", "widgets", "icon-groups", "theme-selection", "custom-themes"]);
+    for (const namespace of ["workspace-directory", "shell", "file-associations", "handler-preferences"]) expect(() => parseSettingNamespace(namespace), namespace).toThrow();
+  });
+
+  test("pins the authoritative corpus bytes", async () => {
+    expect(await sha256Hex(corpusBytes)).toBe("46ffaa80ac1d87b1d81fe0ed24785e31acaae88b892954808ff7fd5c4604ce99");
   });
 
   test("runs every primitive case through production validators", () => {

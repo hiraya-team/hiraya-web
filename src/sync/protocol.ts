@@ -12,7 +12,7 @@ import {
   parseNonNegativeSafeInteger,
   parsePositiveSafeInteger,
   parseSetting,
-  parseSettingKey,
+  parseSettingKeyForNamespace,
   parseSettingNamespace,
   parseSha256,
   parseStableId,
@@ -55,7 +55,7 @@ export type Bootstrap = {
   workspaces: WorkspaceSummary[];
   workspace: WorkspaceBootstrapState;
   rootPage: HydrationPage;
-  shellSettings: Setting[];
+  workspaceSettings: Setting[];
 };
 export type SequencedOperation = { sequence: number; operation: WorkspaceOperation };
 export type PushRequest = {
@@ -143,9 +143,9 @@ function boundedIds(value: unknown, message: string) {
   return ids;
 }
 
-function boundedKeys(value: unknown) {
+function boundedKeys(value: unknown, namespace: SettingNamespace) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A hydration setting-key batch is invalid.");
-  const keys = value.map(parseSettingKey);
+  const keys = value.map((key) => parseSettingKeyForNamespace(namespace, key).key);
   if (new Set(keys).size !== keys.length) throw new Error("A hydration setting-key batch contains duplicates.");
   return keys;
 }
@@ -173,9 +173,11 @@ export function parseHydrationTarget(value: unknown): HydrationTarget {
       if (maxDepth > WEB2_MAX_ANCESTRY_DEPTH) throw new Error("An ancestry hydration depth is invalid.");
       return { kind: "ancestry", workspaceId, asOf, nodeId: parseStableId(value.nodeId, "An ancestry node ID is invalid."), maxDepth };
     }
-    case "exact-settings":
+    case "exact-settings": {
       assertExactKeys(value, ["kind", "workspaceId", "asOf", "namespace", "keys"], "An exact-setting hydration target has an unsupported shape.");
-      return { kind: "exact-settings", workspaceId, asOf, namespace: parseSettingNamespace(value.namespace), keys: boundedKeys(value.keys) };
+      const namespace = parseSettingNamespace(value.namespace);
+      return { kind: "exact-settings", workspaceId, asOf, namespace, keys: boundedKeys(value.keys, namespace) };
+    }
     case "setting-namespace":
       assertExactKeys(value, ["kind", "workspaceId", "asOf", "namespace", "limit"], "A setting-namespace hydration target has an unsupported shape.");
       return { kind: "setting-namespace", workspaceId, asOf, namespace: parseSettingNamespace(value.namespace), limit: pageLimit(value.limit) };
@@ -232,7 +234,7 @@ function parseWorkspaceState(value: unknown): WorkspaceBootstrapState {
 
 export function parseBootstrap(value: unknown): Bootstrap {
   if (!isRecord(value)) throw new Error("A bootstrap response has an unsupported shape.");
-  assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "deviceId", "cursor", "workspaces", "workspace", "rootPage", "shellSettings"], "A bootstrap response has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "deviceId", "cursor", "workspaces", "workspace", "rootPage", "workspaceSettings"], "A bootstrap response has an unsupported shape.");
   const wire = parseWireBase(value);
   const accountId = parseStableId(value.accountId, "A bootstrap account ID is invalid.");
   const deviceId = parseStableId(value.deviceId, "A bootstrap device ID is invalid.");
@@ -241,11 +243,11 @@ export function parseBootstrap(value: unknown): Bootstrap {
   const workspaces = value.workspaces.map(parseWorkspaceSummary);
   const workspace = parseWorkspaceState(value.workspace);
   const rootPage = parseHydrationPage(value.rootPage);
-  const shellSettings = parseBoundedRecords(value.shellSettings, parseSetting, "Bootstrap shell settings are invalid.");
+  const workspaceSettings = parseBoundedRecords(value.workspaceSettings, parseSetting, "Bootstrap workspace settings are invalid.");
   if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || !workspaces.some(({ id }) => id === workspace.id)) throw new Error("A bootstrap workspace directory is inconsistent.");
   if (cursor > workspace.headSequence || rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
-  if (shellSettings.some((setting) => setting.workspaceId !== workspace.id) || new Set(shellSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== shellSettings.length) throw new Error("Bootstrap shell settings are inconsistent.");
-  return { ...wire, accountId, deviceId, cursor, workspaces, workspace, rootPage, shellSettings };
+  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
+  return { ...wire, accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
 
 function parsePullBase(value: Record<string, unknown>): PullBase {
