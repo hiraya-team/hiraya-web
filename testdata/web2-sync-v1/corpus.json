@@ -1023,6 +1023,52 @@
       }
     ]
   },
+  "hydrationRequests": {
+    "valid": [
+      {
+        "name": "initial exact-node hydration",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000301",
+          "pageIndex": 0,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "pageToken": null
+        }
+      },
+      {
+        "name": "continued folder hydration",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000302",
+          "pageIndex": 1,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "parentId": null, "limit": 100 },
+          "pageToken": "next-page"
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "initial hydration carries a page token",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000303", "pageIndex": 0,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "parentId": null, "limit": 100 }, "pageToken": "unexpected"
+        }
+      },
+      {
+        "name": "exact-node hydration attempts continuation",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000304", "pageIndex": 1,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "nodeIds": ["00000000-0000-4000-8000-000000000202"] }, "pageToken": "unexpected"
+        }
+      }
+    ]
+  },
   "bootstrap": {
     "valid": [
       {
@@ -1058,6 +1104,9 @@
             "protocol": "web2-sync-v1",
             "workspaceId": "00000000-0000-4000-8000-000000000001",
             "deviceId": "00000000-0000-4000-8000-000000000003",
+            "generationId": "00000000-0000-4000-8000-000000000301",
+            "pageIndex": 0,
+            "observedLogicalTime": 10,
             "target": {
               "kind": "folder-page",
               "workspaceId": "00000000-0000-4000-8000-000000000001",
@@ -1130,6 +1179,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000302",
+          "pageIndex": 0,
+          "observedLogicalTime": 10,
           "target": {
             "kind": "exact-nodes",
             "workspaceId": "00000000-0000-4000-8000-000000000001",
@@ -1170,6 +1222,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000303",
+          "pageIndex": 0,
+          "observedLogicalTime": 11,
           "target": {
             "kind": "exact-nodes",
             "workspaceId": "00000000-0000-4000-8000-000000000001",
@@ -1188,6 +1243,54 @@
           "settings": [],
           "nextPageToken": null
         }
+      },
+      {
+        "name": "child-to-root ancestry page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000305",
+          "pageIndex": 0,
+          "observedLogicalTime": 8,
+          "target": { "kind": "ancestry", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 8, "nodeId": "00000000-0000-4000-8000-000000000201", "maxDepth": 64 },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000201", "kind": "folder", "name": "Documents", "parentId": null, "lifecycle": { "kind": "active" }, "position": { "x": 10, "y": 20 }, "createdAt": 1, "modifiedAt": 1, "fieldTuples": { "name": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "parent": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "lifecycle": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "position": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "content": null } }],
+          "settings": [],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "exact setting page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000306",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "setting namespace page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000307",
+          "pageIndex": 1,
+          "observedLogicalTime": 3,
+          "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }, { "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "grid-size", "deleted": false, "value": 36, "logicalTime": 3, "operationId": "00000000-0000-4000-8000-000000000112" }],
+          "nextPageToken": "next-page"
+        }
       }
     ],
     "invalid": [
@@ -1198,6 +1301,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000311",
+          "pageIndex": 0,
+          "observedLogicalTime": 0,
           "target": {
             "kind": "exact-nodes",
             "workspaceId": "00000000-0000-4000-8000-000000000001",
@@ -1217,6 +1323,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000312",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
           "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
           "nodes": [],
           "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
@@ -1230,6 +1339,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000313",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
           "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
           "nodes": [],
           "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": true, "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
@@ -1243,6 +1355,9 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000314",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
           "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
           "nodes": [],
           "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
@@ -1256,10 +1371,37 @@
           "protocol": "web2-sync-v1",
           "workspaceId": "00000000-0000-4000-8000-000000000001",
           "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000315",
+          "pageIndex": 0,
+          "observedLogicalTime": 11,
           "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
           "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": false, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }],
           "settings": [],
           "nextPageToken": null
+        }
+      },
+      {
+        "name": "hydration watermark is below its record",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000308", "pageIndex": 0, "observedLogicalTime": 10,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
+        }
+      },
+      {
+        "name": "exact node page returns an unrequested ID",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000309", "pageIndex": 0, "observedLogicalTime": 11,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000201"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
+        }
+      },
+      {
+        "name": "folder page returns a purge tombstone",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000310", "pageIndex": 0, "observedLogicalTime": 11,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "parentId": null, "limit": 100 },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
         }
       }
     ]
@@ -1313,6 +1455,9 @@
               "protocol": "web2-sync-v1",
               "workspaceId": "00000000-0000-4000-8000-000000000001",
               "deviceId": "00000000-0000-4000-8000-000000000003",
+              "generationId": "00000000-0000-4000-8000-000000000304",
+              "pageIndex": 0,
+              "observedLogicalTime": 8,
               "target": {
                 "kind": "exact-nodes",
                 "workspaceId": "00000000-0000-4000-8000-000000000001",

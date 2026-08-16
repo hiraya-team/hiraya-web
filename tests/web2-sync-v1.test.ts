@@ -30,6 +30,7 @@ import {
   parseChunkUploadRequest,
   parseChunkUploadResult,
   parseHydrationPage,
+  parseHydrationRequest,
   parseHydrationTarget,
   parseOperationReceipt,
   parsePullResult,
@@ -49,6 +50,7 @@ type Corpus = {
   manifests: { valid: Array<Case & { canonicalJson: string; sha256: string }>; invalid: Case[] };
   operations: { valid: Array<Case & { affected: string[] }>; invalid: InvalidKindCase[] };
   hydrationTargets: { valid: Case[]; invalid: InvalidKindCase[] };
+  hydrationRequests: { valid: Case[]; invalid: Case[] };
   bootstrap: { valid: Case[]; invalid: Case[] };
   hydrationPages: { valid: Case[]; invalid: Case[] };
   pullResults: { valid: Case[]; invalid: InvalidKindCase[] };
@@ -98,13 +100,14 @@ function validAndInvalid(value: unknown, validKeys: readonly string[], invalidKe
 }
 
 function parseCorpus(value: unknown): Corpus {
-  exact(value, ["schemaVersion", "protocol", "constants", "primitives", "manifests", "operations", "hydrationTargets", "bootstrap", "hydrationPages", "pullResults", "pushResults", "pushRequests", "conflictMatrix", "receipts", "tupleOrdering", "chunkNegotiation"], "corpus");
+  exact(value, ["schemaVersion", "protocol", "constants", "primitives", "manifests", "operations", "hydrationTargets", "hydrationRequests", "bootstrap", "hydrationPages", "pullResults", "pushResults", "pushRequests", "conflictMatrix", "receipts", "tupleOrdering", "chunkNegotiation"], "corpus");
   exact(value.constants, ["indexedDbPrefix", "opfsPrefix", "chunkSize"], "constants");
   exact(value.primitives, ["stableIds", "names", "mimeTypes", "nonNegativeIntegers", "positions", "sha256"], "primitives");
   for (const [name, section] of Object.entries(value.primitives)) cases(section, ["name", "valid", "value"], `primitives.${name}`);
   validAndInvalid(value.manifests, ["name", "value", "canonicalJson", "sha256"], ["name", "value"], "manifests");
   validAndInvalid(value.operations, ["name", "value", "affected"], ["name", "kind", "value"], "operations");
   validAndInvalid(value.hydrationTargets, ["name", "value"], ["name", "kind", "value"], "hydrationTargets");
+  validAndInvalid(value.hydrationRequests, ["name", "value"], ["name", "value"], "hydrationRequests");
   validAndInvalid(value.bootstrap, ["name", "value"], ["name", "value"], "bootstrap");
   validAndInvalid(value.hydrationPages, ["name", "value"], ["name", "value"], "hydrationPages");
   validAndInvalid(value.pullResults, ["name", "value"], ["name", "kind", "value"], "pullResults");
@@ -145,7 +148,7 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("pins the authoritative corpus bytes", async () => {
-    expect(await sha256Hex(corpusBytes)).toBe("0726c1928447f14f4c95599b57cfdf75989f92f16ae7f399afffd19debda3cfe");
+    expect(await sha256Hex(corpusBytes)).toBe("cfba325dfffc1e5e919ae95d872d750131924156b6a525f3a9c835a6ca6120f2");
   });
 
   test("runs every primitive case through production validators", () => {
@@ -198,6 +201,8 @@ describe("web2-sync-v1 corpus", () => {
     for (const item of corpus.bootstrap.invalid) expect(() => parseBootstrap(item.value), item.name).toThrow();
     for (const item of corpus.hydrationPages.valid) expect(() => parseHydrationPage(item.value), item.name).not.toThrow();
     for (const item of corpus.hydrationPages.invalid) expect(() => parseHydrationPage(item.value), item.name).toThrow();
+    for (const item of corpus.hydrationRequests.valid) expect(() => parseHydrationRequest(item.value), item.name).not.toThrow();
+    for (const item of corpus.hydrationRequests.invalid) expect(() => parseHydrationRequest(item.value), item.name).toThrow();
     expect(new Set(corpus.pullResults.valid.map((item) => parsePullResult(item.value).kind))).toEqual(new Set(["operations", "reset"]));
     for (const item of corpus.pullResults.invalid) expect(() => parsePullResult(item.value), item.name).toThrow();
     expect(new Set(corpus.pushResults.valid.map((item) => parsePushResult(item.value).kind))).toEqual(new Set(["accepted", "rejected"]));

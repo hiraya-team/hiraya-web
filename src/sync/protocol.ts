@@ -39,10 +39,23 @@ export type HydrationPage = {
   protocol: typeof WEB2_SYNC_PROTOCOL;
   workspaceId: string;
   deviceId: string;
+  generationId: string;
+  pageIndex: number;
+  observedLogicalTime: number;
   target: HydrationTarget;
   nodes: NodeRecord[];
   settings: Setting[];
   nextPageToken: string | null;
+};
+export type HydrationRequest = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  workspaceId: string;
+  deviceId: string;
+  generationId: string;
+  pageIndex: number;
+  target: HydrationTarget;
+  pageToken: string | null;
 };
 export type WorkspaceSummary = { id: string; name: string; pinned: boolean };
 export type WorkspaceBootstrapState = WorkspaceSummary & { headSequence: number; snapshotBarrier: number; logFloor: number };
@@ -136,10 +149,21 @@ function parseWireBase(value: Record<string, unknown>) {
   return { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL } as const;
 }
 
+function compareCanonicalStrings(left: string, right: string) {
+  const leftPoints = [...left];
+  const rightPoints = [...right];
+  for (let index = 0; index < Math.min(leftPoints.length, rightPoints.length); index += 1) {
+    const difference = leftPoints[index]!.codePointAt(0)! - rightPoints[index]!.codePointAt(0)!;
+    if (difference !== 0) return difference;
+  }
+  return leftPoints.length - rightPoints.length;
+}
+
 function boundedIds(value: unknown, message: string) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error(message);
   const ids = value.map((id) => parseStableId(id, message));
   if (new Set(ids).size !== ids.length) throw new Error(message);
+  if (ids.some((id, index) => index > 0 && compareCanonicalStrings(ids[index - 1]!, id) >= 0)) throw new Error(message);
   return ids;
 }
 
@@ -147,6 +171,7 @@ function boundedKeys(value: unknown, namespace: SettingNamespace) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A hydration setting-key batch is invalid.");
   const keys = value.map((key) => parseSettingKeyForNamespace(namespace, key).key);
   if (new Set(keys).size !== keys.length) throw new Error("A hydration setting-key batch contains duplicates.");
+  if (keys.some((key, index) => index > 0 && compareCanonicalStrings(keys[index - 1]!, key) >= 0)) throw new Error("A hydration setting-key batch is not canonically ordered.");
   return keys;
 }
 
@@ -194,6 +219,21 @@ function parsePageToken(value: unknown) {
   return value;
 }
 
+export function parseHydrationRequest(value: unknown): HydrationRequest {
+  if (!isRecord(value)) throw new Error("A hydration request has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "pageIndex", "target", "pageToken"], "A hydration request has an unsupported shape.");
+  const wire = parseWireBase(value);
+  const workspaceId = parseStableId(value.workspaceId, "A hydration request workspace ID is invalid.");
+  const deviceId = parseStableId(value.deviceId, "A hydration request device ID is invalid.");
+  const generationId = parseStableId(value.generationId, "A hydration generation ID is invalid.");
+  const pageIndex = parseNonNegativeSafeInteger(value.pageIndex, "A hydration page index is invalid.");
+  const target = parseHydrationTarget(value.target);
+  const pageToken = value.pageToken === null ? null : parsePageToken(value.pageToken);
+  if (target.workspaceId !== workspaceId || pageIndex === 0 !== (pageToken === null)) throw new Error("A hydration request has inconsistent pagination metadata.");
+  if (target.kind !== "folder-page" && target.kind !== "setting-namespace" && (pageIndex !== 0 || pageToken !== null)) throw new Error("That hydration selector cannot paginate.");
+  return { ...wire, workspaceId, deviceId, generationId, pageIndex, target, pageToken };
+}
+
 function parseBoundedRecords<T>(value: unknown, parse: (candidate: unknown) => T, message: string) {
   if (!Array.isArray(value) || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error(message);
   return value.map(parse);
@@ -201,17 +241,53 @@ function parseBoundedRecords<T>(value: unknown, parse: (candidate: unknown) => T
 
 export function parseHydrationPage(value: unknown): HydrationPage {
   if (!isRecord(value)) throw new Error("A hydration page has an unsupported shape.");
-  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "target", "nodes", "settings", "nextPageToken"], "A hydration page has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "pageIndex", "observedLogicalTime", "target", "nodes", "settings", "nextPageToken"], "A hydration page has an unsupported shape.");
   const wire = parseWireBase(value);
   const workspaceId = parseStableId(value.workspaceId, "A hydration page workspace ID is invalid.");
   const deviceId = parseStableId(value.deviceId, "A hydration page device ID is invalid.");
+  const generationId = parseStableId(value.generationId, "A hydration generation ID is invalid.");
+  const pageIndex = parseNonNegativeSafeInteger(value.pageIndex, "A hydration page index is invalid.");
+  const observedLogicalTime = parseNonNegativeSafeInteger(value.observedLogicalTime, "A hydration observed logical time is invalid.");
   const target = parseHydrationTarget(value.target);
   const nodes = parseBoundedRecords(value.nodes, parseNodeRecord, "A hydration node page is invalid.");
   const settings = parseBoundedRecords(value.settings, parseSetting, "A hydration setting page is invalid.");
   if (target.workspaceId !== workspaceId || nodes.some((node) => node.workspaceId !== workspaceId) || settings.some((setting) => setting.workspaceId !== workspaceId)) throw new Error("A hydration page mixes workspaces.");
   if (new Set(nodes.map(({ id }) => id)).size !== nodes.length) throw new Error("A hydration page contains duplicate node IDs.");
   if (new Set(settings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== settings.length) throw new Error("A hydration page contains duplicate setting keys.");
-  return { ...wire, workspaceId, deviceId, target, nodes, settings, nextPageToken: value.nextPageToken === null ? null : parsePageToken(value.nextPageToken) };
+  const nextPageToken = value.nextPageToken === null ? null : parsePageToken(value.nextPageToken);
+  const recordLogicalTimes = [
+    ...nodes.flatMap((node) => "purged" in node ? [node.logicalTime] : Object.values(node.fieldTuples).flatMap((tuple) => tuple === null ? [] : [tuple.logicalTime])),
+    ...settings.map(({ logicalTime }) => logicalTime),
+  ];
+  if (recordLogicalTimes.some((logicalTime) => logicalTime > observedLogicalTime)) throw new Error("A hydration page exceeds its observed logical time.");
+  const ordered = (identities: string[]) => identities.every((identity, index) => index === 0 || compareCanonicalStrings(identities[index - 1]!, identity) < 0);
+  switch (target.kind) {
+    case "folder-page":
+      if (settings.length > 0 || nodes.some((node) => "purged" in node || node.lifecycle.kind !== "active" || node.parentId !== target.parentId) || nodes.length > target.limit || !ordered(nodes.map(({ id }) => id))) throw new Error("A folder hydration page does not match its selector.");
+      break;
+    case "exact-nodes":
+      if (settings.length > 0 || nodes.some(({ id }) => !target.nodeIds.includes(id)) || !ordered(nodes.map(({ id }) => id)) || pageIndex !== 0 || nextPageToken !== null) throw new Error("An exact-node hydration page does not match its selector.");
+      break;
+    case "ancestry": {
+      if (settings.length > 0 || pageIndex !== 0 || nextPageToken !== null || nodes.length > target.maxDepth || nodes.length > 0 && nodes[0]!.id !== target.nodeId) throw new Error("An ancestry hydration page does not match its selector.");
+      for (let index = 1; index < nodes.length; index += 1) {
+        const child = nodes[index - 1]!;
+        const parent = nodes[index]!;
+        if ("purged" in child || child.parentId !== parent.id || !("purged" in parent) && parent.kind !== "folder") throw new Error("An ancestry hydration page is not a child-to-root chain.");
+      }
+      const last = nodes.at(-1);
+      if (last && !("purged" in last) && last.parentId !== null && nodes.some(({ id }) => id === last.parentId)) throw new Error("An ancestry hydration page contains a cycle.");
+      if (last && nodes.length < target.maxDepth && !("purged" in last) && last.parentId !== null) throw new Error("An ancestry hydration page ends before its root or depth bound.");
+      break;
+    }
+    case "exact-settings":
+      if (nodes.length > 0 || settings.some(({ namespace, key }) => namespace !== target.namespace || !target.keys.includes(key)) || !ordered(settings.map(({ key }) => key)) || pageIndex !== 0 || nextPageToken !== null) throw new Error("An exact-setting hydration page does not match its selector.");
+      break;
+    case "setting-namespace":
+      if (nodes.length > 0 || settings.some(({ namespace }) => namespace !== target.namespace) || settings.length > target.limit || !ordered(settings.map(({ key }) => key))) throw new Error("A setting-namespace hydration page does not match its selector.");
+      break;
+  }
+  return { ...wire, workspaceId, deviceId, generationId, pageIndex, observedLogicalTime, target, nodes, settings, nextPageToken };
 }
 
 function parseWorkspaceSummary(value: unknown): WorkspaceSummary {
@@ -245,7 +321,7 @@ export function parseBootstrap(value: unknown): Bootstrap {
   const rootPage = parseHydrationPage(value.rootPage);
   const workspaceSettings = parseBoundedRecords(value.workspaceSettings, parseSetting, "Bootstrap workspace settings are invalid.");
   if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || !workspaces.some(({ id }) => id === workspace.id)) throw new Error("A bootstrap workspace directory is inconsistent.");
-  if (cursor > workspace.headSequence || rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
+  if (cursor > workspace.headSequence || rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
   if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
   return { ...wire, accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
