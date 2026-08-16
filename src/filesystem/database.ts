@@ -222,6 +222,7 @@ export type FilesystemDatabase = {
   retryAccountAppOperation(operationId: string): Promise<AccountAppOutboxRecord>;
   discardAccountAppOperation(operationId: string, restoration?: AccountAppDataRestoration): Promise<void>;
   recordAccountAppAttempt(operationId: string, attemptedAt: number): Promise<void>;
+  getOrCreateDeviceId(): Promise<string>;
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
@@ -376,6 +377,13 @@ function parseStoredDevicePreferences(value: unknown) {
   assertExactKeys(value, ["id", "schemaVersion", "preferences"], "Stored device preferences have an unsupported shape.");
   if (value.id !== "singleton" || value.schemaVersion !== 1) throw new Error("Stored device preferences have an unsupported format.");
   return parseDevicePreferences(value.preferences);
+}
+
+function parseStoredDeviceIdentity(value: unknown) {
+  if (!isRecord(value)) throw new Error("Stored device identity has an unsupported shape.");
+  assertExactKeys(value, ["id", "schemaVersion", "deviceId"], "Stored device identity has an unsupported shape.");
+  if (value.id !== "device" || value.schemaVersion !== 1) throw new Error("Stored device identity has an unsupported format.");
+  return parseStableId(value.deviceId, "Stored device identity is invalid.");
 }
 
 function request<T>(value: IDBRequest<T>): Promise<T> {
@@ -1169,6 +1177,15 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         await request(transaction.objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: parsed }));
       });
     },
+
+    getOrCreateDeviceId: () => transact(db, "device-preferences", "readwrite", async (transaction) => {
+      const store = transaction.objectStore("device-preferences");
+      const value = await request(store.get("device"));
+      if (value !== undefined) return parseStoredDeviceIdentity(value);
+      const deviceId = parseStableId(randomUUID(), "The generated device ID is invalid.");
+      await request(store.add({ id: "device", schemaVersion: 1, deviceId }));
+      return deviceId;
+    }),
 
     listInstalledApps: () => transact(db, "installed-apps", "readonly", async (transaction) => {
       const values = await request(transaction.objectStore("installed-apps").getAll());

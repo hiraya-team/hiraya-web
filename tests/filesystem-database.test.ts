@@ -226,11 +226,13 @@ describe("web2 filesystem database", () => {
     database.close();
     const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
     await idbRequest(raw.transaction("device-preferences", "readwrite").objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: { ...DEFAULT_DEVICE_PREFERENCES, extra: true } }));
+    await idbRequest(raw.transaction("device-preferences", "readwrite").objectStore("device-preferences").put({ id: "device", schemaVersion: 1, deviceId: "invalid" }));
     await idbRequest(raw.transaction("window-sessions", "readwrite").objectStore("window-sessions").put({ workspaceId: WORKSPACE, session: { schemaVersion: 1, apps: "invalid" } }));
     raw.close();
 
     const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
     await expect(reopened.readDevicePreferences()).rejects.toThrow("unsupported format");
+    await expect(reopened.getOrCreateDeviceId()).rejects.toThrow("invalid");
     await expect(reopened.readWindowSession(WORKSPACE)).rejects.toThrow("unsupported format");
     reopened.close();
   });

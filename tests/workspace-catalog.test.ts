@@ -4,6 +4,7 @@ import { filesystemDatabaseName, openFilesystemDatabase } from "../src/filesyste
 import { openWorkspaceCatalog, type WorkspaceCatalogEnvironment } from "../src/platform/storage/workspace-catalog";
 import { openWorkspaceFilesystem, type FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
 import { MemoryDirectory, memoryOpfsHandle } from "./support/memory-opfs";
+import { initializeLocalWeb2Storage, LOCAL_WEB2_ACCOUNT_ID } from "../src/platform/storage/local-startup";
 
 const ACCOUNT = stableId(1);
 const DEVICE = stableId(2);
@@ -106,6 +107,22 @@ function testEnvironment(indexedDB = new IDBFactory()) {
   } satisfies WorkspaceCatalogEnvironment;
   return { environment, locks };
 }
+
+test("initializes one stable browser-local identity and workspace across tabs and reload", async () => {
+  const { environment } = testEnvironment();
+  const [first, second] = await Promise.all([initializeLocalWeb2Storage(environment), initializeLocalWeb2Storage(environment)]);
+  expect(first.accountId).toBe(LOCAL_WEB2_ACCOUNT_ID);
+  expect(second.deviceId).toBe(first.deviceId);
+  expect(second.activeWorkspaceId).toBe(first.activeWorkspaceId);
+  expect(await first.catalog.listWorkspaces()).toEqual([{ id: first.activeWorkspaceId, name: "Home", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 }]);
+  first.catalog.close();
+  second.catalog.close();
+
+  const reopened = await initializeLocalWeb2Storage(environment);
+  expect(reopened).toMatchObject({ accountId: LOCAL_WEB2_ACCOUNT_ID, deviceId: first.deviceId, activeWorkspaceId: first.activeWorkspaceId });
+  expect(await reopened.catalog.listWorkspaces()).toHaveLength(1);
+  reopened.catalog.close();
+});
 
 test("creates, renames, orders, pins, selects, and deletes workspaces across reload", async () => {
   const { environment, locks } = testEnvironment();

@@ -21,6 +21,7 @@ export type WorkspaceCatalogEnvironment = FilesystemDatabaseEnvironment & {
 export type WorkspaceCatalog = {
   listWorkspaces(): Promise<Workspace[]>;
   createWorkspace(value: { name: string; pinned?: boolean }): Promise<Workspace>;
+  ensureInitialWorkspace(name?: string): Promise<Workspace>;
   renameWorkspace(workspaceId: string, name: string): Promise<Workspace>;
   setWorkspacePreferences(preferences: Array<{ id: string; pinned: boolean }>): Promise<Workspace[]>;
   moveWorkspace(workspaceId: string, direction: -1 | 1): Promise<Workspace[]>;
@@ -85,6 +86,17 @@ export async function openWorkspaceCatalog(accountId: string, deviceId: string, 
         const wasEmpty = (await database.listWorkspaces()).length === 0;
         const workspace = await database.createWorkspace({ id: randomUUID(), name: value.name, pinned: value.pinned ?? false, deviceId: canonicalDeviceId });
         if (wasEmpty) writeActiveId(workspace.id);
+        notify();
+        return workspace;
+      }),
+      ensureInitialWorkspace: (name = "Home") => locked(async () => {
+        const current = await database.listWorkspaces();
+        if (current[0]) {
+          if (!readActiveId()) writeActiveId(current[0].id);
+          return current[0];
+        }
+        const workspace = await database.createWorkspace({ id: randomUUID(), name, pinned: true, deviceId: canonicalDeviceId });
+        writeActiveId(workspace.id);
         notify();
         return workspace;
       }),
