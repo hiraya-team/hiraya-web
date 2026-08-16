@@ -22,22 +22,40 @@ async function blobHash(value: Blob) {
 class TestLocks {
   readonly calls: Array<{ name: string; mode?: LockMode }> = [];
   depth = 0;
-  private readonly tails = new Map<string, Promise<void>>();
+  private readonly states = new Map<string, { readers: number; writer: boolean; queue: Array<{ mode: LockMode; operation: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void }> }>();
 
-  async request<T>(name: string, options: LockOptions, operation: () => Promise<T>) {
+  request<T>(name: string, options: LockOptions, operation: () => Promise<T>) {
     this.calls.push({ name, mode: options.mode });
-    const previous = this.tails.get(name) ?? Promise.resolve();
-    let release!: () => void;
-    const turn = new Promise<void>((resolve) => { release = resolve; });
-    this.tails.set(name, previous.then(() => turn));
-    await previous;
-    this.depth += 1;
-    try {
-      return await operation();
-    } finally {
-      this.depth -= 1;
-      release();
-    }
+    const state = this.states.get(name) ?? { readers: 0, writer: false, queue: [] };
+    this.states.set(name, state);
+    const result = new Promise<T>((resolve, reject) => state.queue.push({ mode: options.mode ?? "exclusive", operation, resolve: resolve as (value: unknown) => void, reject }));
+    this.drain(name);
+    return result;
+  }
+
+  private drain(name: string) {
+    const state = this.states.get(name)!;
+    if (state.writer || state.queue.length === 0 || state.readers > 0 && state.queue[0]!.mode === "exclusive") return;
+    const start = (entry: typeof state.queue[number]) => {
+      if (entry.mode === "exclusive") state.writer = true;
+      else state.readers += 1;
+      this.depth += 1;
+      void entry.operation().then((value) => {
+        this.depth -= 1;
+        if (entry.mode === "exclusive") state.writer = false;
+        else state.readers -= 1;
+        this.drain(name);
+        entry.resolve(value);
+      }, (error) => {
+        this.depth -= 1;
+        if (entry.mode === "exclusive") state.writer = false;
+        else state.readers -= 1;
+        this.drain(name);
+        entry.reject(error);
+      });
+    };
+    if (state.queue[0]!.mode === "exclusive") start(state.queue.shift()!);
+    else while (state.queue[0]?.mode === "shared" && !state.writer) start(state.queue.shift()!);
   }
 }
 
@@ -49,7 +67,7 @@ describe("workspace filesystem storage", () => {
     let nextId = 10;
     let timestamp = 1_000;
     const randomUUID = () => {
-      expect(locks.depth).toBe(1);
+      expect(locks.depth).toBe(2);
       return stableId(nextId++);
     };
     const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID, locks: locks as unknown as Pick<LockManager, "request"> };
@@ -176,10 +194,255 @@ describe("workspace filesystem storage", () => {
     expect(await blobHash((await reopened.readFile(file.id)).content)).toBe(await blobHash(raceContent));
     for (const version of await reopened.listFileVersions(file.id)) await reopened.readFileVersion(file.id, version.operationId);
 
-    expect(locks.calls).toHaveLength(26);
-    expect(locks.calls).toEqual(Array.from({ length: 26 }, () => ({ name: `hiraya-web2-v1-${ACCOUNT_HASH}-storage`, mode: "exclusive" })));
+    const accountLocks = locks.calls.filter(({ name }) => name === `hiraya-web2-v1-${ACCOUNT_HASH}-storage`);
+    const workspaceLocks = locks.calls.filter(({ name }) => name === `hiraya-web2-v1-${ACCOUNT_HASH}-workspace-${WORKSPACE}`);
+    expect(accountLocks).toEqual([...Array.from({ length: 25 }, () => ({ name: `hiraya-web2-v1-${ACCOUNT_HASH}-storage`, mode: "shared" as const })), { name: `hiraya-web2-v1-${ACCOUNT_HASH}-storage`, mode: "exclusive" }]);
+    expect(workspaceLocks).toEqual(Array.from({ length: 25 }, () => ({ name: `hiraya-web2-v1-${ACCOUNT_HASH}-workspace-${WORKSPACE}`, mode: "exclusive" })));
     expect(await getAccountOpfsRoot(ACCOUNT, memoryOpfsHandle(origin))).toBe(memoryOpfsHandle(accountRoot));
     competing.close();
     reopened.close();
+  });
+
+  test("creates a bounded multi-root forest atomically in caller order with deduplicated content", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 200;
+    const environment = { indexedDB, IDBKeyRange, now: () => 100, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Forest", pinned: true, deviceId: DEVICE });
+    database.close();
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const duplicate = new Blob(["same bytes"], { type: "text/plain" });
+    const created = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "nested-file", kind: "file", name: "Nested.txt", parentKey: "folder", position: { x: 3, y: 4 }, modifiedAt: 90, content: duplicate, mimeType: "text/markdown" },
+      { key: "folder", kind: "folder", name: "Folder", parentKey: null, position: { x: 1, y: 2 } },
+      { key: "empty", kind: "folder", name: "Empty", parentKey: "folder", position: { x: 5, y: 6 }, modifiedAt: 91 },
+      { key: "duplicate-file", kind: "file", name: "Duplicate.txt", parentKey: null, position: { x: 7, y: 8 }, content: duplicate },
+      { key: "zero", kind: "file", name: "Zero.txt", parentKey: "empty", position: { x: 9, y: 10 }, content: new Blob([], { type: "application/octet-stream" }) },
+    ] });
+
+    expect(created.map(({ name }) => name)).toEqual(["Nested.txt", "Folder", "Empty", "Duplicate.txt", "Zero.txt"]);
+    expect(created[0]).toMatchObject({ parentId: created[1]!.id, mimeType: "text/markdown", modifiedAt: 90, createdAt: 100 });
+    expect(created[2]).toMatchObject({ parentId: created[1]!.id, modifiedAt: 91, createdAt: 100 });
+    expect(created[4]).toMatchObject({ parentId: created[2]!.id, size: 0, createdAt: 100, modifiedAt: 100 });
+    const operations = await filesystem.listOperations();
+    expect(operations).toHaveLength(1);
+    expect(operations[0]!.operation).toMatchObject({ kind: "create", nodes: created.map(({ id }) => ({ id })) });
+    expect(operations[0]!.versionNodeIds).toEqual([created[0]!.id, created[3]!.id, created[4]!.id]);
+    expect(created.every(({ fieldTuples }) => fieldTuples.name.operationId === operations[0]!.operationId)).toBe(true);
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const chunkEntries = [...accountRoot.directories.get("chunks")!.directories.values()].flatMap((directory) => [...directory.files.values()]);
+    expect(chunkEntries).toHaveLength(1);
+    expect(chunkEntries[0]!.writes).toBe(1);
+    expect(await (await filesystem.readFile(created[0]!.id)).content.text()).toBe("same bytes");
+    expect(await (await filesystem.readFile(created[4]!.id)).content.text()).toBe("");
+
+    const beforeReopen = { root: await filesystem.listChildren(null), folder: await filesystem.listChildren(created[1]!.id), empty: await filesystem.listChildren(created[2]!.id), operations };
+    filesystem.close();
+    const reopened = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    expect({ root: await reopened.listChildren(null), folder: await reopened.listChildren(created[1]!.id), empty: await reopened.listChildren(created[2]!.id), operations: await reopened.listOperations() }).toEqual(beforeReopen);
+    reopened.close();
+  });
+
+  test("rejects forest metadata and destination failures before OPFS, and leaves no projection after later staging failure", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 300;
+    const environment = { indexedDB, IDBKeyRange, now: () => 200, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Preflight", pinned: true, deviceId: DEVICE });
+    database.close();
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+
+    await expect(filesystem.createForest({ parentId: null, nodes: [] })).rejects.toThrow("between 1 and 256");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "child", kind: "folder", name: "Child", parentKey: "missing", position: { x: 0, y: 0 } }] })).rejects.toThrow("parent key");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "same", kind: "folder", name: "First", parentKey: null, position: { x: 0, y: 0 } }, { key: "same", kind: "folder", name: "Second", parentKey: null, position: { x: 0, y: 0 } }] })).rejects.toThrow("duplicate keys");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "a", kind: "folder", name: "A", parentKey: "b", position: { x: 0, y: 0 } }, { key: "b", kind: "folder", name: "B", parentKey: "a", position: { x: 0, y: 0 } }] })).rejects.toThrow("cycle");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "bad-name", kind: "folder", name: " Bad", parentKey: null, position: { x: 0, y: 0 } }] })).rejects.toThrow("name");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "bad-position", kind: "folder", name: "Bad position", parentKey: null, position: { x: Number.NaN, y: 0 } }] })).rejects.toThrow("position");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "bad-time", kind: "folder", name: "Bad time", parentKey: null, position: { x: 0, y: 0 }, modifiedAt: -1 }] })).rejects.toThrow("time");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "bad-mime", kind: "file", name: "Bad MIME", parentKey: null, position: { x: 0, y: 0 }, content: new Blob(["bytes"]), mimeType: "not-a-mime" }] })).rejects.toThrow("MIME");
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "file", kind: "file", name: "File", parentKey: null, position: { x: 0, y: 0 }, content: "not a blob" as unknown as Blob }] })).rejects.toThrow("Blob");
+    await expect(filesystem.createForest({ parentId: stableId(999), nodes: [{ key: "file", kind: "file", name: "File", parentKey: null, position: { x: 0, y: 0 }, content: new Blob(["bytes"]) }] })).rejects.toThrow("active folder");
+    const existing = await filesystem.createFolder({ name: "Existing" });
+    await expect(filesystem.createForest({ parentId: null, nodes: [{ key: "file", kind: "file", name: "existing", parentKey: null, position: { x: 0, y: 0 }, content: new Blob(["bytes"]) }] })).rejects.toThrow("sibling");
+    await expect(filesystem.createForest({ parentId: null, nodes: Array.from({ length: 257 }, (_, index) => ({ key: `${index}`, kind: "folder" as const, name: `Folder ${index}`, parentKey: null, position: { x: 0, y: 0 } })) })).rejects.toThrow("between 1 and 256");
+    expect(accountRoot.directoryReads).toBe(0);
+    expect(accountRoot.directories.has("chunks")).toBe(false);
+
+    const collisionIds = [existing.id, stableId(9_998)];
+    const collisionFilesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, { ...environment, randomUUID: () => collisionIds.shift()! });
+    await expect(collisionFilesystem.createFile({ name: "Collision.txt", content: new Blob(["must not stage"]) })).rejects.toThrow("already exists");
+    expect(accountRoot.directories.has("chunks")).toBe(false);
+    collisionFilesystem.close();
+
+    const first = new Blob(["first"]);
+    const second = new Blob(["second"]);
+    const firstHash = await blobHash(first);
+    const secondHash = await blobHash(second);
+    const chunks = accountRoot.directory("chunks");
+    const failingShard = chunks.directory(secondHash.slice(0, 2));
+    failingShard.beforeFileClose = async (name) => { if (name === secondHash) throw new Error("Injected later staging failure"); };
+    await expect(filesystem.createForest({ parentId: null, nodes: [
+      { key: "first", kind: "file", name: "First.txt", parentKey: null, position: { x: 0, y: 0 }, content: first },
+      { key: "second", kind: "file", name: "Second.txt", parentKey: null, position: { x: 1, y: 1 }, content: second },
+    ] })).rejects.toThrow("Injected later staging failure");
+    expect(memoryChunk(accountRoot, firstHash)?.writes).toBe(1);
+    expect((await filesystem.listChildren(null)).map(({ id }) => id)).toEqual([existing.id]);
+    expect(await filesystem.listOperations()).toHaveLength(1);
+    const verification = await openFilesystemDatabase(ACCOUNT, environment);
+    expect((await verification.listWorkspaces())[0]!.localRevision).toBe(1);
+    verification.close();
+    filesystem.close();
+  });
+
+  test("copies nested and empty roots without chunk rewrites and verifies source chunks after destination preflight", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 400;
+    let timestamp = 300;
+    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Copy", pinned: true, deviceId: DEVICE });
+    database.close();
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const shared = new Blob(["copy bytes"], { type: "text/plain" });
+    const source = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Root", parentKey: null, position: { x: 1, y: 2 } },
+      { key: "nested", kind: "folder", name: "Nested", parentKey: "root", position: { x: 3, y: 4 } },
+      { key: "nested-file", kind: "file", name: "Nested.txt", parentKey: "nested", position: { x: 5, y: 6 }, content: shared, mimeType: "text/markdown" },
+      { key: "duplicate", kind: "file", name: "Duplicate.txt", parentKey: "root", position: { x: 7, y: 8 }, content: shared },
+      { key: "empty", kind: "folder", name: "Empty", parentKey: null, position: { x: 9, y: 10 } },
+    ] });
+    const destination = await filesystem.createFolder({ name: "Destination" });
+    const sourceByName = new Map(source.map((node) => [node.name, node]));
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const hash = await blobHash(shared);
+    const chunk = memoryChunk(accountRoot, hash)!;
+    const writesBeforeCopy = chunk.writes;
+    const readsBeforeCopy = chunk.reads;
+    timestamp = 500;
+    const copied = await filesystem.copyNodes({ parentId: destination.id, roots: [
+      { nodeId: sourceByName.get("Root")!.id, name: "Root copy", position: { x: 20, y: 21 } },
+      { nodeId: sourceByName.get("Empty")!.id, name: "Empty copy", position: { x: 22, y: 23 } },
+    ] });
+    const copiedByName = new Map(copied.map((node) => [node.name, node]));
+
+    expect(new Set(copied.map(({ id }) => id)).size).toBe(5);
+    expect(copied.every(({ id }) => !source.some((node) => node.id === id))).toBe(true);
+    expect(copied.every(({ createdAt, modifiedAt }) => createdAt === 500 && modifiedAt === 500)).toBe(true);
+    expect(copiedByName.get("Root copy")).toMatchObject({ parentId: destination.id, position: { x: 20, y: 21 } });
+    expect(copiedByName.get("Empty copy")).toMatchObject({ parentId: destination.id, position: { x: 22, y: 23 } });
+    expect(copiedByName.get("Nested")).toMatchObject({ name: "Nested", position: sourceByName.get("Nested")!.position, parentId: copiedByName.get("Root copy")!.id });
+    expect(copiedByName.get("Nested.txt")).toMatchObject({ parentId: copiedByName.get("Nested")!.id, position: sourceByName.get("Nested.txt")!.position, mimeType: "text/markdown", manifestHash: (sourceByName.get("Nested.txt") as typeof copied[number] & { manifestHash: string }).manifestHash });
+    expect(copiedByName.get("Duplicate.txt")).toMatchObject({ parentId: copiedByName.get("Root copy")!.id, position: sourceByName.get("Duplicate.txt")!.position });
+    expect(chunk.writes).toBe(writesBeforeCopy);
+    expect(chunk.reads).toBe(readsBeforeCopy + 1);
+    expect(await (await filesystem.readFile(copiedByName.get("Nested.txt")!.id)).content.text()).toBe("copy bytes");
+    const copyOperation = (await filesystem.listOperations())[0]!;
+    expect(copyOperation.operation).toMatchObject({ kind: "copy", sourceNodeIds: [sourceByName.get("Root")!.id, sourceByName.get("Empty")!.id] });
+    expect((await filesystem.listFileVersions(copiedByName.get("Nested.txt")!.id)).map(({ operationId }) => operationId)).toEqual([copyOperation.operationId]);
+
+    const revision = copyOperation.localRevision;
+    const readsBeforeCollision = chunk.reads;
+    await expect(filesystem.copyNodes({ parentId: destination.id, roots: [{ nodeId: sourceByName.get("Root")!.id, name: "root COPY", position: { x: 0, y: 0 } }] })).rejects.toThrow("sibling");
+    expect(chunk.reads).toBe(readsBeforeCollision);
+    chunk.content = new Blob(["corrupt"]);
+    await expect(filesystem.copyNodes({ parentId: destination.id, roots: [{ nodeId: sourceByName.get("Root")!.id, name: "Corrupt attempt", position: { x: 0, y: 0 } }] })).rejects.toThrow("does not match");
+    accountRoot.directories.get("chunks")!.directories.get(hash.slice(0, 2))!.files.delete(hash);
+    await expect(filesystem.copyNodes({ parentId: destination.id, roots: [{ nodeId: sourceByName.get("Root")!.id, name: "Missing attempt", position: { x: 0, y: 0 } }] })).rejects.toThrow();
+    expect((await filesystem.listOperations())[0]!.localRevision).toBe(revision);
+    expect(chunk.writes).toBe(writesBeforeCopy);
+    filesystem.close();
+  });
+
+  test("preflights missing, trashed, overlapping, deep, and 257-node copies without OPFS", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 2_000;
+    const environment = { indexedDB, IDBKeyRange, now: () => 600, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Copy validation", pinned: true, deviceId: DEVICE });
+    database.close();
+    const filesystem = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const basic = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Basic", parentKey: null, position: { x: 0, y: 0 } },
+      { key: "child", kind: "folder", name: "Child", parentKey: "root", position: { x: 0, y: 0 } },
+      { key: "trashed", kind: "folder", name: "Trashed", parentKey: null, position: { x: 0, y: 0 } },
+    ] });
+    await filesystem.trashNodes([basic[2]!.id]);
+    const chain = await filesystem.createForest({ parentId: null, nodes: Array.from({ length: 65 }, (_, index) => ({ key: `${index}`, kind: "folder" as const, name: `Depth ${index}`, parentKey: index === 0 ? null : `${index - 1}`, position: { x: 0, y: 0 } })) });
+    const depthSource = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Depth source", parentKey: null, position: { x: 0, y: 0 } },
+      { key: "child", kind: "folder", name: "Depth child", parentKey: "root", position: { x: 0, y: 0 } },
+    ] });
+    const large = await filesystem.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Large", parentKey: null, position: { x: 0, y: 0 } },
+      ...Array.from({ length: 255 }, (_, index) => ({ key: `child-${index}`, kind: "folder" as const, name: `Large child ${index}`, parentKey: "root", position: { x: 0, y: 0 } })),
+    ] });
+    await filesystem.createFolder({ name: "Large overflow", parentId: large[0]!.id });
+    const revision = (await filesystem.listOperations())[0]!.localRevision;
+
+    await expect(filesystem.copyNodes({ parentId: null, roots: [{ nodeId: stableId(999), name: "Missing", position: { x: 0, y: 0 } }] })).rejects.toThrow("active source roots");
+    await expect(filesystem.copyNodes({ parentId: null, roots: [{ nodeId: basic[2]!.id, name: "Trashed copy", position: { x: 0, y: 0 } }] })).rejects.toThrow("active source roots");
+    await expect(filesystem.copyNodes({ parentId: null, roots: [
+      { nodeId: basic[0]!.id, name: "Basic copy", position: { x: 0, y: 0 } },
+      { nodeId: basic[1]!.id, name: "Child copy", position: { x: 0, y: 0 } },
+    ] })).rejects.toThrow("overlap");
+    await expect(filesystem.copyNodes({ parentId: chain.at(-1)!.id, roots: [{ nodeId: depthSource[0]!.id, name: "Too deep", position: { x: 0, y: 0 } }] })).rejects.toThrow("too deep");
+    await expect(filesystem.copyNodes({ parentId: null, roots: Array.from({ length: 257 }, (_, index) => ({ nodeId: stableId(3_000 + index), name: `Root ${index}`, position: { x: 0, y: 0 } })) })).rejects.toThrow("between 1 and 256");
+    await expect(filesystem.copyNodes({ parentId: null, roots: [{ nodeId: large[0]!.id, name: "Large copy", position: { x: 0, y: 0 } }] })).rejects.toThrow("too large");
+    expect((await filesystem.listOperations())[0]!.localRevision).toBe(revision);
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    expect(accountRoot.directories.has("chunks")).toBe(false);
+    filesystem.close();
+  });
+
+  test("allows unrelated workspace mutations while account cleanup remains coordinated", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    const otherWorkspace = stableId(4);
+    let nextId = 5_000;
+    const environment = { indexedDB, IDBKeyRange, now: () => 700, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "First", pinned: true, deviceId: DEVICE });
+    await database.createWorkspace({ id: otherWorkspace, name: "Second", pinned: false, deviceId: DEVICE });
+    database.close();
+    const first = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const second = await openWorkspaceFilesystem(ACCOUNT, otherWorkspace, environment);
+    const file = await first.createFile({ name: "First.txt", content: new Blob(["first"]) });
+    const next = new Blob(["next"]);
+    const hash = await blobHash(next);
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const chunks = accountRoot.directories.get("chunks")!;
+    const shard = chunks.directories.get(hash.slice(0, 2)) ?? chunks.directory(hash.slice(0, 2));
+    let staged!: () => void;
+    const stagedPromise = new Promise<void>((resolve) => { staged = resolve; });
+    let release!: () => void;
+    const releasePromise = new Promise<void>((resolve) => { release = resolve; });
+    shard.beforeFileClose = async (name) => {
+      if (name !== hash) return;
+      staged();
+      await releasePromise;
+    };
+    const write = first.writeFile(file.id, next, { expectedContentTuple: file.fieldTuples.content! });
+    await stagedPromise;
+    const otherMutation = second.createFolder({ name: "Unblocked" });
+    try {
+      const progressed = await Promise.race([otherMutation.then(() => true), new Promise<false>((resolve) => setTimeout(() => resolve(false), 1_000))]);
+      expect(progressed).toBe(true);
+    } finally {
+      release();
+    }
+    await Promise.all([write, otherMutation]);
+    expect((await second.listChildren(null)).map(({ name }) => name).includes("Unblocked")).toBe(true);
+    first.close();
+    second.close();
   });
 });

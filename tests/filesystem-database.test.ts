@@ -73,6 +73,10 @@ function createDraft(operationId: string, nodes: ReturnType<typeof folder | type
   return { schemaVersion: 1, kind: "create", operationId, workspaceId, deviceId: DEVICE, nodes };
 }
 
+function copyDraft(operationId: string, sourceNodeIds: string[], nodes: ReturnType<typeof folder | typeof file>[]): Extract<WorkspaceOperationDraft, { kind: "copy" }> {
+  return { schemaVersion: 1, kind: "copy", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, sourceNodeIds, nodes };
+}
+
 function writeDraft(operationId: string, nodeId: string, manifest: Awaited<ReturnType<typeof verifiedManifest>>, modifiedAt: number): Extract<WorkspaceOperationDraft, { kind: "write" }> {
   return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, mimeType: "text/markdown", size: manifest.manifest.size, manifestHash: manifest.hash, modifiedAt };
 }
@@ -342,7 +346,7 @@ describe("web2 filesystem database", () => {
 
     await expect(database.commitOperation({ operation: versionDraft(stableId(150), nodeId, inverse!), intent: "forward", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("forward operation");
     await expect(database.commitOperation({ operation: versionDraft(stableId(151), nodeId, inverse!), intent: "undo", compensatesOperationId: stableId(999), expectedContentTuple: writeTuple })).rejects.toThrow("existing operation");
-    await expect(database.commitOperation({ operation: versionDraft(stableId(152), nodeId, inverse!), intent: "undo", compensatesOperationId: createId, expectedContentTuple: writeTuple })).rejects.toThrow("Create undo");
+    await expect(database.commitOperation({ operation: versionDraft(stableId(152), nodeId, inverse!), intent: "undo", compensatesOperationId: createId, expectedContentTuple: writeTuple })).rejects.toThrow("Create and copy undo");
     await expect(database.commitOperation({ operation: versionDraft(stableId(153), nodeId, inverse!), intent: "redo", compensatesOperationId: writeId, expectedContentTuple: writeTuple })).rejects.toThrow("undo inverse");
 
     const otherWorkspace = stableId(154);
@@ -398,6 +402,72 @@ describe("web2 filesystem database", () => {
     await expect(database.commitOperation({ operation: { ...operation, nodes: [folder(stableId(81), "Changed")] } })).rejects.toThrow("cannot be reused");
     expect((await database.listWorkspaces())[0]!.localRevision).toBe(1);
     database.close();
+  });
+
+  test("copies complete source forests with strict history, dynamic identities, replay, and reopen", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 650);
+    const manifest = await verifiedManifest(3, 12);
+    const sourceRootId = stableId(170);
+    const sourceFolderId = stableId(171);
+    const sourceFileId = stableId(172);
+    const emptyRootId = stableId(173);
+    const destinationId = stableId(174);
+    const sourceRoot = folder(sourceRootId, "Source");
+    const sourceFolder = folder(sourceFolderId, "Nested", sourceRootId);
+    const sourceFile = file(sourceFileId, "Notes.txt", manifest, sourceFolderId);
+    const emptyRoot = folder(emptyRootId, "Empty");
+    await database.commitOperation({ operation: createDraft(stableId(175), [sourceRoot, sourceFolder, sourceFile, emptyRoot, folder(destinationId, "Destination")]), manifests: [manifest] });
+
+    const copiedRootId = stableId(176);
+    const copiedFolderId = stableId(177);
+    const copiedFileId = stableId(178);
+    const copiedEmptyId = stableId(179);
+    const copyId = stableId(180);
+    const nodes = [
+      { ...sourceRoot, id: copiedRootId, name: "Source copy", parentId: destinationId, position: { x: 90, y: 91 }, createdAt: 77, modifiedAt: 77 },
+      { ...sourceFolder, id: copiedFolderId, parentId: copiedRootId, createdAt: 77, modifiedAt: 77 },
+      { ...sourceFile, id: copiedFileId, parentId: copiedFolderId, createdAt: 77, modifiedAt: 77 },
+      { ...emptyRoot, id: copiedEmptyId, name: "Empty copy", parentId: destinationId, position: { x: 92, y: 93 }, createdAt: 77, modifiedAt: 77 },
+    ];
+    const operation = copyDraft(copyId, [sourceRootId, emptyRootId], nodes);
+    const copied = await database.commitOperation({ operation });
+
+    expect(copied).toMatchObject({ inverse: { kind: "copy", rootNodeIds: [copiedRootId, copiedEmptyId], sourceNodeIds: [sourceRootId, sourceFolderId, sourceFileId, emptyRootId].sort(), sourceFileNodeIds: [sourceFileId] }, versionNodeIds: [copiedFileId], localRevision: 2 });
+    expect(copied.affectedIdentities).toEqual([...copied.affectedIdentities].sort());
+    for (const id of [sourceRootId, sourceFolderId, sourceFileId, emptyRootId]) expect(copied.affectedIdentities).toContain(`node:${WORKSPACE}:${id}`);
+    expect(copied.affectedIdentities).toContain(`content:${WORKSPACE}:${sourceFileId}`);
+    expect(await database.getNode(sourceFileId)).toMatchObject(sourceFile);
+    expect(await database.getNode(copiedRootId)).toMatchObject({ name: "Source copy", parentId: destinationId, position: { x: 90, y: 91 }, createdAt: 77, modifiedAt: 77 });
+    expect(await database.getNode(copiedFolderId)).toMatchObject({ name: sourceFolder.name, parentId: copiedRootId, position: sourceFolder.position, createdAt: 77, modifiedAt: 77 });
+    expect(await database.getNode(copiedFileId)).toMatchObject({ name: sourceFile.name, parentId: copiedFolderId, mimeType: sourceFile.mimeType, size: sourceFile.size, manifestHash: sourceFile.manifestHash, createdAt: 77, modifiedAt: 77 });
+    expect((await database.listFileVersions(WORKSPACE, copiedFileId)).map(({ operationId, current }) => ({ operationId, current }))).toEqual([{ operationId: copyId, current: true }]);
+    const nextManifest = await verifiedManifest(4, 13);
+    const writeId = stableId(184);
+    await commitWrite(database, writeDraft(writeId, copiedFileId, nextManifest, 78), [nextManifest]);
+    expect((await database.listFileVersions(WORKSPACE, copiedFileId)).map(({ operationId, current }) => ({ operationId, current }))).toEqual([
+      { operationId: writeId, current: true },
+      { operationId: copyId, current: false },
+    ]);
+    expect(await database.commitOperation({ operation })).toEqual(copied);
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(3);
+
+    const beforeReopen = {
+      nodes: await Promise.all(nodes.map(({ id }) => database.getNode(id))),
+      operations: await database.listOperations(WORKSPACE),
+      versions: await database.listFileVersions(WORKSPACE, copiedFileId),
+    };
+    database.close();
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect({
+      nodes: await Promise.all(nodes.map(({ id }) => reopened.getNode(id))),
+      operations: await reopened.listOperations(WORKSPACE),
+      versions: await reopened.listFileVersions(WORKSPACE, copiedFileId),
+    }).toEqual(beforeReopen);
+    await reopened.commitOperation({ operation: { ...operationBase(stableId(181)), kind: "trash", nodeIds: [copiedRootId], trashedAt: 80 } });
+    await reopened.commitOperation({ operation: { ...operationBase(stableId(182)), kind: "purge", nodeIds: [copiedRootId] } });
+    await expect(reopened.commitOperation({ operation: createDraft(stableId(183), [folder(copiedFileId, "Reused")]) })).rejects.toThrow("retained operation history");
+    reopened.close();
   });
 
   test("lists the current version first and caps older local versions at twenty", async () => {
@@ -563,8 +633,8 @@ describe("web2 filesystem database", () => {
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(241)), kind: "move", nodeIds: [firstId], parentId: childId, modifiedAt: 22 } })).rejects.toThrow("descendant");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(242)), kind: "move", nodeIds: [firstId, childId], parentId: null, modifiedAt: 22 } })).rejects.toThrow("overlap");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(246)), kind: "rename", nodeId: secondId, name: "Changed", modifiedAt: 22 }, intent: "undo", compensatesOperationId: stableId(235) } as never)).rejects.toThrow("forward intent only");
-    await expect(database.commitOperation({ operation: { ...operationBase(stableId(247)), kind: "copy", sourceNodeIds: [firstId], nodes: [folder(stableId(248), "Copy")] } } as never)).rejects.toThrow("Copy and transfer");
-    await expect(database.commitOperation({ operation: { ...operationBase(stableId(249)), kind: "transfer", nodeIds: [firstId], destinationWorkspaceId: stableId(250), parentId: null, modifiedAt: 22 } } as never)).rejects.toThrow("Copy and transfer");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(247)), kind: "copy", sourceNodeIds: [firstId], nodes: [folder(stableId(248), "Copy")] } })).rejects.toThrow("complete source forest");
+    await expect(database.commitOperation({ operation: { ...operationBase(stableId(249)), kind: "transfer", nodeIds: [firstId], destinationWorkspaceId: stableId(250), parentId: null, modifiedAt: 22 } } as never)).rejects.toThrow("Transfer operations");
 
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(243)), kind: "position", positions: [{ nodeId: firstId, position: { x: 100, y: 100 } }, { nodeId: stableId(998), position: { x: 0, y: 0 } }] } })).rejects.toThrow("active nodes");
     expect(await database.getNode(firstId)).toEqual(beforeFirst);
@@ -585,6 +655,113 @@ describe("web2 filesystem database", () => {
     await database.commitOperation({ operation: { ...operationBase(stableId(501)), kind: "move", nodeIds: [overflowParentId], parentId: stableId(363), modifiedAt: 24 } });
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(502)), kind: "restore", nodeIds: [overflowChildId], destination: "original", modifiedAt: 25 } })).rejects.toThrow("too deep");
     expect(await database.getNode(secondId)).toEqual(beforeSecond);
+    database.close();
+  });
+
+  test("rejects malformed, unavailable, overlapping, colliding, and too-deep copy snapshots atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 1_025);
+    const manifest = await verifiedManifest(2, 13);
+    const sourceRootId = stableId(520);
+    const sourceFileId = stableId(521);
+    const destinationId = stableId(522);
+    const collisionId = stableId(523);
+    const trashedId = stableId(524);
+    const sourceRoot = folder(sourceRootId, "Source");
+    const sourceFile = file(sourceFileId, "File.txt", manifest, sourceRootId);
+    await database.commitOperation({ operation: createDraft(stableId(525), [sourceRoot, sourceFile, folder(destinationId, "Destination"), folder(collisionId, "Taken", destinationId), folder(trashedId, "Trashed")]), manifests: [manifest] });
+    await database.commitOperation({ operation: { ...operationBase(stableId(526)), kind: "trash", nodeIds: [trashedId], trashedAt: 1 } });
+    const otherWorkspace = stableId(527);
+    const otherRoot = stableId(528);
+    await database.createWorkspace({ id: otherWorkspace, name: "Other", pinned: false, deviceId: DEVICE });
+    await database.commitOperation({ operation: createDraft(stableId(529), [folder(otherRoot, "Other source")], otherWorkspace) });
+    const chain = Array.from({ length: 65 }, (_, index) => folder(stableId(600 + index), `Copy depth ${index}`, index === 0 ? null : stableId(599 + index)));
+    await database.commitOperation({ operation: createDraft(stableId(665), chain) });
+    const revision = (await database.listWorkspaces())[0]!.localRevision;
+    const snapshot = (rootId: string, fileId: string, name = "Source copy") => [
+      { ...sourceRoot, id: rootId, name, parentId: destinationId, createdAt: 88, modifiedAt: 88 },
+      { ...sourceFile, id: fileId, parentId: rootId, createdAt: 88, modifiedAt: 88 },
+    ];
+
+    await expect(database.commitOperation({ operation: copyDraft(stableId(530), [sourceRootId], snapshot(stableId(531), stableId(532)).slice(0, 1)) })).rejects.toThrow("complete source forest");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(533), [sourceRootId], [
+      snapshot(stableId(534), stableId(535))[0]!,
+      { ...folder(stableId(535), "Invented", stableId(534)), createdAt: 88, modifiedAt: 88 },
+    ]) })).rejects.toThrow("source snapshot");
+    const changed = snapshot(stableId(536), stableId(537));
+    changed[1] = { ...changed[1]!, position: { x: 999, y: 4 } };
+    await expect(database.commitOperation({ operation: copyDraft(stableId(538), [sourceRootId], changed) })).rejects.toThrow("source snapshot");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(539), [stableId(999)], [{ ...folder(stableId(540), "Missing"), createdAt: 88, modifiedAt: 88 }]) })).rejects.toThrow("active source roots");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(541), [trashedId], [{ ...folder(stableId(542), "Trashed copy"), parentId: destinationId, createdAt: 88, modifiedAt: 88 }]) })).rejects.toThrow("active source roots");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(543), [otherRoot], [{ ...folder(stableId(544), "Cross-workspace"), parentId: destinationId, createdAt: 88, modifiedAt: 88 }]) })).rejects.toThrow("active source roots");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(545), [sourceRootId, sourceFileId], [
+      ...snapshot(stableId(546), stableId(547)),
+      { ...sourceFile, id: stableId(548), name: "File root copy.txt", parentId: destinationId, createdAt: 88, modifiedAt: 88 },
+    ]) })).rejects.toThrow("overlap");
+    await expect(database.commitOperation({ operation: copyDraft(stableId(549), [sourceRootId], snapshot(stableId(550), stableId(551), "taken")) })).rejects.toThrow("sibling");
+    const tooDeep = snapshot(stableId(552), stableId(553));
+    tooDeep[0] = { ...tooDeep[0]!, parentId: stableId(664) };
+    await expect(database.commitOperation({ operation: copyDraft(stableId(554), [sourceRootId], tooDeep) })).rejects.toThrow("too deep");
+
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(revision);
+    expect(await database.getNode(stableId(531))).toBeUndefined();
+    expect(await database.getOperation(stableId(554))).toBeUndefined();
+    database.close();
+  });
+
+  test("bounds authoritative copy expansion at 256 nodes before projection", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const rootId = stableId(700);
+    const firstBatch = [folder(rootId, "Large source"), ...Array.from({ length: 255 }, (_, index) => folder(stableId(701 + index), `Child ${index}`, rootId))];
+    await database.commitOperation({ operation: createDraft(stableId(956), firstBatch) });
+    await database.commitOperation({ operation: createDraft(stableId(957), [folder(stableId(958), "Overflow child", rootId)]) });
+    const revision = (await database.listWorkspaces())[0]!.localRevision;
+    await expect(database.commitOperation({ operation: copyDraft(stableId(959), [rootId], [{ ...folder(stableId(960), "Large copy"), createdAt: 20, modifiedAt: 20 }]) })).rejects.toThrow("too large");
+    const oversized = Array.from({ length: 257 }, (_, index) => ({ ...folder(stableId(1_000 + index), `Copy ${index}`), createdAt: 20, modifiedAt: 20 }));
+    await expect(database.commitOperation({ operation: copyDraft(stableId(1_300), [rootId], oversized) })).rejects.toThrow("batch");
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(revision);
+    expect(await database.getNode(stableId(960))).toBeUndefined();
+    database.close();
+  });
+
+  test("rolls back copy projection and rejects malformed retained copy identities", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 1_040);
+    const manifest = await verifiedManifest(1, 14);
+    const sourceId = stableId(1_400);
+    const sourceFileId = stableId(1_401);
+    const source = folder(sourceId, "Source");
+    const sourceFile = file(sourceFileId, "File.txt", manifest, sourceId);
+    await database.commitOperation({ operation: createDraft(stableId(1_402), [source, sourceFile]), manifests: [manifest] });
+    const copiedId = stableId(1_403);
+    const copiedFileId = stableId(1_404);
+    const operationId = stableId(1_405);
+    const operation = copyDraft(operationId, [sourceId], [
+      { ...source, id: copiedId, name: "Copy", createdAt: 30, modifiedAt: 30 },
+      { ...sourceFile, id: copiedFileId, parentId: copiedId, createdAt: 30, modifiedAt: 30 },
+    ]);
+    const revision = (await database.listWorkspaces())[0]!.localRevision;
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (value, key) {
+      if (this.name === "operations" && (value as { operationId?: unknown }).operationId === operationId) throw new DOMException("Injected copy failure", "AbortError");
+      return key === undefined ? originalAdd.call(this, value) : originalAdd.call(this, value, key);
+    };
+    try {
+      await expect(database.commitOperation({ operation })).rejects.toThrow("Injected copy failure");
+    } finally {
+      IDBObjectStore.prototype.add = originalAdd;
+    }
+    expect(await database.getNode(copiedId)).toBeUndefined();
+    expect(await database.getNode(copiedFileId)).toBeUndefined();
+    expect(await database.getOperation(operationId)).toBeUndefined();
+    expect((await database.listWorkspaces())[0]!.localRevision).toBe(revision);
+
+    const committed = await database.commitOperation({ operation: { ...operation, operationId: stableId(1_406) } });
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("operations", "readwrite").objectStore("operations").put({ ...committed, affectedIdentities: committed.affectedIdentities.map((identity) => identity === `content:${WORKSPACE}:${sourceFileId}` ? `content:${WORKSPACE}:${stableId(9_999)}` : identity).sort() }));
+    raw.close();
+    await expect(database.getOperation(committed.operationId)).rejects.toThrow("derived metadata");
     database.close();
   });
 

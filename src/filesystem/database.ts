@@ -80,7 +80,7 @@ export type SyncState = {
   lastLocalLogicalTime: number;
 };
 
-type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "rename" | "move" | "position" | "trash" | "restore" | "purge" | "set" | "set-many" }>;
+type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "trash" | "restore" | "purge" | "set" | "set-many" }>;
 export type WorkspaceOperationDraft = {
   [Kind in LocallyCommittableOperation["kind"]]: Omit<Extract<LocallyCommittableOperation, { kind: Kind }>, "logicalTime">;
 }[LocallyCommittableOperation["kind"]];
@@ -89,6 +89,7 @@ export type OperationIntent = "forward" | "undo" | "redo" | "restore";
 type PreviousSetting = { exists: false } | { exists: true; value: JsonValue };
 export type OperationInverse =
   | { kind: "create"; rootNodeIds: string[] }
+  | { kind: "copy"; rootNodeIds: string[]; sourceNodeIds: string[]; sourceFileNodeIds: string[] }
   | { kind: "write"; nodeId: string; mimeType: string; size: number; manifestHash: string; modifiedAt: number }
   | { kind: "rename"; nodeId: string; name: string; modifiedAt: number }
   | { kind: "move"; roots: Array<{ nodeId: string; parentId: string | null; modifiedAt: number }> }
@@ -153,7 +154,9 @@ export type FilesystemDatabase = {
   createWorkspace(value: { id: string; name: string; pinned: boolean; deviceId: string }): Promise<Workspace>;
   listWorkspaces(): Promise<Workspace[]>;
   getNode(id: string): Promise<Node | undefined>;
-  listChildren(workspaceId: string, parentId: string | null): Promise<Node[]>;
+  listChildren(workspaceId: string, parentId: string | null, limit?: number): Promise<Node[]>;
+  assertChildNamesAvailable(workspaceId: string, parentId: string | null, names: string[]): Promise<void>;
+  assertNodeIdsAvailable(ids: string[]): Promise<void>;
   listTrash(workspaceId: string): Promise<Node[]>;
   getSetting(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettings(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
@@ -305,6 +308,14 @@ function parseOperationInverse(value: unknown): OperationInverse {
     case "create":
       assertExactKeys(value, ["kind", "rootNodeIds"], "Stored operation inverse metadata has an unsupported shape.");
       return { kind: "create", rootNodeIds: parseStoredIds(value.rootNodeIds, "Stored create inverse roots are invalid.") };
+    case "copy": {
+      assertExactKeys(value, ["kind", "rootNodeIds", "sourceNodeIds", "sourceFileNodeIds"], "Stored operation inverse metadata has an unsupported shape.");
+      const rootNodeIds = parseStoredIds(value.rootNodeIds, "Stored copy inverse roots are invalid.");
+      const sourceNodeIds = parseStoredIds(value.sourceNodeIds, "Stored copy source node IDs are invalid.");
+      const sourceFileNodeIds = parseStoredIds(value.sourceFileNodeIds, "Stored copy source file IDs are invalid.", true);
+      if (!isSorted(sourceNodeIds) || !isSorted(sourceFileNodeIds) || sourceFileNodeIds.some((id) => !sourceNodeIds.includes(id))) throw new Error("Stored copy source IDs are invalid.");
+      return { kind: "copy", rootNodeIds, sourceNodeIds, sourceFileNodeIds };
+    }
     case "write":
       assertExactKeys(value, ["kind", "nodeId", "mimeType", "size", "manifestHash", "modifiedAt"], "Stored operation inverse metadata has an unsupported shape.");
       return { kind: "write", nodeId: parseStableId(value.nodeId, "A stored write inverse node ID is invalid."), mimeType: parseMimeType(value.mimeType, "A stored write inverse MIME type is invalid."), size: parseNonNegativeSafeInteger(value.size, "A stored write inverse size is invalid."), manifestHash: parseSha256(value.manifestHash, "A stored write inverse manifest hash is invalid."), modifiedAt: parseNonNegativeSafeInteger(value.modifiedAt, "A stored write inverse modification time is invalid.") };
@@ -386,11 +397,11 @@ function parseOperationInverse(value: unknown): OperationInverse {
 }
 
 function operationVersionNodeIds(operation: LocallyCommittableOperation) {
-  if (operation.kind === "create") return operation.nodes.filter((node) => node.kind === "file").map(({ id }) => id);
+  if (operation.kind === "create" || operation.kind === "copy") return operation.nodes.filter((node) => node.kind === "file").map(({ id }) => id);
   return operation.kind === "write" ? [operation.nodeId] : [];
 }
 
-function createRootIds(operation: Extract<WorkspaceOperation, { kind: "create" }>) {
+function createdRootIds(operation: Extract<WorkspaceOperation, { kind: "create" | "copy" }>) {
   const ids = new Set(operation.nodes.map(({ id }) => id));
   return operation.nodes.filter(({ parentId }) => parentId === null || !ids.has(parentId)).map(({ id }) => id);
 }
@@ -402,7 +413,12 @@ function equalValues(left: unknown, right: unknown) {
 function localAffectedIdentities(operation: LocallyCommittableOperation, inverse: OperationInverse) {
   const affected = new Set(operationAffectedIdentities(operation));
   const node = (nodeId: string) => affected.add(`node:${operation.workspaceId}:${nodeId}`);
+  const content = (nodeId: string) => affected.add(`content:${operation.workspaceId}:${nodeId}`);
   const folder = (parentId: string | null) => affected.add(`folder:${operation.workspaceId}:${parentId ?? "root"}`);
+  if (inverse.kind === "copy") {
+    inverse.sourceNodeIds.forEach(node);
+    inverse.sourceFileNodeIds.forEach(content);
+  }
   switch (inverse.kind) {
     case "move":
       for (const root of inverse.roots) { node(root.nodeId); folder(root.parentId); folder(operation.kind === "move" ? operation.parentId : null); }
@@ -433,7 +449,7 @@ function parseStoredOperation(value: unknown): StoredOperation {
   assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "stateKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
   if (value.stateKind !== "pending") throw new Error("A stored operation state is invalid.");
   const operation = parseWorkspaceOperation(value.operation);
-  if (operation.kind === "copy" || operation.kind === "transfer") throw new Error("A stored operation kind is unsupported by this database slice.");
+  if (operation.kind === "transfer") throw new Error("A stored operation kind is unsupported by this database slice.");
   const stored = {
     operationId: parseStableId(value.operationId, "A stored operation ID is invalid."),
     workspaceId: parseStableId(value.workspaceId, "A stored operation workspace ID is invalid."),
@@ -454,8 +470,13 @@ function parseStoredOperation(value: unknown): StoredOperation {
   if (!equalValues(stored.affectedIdentities, localAffectedIdentities(operation, stored.inverse)) || !equalValues(stored.versionNodeIds, operationVersionNodeIds(operation))) throw new Error("Stored operation derived metadata is inconsistent.");
   switch (operation.kind) {
     case "create":
-      if (stored.inverse.kind !== "create" || !equalValues(stored.inverse.rootNodeIds, createRootIds(operation))) throw new Error("Stored operation inverse metadata is inconsistent.");
+      if (stored.inverse.kind !== "create" || !equalValues(stored.inverse.rootNodeIds, createdRootIds(operation))) throw new Error("Stored operation inverse metadata is inconsistent.");
       break;
+    case "copy": {
+      const inverse = stored.inverse;
+      if (inverse.kind !== "copy" || !equalValues(inverse.rootNodeIds, createdRootIds(operation)) || inverse.sourceNodeIds.length !== operation.nodes.length || inverse.sourceFileNodeIds.length !== operation.nodes.filter(({ kind }) => kind === "file").length || !operation.sourceNodeIds.every((id) => inverse.sourceNodeIds.includes(id)) || inverse.sourceNodeIds.some((id) => operation.nodes.some((node) => node.id === id))) throw new Error("Stored operation inverse metadata is inconsistent.");
+      break;
+    }
     case "write":
       if (stored.inverse.kind !== "write" || stored.inverse.nodeId !== operation.nodeId) throw new Error("Stored operation inverse metadata is inconsistent.");
       break;
@@ -593,7 +614,7 @@ async function normalizeCommitInput(value: CommitOperationInput) {
   if (!isRecord(value) || !("operation" in value) || Object.keys(value).some((key) => !["operation", "manifests", "intent", "compensatesOperationId", "expectedContentTuple"].includes(key))) throw new Error("A filesystem commit has an unsupported shape.");
   if (!isRecord(value.operation) || Object.prototype.hasOwnProperty.call(value.operation, "logicalTime")) throw new Error("An operation draft must not supply a logical time.");
   const operation = parseWorkspaceOperation({ ...value.operation, logicalTime: 0 });
-  if (operation.kind === "copy" || operation.kind === "transfer") throw new Error("Copy and transfer operations are not supported by this database slice.");
+  if (operation.kind === "transfer") throw new Error("Transfer operations are not supported by this database slice.");
   const manifestValues = value.manifests ?? [];
   if (!Array.isArray(manifestValues) || manifestValues.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A commit manifest batch is invalid.");
   const manifests = await Promise.all(manifestValues.map(async (candidate): Promise<StoredManifest> => {
@@ -612,7 +633,7 @@ async function normalizeCommitInput(value: CommitOperationInput) {
   const expectedContentTuple = value.expectedContentTuple === undefined || value.expectedContentTuple === null ? null : parseOperationTuple(value.expectedContentTuple);
   if (intent === "forward" && compensatesOperationId !== null) throw new Error("A forward operation cannot compensate another operation.");
   if (intent !== "forward" && compensatesOperationId === null) throw new Error("A compensating operation must reference an existing operation.");
-  if (operation.kind === "create" && (intent !== "forward" || expectedContentTuple !== null)) throw new Error("Create undo is unsupported until lifecycle projection exists.");
+  if ((operation.kind === "create" || operation.kind === "copy") && (intent !== "forward" || expectedContentTuple !== null)) throw new Error("Create and copy undo are unsupported until lifecycle projection exists.");
   if (operation.kind === "write" && expectedContentTuple === null) throw new Error("A write requires an exact expected content tuple.");
   if (operation.kind !== "create" && operation.kind !== "write" && (intent !== "forward" || compensatesOperationId !== null || expectedContentTuple !== null)) throw new Error("Metadata operations currently support forward intent only.");
   return {
@@ -629,7 +650,7 @@ function replayOperation(operation: LocallyCommittableOperation) {
 }
 
 function manifestHashes(operation: LocallyCommittableOperation) {
-  if (operation.kind === "create") return [...new Set(operation.nodes.filter((node) => node.kind === "file").map(({ manifestHash }) => manifestHash))];
+  if (operation.kind === "create" || operation.kind === "copy") return [...new Set(operation.nodes.filter((node) => node.kind === "file").map(({ manifestHash }) => manifestHash))];
   return operation.kind === "write" ? [operation.manifestHash] : [];
 }
 
@@ -638,7 +659,7 @@ function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId
     if (operation.nodeId !== nodeId) return undefined;
     return { nodeId, operationId: operation.operationId, logicalTime: operation.logicalTime, mimeType: operation.mimeType, size: operation.size, manifestHash: operation.manifestHash, modifiedAt: operation.modifiedAt, current: false };
   }
-  if (operation.kind !== "create") return undefined;
+  if (operation.kind !== "create" && operation.kind !== "copy") return undefined;
   const node = operation.nodes.find((candidate) => candidate.id === nodeId);
   if (!node || node.kind !== "file") return undefined;
   return { nodeId, operationId: operation.operationId, logicalTime: operation.logicalTime, mimeType: node.mimeType, size: node.size, manifestHash: node.manifestHash, modifiedAt: node.modifiedAt, current: false };
@@ -658,6 +679,47 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       if (value !== undefined) records.set(hashes[index]!, await validateStoredManifest(value, hashes[index]));
     }
     return records;
+  };
+  const assertChildNamesAvailableInTransaction = async (transaction: IDBTransaction, workspaceId: string, parentId: string | null, names: readonly string[], excludedIds = new Set<string>()) => {
+    const folded = names.map((name) => parseCanonicalName(name).toLowerCase());
+    if (new Set(folded).size !== folded.length) throw new Error("An active sibling already uses that name.");
+    const wanted = new Set(folded);
+    await new Promise<void>((resolve, reject) => {
+      const cursor = transaction.objectStore("nodes").index("by-workspace-parent-lifecycle").openCursor(keyRange.only([workspaceId, parentId ?? "", "active"]));
+      cursor.onerror = () => reject(cursor.error ?? new Error("Filesystem sibling names could not be read."));
+      cursor.onsuccess = () => {
+        try {
+          if (!cursor.result) { resolve(); return; }
+          const sibling = parseStoredNode(cursor.result.value);
+          if (!excludedIds.has(sibling.id) && wanted.has(sibling.name.toLowerCase())) { reject(new Error("An active sibling already uses that name.")); return; }
+          cursor.result.continue();
+        } catch (error) {
+          reject(error);
+        }
+      };
+    });
+  };
+  const assertNodeIdsAvailableInTransaction = async (transaction: IDBTransaction, values: readonly string[]) => {
+    const ids = values.map((id) => parseStableId(id, "A created node ID is invalid."));
+    if (ids.length === 0 || ids.length > WEB2_MAX_BATCH_ITEMS || new Set(ids).size !== ids.length) throw new Error("Created node IDs must be unique and bounded.");
+    const nodes = transaction.objectStore("nodes");
+    for (const id of ids) if (await request(nodes.get(id)) !== undefined) throw new Error("A node ID already exists.");
+    const pending = new Set(ids);
+    // ponytail: retained-ID lookup is O(operation history); add a dedicated reservation index when history size makes this measurable.
+    await new Promise<void>((resolve, reject) => {
+      const cursor = transaction.objectStore("operations").openCursor();
+      cursor.onerror = () => reject(cursor.error ?? new Error("Filesystem operation history could not be read."));
+      cursor.onsuccess = () => {
+        try {
+          if (!cursor.result) { resolve(); return; }
+          const stored = parseStoredOperation(cursor.result.value);
+          if ((stored.operation.kind === "create" || stored.operation.kind === "copy") && stored.operation.nodes.some(({ id }) => pending.has(id))) { reject(new Error("A node ID was already used by retained operation history.")); return; }
+          cursor.result.continue();
+        } catch (error) {
+          reject(error);
+        }
+      };
+    });
   };
 
   return {
@@ -697,13 +759,29 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
-    listChildren: async (workspaceId, parentId) => {
+    listChildren: async (workspaceId, parentId, limit) => {
       const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
       const canonicalParentId = parentId === null ? null : parseStableId(parentId, "A parent node ID is invalid.");
+      const boundedLimit = limit === undefined ? undefined : parsePositiveSafeInteger(limit, "A child list limit is invalid.");
+      if (boundedLimit !== undefined && boundedLimit > WEB2_MAX_BATCH_ITEMS + 1) throw new Error("A child list limit is too large.");
       return transact(db, "nodes", "readonly", async (transaction) => {
-        const values = await request(transaction.objectStore("nodes").index("by-workspace-parent-lifecycle").getAll(keyRange.only([canonicalWorkspaceId, canonicalParentId ?? "", "active"])));
+        const index = transaction.objectStore("nodes").index("by-workspace-parent-lifecycle");
+        const range = keyRange.only([canonicalWorkspaceId, canonicalParentId ?? "", "active"]);
+        const values = await request(boundedLimit === undefined ? index.getAll(range) : index.getAll(range, boundedLimit));
         return values.map((value) => nodeRecord(parseStoredNode(value)));
       });
+    },
+
+    assertChildNamesAvailable: async (workspaceId, parentId, names) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const canonicalParentId = parentId === null ? null : parseStableId(parentId, "A parent node ID is invalid.");
+      if (!Array.isArray(names) || names.length === 0 || names.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A sibling name batch is invalid.");
+      return transact(db, "nodes", "readonly", (transaction) => assertChildNamesAvailableInTransaction(transaction, canonicalWorkspaceId, canonicalParentId, names));
+    },
+
+    assertNodeIdsAvailable: async (ids) => {
+      if (!Array.isArray(ids)) throw new Error("Created node IDs are invalid.");
+      return transact(db, ["nodes", "operations"], "readonly", (transaction) => assertNodeIdsAvailableInTransaction(transaction, ids));
     },
 
     listTrash: async (workspaceId) => {
@@ -806,7 +884,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             manifestHash: compensatingWrite.manifestHash,
           }, { nodeId: version.nodeId, mimeType: version.mimeType, size: version.size, manifestHash: version.manifestHash });
           if (normalized.intent === "undo") {
-            if (compensated.operation.kind === "create") throw new Error("Create undo is unsupported until lifecycle projection exists.");
+            if (compensated.operation.kind === "create" || compensated.operation.kind === "copy") throw new Error("Create and copy undo are unsupported until lifecycle projection exists.");
             if (compensated.operation.kind !== "write" || compensated.intent !== "forward" && compensated.intent !== "redo" && compensated.intent !== "restore" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse)) throw new Error("An undo must apply a write inverse for that file.");
           }
           if (normalized.intent === "redo" && (compensated.intent !== "undo" || compensated.operation.kind !== "write" || compensated.operation.nodeId !== normalized.operation.nodeId || compensated.inverse.kind !== "write" || !matchesContent(compensated.inverse))) throw new Error("A redo must apply an undo inverse for that file.");
@@ -836,7 +914,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const wallTime = parseNonNegativeSafeInteger(now(), "The current time is invalid.");
         const logicalTime = Math.max(wallTime, observedNext, localNext);
         const parsedOperation = parseWorkspaceOperation({ ...normalized.operation, logicalTime });
-        if (parsedOperation.kind === "copy" || parsedOperation.kind === "transfer") throw new Error("Copy and transfer operations are not supported by this database slice.");
+        if (parsedOperation.kind === "transfer") throw new Error("Transfer operations are not supported by this database slice.");
         const operation = parsedOperation;
         const tuple = { logicalTime, operationId: operation.operationId };
         const nodes = transaction.objectStore("nodes");
@@ -849,8 +927,12 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           nodeCache.set(id, node);
           return node;
         };
-        const activeChildren = async (parentId: string | null) => (await request(nodes.index("by-workspace-parent-lifecycle").getAll(keyRange.only([workspace.id, parentId ?? "", "active"])))).map(parseStoredNode);
-        const childrenInLifecycle = async (parentId: string, lifecycle: "active" | "trashed") => (await request(nodes.index("by-workspace-parent-lifecycle").getAll(keyRange.only([workspace.id, parentId, lifecycle])))).map(parseStoredNode).sort((left, right) => left.id.localeCompare(right.id));
+        const childrenInLifecycle = async (parentId: string, lifecycle: "active" | "trashed", limit?: number) => {
+          const index = nodes.index("by-workspace-parent-lifecycle");
+          const range = keyRange.only([workspace.id, parentId, lifecycle]);
+          const values = await request(limit === undefined ? index.getAll(range) : index.getAll(range, limit));
+          return values.map(parseStoredNode).sort((left, right) => left.id.localeCompare(right.id));
+        };
         const ancestors = async (node: StoredNode) => {
           const result: StoredNode[] = [];
           const seen = new Set([node.id]);
@@ -869,33 +951,31 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           const seen = new Set<string>();
           const result: Array<{ root: StoredNode; nodes: Array<{ node: StoredNode; depth: number }> }> = [];
           for (const root of roots) {
+            if (seen.has(root.id)) throw new Error("Selected filesystem roots overlap.");
+            seen.add(root.id);
             const expanded: Array<{ node: StoredNode; depth: number }> = [];
             const pending = [{ node: root, depth: 0 }];
             for (let index = 0; index < pending.length; index += 1) {
               const current = pending[index]!;
-              if (seen.has(current.node.id)) throw new Error("Selected filesystem roots overlap.");
-              seen.add(current.node.id);
               expanded.push(current);
               if (maxItems !== null && seen.size > maxItems) throw new Error(message);
-              const children = await childrenInLifecycle(current.node.id, lifecycle);
-              for (const child of children) pending.push({ node: child, depth: current.depth + 1 });
+              const remaining = maxItems === null ? undefined : maxItems - seen.size;
+              const children = await childrenInLifecycle(current.node.id, lifecycle, remaining === undefined ? undefined : remaining + 1);
+              if (remaining !== undefined && children.length > remaining) throw new Error(message);
+              for (const child of children) {
+                if (seen.has(child.id)) throw new Error("Selected filesystem roots overlap.");
+                seen.add(child.id);
+                pending.push({ node: child, depth: current.depth + 1 });
+              }
             }
             result.push({ root, nodes: expanded });
           }
           return result;
         };
-        const validateDestinationNames = async (items: Array<{ node: StoredNode; parentId: string | null }>, excludedIds: Set<string>) => {
-          const names = new Map<string, Set<string>>();
-          for (const parentId of new Set(items.map(({ parentId }) => parentId))) {
-            const existing = new Set((await activeChildren(parentId)).filter(({ id }) => !excludedIds.has(id)).map(({ name }) => name.toLowerCase()));
-            names.set(parentId ?? "", existing);
-          }
-          for (const { node, parentId } of items) {
-            const siblings = names.get(parentId ?? "")!;
-            const name = node.name.toLowerCase();
-            if (siblings.has(name)) throw new Error("An active sibling already uses that name.");
-            siblings.add(name);
-          }
+        const validateDestinationNames = async (items: Array<{ node: { id: string; name: string }; parentId: string | null }>, excludedIds: Set<string>) => {
+          const byParent = new Map<string | null, string[]>();
+          for (const { node, parentId } of items) byParent.set(parentId, [...(byParent.get(parentId) ?? []), node.name]);
+          for (const [parentId, names] of byParent) await assertChildNamesAvailableInTransaction(transaction, workspace.id, parentId, names, excludedIds);
         };
         const previousSetting = (setting: Setting | undefined): PreviousSetting => setting === undefined ? { exists: false } : { exists: true, value: setting.value };
         const readSetting = async (namespace: SettingNamespace, key: string) => {
@@ -911,13 +991,58 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const addedNodeIds = new Set<string>();
         const deletedNodeIds: string[] = [];
         const projectedSettings: Setting[] = [];
+        let copySourceNodes: StoredNode[] = [];
         switch (operation.kind) {
-          case "create": {
+          case "create":
+          case "copy": {
+            if (operation.kind === "copy") {
+              const sourceRoots = await Promise.all(operation.sourceNodeIds.map(async (id) => {
+                const node = await readNode(id);
+                if (!node || node.workspaceId !== workspace.id || node.lifecycle.kind !== "active") throw new Error("A copy requires active source roots in their workspace.");
+                return node;
+              }));
+              const expanded = await expandSubtrees(sourceRoots, "active", "A copied forest is too large.");
+              copySourceNodes = expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node));
+              if (copySourceNodes.length !== operation.nodes.length) throw new Error("A copy must contain a complete source forest snapshot.");
+              const destinationIds = new Set(operation.nodes.map(({ id }) => id));
+              const destinationRoots = operation.nodes.filter(({ parentId }) => parentId === null || !destinationIds.has(parentId));
+              if (destinationRoots.length !== sourceRoots.length) throw new Error("A copy must map each source root to one destination root.");
+              const timestamp = operation.nodes[0]!.createdAt;
+              if (operation.nodes.some((node) => node.createdAt !== timestamp || node.modifiedAt !== timestamp)) throw new Error("Copied nodes require one creation and modification timestamp.");
+
+              const sourceChildren = new Map<string, StoredNode[]>();
+              const sourceRootIds = new Set(sourceRoots.map(({ id }) => id));
+              for (const source of copySourceNodes) if (!sourceRootIds.has(source.id)) {
+                const children = sourceChildren.get(source.parentId!) ?? [];
+                children.push(source);
+                sourceChildren.set(source.parentId!, children);
+              }
+              const destinationChildren = new Map<string, typeof operation.nodes>();
+              for (const destination of operation.nodes) if (destinationIds.has(destination.parentId ?? "")) {
+                const children = destinationChildren.get(destination.parentId!) ?? [];
+                children.push(destination);
+                destinationChildren.set(destination.parentId!, children);
+              }
+              const matchedDestinations = new Set<string>();
+              const validateSnapshot = (source: StoredNode, destination: typeof operation.nodes[number], root: boolean) => {
+                if (source.kind !== destination.kind) throw new Error("A copied node kind does not match its source snapshot.");
+                if (!root && (source.name !== destination.name || !equalValues(source.position, destination.position))) throw new Error("A copied descendant does not match its source snapshot.");
+                if (source.kind === "file" && destination.kind === "file" && (source.mimeType !== destination.mimeType || source.size !== destination.size || source.manifestHash !== destination.manifestHash)) throw new Error("Copied file metadata does not match its source snapshot.");
+                matchedDestinations.add(destination.id);
+                const sourceValues = sourceChildren.get(source.id) ?? [];
+                const destinationValues = destinationChildren.get(destination.id) ?? [];
+                if (sourceValues.length !== destinationValues.length) throw new Error("A copy must contain a complete source forest snapshot.");
+                for (const sourceChild of sourceValues) {
+                  const destinationChild = destinationValues.find(({ name }) => name === sourceChild.name);
+                  if (!destinationChild) throw new Error("A copied descendant does not match its source snapshot.");
+                  validateSnapshot(sourceChild, destinationChild, false);
+                }
+              };
+              for (let index = 0; index < sourceRoots.length; index += 1) validateSnapshot(sourceRoots[index]!, destinationRoots[index]!, true);
+              if (matchedDestinations.size !== operation.nodes.length) throw new Error("A copy contains invented destination nodes.");
+            }
             const createdIds = new Set(operation.nodes.map(({ id }) => id));
-            const existingNodes = await Promise.all(operation.nodes.map(({ id }) => readNode(id)));
-            for (const node of existingNodes) if (node !== undefined) throw new Error("A node ID already exists.");
-            const history = (await request(operations.getAll())).map(parseStoredOperation);
-            if (history.some(({ operation: previous }) => previous.kind === "create" && previous.nodes.some(({ id }) => createdIds.has(id)))) throw new Error("A node ID was already used by retained operation history.");
+            await assertNodeIdsAvailableInTransaction(transaction, [...createdIds]);
 
             const externalParentIds = [...new Set(operation.nodes.map(({ parentId }) => parentId).filter((parentId): parentId is string => parentId !== null && !createdIds.has(parentId)))];
             await Promise.all(externalParentIds.map(async (id) => {
@@ -925,9 +1050,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
               if (!parent) throw new Error("A created node parent does not exist.");
               if (parent.workspaceId !== workspace.id || parent.kind !== "folder" || parent.lifecycle.kind !== "active") throw new Error("A created node parent must be an active folder in its workspace.");
             }));
-            const externalParentKeys = [...new Set(operation.nodes.filter(({ parentId }) => parentId === null || !createdIds.has(parentId)).map(({ parentId }) => parentId))];
-            const siblingNames = new Set<string>();
-            for (const parentId of externalParentKeys) for (const sibling of await activeChildren(parentId)) siblingNames.add(`${parentId ?? ""}\0${sibling.name.toLowerCase()}`);
+            await validateDestinationNames(operation.nodes.filter(({ parentId }) => parentId === null || !createdIds.has(parentId)).map((node) => ({ node, parentId: node.parentId })), new Set());
             const createdById = new Map(operation.nodes.map((node) => [node.id, node]));
             const createdDepths = new Map<string, number>();
             const createdDepth = async (id: string): Promise<number> => {
@@ -950,12 +1073,13 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             await Promise.all(operation.nodes.map(({ id }) => createdDepth(id)));
             for (const node of operation.nodes) {
               if (node.kind === "file" && resolvedManifest(node.manifestHash)!.manifest.size !== node.size) throw new Error("A created file size does not match its manifest.");
-              if ((node.parentId === null || !createdIds.has(node.parentId)) && siblingNames.has(`${node.parentId ?? ""}\0${node.name.toLowerCase()}`)) throw new Error("An active sibling already uses that name.");
               const projected = storeNode(parseNode({ ...node, workspaceId: operation.workspaceId, lifecycle: { kind: "active" }, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: node.kind === "file" ? tuple : null } }));
               projectedNodes.set(node.id, projected);
               addedNodeIds.add(node.id);
             }
-            inverse = { kind: "create", rootNodeIds: createRootIds(operation) };
+            inverse = operation.kind === "copy"
+              ? { kind: "copy", rootNodeIds: createdRootIds(operation), sourceNodeIds: copySourceNodes.map(({ id }) => id).sort(), sourceFileNodeIds: copySourceNodes.filter(({ kind }) => kind === "file").map(({ id }) => id).sort() }
+              : { kind: "create", rootNodeIds: createdRootIds(operation) };
             break;
           }
           case "write": {
@@ -975,7 +1099,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           case "rename": {
             const node = await readNode(operation.nodeId);
             if (!node || node.workspaceId !== workspace.id || node.lifecycle.kind !== "active") throw new Error("A rename requires an active node in its workspace.");
-            if ((await activeChildren(node.parentId)).some((sibling) => sibling.id !== node.id && sibling.name.toLowerCase() === operation.name.toLowerCase())) throw new Error("An active sibling already uses that name.");
+            await validateDestinationNames([{ node: { id: node.id, name: operation.name }, parentId: node.parentId }], new Set([node.id]));
             inverse = { kind: "rename", nodeId: node.id, name: node.name, modifiedAt: node.modifiedAt };
             projectedNodes.set(node.id, storeNode({ ...node, name: operation.name, modifiedAt: operation.modifiedAt, fieldTuples: { ...node.fieldTuples, name: tuple } }));
             break;
@@ -1194,7 +1318,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
                 const version = fileVersionFromOperation(stored.operation, canonicalNodeId);
                 if (version) result.push(version);
               }
-              if (stored.operation.kind === "create" && stored.operation.nodes.some(({ id }) => id === canonicalNodeId)) { resolve(result); return; }
+              if ((stored.operation.kind === "create" || stored.operation.kind === "copy") && stored.operation.nodes.some(({ id }) => id === canonicalNodeId)) { resolve(result); return; }
               cursor.result.continue();
             } catch (error) {
               reject(error);
