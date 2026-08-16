@@ -34,6 +34,7 @@ import {
   type Setting,
   type SettingNamespace,
 } from "./model";
+import { compareCanonicalStrings, hydrationTargetId, parseHydrationPageData, parseHydrationPageToken, parseHydrationTarget, type HydrationPageData, type HydrationTarget } from "./hydration";
 import {
   operationAffectedIdentities,
   parseWorkspaceOperation,
@@ -80,7 +81,7 @@ const STORE_SCHEMA = {
   changes: { keyPath: ["workspaceId", "revision"], indexes: {} },
   sync: { keyPath: "workspaceId", indexes: {} },
   settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: {} },
-  "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: {} },
+  "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: { "by-workspace-kind": { keyPath: ["workspaceId", "kind"], unique: false } } },
   "window-sessions": { keyPath: "workspaceId", indexes: {} },
   "device-preferences": { keyPath: "id", indexes: {} },
   "installed-apps": { keyPath: "appId", indexes: {} },
@@ -109,6 +110,9 @@ export type SyncState = {
   lastObservedLogicalTime: number;
   lastLocalLogicalTime: number;
 };
+
+export type HydrationGeneration = { workspaceId: string; deviceId: string; generationId: string; target: HydrationTarget };
+export type HydrationProgress = { nextPageIndex: number; pageToken: string | null; complete: boolean };
 
 type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
@@ -202,6 +206,9 @@ export type FilesystemDatabase = {
   getSettingRecord(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
   listSettingRecords(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
   getSyncState(workspaceId: string): Promise<SyncState>;
+  beginHydration(targetId: string, generation: HydrationGeneration): Promise<void>;
+  getHydrationProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
+  stageHydrationPage(targetId: string, requestPageToken: string | null, page: HydrationPageData): Promise<boolean>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
@@ -236,6 +243,8 @@ export type FilesystemDatabase = {
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
 type StoredNodeRecord = StoredNode | Extract<NodeRecord, { purged: true }>;
+type StoredHydrationHeader = HydrationGeneration & HydrationProgress & { targetId: string; pageIndex: -1; kind: "header"; lastIdentity: string | null };
+type StoredHydrationPage = { workspaceId: string; targetId: string; pageIndex: number; kind: "page"; requestPageToken: string | null; page: HydrationPageData };
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
 type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
@@ -466,6 +475,70 @@ function parseSyncState(value: unknown): SyncState {
     lastObservedLogicalTime: parseNonNegativeSafeInteger(value.lastObservedLogicalTime, "A stored observed logical time is invalid."),
     lastLocalLogicalTime: parseNonNegativeSafeInteger(value.lastLocalLogicalTime, "A stored local logical time is invalid."),
   };
+}
+
+function parseHydrationGeneration(value: unknown): HydrationGeneration {
+  if (!isRecord(value)) throw new Error("A hydration generation has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "deviceId", "generationId", "target"], "A hydration generation has an unsupported shape.");
+  const workspaceId = parseStableId(value.workspaceId, "A hydration workspace ID is invalid.");
+  const target = parseHydrationTarget(value.target);
+  if (target.workspaceId !== workspaceId) throw new Error("A hydration generation mixes workspaces.");
+  return { workspaceId, deviceId: parseStableId(value.deviceId, "A hydration device ID is invalid."), generationId: parseStableId(value.generationId, "A hydration generation ID is invalid."), target };
+}
+
+function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
+  if (!isRecord(value)) throw new Error("A stored hydration header has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "deviceId", "generationId", "target", "nextPageIndex", "pageToken", "complete", "lastIdentity"], "A stored hydration header has an unsupported shape.");
+  if (value.kind !== "header" || value.pageIndex !== -1 || typeof value.complete !== "boolean" || value.lastIdentity !== null && (typeof value.lastIdentity !== "string" || value.lastIdentity.length === 0)) throw new Error("A stored hydration header is invalid.");
+  const nextPageIndex = parseNonNegativeSafeInteger(value.nextPageIndex, "A stored hydration page index is invalid.");
+  if (nextPageIndex > 100_000) throw new Error("A stored hydration generation is too large.");
+  const pageToken = value.pageToken === null ? null : parseHydrationPageToken(value.pageToken);
+  if (value.complete !== (pageToken === null && nextPageIndex > 0)) throw new Error("Stored hydration completion metadata is inconsistent.");
+  return { ...parseHydrationGeneration({ workspaceId: value.workspaceId, deviceId: value.deviceId, generationId: value.generationId, target: value.target }), targetId: parseSha256(value.targetId, "A hydration target ID is invalid."), pageIndex: -1, kind: "header", nextPageIndex, pageToken, complete: value.complete, lastIdentity: value.lastIdentity };
+}
+
+function parseStoredHydrationPage(value: unknown): StoredHydrationPage {
+  if (!isRecord(value)) throw new Error("A stored hydration page has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "requestPageToken", "page"], "A stored hydration page has an unsupported shape.");
+  if (value.kind !== "page") throw new Error("A stored hydration page is invalid.");
+  const workspaceId = parseStableId(value.workspaceId, "A hydration workspace ID is invalid.");
+  const pageIndex = parseNonNegativeSafeInteger(value.pageIndex, "A hydration page index is invalid.");
+  const requestPageToken = value.requestPageToken === null ? null : parseHydrationPageToken(value.requestPageToken);
+  if ((pageIndex === 0) !== (requestPageToken === null)) throw new Error("Stored hydration request pagination is inconsistent.");
+  const page = parseHydrationPageData(value.page);
+  if (page.workspaceId !== workspaceId || page.pageIndex !== pageIndex) throw new Error("Stored hydration page metadata is inconsistent.");
+  return { workspaceId, targetId: parseSha256(value.targetId, "A hydration target ID is invalid."), pageIndex, kind: "page", requestPageToken, page };
+}
+
+function hydrationPageIdentities(page: HydrationPageData) {
+  return page.target.kind === "folder-page" ? page.nodes.map(({ id }) => id) : page.target.kind === "setting-namespace" ? page.settings.map(({ key }) => key) : [];
+}
+
+function validateStoredHydrationGeneration(header: StoredHydrationHeader, pages: StoredHydrationPage[]) {
+  if (pages.length !== header.nextPageIndex) throw new Error("Stored hydration page count is inconsistent.");
+  let pageToken: string | null = null;
+  let lastIdentity: string | null = null;
+  const emittedTokens = new Set<string>();
+  for (let index = 0; index < pages.length; index += 1) {
+    const stored = pages[index]!;
+    const page = stored.page;
+    if (stored.workspaceId !== header.workspaceId || stored.targetId !== header.targetId || stored.pageIndex !== index || stored.requestPageToken !== pageToken || page.workspaceId !== header.workspaceId || page.deviceId !== header.deviceId || page.generationId !== header.generationId || !equalValues(page.target, header.target)) throw new Error("Stored hydration generation metadata is inconsistent.");
+    const identities = hydrationPageIdentities(page);
+    if (lastIdentity !== null && identities.length > 0 && compareCanonicalStrings(lastIdentity, identities[0]!) >= 0) throw new Error("Stored hydration records are not ordered across pages.");
+    lastIdentity = identities.at(-1) ?? lastIdentity;
+    if (page.nextPageToken === null && index !== pages.length - 1) throw new Error("Stored hydration generation completes before its final page.");
+    if (page.nextPageToken !== null && emittedTokens.has(page.nextPageToken)) throw new Error("Stored hydration generation contains a token cycle.");
+    if (page.nextPageToken !== null) emittedTokens.add(page.nextPageToken);
+    pageToken = page.nextPageToken;
+  }
+  if (header.pageToken !== pageToken || header.complete !== (pageToken === null && pages.length > 0) || header.lastIdentity !== lastIdentity) throw new Error("Stored hydration progress is inconsistent.");
+}
+
+async function validateCompletedHydrationGeneration(store: IDBObjectStore, keyRange: typeof IDBKeyRange, header: StoredHydrationHeader) {
+  if (!header.complete) return;
+  const range = keyRange.bound([header.workspaceId, header.targetId, 0], [header.workspaceId, header.targetId, Number.MAX_SAFE_INTEGER]);
+  const pages = (await request(store.getAll(range))).map(parseStoredHydrationPage).sort((left, right) => left.pageIndex - right.pageIndex);
+  validateStoredHydrationGeneration(header, pages);
 }
 
 function parseStoredNode(value: unknown): StoredNode {
@@ -883,7 +956,8 @@ function createSchema(db: IDBDatabase) {
   db.createObjectStore("changes", { keyPath: ["workspaceId", "revision"] });
   db.createObjectStore("sync", { keyPath: "workspaceId" });
   db.createObjectStore("settings", { keyPath: ["workspaceId", "namespace", "key"] });
-  db.createObjectStore("hydration-pages", { keyPath: ["workspaceId", "targetId", "pageIndex"] });
+  const hydrationPages = db.createObjectStore("hydration-pages", { keyPath: ["workspaceId", "targetId", "pageIndex"] });
+  hydrationPages.createIndex("by-workspace-kind", ["workspaceId", "kind"]);
   db.createObjectStore("window-sessions", { keyPath: "workspaceId" });
   db.createObjectStore("device-preferences", { keyPath: "id" });
   db.createObjectStore("installed-apps", { keyPath: "appId" });
@@ -1557,6 +1631,109 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const sync = parseSyncState(syncValue);
         if (workspace.id !== sync.workspaceId) throw new Error("Stored synchronization state does not match its workspace.");
         return sync;
+      });
+    },
+
+    beginHydration: async (targetIdValue, generationValue) => {
+      const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
+      const generation = parseHydrationGeneration(generationValue);
+      if (hydrationTargetId(generation.target) !== targetId) throw new Error("A hydration target ID does not match its selector.");
+      await transact(db, ["workspaces", "sync", "hydration-pages"], "readwrite", async (transaction) => {
+        const [workspaceValue, syncValue] = await Promise.all([
+          request(transaction.objectStore("workspaces").get(generation.workspaceId)),
+          request(transaction.objectStore("sync").get(generation.workspaceId)),
+        ]);
+        if (workspaceValue === undefined || syncValue === undefined) throw new Error("That workspace does not exist.");
+        const workspace = parseWorkspace(workspaceValue);
+        const sync = parseSyncState(syncValue);
+        if (workspace.id !== sync.workspaceId || sync.deviceId !== generation.deviceId) throw new Error("A hydration generation does not match its local synchronization state.");
+        const pages = transaction.objectStore("hydration-pages");
+        const existingValue = await request(pages.get([generation.workspaceId, targetId, -1]));
+        if (existingValue !== undefined) {
+          const existing = parseStoredHydrationHeader(existingValue);
+          if (existing.generationId === generation.generationId && existing.deviceId === generation.deviceId && equalValues(existing.target, generation.target)) {
+            await validateCompletedHydrationGeneration(pages, keyRange, existing);
+            return;
+          }
+        } else {
+          const count = await request(pages.index("by-workspace-kind").count(keyRange.only([generation.workspaceId, "header"])));
+          if (count >= WEB2_MAX_BATCH_ITEMS) throw new Error("Too many hydration generations are active.");
+        }
+        const range = keyRange.bound([generation.workspaceId, targetId, -1], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
+        const keys = await request(pages.getAllKeys(range));
+        await Promise.all([...keys.map((key) => request(pages.delete(key))), request(pages.add({ ...generation, targetId, pageIndex: -1, kind: "header", nextPageIndex: 0, pageToken: null, complete: false, lastIdentity: null } satisfies StoredHydrationHeader))]);
+      });
+    },
+
+    getHydrationProgress: async (workspaceIdValue, targetIdValue, generationIdValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A hydration workspace ID is invalid.");
+      const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
+      const generationId = parseStableId(generationIdValue, "A hydration generation ID is invalid.");
+      return transact(db, "hydration-pages", "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("hydration-pages").get([workspaceId, targetId, -1]));
+        if (value === undefined) return undefined;
+        const header = parseStoredHydrationHeader(value);
+        if (header.generationId !== generationId) return undefined;
+        await validateCompletedHydrationGeneration(transaction.objectStore("hydration-pages"), keyRange, header);
+        return { nextPageIndex: header.nextPageIndex, pageToken: header.pageToken, complete: header.complete };
+      });
+    },
+
+    stageHydrationPage: async (targetIdValue, requestPageTokenValue, pageValue) => {
+      const targetId = parseSha256(targetIdValue, "A hydration target ID is invalid.");
+      const requestPageToken = requestPageTokenValue === null ? null : parseHydrationPageToken(requestPageTokenValue);
+      const page = parseHydrationPageData(pageValue);
+      if (hydrationTargetId(page.target) !== targetId) throw new Error("A hydration target ID does not match its selector.");
+      if ((page.pageIndex === 0) !== (requestPageToken === null) || page.pageIndex >= 100_000) throw new Error("A hydration page has invalid request pagination.");
+      return transact(db, ["workspaces", "sync", "hydration-pages"], "readwrite", async (transaction) => {
+        const [workspaceValue, syncValue] = await Promise.all([
+          request(transaction.objectStore("workspaces").get(page.workspaceId)),
+          request(transaction.objectStore("sync").get(page.workspaceId)),
+        ]);
+        if (workspaceValue === undefined || syncValue === undefined) throw new Error("That workspace does not exist.");
+        const workspace = parseWorkspace(workspaceValue);
+        const sync = parseSyncState(syncValue);
+        if (workspace.id !== sync.workspaceId || sync.deviceId !== page.deviceId) throw new Error("A hydration page does not match its local synchronization state.");
+        const nextSync = parseSyncState({ ...sync, lastObservedLogicalTime: Math.max(sync.lastObservedLogicalTime, page.observedLogicalTime) });
+        const pages = transaction.objectStore("hydration-pages");
+        const headerValue = await request(pages.get([page.workspaceId, targetId, -1]));
+        if (headerValue === undefined) {
+          await request(transaction.objectStore("sync").put(nextSync));
+          return false;
+        }
+        const header = parseStoredHydrationHeader(headerValue);
+        if (header.generationId !== page.generationId) {
+          await request(transaction.objectStore("sync").put(nextSync));
+          return false;
+        }
+        if (header.targetId !== targetId || header.workspaceId !== page.workspaceId || header.deviceId !== page.deviceId || !equalValues(header.target, page.target)) throw new Error("A hydration page does not match its active generation.");
+        if (page.pageIndex < header.nextPageIndex) {
+          const existingValue = await request(pages.get([page.workspaceId, targetId, page.pageIndex]));
+          const existing = existingValue === undefined ? undefined : parseStoredHydrationPage(existingValue);
+          if (!existing || existing.targetId !== targetId || existing.requestPageToken !== requestPageToken || existing.page.generationId !== header.generationId || !equalValues(existing.page.target, header.target) || !equalValues(existing.page, page)) throw new Error("A hydration page index cannot be reused with different content.");
+          await validateCompletedHydrationGeneration(pages, keyRange, header);
+          await request(transaction.objectStore("sync").put(nextSync));
+          return page.nextPageToken === null;
+        }
+        if (page.pageIndex !== header.nextPageIndex || header.complete || requestPageToken !== header.pageToken) throw new Error("A hydration page is out of sequence.");
+        if (page.nextPageToken !== null && page.nextPageToken === requestPageToken) throw new Error("A hydration continuation token cannot repeat immediately.");
+        if (page.pageIndex === 99_999 && page.nextPageToken !== null) throw new Error("A hydration generation is too large.");
+        const identities = hydrationPageIdentities(page);
+        if (header.lastIdentity !== null && identities.length > 0 && compareCanonicalStrings(header.lastIdentity, identities[0]!) >= 0) throw new Error("Hydration records are not ordered across pages.");
+        const complete = page.nextPageToken === null;
+        const nextHeader = { ...header, nextPageIndex: page.pageIndex + 1, pageToken: page.nextPageToken, complete, lastIdentity: identities.at(-1) ?? header.lastIdentity } satisfies StoredHydrationHeader;
+        const storedPage = { workspaceId: page.workspaceId, targetId, pageIndex: page.pageIndex, kind: "page", requestPageToken, page } satisfies StoredHydrationPage;
+        if (complete) {
+          const range = keyRange.bound([page.workspaceId, targetId, 0], [page.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
+          const staged = (await request(pages.getAll(range))).map(parseStoredHydrationPage).sort((left, right) => left.pageIndex - right.pageIndex);
+          validateStoredHydrationGeneration(nextHeader, [...staged, storedPage]);
+        }
+        await Promise.all([
+          request(pages.add(storedPage)),
+          request(pages.put(nextHeader)),
+          request(transaction.objectStore("sync").put(nextSync)),
+        ]);
+        return complete;
       });
     },
 

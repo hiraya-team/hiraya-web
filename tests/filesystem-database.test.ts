@@ -12,6 +12,7 @@ import {
   canonicalManifestSha256,
   type Manifest,
 } from "../src/filesystem/model";
+import { hydrationTargetId } from "../src/filesystem/hydration";
 import { DEFAULT_DEVICE_PREFERENCES } from "../src/domain/preferences";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
@@ -164,7 +165,7 @@ describe("web2 filesystem database", () => {
         changes: { keyPath: ["workspaceId", "revision"], indexes: [] },
         sync: { keyPath: "workspaceId", indexes: [] },
         settings: { keyPath: ["workspaceId", "namespace", "key"], indexes: [] },
-        "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: [] },
+        "hydration-pages": { keyPath: ["workspaceId", "targetId", "pageIndex"], indexes: ["by-workspace-kind"] },
         "window-sessions": { keyPath: "workspaceId", indexes: [] },
         "device-preferences": { keyPath: "id", indexes: [] },
         "installed-apps": { keyPath: "appId", indexes: [] },
@@ -333,6 +334,90 @@ describe("web2 filesystem database", () => {
     const committed = await database.commitOperation({ operation: createDraft(operationId, [folder(stableId(8), "Lookup")]) });
     expect(await database.getOperation(operationId)).toEqual(committed);
     expect(await database.getSyncState(WORKSPACE)).toMatchObject({ workspaceId: WORKSPACE, deviceId: DEVICE, lastLocalLogicalTime: 90 });
+    database.close();
+  });
+
+  test("stages only the active hydration generation and advances observed clocks", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 100);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = await hydrationTargetId(target);
+    const firstGeneration = stableId(2_300);
+    const secondGeneration = stableId(2_301);
+    const remoteNodeId = stableId(2_302);
+    const remoteOperationId = stableId(2_303);
+    const tuple = { logicalTime: 500, operationId: remoteOperationId };
+    const remoteNode = { workspaceId: WORKSPACE, id: remoteNodeId, kind: "folder" as const, name: "Remote", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 1, y: 2 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, target });
+    expect(await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 0, observedLogicalTime: 500, target, nodes: [], settings: [], nextPageToken: "next" })).toBe(false);
+    expect(await database.getHydrationProgress(WORKSPACE, targetId, firstGeneration)).toEqual({ nextPageIndex: 1, pageToken: "next", complete: false });
+    const local = await database.commitOperation({ operation: createDraft(stableId(2_304), [folder(stableId(2_305), "Local")]) });
+    expect(local.operation.logicalTime).toBe(501);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target });
+    expect(await database.stageHydrationPage(targetId, "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: firstGeneration, pageIndex: 1, observedLogicalTime: 700, target, nodes: [remoteNode], settings: [], nextPageToken: null })).toBe(false);
+    expect((await database.getSyncState(WORKSPACE)).lastObservedLogicalTime).toBe(700);
+    await expect(database.stageHydrationPage(targetId, "unexpected", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 1, observedLogicalTime: 600, target, nodes: [], settings: [], nextPageToken: null })).rejects.toThrow("out of sequence");
+    const finalPage = { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, pageIndex: 0, observedLogicalTime: 600, target, nodes: [remoteNode], settings: [], nextPageToken: null };
+    expect(await database.stageHydrationPage(targetId, null, finalPage)).toBe(true);
+    expect(await database.stageHydrationPage(targetId, null, finalPage)).toBe(true);
+    expect(await database.getNode(remoteNodeId)).toBeUndefined();
+    const staged = await readStored(factory, await filesystemDatabaseName(ACCOUNT), "hydration-pages") as Array<{ generationId?: string; page?: { generationId: string } }>;
+    expect(staged).toHaveLength(2);
+    expect(staged.every((record) => (record.generationId ?? record.page?.generationId) === secondGeneration)).toBe(true);
+    database.close();
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    await reopened.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: secondGeneration, target });
+    expect(await reopened.getHydrationProgress(WORKSPACE, targetId, secondGeneration)).toEqual({ nextPageIndex: 1, pageToken: null, complete: true });
+    expect(await reopened.stageHydrationPage(targetId, null, finalPage)).toBe(true);
+    reopened.close();
+  });
+
+  test("rejects forged hydration target IDs and cross-page disorder", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = await hydrationTargetId(target);
+    const generationId = stableId(2_320);
+    await expect(database.beginHydration("f".repeat(64), { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target })).rejects.toThrow("does not match");
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    const tuple = { logicalTime: 10, operationId: stableId(2_321) };
+    const node = (id: string) => ({ workspaceId: WORKSPACE, id, kind: "folder" as const, name: id, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [node(stableId(2_323))], settings: [], nextPageToken: "next" });
+    await expect(database.stageHydrationPage(targetId, "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 1, observedLogicalTime: 10, target, nodes: [node(stableId(2_322))], settings: [], nextPageToken: null })).rejects.toThrow("not ordered");
+    database.close();
+  });
+
+  test("rejects hydration token cycles and corrupted predecessor pages at completion", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = hydrationTargetId(target);
+    const cycleGeneration = stableId(2_330);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: cycleGeneration, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: cycleGeneration, pageIndex: 0, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: "a" });
+    await database.stageHydrationPage(targetId, "a", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: cycleGeneration, pageIndex: 1, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: "b" });
+    await database.stageHydrationPage(targetId, "b", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: cycleGeneration, pageIndex: 2, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: "a" });
+    await expect(database.stageHydrationPage(targetId, "a", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: cycleGeneration, pageIndex: 3, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: null })).rejects.toThrow("token cycle");
+
+    const corruptGeneration = stableId(2_331);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: corruptGeneration, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: corruptGeneration, pageIndex: 0, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: "next" });
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    const store = raw.transaction("hydration-pages", "readwrite").objectStore("hydration-pages");
+    const stored = await idbRequest(store.get([WORKSPACE, targetId, 0])) as { page: { generationId: string } };
+    await idbRequest(store.put({ ...stored, page: { ...stored.page, generationId: cycleGeneration } }));
+    raw.close();
+    await expect(database.stageHydrationPage(targetId, "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: corruptGeneration, pageIndex: 1, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: null })).rejects.toThrow("metadata is inconsistent");
+
+    const completedGeneration = stableId(2_332);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: completedGeneration, target });
+    const completedPage = { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: completedGeneration, pageIndex: 0, observedLogicalTime: 0, target, nodes: [], settings: [], nextPageToken: null };
+    await database.stageHydrationPage(targetId, null, completedPage);
+    const completedRaw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(completedRaw.transaction("hydration-pages", "readwrite").objectStore("hydration-pages").delete([WORKSPACE, targetId, 0]));
+    completedRaw.close();
+    await expect(database.getHydrationProgress(WORKSPACE, targetId, completedGeneration)).rejects.toThrow("count is inconsistent");
+    await expect(database.stageHydrationPage(targetId, null, completedPage)).rejects.toThrow();
     database.close();
   });
 
