@@ -200,7 +200,7 @@ test("deleting a workspace preserves transferred files, shared chunks, and desti
   expect(await verification.getOperation(retainedOperation.operationId)).toEqual(retainedOperation);
   await expect(verification.assertNodeIdsAvailable([disposable.id])).rejects.toThrow("retained operation history");
   expect(await verification.listWorkspaces()).toEqual([{ ...destinationWorkspace, ordinal: 0, localRevision: 1 }]);
-  expect(await verification.listRetainedChunkHashes()).not.toEqual([]);
+  expect(await verification.sweepManifests()).not.toEqual([]);
   await expect(verification.getSyncState(sourceWorkspace.id)).rejects.toThrow("does not exist");
   verification.close();
   const cleaned = await openRaw(indexedDB, databaseName);

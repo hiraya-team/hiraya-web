@@ -505,7 +505,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
         return commitVersion(nodeId, version, node.fieldTuples.content!, "restore", operationId);
       }),
 
-      removeOrphans: () => cleanupLocked(async () => removeOrphanChunks(root, await database.listRetainedChunkHashes())),
+      removeOrphans: () => cleanupLocked(async () => removeOrphanChunks(root, await database.sweepManifests())),
       close: () => {
         revisionChannel.close();
         database.close();

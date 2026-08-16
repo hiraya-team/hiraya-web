@@ -208,7 +208,7 @@ export type FilesystemDatabase = {
   listChanges(workspaceId: string, afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
   listOperations(workspaceId: string, limit?: number): Promise<StoredOperation[]>;
   listFileVersions(workspaceId: string, nodeId: string): Promise<FileVersion[]>;
-  listRetainedChunkHashes(): Promise<string[]>;
+  sweepManifests(): Promise<string[]>;
   readWindowSession(workspaceId: string): Promise<WindowSession>;
   writeWindowSession(workspaceId: string, session: WindowSession): Promise<void>;
   readDevicePreferences(): Promise<DevicePreferences>;
@@ -991,6 +991,12 @@ function replayOperation(operation: LocallyCommittableOperation) {
 function manifestHashes(operation: LocallyCommittableOperation) {
   if (operation.kind === "create" || operation.kind === "copy") return [...new Set(operation.nodes.filter((node) => node.kind === "file").map(({ manifestHash }) => manifestHash))];
   return operation.kind === "write" ? [operation.manifestHash] : [];
+}
+
+function storedManifestHashes(stored: StoredOperation) {
+  const hashes = manifestHashes(stored.operation);
+  if (stored.inverse.kind === "write") hashes.push(stored.inverse.manifestHash);
+  return hashes;
 }
 
 function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId: string): FileVersion | undefined {
@@ -2183,10 +2189,35 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       return versions;
     },
 
-    listRetainedChunkHashes: async () => {
-      const values = await transact(db, "manifests", "readonly", (transaction) => request(transaction.objectStore("manifests").getAll()));
+    sweepManifests: async () => {
+      const retained = await transact(db, ["workspaces", "nodes", "operations", "manifests"], "readwrite", async (transaction) => {
+        const [workspaceValues, nodeValues, operationValues, manifestValues] = await Promise.all([
+          request(transaction.objectStore("workspaces").getAll()),
+          request(transaction.objectStore("nodes").getAll()),
+          request(transaction.objectStore("operations").getAll()),
+          request(transaction.objectStore("manifests").getAll()),
+        ]);
+        const workspaceIds = new Set(parseWorkspaceList(workspaceValues).map(({ id }) => id));
+        const liveNodeIds = new Set<string>();
+        const retainedHashes = new Set<string>();
+        for (const value of nodeValues) {
+          const record = parseStoredNodeRecord(value);
+          if (isPurgeTombstone(record)) continue;
+          liveNodeIds.add(record.id);
+          if (record.kind === "file") retainedHashes.add(record.manifestHash);
+        }
+        for (const value of operationValues) {
+          const stored = parseStoredOperation(value);
+          if (workspaceIds.has(stored.workspaceId) || stored.versionNodeIds.some((id) => liveNodeIds.has(id))) for (const hash of storedManifestHashes(stored)) retainedHashes.add(hash);
+        }
+        const manifests = manifestValues.map(parseStoredManifest);
+        const manifestHashes = new Set(manifests.map(({ hash }) => hash));
+        if ([...retainedHashes].some((hash) => !manifestHashes.has(hash))) throw new Error("A retained manifest is missing.");
+        await Promise.all(manifests.filter(({ hash }) => !retainedHashes.has(hash)).map(({ hash }) => request(transaction.objectStore("manifests").delete(hash))));
+        return manifests.filter(({ hash }) => retainedHashes.has(hash));
+      });
       const hashes = new Set<string>();
-      for (const value of values) for (const chunk of (await validateStoredManifest(value)).manifest.chunks) hashes.add(chunk.hash);
+      for (const value of retained) for (const chunk of (await validateStoredManifest(value)).manifest.chunks) hashes.add(chunk.hash);
       return [...hashes].sort();
     },
   };

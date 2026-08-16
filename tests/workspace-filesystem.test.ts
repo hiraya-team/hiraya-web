@@ -637,7 +637,7 @@ describe("workspace filesystem storage", () => {
     const chunkEntries = [...accountRoot.directories.get("chunks")!.directories.values()].flatMap((directory) => [...directory.files.values()]);
     const countersBefore = chunkEntries.map(({ reads, writes }) => ({ reads, writes }));
     const verification = await openFilesystemDatabase(ACCOUNT, environment);
-    const retainedBefore = await verification.listRetainedChunkHashes();
+    const retainedBefore = await verification.sweepManifests();
     verification.close();
 
     timestamp = 900;
@@ -653,7 +653,7 @@ describe("workspace filesystem storage", () => {
     expect(await (await destination.readFile(byName.get("File.txt")!.id)).content.text()).toBe("transfer bytes");
     expect((await destination.listOperations()).some(({ operationId }) => operationId === transfer.operationId)).toBe(false);
     const after = await openFilesystemDatabase(ACCOUNT, environment);
-    expect(await after.listRetainedChunkHashes()).toEqual(retainedBefore);
+    expect(await after.sweepManifests()).toEqual(retainedBefore);
     after.close();
     source.close();
     destination.close();

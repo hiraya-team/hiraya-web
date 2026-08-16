@@ -872,6 +872,53 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("sweeps manifests without a live projection or pending workspace owner", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 900);
+    await database.createWorkspace({ id: DESTINATION, name: "Disposable", pinned: false, deviceId: DEVICE });
+    const initial = await verifiedManifest(3, 10);
+    const current = await verifiedManifest(4, 11);
+    const deleted = await verifiedManifest(5, 12);
+    const fileId = stableId(190);
+    const createId = stableId(191);
+    await database.commitOperation({ operation: createDraft(createId, [file(fileId, "History.txt", initial)]), manifests: [initial] });
+    await commitWrite(database, writeDraft(stableId(192), fileId, current, 20), [current]);
+    const deletedOperationId = stableId(193);
+    await database.commitOperation({ operation: createDraft(deletedOperationId, [file(stableId(194), "Deleted.txt", deleted)], DESTINATION), manifests: [deleted] });
+    await database.deleteWorkspace(DESTINATION);
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("operations", "readwrite").objectStore("operations").delete(createId));
+    raw.close();
+
+    expect(await database.getOperation(deletedOperationId)).toBeDefined();
+    const retainedChunks = [initial.manifest.chunks[0]!.hash, current.manifest.chunks[0]!.hash].sort();
+    expect(await database.sweepManifests()).toEqual(retainedChunks);
+    expect(await database.getManifest(initial.hash)).toEqual(initial.manifest);
+    expect(await database.getManifest(current.hash)).toEqual(current.manifest);
+    expect(await database.getManifest(deleted.hash)).toBeUndefined();
+    expect(await database.sweepManifests()).toEqual(retainedChunks);
+    database.close();
+  });
+
+  test("retains transferred file history after deleting its source workspace", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 950);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const original = await verifiedManifest(3, 13);
+    const current = await verifiedManifest(4, 14);
+    const fileId = stableId(195);
+    const createId = stableId(196);
+    const writeId = stableId(197);
+    await database.commitOperation({ operation: createDraft(createId, [file(fileId, "Transferred.txt", original)]), manifests: [original] });
+    await commitWrite(database, writeDraft(writeId, fileId, current, 20), [current]);
+    await database.commitOperation({ operation: transferDraft(stableId(198), [fileId]) });
+    await database.deleteWorkspace(WORKSPACE);
+
+    expect(await database.sweepManifests()).toEqual([original.manifest.chunks[0]!.hash, current.manifest.chunks[0]!.hash].sort());
+    expect((await database.listFileVersions(DESTINATION, fileId)).map(({ operationId }) => operationId)).toEqual([writeId, createId]);
+    database.close();
+  });
+
   test("commits exact metadata, lifecycle, and setting projections through purge and reopen", async () => {
     const factory = new IDBFactory();
     let time = 900;
@@ -991,7 +1038,7 @@ describe("web2 filesystem database", () => {
     expect(unsetMany.inverse).toEqual({ kind: "unset-many", namespace: "editor", settings: [{ key: "font", previous: { exists: true, value: null } }, { key: "theme", previous: { exists: true, value: { dark: false } } }] });
     expect(await database.listSettings(WORKSPACE, "editor")).toEqual([]);
     expect((await database.listSettingRecords(WORKSPACE, "editor")).map(({ key, deleted }) => ({ key, deleted }))).toEqual([{ key: "font", deleted: true }, { key: "theme", deleted: true }]);
-    expect(await database.listRetainedChunkHashes()).toEqual(["f".repeat(64)]);
+    expect(await database.sweepManifests()).toEqual([]);
 
     await database.commitOperation({ operation: { ...operationBase(stableId(221)), kind: "trash", nodeIds: [retainedTrashId], trashedAt: 70 } });
     const beforeReopen = { active: await database.listChildren(WORKSPACE, null), trash: await database.listTrash(WORKSPACE), settings: await database.listSettings(WORKSPACE, "editor"), operations: await database.listOperations(WORKSPACE) };
@@ -1185,7 +1232,7 @@ describe("web2 filesystem database", () => {
       changes: await readStored(factory, databaseName, "changes"),
       operations: await readStored(factory, databaseName, "operations"),
       versions: await database.listFileVersions(WORKSPACE, fileId),
-      chunks: await database.listRetainedChunkHashes(),
+      chunks: await database.sweepManifests(),
     };
     const operationId = stableId(2_103);
     const originalAdd = IDBObjectStore.prototype.add;
@@ -1207,7 +1254,7 @@ describe("web2 filesystem database", () => {
       changes: await readStored(factory, databaseName, "changes"),
       operations: await readStored(factory, databaseName, "operations"),
       versions: await database.listFileVersions(WORKSPACE, fileId),
-      chunks: await database.listRetainedChunkHashes(),
+      chunks: await database.sweepManifests(),
     }).toEqual(before);
     expect(await database.getOperation(operationId)).toBeUndefined();
     expect(await database.listChildren(DESTINATION, null)).toEqual([]);
@@ -1371,7 +1418,7 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
-  test("enumerates retained chunk hashes and rejects noncanonical stored manifests", async () => {
+  test("sweeps manifests and rejects noncanonical retained records", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory);
     const first = await verifiedManifest(1, 1);
@@ -1379,7 +1426,7 @@ describe("web2 filesystem database", () => {
     const firstNodeId = stableId(161);
     const operation = createDraft(stableId(160), [file(firstNodeId, "First.txt", first), file(stableId(162), "Second.txt", second)]);
     const committed = await database.commitOperation({ operation, manifests: [first, second] });
-    expect(await database.listRetainedChunkHashes()).toEqual(["1".repeat(64), "2".repeat(64)]);
+    expect(await database.sweepManifests()).toEqual(["1".repeat(64), "2".repeat(64)]);
 
     const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
     await idbRequest(raw.transaction("manifests", "readwrite").objectStore("manifests").put({ hash: first.hash, manifest: { ...first.manifest, chunks: [{ hash: "3".repeat(64), size: 1 }] } }));
@@ -1388,7 +1435,7 @@ describe("web2 filesystem database", () => {
     await expect(database.getManifest(first.hash)).rejects.toThrow("canonical bytes");
     await expect(database.listFileVersions(WORKSPACE, firstNodeId)).rejects.toThrow("canonical bytes");
     await expect(database.commitOperation({ operation: writeDraft(stableId(164), firstNodeId, first, 20), expectedContentTuple: (await database.getNode(firstNodeId))!.fieldTuples.content })).rejects.toThrow("canonical bytes");
-    await expect(database.listRetainedChunkHashes()).rejects.toThrow("canonical bytes");
+    await expect(database.sweepManifests()).rejects.toThrow("canonical bytes");
     database.close();
   });
 
