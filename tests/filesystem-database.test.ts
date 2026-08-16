@@ -13,6 +13,8 @@ import {
   type Manifest,
 } from "../src/filesystem/model";
 import { DEFAULT_DEVICE_PREFERENCES } from "../src/domain/preferences";
+import type { InstalledApp } from "../src/apps/installed-apps";
+import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
 const ACCOUNT = stableId(1);
 const WORKSPACE = stableId(2);
@@ -90,6 +92,10 @@ function versionDraft(operationId: string, nodeId: string, version: { mimeType: 
 
 function operationBase(operationId: string) {
   return { schemaVersion: 1 as const, operationId, workspaceId: WORKSPACE, deviceId: DEVICE };
+}
+
+function installedApp(appId = "test.editor"): InstalledApp {
+  return { appId, source: "desktop", packageEntryId: "package-one", archivePath: null, digest: "a".repeat(64), version: "1.0.0", approvedAt: 10, manifest: { schemaVersion: 2, uiRuntime: 1, id: appId, name: "Editor", version: "1.0.0", entrypoint: "index.html", permissions: ["files:read"], fileTypes: [".txt"] } };
 }
 
 function transferDraft(operationId: string, nodeIds: string[], destinationWorkspaceId = DESTINATION, parentId: string | null = null, deviceId = DEVICE): Extract<WorkspaceOperationDraft, { kind: "transfer" }> {
@@ -227,6 +233,79 @@ describe("web2 filesystem database", () => {
     await expect(reopened.readDevicePreferences()).rejects.toThrow("unsupported format");
     await expect(reopened.readWindowSession(WORKSPACE)).rejects.toThrow("unsupported format");
     reopened.close();
+  });
+
+  test("persists local app approvals, data, and associations with atomic uninstall cleanup", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const install = installedApp();
+    const association = { matcher: ".txt", appId: install.appId, createdAt: 20 };
+    expect(await database.listInstalledApps()).toEqual([]);
+    await expect(database.setFileAssociation(association)).rejects.toThrow("not installed");
+    expect(await database.installApp(install)).toEqual(install);
+    const key = "theme-🌙";
+    const value = { mode: "düsk" };
+    const bytes = new TextEncoder().encode(JSON.stringify(key)).byteLength + new TextEncoder().encode(JSON.stringify(value)).byteLength;
+    await database.writeAppStorage(install.appId, key, value, bytes, 1);
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "app-storage", [install.appId, key])).toEqual({ appId: install.appId, key, value, bytes });
+    const replacementBytes = new TextEncoder().encode(JSON.stringify(key)).byteLength + new TextEncoder().encode(JSON.stringify(false)).byteLength;
+    await database.writeAppStorage(install.appId, key, false, replacementBytes, 1);
+    await expect(database.writeAppStorage(install.appId, key, "too large", replacementBytes, 1)).rejects.toThrow("quota");
+    expect(await database.readAppStorage(install.appId, key)).toBe(false);
+    await database.writeAppStorage(install.appId, "wrap", true, 64 * 1024, 2);
+    await expect(database.writeAppStorage(install.appId, "third", null, 64 * 1024, 2)).rejects.toThrow("entry quota");
+    await database.setFileAssociation(association);
+    database.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await reopened.listInstalledApps()).toEqual([install]);
+    expect(await reopened.readAppStorage(install.appId, key)).toBe(false);
+    expect(await reopened.listFileAssociations()).toEqual([association]);
+    await reopened.removeAppStorage(install.appId, "wrap");
+    expect(await reopened.readAppStorage(install.appId, "wrap")).toBeUndefined();
+    const originalDelete = IDBObjectStore.prototype.delete;
+    IDBObjectStore.prototype.delete = function (candidate) {
+      if (this.name === "file-associations" && candidate === association.matcher) throw new DOMException("Injected app cleanup failure", "AbortError");
+      return originalDelete.call(this, candidate);
+    };
+    try {
+      await expect(reopened.uninstallApp(install.appId)).rejects.toThrow("Injected app cleanup failure");
+    } finally {
+      IDBObjectStore.prototype.delete = originalDelete;
+    }
+    expect(await reopened.listInstalledApps()).toEqual([install]);
+    expect(await reopened.readAppStorage(install.appId, key)).toBe(false);
+    expect(await reopened.listFileAssociations()).toEqual([association]);
+    await reopened.uninstallApp(install.appId);
+    expect(await reopened.listInstalledApps()).toEqual([]);
+    expect(await reopened.readAppStorage(install.appId, key)).toBeUndefined();
+    expect(await reopened.listFileAssociations()).toEqual([]);
+    reopened.close();
+
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("app-storage", "readwrite").objectStore("app-storage").put({ appId: install.appId, key: "corrupt", value: true, bytes: 1 }));
+    raw.close();
+    const malformed = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    await expect(malformed.readAppStorage(install.appId, "corrupt")).rejects.toThrow("inconsistent");
+    malformed.close();
+  });
+
+  test("protects bundled system app identities", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const reserved = installedApp(SYSTEM_APP_IDS.textEditor);
+    await expect(database.installApp(reserved)).rejects.toThrow("reserved");
+    const system = { ...reserved, source: "system" as const, packageEntryId: null, archivePath: "system-apps/text-editor.hiraya.app" };
+    await database.installApp(system);
+    await database.uninstallApp(system.appId);
+    expect(await database.listInstalledApps()).toEqual([system]);
+
+    const extensionSystemBase = installedApp("test.system");
+    const extensionSystem = { ...extensionSystemBase, source: "system" as const, packageEntryId: null, archivePath: "system-apps/terminal.hiraya.app" };
+    await database.installApp(extensionSystem);
+    await expect(database.installApp(extensionSystemBase)).rejects.toThrow("cannot be replaced");
+    expect(await database.listInstalledApps()).toEqual([system, extensionSystem]);
+    database.close();
   });
 
   test("initializes workspace and sync state atomically and reloads them unchanged", async () => {

@@ -37,6 +37,9 @@ import {
 } from "./operations";
 import { DEFAULT_DEVICE_PREFERENCES, parseDevicePreferences, type DevicePreferences } from "../domain/preferences";
 import { parseWindowSession, type WindowSession } from "../lib/window-session";
+import { parseJsonValue } from "@hiraya-team/apps-contracts";
+import { normalizeAssociationMatcher, parseFileAssociation, parseInstalledApp, type FileAssociation, type InstalledApp } from "../apps/installed-apps";
+import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
 
 const DATABASE_VERSION = 1;
 const FILE_VERSION_HISTORY_LIMIT = 20;
@@ -189,10 +192,61 @@ export type FilesystemDatabase = {
   writeWindowSession(workspaceId: string, session: WindowSession): Promise<void>;
   readDevicePreferences(): Promise<DevicePreferences>;
   writeDevicePreferences(preferences: DevicePreferences): Promise<void>;
+  listInstalledApps(): Promise<InstalledApp[]>;
+  installApp(install: InstalledApp): Promise<InstalledApp>;
+  uninstallApp(appId: string): Promise<void>;
+  listFileAssociations(): Promise<FileAssociation[]>;
+  setFileAssociation(association: FileAssociation): Promise<FileAssociation>;
+  removeFileAssociation(matcher: string): Promise<void>;
+  resetFileAssociations(): Promise<void>;
+  readAppStorage(appId: string, key: string): Promise<JsonValue | undefined>;
+  writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number): Promise<void>;
+  removeAppStorage(appId: string, key: string): Promise<void>;
+  clearAppStorage(appId: string): Promise<void>;
 };
 
 type StoredNode = Node & { parentKey: string; lifecycleKey: string };
 type StoredManifest = { hash: string; manifest: Manifest };
+type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
+
+const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
+
+function parseAppId(value: unknown) {
+  if (typeof value !== "string" || value.length > 256 || !APP_ID.test(value)) throw new Error("An app ID is invalid.");
+  return value;
+}
+
+function parseAppStorageKey(value: unknown) {
+  if (typeof value !== "string" || value.length === 0 || value.length > 128 || [...value].some((character) => {
+    const point = character.codePointAt(0) ?? 0;
+    return point < 32 || point === 127;
+  })) throw new Error("An app storage key is invalid.");
+  return value;
+}
+
+function appStorageBytes(key: string, value: JsonValue) {
+  return new TextEncoder().encode(JSON.stringify(key)).byteLength + new TextEncoder().encode(JSON.stringify(value)).byteLength;
+}
+
+function parseAppStorageRecord(value: unknown, expectedAppId?: string): AppStorageRecord {
+  if (!isRecord(value)) throw new Error("A stored app data record has an unsupported shape.");
+  assertExactKeys(value, ["appId", "key", "value", "bytes"], "A stored app data record has an unsupported shape.");
+  const appId = parseAppId(value.appId);
+  const key = parseAppStorageKey(value.key);
+  const parsed = parseJsonValue(value.value);
+  const bytes = parsePositiveSafeInteger(value.bytes, "A stored app data size is invalid.");
+  if ((expectedAppId !== undefined && appId !== expectedAppId) || bytes !== appStorageBytes(key, parsed)) throw new Error("A stored app data record is inconsistent.");
+  return { appId, key, value: parsed, bytes };
+}
+
+async function clearAppDataRows(transaction: IDBTransaction, appId: string) {
+  const storage = transaction.objectStore("app-storage");
+  const associations = transaction.objectStore("file-associations");
+  await Promise.all([
+    ...((await request(storage.index("appId").getAllKeys(appId))).map((key) => request(storage.delete(key)))),
+    ...((await request(associations.index("appId").getAllKeys(appId))).map((key) => request(associations.delete(key)))),
+  ]);
+}
 
 function parseStoredWindowSession(value: unknown, expectedWorkspaceId: string) {
   if (!isRecord(value)) throw new Error("A stored window session has an unsupported shape.");
@@ -997,6 +1051,112 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const parsed = parseDevicePreferences(preferences);
       await transact(db, "device-preferences", "readwrite", async (transaction) => {
         await request(transaction.objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: parsed }));
+      });
+    },
+
+    listInstalledApps: () => transact(db, "installed-apps", "readonly", async (transaction) => {
+      const values = await request(transaction.objectStore("installed-apps").getAll());
+      return values.map(parseInstalledApp).sort((left, right) => left.approvedAt - right.approvedAt || left.appId.localeCompare(right.appId));
+    }),
+
+    installApp: async (value) => {
+      const install = parseInstalledApp(value);
+      if (install.source !== "system" && RESERVED_SYSTEM_APP_IDS.has(install.appId)) throw new Error("That app ID is reserved for a trusted system app.");
+      return transact(db, "installed-apps", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("installed-apps");
+        const stored = await request(store.get(install.appId));
+        const current = stored === undefined ? undefined : parseInstalledApp(stored);
+        if (current?.source === "system" && install.source !== "system") throw new Error("Bundled system apps cannot be replaced.");
+        await request(store.put(install));
+        return install;
+      });
+    },
+
+    uninstallApp: async (value) => {
+      const appId = parseAppId(value);
+      await transact(db, ["installed-apps", "app-storage", "file-associations"], "readwrite", async (transaction) => {
+        const apps = transaction.objectStore("installed-apps");
+        const stored = await request(apps.get(appId));
+        if (stored === undefined) return;
+        const current = parseInstalledApp(stored);
+        if (current.source === "system") return;
+        await request(apps.delete(appId));
+        await clearAppDataRows(transaction, appId);
+      });
+    },
+
+    listFileAssociations: () => transact(db, "file-associations", "readonly", async (transaction) => {
+      const values = await request(transaction.objectStore("file-associations").getAll());
+      return values.map(parseFileAssociation).sort((left, right) => left.matcher.localeCompare(right.matcher));
+    }),
+
+    setFileAssociation: async (value) => {
+      const association = parseFileAssociation(value);
+      return transact(db, ["installed-apps", "file-associations"], "readwrite", async (transaction) => {
+        const installed = await request(transaction.objectStore("installed-apps").get(association.appId));
+        if (installed === undefined) throw new Error("That app is not installed.");
+        parseInstalledApp(installed);
+        await request(transaction.objectStore("file-associations").put(association));
+        return association;
+      });
+    },
+
+    removeFileAssociation: async (matcher) => {
+      await transact(db, "file-associations", "readwrite", async (transaction) => {
+        await request(transaction.objectStore("file-associations").delete(normalizeAssociationMatcher(matcher)));
+      });
+    },
+
+    resetFileAssociations: async () => {
+      await transact(db, "file-associations", "readwrite", async (transaction) => {
+        await request(transaction.objectStore("file-associations").clear());
+      });
+    },
+
+    readAppStorage: async (appIdValue, keyValue) => {
+      const appId = parseAppId(appIdValue);
+      const key = parseAppStorageKey(keyValue);
+      return transact(db, "app-storage", "readonly", async (transaction) => {
+        const stored = await request(transaction.objectStore("app-storage").get([appId, key]));
+        return stored === undefined ? undefined : parseAppStorageRecord(stored, appId).value;
+      });
+    },
+
+    writeAppStorage: async (appIdValue, keyValue, value, maxBytesValue, maxEntriesValue) => {
+      const appId = parseAppId(appIdValue);
+      const key = parseAppStorageKey(keyValue);
+      const parsed = parseJsonValue(value);
+      const maxBytes = parsePositiveSafeInteger(maxBytesValue, "The app storage byte quota is invalid.");
+      const maxEntries = parsePositiveSafeInteger(maxEntriesValue, "The app storage entry quota is invalid.");
+      if (maxBytes > 64 * 1024 || maxEntries > WEB2_MAX_BATCH_ITEMS) throw new Error("The app storage quota is invalid.");
+      const bytes = appStorageBytes(key, parsed);
+      await transact(db, ["installed-apps", "app-storage"], "readwrite", async (transaction) => {
+        const installed = await request(transaction.objectStore("installed-apps").get(appId));
+        if (installed === undefined) throw new Error("That app is not installed.");
+        parseInstalledApp(installed);
+        const store = transaction.objectStore("app-storage");
+        const records = (await request(store.index("appId").getAll(appId))).map((record) => parseAppStorageRecord(record, appId));
+        const existing = records.find((record) => record.key === key);
+        if (!existing && records.length >= maxEntries) throw new Error("App storage entry quota exceeded.");
+        if (records.reduce((sum, record) => sum + record.bytes, 0) - (existing?.bytes ?? 0) + bytes > maxBytes) throw new Error("App storage quota exceeded.");
+        await request(store.put({ appId, key, value: parsed, bytes } satisfies AppStorageRecord));
+      });
+    },
+
+    removeAppStorage: async (appIdValue, keyValue) => {
+      const appId = parseAppId(appIdValue);
+      const key = parseAppStorageKey(keyValue);
+      await transact(db, "app-storage", "readwrite", async (transaction) => {
+        await request(transaction.objectStore("app-storage").delete([appId, key]));
+      });
+    },
+
+    clearAppStorage: async (appIdValue) => {
+      const appId = parseAppId(appIdValue);
+      await transact(db, "app-storage", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("app-storage");
+        const keys = await request(store.index("appId").getAllKeys(appId));
+        await Promise.all(keys.map((key) => request(store.delete(key))));
       });
     },
 
