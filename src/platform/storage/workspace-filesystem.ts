@@ -22,11 +22,11 @@ import {
   parsePosition,
   parseStableId,
   type JsonValue,
+  type ActiveSetting,
   type DesktopGridSettings,
   type Node,
   type OperationTuple,
   type Position,
-  type Setting,
   type SettingNamespace,
 } from "../../filesystem/model";
 import type { NewNode, SettingChange } from "../../filesystem/operations";
@@ -155,8 +155,8 @@ export type WorkspaceFilesystem = {
   getNode(nodeId: string): Promise<Node | undefined>;
   listChildren(parentId: string | null): Promise<Node[]>;
   listTrash(): Promise<Node[]>;
-  getSetting(namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
-  listSettings(namespace: SettingNamespace): Promise<Setting[]>;
+  getSetting(namespace: SettingNamespace, key: string): Promise<ActiveSetting | undefined>;
+  listSettings(namespace: SettingNamespace): Promise<ActiveSetting[]>;
   readDesktopGridSettings(): Promise<DesktopGridSettings>;
   saveDesktopGridSettings(value: DesktopGridSettings): Promise<StoredOperation>;
   listChanges(afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
@@ -172,6 +172,8 @@ export type WorkspaceFilesystem = {
   purgeNodes(nodeIds: string[]): Promise<StoredOperation>;
   setSetting(namespace: SettingNamespace, key: string, value: JsonValue): Promise<StoredOperation>;
   setSettings(namespace: SettingNamespace, settings: SettingChange[]): Promise<StoredOperation>;
+  unsetSetting(namespace: SettingNamespace, key: string): Promise<StoredOperation>;
+  unsetSettings(namespace: SettingNamespace, keys: string[]): Promise<StoredOperation>;
   listOperations(limit?: number): Promise<StoredOperation[]>;
   listFileVersions(nodeId: string): Promise<FileVersion[]>;
   readFileVersion(nodeId: string, operationId: string): Promise<Blob>;
@@ -414,7 +416,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
           gridSize: settings.get("grid-size") ?? DEFAULT_DESKTOP_GRID_SETTINGS.gridSize,
         });
       },
-      saveDesktopGridSettings: async (value) => locked(() => {
+      saveDesktopGridSettings: async (value) => locked(async () => {
         const settings = parseDesktopGridSettings(value);
         return commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace: "desktop-grid", settings: [
           { key: "auto-arrange-icons", value: settings.autoArrangeIcons },
@@ -458,6 +460,8 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       purgeNodes: (nodeIds) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "purge", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds } })),
       setSetting: (namespace, key, value) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, key, value } })),
       setSettings: (namespace, settings) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "set-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, settings } })),
+      unsetSetting: (namespace, key) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "unset", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, key } })),
+      unsetSettings: (namespace, keys) => locked(() => commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "unset-many", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, namespace, keys } })),
 
       listOperations: (limit) => database.listOperations(workspaceId, limit),
       listFileVersions: (nodeId) => database.listFileVersions(workspaceId, nodeId),

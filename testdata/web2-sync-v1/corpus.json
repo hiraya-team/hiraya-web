@@ -544,6 +544,37 @@
           "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",
           "setting:00000000-0000-4000-8000-000000000001:desktop-grid:grid-size"
         ]
+      },
+      {
+        "name": "unset one setting",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000121",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 30,
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid"
+        },
+        "affected": ["setting:00000000-0000-4000-8000-000000000001:desktop-grid:snap-to-grid"]
+      },
+      {
+        "name": "unset many settings",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000122",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 31,
+          "namespace": "desktop-grid",
+          "keys": ["auto-arrange-icons", "grid-size"]
+        },
+        "affected": [
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:grid-size"
+        ]
       }
     ],
     "invalid": [
@@ -821,6 +852,62 @@
           "namespace": "desktop-grid",
           "settings": [{ "key": "grid-size", "value": 16 }]
         }
+      },
+      {
+        "name": "invalid desktop grid unset key",
+        "kind": "unset",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000123",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 32,
+          "namespace": "desktop-grid",
+          "key": "unknown"
+        }
+      },
+      {
+        "name": "invalid duplicate unset batch",
+        "kind": "unset-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000124",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 33,
+          "namespace": "desktop-grid",
+          "keys": ["grid-size", "grid-size"]
+        }
+      },
+      {
+        "name": "invalid desktop grid unset batch key",
+        "kind": "unset-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000125",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 34,
+          "namespace": "desktop-grid",
+          "keys": ["unknown"]
+        }
+      },
+      {
+        "name": "device setting cannot be unset by workspace operation",
+        "kind": "unset",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000126",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 35,
+          "namespace": "shell",
+          "key": "show-hidden-files"
+        }
       }
     ]
   },
@@ -1006,9 +1093,18 @@
               "workspaceId": "00000000-0000-4000-8000-000000000001",
               "namespace": "desktop-grid",
               "key": "auto-arrange-icons",
+              "deleted": false,
               "value": true,
               "logicalTime": 1,
               "operationId": "00000000-0000-4000-8000-000000000111"
+            },
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "namespace": "desktop-grid",
+              "key": "snap-to-grid",
+              "deleted": true,
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000121"
             }
           ]
         }
@@ -1086,6 +1182,45 @@
           "settings": [],
           "nextPageToken": null,
           "extra": true
+        }
+      },
+      {
+        "name": "setting record missing deleted flag",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "setting tombstone carries a value",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": true, "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "active setting record has no value",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
         }
       }
     ]
@@ -1546,31 +1681,31 @@
         }
       },
       {
-        "name": "setting resolves independently",
+        "name": "setting tombstone wins independently",
         "category": "setting",
         "input": {
           "category": "setting",
           "current": {
-            "value": { "enabled": true },
+            "value": { "deleted": false, "value": null },
             "tuple": {
-              "logicalTime": 9,
+              "logicalTime": 8,
               "operationId": "00000000-0000-4000-8000-000000000101"
             }
           },
           "incoming": {
-            "value": { "enabled": false },
+            "value": { "deleted": true },
             "tuple": {
-              "logicalTime": 8,
+              "logicalTime": 9,
               "operationId": "00000000-0000-4000-8000-000000000102"
             }
           }
         },
         "expected": {
-          "winner": "current",
-          "value": { "enabled": true },
+          "winner": "incoming",
+          "value": { "deleted": true },
           "tuple": {
             "logicalTime": 9,
-            "operationId": "00000000-0000-4000-8000-000000000101"
+            "operationId": "00000000-0000-4000-8000-000000000102"
           }
         }
       },
@@ -1653,6 +1788,30 @@
             }
           },
           "extra": true
+        }
+      },
+      {
+        "name": "setting conflict missing deleted flag",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "value": null }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
+        }
+      },
+      {
+        "name": "setting conflict tombstone carries value",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "deleted": true, "value": null }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
+        }
+      },
+      {
+        "name": "active setting conflict missing value",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "deleted": false }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
         }
       }
     ]

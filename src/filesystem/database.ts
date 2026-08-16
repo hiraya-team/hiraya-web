@@ -22,6 +22,7 @@ import {
   parseWorkspaceSetting,
   sha256Hex,
   type JsonValue,
+  type ActiveSetting,
   type Manifest,
   type Node,
   type NodeLifecycle,
@@ -106,7 +107,7 @@ export type SyncState = {
   lastLocalLogicalTime: number;
 };
 
-type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" }>;
+type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
   [Kind in LocallyCommittableOperation["kind"]]: Omit<Extract<LocallyCommittableOperation, { kind: Kind }>, "logicalTime">;
 }[LocallyCommittableOperation["kind"]];
@@ -125,7 +126,9 @@ export type OperationInverse =
   | { kind: "restore"; roots: Array<{ nodeId: string; parentId: string | null; modifiedAt: number }>; nodes: Array<{ nodeId: string; lifecycle: Extract<NodeLifecycle, { kind: "trashed" }> }> }
   | { kind: "purge"; nodeIds: string[]; reason: "Permanent purge cannot be undone." }
   | { kind: "set"; namespace: SettingNamespace; key: string; previous: PreviousSetting }
-  | { kind: "set-many"; namespace: SettingNamespace; settings: Array<{ key: string; previous: PreviousSetting }> };
+  | { kind: "set-many"; namespace: SettingNamespace; settings: Array<{ key: string; previous: PreviousSetting }> }
+  | { kind: "unset"; namespace: SettingNamespace; key: string; previous: PreviousSetting }
+  | { kind: "unset-many"; namespace: SettingNamespace; settings: Array<{ key: string; previous: PreviousSetting }> };
 
 export type StoredOperation = {
   operationId: string;
@@ -190,8 +193,10 @@ export type FilesystemDatabase = {
   assertChildNamesAvailable(workspaceId: string, parentId: string | null, names: string[]): Promise<void>;
   assertNodeIdsAvailable(ids: string[]): Promise<void>;
   listTrash(workspaceId: string): Promise<Node[]>;
-  getSetting(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
-  listSettings(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
+  getSetting(workspaceId: string, namespace: SettingNamespace, key: string): Promise<ActiveSetting | undefined>;
+  listSettings(workspaceId: string, namespace: SettingNamespace): Promise<ActiveSetting[]>;
+  getSettingRecord(workspaceId: string, namespace: SettingNamespace, key: string): Promise<Setting | undefined>;
+  listSettingRecords(workspaceId: string, namespace: SettingNamespace): Promise<Setting[]>;
   getSyncState(workspaceId: string): Promise<SyncState>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
@@ -634,6 +639,24 @@ function parseOperationInverse(value: unknown): OperationInverse {
       if (new Set(settings.map(({ key }) => key)).size !== settings.length) throw new Error("Stored setting batch inverse metadata is invalid.");
       return { kind: "set-many", namespace, settings };
     }
+    case "unset": {
+      assertExactKeys(value, ["kind", "namespace", "key", "previous"], "Stored operation inverse metadata has an unsupported shape.");
+      const { namespace, key } = parseSettingKeyForNamespace(value.namespace, value.key);
+      return { kind: "unset", namespace, key, previous: parsePreviousSetting(value.previous, namespace, key) };
+    }
+    case "unset-many": {
+      assertExactKeys(value, ["kind", "namespace", "settings"], "Stored operation inverse metadata has an unsupported shape.");
+      if (!Array.isArray(value.settings) || value.settings.length === 0 || value.settings.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Stored setting batch inverse metadata is invalid.");
+      const namespace = parseSettingNamespace(value.namespace);
+      const settings = value.settings.map((candidate) => {
+        if (!isRecord(candidate)) throw new Error("Stored setting batch inverse metadata is invalid.");
+        assertExactKeys(candidate, ["key", "previous"], "Stored setting batch inverse metadata is invalid.");
+        const key = parseSettingKeyForNamespace(namespace, candidate.key).key;
+        return { key, previous: parsePreviousSetting(candidate.previous, namespace, key) };
+      });
+      if (new Set(settings.map(({ key }) => key)).size !== settings.length) throw new Error("Stored setting batch inverse metadata is invalid.");
+      return { kind: "unset-many", namespace, settings };
+    }
     default:
       throw new Error("Stored operation inverse metadata has an unsupported shape.");
   }
@@ -794,6 +817,12 @@ function parseStoredOperation(value: unknown): StoredOperation {
       break;
     case "set-many":
       if (stored.inverse.kind !== "set-many" || stored.inverse.namespace !== operation.namespace || !equalValues(stored.inverse.settings.map(({ key }) => key), operation.settings.map(({ key }) => key))) throw new Error("Stored operation inverse metadata is inconsistent.");
+      break;
+    case "unset":
+      if (stored.inverse.kind !== "unset" || stored.inverse.namespace !== operation.namespace || stored.inverse.key !== operation.key) throw new Error("Stored operation inverse metadata is inconsistent.");
+      break;
+    case "unset-many":
+      if (stored.inverse.kind !== "unset-many" || stored.inverse.namespace !== operation.namespace || !equalValues(stored.inverse.settings.map(({ key }) => key), operation.keys)) throw new Error("Stored operation inverse metadata is inconsistent.");
       break;
   }
   return stored;
@@ -1451,6 +1480,17 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const { namespace: canonicalNamespace, key: canonicalKey } = parseSettingKeyForNamespace(namespace, key);
       return transact(db, "settings", "readonly", async (transaction) => {
         const value = await request(transaction.objectStore("settings").get([canonicalWorkspaceId, canonicalNamespace, canonicalKey]));
+        if (value === undefined) return undefined;
+        const setting = parseSetting(value);
+        return setting.deleted ? undefined : setting;
+      });
+    },
+
+    getSettingRecord: async (workspaceId, namespace, key) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const { namespace: canonicalNamespace, key: canonicalKey } = parseSettingKeyForNamespace(namespace, key);
+      return transact(db, "settings", "readonly", async (transaction) => {
+        const value = await request(transaction.objectStore("settings").get([canonicalWorkspaceId, canonicalNamespace, canonicalKey]));
         return value === undefined ? undefined : parseSetting(value);
       });
     },
@@ -1460,7 +1500,16 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const canonicalNamespace = parseSettingNamespace(namespace);
       return transact(db, "settings", "readonly", async (transaction) => {
         const values = await request(transaction.objectStore("settings").getAll(keyRange.bound([canonicalWorkspaceId, canonicalNamespace, ""], [canonicalWorkspaceId, canonicalNamespace, "\uffff"])));
-        return values.map(parseSetting);
+        return values.map(parseSetting).filter((setting): setting is Extract<Setting, { deleted: false }> => !setting.deleted);
+      });
+    },
+
+    listSettingRecords: async (workspaceId, namespace) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const canonicalNamespace = parseSettingNamespace(namespace);
+      return transact(db, "settings", "readonly", async (transaction) => {
+        const range = keyRange.bound([canonicalWorkspaceId, canonicalNamespace, ""], [canonicalWorkspaceId, canonicalNamespace, "\uffff"]);
+        return (await request(transaction.objectStore("settings").getAll(range))).map(parseSetting);
       });
     },
 
@@ -1656,7 +1705,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           for (const { node, parentId } of items) byParent.set(parentId, [...(byParent.get(parentId) ?? []), node.name]);
           for (const [parentId, names] of byParent) await assertChildNamesAvailableInTransaction(transaction, destinationWorkspaceId, parentId, names, excludedIds);
         };
-        const previousSetting = (setting: Setting | undefined): PreviousSetting => setting === undefined ? { exists: false } : { exists: true, value: setting.value };
+        const previousSetting = (setting: Setting | undefined): PreviousSetting => setting === undefined || setting.deleted ? { exists: false } : { exists: true, value: setting.value };
         const readSetting = async (namespace: SettingNamespace, key: string) => {
           const value = await request(settingsStore.get([workspace.id, namespace, key]));
           if (value === undefined) return undefined;
@@ -1934,13 +1983,25 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           case "set": {
             const previous = await readSetting(operation.namespace, operation.key);
             inverse = { kind: "set", namespace: operation.namespace, key: operation.key, previous: previousSetting(previous) };
-            projectedSettings.push(parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key: operation.key, value: operation.value, logicalTime, operationId: operation.operationId }));
+            projectedSettings.push(parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key: operation.key, deleted: false, value: operation.value, logicalTime, operationId: operation.operationId }));
             break;
           }
           case "set-many": {
             const previous = await Promise.all(operation.settings.map(async ({ key }) => ({ key, previous: previousSetting(await readSetting(operation.namespace, key)) })));
             inverse = { kind: "set-many", namespace: operation.namespace, settings: previous };
-            projectedSettings.push(...operation.settings.map(({ key, value }) => parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key, value, logicalTime, operationId: operation.operationId })));
+            projectedSettings.push(...operation.settings.map(({ key, value }) => parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key, deleted: false, value, logicalTime, operationId: operation.operationId })));
+            break;
+          }
+          case "unset": {
+            const previous = await readSetting(operation.namespace, operation.key);
+            inverse = { kind: "unset", namespace: operation.namespace, key: operation.key, previous: previousSetting(previous) };
+            projectedSettings.push(parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key: operation.key, deleted: true, logicalTime, operationId: operation.operationId }));
+            break;
+          }
+          case "unset-many": {
+            const previous = await Promise.all(operation.keys.map(async (key) => ({ key, previous: previousSetting(await readSetting(operation.namespace, key)) })));
+            inverse = { kind: "unset-many", namespace: operation.namespace, settings: previous };
+            projectedSettings.push(...operation.keys.map((key) => parseSetting({ workspaceId: workspace.id, namespace: operation.namespace, key, deleted: true, logicalTime, operationId: operation.operationId })));
             break;
           }
         }

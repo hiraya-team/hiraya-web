@@ -7,6 +7,7 @@ import {
   parseMimeType,
   parseNonNegativeSafeInteger,
   parsePosition,
+  parseSettingKeyForNamespace,
   parseSettingNamespace,
   parseWorkspaceSetting,
   parseSha256,
@@ -48,6 +49,8 @@ export type WorkspaceOperation = OperationBase & (
   | { kind: "purge"; nodeIds: string[] }
   | { kind: "set"; namespace: SettingNamespace; key: string; value: JsonValue }
   | { kind: "set-many"; namespace: SettingNamespace; settings: SettingChange[] }
+  | { kind: "unset"; namespace: SettingNamespace; key: string }
+  | { kind: "unset-many"; namespace: SettingNamespace; keys: string[] }
 );
 
 const BASE_KEYS = ["schemaVersion", "kind", "operationId", "workspaceId", "deviceId", "logicalTime"] as const;
@@ -143,6 +146,12 @@ function parseSettings(value: unknown, namespace: SettingNamespace) {
   return settings;
 }
 
+function parseSettingKeys(value: unknown, namespace: SettingNamespace) {
+  const keys = boundedNonemptyArray(value, "A setting key batch is invalid.").map((key) => parseSettingKeyForNamespace(namespace, key).key);
+  if (new Set(keys).size !== keys.length) throw new Error("A setting key batch contains duplicate keys.");
+  return keys;
+}
+
 export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
   if (!isRecord(value) || typeof value.kind !== "string") throw new Error("An operation has an unsupported shape.");
   const base = parseBase(value);
@@ -199,6 +208,16 @@ export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
       const namespace = parseSettingNamespace(value.namespace);
       return { ...base, kind: "set-many", namespace, settings: parseSettings(value.settings, namespace) };
     }
+    case "unset": {
+      exactOperation(value, ["namespace", "key"]);
+      const setting = parseSettingKeyForNamespace(value.namespace, value.key);
+      return { ...base, kind: "unset", ...setting };
+    }
+    case "unset-many": {
+      exactOperation(value, ["namespace", "keys"]);
+      const namespace = parseSettingNamespace(value.namespace);
+      return { ...base, kind: "unset-many", namespace, keys: parseSettingKeys(value.keys, namespace) };
+    }
     default:
       throw new Error("An operation kind is unsupported.");
   }
@@ -236,6 +255,8 @@ export function operationAffectedIdentities(operation: WorkspaceOperation) {
     case "purge": operation.nodeIds.forEach((id) => node(operation.workspaceId, id)); affected.add(`trash:${operation.workspaceId}`); break;
     case "set": affected.add(`setting:${operation.workspaceId}:${operation.namespace}:${operation.key}`); break;
     case "set-many": operation.settings.forEach(({ key }) => affected.add(`setting:${operation.workspaceId}:${operation.namespace}:${key}`)); break;
+    case "unset": affected.add(`setting:${operation.workspaceId}:${operation.namespace}:${operation.key}`); break;
+    case "unset-many": operation.keys.forEach((key) => affected.add(`setting:${operation.workspaceId}:${operation.namespace}:${key}`)); break;
     default: assertNever(operation);
   }
   return [...affected].sort();

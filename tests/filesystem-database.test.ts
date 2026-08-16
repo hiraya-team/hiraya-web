@@ -969,6 +969,16 @@ describe("web2 filesystem database", () => {
     ]);
     expect((await database.getSetting(WORKSPACE, "editor", "font"))?.value).toBeNull();
     expect(await database.getSetting(WORKSPACE, "editor", "absent")).toBeUndefined();
+    const unset = await database.commitOperation({ operation: { ...operationBase(stableId(2_220)), kind: "unset", namespace: "editor", key: "theme" } });
+    expect(unset.inverse).toEqual({ kind: "unset", namespace: "editor", key: "theme", previous: { exists: true, value: { dark: true } } });
+    expect(await database.getSetting(WORKSPACE, "editor", "theme")).toBeUndefined();
+    expect(await readStored(factory, await filesystemDatabaseName(ACCOUNT), "settings", [WORKSPACE, "editor", "theme"])).toEqual({ workspaceId: WORKSPACE, namespace: "editor", key: "theme", deleted: true, logicalTime: unset.operation.logicalTime, operationId: unset.operationId });
+    const reset = await database.commitOperation({ operation: { ...operationBase(stableId(2_221)), kind: "set", namespace: "editor", key: "theme", value: { dark: false } } });
+    expect(reset.inverse).toEqual({ kind: "set", namespace: "editor", key: "theme", previous: { exists: false } });
+    const unsetMany = await database.commitOperation({ operation: { ...operationBase(stableId(2_222)), kind: "unset-many", namespace: "editor", keys: ["font", "theme"] } });
+    expect(unsetMany.inverse).toEqual({ kind: "unset-many", namespace: "editor", settings: [{ key: "font", previous: { exists: true, value: null } }, { key: "theme", previous: { exists: true, value: { dark: false } } }] });
+    expect(await database.listSettings(WORKSPACE, "editor")).toEqual([]);
+    expect((await database.listSettingRecords(WORKSPACE, "editor")).map(({ key, deleted }) => ({ key, deleted }))).toEqual([{ key: "font", deleted: true }, { key: "theme", deleted: true }]);
     expect(await database.listRetainedChunkHashes()).toEqual(["f".repeat(64)]);
 
     await database.commitOperation({ operation: { ...operationBase(stableId(221)), kind: "trash", nodeIds: [retainedTrashId], trashedAt: 70 } });

@@ -131,7 +131,7 @@ function accepts(parse: (value: unknown) => unknown, item: PrimitiveCase) {
   expect(accepted, item.name).toBe(item.valid);
 }
 
-const OPERATION_KINDS = ["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many"];
+const OPERATION_KINDS = ["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"];
 const HYDRATION_KINDS = ["folder-page", "exact-nodes", "ancestry", "exact-settings", "setting-namespace"];
 const CONFLICT_CATEGORIES = ["name", "parent", "lifecycle", "position", "content", "setting", "delete-restore-purge"];
 
@@ -145,7 +145,7 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("pins the authoritative corpus bytes", async () => {
-    expect(await sha256Hex(corpusBytes)).toBe("46ffaa80ac1d87b1d81fe0ed24785e31acaae88b892954808ff7fd5c4604ce99");
+    expect(await sha256Hex(corpusBytes)).toBe("4870c8a131a6cd997e507b559f3f128616d3963ae84e2a12289ebc5624dc620a");
   });
 
   test("runs every primitive case through production validators", () => {

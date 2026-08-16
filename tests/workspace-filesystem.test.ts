@@ -283,11 +283,13 @@ describe("workspace filesystem storage", () => {
     await expect(filesystem.setSetting("desktop-grid", "unknown", true)).rejects.toThrow();
     await expect(filesystem.setSetting("desktop-grid", "grid-size", 16)).rejects.toThrow();
     await expect(filesystem.saveDesktopGridSettings({ autoArrangeIcons: false, snapToGrid: true, gridSize: 16 as 24 })).rejects.toThrow();
+    await filesystem.unsetSettings("desktop-grid", ["auto-arrange-icons", "snap-to-grid", "grid-size"]);
+    expect(await filesystem.readDesktopGridSettings()).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: 24 });
     filesystem.close();
 
     const reopened = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
-    expect(await reopened.readDesktopGridSettings()).toEqual({ autoArrangeIcons: false, snapToGrid: true, gridSize: 36 });
-    expect(await reopened.listOperations()).toHaveLength(1);
+    expect(await reopened.readDesktopGridSettings()).toEqual({ autoArrangeIcons: true, snapToGrid: false, gridSize: 24 });
+    expect(await reopened.listOperations()).toHaveLength(2);
     reopened.close();
   });
 

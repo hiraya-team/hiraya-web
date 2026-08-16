@@ -39,13 +39,14 @@ export type OperationTuple = { logicalTime: number; operationId: string };
 export type ConflictWrite<T> = { value: T; tuple: OperationTuple };
 export type LifecycleState = "active" | "trashed" | "purged";
 export type ContentConflictValue = { mimeType: string; size: number; manifestHash: string };
+export type SettingConflictValue = { deleted: false; value: JsonValue } | { deleted: true };
 export type FieldConflict =
   | { category: "name"; current: ConflictWrite<string>; incoming: ConflictWrite<string> }
   | { category: "parent"; current: ConflictWrite<string | null>; incoming: ConflictWrite<string | null> }
   | { category: "lifecycle"; current: ConflictWrite<LifecycleState>; incoming: ConflictWrite<LifecycleState> }
   | { category: "position"; current: ConflictWrite<Position>; incoming: ConflictWrite<Position> }
   | { category: "content"; lifecycle: LifecycleState; current: ConflictWrite<ContentConflictValue>; incoming: ConflictWrite<ContentConflictValue> }
-  | { category: "setting"; current: ConflictWrite<JsonValue>; incoming: ConflictWrite<JsonValue> }
+  | { category: "setting"; current: ConflictWrite<SettingConflictValue>; incoming: ConflictWrite<SettingConflictValue> }
   | { category: "delete-restore-purge"; current: ConflictWrite<LifecycleState>; incoming: ConflictWrite<LifecycleState> };
 export type NodeLifecycle =
   | { kind: "active" }
@@ -71,14 +72,15 @@ type NodeBase = {
 export type Node =
   | NodeBase & { kind: "folder" }
   | NodeBase & { kind: "file"; mimeType: string; size: number; manifestHash: string };
-export type Setting = {
+type SettingBase = {
   workspaceId: string;
   namespace: SettingNamespace;
   key: string;
-  value: JsonValue;
   logicalTime: number;
   operationId: string;
 };
+export type Setting = SettingBase & ({ deleted: false; value: JsonValue } | { deleted: true });
+export type ActiveSetting = Extract<Setting, { deleted: false }>;
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -256,14 +258,17 @@ export function parseNode(value: unknown): Node {
 
 export function parseSetting(value: unknown): Setting {
   if (!isRecord(value)) throw new Error("A setting has an unsupported shape.");
-  assertExactKeys(value, ["workspaceId", "namespace", "key", "value", "logicalTime", "operationId"], "A setting has an unsupported shape.");
-  const setting = parseWorkspaceSetting(value.namespace, value.key, value.value);
-  return {
+  if (typeof value.deleted !== "boolean") throw new Error("A setting has an unsupported shape.");
+  assertExactKeys(value, value.deleted ? ["workspaceId", "namespace", "key", "deleted", "logicalTime", "operationId"] : ["workspaceId", "namespace", "key", "deleted", "value", "logicalTime", "operationId"], "A setting has an unsupported shape.");
+  const identity = parseSettingKeyForNamespace(value.namespace, value.key);
+  const base = {
     workspaceId: parseStableId(value.workspaceId, "A setting workspace ID is invalid."),
-    ...setting,
+    ...identity,
     logicalTime: parseNonNegativeSafeInteger(value.logicalTime, "A setting logical time is invalid."),
     operationId: parseStableId(value.operationId, "A setting operation ID is invalid."),
   };
+  if (value.deleted) return { ...base, deleted: true };
+  return { ...base, deleted: false, value: parseWorkspaceSetting(identity.namespace, identity.key, value.value).value };
 }
 
 export function parseOperationTuple(value: unknown): OperationTuple {
@@ -303,6 +308,12 @@ function parseContentConflictValue(value: unknown): ContentConflictValue {
   return { mimeType: parseMimeType(value.mimeType), size: parseNonNegativeSafeInteger(value.size), manifestHash: parseSha256(value.manifestHash) };
 }
 
+function parseSettingConflictValue(value: unknown): SettingConflictValue {
+  if (!isRecord(value) || typeof value.deleted !== "boolean") throw new Error("A setting conflict value has an unsupported shape.");
+  assertExactKeys(value, value.deleted ? ["deleted"] : ["deleted", "value"], "A setting conflict value has an unsupported shape.");
+  return value.deleted ? { deleted: true } : { deleted: false, value: parseSettingValue(value.value) };
+}
+
 function parseFieldConflict(value: unknown): FieldConflict {
   if (!isRecord(value) || typeof value.category !== "string") throw new Error("A field conflict has an unsupported shape.");
   const standardKeys = ["category", "current", "incoming"];
@@ -326,7 +337,7 @@ function parseFieldConflict(value: unknown): FieldConflict {
       return { category: "content", lifecycle: parseLifecycleState(value.lifecycle), current: parseConflictWrite(value.current, parseContentConflictValue), incoming: parseConflictWrite(value.incoming, parseContentConflictValue) };
     case "setting":
       assertExactKeys(value, standardKeys, "A setting conflict has an unsupported shape.");
-      return { category: "setting", current: parseConflictWrite(value.current, parseSettingValue), incoming: parseConflictWrite(value.incoming, parseSettingValue) };
+      return { category: "setting", current: parseConflictWrite(value.current, parseSettingConflictValue), incoming: parseConflictWrite(value.incoming, parseSettingConflictValue) };
     case "delete-restore-purge":
       assertExactKeys(value, standardKeys, "A delete/restore/purge conflict has an unsupported shape.");
       return { category: "delete-restore-purge", current: parseConflictWrite(value.current, parseLifecycleState), incoming: parseConflictWrite(value.incoming, parseLifecycleState) };
