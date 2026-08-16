@@ -134,6 +134,51 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
   published.close();
 });
 
+test("applies a parsed operation pull under storage locks and broadcasts after commit", async () => {
+  const indexedDB = new IDBFactory();
+  const locks = new ImmediateLocks();
+  const revisions = new RevisionRecorder();
+  const environment = { indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const database = await openFilesystemDatabase(ACCOUNT, environment);
+  await database.getOrCreateDeviceId();
+  const generationId = stableId(80);
+  const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+  await database.publishHydration(WORKSPACE, hydrationTargetId(target), generationId, {
+    accountId: ACCOUNT,
+    deviceId: DEVICE,
+    cursor: 10,
+    workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }],
+    workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+    rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [], settings: [], nextPageToken: null },
+    workspaceSettings: [],
+  });
+  database.close();
+  const operationId = stableId(81);
+  const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment));
+  const result = await coordinator.applyPull({
+    schemaVersion: 1,
+    protocol: WEB2_SYNC_PROTOCOL,
+    kind: "operations",
+    workspaceId: WORKSPACE,
+    deviceId: DEVICE,
+    fromCursor: 10,
+    cursor: 11,
+    headSequence: 11,
+    snapshotBarrier: 8,
+    logFloor: 2,
+    observedLogicalTime: 11,
+    operations: [{ sequence: 11, operationId, companion: null, nodes: [], settings: [{ workspaceId: WORKSPACE, namespace: "editor", key: "font-size", deleted: false, value: 18, logicalTime: 11, operationId }] }],
+  });
+  await coordinator.close();
+  expect(result.changes).toMatchObject([{ kind: "pull", workspaceId: WORKSPACE, revision: 2, operationId, fromCursor: 10, cursor: 11 }]);
+  expect(revisions.messages).toEqual([{ schemaVersion: 1, kind: "catalog-change" }, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2 }]);
+  expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-workspace-${WORKSPACE}`);
+  const published = await openFilesystemDatabase(ACCOUNT, environment);
+  expect(await published.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
+  expect(await published.getSyncState(WORKSPACE)).toMatchObject({ cursor: 11 });
+  published.close();
+});
+
 test("resumes a durable hydration generation and broadcasts its published revision", async () => {
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();

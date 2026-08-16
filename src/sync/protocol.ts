@@ -7,15 +7,17 @@ import {
   isRecord,
   parseCanonicalName,
   parseManifest,
+  parseNodeRecord,
   parseNonNegativeSafeInteger,
   parsePositiveSafeInteger,
   parseSetting,
   parseSha256,
   parseStableId,
   type Manifest,
+  type NodeRecord,
   type Setting,
 } from "../filesystem/model";
-import { parseHydrationPageData, parseHydrationPageToken, parseHydrationTarget, type HydrationPageData, type HydrationTarget } from "../filesystem/hydration";
+import { compareCanonicalStrings, parseHydrationPageData, parseHydrationPageToken, parseHydrationTarget, type HydrationPageData, type HydrationTarget } from "../filesystem/hydration";
 export type { HydrationTarget } from "../filesystem/hydration";
 export { parseHydrationTarget } from "../filesystem/hydration";
 import { parseWorkspaceOperation, type WorkspaceOperation } from "../filesystem/operations";
@@ -50,7 +52,20 @@ export type Bootstrap = {
   rootPage: HydrationPage;
   workspaceSettings: Setting[];
 };
-export type SequencedOperation = { sequence: number; operation: WorkspaceOperation };
+export type PullRequest = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  workspaceId: string;
+  deviceId: string;
+  cursor: number;
+};
+export type PulledOperation = {
+  sequence: number;
+  operationId: string;
+  companion: { workspaceId: string; sequence: number } | null;
+  nodes: NodeRecord[];
+  settings: Setting[];
+};
 export type PushRequest = {
   schemaVersion: typeof WEB2_SCHEMA_VERSION;
   protocol: typeof WEB2_SYNC_PROTOCOL;
@@ -66,10 +81,13 @@ type PullBase = {
   fromCursor: number;
   cursor: number;
   headSequence: number;
+  snapshotBarrier: number;
+  logFloor: number;
+  observedLogicalTime: number;
 };
 export type PullResult = PullBase & (
-  | { kind: "operations"; operations: SequencedOperation[] }
-  | { kind: "reset"; resetBarrier: number; pages: HydrationPage[] }
+  | { kind: "operations"; operations: PulledOperation[] }
+  | { kind: "reset"; resetBarrier: number }
 );
 export type PushResult = {
   schemaVersion: typeof WEB2_SCHEMA_VERSION;
@@ -197,31 +215,52 @@ function parsePullBase(value: Record<string, unknown>): PullBase {
   const fromCursor = parseNonNegativeSafeInteger(value.fromCursor, "A pull cursor is invalid.");
   const cursor = parseNonNegativeSafeInteger(value.cursor, "A pull cursor is invalid.");
   const headSequence = parseNonNegativeSafeInteger(value.headSequence, "A pull head is invalid.");
-  if (cursor < fromCursor || headSequence < cursor) throw new Error("A pull sequence range is invalid.");
-  return { ...wire, workspaceId: parseStableId(value.workspaceId, "A pull workspace ID is invalid."), deviceId: parseStableId(value.deviceId, "A pull device ID is invalid."), fromCursor, cursor, headSequence };
+  const snapshotBarrier = parseNonNegativeSafeInteger(value.snapshotBarrier, "A pull snapshot barrier is invalid.");
+  const logFloor = parseNonNegativeSafeInteger(value.logFloor, "A pull log floor is invalid.");
+  const observedLogicalTime = parseNonNegativeSafeInteger(value.observedLogicalTime, "A pull observed logical time is invalid.");
+  if (cursor < fromCursor || headSequence < cursor || logFloor > snapshotBarrier || snapshotBarrier > headSequence) throw new Error("A pull sequence range is invalid.");
+  return { ...wire, workspaceId: parseStableId(value.workspaceId, "A pull workspace ID is invalid."), deviceId: parseStableId(value.deviceId, "A pull device ID is invalid."), fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime };
+}
+
+export function parsePullRequest(value: unknown): PullRequest {
+  if (!isRecord(value)) throw new Error("A pull request has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "cursor"], "A pull request has an unsupported shape.");
+  return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId, "A pull request workspace ID is invalid."), deviceId: parseStableId(value.deviceId, "A pull request device ID is invalid."), cursor: parseNonNegativeSafeInteger(value.cursor, "A pull request cursor is invalid.") };
 }
 
 export function parsePullResult(value: unknown): PullResult {
   if (!isRecord(value) || value.kind !== "operations" && value.kind !== "reset") throw new Error("A pull result has an unsupported shape.");
-  const baseKeys = ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "fromCursor", "cursor", "headSequence"];
+  const baseKeys = ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime"];
   if (value.kind === "operations") {
     assertExactKeys(value, [...baseKeys, "operations"], "An operation pull result has an unsupported shape.");
     const base = parsePullBase(value);
-    const operations = parseBoundedRecords(value.operations, (candidate): SequencedOperation => {
+    const operations = parseBoundedRecords(value.operations, (candidate): PulledOperation => {
       if (!isRecord(candidate)) throw new Error("A pulled operation has an unsupported shape.");
-      assertExactKeys(candidate, ["sequence", "operation"], "A pulled operation has an unsupported shape.");
-      return { sequence: parsePositiveSafeInteger(candidate.sequence, "A pulled operation sequence is invalid."), operation: parseWorkspaceOperation(candidate.operation) };
+      assertExactKeys(candidate, ["sequence", "operationId", "companion", "nodes", "settings"], "A pulled operation has an unsupported shape.");
+      const sequence = parsePositiveSafeInteger(candidate.sequence, "A pulled operation sequence is invalid.");
+      const operationId = parseStableId(candidate.operationId, "A pulled operation ID is invalid.");
+      let companion: PulledOperation["companion"] = null;
+      if (candidate.companion !== null) {
+        if (!isRecord(candidate.companion)) throw new Error("A pulled operation companion has an unsupported shape.");
+        assertExactKeys(candidate.companion, ["workspaceId", "sequence"], "A pulled operation companion has an unsupported shape.");
+        companion = { workspaceId: parseStableId(candidate.companion.workspaceId, "A pulled operation companion workspace ID is invalid."), sequence: parsePositiveSafeInteger(candidate.companion.sequence, "A pulled operation companion sequence is invalid.") };
+      }
+      if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.settings) || candidate.nodes.length + candidate.settings.length === 0 || candidate.nodes.length + candidate.settings.length > WEB2_MAX_BATCH_ITEMS || candidate.nodes.length > 0 && candidate.settings.length > 0) throw new Error("A pulled operation record batch is invalid.");
+      const nodes = candidate.nodes.map(parseNodeRecord);
+      const settings = candidate.settings.map(parseSetting);
+      const settingIdentities = settings.map(({ namespace, key }) => `${namespace}\0${key}`);
+      if (new Set(nodes.map(({ id }) => id)).size !== nodes.length || nodes.some(({ id }, index) => index > 0 && compareCanonicalStrings(nodes[index - 1]!.id, id) >= 0) || new Set(settingIdentities).size !== settings.length || settingIdentities.some((identity, index) => index > 0 && compareCanonicalStrings(settingIdentities[index - 1]!, identity) >= 0)) throw new Error("Pulled operation records are not canonically ordered.");
+      return { sequence, operationId, companion, nodes, settings };
     }, "A pulled operation batch is invalid.");
-    if (operations.some(({ operation }) => operation.workspaceId !== base.workspaceId || operation.deviceId === "") || operations.some(({ sequence }, index) => sequence <= base.fromCursor || sequence > base.cursor || index > 0 && operations[index - 1]!.sequence >= sequence) || operations.length > 0 && operations.at(-1)!.sequence !== base.cursor || operations.length === 0 && base.cursor !== base.fromCursor || new Set(operations.map(({ operation }) => operation.operationId)).size !== operations.length) throw new Error("A pulled operation batch is inconsistent.");
+    const logicalTimes = operations.flatMap(({ nodes, settings }) => [...nodes.flatMap((node) => "purged" in node ? [node.logicalTime] : Object.values(node.fieldTuples).flatMap((tuple) => tuple === null ? [] : [tuple.logicalTime])), ...settings.map(({ logicalTime }) => logicalTime)]);
+    if (base.fromCursor < base.logFloor || operations.some(({ sequence }, index) => sequence !== base.fromCursor + index + 1) || operations.length > 0 && operations.at(-1)!.sequence !== base.cursor || operations.length === 0 && base.cursor !== base.fromCursor || base.cursor < base.headSequence && operations.length === 0 || new Set(operations.map(({ operationId }) => operationId)).size !== operations.length || logicalTimes.some((logicalTime) => logicalTime > base.observedLogicalTime) || operations.some(({ companion, nodes, settings }) => companion === null ? [...nodes, ...settings].some(({ workspaceId }) => workspaceId !== base.workspaceId) : companion.workspaceId === base.workspaceId || settings.length > 0 || nodes.some(({ workspaceId }) => workspaceId !== base.workspaceId && workspaceId !== companion.workspaceId))) throw new Error("A pulled operation batch is inconsistent.");
     return { ...base, kind: "operations", operations };
   }
-  assertExactKeys(value, [...baseKeys, "resetBarrier", "pages"], "A reset pull result has an unsupported shape.");
+  assertExactKeys(value, [...baseKeys, "resetBarrier"], "A reset pull result has an unsupported shape.");
   const base = parsePullBase(value);
   const resetBarrier = parseNonNegativeSafeInteger(value.resetBarrier, "A pull reset barrier is invalid.");
-  if (!Array.isArray(value.pages) || value.pages.length === 0 || value.pages.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A pull reset page batch is invalid.");
-  const pages = value.pages.map(parseHydrationPage);
-  if (resetBarrier !== base.cursor || pages.some((page) => page.workspaceId !== base.workspaceId || page.deviceId !== base.deviceId || page.target.asOf !== resetBarrier)) throw new Error("A pull reset is inconsistent.");
-  return { ...base, kind: "reset", resetBarrier, pages };
+  if (base.fromCursor >= base.logFloor || resetBarrier !== base.cursor || resetBarrier !== base.snapshotBarrier) throw new Error("A pull reset is inconsistent.");
+  return { ...base, kind: "reset", resetBarrier };
 }
 
 const PUSH_REJECTION_CODES = new Set(["invalid", "forbidden", "quota", "missing-chunks", "not-found", "operation-id-reuse"]);

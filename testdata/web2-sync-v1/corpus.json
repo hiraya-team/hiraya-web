@@ -1406,10 +1406,24 @@
       }
     ]
   },
+  "pullRequests": {
+    "valid": [
+      {
+        "name": "current workspace cursor",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 10 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "negative pull cursor",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": -1 }
+      }
+    ]
+  },
   "pullResults": {
     "valid": [
       {
-        "name": "operation page",
+        "name": "authoritative setting operation page",
         "value": {
           "schemaVersion": 1,
           "protocol": "web2-sync-v1",
@@ -1418,21 +1432,44 @@
           "deviceId": "00000000-0000-4000-8000-000000000003",
           "fromCursor": 10,
           "cursor": 11,
-          "headSequence": 11,
+          "headSequence": 12,
+          "snapshotBarrier": 8,
+          "logFloor": 2,
+          "observedLogicalTime": 13,
           "operations": [
             {
               "sequence": 11,
-              "operation": {
-                "schemaVersion": 1,
-                "kind": "rename",
-                "operationId": "00000000-0000-4000-8000-000000000104",
-                "workspaceId": "00000000-0000-4000-8000-000000000001",
-                "deviceId": "00000000-0000-4000-8000-000000000003",
-                "logicalTime": 13,
-                "nodeId": "00000000-0000-4000-8000-000000000202",
-                "name": "renamed.txt",
-                "modifiedAt": 4
-              }
+              "operationId": "00000000-0000-4000-8000-000000000104",
+              "companion": null,
+              "nodes": [],
+              "settings": [
+                {
+                  "workspaceId": "00000000-0000-4000-8000-000000000001",
+                  "namespace": "editor",
+                  "key": "font-size",
+                  "deleted": false,
+                  "value": 18,
+                  "logicalTime": 13,
+                  "operationId": "00000000-0000-4000-8000-000000000104"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "cross-workspace companion page",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "operations",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 11, "cursor": 12, "headSequence": 12, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 14,
+          "operations": [
+            {
+              "sequence": 12,
+              "operationId": "00000000-0000-4000-8000-000000000105",
+              "companion": { "workspaceId": "00000000-0000-4000-8000-000000000002", "sequence": 4 },
+              "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000002", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 14, "operationId": "00000000-0000-4000-8000-000000000105" }],
+              "settings": []
             }
           ]
         }
@@ -1448,68 +1485,31 @@
           "fromCursor": 1,
           "cursor": 8,
           "headSequence": 10,
-          "resetBarrier": 8,
-          "pages": [
-            {
-              "schemaVersion": 1,
-              "protocol": "web2-sync-v1",
-              "workspaceId": "00000000-0000-4000-8000-000000000001",
-              "deviceId": "00000000-0000-4000-8000-000000000003",
-              "generationId": "00000000-0000-4000-8000-000000000304",
-              "pageIndex": 0,
-              "observedLogicalTime": 8,
-              "target": {
-                "kind": "exact-nodes",
-                "workspaceId": "00000000-0000-4000-8000-000000000001",
-                "asOf": 8,
-                "nodeIds": ["00000000-0000-4000-8000-000000000201"]
-              },
-              "nodes": [
-                {
-                  "workspaceId": "00000000-0000-4000-8000-000000000001",
-                  "id": "00000000-0000-4000-8000-000000000201",
-                  "kind": "folder",
-                  "name": "Documents",
-                  "parentId": null,
-                  "lifecycle": { "kind": "active" },
-                  "position": { "x": 10, "y": 20 },
-                  "createdAt": 1,
-                  "modifiedAt": 1,
-                  "fieldTuples": {
-                    "name": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
-                    "parent": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
-                    "lifecycle": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
-                    "position": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" },
-                    "content": null
-                  }
-                }
-              ],
-              "settings": [],
-              "nextPageToken": null
-            }
-          ]
+          "snapshotBarrier": 8,
+          "logFloor": 2,
+          "observedLogicalTime": 8,
+          "resetBarrier": 8
         }
       }
     ],
     "invalid": [
       {
-        "name": "invalid operation pull",
+        "name": "gapped operation pull",
         "kind": "operations",
         "value": {
-          "schemaVersion": 1,
-          "protocol": "web2-sync-v1",
-          "kind": "operations",
-          "extra": true
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "operations",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 10, "cursor": 12, "headSequence": 12, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 13,
+          "operations": [{ "sequence": 12, "operationId": "00000000-0000-4000-8000-000000000104", "companion": null, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "editor", "key": "font-size", "deleted": false, "value": 18, "logicalTime": 13, "operationId": "00000000-0000-4000-8000-000000000104" }] }]
         }
       },
       {
-        "name": "invalid reset pull",
+        "name": "reset without a cursor gap",
         "kind": "reset",
         "value": {
-          "schemaVersion": 1,
-          "protocol": "web2-sync-v1",
-          "kind": "reset",
-          "extra": true
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 2, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8
         }
       }
     ]

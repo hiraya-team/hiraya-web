@@ -4,6 +4,7 @@ import {
   type ChangeRecord,
   type FilesystemBootstrap,
   type FilesystemDatabaseEnvironment,
+  type FilesystemPullOperations,
   type HydrationGeneration,
   type HydrationProgress,
 } from "../../filesystem/database";
@@ -13,6 +14,7 @@ import { filesystemRevisionChannelName, type FilesystemBroadcastChannel } from "
 
 export type HydrationStorage = {
   bootstrap(value: FilesystemBootstrap, signal: AbortSignal): Promise<ChangeRecord[]>;
+  applyPull(value: FilesystemPullOperations, signal: AbortSignal): Promise<ChangeRecord[]>;
   start(targetId: string, target: HydrationTarget, createGenerationId: () => string, restart: boolean, signal: AbortSignal): Promise<HydrationGeneration>;
   getProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   getPublishedGeneration(workspaceId: string, targetId: string): Promise<string | undefined>;
@@ -58,6 +60,19 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
         notifyCatalog();
         changes.forEach(notify);
         return changes;
+      },
+      applyPull: (value, signal) => {
+        open();
+        return locks.request(accountLock, { mode: "shared", signal }, async () => {
+          const lockNames = (await database.listWorkspaces()).map(({ id }) => `${databaseName}-workspace-${id}`).sort();
+          const acquire = (index: number): Promise<ChangeRecord[]> => index === lockNames.length
+            ? database.applyPullOperations(value)
+            : locks.request(lockNames[index]!, { mode: "exclusive", signal }, () => acquire(index + 1));
+          const changes = await acquire(0);
+          notifyCatalog();
+          changes.forEach(notify);
+          return changes;
+        });
       },
       start: (targetId, target, createGenerationId, restart, signal) => withWorkspace(target.workspaceId, signal, async () => {
         const sync = await database.getSyncState(target.workspaceId);

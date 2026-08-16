@@ -133,6 +133,23 @@ export type FilesystemBootstrap = {
   rootPage: HydrationPageData;
   workspaceSettings: Setting[];
 };
+export type FilesystemPullOperations = {
+  workspaceId: string;
+  deviceId: string;
+  fromCursor: number;
+  cursor: number;
+  headSequence: number;
+  snapshotBarrier: number;
+  logFloor: number;
+  observedLogicalTime: number;
+  operations: Array<{
+    sequence: number;
+    operationId: string;
+    companion: { workspaceId: string; sequence: number } | null;
+    nodes: NodeRecord[];
+    settings: Setting[];
+  }>;
+};
 
 type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" | "unset" | "unset-many" }>;
 export type WorkspaceOperationDraft = {
@@ -162,7 +179,7 @@ export type StoredOperation = {
   workspaceId: string;
   localRevision: number;
   destinationLocalRevision: number | null;
-  stateKind: "pending";
+  stateKind: "pending" | "accepted";
   overlayKind: "active" | "deferred";
   intent: OperationIntent;
   compensatesOperationId: string | null;
@@ -185,6 +202,14 @@ export type ChangeRecord = {
   revision: number;
   operationId: string;
   targetId: string;
+  affectedIdentities: string[];
+} | {
+  kind: "pull";
+  workspaceId: string;
+  revision: number;
+  operationId: string;
+  fromCursor: number;
+  cursor: number;
   affectedIdentities: string[];
 };
 
@@ -246,6 +271,7 @@ export type FilesystemDatabase = {
   getHydrationCoverage(workspaceId: string, targetId: string): Promise<HydrationCoverage | undefined>;
   getHydrationChanges(generationId: string): Promise<ChangeRecord[]>;
   publishHydration(workspaceId: string, targetId: string, generationId: string, bootstrap?: FilesystemBootstrap): Promise<ChangeRecord[]>;
+  applyPullOperations(value: FilesystemPullOperations): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
@@ -558,6 +584,39 @@ function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
   if (rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
   if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
   return { accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
+}
+
+function parseFilesystemPullOperations(value: unknown): FilesystemPullOperations {
+  if (!isRecord(value)) throw new Error("A filesystem pull has an unsupported shape.");
+  assertExactKeys(value, ["workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "operations"], "A filesystem pull has an unsupported shape.");
+  const workspaceId = parseStableId(value.workspaceId, "A pull workspace ID is invalid.");
+  const deviceId = parseStableId(value.deviceId, "A pull device ID is invalid.");
+  const fromCursor = parseNonNegativeSafeInteger(value.fromCursor, "A pull cursor is invalid.");
+  const cursor = parseNonNegativeSafeInteger(value.cursor, "A pull cursor is invalid.");
+  const headSequence = parseNonNegativeSafeInteger(value.headSequence, "A pull head is invalid.");
+  const snapshotBarrier = parseNonNegativeSafeInteger(value.snapshotBarrier, "A pull snapshot barrier is invalid.");
+  const logFloor = parseNonNegativeSafeInteger(value.logFloor, "A pull log floor is invalid.");
+  const observedLogicalTime = parseNonNegativeSafeInteger(value.observedLogicalTime, "A pull observed logical time is invalid.");
+  if (cursor < fromCursor || headSequence < cursor || logFloor > snapshotBarrier || snapshotBarrier > headSequence || !Array.isArray(value.operations) || value.operations.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A filesystem pull sequence range is invalid.");
+  const operations = value.operations.map((candidate, index) => {
+    if (!isRecord(candidate)) throw new Error("A filesystem pulled operation has an unsupported shape.");
+    assertExactKeys(candidate, ["sequence", "operationId", "companion", "nodes", "settings"], "A filesystem pulled operation has an unsupported shape.");
+    const sequence = parsePositiveSafeInteger(candidate.sequence, "A pulled operation sequence is invalid.");
+    const operationId = parseStableId(candidate.operationId, "A pulled operation ID is invalid.");
+    let companion: { workspaceId: string; sequence: number } | null = null;
+    if (candidate.companion !== null) {
+      if (!isRecord(candidate.companion)) throw new Error("A filesystem pull companion has an unsupported shape.");
+      assertExactKeys(candidate.companion, ["workspaceId", "sequence"], "A filesystem pull companion has an unsupported shape.");
+      companion = { workspaceId: parseStableId(candidate.companion.workspaceId, "A pull companion workspace ID is invalid."), sequence: parsePositiveSafeInteger(candidate.companion.sequence, "A pull companion sequence is invalid.") };
+    }
+    if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.settings)) throw new Error("A filesystem pull record batch is invalid.");
+    const nodes = candidate.nodes.map(parseNodeRecord);
+    const settings = candidate.settings.map(parseSetting);
+    if (sequence !== fromCursor + index + 1 || nodes.length + settings.length === 0 || nodes.length + settings.length > WEB2_MAX_BATCH_ITEMS || nodes.length > 0 && settings.length > 0 || (companion === null ? [...nodes, ...settings].some((record) => record.workspaceId !== workspaceId) : companion.workspaceId === workspaceId || settings.length > 0 || nodes.some((record) => record.workspaceId !== workspaceId && record.workspaceId !== companion.workspaceId))) throw new Error("A filesystem pulled operation is inconsistent.");
+    return { sequence, operationId, companion, nodes, settings };
+  });
+  if (operations.length > 0 && operations.at(-1)!.sequence !== cursor || operations.length === 0 && cursor !== fromCursor || new Set(operations.map(({ operationId }) => operationId)).size !== operations.length) throw new Error("A filesystem pull cursor is inconsistent.");
+  return { workspaceId, deviceId, fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime, operations };
 }
 
 function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
@@ -962,7 +1021,7 @@ function changeForWorkspace(stored: StoredOperation, workspaceId: string): Chang
 function parseStoredOperation(value: unknown): StoredOperation {
   if (!isRecord(value)) throw new Error("A stored operation has an unsupported shape.");
   assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "destinationLocalRevision", "stateKind", "overlayKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
-  if (value.stateKind !== "pending") throw new Error("A stored operation state is invalid.");
+  if (value.stateKind !== "pending" && value.stateKind !== "accepted") throw new Error("A stored operation state is invalid.");
   if (value.overlayKind !== "active" && value.overlayKind !== "deferred") throw new Error("A stored operation overlay state is invalid.");
   const operation = parseWorkspaceOperation(value.operation);
   const stored = {
@@ -970,7 +1029,7 @@ function parseStoredOperation(value: unknown): StoredOperation {
     workspaceId: parseStableId(value.workspaceId, "A stored operation workspace ID is invalid."),
     localRevision: parsePositiveSafeInteger(value.localRevision, "A stored operation revision is invalid."),
     destinationLocalRevision: value.destinationLocalRevision === null ? null : parsePositiveSafeInteger(value.destinationLocalRevision, "A stored destination operation revision is invalid."),
-    stateKind: "pending" as const,
+    stateKind: value.stateKind as StoredOperation["stateKind"],
     overlayKind: value.overlayKind as StoredOperation["overlayKind"],
     intent: parseIntent(value.intent),
     compensatesOperationId: value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid."),
@@ -1045,8 +1104,8 @@ function parseStoredOperation(value: unknown): StoredOperation {
 }
 
 function parseChangeRecord(value: unknown): ChangeRecord {
-  if (!isRecord(value) || value.kind !== "operation" && value.kind !== "hydration") throw new Error("A stored change record has an unsupported shape.");
-  assertExactKeys(value, value.kind === "hydration" ? ["kind", "workspaceId", "revision", "operationId", "targetId", "affectedIdentities"] : ["kind", "workspaceId", "revision", "operationId", "affectedIdentities"], "A stored change record has an unsupported shape.");
+  if (!isRecord(value) || value.kind !== "operation" && value.kind !== "hydration" && value.kind !== "pull") throw new Error("A stored change record has an unsupported shape.");
+  assertExactKeys(value, value.kind === "hydration" ? ["kind", "workspaceId", "revision", "operationId", "targetId", "affectedIdentities"] : value.kind === "pull" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "affectedIdentities"] : ["kind", "workspaceId", "revision", "operationId", "affectedIdentities"], "A stored change record has an unsupported shape.");
   const base = {
     kind: value.kind,
     workspaceId: parseStableId(value.workspaceId, "A stored change workspace ID is invalid."),
@@ -1054,7 +1113,14 @@ function parseChangeRecord(value: unknown): ChangeRecord {
     operationId: parseStableId(value.operationId, "A stored change operation ID is invalid."),
     affectedIdentities: parseStringSet(value.affectedIdentities, "Stored change identities are invalid."),
   };
-  return value.kind === "hydration" ? { ...base, kind: "hydration", targetId: parseSha256(value.targetId, "A stored hydration change target ID is invalid.") } : { ...base, kind: "operation" };
+  if (value.kind === "hydration") return { ...base, kind: "hydration", targetId: parseSha256(value.targetId, "A stored hydration change target ID is invalid.") };
+  if (value.kind === "pull") {
+    const fromCursor = parseNonNegativeSafeInteger(value.fromCursor, "A stored pull cursor is invalid.");
+    const cursor = parsePositiveSafeInteger(value.cursor, "A stored pull cursor is invalid.");
+    if (cursor <= fromCursor) throw new Error("A stored pull cursor range is invalid.");
+    return { ...base, kind: "pull", fromCursor, cursor };
+  }
+  return { ...base, kind: "operation" };
 }
 
 function sameKeyPath(left: string | string[] | null, right: string | readonly string[]) {
@@ -1424,6 +1490,13 @@ function mergeCrossWorkspaceNode(remote: Node, current: Node) {
   if (base.kind === "folder" || remote.kind === "folder" || current.kind === "folder") return parseNode({ ...base, lifecycle: lifecycle.lifecycle, name: name.name, position: position.position, modifiedAt: Math.max(remote.modifiedAt, current.modifiedAt), fieldTuples: { ...base.fieldTuples, lifecycle: lifecycle.fieldTuples.lifecycle, name: name.fieldTuples.name, position: position.fieldTuples.position } });
   const content = compareOperationTuples(current.fieldTuples.content!, remote.fieldTuples.content!) > 0 ? current : remote;
   return parseNode({ ...base, lifecycle: lifecycle.lifecycle, name: name.name, position: position.position, mimeType: content.mimeType, size: content.size, manifestHash: content.manifestHash, modifiedAt: Math.max(remote.modifiedAt, current.modifiedAt), fieldTuples: { ...base.fieldTuples, lifecycle: lifecycle.fieldTuples.lifecycle, name: name.fieldTuples.name, position: position.fieldTuples.position, content: content.fieldTuples.content } });
+}
+
+function mergePulledNode(remote: NodeRecord, current: NodeRecord | undefined): NodeRecord {
+  if (!current) return remote;
+  if (isPurgeTombstone(remote)) return isPurgeTombstone(current) && compareOperationTuples({ logicalTime: current.logicalTime, operationId: current.operationId }, { logicalTime: remote.logicalTime, operationId: remote.operationId }) > 0 ? current : remote;
+  if (isPurgeTombstone(current)) return current;
+  return mergeCrossWorkspaceNode(remote, current);
 }
 
 function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId: string): FileVersion | undefined {
@@ -2406,7 +2479,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
         const operations = operationValues.map(parseStoredOperation);
         if (operations.some(({ operationId }) => operationId === generation.generationId)) throw new Error("A hydration generation ID collides with an operation.");
-        const pending = operations.filter(({ operation }) => operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId)).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        const pending = operations.filter(({ stateKind, operation }) => stateKind === "pending" && (operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         const coveredNodeIds = new Set(remoteNodes.keys());
         if (generation.target.kind === "exact-nodes") generation.target.nodeIds.forEach((id) => coveredNodeIds.add(id));
         if (generation.target.kind === "ancestry") coveredNodeIds.add(generation.target.nodeId);
@@ -2510,6 +2583,178 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    applyPullOperations: async (value) => {
+      const pull = parseFilesystemPullOperations(value);
+      return transact(db, ["workspaces", "nodes", "operations", "changes", "sync", "settings", "hydration-coverage"], "readwrite", async (transaction) => {
+        const [workspaceValues, syncValues, nodeValues, settingValues, operationValues, coverageValues, changeValues] = await Promise.all([
+          request(transaction.objectStore("workspaces").getAll()),
+          request(transaction.objectStore("sync").getAll()),
+          request(transaction.objectStore("nodes").getAll()),
+          request(transaction.objectStore("settings").getAll()),
+          request(transaction.objectStore("operations").getAll()),
+          request(transaction.objectStore("hydration-coverage").getAll()),
+          request(transaction.objectStore("changes").getAll()),
+        ]);
+        const workspaces = new Map(workspaceValues.map(parseWorkspace).map((candidate) => [candidate.id, candidate]));
+        const syncs = new Map(syncValues.map(parseSyncState).map((candidate) => [candidate.workspaceId, candidate]));
+        const workspace = workspaces.get(pull.workspaceId);
+        const sync = syncs.get(pull.workspaceId);
+        if (!workspace || !sync) throw new Error("That workspace does not exist.");
+        if (sync.deviceId !== pull.deviceId) throw new Error("A pull response does not match the local synchronization device.");
+        const terminalOperationId = pull.operations.at(-1)?.operationId;
+        if (sync.cursor === pull.cursor) {
+          if (!terminalOperationId) return [];
+          const replayed = changeValues.map(parseChangeRecord).filter((change): change is Extract<ChangeRecord, { kind: "pull" }> => change.kind === "pull" && change.fromCursor === pull.fromCursor && change.cursor === pull.cursor && change.operationId === terminalOperationId).sort((left, right) => left.workspaceId.localeCompare(right.workspaceId));
+          if (replayed.length === 0) throw new Error("That pull cursor range was already applied with different input.");
+          return replayed;
+        }
+        if (sync.cursor !== pull.fromCursor) throw new Error("A pull response does not start at the local cursor.");
+        if (workspace.headSequence > pull.headSequence || workspace.snapshotBarrier > pull.snapshotBarrier || workspace.logFloor > pull.logFloor) throw new Error("A pull response regresses workspace sequence metadata.");
+        const projectedCompanionCursors = new Map([...syncs].map(([workspaceId, state]) => [workspaceId, state.cursor]));
+        const companionAlreadyApplied = pull.operations.map(({ companion }) => {
+          if (!companion) return false;
+          const companionWorkspace = workspaces.get(companion.workspaceId);
+          const companionSync = syncs.get(companion.workspaceId);
+          if (!companionWorkspace || !companionSync || companionSync.deviceId !== pull.deviceId) throw new Error("A pull companion workspace does not exist on this device.");
+          const projectedCursor = projectedCompanionCursors.get(companion.workspaceId)!;
+          if (projectedCursor < companion.sequence - 1) throw new Error("A pull companion workspace must apply its preceding sequence first.");
+          if (projectedCursor === companion.sequence - 1) projectedCompanionCursors.set(companion.workspaceId, companion.sequence);
+          return projectedCursor >= companion.sequence;
+        });
+
+        const currentNodes = new Map<string, NodeRecord>(nodeValues.map(parseStoredNodeRecord).map((record) => [record.id, isPurgeTombstone(record) ? record : nodeRecord(record)]));
+        const projectedNodes = new Map(currentNodes);
+        const currentSettings = new Map(settingValues.map(parseSetting).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
+        const projectedSettings = new Map(currentSettings);
+        const authoritativeNodeIds = new Set<string>();
+        const recordWorkspaceIds = new Set<string>();
+        for (let index = 0; index < pull.operations.length; index += 1) {
+          const operation = pull.operations[index]!;
+          for (const record of operation.nodes) {
+            projectedNodes.set(record.id, companionAlreadyApplied[index] ? mergePulledNode(record, projectedNodes.get(record.id)) : record);
+            authoritativeNodeIds.add(record.id);
+            recordWorkspaceIds.add(record.workspaceId);
+          }
+          for (const setting of operation.settings) {
+            const key = `${setting.workspaceId}\0${setting.namespace}\0${setting.key}`;
+            const current = projectedSettings.get(key);
+            if (!companionAlreadyApplied[index] || !current || compareOperationTuples({ logicalTime: current.logicalTime, operationId: current.operationId }, { logicalTime: setting.logicalTime, operationId: setting.operationId }) <= 0) projectedSettings.set(key, setting);
+            recordWorkspaceIds.add(setting.workspaceId);
+          }
+        }
+
+        const pulledOperationIds = new Set(pull.operations.map(({ operationId }) => operationId));
+        const settled: StoredOperation[] = [];
+        const operations = operationValues.map(parseStoredOperation).map((stored) => {
+          if (stored.stateKind !== "pending" || !pulledOperationIds.has(stored.operationId)) return stored;
+          settled.push(stored);
+          return { ...stored, stateKind: "accepted" as const };
+        });
+        const coveredNodeIds = new Set(authoritativeNodeIds);
+        const hierarchyNodes = new Set<string>();
+        const siblingNodes = new Set<string>();
+        const deferredOperations = new Set<string>();
+        const pending = operations.filter((stored) => stored.stateKind === "pending" && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        for (const operation of pending) replayPendingOperation(projectedNodes, projectedSettings, currentSettings, coveredNodeIds, hierarchyNodes, siblingNodes, deferredOperations, operation);
+        validateProjectedNodes(projectedNodes, authoritativeNodeIds, hierarchyNodes, siblingNodes, true);
+
+        const affectedByWorkspace = new Map<string, Set<string>>();
+        const affected = (workspaceId: string) => {
+          const identities = affectedByWorkspace.get(workspaceId) ?? new Set<string>();
+          affectedByWorkspace.set(workspaceId, identities);
+          return identities;
+        };
+        for (const stored of settled) for (const workspaceId of stored.operation.kind === "transfer" ? [stored.workspaceId, stored.operation.destinationWorkspaceId] : [stored.workspaceId]) {
+          const change = changeForWorkspace(stored, workspaceId);
+          change?.affectedIdentities.forEach((identity) => affected(workspaceId).add(identity));
+        }
+        const touchNode = (record: NodeRecord) => {
+          const identities = affected(record.workspaceId);
+          identities.add(`node:${record.workspaceId}:${record.id}`);
+          if (isPurgeTombstone(record)) { identities.add(`trash:${record.workspaceId}`); return; }
+          identities.add(`folder:${record.workspaceId}:${record.parentId ?? "root"}`);
+          if (record.kind === "file") identities.add(`content:${record.workspaceId}:${record.id}`);
+          if (record.lifecycle.kind === "trashed") identities.add(`trash:${record.workspaceId}`);
+        };
+        const writes: Promise<unknown>[] = [];
+        const nodeStore = transaction.objectStore("nodes");
+        for (const [id, current] of currentNodes) {
+          const projected = projectedNodes.get(id);
+          if (projected === undefined) {
+            writes.push(request(nodeStore.delete(id)));
+            touchNode(current);
+          } else if (!equalValues(current, projected)) {
+            writes.push(request(nodeStore.put(isPurgeTombstone(projected) ? projected : storeNode(projected))));
+            touchNode(current);
+            touchNode(projected);
+          }
+        }
+        for (const [id, projected] of projectedNodes) if (!currentNodes.has(id)) {
+          writes.push(request(nodeStore.add(isPurgeTombstone(projected) ? projected : storeNode(projected))));
+          touchNode(projected);
+        }
+        const settingStore = transaction.objectStore("settings");
+        for (const [key, current] of currentSettings) {
+          const projected = projectedSettings.get(key);
+          if (projected === undefined) {
+            writes.push(request(settingStore.delete([current.workspaceId, current.namespace, current.key])));
+            affected(current.workspaceId).add(`setting:${current.workspaceId}:${current.namespace}:${current.key}`);
+            affected(current.workspaceId).add(`setting-namespace:${current.workspaceId}:${current.namespace}`);
+          } else if (!equalValues(current, projected)) {
+            writes.push(request(settingStore.put(projected)));
+            affected(current.workspaceId).add(`setting:${current.workspaceId}:${current.namespace}:${current.key}`);
+            affected(current.workspaceId).add(`setting-namespace:${current.workspaceId}:${current.namespace}`);
+          }
+        }
+        for (const [key, projected] of projectedSettings) if (!currentSettings.has(key)) {
+          writes.push(request(settingStore.add(projected)));
+          affected(projected.workspaceId).add(`setting:${projected.workspaceId}:${projected.namespace}:${projected.key}`);
+          affected(projected.workspaceId).add(`setting-namespace:${projected.workspaceId}:${projected.namespace}`);
+        }
+        const operationStore = transaction.objectStore("operations");
+        for (let index = 0; index < operations.length; index += 1) {
+          const current = parseStoredOperation(operationValues[index]);
+          const projected = deferredOperations.has(operations[index]!.operationId) ? { ...operations[index]!, overlayKind: "deferred" as const } : operations[index]!;
+          if (!equalValues(current, projected)) writes.push(request(operationStore.put(projected)));
+        }
+
+        // ponytail: invalidate selector proofs instead of incrementally repairing them; retain targeted repair when pull volume makes rehydration costly.
+        const coverageStore = transaction.objectStore("hydration-coverage");
+        for (const coverage of coverageValues.map(parseStoredHydrationCoverage)) if (recordWorkspaceIds.has(coverage.workspaceId)) {
+          hydrationTargetAffectedIdentities(coverage.target).forEach((identity) => affected(coverage.workspaceId).add(identity));
+          writes.push(request(coverageStore.delete([coverage.workspaceId, coverage.targetId])));
+        }
+        await Promise.all(writes);
+
+        const nextWorkspaces = new Map(workspaces);
+        const nextSyncs = new Map(syncs);
+        nextWorkspaces.set(pull.workspaceId, parseWorkspace({ ...workspace, headSequence: pull.headSequence, snapshotBarrier: pull.snapshotBarrier, logFloor: pull.logFloor }));
+        nextSyncs.set(pull.workspaceId, parseSyncState({ ...sync, cursor: pull.cursor, lastObservedLogicalTime: Math.max(sync.lastObservedLogicalTime, pull.observedLogicalTime) }));
+        for (const [companionWorkspaceId, cursor] of projectedCompanionCursors) if (cursor !== syncs.get(companionWorkspaceId)!.cursor) {
+          const companionWorkspace = nextWorkspaces.get(companionWorkspaceId)!;
+          const companionSync = nextSyncs.get(companionWorkspaceId)!;
+          nextWorkspaces.set(companionWorkspaceId, parseWorkspace({ ...companionWorkspace, headSequence: Math.max(companionWorkspace.headSequence, cursor) }));
+          nextSyncs.set(companionWorkspaceId, parseSyncState({ ...companionSync, cursor, lastObservedLogicalTime: Math.max(companionSync.lastObservedLogicalTime, pull.observedLogicalTime) }));
+        }
+        if (terminalOperationId) affected(pull.workspaceId);
+        const changes = terminalOperationId === undefined ? [] : [...affectedByWorkspace].filter(([workspaceId, identities]) => identities.size > 0 || workspaceId === pull.workspaceId).map(([workspaceId, identities]) => {
+          const current = nextWorkspaces.get(workspaceId);
+          if (!current || !nextSyncs.has(workspaceId)) throw new Error("Pulled records reference a workspace that does not exist.");
+          return parseChangeRecord({ kind: "pull", workspaceId, revision: current.localRevision + 1, operationId: terminalOperationId, fromCursor: pull.fromCursor, cursor: pull.cursor, affectedIdentities: [...identities].sort() });
+        });
+        for (const change of changes) {
+          nextWorkspaces.set(change.workspaceId, parseWorkspace({ ...nextWorkspaces.get(change.workspaceId)!, localRevision: change.revision }));
+          nextSyncs.set(change.workspaceId, parseSyncState({ ...nextSyncs.get(change.workspaceId)!, lastObservedLogicalTime: Math.max(nextSyncs.get(change.workspaceId)!.lastObservedLogicalTime, pull.observedLogicalTime) }));
+        }
+        await Promise.all([
+          ...nextWorkspaces.values().map((candidate) => request(transaction.objectStore("workspaces").put(candidate))),
+          ...nextSyncs.values().map((candidate) => request(transaction.objectStore("sync").put(candidate))),
+          ...changes.map((change) => request(transaction.objectStore("changes").add(change))),
+        ]);
+        return changes;
+      });
+    },
+
     getManifest: async (hash) => {
       const canonicalHash = parseSha256(hash, "A manifest hash is invalid.");
       return (await readStoredManifests([canonicalHash])).get(canonicalHash)?.manifest;
@@ -2544,6 +2789,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
         const collidingChanges = (await request(transaction.objectStore("changes").index("by-operation-id").getAll(normalized.operation.operationId))).map(parseChangeRecord);
         if (collidingChanges.some(({ kind }) => kind === "hydration")) throw new Error("An operation ID cannot reuse a hydration generation ID.");
+        if (collidingChanges.some(({ kind }) => kind === "pull")) throw new Error("An operation ID cannot reuse a pulled operation ID.");
 
         const workspaceValue = await request(transaction.objectStore("workspaces").get(normalized.operation.workspaceId));
         const syncValue = await request(transaction.objectStore("sync").get(normalized.operation.workspaceId));
@@ -3060,6 +3306,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             if (operationValue !== undefined) throw new Error("A stored hydration change collides with an operation.");
             return;
           }
+          if (change.kind === "pull") return;
           const expected = operationValue === undefined ? undefined : changeForWorkspace(parseStoredOperation(operationValue), canonicalWorkspaceId);
           if (!expected || !equalValues(change, expected)) throw new Error("A stored workspace change does not match its operation.");
         }));

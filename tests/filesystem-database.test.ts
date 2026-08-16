@@ -420,6 +420,118 @@ describe("web2 filesystem database", () => {
     database.close();
   });
 
+  test("applies authoritative operation pulls and settles matching pending overlays", async () => {
+    const factory = new IDBFactory();
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory, () => 100), randomUUID: () => DEVICE });
+    await database.getOrCreateDeviceId();
+    const nodeId = stableId(2_270);
+    const baseTuple = { logicalTime: 10, operationId: stableId(2_271) };
+    const base = { workspaceId: WORKSPACE, id: nodeId, kind: "folder" as const, name: "Base", parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: baseTuple, parent: baseTuple, lifecycle: baseTuple, position: baseTuple, content: null } };
+    const generationId = stableId(2_272);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    await database.publishHydration(WORKSPACE, hydrationTargetId(target), generationId, {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      cursor: 10,
+      workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }],
+      workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+      rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [base], settings: [], nextPageToken: null },
+      workspaceSettings: [],
+    });
+    const operationId = stableId(2_273);
+    const rename = await database.commitOperation({ operation: { ...operationBase(operationId), kind: "rename", nodeId, name: "Client input", modifiedAt: 999 } });
+    const transformed = { ...base, name: "Server transformed", modifiedAt: 2, fieldTuples: { ...base.fieldTuples, name: { logicalTime: rename.operation.logicalTime, operationId } } };
+    const pull = { workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 10, cursor: 11, headSequence: 11, snapshotBarrier: 8, logFloor: 2, observedLogicalTime: rename.operation.logicalTime, operations: [{ sequence: 11, operationId, companion: null, nodes: [transformed], settings: [] }] };
+    const changes = await database.applyPullOperations(pull);
+
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Server transformed", modifiedAt: 2, fieldTuples: { name: { operationId } } });
+    expect(await database.getOperation(operationId)).toMatchObject({ stateKind: "accepted" });
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 11, lastObservedLogicalTime: rename.operation.logicalTime });
+    expect(await database.queryFolderChildren(WORKSPACE, null)).toEqual({ availability: "unavailable" });
+    expect(changes).toMatchObject([{ kind: "pull", workspaceId: WORKSPACE, revision: 3, operationId, fromCursor: 10, cursor: 11 }]);
+    expect(await database.listChanges(WORKSPACE, 2)).toEqual(changes);
+    expect(await database.applyPullOperations(pull)).toEqual(changes);
+    database.close();
+  });
+
+  test("advances consecutive cross-workspace pull companions atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory), randomUUID: () => DEVICE });
+    await database.getOrCreateDeviceId();
+    const generationId = stableId(2_260);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    await database.publishHydration(WORKSPACE, hydrationTargetId(target), generationId, {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      cursor: 10,
+      workspaces: [{ id: WORKSPACE, name: "Source", pinned: true }, { id: DESTINATION, name: "Destination", pinned: false }],
+      workspace: { id: WORKSPACE, name: "Source", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+      rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [], settings: [], nextPageToken: null },
+      workspaceSettings: [],
+    });
+    const transferred = (id: string, operationId: string, logicalTime: number) => {
+      const tuple = { logicalTime, operationId };
+      return { workspaceId: DESTINATION, id, kind: "folder" as const, name: id, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
+    };
+    const firstOperationId = stableId(2_261);
+    const secondOperationId = stableId(2_262);
+    const changes = await database.applyPullOperations({
+      workspaceId: WORKSPACE,
+      deviceId: DEVICE,
+      fromCursor: 10,
+      cursor: 12,
+      headSequence: 12,
+      snapshotBarrier: 8,
+      logFloor: 2,
+      observedLogicalTime: 12,
+      operations: [
+        { sequence: 11, operationId: firstOperationId, companion: { workspaceId: DESTINATION, sequence: 1 }, nodes: [transferred(stableId(2_263), firstOperationId, 11)], settings: [] },
+        { sequence: 12, operationId: secondOperationId, companion: { workspaceId: DESTINATION, sequence: 2 }, nodes: [transferred(stableId(2_264), secondOperationId, 12)], settings: [] },
+      ],
+    });
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 12 });
+    expect(await database.getSyncState(DESTINATION)).toMatchObject({ cursor: 2 });
+    expect((await database.listChildren(DESTINATION, null)).map(({ id }) => id).sort()).toEqual([stableId(2_263), stableId(2_264)].sort());
+    expect(changes.map(({ workspaceId }) => workspaceId).sort()).toEqual([WORKSPACE, DESTINATION].sort());
+    database.close();
+  });
+
+  test("rolls back authoritative records, settlement, coverage, cursor, and revision when pull publication fails", async () => {
+    const factory = new IDBFactory();
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory, () => 100), randomUUID: () => DEVICE });
+    await database.getOrCreateDeviceId();
+    const generationId = stableId(2_250);
+    const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 10, parentId: null, limit: 100 };
+    const targetId = hydrationTargetId(target);
+    await database.publishHydration(WORKSPACE, targetId, generationId, {
+      accountId: ACCOUNT,
+      deviceId: DEVICE,
+      cursor: 10,
+      workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }],
+      workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
+      rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [], settings: [], nextPageToken: null },
+      workspaceSettings: [],
+    });
+    const operationId = stableId(2_251);
+    const pending = await database.commitOperation({ operation: { ...operationBase(operationId), kind: "set", namespace: "editor", key: "font-size", value: 18 } });
+    const originalPut = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "workspaces" && (value as { headSequence?: number }).headSequence === 11) throw new DOMException("Injected pull failure", "AbortError");
+      return key === undefined ? originalPut.call(this, value) : originalPut.call(this, value, key);
+    };
+    try {
+      await expect(database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 10, cursor: 11, headSequence: 11, snapshotBarrier: 8, logFloor: 2, observedLogicalTime: pending.operation.logicalTime, operations: [{ sequence: 11, operationId, companion: null, nodes: [], settings: [{ workspaceId: WORKSPACE, namespace: "editor", key: "font-size", deleted: false, value: 20, logicalTime: pending.operation.logicalTime, operationId }] }] })).rejects.toThrow();
+    } finally {
+      IDBObjectStore.prototype.put = originalPut;
+    }
+    expect(await database.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
+    expect(await database.getOperation(operationId)).toMatchObject({ stateKind: "pending" });
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 10 });
+    expect((await database.listWorkspaces())[0]).toMatchObject({ localRevision: 2 });
+    expect(await database.getHydrationCoverage(WORKSPACE, targetId)).toBeDefined();
+    database.close();
+  });
+
   test("stages only the active hydration generation and advances observed clocks", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory, () => 100);
