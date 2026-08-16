@@ -137,6 +137,7 @@ export type WorkspaceFilesystem = {
   writeFile(nodeId: string, content: Blob, value: { expectedContentTuple: OperationTuple; mimeType?: string }): Promise<StoredOperation>;
   renameNode(nodeId: string, name: string): Promise<StoredOperation>;
   moveNodes(nodeIds: string[], parentId: string | null): Promise<StoredOperation>;
+  transferNodes(destinationWorkspaceId: string, nodeIds: string[], parentId: string | null): Promise<StoredOperation>;
   setNodePositions(positions: Array<{ nodeId: string; position: Position }>): Promise<StoredOperation>;
   trashNodes(nodeIds: string[]): Promise<StoredOperation>;
   restoreNodes(nodeIds: string[], destination: "original" | "root"): Promise<StoredOperation>;
@@ -160,14 +161,18 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
     const root = await getAccountOpfsRoot(accountId, environment.originRoot);
     const databaseName = await filesystemDatabaseName(accountId);
     const accountLockName = `${databaseName}-storage`;
-    const workspaceLockName = `${databaseName}-workspace-${workspaceId}`;
     const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
     const now = environment.now ?? Date.now;
     const randomUUID = environment.randomUUID ?? (() => crypto.randomUUID());
-    const locked = <T>(operation: () => Promise<T>) => {
+    const lockedWorkspaces = <T>(workspaceIds: string[], operation: () => Promise<T>) => {
       if (!locks) throw new Error("Web Locks are required for fresh filesystem mutations.");
-      return locks.request(accountLockName, { mode: "shared" }, () => locks.request(workspaceLockName, { mode: "exclusive" }, operation));
+      const lockNames = [...new Set(workspaceIds.map((id) => parseStableId(id, "A workspace ID is invalid.")))].sort().map((id) => `${databaseName}-workspace-${id}`);
+      const acquire = (index: number): Promise<T> => index === lockNames.length
+        ? operation()
+        : locks.request(lockNames[index]!, { mode: "exclusive" }, () => acquire(index + 1));
+      return locks.request(accountLockName, { mode: "shared" }, () => acquire(0));
     };
+    const locked = <T>(operation: () => Promise<T>) => lockedWorkspaces([workspaceId], operation);
     const cleanupLocked = <T>(operation: () => Promise<T>) => {
       if (!locks) throw new Error("Web Locks are required for fresh filesystem mutations.");
       return locks.request(accountLockName, { mode: "exclusive" }, operation);
@@ -376,6 +381,7 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
 
       renameNode: (nodeId, name) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "rename", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeId, name, modifiedAt: now() } })),
       moveNodes: (nodeIds, parentId) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "move", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, parentId, modifiedAt: now() } })),
+      transferNodes: (destinationWorkspaceId, nodeIds, parentId) => lockedWorkspaces([workspaceId, destinationWorkspaceId], () => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "transfer", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destinationWorkspaceId, parentId, modifiedAt: now() } })),
       setNodePositions: (positions) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, positions } })),
       trashNodes: (nodeIds) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "trash", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, trashedAt: now() } })),
       restoreNodes: (nodeIds, destination) => locked(() => database.commitOperation({ operation: { schemaVersion: WEB2_SCHEMA_VERSION, kind: "restore", operationId: randomUUID(), workspaceId, deviceId: sync.deviceId, nodeIds, destination, modifiedAt: now() } })),

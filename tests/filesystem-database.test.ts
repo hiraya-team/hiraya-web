@@ -15,6 +15,7 @@ import {
 const ACCOUNT = stableId(1);
 const WORKSPACE = stableId(2);
 const DEVICE = stableId(3);
+const DESTINATION = stableId(4);
 const ACCOUNT_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
 
 function stableId(value: number) {
@@ -87,6 +88,10 @@ function versionDraft(operationId: string, nodeId: string, version: { mimeType: 
 
 function operationBase(operationId: string) {
   return { schemaVersion: 1 as const, operationId, workspaceId: WORKSPACE, deviceId: DEVICE };
+}
+
+function transferDraft(operationId: string, nodeIds: string[], destinationWorkspaceId = DESTINATION, parentId: string | null = null, deviceId = DEVICE): Extract<WorkspaceOperationDraft, { kind: "transfer" }> {
+  return { schemaVersion: 1, kind: "transfer", operationId, workspaceId: WORKSPACE, deviceId, nodeIds, destinationWorkspaceId, parentId, modifiedAt: 77 };
 }
 
 async function workspaceDatabase(factory: IDBFactory, now?: () => number, id = WORKSPACE) {
@@ -210,7 +215,7 @@ describe("web2 filesystem database", () => {
       manifests: [manifest],
     });
 
-    expect(stored).toMatchObject({ operationId, localRevision: 1, stateKind: "pending", intent: "forward", compensatesOperationId: null, inverse: { kind: "create", rootNodeIds: [rootId, looseFileId] }, versionNodeIds: [fileId, looseFileId] });
+    expect(stored).toMatchObject({ operationId, localRevision: 1, destinationLocalRevision: null, stateKind: "pending", intent: "forward", compensatesOperationId: null, inverse: { kind: "create", rootNodeIds: [rootId, looseFileId] }, versionNodeIds: [fileId, looseFileId] });
     expect(stored.operation.logicalTime).toBe(100);
     expect(await database.listChildren(WORKSPACE, null)).toHaveLength(2);
     expect((await database.listChildren(WORKSPACE, rootId)).map(({ id }) => id)).toEqual([fileId]);
@@ -470,6 +475,151 @@ describe("web2 filesystem database", () => {
     reopened.close();
   });
 
+  test("atomically transfers complete forests with exact projection, inverse, clocks, changes, replay, and reopen", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 2_000);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const manifest = await verifiedManifest(3, 15);
+    const sourceParentId = stableId(1_500);
+    const rootId = stableId(1_501);
+    const nestedId = stableId(1_502);
+    const fileId = stableId(1_503);
+    const emptyId = stableId(1_504);
+    const looseFileId = stableId(1_505);
+    const destinationParentId = stableId(1_506);
+    const sourceNodes = [
+      folder(sourceParentId, "Source parent"),
+      { ...folder(rootId, "Tree", sourceParentId), modifiedAt: 11 },
+      { ...folder(nestedId, "Nested", rootId), modifiedAt: 12 },
+      file(fileId, "Nested.txt", manifest, nestedId, 13),
+      { ...folder(emptyId, "Empty"), modifiedAt: 14 },
+      file(looseFileId, "Loose.txt", manifest, null, 15),
+    ];
+    await database.commitOperation({ operation: createDraft(stableId(1_507), sourceNodes), manifests: [manifest] });
+    await database.commitOperation({ operation: createDraft(stableId(1_508), [folder(destinationParentId, "Inbox")], DESTINATION) });
+    const before = new Map((await Promise.all([rootId, nestedId, fileId, emptyId, looseFileId].map((id) => database.getNode(id)))).map((node) => [node!.id, node!]));
+    const databaseName = await filesystemDatabaseName(ACCOUNT);
+    const raw = await openRaw(factory, databaseName);
+    const clockTransaction = raw.transaction("sync", "readwrite");
+    await Promise.all([
+      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: WORKSPACE, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 3_500, lastLocalLogicalTime: 100 })),
+      idbRequest(clockTransaction.objectStore("sync").put({ workspaceId: DESTINATION, deviceId: DEVICE, cursor: 0, lastObservedLogicalTime: 300, lastLocalLogicalTime: 4_000 })),
+    ]);
+    raw.close();
+
+    const operationId = stableId(1_509);
+    const operation = transferDraft(operationId, [looseFileId, rootId, emptyId], DESTINATION, destinationParentId);
+    const transferred = await database.commitOperation({ operation });
+    const tuple = { logicalTime: 4_001, operationId };
+    const movedIds = [rootId, nestedId, fileId, emptyId, looseFileId];
+    expect(transferred).toMatchObject({ localRevision: 2, destinationLocalRevision: 2, stateKind: "pending", intent: "forward", compensatesOperationId: null });
+    expect(transferred.operation.logicalTime).toBe(4_001);
+    expect(transferred.versionNodeIds).toEqual([]);
+    expect(transferred.inverse).toEqual({
+      kind: "transfer",
+      nodes: [
+        { nodeId: rootId, parentId: sourceParentId, modifiedAt: 11 },
+        { nodeId: nestedId, parentId: rootId, modifiedAt: 12 },
+        { nodeId: fileId, parentId: nestedId, modifiedAt: 13 },
+        { nodeId: emptyId, parentId: null, modifiedAt: 14 },
+        { nodeId: looseFileId, parentId: null, modifiedAt: 15 },
+      ],
+      fileNodeIds: [fileId, looseFileId],
+    });
+    for (const id of movedIds) {
+      const previous = before.get(id)!;
+      const node = (await database.getNode(id))!;
+      expect(node).toEqual({
+        ...previous,
+        workspaceId: DESTINATION,
+        parentId: [rootId, emptyId, looseFileId].includes(id) ? destinationParentId : previous.parentId,
+        modifiedAt: 77,
+        fieldTuples: { ...previous.fieldTuples, parent: tuple },
+      });
+    }
+    expect(await database.listChildren(WORKSPACE, sourceParentId)).toEqual([]);
+    expect((await database.listChildren(DESTINATION, destinationParentId)).map(({ id }) => id).sort()).toEqual([emptyId, looseFileId, rootId].sort());
+    expect((await database.getNode(fileId) as Extract<Awaited<ReturnType<FilesystemDatabase["getNode"]>>, { kind: "file" }>)).toMatchObject({ mimeType: "text/plain", size: 3, manifestHash: manifest.hash });
+
+    const sourceIdentities = [
+      ...movedIds.map((id) => `node:${WORKSPACE}:${id}`),
+      `content:${WORKSPACE}:${fileId}`,
+      `content:${WORKSPACE}:${looseFileId}`,
+      `folder:${WORKSPACE}:${rootId}`,
+      `folder:${WORKSPACE}:${nestedId}`,
+      `folder:${WORKSPACE}:${emptyId}`,
+      `folder:${WORKSPACE}:${sourceParentId}`,
+      `folder:${WORKSPACE}:root`,
+    ].sort();
+    const destinationIdentities = [
+      ...movedIds.map((id) => `node:${DESTINATION}:${id}`),
+      `content:${DESTINATION}:${fileId}`,
+      `content:${DESTINATION}:${looseFileId}`,
+      `folder:${DESTINATION}:${rootId}`,
+      `folder:${DESTINATION}:${nestedId}`,
+      `folder:${DESTINATION}:${emptyId}`,
+      `folder:${DESTINATION}:${destinationParentId}`,
+    ].sort();
+    expect(transferred.affectedIdentities).toEqual([...sourceIdentities, ...destinationIdentities].sort());
+    expect(await readStored(factory, databaseName, "changes", [WORKSPACE, 2])).toEqual({ workspaceId: WORKSPACE, revision: 2, operationId, affectedIdentities: sourceIdentities });
+    expect(await readStored(factory, databaseName, "changes", [DESTINATION, 2])).toEqual({ workspaceId: DESTINATION, revision: 2, operationId, affectedIdentities: destinationIdentities });
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ lastObservedLogicalTime: 3_500, lastLocalLogicalTime: 4_001 });
+    expect(await database.getSyncState(DESTINATION)).toMatchObject({ lastObservedLogicalTime: 300, lastLocalLogicalTime: 4_001 });
+    expect(new Map((await database.listWorkspaces()).map((workspace) => [workspace.id, workspace.localRevision]))).toEqual(new Map([[WORKSPACE, 2], [DESTINATION, 2]]));
+    expect((await database.listOperations(WORKSPACE))[0]).toEqual(transferred);
+    expect((await database.listOperations(DESTINATION)).some(({ operationId: id }) => id === operationId)).toBe(false);
+    expect(await database.commitOperation({ operation })).toEqual(transferred);
+    expect(new Map((await database.listWorkspaces()).map((workspace) => [workspace.id, workspace.localRevision]))).toEqual(new Map([[WORKSPACE, 2], [DESTINATION, 2]]));
+
+    const beforeReopen = await Promise.all(movedIds.map((id) => database.getNode(id)));
+    database.close();
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await Promise.all(movedIds.map((id) => reopened.getNode(id)))).toEqual(beforeReopen);
+    expect(await reopened.getOperation(operationId)).toEqual(transferred);
+    reopened.close();
+
+    const malformed = await openRaw(factory, databaseName);
+    await idbRequest(malformed.transaction("operations", "readwrite").objectStore("operations").put({ ...transferred, affectedIdentities: transferred.affectedIdentities.slice(1) }));
+    malformed.close();
+    const strict = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    await expect(strict.getOperation(operationId)).rejects.toThrow("derived metadata");
+    strict.close();
+  });
+
+  test("preserves pre-transfer file versions through a bounded global operation scan", async () => {
+    const factory = new IDBFactory();
+    let time = 4_100;
+    const database = await workspaceDatabase(factory, () => time++);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const original = await verifiedManifest(1, 1);
+    const second = await verifiedManifest(2, 2);
+    const third = await verifiedManifest(3, 3);
+    const nodeId = stableId(1_520);
+    const createId = stableId(1_521);
+    const writeId = stableId(1_522);
+    const transferId = stableId(1_523);
+    const destinationWriteId = stableId(1_524);
+    await database.commitOperation({ operation: createDraft(createId, [file(nodeId, "History.txt", original)]), manifests: [original] });
+    await commitWrite(database, writeDraft(writeId, nodeId, second, 20), [second]);
+    await database.commitOperation({ operation: transferDraft(transferId, [nodeId]) });
+    expect((await database.listFileVersions(DESTINATION, nodeId)).map(({ operationId, current }) => ({ operationId, current }))).toEqual([
+      { operationId: writeId, current: true },
+      { operationId: createId, current: false },
+    ]);
+    const transferred = await database.getNode(nodeId);
+    await database.commitOperation({
+      operation: { schemaVersion: 1, kind: "write", operationId: destinationWriteId, workspaceId: DESTINATION, deviceId: DEVICE, nodeId, mimeType: "text/plain", size: third.manifest.size, manifestHash: third.hash, modifiedAt: 21 },
+      manifests: [third],
+      expectedContentTuple: transferred!.fieldTuples.content!,
+    });
+    expect((await database.listFileVersions(DESTINATION, nodeId)).map(({ operationId, current }) => ({ operationId, current }))).toEqual([
+      { operationId: destinationWriteId, current: true },
+      { operationId: writeId, current: false },
+      { operationId: createId, current: false },
+    ]);
+    database.close();
+  });
+
   test("lists the current version first and caps older local versions at twenty", async () => {
     const factory = new IDBFactory();
     let time = 700;
@@ -634,8 +784,6 @@ describe("web2 filesystem database", () => {
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(242)), kind: "move", nodeIds: [firstId, childId], parentId: null, modifiedAt: 22 } })).rejects.toThrow("overlap");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(246)), kind: "rename", nodeId: secondId, name: "Changed", modifiedAt: 22 }, intent: "undo", compensatesOperationId: stableId(235) } as never)).rejects.toThrow("forward intent only");
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(247)), kind: "copy", sourceNodeIds: [firstId], nodes: [folder(stableId(248), "Copy")] } })).rejects.toThrow("complete source forest");
-    await expect(database.commitOperation({ operation: { ...operationBase(stableId(249)), kind: "transfer", nodeIds: [firstId], destinationWorkspaceId: stableId(250), parentId: null, modifiedAt: 22 } } as never)).rejects.toThrow("Transfer operations");
-
     await expect(database.commitOperation({ operation: { ...operationBase(stableId(243)), kind: "position", positions: [{ nodeId: firstId, position: { x: 100, y: 100 } }, { nodeId: stableId(998), position: { x: 0, y: 0 } }] } })).rejects.toThrow("active nodes");
     expect(await database.getNode(firstId)).toEqual(beforeFirst);
     await database.commitOperation({ operation: { ...operationBase(stableId(244)), kind: "set", namespace: "editor", key: "safe", value: true } });
@@ -706,6 +854,119 @@ describe("web2 filesystem database", () => {
     expect((await database.listWorkspaces())[0]!.localRevision).toBe(revision);
     expect(await database.getNode(stableId(531))).toBeUndefined();
     expect(await database.getOperation(stableId(554))).toBeUndefined();
+    database.close();
+  });
+
+  test("rejects invalid transfer roots, destinations, devices, depth, and 257-node subtrees atomically", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 5_000);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const mismatchedDestination = stableId(1_600);
+    const otherDevice = stableId(1_601);
+    await database.createWorkspace({ id: mismatchedDestination, name: "Other device", pinned: false, deviceId: otherDevice });
+    const manifest = await verifiedManifest(1, 4);
+    const rootId = stableId(1_602);
+    const childId = stableId(1_603);
+    const trashedSourceId = stableId(1_604);
+    await database.commitOperation({ operation: createDraft(stableId(1_605), [folder(rootId, "Root"), folder(childId, "Child", rootId), folder(trashedSourceId, "Trashed source")]) });
+    await database.commitOperation({ operation: { ...operationBase(stableId(1_606)), kind: "trash", nodeIds: [trashedSourceId], trashedAt: 1 } });
+
+    const destinationParentId = stableId(1_607);
+    const destinationFileId = stableId(1_608);
+    const trashedDestinationId = stableId(1_609);
+    const foreignRootId = stableId(1_610);
+    await database.commitOperation({ operation: createDraft(stableId(1_611), [
+      folder(destinationParentId, "Destination parent"),
+      file(destinationFileId, "Destination file.txt", manifest),
+      folder(trashedDestinationId, "Trashed destination"),
+      folder(foreignRootId, "Foreign root"),
+      folder(stableId(1_612), "ROOT", destinationParentId),
+    ], DESTINATION), manifests: [manifest] });
+    await database.commitOperation({ operation: { schemaVersion: 1, kind: "trash", operationId: stableId(1_613), workspaceId: DESTINATION, deviceId: DEVICE, nodeIds: [trashedDestinationId], trashedAt: 1 } });
+
+    const depthChain = Array.from({ length: 65 }, (_, index) => folder(stableId(1_620 + index), `Destination depth ${index}`, index === 0 ? null : stableId(1_619 + index)));
+    await database.commitOperation({ operation: createDraft(stableId(1_685), depthChain, DESTINATION) });
+    const largeRootId = stableId(1_700);
+    await database.commitOperation({ operation: createDraft(stableId(1_957), [folder(largeRootId, "Large"), ...Array.from({ length: 255 }, (_, index) => folder(stableId(1_701 + index), `Large child ${index}`, largeRootId))]) });
+    await database.commitOperation({ operation: createDraft(stableId(1_958), [folder(stableId(1_959), "Overflow", largeRootId)]) });
+    const before = {
+      workspaces: await database.listWorkspaces(),
+      source: await database.getNode(rootId),
+      destination: await database.getNode(destinationParentId),
+      operations: await readStored(factory, await filesystemDatabaseName(ACCOUNT), "operations"),
+      changes: await readStored(factory, await filesystemDatabaseName(ACCOUNT), "changes"),
+    };
+    let operationId = 2_000;
+    const rejects = (operation: Extract<WorkspaceOperationDraft, { kind: "transfer" }>, message: string) => expect(database.commitOperation({ operation })).rejects.toThrow(message);
+
+    await rejects(transferDraft(stableId(operationId++), [stableId(9_999)]), "active source roots");
+    await rejects(transferDraft(stableId(operationId++), [trashedSourceId]), "active source roots");
+    await rejects(transferDraft(stableId(operationId++), [foreignRootId]), "active source roots");
+    await rejects(transferDraft(stableId(operationId++), [rootId, childId]), "overlap");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, stableId(9_998)), "active folder");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, destinationFileId), "active folder");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, trashedDestinationId), "active folder");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, childId), "active folder");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, destinationParentId), "sibling");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, depthChain.at(-1)!.id), "too deep");
+    await rejects(transferDraft(stableId(operationId++), [rootId], DESTINATION, null, otherDevice), "does not own this local workspace");
+    await rejects(transferDraft(stableId(operationId++), [rootId], mismatchedDestination), "does not own the transfer destination");
+    await rejects(transferDraft(stableId(operationId++), [largeRootId]), "too large");
+
+    expect({
+      workspaces: await database.listWorkspaces(),
+      source: await database.getNode(rootId),
+      destination: await database.getNode(destinationParentId),
+      operations: await readStored(factory, await filesystemDatabaseName(ACCOUNT), "operations"),
+      changes: await readStored(factory, await filesystemDatabaseName(ACCOUNT), "changes"),
+    }).toEqual(before);
+    database.close();
+  });
+
+  test("rolls back transfer nodes, both workspace clocks and revisions, changes, and history when operation storage fails", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory, () => 5_500);
+    await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
+    const manifest = await verifiedManifest(2, 5);
+    const rootId = stableId(2_100);
+    const fileId = stableId(2_101);
+    await database.commitOperation({ operation: createDraft(stableId(2_102), [folder(rootId, "Tree"), file(fileId, "File.txt", manifest, rootId)]), manifests: [manifest] });
+    const databaseName = await filesystemDatabaseName(ACCOUNT);
+    const before = {
+      root: await database.getNode(rootId),
+      file: await database.getNode(fileId),
+      workspaces: await database.listWorkspaces(),
+      sourceSync: await database.getSyncState(WORKSPACE),
+      destinationSync: await database.getSyncState(DESTINATION),
+      changes: await readStored(factory, databaseName, "changes"),
+      operations: await readStored(factory, databaseName, "operations"),
+      versions: await database.listFileVersions(WORKSPACE, fileId),
+      chunks: await database.listRetainedChunkHashes(),
+    };
+    const operationId = stableId(2_103);
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (value, key) {
+      if (this.name === "operations" && (value as { operationId?: unknown }).operationId === operationId) throw new DOMException("Injected transfer failure", "AbortError");
+      return key === undefined ? originalAdd.call(this, value) : originalAdd.call(this, value, key);
+    };
+    try {
+      await expect(database.commitOperation({ operation: transferDraft(operationId, [rootId]) })).rejects.toThrow("Injected transfer failure");
+    } finally {
+      IDBObjectStore.prototype.add = originalAdd;
+    }
+    expect({
+      root: await database.getNode(rootId),
+      file: await database.getNode(fileId),
+      workspaces: await database.listWorkspaces(),
+      sourceSync: await database.getSyncState(WORKSPACE),
+      destinationSync: await database.getSyncState(DESTINATION),
+      changes: await readStored(factory, databaseName, "changes"),
+      operations: await readStored(factory, databaseName, "operations"),
+      versions: await database.listFileVersions(WORKSPACE, fileId),
+      chunks: await database.listRetainedChunkHashes(),
+    }).toEqual(before);
+    expect(await database.getOperation(operationId)).toBeUndefined();
+    expect(await database.listChildren(DESTINATION, null)).toEqual([]);
     database.close();
   });
 

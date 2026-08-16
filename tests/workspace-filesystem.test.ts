@@ -21,16 +21,34 @@ async function blobHash(value: Blob) {
 
 class TestLocks {
   readonly calls: Array<{ name: string; mode?: LockMode }> = [];
+  readonly acquisitions: Array<{ name: string; mode: LockMode }> = [];
   depth = 0;
   private readonly states = new Map<string, { readers: number; writer: boolean; queue: Array<{ mode: LockMode; operation: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void }> }>();
+  private readonly callWaiters: Array<{ name: string; count: number; resolve: () => void }> = [];
 
   request<T>(name: string, options: LockOptions, operation: () => Promise<T>) {
     this.calls.push({ name, mode: options.mode });
+    this.resolveCallWaiters();
     const state = this.states.get(name) ?? { readers: 0, writer: false, queue: [] };
     this.states.set(name, state);
     const result = new Promise<T>((resolve, reject) => state.queue.push({ mode: options.mode ?? "exclusive", operation, resolve: resolve as (value: unknown) => void, reject }));
     this.drain(name);
     return result;
+  }
+
+  waitForCallCount(name: string, count: number) {
+    if (this.calls.filter((call) => call.name === name).length >= count) return Promise.resolve();
+    return new Promise<void>((resolve) => this.callWaiters.push({ name, count, resolve }));
+  }
+
+  private resolveCallWaiters() {
+    for (let index = this.callWaiters.length - 1; index >= 0; index -= 1) {
+      const waiter = this.callWaiters[index]!;
+      if (this.calls.filter((call) => call.name === waiter.name).length >= waiter.count) {
+        this.callWaiters.splice(index, 1);
+        waiter.resolve();
+      }
+    }
   }
 
   private drain(name: string) {
@@ -39,6 +57,7 @@ class TestLocks {
     const start = (entry: typeof state.queue[number]) => {
       if (entry.mode === "exclusive") state.writer = true;
       else state.readers += 1;
+      this.acquisitions.push({ name, mode: entry.mode });
       this.depth += 1;
       void entry.operation().then((value) => {
         this.depth -= 1;
@@ -401,6 +420,118 @@ describe("workspace filesystem storage", () => {
     const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
     expect(accountRoot.directories.has("chunks")).toBe(false);
     filesystem.close();
+  });
+
+  test("transfers a complete tree between facades without touching manifests or chunks", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 6_000;
+    let timestamp = 800;
+    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const destinationWorkspace = stableId(4);
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
+    await database.createWorkspace({ id: destinationWorkspace, name: "Destination", pinned: false, deviceId: DEVICE });
+    database.close();
+    const source = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const destination = await openWorkspaceFilesystem(ACCOUNT, destinationWorkspace, environment);
+    const content = new Blob(["transfer bytes"], { type: "text/plain" });
+    const created = await source.createForest({ parentId: null, nodes: [
+      { key: "root", kind: "folder", name: "Tree", parentKey: null, position: { x: 1, y: 2 } },
+      { key: "nested", kind: "folder", name: "Nested", parentKey: "root", position: { x: 3, y: 4 } },
+      { key: "file", kind: "file", name: "File.txt", parentKey: "nested", position: { x: 5, y: 6 }, content },
+      { key: "empty", kind: "folder", name: "Empty", parentKey: null, position: { x: 7, y: 8 } },
+    ] });
+    const destinationParent = await destination.createFolder({ name: "Inbox" });
+    const byName = new Map(created.map((node) => [node.name, node]));
+    const accountRoot = origin.directories.get(`${WEB2_OPFS_PREFIX}${ACCOUNT_HASH}`)!;
+    const chunkEntries = [...accountRoot.directories.get("chunks")!.directories.values()].flatMap((directory) => [...directory.files.values()]);
+    const countersBefore = chunkEntries.map(({ reads, writes }) => ({ reads, writes }));
+    const verification = await openFilesystemDatabase(ACCOUNT, environment);
+    const retainedBefore = await verification.listRetainedChunkHashes();
+    verification.close();
+
+    timestamp = 900;
+    const transfer = await source.transferNodes(destinationWorkspace, [byName.get("Empty")!.id, byName.get("Tree")!.id], destinationParent.id);
+    expect(transfer).toMatchObject({ destinationLocalRevision: 2, operation: { kind: "transfer", destinationWorkspaceId: destinationWorkspace, parentId: destinationParent.id, modifiedAt: 900 }, versionNodeIds: [] });
+    expect(await source.getNode(byName.get("Tree")!.id)).toBeUndefined();
+    expect(await source.listChildren(null)).toEqual([]);
+    await expect(source.readFile(byName.get("File.txt")!.id)).rejects.toThrow("active file");
+    expect(chunkEntries.map(({ reads, writes }) => ({ reads, writes }))).toEqual(countersBefore);
+    expect((await destination.listChildren(destinationParent.id)).map(({ name }) => name).sort()).toEqual(["Empty", "Tree"]);
+    expect(await destination.getNode(byName.get("Nested")!.id)).toMatchObject({ workspaceId: destinationWorkspace, parentId: byName.get("Tree")!.id, modifiedAt: 900 });
+    expect(await destination.getNode(byName.get("File.txt")!.id)).toMatchObject({ workspaceId: destinationWorkspace, parentId: byName.get("Nested")!.id, modifiedAt: 900 });
+    expect(await (await destination.readFile(byName.get("File.txt")!.id)).content.text()).toBe("transfer bytes");
+    expect((await destination.listOperations()).some(({ operationId }) => operationId === transfer.operationId)).toBe(false);
+    const after = await openFilesystemDatabase(ACCOUNT, environment);
+    expect(await after.listRetainedChunkHashes()).toEqual(retainedBefore);
+    after.close();
+    source.close();
+    destination.close();
+  });
+
+  test("orders opposite transfers identically while unrelated mutation progresses and cleanup waits", async () => {
+    const indexedDB = new IDBFactory();
+    const origin = new MemoryDirectory();
+    const locks = new TestLocks();
+    let nextId = 7_000;
+    const secondWorkspace = stableId(4);
+    const unrelatedWorkspace = stableId(5);
+    const environment = { indexedDB, IDBKeyRange, now: () => 1_000, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const database = await openFilesystemDatabase(ACCOUNT, environment);
+    await database.createWorkspace({ id: WORKSPACE, name: "First", pinned: true, deviceId: DEVICE });
+    await database.createWorkspace({ id: secondWorkspace, name: "Second", pinned: false, deviceId: DEVICE });
+    await database.createWorkspace({ id: unrelatedWorkspace, name: "Third", pinned: false, deviceId: DEVICE });
+    database.close();
+    const first = await openWorkspaceFilesystem(ACCOUNT, WORKSPACE, environment);
+    const second = await openWorkspaceFilesystem(ACCOUNT, secondWorkspace, environment);
+    const unrelated = await openWorkspaceFilesystem(ACCOUNT, unrelatedWorkspace, environment);
+    const firstParent = await first.createFolder({ name: "First parent" });
+    const firstItem = await first.createFolder({ name: "First item" });
+    const secondParent = await second.createFolder({ name: "Second parent" });
+    const secondItem = await second.createFolder({ name: "Second item" });
+    locks.acquisitions.length = 0;
+    await Promise.all([
+      first.transferNodes(secondWorkspace, [firstItem.id], secondParent.id),
+      second.transferNodes(WORKSPACE, [secondItem.id], firstParent.id),
+    ]);
+    const firstLock = `hiraya-web2-v1-${ACCOUNT_HASH}-workspace-${WORKSPACE}`;
+    const secondLock = `hiraya-web2-v1-${ACCOUNT_HASH}-workspace-${secondWorkspace}`;
+    expect(locks.acquisitions.filter(({ name }) => name === firstLock || name === secondLock).map(({ name }) => name)).toEqual([firstLock, secondLock, firstLock, secondLock]);
+    expect(await second.getNode(firstItem.id)).toMatchObject({ workspaceId: secondWorkspace, parentId: secondParent.id });
+    expect(await first.getNode(secondItem.id)).toMatchObject({ workspaceId: WORKSPACE, parentId: firstParent.id });
+
+    let releaseBlocker!: () => void;
+    const blockerRelease = new Promise<void>((resolve) => { releaseBlocker = resolve; });
+    let blockerAcquired!: () => void;
+    const blockerReady = new Promise<void>((resolve) => { blockerAcquired = resolve; });
+    const blocker = locks.request(secondLock, { mode: "exclusive" }, async () => {
+      blockerAcquired();
+      await blockerRelease;
+    });
+    await blockerReady;
+    const heldItem = await first.createFolder({ name: "Held item" });
+    const secondCalls = locks.calls.filter(({ name }) => name === secondLock).length;
+    const transfer = first.transferNodes(secondWorkspace, [heldItem.id], secondParent.id);
+    await locks.waitForCallCount(secondLock, secondCalls + 1);
+    await unrelated.createFolder({ name: "Unblocked" });
+    let cleanupFinished = false;
+    const accountLock = `hiraya-web2-v1-${ACCOUNT_HASH}-storage`;
+    const exclusiveAcquisitions = () => locks.acquisitions.filter(({ name, mode }) => name === accountLock && mode === "exclusive").length;
+    const acquisitionsBeforeCleanup = exclusiveAcquisitions();
+    const cleanup = first.removeOrphans().then(() => { cleanupFinished = true; });
+    await locks.waitForCallCount(accountLock, locks.calls.filter(({ name }) => name === accountLock).length);
+    expect(cleanupFinished).toBe(false);
+    expect(exclusiveAcquisitions()).toBe(acquisitionsBeforeCleanup);
+    releaseBlocker();
+    await Promise.all([blocker, transfer, cleanup]);
+    expect(cleanupFinished).toBe(true);
+    expect(exclusiveAcquisitions()).toBe(acquisitionsBeforeCleanup + 1);
+    expect((await unrelated.listChildren(null)).map(({ name }) => name).includes("Unblocked")).toBe(true);
+    first.close();
+    second.close();
+    unrelated.close();
   });
 
   test("allows unrelated workspace mutations while account cleanup remains coordinated", async () => {

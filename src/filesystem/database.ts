@@ -80,7 +80,7 @@ export type SyncState = {
   lastLocalLogicalTime: number;
 };
 
-type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "trash" | "restore" | "purge" | "set" | "set-many" }>;
+type LocallyCommittableOperation = Extract<WorkspaceOperation, { kind: "create" | "write" | "copy" | "rename" | "move" | "position" | "transfer" | "trash" | "restore" | "purge" | "set" | "set-many" }>;
 export type WorkspaceOperationDraft = {
   [Kind in LocallyCommittableOperation["kind"]]: Omit<Extract<LocallyCommittableOperation, { kind: Kind }>, "logicalTime">;
 }[LocallyCommittableOperation["kind"]];
@@ -93,6 +93,7 @@ export type OperationInverse =
   | { kind: "write"; nodeId: string; mimeType: string; size: number; manifestHash: string; modifiedAt: number }
   | { kind: "rename"; nodeId: string; name: string; modifiedAt: number }
   | { kind: "move"; roots: Array<{ nodeId: string; parentId: string | null; modifiedAt: number }> }
+  | { kind: "transfer"; nodes: Array<{ nodeId: string; parentId: string | null; modifiedAt: number }>; fileNodeIds: string[] }
   | { kind: "position"; positions: Array<{ nodeId: string; position: Position }> }
   | { kind: "trash"; roots: Array<{ nodeId: string; parentId: string | null }>; nodeIds: string[] }
   | { kind: "restore"; roots: Array<{ nodeId: string; parentId: string | null; modifiedAt: number }>; nodes: Array<{ nodeId: string; lifecycle: Extract<NodeLifecycle, { kind: "trashed" }> }> }
@@ -104,6 +105,7 @@ export type StoredOperation = {
   operationId: string;
   workspaceId: string;
   localRevision: number;
+  destinationLocalRevision: number | null;
   stateKind: "pending";
   intent: OperationIntent;
   compensatesOperationId: string | null;
@@ -333,6 +335,19 @@ function parseOperationInverse(value: unknown): OperationInverse {
       if (new Set(roots.map(({ nodeId }) => nodeId)).size !== roots.length) throw new Error("Stored move inverse roots are invalid.");
       return { kind: "move", roots };
     }
+    case "transfer": {
+      assertExactKeys(value, ["kind", "nodes", "fileNodeIds"], "Stored operation inverse metadata has an unsupported shape.");
+      if (!Array.isArray(value.nodes) || value.nodes.length === 0 || value.nodes.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Stored transfer inverse nodes are invalid.");
+      const nodes = value.nodes.map((candidate) => {
+        if (!isRecord(candidate)) throw new Error("Stored transfer inverse nodes are invalid.");
+        assertExactKeys(candidate, ["nodeId", "parentId", "modifiedAt"], "Stored transfer inverse nodes are invalid.");
+        return { nodeId: parseStableId(candidate.nodeId), parentId: candidate.parentId === null ? null : parseStableId(candidate.parentId), modifiedAt: parseNonNegativeSafeInteger(candidate.modifiedAt) };
+      });
+      const nodeIds = nodes.map(({ nodeId }) => nodeId);
+      const fileNodeIds = parseStoredIds(value.fileNodeIds, "Stored transfer inverse file IDs are invalid.", true);
+      if (!isSorted(nodeIds) || new Set(nodeIds).size !== nodeIds.length || !isSorted(fileNodeIds) || fileNodeIds.some((id) => !nodeIds.includes(id))) throw new Error("Stored transfer inverse metadata is invalid.");
+      return { kind: "transfer", nodes, fileNodeIds };
+    }
     case "position": {
       assertExactKeys(value, ["kind", "positions"], "Stored operation inverse metadata has an unsupported shape.");
       if (!Array.isArray(value.positions) || value.positions.length === 0 || value.positions.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Stored position inverse metadata is invalid.");
@@ -411,6 +426,10 @@ function equalValues(left: unknown, right: unknown) {
 }
 
 function localAffectedIdentities(operation: LocallyCommittableOperation, inverse: OperationInverse) {
+  if (operation.kind === "transfer" && inverse.kind === "transfer") {
+    const { source, destination } = transferAffectedIdentities(operation, inverse);
+    return [...new Set([...source, ...destination])].sort();
+  }
   const affected = new Set(operationAffectedIdentities(operation));
   const node = (nodeId: string) => affected.add(`node:${operation.workspaceId}:${nodeId}`);
   const content = (nodeId: string) => affected.add(`content:${operation.workspaceId}:${nodeId}`);
@@ -444,16 +463,36 @@ function localAffectedIdentities(operation: LocallyCommittableOperation, inverse
   return [...affected].sort();
 }
 
+function transferAffectedIdentities(operation: Extract<LocallyCommittableOperation, { kind: "transfer" }>, inverse: Extract<OperationInverse, { kind: "transfer" }>) {
+  const source = new Set<string>();
+  const destination = new Set<string>();
+  const fileNodeIds = new Set(inverse.fileNodeIds);
+  const addNodeIdentities = (affected: Set<string>, workspaceId: string, nodeId: string) => {
+    affected.add(`node:${workspaceId}:${nodeId}`);
+    affected.add(`${fileNodeIds.has(nodeId) ? "content" : "folder"}:${workspaceId}:${nodeId}`);
+  };
+  for (const { nodeId } of inverse.nodes) {
+    addNodeIdentities(source, operation.workspaceId, nodeId);
+    addNodeIdentities(destination, operation.destinationWorkspaceId, nodeId);
+  }
+  for (const rootId of operation.nodeIds) {
+    const root = inverse.nodes.find(({ nodeId }) => nodeId === rootId);
+    if (root) source.add(`folder:${operation.workspaceId}:${root.parentId ?? "root"}`);
+  }
+  destination.add(`folder:${operation.destinationWorkspaceId}:${operation.parentId ?? "root"}`);
+  return { source: [...source].sort(), destination: [...destination].sort() };
+}
+
 function parseStoredOperation(value: unknown): StoredOperation {
   if (!isRecord(value)) throw new Error("A stored operation has an unsupported shape.");
-  assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "stateKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
+  assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "destinationLocalRevision", "stateKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
   if (value.stateKind !== "pending") throw new Error("A stored operation state is invalid.");
   const operation = parseWorkspaceOperation(value.operation);
-  if (operation.kind === "transfer") throw new Error("A stored operation kind is unsupported by this database slice.");
   const stored = {
     operationId: parseStableId(value.operationId, "A stored operation ID is invalid."),
     workspaceId: parseStableId(value.workspaceId, "A stored operation workspace ID is invalid."),
     localRevision: parsePositiveSafeInteger(value.localRevision, "A stored operation revision is invalid."),
+    destinationLocalRevision: value.destinationLocalRevision === null ? null : parsePositiveSafeInteger(value.destinationLocalRevision, "A stored destination operation revision is invalid."),
     stateKind: "pending" as const,
     intent: parseIntent(value.intent),
     compensatesOperationId: value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid."),
@@ -464,6 +503,7 @@ function parseStoredOperation(value: unknown): StoredOperation {
     versionNodeIds: parseStringSet(value.versionNodeIds, "Stored operation version node IDs are invalid.").map((id) => parseStableId(id, "A stored operation version node ID is invalid.")),
   };
   if (stored.operationId !== operation.operationId || stored.workspaceId !== operation.workspaceId) throw new Error("Stored operation identity metadata is inconsistent.");
+  if (operation.kind === "transfer" && stored.destinationLocalRevision === null || operation.kind !== "transfer" && stored.destinationLocalRevision !== null) throw new Error("Stored operation destination revision metadata is inconsistent.");
   if (stored.intent === "forward" && stored.compensatesOperationId !== null || stored.intent !== "forward" && stored.compensatesOperationId === null) throw new Error("Stored operation compensation metadata is inconsistent.");
   if (operation.kind === "write" && stored.expectedContentTuple === null || operation.kind !== "write" && stored.expectedContentTuple !== null) throw new Error("Stored operation expectation metadata is inconsistent.");
   if (operation.kind !== "write" && (stored.intent !== "forward" || stored.compensatesOperationId !== null)) throw new Error("Stored operation intent is unsupported for metadata projection.");
@@ -486,6 +526,11 @@ function parseStoredOperation(value: unknown): StoredOperation {
     case "move":
       if (stored.inverse.kind !== "move" || !equalValues(stored.inverse.roots.map(({ nodeId }) => nodeId), operation.nodeIds)) throw new Error("Stored operation inverse metadata is inconsistent.");
       break;
+    case "transfer": {
+      const inverse = stored.inverse;
+      if (inverse.kind !== "transfer" || operation.nodeIds.some((nodeId) => !inverse.nodes.some((node) => node.nodeId === nodeId))) throw new Error("Stored operation inverse metadata is inconsistent.");
+      break;
+    }
     case "position":
       if (stored.inverse.kind !== "position" || !equalValues(stored.inverse.positions.map(({ nodeId }) => nodeId), operation.positions.map(({ nodeId }) => nodeId))) throw new Error("Stored operation inverse metadata is inconsistent.");
       break;
@@ -614,7 +659,6 @@ async function normalizeCommitInput(value: CommitOperationInput) {
   if (!isRecord(value) || !("operation" in value) || Object.keys(value).some((key) => !["operation", "manifests", "intent", "compensatesOperationId", "expectedContentTuple"].includes(key))) throw new Error("A filesystem commit has an unsupported shape.");
   if (!isRecord(value.operation) || Object.prototype.hasOwnProperty.call(value.operation, "logicalTime")) throw new Error("An operation draft must not supply a logical time.");
   const operation = parseWorkspaceOperation({ ...value.operation, logicalTime: 0 });
-  if (operation.kind === "transfer") throw new Error("Transfer operations are not supported by this database slice.");
   const manifestValues = value.manifests ?? [];
   if (!Array.isArray(manifestValues) || manifestValues.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A commit manifest batch is invalid.");
   const manifests = await Promise.all(manifestValues.map(async (candidate): Promise<StoredManifest> => {
@@ -868,6 +912,18 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const workspace = parseWorkspace(workspaceValue);
         const sync = parseSyncState(syncValue);
         if (sync.workspaceId !== workspace.id || sync.deviceId !== normalized.operation.deviceId) throw new Error("The operation device does not own this local workspace state.");
+        let destinationWorkspace: Workspace | undefined;
+        let destinationSync: SyncState | undefined;
+        if (normalized.operation.kind === "transfer") {
+          const [destinationWorkspaceValue, destinationSyncValue] = await Promise.all([
+            request(transaction.objectStore("workspaces").get(normalized.operation.destinationWorkspaceId)),
+            request(transaction.objectStore("sync").get(normalized.operation.destinationWorkspaceId)),
+          ]);
+          if (destinationWorkspaceValue === undefined || destinationSyncValue === undefined) throw new Error("The transfer destination workspace does not exist.");
+          destinationWorkspace = parseWorkspace(destinationWorkspaceValue);
+          destinationSync = parseSyncState(destinationSyncValue);
+          if (destinationSync.workspaceId !== destinationWorkspace.id || destinationSync.deviceId !== normalized.operation.deviceId) throw new Error("The operation device does not own the transfer destination workspace state.");
+        }
 
         let compensated: StoredOperation | undefined;
         if (normalized.compensatesOperationId !== null) {
@@ -909,12 +965,12 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const resolvedManifest = (hash: string) => suppliedManifests.get(hash) ?? storedManifests.get(hash);
         for (const hash of manifestHashes(normalized.operation)) if (!resolvedManifest(hash)) throw new Error("An operation references a missing manifest.");
 
-        const observedNext = nextSafeInteger(sync.lastObservedLogicalTime, "The observed logical clock is exhausted.");
-        const localNext = nextSafeInteger(sync.lastLocalLogicalTime, "The local logical clock is exhausted.");
         const wallTime = parseNonNegativeSafeInteger(now(), "The current time is invalid.");
-        const logicalTime = Math.max(wallTime, observedNext, localNext);
+        const logicalTime = Math.max(wallTime, ...[sync, ...(destinationSync ? [destinationSync] : [])].flatMap((state) => [
+          nextSafeInteger(state.lastObservedLogicalTime, "The observed logical clock is exhausted."),
+          nextSafeInteger(state.lastLocalLogicalTime, "The local logical clock is exhausted."),
+        ]));
         const parsedOperation = parseWorkspaceOperation({ ...normalized.operation, logicalTime });
-        if (parsedOperation.kind === "transfer") throw new Error("Transfer operations are not supported by this database slice.");
         const operation = parsedOperation;
         const tuple = { logicalTime, operationId: operation.operationId };
         const nodes = transaction.objectStore("nodes");
@@ -927,9 +983,9 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           nodeCache.set(id, node);
           return node;
         };
-        const childrenInLifecycle = async (parentId: string, lifecycle: "active" | "trashed", limit?: number) => {
+        const childrenInLifecycle = async (parent: StoredNode, lifecycle: "active" | "trashed", limit?: number) => {
           const index = nodes.index("by-workspace-parent-lifecycle");
-          const range = keyRange.only([workspace.id, parentId, lifecycle]);
+          const range = keyRange.only([parent.workspaceId, parent.id, lifecycle]);
           const values = await request(limit === undefined ? index.getAll(range) : index.getAll(range, limit));
           return values.map(parseStoredNode).sort((left, right) => left.id.localeCompare(right.id));
         };
@@ -939,7 +995,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           let parentId = node.parentId;
           while (parentId !== null) {
             const parent = await readNode(parentId);
-            if (!parent || parent.workspaceId !== workspace.id || parent.kind !== "folder" || parent.lifecycle.kind !== node.lifecycle.kind || seen.has(parent.id)) throw new Error("The stored node hierarchy is invalid.");
+            if (!parent || parent.workspaceId !== node.workspaceId || parent.kind !== "folder" || parent.lifecycle.kind !== node.lifecycle.kind || seen.has(parent.id)) throw new Error("The stored node hierarchy is invalid.");
             result.push(parent);
             seen.add(parent.id);
             if (result.length > WEB2_MAX_ANCESTRY_DEPTH) throw new Error("The node hierarchy is too deep.");
@@ -951,31 +1007,31 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           const seen = new Set<string>();
           const result: Array<{ root: StoredNode; nodes: Array<{ node: StoredNode; depth: number }> }> = [];
           for (const root of roots) {
-            if (seen.has(root.id)) throw new Error("Selected filesystem roots overlap.");
-            seen.add(root.id);
             const expanded: Array<{ node: StoredNode; depth: number }> = [];
-            const pending = [{ node: root, depth: 0 }];
+            const pending: Array<{ node: StoredNode; depth: number }> = [];
+            const enqueue = (node: StoredNode, depth: number) => {
+              if (seen.has(node.id)) throw new Error("Selected filesystem roots overlap.");
+              if (maxItems !== null && seen.size === maxItems) throw new Error(message);
+              seen.add(node.id);
+              pending.push({ node, depth });
+            };
+            enqueue(root, 0);
             for (let index = 0; index < pending.length; index += 1) {
               const current = pending[index]!;
               expanded.push(current);
-              if (maxItems !== null && seen.size > maxItems) throw new Error(message);
               const remaining = maxItems === null ? undefined : maxItems - seen.size;
-              const children = await childrenInLifecycle(current.node.id, lifecycle, remaining === undefined ? undefined : remaining + 1);
+              const children = await childrenInLifecycle(current.node, lifecycle, remaining === undefined ? undefined : remaining + 1);
               if (remaining !== undefined && children.length > remaining) throw new Error(message);
-              for (const child of children) {
-                if (seen.has(child.id)) throw new Error("Selected filesystem roots overlap.");
-                seen.add(child.id);
-                pending.push({ node: child, depth: current.depth + 1 });
-              }
+              for (const child of children) enqueue(child, current.depth + 1);
             }
             result.push({ root, nodes: expanded });
           }
           return result;
         };
-        const validateDestinationNames = async (items: Array<{ node: { id: string; name: string }; parentId: string | null }>, excludedIds: Set<string>) => {
+        const validateDestinationNames = async (items: Array<{ node: { id: string; name: string }; parentId: string | null }>, excludedIds: Set<string>, destinationWorkspaceId = workspace.id) => {
           const byParent = new Map<string | null, string[]>();
           for (const { node, parentId } of items) byParent.set(parentId, [...(byParent.get(parentId) ?? []), node.name]);
-          for (const [parentId, names] of byParent) await assertChildNamesAvailableInTransaction(transaction, workspace.id, parentId, names, excludedIds);
+          for (const [parentId, names] of byParent) await assertChildNamesAvailableInTransaction(transaction, destinationWorkspaceId, parentId, names, excludedIds);
         };
         const previousSetting = (setting: Setting | undefined): PreviousSetting => setting === undefined ? { exists: false } : { exists: true, value: setting.value };
         const readSetting = async (namespace: SettingNamespace, key: string) => {
@@ -1127,6 +1183,39 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             for (const root of roots) projectedNodes.set(root.id, storeNode({ ...root, parentId: operation.parentId, modifiedAt: operation.modifiedAt, fieldTuples: { ...root.fieldTuples, parent: tuple } }));
             break;
           }
+          case "transfer": {
+            if (!destinationWorkspace || !destinationSync) throw new Error("The transfer destination workspace does not exist.");
+            const roots = await Promise.all(operation.nodeIds.map(async (id) => {
+              const node = await readNode(id);
+              if (!node || node.workspaceId !== workspace.id || node.lifecycle.kind !== "active") throw new Error("A transfer requires active source roots in their workspace.");
+              return node;
+            }));
+            const selected = new Set(operation.nodeIds);
+            for (const root of roots) if ((await ancestors(root)).some(({ id }) => selected.has(id))) throw new Error("Transferred roots cannot overlap.");
+            const expanded = await expandSubtrees(roots, "active", "A transferred forest is too large.");
+            const movedNodes = expanded.flatMap(({ nodes: values }) => values.map(({ node }) => node)).sort((left, right) => left.id.localeCompare(right.id));
+            let destination: StoredNode | undefined;
+            if (operation.parentId !== null) {
+              destination = await readNode(operation.parentId);
+              if (!destination || destination.workspaceId !== destinationWorkspace.id || destination.kind !== "folder" || destination.lifecycle.kind !== "active") throw new Error("The transfer destination parent must be an active folder in the destination workspace.");
+            }
+            const destinationDepth = destination ? (await ancestors(destination)).length + 1 : 0;
+            if (expanded.some(({ nodes: expandedNodes }) => destinationDepth + Math.max(...expandedNodes.map(({ depth }) => depth)) > WEB2_MAX_ANCESTRY_DEPTH)) throw new Error("The transfer destination would make the hierarchy too deep.");
+            await validateDestinationNames(roots.map((node) => ({ node, parentId: operation.parentId })), new Set(), destinationWorkspace.id);
+            inverse = {
+              kind: "transfer",
+              nodes: movedNodes.map(({ id, parentId, modifiedAt }) => ({ nodeId: id, parentId, modifiedAt })),
+              fileNodeIds: movedNodes.filter(({ kind }) => kind === "file").map(({ id }) => id),
+            };
+            for (const node of movedNodes) projectedNodes.set(node.id, storeNode({
+              ...node,
+              workspaceId: destinationWorkspace.id,
+              parentId: selected.has(node.id) ? operation.parentId : node.parentId,
+              modifiedAt: operation.modifiedAt,
+              fieldTuples: { ...node.fieldTuples, parent: tuple },
+            }));
+            break;
+          }
           case "position": {
             const previous: Array<{ nodeId: string; position: Position }> = [];
             for (const change of operation.positions) {
@@ -1232,11 +1321,14 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
 
         const localRevision = nextSafeInteger(workspace.localRevision, "The workspace revision is exhausted.");
-        const affectedIdentities = localAffectedIdentities(operation, inverse);
+        const destinationLocalRevision = destinationWorkspace ? nextSafeInteger(destinationWorkspace.localRevision, "The destination workspace revision is exhausted.") : null;
+        const transferIdentities = operation.kind === "transfer" && inverse.kind === "transfer" ? transferAffectedIdentities(operation, inverse) : undefined;
+        const affectedIdentities = transferIdentities ? [...new Set([...transferIdentities.source, ...transferIdentities.destination])].sort() : localAffectedIdentities(operation, inverse);
         const stored = parseStoredOperation({
           operationId: operation.operationId,
           workspaceId: operation.workspaceId,
           localRevision,
+          destinationLocalRevision,
           stateKind: "pending",
           intent: normalized.intent,
           compensatesOperationId: normalized.compensatesOperationId,
@@ -1246,7 +1338,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           affectedIdentities,
           versionNodeIds: operationVersionNodeIds(operation),
         });
-        const change = parseChangeRecord({ workspaceId: workspace.id, revision: localRevision, operationId: operation.operationId, affectedIdentities });
+        const changes = [parseChangeRecord({ workspaceId: workspace.id, revision: localRevision, operationId: operation.operationId, affectedIdentities: transferIdentities?.source ?? affectedIdentities })];
+        if (destinationWorkspace && destinationLocalRevision !== null && transferIdentities) changes.push(parseChangeRecord({ workspaceId: destinationWorkspace.id, revision: destinationLocalRevision, operationId: operation.operationId, affectedIdentities: transferIdentities.destination }));
         const nextWorkspace = parseWorkspace({ ...workspace, localRevision });
         const nextSync = parseSyncState({ ...sync, lastLocalLogicalTime: logicalTime });
         const writes: IDBRequest[] = [];
@@ -1255,9 +1348,13 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         for (const nodeId of deletedNodeIds) writes.push(nodes.delete(nodeId));
         for (const setting of projectedSettings) writes.push(settingsStore.put(setting));
         writes.push(operations.add(stored));
-        writes.push(transaction.objectStore("changes").add(change));
+        for (const change of changes) writes.push(transaction.objectStore("changes").add(change));
         writes.push(transaction.objectStore("workspaces").put(nextWorkspace));
         writes.push(transaction.objectStore("sync").put(nextSync));
+        if (destinationWorkspace && destinationSync && destinationLocalRevision !== null) {
+          writes.push(transaction.objectStore("workspaces").put(parseWorkspace({ ...destinationWorkspace, localRevision: destinationLocalRevision })));
+          writes.push(transaction.objectStore("sync").put(parseSyncState({ ...destinationSync, lastLocalLogicalTime: logicalTime })));
+        }
         await Promise.all(writes.map((write) => request(write)));
         return stored;
       });
@@ -1308,17 +1405,21 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         } satisfies FileVersion;
         const older = await new Promise<FileVersion[]>((resolve, reject) => {
           const result: FileVersion[] = [];
-          const cursor = transaction.objectStore("operations").index("by-workspace-revision").openCursor(keyRange.bound([canonicalWorkspaceId, 0], [canonicalWorkspaceId, Number.MAX_SAFE_INTEGER]), "prev");
+          // ponytail: this bounded scan avoids a schema change; add a node-version index when measured history size makes it slow.
+          const cursor = transaction.objectStore("operations").openCursor();
           cursor.onerror = () => reject(cursor.error ?? new Error("Filesystem version history could not be read."));
           cursor.onsuccess = () => {
             try {
-              if (!cursor.result || result.length === FILE_VERSION_HISTORY_LIMIT) { resolve(result); return; }
+              if (!cursor.result) { resolve(result); return; }
               const stored = parseStoredOperation(cursor.result.value);
               if (stored.versionNodeIds.includes(canonicalNodeId) && stored.operationId !== current.operationId) {
                 const version = fileVersionFromOperation(stored.operation, canonicalNodeId);
-                if (version) result.push(version);
+                if (version) {
+                  const index = result.findIndex((existing) => version.logicalTime > existing.logicalTime || version.logicalTime === existing.logicalTime && version.operationId > existing.operationId);
+                  result.splice(index === -1 ? result.length : index, 0, version);
+                  if (result.length > FILE_VERSION_HISTORY_LIMIT) result.pop();
+                }
               }
-              if ((stored.operation.kind === "create" || stored.operation.kind === "copy") && stored.operation.nodes.some(({ id }) => id === canonicalNodeId)) { resolve(result); return; }
               cursor.result.continue();
             } catch (error) {
               reject(error);
