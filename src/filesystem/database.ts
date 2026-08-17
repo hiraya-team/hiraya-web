@@ -554,9 +554,13 @@ function parseWorkspace(value: unknown): Workspace {
   return workspace;
 }
 
+function workspaceNameKey(name: string) {
+  return name.replace(/[A-Z]/g, (character) => character.toLowerCase());
+}
+
 function parseWorkspaceList(values: unknown[]) {
   const workspaces = values.map(parseWorkspace).sort((left, right) => left.ordinal - right.ordinal);
-  if (workspaces.length > MAX_WORKSPACES || workspaces.some(({ ordinal }, index) => ordinal !== index) || new Set(workspaces.map(({ name }) => name.toLowerCase())).size !== workspaces.length) throw new Error("Stored workspace directory metadata is invalid.");
+  if (workspaces.length > MAX_WORKSPACES || workspaces.some(({ ordinal }, index) => ordinal !== index) || new Set(workspaces.map(({ name }) => workspaceNameKey(name))).size !== workspaces.length) throw new Error("Stored workspace directory metadata is invalid.");
   let unpinned = false;
   for (const workspace of workspaces) {
     if (!workspace.pinned) unpinned = true;
@@ -614,7 +618,7 @@ function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
   if (!Array.isArray(value.workspaceSettings) || value.workspaceSettings.length > WEB2_MAX_BATCH_ITEMS) throw new Error("Bootstrap workspace settings are invalid.");
   const workspaceSettings = value.workspaceSettings.map(parseSetting);
   const activeSummary = workspaces.find(({ id }) => id === workspace.id);
-  if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || new Set(workspaces.map(({ name }) => name.toLowerCase())).size !== workspaces.length || workspaces.some(({ pinned }, index) => index > 0 && pinned && !workspaces[index - 1]!.pinned) || !activeSummary || !equalValues(activeSummary, summary)) throw new Error("A bootstrap workspace directory is inconsistent.");
+  if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || new Set(workspaces.map(({ name }) => workspaceNameKey(name))).size !== workspaces.length || workspaces.some(({ pinned }, index) => index > 0 && pinned && !workspaces[index - 1]!.pinned) || !activeSummary || !equalValues(activeSummary, summary)) throw new Error("A bootstrap workspace directory is inconsistent.");
   if (workspace.logFloor > workspace.snapshotBarrier || workspace.snapshotBarrier > workspace.headSequence || cursor > workspace.headSequence) throw new Error("A bootstrap workspace sequence range is invalid.");
   if (rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
   if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
@@ -1862,7 +1866,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         if (existingSync !== undefined) { parseSyncState(existingSync); throw new Error("Stored synchronization state exists without its workspace."); }
         const current = parseWorkspaceList(await request(workspaces.getAll()));
         if (current.length === MAX_WORKSPACES) throw new Error("The workspace directory is full.");
-        if (current.some((workspace) => workspace.name.toLowerCase() === name.toLowerCase())) throw new Error("A workspace already uses that name.");
+        if (current.some((workspace) => workspaceNameKey(workspace.name) === workspaceNameKey(name))) throw new Error("A workspace already uses that name.");
         const insertion = value.pinned ? current.findIndex(({ pinned }) => !pinned) : current.length;
         const ordered = [...current];
         const workspace = parseWorkspace({ id, name, pinned: value.pinned, ordinal: insertion < 0 ? current.length : insertion, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 });
@@ -1889,7 +1893,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const workspaces = parseWorkspaceList(await request(store.getAll()));
         const workspace = workspaces.find((candidate) => candidate.id === id);
         if (!workspace) throw new Error("That workspace does not exist.");
-        if (workspaces.some((candidate) => candidate.id !== id && candidate.name.toLowerCase() === canonicalName.toLowerCase())) throw new Error("A workspace already uses that name.");
+        if (workspaces.some((candidate) => candidate.id !== id && workspaceNameKey(candidate.name) === workspaceNameKey(canonicalName))) throw new Error("A workspace already uses that name.");
         const renamed = parseWorkspace({ ...workspace, name: canonicalName });
         await request(store.put(renamed));
         return renamed;
@@ -2683,7 +2687,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
             ...bootstrap.workspaces.filter(({ pinned }) => !pinned),
             ...retained.filter(({ pinned }) => !pinned),
           ];
-          if (orderedSummaries.length > MAX_WORKSPACES || new Set(orderedSummaries.map(({ name }) => name.toLowerCase())).size !== orderedSummaries.length) throw new Error("The bootstrap workspace directory conflicts with retained local workspaces.");
+          if (orderedSummaries.length > MAX_WORKSPACES || new Set(orderedSummaries.map(({ name }) => workspaceNameKey(name))).size !== orderedSummaries.length) throw new Error("The bootstrap workspace directory conflicts with retained local workspaces.");
           const nextWorkspaces = orderedSummaries.map((summary, ordinal) => {
             const existing = currentById.get(summary.id);
             const sequence = summary.id === workspaceId ? bootstrap.workspace : existing ?? { headSequence: 0, snapshotBarrier: 0, logFloor: 0 };

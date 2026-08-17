@@ -165,6 +165,16 @@ test("creates, renames, orders, pins, selects, and deletes workspaces across rel
   observer.close();
 });
 
+test("matches server ASCII case-insensitive workspace name uniqueness", async () => {
+  const { environment } = testEnvironment();
+  const catalog = await openWorkspaceCatalog(ACCOUNT, DEVICE, environment);
+  await catalog.createWorkspace({ name: "Beta" });
+  await expect(catalog.createWorkspace({ name: "beta" })).rejects.toThrow("already uses");
+  await catalog.createWorkspace({ name: "Ä" });
+  await catalog.createWorkspace({ name: "ä" });
+  catalog.close();
+});
+
 test("deleting a workspace preserves transferred files, shared chunks, and destination change history", async () => {
   const indexedDB = new IDBFactory();
   const origin = new MemoryDirectory();
