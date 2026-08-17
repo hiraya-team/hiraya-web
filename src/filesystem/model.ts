@@ -405,8 +405,9 @@ export function parseManifest(value: unknown): Manifest {
     const chunkSize = parsePositiveSafeInteger(candidate.size, "A manifest chunk size is invalid.");
     if (chunkSize > WEB2_CHUNK_SIZE || index < candidates.length - 1 && chunkSize !== WEB2_CHUNK_SIZE) throw new Error("A manifest chunk size is invalid.");
     const previousSize = hashSizes.get(hash);
-    if (previousSize !== undefined && previousSize !== chunkSize) throw new Error("A repeated manifest chunk has an inconsistent size.");
-    hashSizes.set(hash, chunkSize);
+	    if (previousSize !== undefined && previousSize !== chunkSize) throw new Error("A repeated manifest chunk has an inconsistent size.");
+	    hashSizes.set(hash, chunkSize);
+	    if (hashSizes.size > WEB2_MAX_BATCH_ITEMS) throw new Error("A manifest has too many unique chunks.");
     total += chunkSize;
     if (!Number.isSafeInteger(total)) throw new Error("A manifest size is invalid.");
     return { hash, size: chunkSize };

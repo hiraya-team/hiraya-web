@@ -151,7 +151,7 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("pins the authoritative corpus bytes", async () => {
-    expect(await sha256Hex(corpusBytes)).toBe("335ab82d001e7b5a1b975b094f579109faf13b4f0f82df8929829e2861331076");
+    expect(await sha256Hex(corpusBytes)).toBe("c8b2cfe73329f512ac71542101afde0278d5424eb64ca2fa769f6675d3187586");
   });
 
   test("runs every primitive case through production validators", () => {
@@ -178,6 +178,12 @@ describe("web2-sync-v1 corpus", () => {
       expect(await canonicalManifestSha256(item.value), item.name).toBe(item.sha256);
     }
     for (const item of corpus.manifests.invalid) expect(() => parseManifest(item.value), item.name).toThrow();
+    expect(() => parseManifest({
+      schemaVersion: 1,
+      size: 257 * WEB2_CHUNK_SIZE,
+      chunkSize: WEB2_CHUNK_SIZE,
+      chunks: Array.from({ length: 257 }, (_, index) => ({ hash: (index + 1).toString(16).padStart(64, "0"), size: WEB2_CHUNK_SIZE })),
+    })).toThrow("too many unique chunks");
   });
 
   test("validates every exhaustive operation and its affected identities", () => {
@@ -255,11 +261,11 @@ describe("web2-sync-v1 corpus", () => {
   test("validates chunk upload and download negotiation", async () => {
     for (const item of corpus.chunkNegotiation.uploadRequests.valid) await expect(parseChunkUploadRequest(item.value)).resolves.toBeDefined();
     for (const item of corpus.chunkNegotiation.uploadRequests.invalid) await expect(parseChunkUploadRequest(item.value)).rejects.toThrow();
-    for (const item of corpus.chunkNegotiation.uploadResults.valid) await expect(parseChunkUploadResult(item.value, item.expectedManifest)).resolves.toBeDefined();
-    for (const item of corpus.chunkNegotiation.uploadResults.invalid) await expect(parseChunkUploadResult(item.value, item.expectedManifest)).rejects.toThrow();
+    for (const item of corpus.chunkNegotiation.uploadResults.valid) await expect(parseChunkUploadResult(item.value, item.expectedManifest, "https://objects.example.test")).resolves.toBeDefined();
+    for (const item of corpus.chunkNegotiation.uploadResults.invalid) await expect(parseChunkUploadResult(item.value, item.expectedManifest, "https://objects.example.test")).rejects.toThrow();
     for (const item of corpus.chunkNegotiation.downloadRequests.valid) expect(() => parseChunkDownloadRequest(item.value), item.name).not.toThrow();
     for (const item of corpus.chunkNegotiation.downloadRequests.invalid) expect(() => parseChunkDownloadRequest(item.value), item.name).toThrow();
-    for (const item of corpus.chunkNegotiation.downloadResults.valid) await expect(parseChunkDownloadResult(item.value)).resolves.toBeDefined();
-    for (const item of corpus.chunkNegotiation.downloadResults.invalid) await expect(parseChunkDownloadResult(item.value)).rejects.toThrow();
+    for (const item of corpus.chunkNegotiation.downloadResults.valid) await expect(parseChunkDownloadResult(item.value, "https://objects.example.test")).resolves.toBeDefined();
+    for (const item of corpus.chunkNegotiation.downloadResults.invalid) await expect(parseChunkDownloadResult(item.value, "https://objects.example.test")).rejects.toThrow();
   });
 });

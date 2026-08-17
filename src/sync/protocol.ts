@@ -325,12 +325,15 @@ export function replayOperationReceipt(receipt: OperationReceipt, operationIdVal
 const HEADER_NAME = /^[!#$%&'*+.^_`|~\w-]+$/;
 const FORBIDDEN_HEADERS = new Set(["authorization", "connection", "content-length", "cookie", "host", "origin", "referer", "transfer-encoding", "upgrade"]);
 
-function parseTransferUrl(value: unknown) {
+function parseTransferUrl(value: unknown, expectedOrigin: string) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A chunk transfer URL is invalid.");
   let url: URL;
   try { url = new URL(value); } catch { throw new Error("A chunk transfer URL is invalid."); }
   const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
-  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback) || url.username || url.password || url.hash) throw new Error("A chunk transfer URL is unsafe.");
+  let origin: string;
+  try { origin = new URL(expectedOrigin).origin; } catch { throw new Error("The authenticated chunk origin is invalid."); }
+  const pageLoopback = typeof location !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "[::1]");
+  if (url.protocol !== "https:" && !(url.protocol === "http:" && loopback && pageLoopback) || url.username || url.password || url.hash || url.origin !== origin) throw new Error("A chunk transfer URL is unsafe.");
   return url.href;
 }
 
@@ -345,17 +348,22 @@ function parseTransferHeaders(value: unknown) {
   }));
 }
 
-function parseTransferDescriptors<Method extends "PUT" | "GET">(value: unknown, expectedMethod: Method) {
+function parseTransferDescriptors<Method extends "PUT" | "GET">(value: unknown, expectedMethod: Method, expectedOrigin: string) {
   if (!Array.isArray(value) || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A chunk transfer batch is invalid.");
   const descriptors = value.map((candidate): ChunkTransferDescriptor<Method> => {
     if (!isRecord(candidate)) throw new Error("A chunk transfer descriptor has an unsupported shape.");
     assertExactKeys(candidate, ["hash", "size", "method", "url", "headers"], "A chunk transfer descriptor has an unsupported shape.");
     const size = parsePositiveSafeInteger(candidate.size);
     if (size > WEB2_CHUNK_SIZE || candidate.method !== expectedMethod) throw new Error("A chunk transfer descriptor is invalid.");
-    return { hash: parseSha256(candidate.hash), size, method: expectedMethod, url: parseTransferUrl(candidate.url), headers: parseTransferHeaders(candidate.headers) };
+    return { hash: parseSha256(candidate.hash), size, method: expectedMethod, url: parseTransferUrl(candidate.url, expectedOrigin), headers: parseTransferHeaders(candidate.headers) };
   });
   if (new Set(descriptors.map(({ hash }) => hash)).size !== descriptors.length) throw new Error("A chunk transfer batch contains duplicate hashes.");
   return descriptors;
+}
+
+function chunkChecksum(hash: string) {
+  const bytes = Uint8Array.from(hash.match(/../g)!, (pair) => Number.parseInt(pair, 16));
+  return btoa(String.fromCharCode(...bytes));
 }
 
 export async function parseChunkUploadRequest(value: unknown): Promise<ChunkUploadRequest> {
@@ -368,16 +376,16 @@ export async function parseChunkUploadRequest(value: unknown): Promise<ChunkUplo
   return { ...wire, kind: "chunk-upload-request", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), operationId: parseStableId(value.operationId), manifestHash, manifest };
 }
 
-export async function parseChunkUploadResult(value: unknown, expectedManifestValue: unknown): Promise<ChunkUploadResult> {
+export async function parseChunkUploadResult(value: unknown, expectedManifestValue: unknown, expectedOrigin: string): Promise<ChunkUploadResult> {
   if (!isRecord(value) || value.kind !== "chunk-upload-result") throw new Error("A chunk upload result has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "operationId", "manifestHash", "transferId", "expiresAt", "missingChunks"], "A chunk upload result has an unsupported shape.");
   const wire = parseWireBase(value);
   const expectedManifest = parseManifest(expectedManifestValue);
   const manifestHash = parseSha256(value.manifestHash);
   if (await canonicalManifestSha256(expectedManifest) !== manifestHash) throw new Error("An upload result is for a different manifest.");
-  const missingChunks = parseTransferDescriptors(value.missingChunks, "PUT");
+  const missingChunks = parseTransferDescriptors(value.missingChunks, "PUT", expectedOrigin);
   const refs = new Map(expectedManifest.chunks.map((chunk) => [chunk.hash, chunk.size]));
-  if (missingChunks.some((chunk) => refs.get(chunk.hash) !== chunk.size)) throw new Error("An upload chunk is absent from its manifest.");
+  if (missingChunks.some((chunk) => refs.get(chunk.hash) !== chunk.size || Object.entries(chunk.headers).find(([name]) => name.toLowerCase() === "x-amz-checksum-sha256")?.[1] !== chunkChecksum(chunk.hash))) throw new Error("An upload chunk is absent from its manifest or lacks its required checksum.");
   return { ...wire, kind: "chunk-upload-result", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), operationId: parseStableId(value.operationId), manifestHash, transferId: parseStableId(value.transferId, "A chunk transfer ID is invalid."), expiresAt: parseNonNegativeSafeInteger(value.expiresAt, "A chunk transfer expiration is invalid."), missingChunks };
 }
 
@@ -391,14 +399,14 @@ export function parseChunkDownloadRequest(value: unknown): ChunkDownloadRequest 
   return { ...wire, kind: "chunk-download-request", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), manifestHash: parseSha256(value.manifestHash), haveChunks };
 }
 
-export async function parseChunkDownloadResult(value: unknown): Promise<ChunkDownloadResult> {
+export async function parseChunkDownloadResult(value: unknown, expectedOrigin: string): Promise<ChunkDownloadResult> {
   if (!isRecord(value) || value.kind !== "chunk-download-result") throw new Error("A chunk download result has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "manifestHash", "manifest", "chunks"], "A chunk download result has an unsupported shape.");
   const wire = parseWireBase(value);
   const manifest = parseManifest(value.manifest);
   const manifestHash = parseSha256(value.manifestHash);
   if (await canonicalManifestSha256(manifest) !== manifestHash) throw new Error("A manifest hash does not match its canonical bytes.");
-  const chunks = parseTransferDescriptors(value.chunks, "GET");
+  const chunks = parseTransferDescriptors(value.chunks, "GET", expectedOrigin);
   const refs = new Map(manifest.chunks.map((chunk) => [chunk.hash, chunk.size]));
   if (chunks.some((chunk) => refs.get(chunk.hash) !== chunk.size)) throw new Error("A downloaded chunk is absent from its manifest.");
   return { ...wire, kind: "chunk-download-result", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), manifestHash, manifest, chunks };

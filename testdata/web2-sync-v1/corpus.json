@@ -2290,7 +2290,7 @@
                 "size": 5,
                 "method": "PUT",
                 "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?signature=test",
-                "headers": { "x-amz-checksum-sha256": "test" }
+                "headers": { "x-amz-checksum-sha256": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=" }
               }
             ]
           }
@@ -2326,7 +2326,7 @@
                 "size": 5,
                 "method": "PUT",
                 "url": "https://objects.example.test/chunks/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-                "headers": {}
+                "headers": { "x-amz-checksum-sha256": "u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s=" }
               }
             ]
           }
