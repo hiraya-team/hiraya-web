@@ -22,6 +22,7 @@ export const SETTING_NAMESPACES = [
   "theme-selection",
   "custom-themes",
 ] as const;
+export const WEB2_BOOTSTRAP_SETTING_KEYS = ["auto-arrange-icons", "grid-size", "snap-to-grid"] as const;
 
 export type SettingNamespace = typeof SETTING_NAMESPACES[number];
 export type DesktopGridSettings = { autoArrangeIcons: boolean; snapToGrid: boolean; gridSize: 12 | 24 | 36 | 48 };

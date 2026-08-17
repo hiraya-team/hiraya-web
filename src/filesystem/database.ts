@@ -1,5 +1,6 @@
 import {
   WEB2_INDEXED_DB_PREFIX,
+  WEB2_BOOTSTRAP_SETTING_KEYS,
   WEB2_MAX_ANCESTRY_DEPTH,
   WEB2_MAX_BATCH_ITEMS,
   assertExactKeys,
@@ -621,7 +622,7 @@ function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
   if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || new Set(workspaces.map(({ name }) => workspaceNameKey(name))).size !== workspaces.length || workspaces.some(({ pinned }, index) => index > 0 && pinned && !workspaces[index - 1]!.pinned) || !activeSummary || !equalValues(activeSummary, summary)) throw new Error("A bootstrap workspace directory is inconsistent.");
   if (workspace.logFloor > workspace.snapshotBarrier || workspace.snapshotBarrier > workspace.headSequence || cursor > workspace.headSequence) throw new Error("A bootstrap workspace sequence range is invalid.");
   if (rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
-  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
+  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.namespace !== "desktop-grid" || !WEB2_BOOTSTRAP_SETTING_KEYS.includes(setting.key as typeof WEB2_BOOTSTRAP_SETTING_KEYS[number]) || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
   return { accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
 
@@ -2747,7 +2748,14 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
         const storedBootstrap = storedBootstrapValue === undefined ? undefined : parseStoredBootstrap(storedBootstrapValue);
         if (storedBootstrap && (storedBootstrap.bootstrap.deviceId !== sync.deviceId || storedBootstrap.bootstrap.rootPage.generationId !== generationId || !equalValues(storedBootstrap.bootstrap.rootPage.target, generation.target))) throw new Error("The staged bootstrap does not match its hydration generation.");
-        if (storedBootstrap) await Promise.all(storedBootstrap.bootstrap.workspaceSettings.map((setting) => request(transaction.objectStore("settings").put(setting))));
+        if (storedBootstrap) {
+          const bootstrapSettings = new Map(storedBootstrap.bootstrap.workspaceSettings.map((setting) => [setting.key, setting]));
+          const settings = transaction.objectStore("settings");
+          await Promise.all(WEB2_BOOTSTRAP_SETTING_KEYS.map((key) => {
+            const setting = bootstrapSettings.get(key);
+            return setting ? request(settings.put(setting)) : request(settings.delete([workspaceId, "desktop-grid", key]));
+          }));
+        }
 
         const pageRange = keyRange.bound([generation.workspaceId, targetId, 0], [generation.workspaceId, targetId, Number.MAX_SAFE_INTEGER]);
         const [pageValues, nodeValues, settingValues, operationValues, coverageValues] = await Promise.all([
@@ -2792,9 +2800,9 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         };
         const targetAffected = affected(generation.workspaceId);
         hydrationTargetAffectedIdentities(generation.target).forEach((identity) => targetAffected.add(identity));
-        if (storedBootstrap) for (const setting of storedBootstrap.bootstrap.workspaceSettings) {
-          targetAffected.add(`setting:${setting.workspaceId}:${setting.namespace}:${setting.key}`);
-          targetAffected.add(`setting-namespace:${setting.workspaceId}:${setting.namespace}`);
+        if (storedBootstrap) {
+          for (const key of WEB2_BOOTSTRAP_SETTING_KEYS) targetAffected.add(`setting:${generation.workspaceId}:desktop-grid:${key}`);
+          targetAffected.add(`setting-namespace:${generation.workspaceId}:desktop-grid`);
         }
         const writes: Promise<unknown>[] = [];
         for (const operation of pending) if (deferredOperations.has(operation.operationId)) writes.push(request(transaction.objectStore("operations").put({ ...operation, overlayKind: "deferred" })));

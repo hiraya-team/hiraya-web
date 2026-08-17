@@ -1,5 +1,6 @@
 import {
   WEB2_CHUNK_SIZE,
+  WEB2_BOOTSTRAP_SETTING_KEYS,
   WEB2_MAX_BATCH_ITEMS,
   WEB2_SCHEMA_VERSION,
   assertExactKeys,
@@ -207,7 +208,7 @@ export function parseBootstrap(value: unknown): Bootstrap {
   const activeSummary = workspaces.find(({ id }) => id === workspace.id);
   if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length || workspaces.some(({ pinned }, index) => pinned && index > 0 && !workspaces[index - 1]!.pinned) || !activeSummary || activeSummary.name !== workspace.name || activeSummary.pinned !== workspace.pinned) throw new Error("A bootstrap workspace directory is inconsistent.");
   if (cursor > workspace.headSequence || rootPage.workspaceId !== workspace.id || rootPage.deviceId !== deviceId || rootPage.pageIndex !== 0 || rootPage.target.kind !== "folder-page" || rootPage.target.parentId !== null || rootPage.target.asOf !== workspace.headSequence) throw new Error("A bootstrap root page is inconsistent.");
-  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
+  if (workspaceSettings.some((setting) => setting.workspaceId !== workspace.id || setting.namespace !== "desktop-grid" || !WEB2_BOOTSTRAP_SETTING_KEYS.includes(setting.key as typeof WEB2_BOOTSTRAP_SETTING_KEYS[number]) || setting.logicalTime > rootPage.observedLogicalTime) || new Set(workspaceSettings.map(({ namespace, key }) => `${namespace}\0${key}`)).size !== workspaceSettings.length) throw new Error("Bootstrap workspace settings are inconsistent.");
   return { ...wire, accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
 

@@ -101,7 +101,7 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
     workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }, { id: DESTINATION, name: "Archive", pinned: false }],
     workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
     rootPage: { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [firstNode], settings: [], nextPageToken: "next" },
-    workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor", key: "font-size", deleted: false, value: 16, logicalTime: 1, operationId: stableId(93) }],
+    workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "desktop-grid", key: "grid-size", deleted: false, value: 24, logicalTime: 1, operationId: stableId(93) }],
   };
   const coordinator = createHydrationCoordinator(await openHydrationStorage(ACCOUNT, environment));
   const bootstrapped = await coordinator.bootstrap(bootstrapResponse);
@@ -110,7 +110,7 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
   const staged = await openFilesystemDatabase(ACCOUNT, environment);
   expect((await staged.listWorkspaces()).map(({ name }) => name)).toEqual(["Main", "Archive"]);
   expect(await staged.queryFolderChildren(WORKSPACE, null)).toEqual({ availability: "unavailable" });
-  expect(await staged.getSetting(WORKSPACE, "editor", "font-size")).toBeUndefined();
+  expect(await staged.getSetting(WORKSPACE, "desktop-grid", "grid-size")).toBeUndefined();
   expect(await staged.getHydrationProgress(WORKSPACE, hydrationTargetId(target), generationId)).toEqual({ nextPageIndex: 1, pageToken: "next", complete: false });
   await staged.stageHydrationPage(hydrationTargetId(target), "next", { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 1, observedLogicalTime: 10, target, nodes: [secondNode], settings: [], nextPageToken: "last" });
   staged.close();
@@ -129,8 +129,26 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
   ]);
   const published = await openFilesystemDatabase(ACCOUNT, environment);
   expect((await published.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([firstNode.id, secondNode.id, finalNode.id].sort());
-  expect(await published.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 16 });
+  expect(await published.getSetting(WORKSPACE, "desktop-grid", "grid-size")).toMatchObject({ value: 24 });
   expect(await published.getSyncState(WORKSPACE)).toMatchObject({ cursor: 9, lastHydrationAsOf: 10 });
+  const clearGeneration = stableId(95);
+  const clearTarget = { ...target, asOf: 11, limit: 100 };
+  const clearChanges = await published.publishHydration(WORKSPACE, hydrationTargetId(clearTarget), clearGeneration, {
+    accountId: ACCOUNT,
+    deviceId: DEVICE,
+    cursor: 9,
+    workspaces: bootstrapResponse.workspaces,
+    workspace: { ...bootstrapResponse.workspace, headSequence: 11 },
+    rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId: clearGeneration, pageIndex: 0, observedLogicalTime: 11, target: clearTarget, nodes: [firstNode, secondNode, finalNode], settings: [], nextPageToken: null },
+    workspaceSettings: [],
+  });
+  expect(await published.getSetting(WORKSPACE, "desktop-grid", "grid-size")).toBeUndefined();
+  expect(clearChanges[0]!.affectedIdentities).toEqual(expect.arrayContaining([
+    `setting:${WORKSPACE}:desktop-grid:auto-arrange-icons`,
+    `setting:${WORKSPACE}:desktop-grid:grid-size`,
+    `setting:${WORKSPACE}:desktop-grid:snap-to-grid`,
+    `setting-namespace:${WORKSPACE}:desktop-grid`,
+  ]));
   published.close();
 });
 

@@ -351,7 +351,7 @@ describe("web2 filesystem database", () => {
     await database.createWorkspace({ id: DESTINATION, name: "Local only", pinned: true, deviceId: DEVICE });
     const localId = stableId(2_290);
     await database.commitOperation({ operation: createDraft(stableId(2_291), [folder(localId, "Local pending")]) });
-    await database.commitOperation({ operation: { ...operationBase(stableId(2_292)), kind: "set", namespace: "editor", key: "font-size", value: 18 } });
+    await database.commitOperation({ operation: { ...operationBase(stableId(2_292)), kind: "set", namespace: "desktop-grid", key: "grid-size", value: 48 } });
 
     const remoteId = stableId(2_293);
     const remoteTuple = { logicalTime: 10, operationId: stableId(2_294) };
@@ -369,7 +369,7 @@ describe("web2 filesystem database", () => {
       ],
       workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
       rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [remote], settings: [], nextPageToken: null },
-      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor" as const, key: "font-size", deleted: false as const, value: 16, logicalTime: 10, operationId: stableId(2_297) }],
+      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "desktop-grid" as const, key: "grid-size", deleted: false as const, value: 24, logicalTime: 10, operationId: stableId(2_297) }],
     };
     const changes = await database.publishHydration(WORKSPACE, targetId, generationId, bootstrap);
 
@@ -380,10 +380,10 @@ describe("web2 filesystem database", () => {
     ]);
     expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 9, lastHydrationAsOf: 10, lastObservedLogicalTime: 10 });
     expect((await database.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([localId, remoteId].sort());
-    expect(await database.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
+    expect(await database.getSetting(WORKSPACE, "desktop-grid", "grid-size")).toMatchObject({ value: 48 });
     expect((await database.listOperations(WORKSPACE)).map(({ operationId }) => operationId).sort()).toEqual([stableId(2_291), stableId(2_292)].sort());
     expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 3, operationId: generationId, targetId }]);
-    expect(changes[0]!.affectedIdentities).toContain(`setting:${WORKSPACE}:editor:font-size`);
+    expect(changes[0]!.affectedIdentities).toContain(`setting:${WORKSPACE}:desktop-grid:grid-size`);
     expect(await database.publishHydration(WORKSPACE, targetId, generationId, bootstrap)).toEqual(changes);
     database.close();
   });
@@ -402,7 +402,7 @@ describe("web2 filesystem database", () => {
       workspaces: [{ id: WORKSPACE, name: "Main", pinned: true }],
       workspace: { id: WORKSPACE, name: "Main", pinned: true, headSequence: 10, snapshotBarrier: 8, logFloor: 2 },
       rootPage: { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: 10, target, nodes: [], settings: [], nextPageToken: null },
-      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "editor" as const, key: "font-size", deleted: false as const, value: 16, logicalTime: 1, operationId: stableId(2_281) }],
+      workspaceSettings: [{ workspaceId: WORKSPACE, namespace: "desktop-grid" as const, key: "grid-size", deleted: false as const, value: 24, logicalTime: 1, operationId: stableId(2_281) }],
     };
     const originalPut = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (value, key) {
