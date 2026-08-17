@@ -193,13 +193,12 @@ export type OperationInverse =
   | { kind: "unset"; namespace: SettingNamespace; key: string; previous: PreviousSetting }
   | { kind: "unset-many"; namespace: SettingNamespace; settings: Array<{ key: string; previous: PreviousSetting }> };
 
-export type StoredOperation = {
+type StoredOperationBase = {
   operationId: string;
   workspaceId: string;
   localRevision: number;
   destinationLocalRevision: number | null;
-  stateKind: "pending" | "accepted";
-  overlayKind: "active" | "deferred";
+  overlayKind: "active" | "deferred" | "discarded";
   intent: OperationIntent;
   compensatesOperationId: string | null;
   expectedContentTuple: OperationTuple | null;
@@ -208,6 +207,10 @@ export type StoredOperation = {
   affectedIdentities: string[];
   versionNodeIds: string[];
 };
+export type StoredOperation = StoredOperationBase & (
+  | { stateKind: "pending" | "accepted"; rejection?: never }
+  | { stateKind: "rejected"; rejection: { code: string; message: string } }
+);
 
 export type ChangeRecord = {
   kind: "operation";
@@ -300,6 +303,7 @@ export type FilesystemDatabase = {
   getHydrationProgress(workspaceId: string, targetId: string, generationId: string): Promise<HydrationProgress | undefined>;
   stageHydrationPage(targetId: string, requestPageToken: string | null, page: HydrationPageData): Promise<boolean>;
   getHydrationCoverage(workspaceId: string, targetId: string): Promise<HydrationCoverage | undefined>;
+  getWorkspaceBootstrapState(workspaceId: string): Promise<{ target: HydrationTarget; staged: boolean } | undefined>;
   getHydrationChanges(generationId: string): Promise<ChangeRecord[]>;
   publishHydration(workspaceId: string, targetId: string, generationId: string, bootstrap?: FilesystemBootstrap): Promise<ChangeRecord[]>;
   prepareReset(value: FilesystemReset, createGenerationId: () => string): Promise<ResetPreparation>;
@@ -308,6 +312,10 @@ export type FilesystemDatabase = {
   applyPullOperations(value: FilesystemPullOperations): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
+  listUnsettledOperations(workspaceId: string, afterRevision?: number, limit?: number): Promise<StoredOperation[]>;
+  recordPushRejections(rejections: Array<{ operationId: string; workspaceId: string; code: string; message: string }>): Promise<StoredOperation[]>;
+  deferRejectedOperation(operationId: string): Promise<StoredOperation>;
+  completeRejectedDiscards(operationIds: string[]): Promise<void>;
   commitOperation(value: CommitOperationInput): Promise<StoredOperation>;
   listChanges(workspaceId: string, afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
   listOperations(workspaceId: string, limit?: number): Promise<StoredOperation[]>;
@@ -1094,16 +1102,16 @@ function changeForWorkspace(stored: StoredOperation, workspaceId: string): Chang
 
 function parseStoredOperation(value: unknown): StoredOperation {
   if (!isRecord(value)) throw new Error("A stored operation has an unsupported shape.");
-  assertExactKeys(value, ["operationId", "workspaceId", "localRevision", "destinationLocalRevision", "stateKind", "overlayKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"], "A stored operation has an unsupported shape.");
-  if (value.stateKind !== "pending" && value.stateKind !== "accepted") throw new Error("A stored operation state is invalid.");
-  if (value.overlayKind !== "active" && value.overlayKind !== "deferred") throw new Error("A stored operation overlay state is invalid.");
+  const baseKeys = ["operationId", "workspaceId", "localRevision", "destinationLocalRevision", "stateKind", "overlayKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"];
+  if (value.stateKind !== "pending" && value.stateKind !== "accepted" && value.stateKind !== "rejected") throw new Error("A stored operation state is invalid.");
+  assertExactKeys(value, value.stateKind === "rejected" ? [...baseKeys, "rejection"] : baseKeys, "A stored operation has an unsupported shape.");
+  if (value.overlayKind !== "active" && value.overlayKind !== "deferred" && value.overlayKind !== "discarded") throw new Error("A stored operation overlay state is invalid.");
   const operation = parseWorkspaceOperation(value.operation);
-  const stored = {
+  const base: StoredOperationBase = {
     operationId: parseStableId(value.operationId, "A stored operation ID is invalid."),
     workspaceId: parseStableId(value.workspaceId, "A stored operation workspace ID is invalid."),
     localRevision: parsePositiveSafeInteger(value.localRevision, "A stored operation revision is invalid."),
     destinationLocalRevision: value.destinationLocalRevision === null ? null : parsePositiveSafeInteger(value.destinationLocalRevision, "A stored destination operation revision is invalid."),
-    stateKind: value.stateKind as StoredOperation["stateKind"],
     overlayKind: value.overlayKind as StoredOperation["overlayKind"],
     intent: parseIntent(value.intent),
     compensatesOperationId: value.compensatesOperationId === null ? null : parseStableId(value.compensatesOperationId, "A compensated operation ID is invalid."),
@@ -1113,6 +1121,15 @@ function parseStoredOperation(value: unknown): StoredOperation {
     affectedIdentities: parseStringSet(value.affectedIdentities, "Stored operation identities are invalid."),
     versionNodeIds: parseStringSet(value.versionNodeIds, "Stored operation version node IDs are invalid.").map((id) => parseStableId(id, "A stored operation version node ID is invalid.")),
   };
+  let stored: StoredOperation;
+  if (value.stateKind === "rejected") {
+    if (!isRecord(value.rejection)) throw new Error("A stored operation rejection has an unsupported shape.");
+    assertExactKeys(value.rejection, ["code", "message"], "A stored operation rejection has an unsupported shape.");
+    if (typeof value.rejection.code !== "string" || !value.rejection.code || value.rejection.code.length > 128 || typeof value.rejection.message !== "string" || !value.rejection.message || value.rejection.message.length > 1024) throw new Error("A stored operation rejection is invalid.");
+    stored = { ...base, stateKind: "rejected", rejection: { code: value.rejection.code, message: value.rejection.message } };
+  } else {
+    stored = { ...base, stateKind: value.stateKind };
+  }
   if (stored.operationId !== operation.operationId || stored.workspaceId !== operation.workspaceId) throw new Error("Stored operation identity metadata is inconsistent.");
   if (operation.kind === "transfer" && stored.destinationLocalRevision === null || operation.kind !== "transfer" && stored.destinationLocalRevision !== null) throw new Error("Stored operation destination revision metadata is inconsistent.");
   if (stored.intent === "forward" && stored.compensatesOperationId !== null || stored.intent !== "forward" && stored.compensatesOperationId === null) throw new Error("Stored operation compensation metadata is inconsistent.");
@@ -1372,7 +1389,7 @@ function tupleApplies(incoming: OperationTuple, current: OperationTuple, missing
 }
 
 function replayPendingOperation(projection: Map<string, NodeRecord>, projectedSettings: Map<string, Setting>, currentSettings: Map<string, Setting>, coveredNodeIds: Set<string>, hierarchyNodes: Set<string>, siblingNodes: Set<string>, deferredOperations: Set<string>, stored: StoredOperation) {
-  if (stored.overlayKind === "deferred") return;
+  if (stored.overlayKind !== "active") return;
   const operation = stored.operation;
   const tuple = operationTuple(stored);
   const node = (id: string) => projection.get(id);
@@ -1614,14 +1631,18 @@ function pendingSettingDependencies(stored: StoredOperation) {
   return [];
 }
 
+function retainsOperationOverlay(stored: StoredOperation) {
+  return stored.stateKind !== "accepted" && stored.overlayKind === "active";
+}
+
 function incomingTransferOverlayNodeIds(operations: StoredOperation[], workspaceId: string) {
-  return new Set(operations.filter((stored) => stored.stateKind === "pending" && stored.overlayKind === "active" && stored.operation.kind === "transfer" && stored.operation.destinationWorkspaceId === workspaceId && stored.workspaceId !== workspaceId && stored.inverse.kind === "transfer").flatMap(({ inverse }) => inverse.kind === "transfer" ? inverse.nodes.map(({ nodeId }) => nodeId) : []));
+  return new Set(operations.filter((stored) => retainsOperationOverlay(stored) && stored.overlayKind === "active" && stored.operation.kind === "transfer" && stored.operation.destinationWorkspaceId === workspaceId && stored.workspaceId !== workspaceId && stored.inverse.kind === "transfer").flatMap(({ inverse }) => inverse.kind === "transfer" ? inverse.nodes.map(({ nodeId }) => nodeId) : []));
 }
 
 function validateIncomingTransferParents(nodes: Map<string, NodeRecord>, operations: StoredOperation[], workspaceId: string, deferredOperations: Set<string>) {
   for (const stored of operations) {
     const operation = stored.operation;
-    if (stored.stateKind !== "pending" || stored.overlayKind !== "active" || deferredOperations.has(stored.operationId) || operation.kind !== "transfer" || operation.destinationWorkspaceId !== workspaceId || operation.parentId === null) continue;
+    if (!retainsOperationOverlay(stored) || stored.overlayKind !== "active" || deferredOperations.has(stored.operationId) || operation.kind !== "transfer" || operation.destinationWorkspaceId !== workspaceId || operation.parentId === null) continue;
     const parent = nodes.get(operation.parentId);
     if (!parent || isPurgeTombstone(parent) || parent.workspaceId !== workspaceId || parent.kind !== "folder" || parent.lifecycle.kind !== "active") throw new Error("Cursor reset invalidates a pending transfer destination.");
   }
@@ -1633,7 +1654,7 @@ function deriveResetTargets(reset: FilesystemReset, coverages: StoredHydrationCo
   const workspaceCoverages = coverages.filter((coverage) => coverage.workspaceId === reset.workspaceId);
   for (const coverage of workspaceCoverages) add({ ...coverage.target, asOf: reset.resetBarrier });
 
-  const pending = operations.filter(({ stateKind }) => stateKind === "pending");
+  const pending = operations.filter(retainsOperationOverlay);
   const incomingTransferNodes = incomingTransferOverlayNodeIds(pending, reset.workspaceId);
   const nodeIds = new Set(nodes.filter((record) => record.workspaceId === reset.workspaceId && !incomingTransferNodes.has(record.id)).map(({ id }) => id));
   for (const stored of pending) if (stored.workspaceId === reset.workspaceId) pendingNodeDependencies(stored).forEach((id) => nodeIds.add(id));
@@ -2575,6 +2596,19 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       });
     },
 
+    getWorkspaceBootstrapState: async (workspaceIdValue) => {
+      const workspaceId = parseStableId(workspaceIdValue, "A bootstrap workspace ID is invalid.");
+      return transact(db, "hydration-pages", "readonly", async (transaction) => {
+        const store = transaction.objectStore("hydration-pages");
+        const values = await request(store.index("by-workspace-kind").getAll(keyRange.only([workspaceId, "bootstrap"])));
+        const bootstraps = values.map(parseStoredBootstrap).filter(({ bootstrap }) => bootstrap.rootPage.target.kind === "folder-page" && bootstrap.rootPage.target.parentId === null).sort((left, right) => right.bootstrap.rootPage.target.asOf - left.bootstrap.rootPage.target.asOf);
+        const latest = bootstraps[0];
+        if (!latest) return undefined;
+        const target = latest.bootstrap.rootPage.target;
+        return { target, staged: await request(store.get([workspaceId, hydrationTargetId(target), -1])) !== undefined };
+      });
+    },
+
     getHydrationChanges: async (generationIdValue) => {
       const generationId = parseStableId(generationIdValue, "A hydration generation ID is invalid.");
       return transact(db, "changes", "readonly", async (transaction) => {
@@ -2775,7 +2809,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
         const operations = operationValues.map(parseStoredOperation);
         if (operations.some(({ operationId }) => operationId === generation.generationId)) throw new Error("A hydration generation ID collides with an operation.");
-        const pending = operations.filter(({ stateKind, operation }) => stateKind === "pending" && (operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        const pending = operations.filter((stored) => retainsOperationOverlay(stored) && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         const hierarchyNodes = new Set<string>();
         const siblingNodes = new Set<string>();
         const deferredOperations = new Set<string>();
@@ -2952,7 +2986,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
         const resetCoverages = coverages.filter((coverage) => coverage.workspaceId === reset.workspaceId).map((coverage) => ({ ...coverage, target: { ...coverage.target, asOf: Math.min(coverage.target.asOf, reset.resetBarrier) } }));
         const projected = projectHydrationBases(completed, currentNodes, currentSettings, resetCoverages, incomingTransferOverlayNodeIds(operations, reset.workspaceId));
-        const pending = operations.filter(({ stateKind, operation }) => stateKind === "pending" && (operation.kind === "transfer" ? workspaces.has(operation.destinationWorkspaceId) : workspaces.has(operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        const pending = operations.filter((stored) => retainsOperationOverlay(stored) && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         const hierarchyNodes = new Set<string>();
         const siblingNodes = new Set<string>();
         const deferredOperations = new Set<string>();
@@ -3100,16 +3134,18 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
 
         const pulledOperationIds = new Set(pull.operations.map(({ operationId }) => operationId));
         const settled: StoredOperation[] = [];
-        const operations = operationValues.map(parseStoredOperation).map((stored) => {
+        let operations = operationValues.map(parseStoredOperation).map((stored) => {
           if (stored.stateKind !== "pending" || !pulledOperationIds.has(stored.operationId)) return stored;
           settled.push(stored);
           return { ...stored, stateKind: "accepted" as const };
         });
+        const compensatedOperationIds = new Set(settled.flatMap(({ compensatesOperationId }) => compensatesOperationId === null ? [] : [compensatesOperationId]));
+        operations = operations.map((stored) => stored.stateKind === "rejected" && compensatedOperationIds.has(stored.operationId) ? { ...stored, overlayKind: "deferred" as const } : stored);
         const coveredNodeIds = new Set(authoritativeNodeIds);
         const hierarchyNodes = new Set<string>();
         const siblingNodes = new Set<string>();
         const deferredOperations = new Set<string>();
-        const pending = operations.filter((stored) => stored.stateKind === "pending" && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
+        const pending = operations.filter((stored) => retainsOperationOverlay(stored) && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         for (const operation of pending) replayPendingOperation(projectedNodes, projectedSettings, currentSettings, coveredNodeIds, hierarchyNodes, siblingNodes, deferredOperations, operation);
         validateProjectedNodes(projectedNodes, authoritativeNodeIds, hierarchyNodes, siblingNodes, true);
 
@@ -3220,6 +3256,88 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       return transact(db, "operations", "readonly", async (transaction) => {
         const value = await request(transaction.objectStore("operations").get(canonicalOperationId));
         return value === undefined ? undefined : parseStoredOperation(value);
+      });
+    },
+
+    listUnsettledOperations: async (workspaceId, afterRevision = 0, limit = WEB2_MAX_BATCH_ITEMS) => {
+      const canonicalWorkspaceId = parseStableId(workspaceId, "A workspace ID is invalid.");
+      const canonicalAfterRevision = parseNonNegativeSafeInteger(afterRevision, "An unsettled operation cursor is invalid.");
+      const boundedLimit = parsePositiveSafeInteger(limit, "An unsettled operation limit is invalid.");
+      if (boundedLimit > WEB2_MAX_BATCH_ITEMS) throw new Error("An unsettled operation limit is too large.");
+      return transact(db, "operations", "readonly", async (transaction) => new Promise<StoredOperation[]>((resolve, reject) => {
+        const result: StoredOperation[] = [];
+        const cursor = transaction.objectStore("operations").index("by-workspace-revision").openCursor(keyRange.bound([canonicalWorkspaceId, canonicalAfterRevision], [canonicalWorkspaceId, Number.MAX_SAFE_INTEGER], canonicalAfterRevision > 0));
+        cursor.onerror = () => reject(cursor.error ?? new Error("Unsettled filesystem operations could not be read."));
+        cursor.onsuccess = () => {
+          try {
+            if (!cursor.result || result.length === boundedLimit) { resolve(result); return; }
+            const operation = parseStoredOperation(cursor.result.value);
+            if (operation.stateKind !== "accepted" && operation.overlayKind !== "discarded") result.push(operation);
+            cursor.result.continue();
+          } catch (error) {
+            reject(error);
+          }
+        };
+      }));
+    },
+
+    recordPushRejections: async (values) => {
+      if (!Array.isArray(values) || values.length === 0 || values.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A push rejection batch is invalid.");
+      const rejections = values.map((value) => {
+        if (!isRecord(value)) throw new Error("A push rejection has an unsupported shape.");
+        assertExactKeys(value, ["operationId", "workspaceId", "code", "message"], "A push rejection has an unsupported shape.");
+        if (typeof value.code !== "string" || !value.code || value.code.length > 128 || typeof value.message !== "string" || !value.message || value.message.length > 1024) throw new Error("A push rejection is invalid.");
+        return { operationId: parseStableId(value.operationId), workspaceId: parseStableId(value.workspaceId), code: value.code, message: value.message };
+      });
+      if (new Set(rejections.map(({ operationId }) => operationId)).size !== rejections.length) throw new Error("A push rejection batch contains duplicate operation IDs.");
+      return transact(db, "operations", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("operations");
+        const rejected: StoredOperation[] = [];
+        for (const rejection of rejections) {
+          const value = await request(store.get(rejection.operationId));
+          if (value === undefined) throw new Error("A rejected operation is absent from the local outbox.");
+          const operation = parseStoredOperation(value);
+          if (operation.workspaceId !== rejection.workspaceId || operation.stateKind === "accepted") throw new Error("A push rejection does not match a pending local operation.");
+          if (operation.stateKind === "rejected") {
+            if (!equalValues(operation.rejection, { code: rejection.code, message: rejection.message })) throw new Error("A rejected operation was replayed with a different result.");
+            rejected.push(operation);
+            continue;
+          }
+          const updated: StoredOperation = { ...operation, stateKind: "rejected", rejection: { code: rejection.code, message: rejection.message } };
+          await request(store.put(updated));
+          rejected.push(updated);
+        }
+        return rejected;
+      });
+    },
+
+    deferRejectedOperation: async (operationId) => {
+      const canonicalOperationId = parseStableId(operationId, "An operation ID is invalid.");
+      return transact(db, "operations", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("operations");
+        const value = await request(store.get(canonicalOperationId));
+        if (value === undefined) throw new Error("That rejected operation does not exist.");
+        const operation = parseStoredOperation(value);
+        if (operation.stateKind !== "rejected" || operation.overlayKind !== "active") throw new Error("That operation is not awaiting discard.");
+        const deferred: StoredOperation = { ...operation, overlayKind: "deferred" };
+        await request(store.put(deferred));
+        return deferred;
+      });
+    },
+
+    completeRejectedDiscards: async (operationIds) => {
+      if (!Array.isArray(operationIds) || operationIds.length === 0 || operationIds.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A rejected discard batch is invalid.");
+      const ids = operationIds.map((operationId) => parseStableId(operationId, "A rejected operation ID is invalid."));
+      if (new Set(ids).size !== ids.length) throw new Error("A rejected discard batch contains duplicate operation IDs.");
+      await transact(db, "operations", "readwrite", async (transaction) => {
+        const store = transaction.objectStore("operations");
+        for (const operationId of ids) {
+          const value = await request(store.get(operationId));
+          if (value === undefined) throw new Error("A deferred rejected operation does not exist.");
+          const operation = parseStoredOperation(value);
+          if (operation.stateKind !== "rejected" || operation.overlayKind !== "deferred") throw new Error("A rejected operation is not awaiting discard completion.");
+          await request(store.put({ ...operation, overlayKind: "discarded" } satisfies StoredOperation));
+        }
       });
     },
 

@@ -40,14 +40,34 @@ export class Web2HTTPError extends Error {
   }
 }
 
+export class Web2NetworkError extends Error {
+  constructor() {
+    super("The synchronization network is unavailable.");
+    this.name = "Web2NetworkError";
+  }
+}
+
+async function networkFetch(input: RequestInfo | URL, init?: RequestInit) {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (init?.signal?.aborted) throw error;
+    throw new Web2NetworkError();
+  }
+}
+
 async function responseJSON(response: Response) {
   if (!response.ok) throw new Web2HTTPError(response.status);
   if (response.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") throw new Error("A synchronization response is not JSON.");
-  return response.json() as Promise<unknown>;
+  try {
+    return await response.json() as unknown;
+  } catch {
+    throw new Web2NetworkError();
+  }
 }
 
 async function post(path: string, value: unknown, signal?: AbortSignal) {
-  return responseJSON(await fetch(path, {
+  return responseJSON(await networkFetch(path, {
     method: "POST",
     credentials: "same-origin",
     cache: "no-store",
@@ -62,7 +82,7 @@ function workspaceRoute(workspaceId: string, suffix: string) {
 }
 
 export async function fetchWeb2Session(signal?: AbortSignal): Promise<Web2Session> {
-  const response = await fetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", signal });
+  const response = await networkFetch("/api/auth/session", { credentials: "same-origin", cache: "no-store", signal });
   return parseWeb2Session(await responseJSON(response));
 }
 
@@ -110,13 +130,13 @@ export async function negotiateWeb2ChunkDownload(requestValue: ChunkDownloadRequ
 
 export async function uploadWeb2Chunk(descriptor: ChunkTransferDescriptor<"PUT">, bytes: Uint8Array, signal?: AbortSignal) {
   if (bytes.byteLength !== descriptor.size || await sha256Hex(bytes) !== descriptor.hash) throw new Error("A local chunk does not match its transfer descriptor.");
-  const response = await fetch(descriptor.url, { method: "PUT", credentials: "omit", headers: descriptor.headers, body: Uint8Array.from(bytes).buffer, signal });
-  if (!response.ok) throw new Error(`Chunk upload failed with status ${response.status}.`);
+  const response = await networkFetch(descriptor.url, { method: "PUT", credentials: "omit", headers: descriptor.headers, body: Uint8Array.from(bytes).buffer, signal });
+  if (!response.ok) throw new Web2HTTPError(response.status);
 }
 
 export async function downloadWeb2Chunk(descriptor: ChunkTransferDescriptor<"GET">, signal?: AbortSignal) {
-  const response = await fetch(descriptor.url, { method: "GET", credentials: "omit", headers: descriptor.headers, cache: "no-store", signal });
-  if (!response.ok) throw new Error(`Chunk download failed with status ${response.status}.`);
+  const response = await networkFetch(descriptor.url, { method: "GET", credentials: "omit", headers: descriptor.headers, cache: "no-store", signal });
+  if (!response.ok) throw new Web2HTTPError(response.status);
   const bytes = new Uint8Array(await response.arrayBuffer());
   if (bytes.byteLength !== descriptor.size || await sha256Hex(bytes) !== descriptor.hash) throw new Error("A downloaded chunk does not match its transfer descriptor.");
   return bytes;
@@ -128,7 +148,7 @@ function eventData(block: string) {
 }
 
 export async function listenForWeb2Events(signal: AbortSignal, receive: (event: AccountEventHint) => void | Promise<void>) {
-  const response = await fetch(`/api/sync/events?protocol=${encodeURIComponent(WEB2_SYNC_PROTOCOL)}`, {
+  const response = await networkFetch(`/api/sync/events?protocol=${encodeURIComponent(WEB2_SYNC_PROTOCOL)}`, {
     credentials: "same-origin",
     cache: "no-store",
     headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL },

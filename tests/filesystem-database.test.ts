@@ -379,6 +379,8 @@ describe("web2 filesystem database", () => {
       { id: stableId(2_296), name: "Archive", ordinal: 2, headSequence: 0 },
     ]);
     expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 9, lastHydrationAsOf: 10, lastObservedLogicalTime: 10 });
+    expect(await database.getWorkspaceBootstrapState(WORKSPACE)).toEqual({ target, staged: false });
+    expect(await database.getWorkspaceBootstrapState(stableId(2_296))).toBeUndefined();
     expect((await database.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([localId, remoteId].sort());
     expect(await database.getSetting(WORKSPACE, "desktop-grid", "grid-size")).toMatchObject({ value: 48 });
     expect((await database.listOperations(WORKSPACE)).map(({ operationId }) => operationId).sort()).toEqual([stableId(2_291), stableId(2_292)].sort());
@@ -2265,6 +2267,50 @@ describe("web2 filesystem database", () => {
     raw.close();
     await expect(database.getNode(malformedId)).rejects.toThrow("unsupported shape");
     await expect(database.getOperation(operationId)).rejects.toThrow("unsupported shape");
+    database.close();
+  });
+
+  test("durably rejects replay while retaining its optimistic overlay", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const operationId = stableId(150);
+    const nodeId = stableId(151);
+    await database.commitOperation({ operation: createDraft(operationId, [folder(nodeId, "Offline")]) });
+    expect((await database.listUnsettledOperations(WORKSPACE)).map(({ operationId }) => operationId)).toEqual([operationId]);
+
+    const rejection = { operationId, workspaceId: WORKSPACE, code: "forbidden", message: "The operation is not authorized." };
+    expect((await database.recordPushRejections([rejection]))[0]).toMatchObject({ stateKind: "rejected", rejection: { code: "forbidden" } });
+    expect((await database.listUnsettledOperations(WORKSPACE))[0]).toMatchObject({ stateKind: "rejected" });
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Offline" });
+    expect((await database.recordPushRejections([rejection]))[0]).toMatchObject({ stateKind: "rejected" });
+    await expect(database.recordPushRejections([{ ...rejection, code: "quota" }])).rejects.toThrow("different result");
+    expect(await database.deferRejectedOperation(operationId)).toMatchObject({ stateKind: "rejected", overlayKind: "deferred" });
+
+    const compensationId = stableId(152);
+    const compensation = await database.commitOperation({
+      operation: { schemaVersion: 1, kind: "trash", operationId: compensationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeIds: [nodeId], trashedAt: 20 },
+      intent: "undo",
+      compensatesOperationId: operationId,
+    });
+    const authoritative = await database.getNodeRecord(nodeId);
+    if (!authoritative) throw new Error("The compensated node is missing.");
+    await database.applyPullOperations({
+      workspaceId: WORKSPACE,
+      deviceId: DEVICE,
+      fromCursor: 0,
+      cursor: 1,
+      headSequence: 1,
+      snapshotBarrier: 0,
+      logFloor: 0,
+      observedLogicalTime: compensation.operation.logicalTime,
+      operations: [{ sequence: 1, operationId: compensationId, companion: null, nodes: [authoritative], settings: [] }],
+    });
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Offline", lifecycle: { kind: "trashed" } });
+    expect(await database.getOperation(operationId)).toMatchObject({ stateKind: "rejected", overlayKind: "deferred", rejection: { code: "forbidden" } });
+    expect(await database.getOperation(compensationId)).toMatchObject({ stateKind: "accepted" });
+    await database.completeRejectedDiscards([operationId]);
+    expect(await database.getOperation(operationId)).toMatchObject({ stateKind: "rejected", overlayKind: "discarded" });
+    expect((await database.listUnsettledOperations(WORKSPACE)).map(({ operationId }) => operationId)).not.toContain(operationId);
     database.close();
   });
 
