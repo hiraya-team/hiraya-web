@@ -40,6 +40,14 @@ export type HydrationRequest = {
   target: HydrationTarget;
   pageToken: string | null;
 };
+export type BootstrapRequest = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  workspaceId: string;
+  deviceId: string;
+  generationId: string;
+  rootLimit: number;
+};
 export type WorkspaceSummary = { id: string; name: string; pinned: boolean };
 export type WorkspaceBootstrapState = WorkspaceSummary & { headSequence: number; snapshotBarrier: number; logFloor: number };
 export type Bootstrap = {
@@ -99,6 +107,27 @@ export type PushResult = {
   | { kind: "accepted"; sequence: number; headSequence: number; outcome: "applied" | "superseded" }
   | { kind: "rejected"; code: "invalid" | "forbidden" | "quota" | "missing-chunks" | "not-found" | "operation-id-reuse"; message: string }
 );
+export type PushBatchResult = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  results: PushResult[];
+};
+export type Web2Session = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  user: { id: string; email: string; displayName: string; deploymentAdmin: boolean };
+  accounts: { id: string; name: string; storageId: string; workspaces: WorkspaceSummary[] }[];
+  directBlobOrigin: string | null;
+  buildTimestamp: string;
+};
+export type AccountEventHint = {
+  schemaVersion: typeof WEB2_SCHEMA_VERSION;
+  protocol: typeof WEB2_SYNC_PROTOCOL;
+  kind: "workspace-head";
+  accountId: string;
+  workspaceId: string;
+  headSequence: number;
+};
 export type OperationReceipt = { operationId: string; inputHash: string; result: PushResult };
 export type ChunkTransferDescriptor<Method extends "PUT" | "GET" = "PUT" | "GET"> = { hash: string; size: number; method: Method; url: string; headers: Record<string, string> };
 export type ChunkUploadRequest = {
@@ -146,6 +175,58 @@ export type ChunkDownloadResult = {
 function parseWireBase(value: Record<string, unknown>) {
   if (value.schemaVersion !== WEB2_SCHEMA_VERSION || value.protocol !== WEB2_SYNC_PROTOCOL) throw new Error("A synchronization message has unsupported protocol metadata.");
   return { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL } as const;
+}
+
+export function parseBootstrapRequest(value: unknown): BootstrapRequest {
+  if (!isRecord(value)) throw new Error("A bootstrap request has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "rootLimit"], "A bootstrap request has an unsupported shape.");
+  const rootLimit = parsePositiveSafeInteger(value.rootLimit, "A bootstrap root limit is invalid.");
+  if (rootLimit > WEB2_MAX_BATCH_ITEMS) throw new Error("A bootstrap root limit is invalid.");
+  return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), generationId: parseStableId(value.generationId), rootLimit };
+}
+
+function parseDirectBlobOrigin(value: unknown) {
+  if (value === null) return null;
+  if (typeof value !== "string" || value.length > 2048) throw new Error("The authenticated chunk origin is invalid.");
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("The authenticated chunk origin is invalid."); }
+  const loopback = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+  const pageLoopback = typeof location !== "undefined" && (location.hostname === "localhost" || location.hostname === "127.0.0.1" || location.hostname === "[::1]");
+  if (url.origin !== value || url.username || url.password || url.pathname !== "/" || url.search || url.hash || url.protocol !== "https:" && !(url.protocol === "http:" && loopback && pageLoopback)) throw new Error("The authenticated chunk origin is invalid.");
+  return value;
+}
+
+export function parseWeb2Session(value: unknown): Web2Session {
+  if (!isRecord(value)) throw new Error("A session response has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "user", "accounts", "directBlobOrigin", "buildTimestamp"], "A session response has an unsupported shape.");
+  const wire = parseWireBase(value);
+  if (!isRecord(value.user)) throw new Error("A session user has an unsupported shape.");
+  assertExactKeys(value.user, ["id", "email", "displayName", "deploymentAdmin"], "A session user has an unsupported shape.");
+  if (typeof value.user.email !== "string" || !value.user.email || value.user.email.length > 320 || typeof value.user.deploymentAdmin !== "boolean") throw new Error("A session user is invalid.");
+  if (!Array.isArray(value.accounts) || value.accounts.length === 0 || value.accounts.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A session account directory is invalid.");
+  const accounts = value.accounts.map((candidate) => {
+    if (!isRecord(candidate)) throw new Error("A session account has an unsupported shape.");
+    assertExactKeys(candidate, ["id", "name", "storageId", "workspaces"], "A session account has an unsupported shape.");
+    if (!Array.isArray(candidate.workspaces) || candidate.workspaces.length === 0 || candidate.workspaces.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A session workspace directory is invalid.");
+    const workspaces = candidate.workspaces.map(parseWorkspaceSummary);
+    if (new Set(workspaces.map(({ id }) => id)).size !== workspaces.length) throw new Error("A session workspace directory contains duplicate IDs.");
+    return { id: parseStableId(candidate.id, "A session account ID is invalid."), name: parseCanonicalName(candidate.name, "A session account name is invalid."), storageId: parseStableId(candidate.storageId, "A session storage ID is invalid."), workspaces };
+  });
+  if (new Set(accounts.map(({ id }) => id)).size !== accounts.length || new Set(accounts.map(({ storageId }) => storageId)).size !== accounts.length || accounts.reduce((count, account) => count + account.workspaces.length, 0) > WEB2_MAX_BATCH_ITEMS) throw new Error("A session account directory is inconsistent.");
+  if (typeof value.buildTimestamp !== "string" || !value.buildTimestamp || value.buildTimestamp.length > 1024) throw new Error("A session build identity is invalid.");
+  return {
+    ...wire,
+    user: { id: parseStableId(value.user.id, "A session user ID is invalid."), email: value.user.email, displayName: parseCanonicalName(value.user.displayName, "A session display name is invalid."), deploymentAdmin: value.user.deploymentAdmin },
+    accounts,
+    directBlobOrigin: parseDirectBlobOrigin(value.directBlobOrigin),
+    buildTimestamp: value.buildTimestamp,
+  };
+}
+
+export function parseAccountEventHint(value: unknown): AccountEventHint {
+  if (!isRecord(value) || value.kind !== "workspace-head") throw new Error("An account event hint has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "kind", "accountId", "workspaceId", "headSequence"], "An account event hint has an unsupported shape.");
+  return { ...parseWireBase(value), kind: "workspace-head", accountId: parseStableId(value.accountId), workspaceId: parseStableId(value.workspaceId), headSequence: parseNonNegativeSafeInteger(value.headSequence) };
 }
 
 export function parseHydrationRequest(value: unknown): HydrationRequest {
@@ -283,6 +364,16 @@ export function parsePushResult(value: unknown): PushResult {
   assertExactKeys(value, [...baseKeys, "code", "message"], "A rejected push result has an unsupported shape.");
   if (typeof value.code !== "string" || !PUSH_REJECTION_CODES.has(value.code) || typeof value.message !== "string" || !value.message || value.message.length > 1024) throw new Error("A rejected push result is invalid.");
   return { ...wire, kind: "rejected", workspaceId, operationId, code: value.code as Extract<PushResult, { kind: "rejected" }>["code"], message: value.message };
+}
+
+export function parsePushBatchResult(value: unknown): PushBatchResult {
+  if (!isRecord(value)) throw new Error("A push batch result has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "results"], "A push batch result has an unsupported shape.");
+  const wire = parseWireBase(value);
+  if (!Array.isArray(value.results) || value.results.length === 0 || value.results.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A push result batch is invalid.");
+  const results = value.results.map(parsePushResult);
+  if (new Set(results.map(({ operationId }) => operationId)).size !== results.length) throw new Error("A push result batch contains duplicate operation IDs.");
+  return { ...wire, results };
 }
 
 export function parsePushRequest(value: unknown): PushRequest {
