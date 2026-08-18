@@ -166,7 +166,7 @@ export function AppWindow({
     aria-labelledby={titleArea ? undefined : titleId}
     aria-label={titleArea ? title : undefined}
     aria-hidden={minimized || !segmentActive || (!windowed && !focused) || undefined}
-    inert={!segmentActive || (!windowed && !focused)}
+    inert={!segmentActive || (!windowed && !focused) ? "" : undefined}
     tabIndex={-1}
     style={style}
     onPointerDown={() => { if (!focused) onFocus(id); }}

@@ -353,7 +353,7 @@ function inlineMarkdownLinks(
 
 export function TextEditor({ file, value, settings, theme, externalEmbeddedPreviews, readOnly = false, onChange, onSave, onResolveLink, onOpenLinkedFile, onLinkError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView>(null);
+  const viewRef = useRef<EditorView | null>(null);
   const languageConfig = useRef(new Compartment());
   const fontConfig = useRef(new Compartment());
   const editableConfig = useRef(new Compartment());

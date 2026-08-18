@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Play, WarningCircle } from "@phosphor-icons/react";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
 import type { SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import type { FileEntry } from "../../types";
 import type { WallpaperSceneTarget } from "../../ui/wallpaper-pointer";
+import { useStableHandler } from "../../ui/use-stable-handler";
 import { inspectSceneFile, materializeScene, sceneMotionBlocked, SCENE_CSP } from "./scene-package";
 
 type Props = { file: FileEntry | null; contentRevision: number; readContent: (file: FileEntry) => Promise<Blob>; mode: "widget" | "wallpaper"; onPointerObservation?: (observation: SandboxPointerObservation, frame: HTMLIFrameElement) => void; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void };
@@ -15,7 +16,7 @@ export function SceneFrame({ file, contentRevision, readContent, mode, onPointer
   const [reducedMotion, setReducedMotion] = useState(() => matchMedia("(prefers-reduced-motion: reduce)").matches);
   const [allowed, setAllowed] = useState(false);
   const frameRef = useRef<HTMLIFrameElement>(null);
-  const loadContent = useEffectEvent(readContent);
+  const loadContent = useStableHandler(readContent);
   const blocked = sceneMotionBlocked(reducedMotion, mode, allowed);
 
   useEffect(() => {
@@ -40,7 +41,7 @@ export function SceneFrame({ file, contentRevision, readContent, mode, onPointer
       if (disposed) scene.revoke(); else setState(resource);
     }).catch((reason) => { if (!disposed) setState({ status: "error", message: reason instanceof Error ? reason.message : "The Scene could not be loaded." }); });
     return () => { disposed = true; resource?.revoke(); };
-  }, [blocked, contentRevision, file]); // eslint-disable-line react-hooks/exhaustive-deps -- useEffectEvent reads the current content loader.
+  }, [blocked, contentRevision, file, loadContent]);
 
   const fail = useCallback(() => setState((current) => {
     if (current.status === "ready") current.revoke();

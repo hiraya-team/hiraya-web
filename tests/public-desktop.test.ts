@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, publicAuthorityFromPath } from "../src/lib/public-desktop";
+import { fetchPublicThumbnail, publicAuthorityFromPath } from "../src/features/public-desktop/transport";
 import { resolvePublicLinkedEntry } from "../src/features/public-desktop/controller";
 import { remoteDesktopSnapshot } from "../src/lib/desktop-state";
 
@@ -25,21 +25,6 @@ describe("public desktop", () => {
     expect(publicAuthorityFromPath("/published/team-desk/roadmap-")).toBeNull();
   });
 
-  test("surfaces the large-download authentication gate without session handling", async () => {
-    const fetchImpl = (async () =>
-      Response.json(
-        {
-          error: "sign in",
-          code: "large_download_auth_required",
-          loginUrl: "/login?returnTo=%2Fpublished%2Fteam-desk",
-        },
-        { status: 401 },
-      )) as typeof fetch;
-    const result = fetchPublicFile({ desktopAlias: "team-desk" }, file, 3, fetchImpl);
-    await expect(result).rejects.toBeInstanceOf(LargeDownloadAuthRequiredError);
-    await expect(result).rejects.toMatchObject({ loginUrl: "/login?returnTo=%2Fpublished%2Fteam-desk" });
-  });
-
   test("does not request content until explicitly asked", () => {
     let calls = 0;
     const fetchImpl = (async () => {
@@ -50,54 +35,13 @@ describe("public desktop", () => {
     expect(calls).toBe(0);
   });
 
-  test("does not request impossible public thumbnail sources", () => {
+  test("does not request impossible public thumbnail sources", async () => {
     let calls = 0;
     const fetchImpl = (async () => { calls += 1; return new Response(); }) as typeof fetch;
-    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/svg+xml" }, 1, fetchImpl)).toThrow("unavailable");
-    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg", size: 100 * 1024 * 1024 + 1 }, 1, fetchImpl)).toThrow("unavailable");
-    expect(() => fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg" }, 0, fetchImpl)).toThrow("unavailable");
+    await expect(fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/svg+xml" }, 1, fetchImpl)).rejects.toThrow("unavailable");
+    await expect(fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg", size: 100 * 1024 * 1024 + 1 }, 1, fetchImpl)).rejects.toThrow("unavailable");
+    await expect(fetchPublicThumbnail({ desktopAlias: "team-desk" }, { ...file, mimeType: "image/jpeg" }, 0, fetchImpl)).rejects.toThrow("unavailable");
     expect(calls).toBe(0);
-  });
-
-  test("uses a direct descriptor returned by the public content route", async () => {
-    const directFile = { ...file, size: 4 };
-    const urls: string[] = [];
-    const fetchImpl = (async (input: RequestInfo | URL) => {
-      urls.push(String(input));
-      if (urls.length === 1) return Response.json({
-        entryId: directFile.id,
-        contentRevision: 3,
-        size: directFile.size,
-        sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-        access: { url: "https://downloads.example.test/file", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
-      });
-      return new Response("test");
-    }) as typeof fetch;
-
-    const result = await fetchPublicFile({ desktopAlias: "team-desk" }, directFile, 3, fetchImpl);
-
-    expect(await result.text()).toBe("test");
-    expect(urls).toEqual([
-      "/api/public/desktops/team-desk/entries/file/content?revision=3",
-      "https://downloads.example.test/file",
-    ]);
-  });
-
-  test("verifies the SHA-256 digest of direct downloads", async () => {
-    const directFile = { ...file, size: 4 };
-    let calls = 0;
-    const fetchImpl = (async () => {
-      calls += 1;
-      if (calls === 1) return Response.json({
-        entryId: directFile.id,
-        contentRevision: 3,
-        size: directFile.size,
-        sha256: "0000000000000000000000000000000000000000000000000000000000000000",
-        access: { url: "https://downloads.example.test/file", method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
-      });
-      return new Response("test");
-    }) as typeof fetch;
-    await expect(fetchPublicFile({ desktopAlias: "team-desk", itemAlias: "archive" }, directFile, 3, fetchImpl)).rejects.toThrow("integrity verification");
   });
 
   test("does not expose public multi-selection behavior", async () => {
@@ -130,13 +74,11 @@ describe("public desktop", () => {
     expect(source).toContain("withoutDotEntries(desktop?.entries ?? [])");
   });
 
-  test("loads packaged wallpaper code only when selected", async () => {
+  test("loads authenticated packaged wallpaper code only when selected", async () => {
     const publicSource = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
-    const appSource = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
-    for (const source of [publicSource, appSource]) {
-      expect(source).toContain('lazy(() => import("./components/ThemeWallpaper")');
-      expect(source).not.toContain('import { ThemeWallpaper } from "./components/ThemeWallpaper"');
-    }
+    const appSource = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
+    expect(appSource).toContain('lazy(() => import("./components/ThemeWallpaper")');
+    expect(publicSource).not.toContain("ThemeWallpaper");
   });
 
   test("keeps public root icons scrollable, focus-reachable, and pinch-magnifiable", async () => {

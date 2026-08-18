@@ -28,7 +28,7 @@ function SceneWallpaper({ loaded, ready, onReady, onError, onWallpaperTarget }: 
     frame.srcdoc = loaded.html;
     return () => { onWallpaperTarget?.(null); stopNavigation(); frame.removeAttribute("srcdoc"); };
   }, [loaded, onError, onReady, onWallpaperTarget]);
-  return <iframe ref={frameRef} className="wallpaper-scene" data-ready={ready || undefined} title="" aria-hidden="true" inert tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="" onError={onError} />;
+  return <iframe ref={frameRef} className="wallpaper-scene" data-ready={ready || undefined} title="" aria-hidden="true" inert="" tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="" onError={onError} />;
 }
 
 export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin, onWallpaperTarget }: Props) {
@@ -83,7 +83,7 @@ export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin, onWa
   return <>
     <div className="wallpaper-image" data-wallpaper-pending={!ready && !failed && !motionFallback || undefined} aria-hidden="true" />
     {loaded?.kind === "scene" && <SceneWallpaper loaded={loaded} ready={ready} onReady={succeeded} onError={fail} onWallpaperTarget={onWallpaperTarget} />}
-    {loaded?.kind === "video" && <video className="wallpaper-video" data-ready={ready || undefined} aria-hidden="true" inert src={loaded.url} autoPlay loop muted playsInline onCanPlay={succeeded} onError={fail} />}
-    {loaded?.kind === "image" && <img className="wallpaper-media" data-ready={ready || undefined} aria-hidden="true" inert draggable={false} src={loaded.url} alt="" onLoad={succeeded} onError={fail} />}
+    {loaded?.kind === "video" && <video className="wallpaper-video" data-ready={ready || undefined} aria-hidden="true" inert="" src={loaded.url} autoPlay loop muted playsInline onCanPlay={succeeded} onError={fail} />}
+    {loaded?.kind === "image" && <img className="wallpaper-media" data-ready={ready || undefined} aria-hidden="true" inert="" draggable={false} src={loaded.url} alt="" onLoad={succeeded} onError={fail} />}
   </>;
 }

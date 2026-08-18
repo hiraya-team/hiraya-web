@@ -257,7 +257,7 @@ function ShellItem({ entityId, label, position, width, height, areaSize, readOnl
       style={{ "--shell-x": `${bounds.x}px`, "--shell-y": `${bounds.y}px`, width: bounds.width, height: bounds.height } as CSSProperties}
       aria-label={label}
       aria-hidden={!areaInteractive || undefined}
-      inert={!areaInteractive || undefined}
+      inert={!areaInteractive ? "" : undefined}
       data-selected={selected || undefined}
       data-desktop-entity-id={entityId}
       data-widget-kind={widgetKind}

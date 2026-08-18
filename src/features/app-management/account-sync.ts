@@ -1,25 +1,24 @@
 import type { AppPackageInspection, JsonValue } from "@hiraya-team/apps-contracts";
 import type { InstalledApp } from "../../apps/installed-apps";
-import { API_ROUTES } from "../../lib/api-routes";
+import { getAccountOpfsRoot, readChunk, stageBlob } from "../../filesystem/chunks";
+import { openFilesystemDatabase } from "../../filesystem/database";
 import {
-  accountMutation,
   accountAppsRequestIsPermanent,
   accountAppsRequestIsTransient,
   downloadAccountAppData,
   downloadAccountAppPackage,
   fetchAccountApps,
-  parseAppsRevisionEvent,
-  prepareAccountPackage,
-  uploadPreparedAccountPackage,
   verifyLocalAccountPackage,
-  cancelPreparedAccountPackage,
   AccountAppsRequestError,
   type AccountApp,
   type AccountAppsSnapshot,
 } from "../../lib/account-apps";
 import { projectAccountAppData, type AccountAppDataRestoration, type AccountAppOperation, type AccountAppOutboxRecord, type PersistedAccountApps } from "../../lib/account-app-outbox";
 import { uploadBlobDigests } from "../../lib/blob-transfer";
-import { readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../../platform/storage/blobs";
+import { accountStorage } from "../../platform/storage/account-storage";
+import { synchronizedSession } from "../../platform/storage/synchronized-session";
+import { Web2HTTPError, clearWeb2AccountAppData, deleteWeb2AccountApp, deleteWeb2AccountAppData, negotiateWeb2ChunkUpload, putWeb2AccountApp, putWeb2AccountAppData, putWeb2AccountAppHandlers, uploadWeb2Chunk } from "../../sync/transport";
+import { readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../../platform/storage/package-archives";
 import {
   blockAccountAppOperation,
   clearAppStorage,
@@ -32,7 +31,7 @@ import {
   removeAppStorage,
   retryAccountAppOperation,
   writeAppStorage,
-} from "../../platform/storage/repositories";
+} from "../../platform/storage/app-repositories";
 
 export type AccountAppsClientState = Readonly<{ state: PersistedAccountApps; outbox: AccountAppOutboxRecord[]; error: string }>;
 
@@ -41,10 +40,8 @@ const emptyState: PersistedAccountApps = { id: "singleton", baseline: null, proj
 export class AccountAppsClient {
   private current: AccountAppsClientState = { state: emptyState, outbox: [], error: "" };
   private listener: (state: AccountAppsClientState) => void = () => undefined;
-  private events: EventSource | null = null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
-  private streamOpen = false;
   private active = false;
   private replaying: Promise<void> | null = null;
   private readonly online = () => { this.clearRetry(); void this.replay(); };
@@ -61,25 +58,12 @@ export class AccountAppsClient {
     this.publish({ ...stored, error: "" });
     await this.refresh().catch((error) => this.fail(error));
     if (!this.active) return;
-    try { this.events = typeof EventSource === "undefined" ? null : new EventSource(API_ROUTES.events); } catch { this.events = null; }
-    if (this.events) {
-      this.events.addEventListener("apps", (event) => {
-        try {
-          const revision = parseAppsRevisionEvent(JSON.parse((event as MessageEvent<string>).data));
-          if (revision !== this.current.state.baseline?.appsRevision) void this.refresh().then(() => this.replay()).catch((error) => this.fail(error));
-        } catch { /* Polling below repairs malformed or missed events. */ }
-      });
-      this.events.onerror = () => { this.streamOpen = false; this.schedulePoll(0); };
-      this.events.onopen = () => { this.streamOpen = true; if (this.timer) clearTimeout(this.timer); this.timer = null; };
-    } else this.schedulePoll(0);
+    this.schedulePoll();
     void this.replay();
   }
 
   stop() {
     this.active = false;
-    this.events?.close();
-    this.events = null;
-    this.streamOpen = false;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     this.clearRetry();
@@ -97,7 +81,7 @@ export class AccountAppsClient {
   }
 
   private schedulePoll(delay = 5_000) {
-    if (!this.active || this.streamOpen || this.timer) return;
+    if (!this.active || this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.refresh().then(() => this.replay()).catch((error) => this.fail(error)).finally(() => this.schedulePoll());
@@ -318,23 +302,33 @@ export class AccountAppsClient {
 
   private async send(record: AccountAppOutboxRecord) {
     const operation = record.operation;
-    if (operation.kind === "install") {
-      const archive = await readApprovedPackageArchive(operation.digest);
-      if (archive.size !== operation.size) throw new Error("The queued app package has an unexpected size.");
-      await verifyLocalAccountPackage(archive, operation.digest, operation.manifest);
-      const prepared = await prepareAccountPackage(archive, operation.manifest, record.clientId, record.operationId, this.directBlobOrigin);
-      if (!prepared) return;
-      try { await uploadPreparedAccountPackage(prepared, archive, operation.manifest, operation.digest, record.clientId, record.operationId); }
-      catch (error) {
-        await cancelPreparedAccountPackage(prepared, record.clientId, record.operationId).catch(() => undefined);
-        throw error;
+    const { accountId, storageId } = accountStorage();
+    const wire = { schemaVersion: 1 as const, protocol: "web2-sync-v1" as const };
+    try {
+      if (operation.kind === "install") {
+        const archive = await readApprovedPackageArchive(operation.digest);
+        if (archive.size !== operation.size) throw new Error("The queued app package has an unexpected size.");
+        await verifyLocalAccountPackage(archive, operation.digest, operation.manifest);
+        const root = await getAccountOpfsRoot(storageId);
+        const staged = await stageBlob(root, archive);
+        const workspaceId = synchronizedSession().account.workspaces[0]!.id;
+        const database = await openFilesystemDatabase(accountId, { storageId });
+        const deviceId = await database.getOrCreateDeviceId();
+        database.close();
+        const upload = await negotiateWeb2ChunkUpload({ ...wire, kind: "chunk-upload-request", workspaceId, deviceId, operationId: record.operationId, manifestHash: staged.manifestHash, manifest: staged.manifest }, this.directBlobOrigin);
+        for (const descriptor of upload.missingChunks) await uploadWeb2Chunk(descriptor, new Uint8Array(await (await readChunk(root, descriptor)).arrayBuffer()));
+        const current = this.current.state.baseline?.apps.find(({ appId }) => appId === operation.appId);
+        await putWeb2AccountApp(accountId, operation.appId, record.operationId, { ...wire, manifest: operation.manifest, packageManifestHash: staged.manifestHash, packageSize: archive.size, packageSha256: operation.digest, installationGeneration: current?.generations.installationGeneration ?? 0, itemRevision: current?.generations.itemRevision ?? 0 });
+        return;
       }
-      return;
+      if (operation.kind === "uninstall") return deleteWeb2AccountApp(accountId, operation.appId, record.operationId, operation.installationGeneration).then(() => undefined);
+      if (operation.kind === "put-data") return putWeb2AccountAppData(accountId, operation.appId, operation.key, record.operationId, { ...wire, dataGeneration: operation.dataGeneration, value: operation.value }).then(() => undefined);
+      if (operation.kind === "delete-data") return deleteWeb2AccountAppData(accountId, operation.appId, operation.key, record.operationId, operation.dataGeneration).then(() => undefined);
+      if (operation.kind === "clear-data") return clearWeb2AccountAppData(accountId, operation.appId, record.operationId, operation.dataGeneration).then(() => undefined);
+      return putWeb2AccountAppHandlers(accountId, record.operationId, operation.hints).then(() => undefined);
+    } catch (error) {
+      if (error instanceof Web2HTTPError) throw new AccountAppsRequestError(error.status, error.message, error.code);
+      throw error;
     }
-    if (operation.kind === "uninstall") return accountMutation(API_ROUTES.app(operation.appId), "DELETE", { installationGeneration: operation.installationGeneration }, record.clientId, record.operationId).then(() => undefined);
-    if (operation.kind === "put-data") return accountMutation(API_ROUTES.appData(operation.appId, operation.key), "PUT", { dataGeneration: operation.dataGeneration, value: operation.value }, record.clientId, record.operationId).then(() => undefined);
-    if (operation.kind === "delete-data") return accountMutation(API_ROUTES.appData(operation.appId, operation.key), "DELETE", { dataGeneration: operation.dataGeneration }, record.clientId, record.operationId).then(() => undefined);
-    if (operation.kind === "clear-data") return accountMutation(API_ROUTES.appData(operation.appId), "DELETE", { dataGeneration: operation.dataGeneration }, record.clientId, record.operationId).then(() => undefined);
-    return accountMutation(API_ROUTES.appHandlers, "PUT", { hints: operation.hints }, record.clientId, record.operationId).then(() => undefined);
   }
 }

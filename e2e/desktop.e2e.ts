@@ -1,9 +1,47 @@
 import AxeBuilder from "@axe-core/playwright";
 import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
+test("core React shell defers rich chunks until an explicit rich action", async ({ page }) => {
+  const richScripts: string[] = [];
+  page.on("response", (response) => {
+    if (/\/assets\/(?:Desktop|PublicDesktop|TextEditor|ImagePreview|MarkdownRenderer|SettingsWindow|SharingDialog|PropertiesWindow|MergeWindow|SandboxFrame|AppStoreWindow)-/.test(response.url())) richScripts.push(response.url());
+  });
+  await page.goto("/");
+  await expect(page.locator(".shell-desktop")).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(richScripts).toEqual([]);
+
+  const folderName = `core-folder-${Date.now()}`;
+  await page.getByRole("button", { name: "New folder" }).click();
+  await page.getByLabel("Name").fill(folderName);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const folder = page.getByRole("button", { name: `${folderName}, folder` });
+  await expect(folder).toBeVisible();
+  await folder.dblclick();
+  await expect(page.getByRole("dialog", { name: folderName })).toBeVisible();
+
+  const fileName = `core-file-${Date.now()}.txt`;
+  await page.getByRole("button", { name: "New file" }).click();
+  await page.getByLabel("Name").fill(fileName);
+  await page.getByRole("button", { name: "Create", exact: true }).click();
+  const file = page.getByRole("button", { name: `${fileName}, file` });
+  await expect(file).toBeVisible();
+  await file.dblclick();
+  await expect(page.getByRole("dialog", { name: fileName })).toBeVisible();
+  await page.waitForTimeout(800);
+  expect(richScripts).toEqual([]);
+
+  await page.getByRole("button", { name: "Edit with Integrated Editor" }).click();
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(() => richScripts.some((url) => /\/assets\/Desktop-/.test(url))).toBe(true);
+});
+
 async function openLocalDesktop(page: Page, timeout = 5_000) {
   await page.goto("/");
+  await expect(page.locator(".shell-desktop")).toBeVisible({ timeout });
+  await page.getByRole("button", { name: "Open full desktop" }).click();
   await expect(page.locator(".desktop-shell")).toBeVisible({ timeout });
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-storage-runtime", "web2");
   await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden({ timeout });
   const onboarding = page.getByRole("dialog", { name: "Know where your work lives" });
   await expect(onboarding).toBeVisible({ timeout });
@@ -640,36 +678,49 @@ test("local mutation persists through reload", async ({ page }) => {
   await expect(page.getByText(name, { exact: true })).toBeVisible();
   await page.reload();
   await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-storage-runtime", "web2");
   await expect(page.getByText(name, { exact: true })).toBeVisible();
   const stored = await page.evaluate(async () => {
-    const databaseName = (await indexedDB.databases()).find((database) => database.name?.startsWith("hiraya-indexeddb-v1-"))?.name;
-    if (!databaseName) throw new Error("The Hiraya IndexedDB database is unavailable.");
+    const databases = (await indexedDB.databases()).map(({ name }) => name).filter((name): name is string => Boolean(name));
+    const databaseName = databases.find((name) => /^hiraya-web2-v1-[0-9a-f]{64}$/.test(name));
+    if (!databaseName) throw new Error("The Web2 IndexedDB database is unavailable.");
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(databaseName);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-    const transaction = database.transaction("desktops", "readonly");
-    const desktops = await new Promise<Array<{ state: { entries: Array<{ name: string }> } }>>((resolve, reject) => {
-      const request = transaction.objectStore("desktops").getAll();
+    const transaction = database.transaction("nodes", "readonly");
+    const nodes = await new Promise<Array<{ name: string }>>((resolve, reject) => {
+      const request = transaction.objectStore("nodes").getAll();
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
     const stores = [...database.objectStoreNames].sort();
     database.close();
-    return { stores, names: desktops.flatMap((desktop) => desktop.state.entries.map((entry) => entry.name)) };
+    const root = await navigator.storage.getDirectory();
+    const directories: string[] = [];
+    for await (const [directoryName, handle] of (root as unknown as { entries(): AsyncIterable<[string, FileSystemHandle]> }).entries()) if (handle.kind === "directory") directories.push(directoryName);
+    return { databases, directories, stores, names: nodes.map((node) => node.name) };
   });
-  expect(stored.stores).toEqual(["account-app-client-state", "account-app-outbox", "account-apps", "activity", "app-storage", "client-state", "desktops", "file-associations", "installed-apps", "outbox", "preferences", "sessions"]);
+  expect(stored.databases).toHaveLength(1);
+  expect(stored.databases.every((name) => /^hiraya-web2-v1-[0-9a-f]{64}$/.test(name))).toBe(true);
+  expect(stored.directories.some((name) => /^\.hiraya-web2-[0-9a-f]{64}$/.test(name))).toBe(true);
+  expect(stored.directories.some((directory) => directory.startsWith(".hiraya-storage-") || directory.includes("legacy"))).toBe(false);
+  expect(stored.stores).toContain("nodes");
+  expect(stored.stores).not.toContain("desktops");
   expect(stored.names).toContain(name);
 });
 
-test("concurrent tabs serialize the first IndexedDB reset", async ({ browser }) => {
+test("concurrent tabs replay fresh filesystem revisions", async ({ browser }) => {
   const context = await browser.newContext();
   const first = await context.newPage();
   const second = await context.newPage();
-  await Promise.all([first.goto("/"), second.goto("/")]);
-  await expect(first.locator(".desktop-shell")).toBeVisible();
-  await expect(second.locator(".desktop-shell")).toBeVisible();
+  await Promise.all([openLocalDesktop(first), openLocalDesktop(second)]);
+  const name = `cross-tab-${Date.now()}.txt`;
+  await first.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await first.getByLabel("File name").fill(name);
+  await first.getByRole("button", { name: "Create file" }).click();
+  await expect(second.getByText(name, { exact: true })).toBeVisible();
   await context.close();
 });
 
@@ -1031,6 +1082,49 @@ test("opening and restoring a text file preserves its loaded contents", async ({
   await editor.locator(".cm-content").focus();
   await page.keyboard.press("Control+z");
   await expect(editor.locator(".cm-content")).toHaveText(contents);
+});
+
+test("file Properties retains versions and supports undo, redo, and restore", async ({ page }) => {
+  await openLocalDesktop(page);
+  const name = `history-${Date.now()}.txt`;
+  const contents = "Retained file history survives reload.";
+
+  await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
+  await page.getByLabel("File name").fill(name);
+  await page.getByRole("button", { name: "Create file" }).click();
+  const icon = page.locator(".file-icon").filter({ hasText: name });
+  await icon.dblclick();
+
+  const editorWindow = page.getByRole("dialog", { name: /Integrated Editor/ });
+  const editor = editorWindow.frameLocator("iframe");
+  await editor.locator(".cm-content").fill(contents);
+  await editorWindow.getByRole("button", { name: /Minimize/ }).focus();
+  await page.keyboard.press("Control+s");
+  await expect(editor.locator("#status")).toHaveText(`Saved ${name}.`);
+  await editorWindow.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
+  await expect(editorWindow).toBeHidden();
+
+  await icon.click({ button: "right" });
+  await page.getByRole("menu", { name: `Actions for ${name}` }).getByRole("menuitem", { name: "Properties" }).click();
+  const properties = page.getByRole("dialog", { name: `${name} Properties` });
+  const history = properties.getByRole("region", { name: "Version history" });
+  await expect(history.locator("li")).toHaveCount(2);
+
+  await history.getByRole("button", { name: "Undo latest change" }).click();
+  await expect(history.getByRole("button", { name: "Redo latest change" })).toBeVisible();
+  await expect(history.locator("li[data-current]")).toContainText("0 bytes");
+
+  await history.getByRole("button", { name: "Redo latest change" }).click();
+  await expect(history.getByRole("button", { name: "Redo latest change" })).toHaveCount(0);
+  await expect(history.locator("li[data-current]")).not.toContainText("0 bytes");
+
+  await history.locator("li").filter({ hasText: "0 bytes" }).first().getByRole("button", { name: "Restore this version" }).click();
+  await expect(history.locator("li[data-current]")).toContainText("0 bytes");
+  await properties.getByRole("button", { name: /Close .*properties/i }).click();
+
+  await page.reload();
+  await page.locator(".file-icon").filter({ hasText: name }).dblclick();
+  await expect(page.getByRole("dialog", { name: /Integrated Editor/ }).frameLocator("iframe").locator(".cm-placeholder")).toHaveText("Start writing...");
 });
 
 test("rapid icon releases cannot accumulate snap previews", async ({ page }) => {
@@ -2012,20 +2106,20 @@ test("Show hidden files persists in the account IndexedDB preferences", async ({
   await toggle.check();
   await expect(toggle).toBeChecked();
   await expect.poll(() => page.evaluate(async () => {
-    const databaseName = (await indexedDB.databases()).find((database) => database.name?.startsWith("hiraya-indexeddb-v1-"))?.name;
+    const databaseName = (await indexedDB.databases()).find((database) => database.name && /^hiraya-web2-v1-[0-9a-f]{64}$/.test(database.name))?.name;
     if (!databaseName) return false;
     const db = await new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(databaseName);
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-    const value = await new Promise<{ showHiddenFiles?: boolean } | undefined>((resolve, reject) => {
-      const request = db.transaction("preferences").objectStore("preferences").get("singleton");
+    const value = await new Promise<{ preferences?: { showHiddenFiles?: boolean } } | undefined>((resolve, reject) => {
+      const request = db.transaction("device-preferences").objectStore("device-preferences").get("singleton");
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
     db.close();
-    return value?.showHiddenFiles === true;
+    return value?.preferences?.showHiddenFiles === true;
   })).toBe(true);
   await settings.getByRole("button", { name: "Close Settings" }).click();
 
@@ -2049,6 +2143,35 @@ test("reduced motion disables desktop transitions and animations", async ({ page
   });
   expect(parseFloat(motion.animationDuration)).toBeLessThanOrEqual(0.001);
   expect(parseFloat(motion.transitionDuration)).toBeLessThanOrEqual(0.001);
+});
+
+test("authenticated shell reflows at 200 percent zoom and preserves focus in forced colors and High Contrast", async ({ page }) => {
+  await page.setViewportSize({ width: 640, height: 720 });
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setPageScaleFactor", { pageScaleFactor: 2 });
+  await page.emulateMedia({ forcedColors: "active" });
+  await openLocalDesktop(page);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+
+  const start = page.getByRole("button", { name: /Start; account, system, and applications/ });
+  await start.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(start).toBeFocused();
+  await expect(start).toBeInViewport();
+  const focus = await start.evaluate((element) => {
+    const style = getComputedStyle(element);
+    return { style: style.outlineStyle, width: Number.parseFloat(style.outlineWidth) };
+  });
+  expect(focus.style).not.toBe("none");
+  expect(focus.width).toBeGreaterThanOrEqual(2);
+
+  await start.click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Theme Editor/ }).click();
+  await page.getByRole("dialog", { name: "Theme Editor" }).frameLocator("iframe").getByRole("option", { name: /High Contrast/ }).click();
+  await expect(page.locator(".desktop-shell")).toHaveAttribute("data-theme", "high-contrast");
+  await session.detach();
 });
 
 test("desktop switcher rows use their full width", async ({ page }) => {
@@ -2077,6 +2200,94 @@ test("service worker excludes API responses from navigation fallback and caches"
   expect(result.status).not.toBe(200);
   expect(result.text).not.toContain("Hiraya Desktop");
   expect(result.cachedApiCount).toBe(0);
+});
+
+test("service worker reloads the shell offline", async ({ page }) => {
+  const pageErrors: string[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error.message));
+  page.on("console", (message) => { if (message.type() === "error") pageErrors.push(message.text()); });
+  page.on("requestfailed", (request) => pageErrors.push(`${request.url()}: ${request.failure()?.errorText ?? "request failed"}`));
+  await openLocalDesktop(page);
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) {
+    await page.reload();
+    await expect(page.locator(".desktop-shell")).toBeVisible();
+  }
+  const cachedShell = await page.evaluate(async () => {
+    const shell = (await caches.keys()).find((key) => key.startsWith("hiraya-shell-"));
+    return shell ? (await (await caches.open(shell)).keys()).map((request) => new URL(request.url).pathname) : [];
+  });
+  expect(cachedShell).toContain("/");
+  expect(cachedShell.some((path) => /\/assets\/app-.*\.js$/.test(path))).toBe(true);
+  await page.evaluate(() => new Promise<void>((resolve) => {
+    const ready = (event: MessageEvent) => {
+      if (event.data?.type !== "HIRAYA_E2E_OFFLINE_READY") return;
+      navigator.serviceWorker.removeEventListener("message", ready);
+      resolve();
+    };
+    navigator.serviceWorker.addEventListener("message", ready);
+    navigator.serviceWorker.controller?.postMessage({ type: "HIRAYA_E2E_OFFLINE" });
+  }));
+  await page.goto(page.url(), { waitUntil: "domcontentloaded" });
+  await expect(page.locator(".shell-desktop, .desktop-shell"), pageErrors.join("\n") || await page.locator("html").innerHTML()).toBeVisible({ timeout: 15_000 });
+});
+
+test("update activation waits for dirty edits", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) {
+    await page.reload();
+    await expect(page.locator(".desktop-shell")).toBeVisible();
+  }
+  const chooser = page.waitForEvent("filechooser");
+  await page.locator(".empty-state__actions").getByRole("button", { name: "Upload files" }).click();
+  await (await chooser).setFiles({ name: "update-guard.md", mimeType: "text/markdown", buffer: Buffer.from("# Before") });
+  await page.locator(".file-icon").filter({ hasText: "update-guard.md" }).dblclick();
+  const editor = page.getByRole("dialog", { name: /Integrated Editor/ }).frameLocator("iframe").locator(".cm-content");
+  await editor.fill("# Unsaved");
+  await page.evaluate(() => navigator.serviceWorker.controller?.postMessage({ type: "HIRAYA_E2E_UPDATE_READY" }));
+  await page.getByRole("button", { name: /Notifications, 1 unread/ }).click();
+  await expect(page.getByText("A new Hiraya version is ready", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Update now" }).click();
+  await expect(page.getByText("Finish current work before updating", { exact: true })).toBeVisible();
+});
+
+test("update activation waits for storage operations and then removes obsolete shell caches", async ({ page }) => {
+  await openLocalDesktop(page);
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  if (!await page.evaluate(() => Boolean(navigator.serviceWorker.controller))) {
+    await page.reload();
+    await expect(page.locator(".desktop-shell")).toBeVisible();
+  }
+  await page.evaluate(async () => {
+    await caches.open("hiraya-shell-obsolete");
+    await caches.open("unrelated-cache");
+    await new Promise<void>((started) => {
+      void navigator.locks.request("hiraya-e2e-storage-commit", async () => {
+        await new Promise<void>((release) => {
+          (window as typeof window & { releaseUpdateLock?: () => void }).releaseUpdateLock = release;
+          started();
+        });
+      });
+    });
+    void navigator.locks.request("hiraya-e2e-storage-commit", () => undefined);
+    navigator.serviceWorker.controller?.postMessage({ type: "HIRAYA_E2E_UPDATE_READY" });
+  });
+  await page.getByRole("button", { name: /Notifications, 1 unread/ }).click();
+  await expect(page.getByText("A new Hiraya version is ready", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => caches.has("hiraya-shell-obsolete"))).toBe(true);
+  await page.getByRole("button", { name: "Update now" }).click();
+  await expect(page.getByText("Finish current work before updating", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => caches.has("hiraya-shell-obsolete"))).toBe(true);
+  await page.evaluate(() => (window as typeof window & { releaseUpdateLock?: () => void }).releaseUpdateLock?.());
+  await expect.poll(() => page.evaluate(async () => {
+    const state = await navigator.locks.query();
+    return (state.held?.length ?? 0) + (state.pending?.length ?? 0);
+  })).toBe(0);
+  await page.getByRole("button", { name: "Try again" }).click();
+  await expect(page.getByRole("button", { name: "Updating" })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => caches.has("hiraya-shell-obsolete"))).toBe(false);
+  expect(await page.evaluate(() => caches.has("unrelated-cache"))).toBe(true);
 });
 
 test("mobile Start and the unified switcher own distinct shell actions", async ({ browser }) => {
@@ -2390,7 +2601,7 @@ test("mobile touch drags selected items and swipes areas from unselected items a
   await page.getByRole("menu", { name: "Create and desktop actions" }).getByRole("menuitem", { name: "Add widget" }).click();
   await page.getByRole("menuitem", { name: "Clock", exact: true }).click();
   const clock = page.locator(".shell-item--widget", { has: page.getByRole("button", { name: "Move Clock", exact: true }) });
-  await desktop.tap({ position: { x: 350, y: 500 } });
+  await desktop.tap({ position: { x: 300, y: 300 } });
   await expect(clock).not.toHaveAttribute("data-selected", "true");
   const clockPosition = await clock.evaluate((element) => ({ x: element.style.getPropertyValue("--shell-x"), y: element.style.getPropertyValue("--shell-y") }));
   await dragTouch(page, clock.getByRole("button", { name: "Move Clock", exact: true }), 180, 0);

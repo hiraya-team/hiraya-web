@@ -1,5 +1,3 @@
-import { registerSW } from "virtual:pwa-register";
-
 export type UpdateCheckResult = "available" | "current" | "unsupported";
 
 export type PwaUpdater = {
@@ -26,6 +24,12 @@ function waitForInstall(worker: ServiceWorker) {
   });
 }
 
+function waitingRegistration(registration: ServiceWorkerRegistration, onUpdateAvailable: () => void) {
+  if (!registration.waiting || !navigator.serviceWorker.controller) return false;
+  onUpdateAvailable();
+  return true;
+}
+
 export function createPwaUpdater({ onUpdateAvailable, onError }: Options): PwaUpdater {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
     return {
@@ -38,31 +42,58 @@ export function createPwaUpdater({ onUpdateAvailable, onError }: Options): PwaUp
 
   let registration: ServiceWorkerRegistration | undefined;
   let disposed = false;
-  const updateSW = registerSW({
-    immediate: true,
-    onNeedRefresh: () => { if (!disposed) onUpdateAvailable(); },
-    onRegisteredSW: (_url, nextRegistration) => { registration = nextRegistration; },
-    onRegisterError: (error) => { if (!disposed) onError(error); },
-  });
+  let simulated = false;
+  let activating = false;
+  const notify = () => { if (!disposed) onUpdateAvailable(); };
+  const onMessage = (event: MessageEvent) => {
+    if (event.data?.type === "HIRAYA_UPDATE_READY") {
+      simulated = import.meta.env.HIRAYA_FRONTEND_ONLY === "true" && event.data.simulated === true;
+      notify();
+    }
+  };
+  navigator.serviceWorker.addEventListener("message", onMessage);
+  const onControllerChange = () => { if (activating) window.location.reload(); };
+  navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
+  void navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, type: "module", updateViaCache: "none" })
+    .then((nextRegistration) => {
+      if (disposed) return;
+      registration = nextRegistration;
+      waitingRegistration(nextRegistration, notify);
+      const observeInstalling = (installing: ServiceWorker | null) => {
+        installing?.addEventListener("statechange", () => {
+          if (installing.state === "installed") waitingRegistration(nextRegistration, notify);
+        });
+      };
+      observeInstalling(nextRegistration.installing);
+      nextRegistration.addEventListener("updatefound", () => observeInstalling(nextRegistration.installing));
+    })
+    .catch((error) => { if (!disposed) onError(error); });
 
   return {
     supported: true,
     async check() {
       if (!registration) registration = await navigator.serviceWorker.ready;
-      if (registration.waiting) {
-        onUpdateAvailable();
-        return "available";
-      }
+      if (waitingRegistration(registration, notify)) return "available";
       await registration.update();
       const installing = registration.installing;
       if (installing) await waitForInstall(installing);
-      if (registration.waiting) {
-        onUpdateAvailable();
-        return "available";
-      }
+      if (waitingRegistration(registration, notify)) return "available";
       return "current";
     },
-    activate: () => updateSW(true),
-    dispose() { disposed = true; },
+    async activate() {
+      if (!registration) registration = await navigator.serviceWorker.ready;
+      const target = registration.waiting ?? (simulated ? navigator.serviceWorker.controller : null);
+      if (!target) throw new Error("The app update is no longer waiting.");
+      if (import.meta.env.HIRAYA_FRONTEND_ONLY === "true" && simulated) target.postMessage({ type: "HIRAYA_E2E_ACTIVATE" });
+      else {
+        activating = true;
+        target.postMessage({ type: "HIRAYA_ACTIVATE" });
+      }
+    },
+    dispose() {
+      disposed = true;
+      navigator.serviceWorker.removeEventListener("message", onMessage);
+      navigator.serviceWorker.removeEventListener("controllerchange", onControllerChange);
+    },
   };
 }

@@ -83,7 +83,7 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   expect(await database.getOrCreateDeviceId()).toBe(DEVICE);
   database.close();
@@ -156,7 +156,7 @@ test("applies a parsed operation pull under storage locks and broadcasts after c
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, randomUUID: () => DEVICE, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.getOrCreateDeviceId();
   const generationId = stableId(80);
@@ -203,6 +203,7 @@ test("resumes a durable hydration generation and broadcasts its published revisi
   const revisions = new RevisionRecorder();
   let nextGeneration = 100;
   const environment = {
+    storageId: ACCOUNT,
     indexedDB,
     IDBKeyRange,
     locks: locks as unknown as Pick<LockManager, "request">,
@@ -269,7 +270,7 @@ test("restarts an expired continuation with a fresh durable generation", async (
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
   database.close();
@@ -318,7 +319,7 @@ test("concurrent callers share one generation and publication", async () => {
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
   database.close();
@@ -355,7 +356,7 @@ test("broadcasts every workspace revision changed by transfer replay", async () 
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, now: () => 100, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 100, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
   await database.createWorkspace({ id: DESTINATION, name: "Destination", pinned: false, deviceId: DEVICE });
@@ -388,7 +389,7 @@ test("resumes a multi-page cursor reset after leader failover and rebroadcasts r
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
   const firstNode = remoteFolder(stableId(800), "First", 0);
@@ -452,7 +453,7 @@ test("explicitly restarts an expired reset continuation with a fresh generation"
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
   const target = { kind: "folder-page" as const, workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 1 };
@@ -484,7 +485,7 @@ test("close aborts and drains an in-flight hydration request", async () => {
   const indexedDB = new IDBFactory();
   const locks = new ImmediateLocks();
   const revisions = new RevisionRecorder();
-  const environment = { indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
+  const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: revisions.create };
   const database = await openFilesystemDatabase(ACCOUNT, environment);
   await database.createWorkspace({ id: WORKSPACE, name: "Workspace", pinned: true, deviceId: DEVICE });
   database.close();

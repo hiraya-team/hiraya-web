@@ -3,7 +3,7 @@ import { describe, expect, test } from "bun:test";
 describe("Scene desktop integration", () => {
   test("uses the shared interactive frame for authenticated and whole public desktops", async () => {
     const [desktop, published] = await Promise.all([
-      Bun.file(new URL("../src/App.tsx", import.meta.url)).text(),
+      Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text(),
       Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text(),
     ]);
     expect(desktop).toContain('mode="widget"');
@@ -16,7 +16,7 @@ describe("Scene desktop integration", () => {
   test("keeps the shell as pointer owner while wallpaper Scenes observe its events", async () => {
     const [css, desktop, published] = await Promise.all([
       Bun.file(new URL("../src/styles.css", import.meta.url)).text(),
-      Bun.file(new URL("../src/App.tsx", import.meta.url)).text(),
+      Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text(),
       Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text(),
     ]);
     expect(css).toContain('.scene-wallpaper-layer { position: absolute; z-index: 0; inset: 0; overflow: hidden; pointer-events: none; }');

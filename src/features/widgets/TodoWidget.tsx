@@ -1,6 +1,7 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowSquareOut, CheckCircle, CheckSquare, WarningCircle } from "@phosphor-icons/react";
 import type { FileEntry } from "../../types";
+import { useStableHandler } from "../../ui/use-stable-handler";
 import { activeTodoItems, parseTodoText, serializeTodo, setTodoCompleted, type TodoDocument, type TodoItem } from "./todo-document";
 
 type Props = {
@@ -18,7 +19,7 @@ export function TodoWidget({ file, contentRevision, readOnly, readContent, write
   const [state, setState] = useState<State>({ status: "loading" });
   const [savingId, setSavingId] = useState("");
   const loadGeneration = useRef(0);
-  const load = useEffectEvent(async () => {
+  const load = useStableHandler(async () => {
     const generation = ++loadGeneration.current;
     if (!file) {
       setState({ status: "error", message: "The linked Todo file is no longer available." });
@@ -37,7 +38,7 @@ export function TodoWidget({ file, contentRevision, readOnly, readContent, write
   useEffect(() => {
     void load();
     return () => { loadGeneration.current += 1; };
-  }, [contentRevision, file?.id]); // eslint-disable-line react-hooks/exhaustive-deps -- useEffectEvent callbacks are intentionally non-reactive.
+  }, [contentRevision, file?.id, load]);
 
   async function toggle(item: TodoItem, completed: boolean) {
     if (!file || !writeContent || state.status !== "ready") return;

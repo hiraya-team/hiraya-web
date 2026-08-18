@@ -90,7 +90,7 @@ export function AreaSwitcher({
 
   return (
     <nav id="area-switcher" ref={rootRef} className="desktop-minimap" data-expanded={detailed || undefined} data-open-apps={apps.length > 0 || undefined} data-obscured={obscured || undefined} aria-label={navigationLabel ?? `${desktopName} areas and open apps`}>
-      <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}>
+      <div className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? "" : undefined}>
         {apps.length > 0 && <header className="desktop-minimap__header">
           <div className="desktop-minimap__header-tools">
             <div className="desktop-minimap__apps" role="group" aria-label="Open apps">

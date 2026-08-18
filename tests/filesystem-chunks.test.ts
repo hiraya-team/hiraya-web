@@ -3,10 +3,10 @@ import { getAccountOpfsRoot, readChunk, reconstructBlob, removeOrphanChunks, sta
 import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, type ChunkRef, type Manifest } from "../src/filesystem/model";
 import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
 
-const ACCOUNT_A = "00000000-0000-4000-8000-000000000001";
-const ACCOUNT_B = "00000000-0000-4000-8000-000000000002";
-const ACCOUNT_A_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
-const ACCOUNT_B_HASH = "e79acd97ac88086665d85a762f43d533a45195b6bac5961a993e6ed362471439";
+const STORAGE_A = "00000000-0000-4000-8000-000000000001";
+const STORAGE_B = "00000000-0000-4000-8000-000000000002";
+const STORAGE_A_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
+const STORAGE_B_HASH = "e79acd97ac88086665d85a762f43d533a45195b6bac5961a993e6ed362471439";
 const FULL_HASH = "9bc1b2a288b26af7257a36277ae3816a7d4f16e89c1e7e77d0a5c48bad62b360";
 const TAIL_HASH = "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc";
 const MULTI_MANIFEST_HASH = "2c2304e63694f4365904a54a2fa9f883c45dd0e3c3080f8f53ba0329e28f0dd6";
@@ -17,22 +17,22 @@ function chunkPath(root: MemoryDirectory, ref: ChunkRef) {
 }
 
 describe("web2 filesystem chunks", () => {
-  test("isolates canonical account UUIDs in only the fresh full-hash namespace", async () => {
+  test("isolates per-account storageId UTF-8 bytes in the fresh full-hash namespace", async () => {
     const origin = new MemoryDirectory();
-    const first = await getAccountOpfsRoot(ACCOUNT_A, memoryOpfsHandle(origin));
-    const second = await getAccountOpfsRoot(ACCOUNT_B, memoryOpfsHandle(origin));
+    const first = await getAccountOpfsRoot(STORAGE_A, memoryOpfsHandle(origin));
+    const second = await getAccountOpfsRoot(STORAGE_B, memoryOpfsHandle(origin));
 
     expect(first).not.toBe(second);
     expect([...origin.directories.keys()]).toEqual([
-      `${WEB2_OPFS_PREFIX}${ACCOUNT_A_HASH}`,
-      `${WEB2_OPFS_PREFIX}${ACCOUNT_B_HASH}`,
+      `${WEB2_OPFS_PREFIX}${STORAGE_A_HASH}`,
+      `${WEB2_OPFS_PREFIX}${STORAGE_B_HASH}`,
     ]);
     expect([...origin.directories.keys()].some((name) => name.startsWith(".hiraya-storage-"))).toBe(false);
     expect(origin.directoryRequests).toEqual([
-      `${WEB2_OPFS_PREFIX}${ACCOUNT_A_HASH}`,
-      `${WEB2_OPFS_PREFIX}${ACCOUNT_B_HASH}`,
+      `${WEB2_OPFS_PREFIX}${STORAGE_A_HASH}`,
+      `${WEB2_OPFS_PREFIX}${STORAGE_B_HASH}`,
     ]);
-    await expect(getAccountOpfsRoot("00000000-0000-4000-8000-00000000000A", memoryOpfsHandle(origin))).rejects.toThrow("account ID");
+    await expect(getAccountOpfsRoot("00000000-0000-4000-8000-00000000000A", memoryOpfsHandle(origin))).rejects.toThrow("storage ID");
     expect(origin.directories.size).toBe(2);
   });
 

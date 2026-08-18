@@ -1,0 +1,13 @@
+{
+  "name": "Hiraya Desktop",
+  "short_name": "Hiraya",
+  "description": "A private, browser-native desktop for your files.",
+  "theme_color": "#24333b",
+  "background_color": "#172329",
+  "display": "standalone",
+  "start_url": ".",
+  "scope": ".",
+  "icons": [
+    { "src": "hiraya-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

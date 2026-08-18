@@ -1069,6 +1069,20 @@
       }
     ]
   },
+  "bootstrapRequests": {
+    "valid": [
+      {
+        "name": "bounded root bootstrap request",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "rootLimit": 100 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "zero root bootstrap limit",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "rootLimit": 0 }
+      }
+    ]
+  },
   "bootstrap": {
     "valid": [
       {
@@ -1554,6 +1568,36 @@
       }
     ]
   },
+  "continuationResetPairs": {
+    "valid": [
+      {
+        "name": "hydration page token continues the same generation",
+        "kind": "continuation",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 1, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "pageToken": "next-page" },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 0, "observedLogicalTime": 2, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }], "nextPageToken": "next-page" }
+      },
+      {
+        "name": "pull request cursor pairs with reset fromCursor",
+        "kind": "reset",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 1 },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "fromCursor": 1, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "hydration continuation token does not match the prior page",
+        "kind": "continuation",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 1, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "pageToken": "wrong-page" },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 0, "observedLogicalTime": 2, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }], "nextPageToken": "next-page" }
+      },
+      {
+        "name": "reset fromCursor does not match the pull request",
+        "kind": "reset",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0 },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "fromCursor": 1, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8 }
+      }
+    ]
+  },
   "pushResults": {
     "valid": [
       {
@@ -1601,6 +1645,34 @@
           "protocol": "web2-sync-v1",
           "kind": "rejected",
           "extra": true
+        }
+      }
+    ]
+  },
+  "pushBatchResults": {
+    "valid": [
+      {
+        "name": "ordered mixed push batch result",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "results": [
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "accepted", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "sequence": 11, "headSequence": 12, "outcome": "applied" },
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "rejected", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000103", "code": "missing-chunks", "message": "Required chunks are unavailable." }
+          ]
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "duplicate push batch operation IDs",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "results": [
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "accepted", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "sequence": 11, "headSequence": 12, "outcome": "applied" },
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "rejected", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "code": "missing-chunks", "message": "Required chunks are unavailable." }
+          ]
         }
       }
     ]
@@ -2206,6 +2278,44 @@
       "winner": "right"
     }
   ],
+  "manifestAccess": {
+    "public": {
+      "valid": [
+        {
+          "name": "published file exposes its complete canonical manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": "note", "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "published file carries the wrong canonical manifest hash",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": "note", "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        },
+        {
+          "name": "published file omits a manifest chunk descriptor",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": null, "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [] }
+        }
+      ]
+    },
+    "accountAppPackages": {
+      "valid": [
+        {
+          "name": "account app package exposes its complete canonical manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.notes", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "account app identity differs from its package manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.other", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        },
+        {
+          "name": "account app package omits a manifest chunk descriptor",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.notes", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [] }
+        }
+      ]
+    }
+  },
   "chunkNegotiation": {
     "uploadRequests": {
       "valid": [
@@ -2330,6 +2440,16 @@
               }
             ]
           }
+        },
+        {
+          "name": "upload descriptor omits the required checksum header",
+          "expectedManifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] },
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "chunk-upload-result", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "operationId": "00000000-0000-4000-8000-000000000102", "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "transferId": "00000000-0000-4000-8000-000000000901", "expiresAt": 2000000000000, "missingChunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "PUT", "url": "https://objects.example.test/chunk", "headers": {} }] }
+        },
+        {
+          "name": "upload descriptor carries the wrong checksum header",
+          "expectedManifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] },
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "chunk-upload-result", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "operationId": "00000000-0000-4000-8000-000000000102", "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "transferId": "00000000-0000-4000-8000-000000000901", "expiresAt": 2000000000000, "missingChunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "PUT", "url": "https://objects.example.test/chunk", "headers": { "x-amz-checksum-sha256": "wrong" } }] }
         },
         {
           "name": "upload descriptor uses GET",

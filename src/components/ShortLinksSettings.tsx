@@ -4,7 +4,7 @@ import { resolveShortLinkUrl, type ShortLink } from "../lib/short-links";
 import { ItemList } from "./ItemList";
 
 type Props = {
-  headingRef?: React.RefObject<HTMLHeadingElement | null>;
+  headingRef?: React.RefObject<HTMLHeadingElement>;
   embedded?: boolean;
   baseUrl: string;
   onBack: () => void;

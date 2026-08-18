@@ -167,6 +167,7 @@ export type WorkspaceFilesystem = {
   listChanges(afterRevision: number, limit?: number): Promise<ChangeRecord[]>;
   onChangesAvailable(listener: () => void): () => void;
   readFile(nodeId: string): Promise<{ content: Blob; contentTuple: OperationTuple }>;
+  readTrashedFile(nodeId: string): Promise<Blob>;
   writeFile(nodeId: string, content: Blob, value: { expectedContentTuple: OperationTuple; mimeType?: string }): Promise<StoredOperation>;
   renameNode(nodeId: string, name: string): Promise<StoredOperation>;
   moveNodes(nodeIds: string[], parentId: string | null): Promise<StoredOperation>;
@@ -189,12 +190,12 @@ export type WorkspaceFilesystem = {
   close(): void;
 };
 
-export async function openWorkspaceFilesystem(accountId: string, workspaceId: string, environment: WorkspaceFilesystemEnvironment = {}): Promise<WorkspaceFilesystem> {
+export async function openWorkspaceFilesystem(accountId: string, workspaceId: string, environment: WorkspaceFilesystemEnvironment): Promise<WorkspaceFilesystem> {
   const database = await openFilesystemDatabase(accountId, environment);
   try {
     const sync = await database.getSyncState(workspaceId);
-    const root = await getAccountOpfsRoot(accountId, environment.originRoot);
-    const databaseName = await filesystemDatabaseName(accountId);
+    const root = await getAccountOpfsRoot(environment.storageId, environment.originRoot);
+    const databaseName = await filesystemDatabaseName(environment.storageId);
     const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
     if (!createBroadcastChannel) throw new Error("BroadcastChannel is required for fresh filesystem coordination.");
     const revisionChannel = createBroadcastChannel(filesystemRevisionChannelName(databaseName));
@@ -447,6 +448,12 @@ export async function openWorkspaceFilesystem(accountId: string, workspaceId: st
       readFile: async (nodeId) => {
         const node = await fileNode(nodeId);
         return { content: await content(node.mimeType, node.size, node.manifestHash), contentTuple: node.fieldTuples.content! };
+      },
+
+      readTrashedFile: async (nodeId) => {
+        const node = await database.getNode(nodeId);
+        if (!node || node.workspaceId !== workspaceId || node.kind !== "file" || node.lifecycle.kind !== "trashed") throw new Error("That Trash file does not exist in this workspace.");
+        return content(node.mimeType, node.size, node.manifestHash);
       },
 
       writeFile: (nodeId, contentValue, value) => locked(async () => {

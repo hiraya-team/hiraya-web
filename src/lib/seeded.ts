@@ -1,6 +1,6 @@
 import { strToU8, zip, type Zippable } from "fflate";
-import { readCurrentDesktop } from "./opfs";
 import { toPortableSeededManifest } from "./seeded-manifest";
+import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import type { DesktopEntry } from "../types";
 
 const EXPORT_ROOT = "hiraya-seeded";
@@ -30,8 +30,7 @@ function createZip(files: Zippable) {
   });
 }
 
-export async function exportSeededDesktop(readContent: (id: string) => Promise<Blob>) {
-  const snapshot = await readCurrentDesktop();
+export async function exportSeededDesktop(snapshot: DesktopStateSnapshot, readContent: (id: string) => Promise<Blob>) {
   const byId = new Map(snapshot.entries.map((entry) => [entry.id, entry]));
   const archive: Zippable = { [`${EXPORT_ROOT}/`]: new Uint8Array() };
   await Promise.all(snapshot.entries.map(async (entry) => {

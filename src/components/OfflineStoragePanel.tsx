@@ -1,7 +1,7 @@
 import { ArrowClockwise, CloudCheck, CloudSlash, HardDrive } from "@phosphor-icons/react";
 import type { DesktopEntry } from "../types";
 import type { OfflineStorageInventory } from "../lib/offline-availability";
-import type { OfflineOperationProgress } from "../lib/sync";
+import type { OfflineOperationProgress } from "../domain/sync-status";
 import { StatusBadge } from "./VisualPrimitives";
 import { ItemList } from "./ItemList";
 

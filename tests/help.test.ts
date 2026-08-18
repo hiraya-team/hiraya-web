@@ -62,7 +62,7 @@ describe("bundled user guide", () => {
       "Manager",
       "public link",
       "clearing site data",
-      "Shared desktops have stricter offline rules",
+      "Writers and managers can edit downloaded shared content offline",
       "Install Hiraya",
       "Automatic updates",
       ".hiraya.app",

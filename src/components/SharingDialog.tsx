@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState, type Ref } from "react";
+import { useEffect, useRef, useState, type Ref } from "react";
 import {
   ArrowSquareOut,
   Check,
@@ -28,6 +28,7 @@ import {
 import type { DesktopIdentity } from "../types";
 import { useNativeDialog } from "../ui/modal-dialog";
 import { writeClipboardText } from "../ui/clipboard-copy";
+import { useStableHandler } from "../ui/use-stable-handler";
 import { RoleBadge } from "./VisualPrimitives";
 import { ItemList } from "./ItemList";
 
@@ -84,7 +85,7 @@ export function SharingDialog({
   async function refresh() {
     applySharing(await getSharing(desktop.id));
   }
-  const loadSharing = useEffectEvent(() =>
+  const loadSharing = useStableHandler(() =>
     getSharing(desktop.id)
       .then(applySharing)
       .catch((reason) =>
@@ -97,9 +98,7 @@ export function SharingDialog({
   );
   useEffect(() => {
     void loadSharing();
-    // useEffectEvent callbacks are intentionally non-reactive.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desktop.id]);
+  }, [desktop.id, loadSharing]);
   useEffect(
     () => () => {
       copyGenerationRef.current += 1;
@@ -406,7 +405,7 @@ export function SharingDialog({
                       disabled={busy !== ""}
                       onClick={() =>
                         void run(`invite-${invite.id}`, () =>
-                          revokeInvitation(desktop.id, invite.email),
+                          revokeInvitation(desktop.id, invite.id),
                         )
                       }
                       aria-label={`Revoke invitation for ${invite.email}`}

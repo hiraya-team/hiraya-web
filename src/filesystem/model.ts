@@ -1,3 +1,6 @@
+import { parseStableId, sha256Hex } from "./ids";
+export { parseStableId, sha256Hex, storageNamespaceHash } from "./ids";
+
 export const WEB2_SCHEMA_VERSION = 1 as const;
 export const WEB2_INDEXED_DB_PREFIX = "hiraya-web2-v1-" as const;
 export const WEB2_OPFS_PREFIX = ".hiraya-web2-" as const;
@@ -5,7 +8,6 @@ export const WEB2_CHUNK_SIZE = 1024 * 1024;
 export const WEB2_MAX_BATCH_ITEMS = 256;
 export const WEB2_MAX_ANCESTRY_DEPTH = 64;
 
-const STABLE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
 const MIME_TYPE = new RegExp(`^${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`);
@@ -93,17 +95,16 @@ export function assertExactKeys(value: Record<string, unknown>, keys: readonly s
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
 }
 
-export function parseStableId(value: unknown, message = "A stable ID is invalid.") {
-  if (typeof value !== "string" || !STABLE_ID.test(value)) throw new Error(message);
-  return value;
-}
-
 export function parseCanonicalName(value: unknown, message = "A name is invalid.") {
   if (typeof value !== "string" || !value || value !== value.trim() || value === "." || value === ".." || value.includes("/") || value.includes("\\") || [...value].length > 180 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
     return point < 32 || point === 127;
   })) throw new Error(message);
   return value;
+}
+
+export function canonicalNameKey(name: string) {
+  return name.replace(/[A-Z]/g, (character) => character.toLowerCase());
 }
 
 export function parseMimeType(value: unknown, message = "A MIME type is invalid.") {
@@ -418,11 +419,6 @@ export function parseManifest(value: unknown): Manifest {
 
 export function canonicalManifestBytes(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(parseManifest(value)));
-}
-
-export async function sha256Hex(bytes: BufferSource) {
-  const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
-  return [...digest].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
 export function canonicalManifestSha256(value: unknown) {

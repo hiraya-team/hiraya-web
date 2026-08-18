@@ -98,6 +98,7 @@ function testEnvironment(indexedDB = new IDBFactory()) {
   const sessionStorage = new TestSessionStorage();
   let nextId = 100;
   const environment = {
+    storageId: ACCOUNT,
     indexedDB,
     IDBKeyRange,
     locks: locks as unknown as Pick<LockManager, "request">,
@@ -114,7 +115,7 @@ test("initializes one stable browser-local identity and workspace across tabs an
   expect(first.accountId).toBe(LOCAL_WEB2_ACCOUNT_ID);
   expect(second.deviceId).toBe(first.deviceId);
   expect(second.activeWorkspaceId).toBe(first.activeWorkspaceId);
-  expect(await first.catalog.listWorkspaces()).toEqual([{ id: first.activeWorkspaceId, name: "Home", pinned: true, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 }]);
+  expect(await first.catalog.listWorkspaces()).toEqual([{ id: first.activeWorkspaceId, name: "Desktop", pinned: false, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: 0 }]);
   first.catalog.close();
   second.catalog.close();
 

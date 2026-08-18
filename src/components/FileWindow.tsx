@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { lazy, useCallback, useEffect, useRef, useState } from "react";
 import { Check, DownloadSimple, FloppyDisk, PencilSimple, SlidersHorizontal } from "@phosphor-icons/react";
 import { createPortal } from "react-dom";
 import type { EditorLanguage, EditorSettings, FileEntry } from "../types";
 import { editorLanguageFor, fileCapabilities } from "../ui/file-capabilities";
-import { TextEditor } from "./TextEditor";
 import type { ThemeDefinition } from "../domain/theme";
-import { ImagePreview } from "./ImagePreview";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
-import { MarkdownRenderer } from "./MarkdownRenderer";
-import { formatEditorText } from "../lib/format-text";
+
+const ImagePreview = lazy(() => import("./ImagePreview").then((module) => ({ default: module.ImagePreview })));
+const MarkdownRenderer = lazy(() => import("./MarkdownRenderer").then((module) => ({ default: module.MarkdownRenderer })));
+const TextEditor = lazy(() => import("./TextEditor").then((module) => ({ default: module.TextEditor })));
 
 const LANGUAGE_OPTIONS: Array<{ value: EditorLanguage; label: string }> = [
   { value: "auto", label: "Auto" },
@@ -125,7 +125,7 @@ export function FileWindow({ file, blob, editable, editMode = false, readOnly = 
     try {
       const settings = editorSettingsRef.current;
       const saved = settings.autoFormat
-        ? await formatEditorText(nextContent, editorLanguageFor(file.name, settings.language))
+        ? await import("../lib/format-text").then(({ formatEditorText }) => formatEditorText(nextContent, editorLanguageFor(file.name, settings.language)))
         : nextContent;
       if (saved !== nextContent) setContent(saved);
       await onSaveRef.current(saved);

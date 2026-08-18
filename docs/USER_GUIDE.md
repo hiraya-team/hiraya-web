@@ -16,6 +16,10 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Open Hiraya faster and update safely.** Hiraya opens a compact file-and-folder desktop first, loads editors and settings only when needed, and keeps **Update now** blocked until unsaved edits and active file operations finish.
+- **Edit shared desktops offline.** Writers and managers can now change downloaded shared files while disconnected. Hiraya queues those changes, checks current access when the connection returns, and converges independent edits automatically.
+- **Work offline from the first synchronized session.** Hiraya's offline shell now takes control as soon as it is installed and keeps built-in app packages available, so new work can be edited and reloaded through a connection loss without another online launch.
+- **Recover earlier file contents.** Open a file's **Properties** and use **Version history** to undo or redo its latest saved change, or restore any retained version.
 - **Show custom wallpaper without a flash.** A neutral surface now covers Hiraya Dusk while you apply or open a custom wallpaper, so the previous default artwork does not appear briefly first.
 - **Keep desktop gestures above Scene wallpaper.** Scene wallpaper can observe pointer activity below app windows without taking control of it, so right-click menus, marquee selection, icons, and widgets remain owned by the desktop shell.
 - **Edit internet shortcuts as text.** Choose **Edit file** on a `.url` internet shortcut to change its source in **Integrated Editor**. Opening the shortcut normally still follows its saved address.
@@ -170,7 +174,7 @@ In synchronized mode, the server remains authoritative. Opening a file may downl
 
 Offline availability is not a backup. Browser storage is origin-scoped: clearing site data, resetting the browser profile, uninstalling with data removal, private-browsing cleanup, or browser eviction can remove cached copies and queued changes. The origin-wide storage estimate may include Hiraya databases, app data, and other data for this origin, not only downloaded files.
 
-Shared desktops have stricter offline rules. Cached shared content remains read-only, and shared writes require a connection so current permissions can be checked. A file that was not downloaded before going offline is unavailable until the connection returns.
+Writers and managers can edit downloaded shared content offline. Hiraya queues those changes and checks current permissions when reconnecting; rejected changes stay available for review. A file that was not downloaded before going offline is unavailable until the connection returns.
 
 ## Installation and updates {#installation-and-updates}
 

@@ -30,7 +30,7 @@ describe("fresh approved package archives", () => {
     old.file("sentinel", new Blob(["untouched"]));
     const lockNames: string[] = [];
     const locks = { request: async (name: string, callback: () => Promise<unknown>) => { lockNames.push(name); return callback(); } } as unknown as Pick<LockManager, "request">;
-    const archives = await openApprovedPackageArchives(ACCOUNT, { indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), locks });
+    const archives = await openApprovedPackageArchives(ACCOUNT, { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), locks });
     const saved = await archive("package bytes");
     let retainedBytes = "";
     await archives.save(saved.digest, saved.blob, async () => { retainedBytes = await (await archives.read(saved.digest)).text(); });
@@ -54,7 +54,7 @@ describe("fresh approved package archives", () => {
   test("retains installed and queued packages and releases true orphans", async () => {
     const factory = new IDBFactory();
     const origin = new MemoryDirectory();
-    const environment = { indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), randomUUID: () => CLIENT };
+    const environment = { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), randomUUID: () => CLIENT };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     const archives = await openApprovedPackageArchives(ACCOUNT, environment);
     const local = await archive("local package");
@@ -100,7 +100,7 @@ describe("fresh approved package archives", () => {
     const factory = new IDBFactory();
     const origin = new MemoryDirectory();
     const locks = { request: (_name: string, callback: () => Promise<unknown>) => callback() } as unknown as Pick<LockManager, "request">;
-    const environment = { indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), locks };
+    const environment = { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange, originRoot: memoryOpfsHandle(origin), locks };
     const firstFacade = await openApprovedPackageArchives(ACCOUNT, environment);
     const secondFacade = await openApprovedPackageArchives(ACCOUNT, environment);
     const first = await archive("first");

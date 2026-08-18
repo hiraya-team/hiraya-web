@@ -25,10 +25,10 @@ async function verify(digest: string, archive: Blob) {
   if (archive.size === 0 || await sha256Hex(await archive.arrayBuffer()) !== digest) throw new Error("Approved package archive does not match its digest.");
 }
 
-export async function openApprovedPackageArchives(accountId: string, environment: ApprovedPackageArchiveEnvironment = {}): Promise<ApprovedPackageArchives> {
+export async function openApprovedPackageArchives(accountId: string, environment: ApprovedPackageArchiveEnvironment): Promise<ApprovedPackageArchives> {
   const database = await openFilesystemDatabase(accountId, environment);
-  const directory = await (await getAccountOpfsRoot(accountId, environment.originRoot)).getDirectoryHandle(DIRECTORY, { create: true });
-  const lockName = `${await filesystemDatabaseName(accountId)}-package-archives`;
+  const directory = await (await getAccountOpfsRoot(environment.storageId, environment.originRoot)).getDirectoryHandle(DIRECTORY, { create: true });
+  const lockName = `${await filesystemDatabaseName(environment.storageId)}-package-archives`;
   const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
   const locked = <T>(operation: () => Promise<T>) => {
     const run = () => locks?.request ? locks.request(lockName, operation) : operation();

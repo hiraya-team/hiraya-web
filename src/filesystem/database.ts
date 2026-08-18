@@ -4,6 +4,7 @@ import {
   WEB2_MAX_ANCESTRY_DEPTH,
   WEB2_MAX_BATCH_ITEMS,
   assertExactKeys,
+  canonicalNameKey,
   canonicalManifestSha256,
   compareOperationTuples,
   isRecord,
@@ -23,7 +24,7 @@ import {
   parseSettingKeyForNamespace,
   parseSettingNamespace,
   parseWorkspaceSetting,
-  sha256Hex,
+  storageNamespaceHash,
   type JsonValue,
   type ActiveSetting,
   type Manifest,
@@ -259,6 +260,7 @@ export type FileVersion = {
 };
 
 export type FilesystemDatabaseEnvironment = {
+  storageId: string;
   indexedDB?: IDBFactory;
   IDBKeyRange?: typeof IDBKeyRange;
   now?: () => number;
@@ -311,6 +313,7 @@ export type FilesystemDatabase = {
   publishReset(resetId: string, createGenerationId: () => string): Promise<ResetPublication>;
   applyPullOperations(value: FilesystemPullOperations): Promise<ChangeRecord[]>;
   getManifest(hash: string): Promise<Manifest | undefined>;
+  storeManifest(hash: string, manifest: Manifest): Promise<void>;
   getOperation(operationId: string): Promise<StoredOperation | undefined>;
   listUnsettledOperations(workspaceId: string, afterRevision?: number, limit?: number): Promise<StoredOperation[]>;
   recordPushRejections(rejections: Array<{ operationId: string; workspaceId: string; code: string; message: string }>): Promise<StoredOperation[]>;
@@ -564,7 +567,7 @@ function parseWorkspace(value: unknown): Workspace {
 }
 
 function workspaceNameKey(name: string) {
-  return name.replace(/[A-Z]/g, (character) => character.toLowerCase());
+  return canonicalNameKey(name);
 }
 
 function parseWorkspaceList(values: unknown[]) {
@@ -660,7 +663,7 @@ function parseFilesystemPullOperations(value: unknown): FilesystemPullOperations
     if (!Array.isArray(candidate.nodes) || !Array.isArray(candidate.settings)) throw new Error("A filesystem pull record batch is invalid.");
     const nodes = candidate.nodes.map(parseNodeRecord);
     const settings = candidate.settings.map(parseSetting);
-    if (sequence !== fromCursor + index + 1 || nodes.length + settings.length === 0 || nodes.length + settings.length > WEB2_MAX_BATCH_ITEMS || nodes.length > 0 && settings.length > 0 || (companion === null ? [...nodes, ...settings].some((record) => record.workspaceId !== workspaceId) : companion.workspaceId === workspaceId || settings.length > 0 || nodes.some((record) => record.workspaceId !== workspaceId && record.workspaceId !== companion.workspaceId))) throw new Error("A filesystem pulled operation is inconsistent.");
+    if (sequence !== fromCursor + index + 1 || nodes.length + settings.length > WEB2_MAX_BATCH_ITEMS || nodes.length > 0 && settings.length > 0 || (companion === null ? [...nodes, ...settings].some((record) => record.workspaceId !== workspaceId) : companion.workspaceId === workspaceId || settings.length > 0 || nodes.some((record) => record.workspaceId !== workspaceId && record.workspaceId !== companion.workspaceId))) throw new Error("A filesystem pulled operation is inconsistent.");
     return { sequence, operationId, companion, nodes, settings };
   });
   if (operations.length > 0 && operations.at(-1)!.sequence !== cursor || operations.length === 0 && cursor !== fromCursor || new Set(operations.map(({ operationId }) => operationId)).size !== operations.length) throw new Error("A filesystem pull cursor is inconsistent.");
@@ -1319,9 +1322,8 @@ function openDatabase(factory: IDBFactory, name: string) {
   });
 }
 
-export async function filesystemDatabaseName(accountId: string) {
-  const canonicalId = parseStableId(accountId, "The account ID is invalid.");
-  return `${WEB2_INDEXED_DB_PREFIX}${await sha256Hex(new TextEncoder().encode(canonicalId))}`;
+export async function filesystemDatabaseName(storageId: string) {
+  return `${WEB2_INDEXED_DB_PREFIX}${await storageNamespaceHash(storageId)}`;
 }
 
 function nextSafeInteger(value: number, message: string) {
@@ -1412,27 +1414,28 @@ function replayPendingOperation(projection: Map<string, NodeRecord>, projectedSe
     case "write": {
       const missing = !projection.has(operation.nodeId);
       const value = active(operation.nodeId);
-      if (value?.kind === "file" && tupleApplies(tuple, value.fieldTuples.content!, missing)) put({ ...value, mimeType: operation.mimeType, size: operation.size, manifestHash: operation.manifestHash, modifiedAt: operation.modifiedAt, fieldTuples: { ...value.fieldTuples, content: tuple } });
+      if (value?.kind === "file" && tupleApplies(tuple, value.fieldTuples.content!, missing)) put({ ...value, mimeType: operation.mimeType, size: operation.size, manifestHash: operation.manifestHash, modifiedAt: Math.max(value.modifiedAt, operation.modifiedAt), fieldTuples: { ...value.fieldTuples, content: tuple } });
       break;
     }
     case "rename": {
       const missing = !projection.has(operation.nodeId);
       const value = active(operation.nodeId);
       if (value && tupleApplies(tuple, value.fieldTuples.name, missing)) {
-        put({ ...value, name: operation.name, modifiedAt: operation.modifiedAt, fieldTuples: { ...value.fieldTuples, name: tuple } });
+        put({ ...value, name: operation.name, modifiedAt: Math.max(value.modifiedAt, operation.modifiedAt), fieldTuples: { ...value.fieldTuples, name: tuple } });
         siblingNodes.add(value.id);
       }
       break;
     }
     case "move": {
       const values = operation.nodeIds.map((id) => ({ id, value: active(id), missing: !projection.has(id) }));
-      const remoteWins = values.some(({ id, value }) => !value || compareOperationTuples(tuple, value.fieldTuples.parent) < 0 || coveredNodeIds.has(id) && compareOperationTuples(tuple, value.fieldTuples.parent) === 0 && value.parentId !== operation.parentId);
-      if (remoteWins) {
-        if (values.every(({ id }) => coveredNodeIds.has(id))) { deferredOperations.add(stored.operationId); break; }
-        throw new Error("Hydration requires complete coverage to defer a pending move.");
-      }
-      for (const { value, missing } of values) if (value && tupleApplies(tuple, value.fieldTuples.parent, missing)) {
-        put({ ...value, parentId: operation.parentId, modifiedAt: operation.modifiedAt, fieldTuples: { ...value.fieldTuples, parent: tuple } });
+      for (const { id, value, missing } of values) {
+        const remoteWins = !value || compareOperationTuples(tuple, value.fieldTuples.parent) < 0 || coveredNodeIds.has(id) && compareOperationTuples(tuple, value.fieldTuples.parent) === 0 && value.parentId !== operation.parentId;
+        if (remoteWins) {
+          if (coveredNodeIds.has(id)) continue;
+          throw new Error("Hydration requires complete coverage to merge a pending move.");
+        }
+        if (!tupleApplies(tuple, value.fieldTuples.parent, missing)) continue;
+        put({ ...value, parentId: operation.parentId, modifiedAt: Math.max(value.modifiedAt, operation.modifiedAt), fieldTuples: { ...value.fieldTuples, parent: tuple } });
         hierarchyNodes.add(value.id);
         siblingNodes.add(value.id);
       }
@@ -1453,15 +1456,33 @@ function replayPendingOperation(projection: Map<string, NodeRecord>, projectedSe
         const value = candidate && !isPurgeTombstone(candidate) && candidate.lifecycle.kind === "active" && (candidate.workspaceId === operation.workspaceId || candidate.workspaceId === operation.destinationWorkspaceId) ? candidate : undefined;
         return { id: nodeId, value, missing: !projection.has(nodeId) };
       });
-      const remoteWins = values.some(({ id, value }) => !value || compareOperationTuples(tuple, value.fieldTuples.parent) < 0 || coveredNodeIds.has(id) && compareOperationTuples(tuple, value.fieldTuples.parent) === 0 && (value.workspaceId !== operation.destinationWorkspaceId || roots.has(id) && value.parentId !== operation.parentId));
-      if (remoteWins) {
-        if (values.every(({ id }) => coveredNodeIds.has(id))) { deferredOperations.add(stored.operationId); break; }
-        throw new Error("Hydration requires complete coverage to defer a pending transfer.");
+      const inverseById = new Map(stored.inverse.nodes.map((value) => [value.nodeId, value]));
+      const byRoot = new Map<string, typeof values>();
+      for (const value of values) {
+        let rootId = value.id;
+        const seen = new Set<string>();
+        while (!roots.has(rootId)) {
+          if (seen.has(rootId)) throw new Error("Stored transfer overlay hierarchy is cyclic.");
+          seen.add(rootId);
+          const parentId = inverseById.get(rootId)?.parentId;
+          if (parentId === null || parentId === undefined || !inverseById.has(parentId)) throw new Error("Stored transfer overlay hierarchy is incomplete.");
+          rootId = parentId;
+        }
+        const group = byRoot.get(rootId) ?? [];
+        group.push(value);
+        byRoot.set(rootId, group);
       }
-      for (const { value, missing } of values) if (tupleApplies(tuple, value!.fieldTuples.parent, missing)) {
-        put({ ...value!, workspaceId: operation.destinationWorkspaceId, parentId: roots.has(value!.id) ? operation.parentId : value!.parentId, modifiedAt: operation.modifiedAt, fieldTuples: { ...value!.fieldTuples, parent: tuple } });
-        hierarchyNodes.add(value!.id);
-        siblingNodes.add(value!.id);
+      for (const group of byRoot.values()) {
+        const remoteWins = group.some(({ id, value }) => !value || compareOperationTuples(tuple, value.fieldTuples.parent) < 0 || coveredNodeIds.has(id) && compareOperationTuples(tuple, value.fieldTuples.parent) === 0 && (value.workspaceId !== operation.destinationWorkspaceId || roots.has(id) && value.parentId !== operation.parentId));
+        if (remoteWins) {
+          if (group.every(({ id }) => coveredNodeIds.has(id))) continue;
+          throw new Error("Hydration requires complete coverage to merge a pending transfer.");
+        }
+        for (const { value, missing } of group) if (tupleApplies(tuple, value!.fieldTuples.parent, missing)) {
+          put({ ...value!, workspaceId: operation.destinationWorkspaceId, parentId: roots.has(value!.id) ? operation.parentId : value!.parentId, modifiedAt: Math.max(value!.modifiedAt, operation.modifiedAt), fieldTuples: { ...value!.fieldTuples, parent: tuple } });
+          hierarchyNodes.add(value!.id);
+          siblingNodes.add(value!.id);
+        }
       }
       break;
     }
@@ -1554,7 +1575,7 @@ function validateProjectedNodes(records: Map<string, NodeRecord>, authoritativeI
   for (const id of new Set([...overlayIds, ...completeSiblingIds])) {
     const record = records.get(id);
     if (!record || isPurgeTombstone(record) || record.lifecycle.kind !== "active") continue;
-    if ([...records.values()].some((candidate) => candidate.id !== record.id && !isPurgeTombstone(candidate) && candidate.lifecycle.kind === "active" && candidate.workspaceId === record.workspaceId && candidate.parentId === record.parentId && candidate.name.toLowerCase() === record.name.toLowerCase())) throw new Error("Hydration overlays create duplicate active sibling names.");
+    if ([...records.values()].some((candidate) => candidate.id !== record.id && !isPurgeTombstone(candidate) && candidate.lifecycle.kind === "active" && candidate.workspaceId === record.workspaceId && candidate.parentId === record.parentId && canonicalNameKey(candidate.name) === canonicalNameKey(record.name))) throw new Error("Hydration overlays create duplicate active sibling names.");
   }
   for (const id of new Set([...authoritativeIds, ...overlayIds])) {
     const record = records.get(id);
@@ -1635,6 +1656,10 @@ function retainsOperationOverlay(stored: StoredOperation) {
   return stored.stateKind !== "accepted" && stored.overlayKind === "active";
 }
 
+function replaceableRejectedPurgeNodeIds(operations: StoredOperation[], workspaceId: string) {
+  return new Set(operations.filter((stored) => stored.workspaceId === workspaceId && stored.stateKind === "rejected" && stored.overlayKind === "deferred" && stored.inverse.kind === "purge").flatMap((stored) => stored.inverse.kind === "purge" ? stored.inverse.nodeIds : []));
+}
+
 function incomingTransferOverlayNodeIds(operations: StoredOperation[], workspaceId: string) {
   return new Set(operations.filter((stored) => retainsOperationOverlay(stored) && stored.overlayKind === "active" && stored.operation.kind === "transfer" && stored.operation.destinationWorkspaceId === workspaceId && stored.workspaceId !== workspaceId && stored.inverse.kind === "transfer").flatMap(({ inverse }) => inverse.kind === "transfer" ? inverse.nodes.map(({ nodeId }) => nodeId) : []));
 }
@@ -1684,7 +1709,7 @@ function resetChangeMatches(change: ChangeRecord, reset: FilesystemReset): chang
 
 type CompletedHydration = { targetId: string; header: StoredHydrationHeader; staged: StoredHydrationPage[] };
 
-function projectHydrationBases(completed: CompletedHydration[], currentNodes: Map<string, NodeRecord>, currentSettings: Map<string, Setting>, coverages: StoredHydrationCoverage[], protectedNodeIds: ReadonlySet<string> = new Set()) {
+function projectHydrationBases(completed: CompletedHydration[], currentNodes: Map<string, NodeRecord>, currentSettings: Map<string, Setting>, coverages: StoredHydrationCoverage[], protectedNodeIds: ReadonlySet<string> = new Set(), replaceTombstoneIds: ReadonlySet<string> = new Set()) {
   const projectedNodes = new Map(currentNodes);
   const projectedSettings = new Map(currentSettings);
   const authoritativeNodeIds = new Set<string>();
@@ -1748,7 +1773,7 @@ function projectHydrationBases(completed: CompletedHydration[], currentNodes: Ma
         for (const id of generation.target.nodeIds) {
           coveredNodeIds.add(id);
           const record = projectedNodes.get(id);
-          if (!protectedNodeIds.has(id) && !remoteNodes.has(id) && record && !isPurgeTombstone(record) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(id)) projectedNodes.delete(id);
+          if (!protectedNodeIds.has(id) && !remoteNodes.has(id) && record && (!isPurgeTombstone(record) || replaceTombstoneIds.has(id)) && record.workspaceId === generation.workspaceId && !newerNodeCoverage(id)) projectedNodes.delete(id);
         }
         break;
       case "ancestry": {
@@ -1770,7 +1795,7 @@ function projectHydrationBases(completed: CompletedHydration[], currentNodes: Ma
     }
     for (const [id, record] of remoteNodes) {
       const current = projectedNodes.get(id);
-      if ((!current || !isPurgeTombstone(current)) && !newerNodeCoverage(id, record)) projectedNodes.set(id, current && !isPurgeTombstone(record) && !isPurgeTombstone(current) && current.workspaceId !== record.workspaceId ? mergeCrossWorkspaceNode(record, current) : record);
+      if ((!current || !isPurgeTombstone(current) || replaceTombstoneIds.has(id)) && !newerNodeCoverage(id, record)) projectedNodes.set(id, current && !isPurgeTombstone(record) && !isPurgeTombstone(current) && current.workspaceId !== record.workspaceId ? mergeCrossWorkspaceNode(record, current) : record);
       coveredNodeIds.add(id);
     }
     for (const [storageKey, setting] of remoteSettings) if (!newerSettingCoverage(setting.namespace, setting.key)) projectedSettings.set(storageKey, setting);
@@ -1810,12 +1835,12 @@ async function lifecycleUndoExpectation(target: StoredOperation, readOperation: 
   return { rootNodeIds: target.operation.nodeIds, nodeIds: target.inverse.nodes.map(({ nodeId }) => nodeId).sort() };
 }
 
-export async function openFilesystemDatabase(accountId: string, environment: FilesystemDatabaseEnvironment = {}): Promise<FilesystemDatabase> {
+export async function openFilesystemDatabase(accountId: string, environment: FilesystemDatabaseEnvironment): Promise<FilesystemDatabase> {
   const factory = environment.indexedDB ?? globalThis.indexedDB;
   const keyRange = environment.IDBKeyRange ?? globalThis.IDBKeyRange;
   if (!factory || !keyRange) throw new Error("IndexedDB filesystem storage is unavailable.");
   const canonicalAccountId = parseStableId(accountId, "A filesystem account ID is invalid.");
-  const db = await openDatabase(factory, await filesystemDatabaseName(canonicalAccountId));
+  const db = await openDatabase(factory, await filesystemDatabaseName(environment.storageId));
   const now = environment.now ?? Date.now;
   const randomUUID = environment.randomUUID ?? (() => crypto.randomUUID());
   const readStoredManifests = async (hashes: readonly string[]) => {
@@ -1828,8 +1853,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
     return records;
   };
   const assertChildNamesAvailableInTransaction = async (transaction: IDBTransaction, workspaceId: string, parentId: string | null, names: readonly string[], excludedIds = new Set<string>()) => {
-    const folded = names.map((name) => parseCanonicalName(name).toLowerCase());
-    if (new Set(folded).size !== folded.length) throw new Error("An active sibling already uses that name.");
+    const folded = names.map((name) => canonicalNameKey(parseCanonicalName(name)));
+    if (new Set(folded).size !== folded.length) throw new Error("An active sibling with that name already exists.");
     const wanted = new Set(folded);
     await new Promise<void>((resolve, reject) => {
       const cursor = transaction.objectStore("nodes").index("by-workspace-parent-lifecycle").openCursor(keyRange.only([workspaceId, parentId ?? "", "active"]));
@@ -1838,7 +1863,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         try {
           if (!cursor.result) { resolve(); return; }
           const sibling = parseStoredNode(cursor.result.value);
-          if (!excludedIds.has(sibling.id) && wanted.has(sibling.name.toLowerCase())) { reject(new Error("An active sibling already uses that name.")); return; }
+          if (!excludedIds.has(sibling.id) && wanted.has(canonicalNameKey(sibling.name))) { reject(new Error("An active sibling with that name already exists.")); return; }
           cursor.result.continue();
         } catch (error) {
           reject(error);
@@ -2804,10 +2829,10 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const currentNodes = new Map<string, NodeRecord>(nodeValues.map(parseStoredNodeRecord).map((record) => [record.id, isPurgeTombstone(record) ? record : nodeRecord(record)]));
         const currentSettings = new Map(settingValues.map(parseSetting).map((setting) => [`${setting.workspaceId}\0${setting.namespace}\0${setting.key}`, setting]));
         const coverages = coverageValues.map(parseStoredHydrationCoverage).filter((coverage) => coverage.workspaceId === generation.workspaceId);
-        const projected = projectHydrationBases([{ targetId, header, staged }], currentNodes, currentSettings, coverages);
+        const operations = operationValues.map(parseStoredOperation);
+        const projected = projectHydrationBases([{ targetId, header, staged }], currentNodes, currentSettings, coverages, new Set(), replaceableRejectedPurgeNodeIds(operations, generation.workspaceId));
         const { projectedNodes, projectedSettings, coveredNodeIds, authoritativeNodeIds, completeSiblingIds, obsoleteCoverageIds } = projected;
 
-        const operations = operationValues.map(parseStoredOperation);
         if (operations.some(({ operationId }) => operationId === generation.generationId)) throw new Error("A hydration generation ID collides with an operation.");
         const pending = operations.filter((stored) => retainsOperationOverlay(stored) && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         const hierarchyNodes = new Set<string>();
@@ -2985,7 +3010,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         }
 
         const resetCoverages = coverages.filter((coverage) => coverage.workspaceId === reset.workspaceId).map((coverage) => ({ ...coverage, target: { ...coverage.target, asOf: Math.min(coverage.target.asOf, reset.resetBarrier) } }));
-        const projected = projectHydrationBases(completed, currentNodes, currentSettings, resetCoverages, incomingTransferOverlayNodeIds(operations, reset.workspaceId));
+        const projected = projectHydrationBases(completed, currentNodes, currentSettings, resetCoverages, incomingTransferOverlayNodeIds(operations, reset.workspaceId), replaceableRejectedPurgeNodeIds(operations, reset.workspaceId));
         const pending = operations.filter((stored) => retainsOperationOverlay(stored) && (stored.operation.kind === "transfer" ? workspaces.has(stored.operation.destinationWorkspaceId) : workspaces.has(stored.operation.workspaceId))).sort((left, right) => compareOperationTuples(operationTuple(left), operationTuple(right)));
         const hierarchyNodes = new Set<string>();
         const siblingNodes = new Set<string>();
@@ -3063,8 +3088,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           nextSyncs.set(change.workspaceId, parseSyncState({ ...nextSyncs.get(change.workspaceId)!, lastObservedLogicalTime: Math.max(nextSyncs.get(change.workspaceId)!.lastObservedLogicalTime, observedLogicalTime) }));
         }
         await Promise.all([
-          ...nextWorkspaces.values().map((candidate) => request(transaction.objectStore("workspaces").put(candidate))),
-          ...nextSyncs.values().map((candidate) => request(transaction.objectStore("sync").put(candidate))),
+          ...Array.from(nextWorkspaces.values(), (candidate) => request(transaction.objectStore("workspaces").put(candidate))),
+          ...Array.from(nextSyncs.values(), (candidate) => request(transaction.objectStore("sync").put(candidate))),
           ...changes.map((change) => request(transaction.objectStore("changes").add(change))),
         ]);
         return { kind: "published", changes };
@@ -3238,8 +3263,8 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           nextSyncs.set(change.workspaceId, parseSyncState({ ...nextSyncs.get(change.workspaceId)!, lastObservedLogicalTime: Math.max(nextSyncs.get(change.workspaceId)!.lastObservedLogicalTime, pull.observedLogicalTime) }));
         }
         await Promise.all([
-          ...nextWorkspaces.values().map((candidate) => request(transaction.objectStore("workspaces").put(candidate))),
-          ...nextSyncs.values().map((candidate) => request(transaction.objectStore("sync").put(candidate))),
+          ...Array.from(nextWorkspaces.values(), (candidate) => request(transaction.objectStore("workspaces").put(candidate))),
+          ...Array.from(nextSyncs.values(), (candidate) => request(transaction.objectStore("sync").put(candidate))),
           ...changes.map((change) => request(transaction.objectStore("changes").add(change))),
         ]);
         return changes;
@@ -3249,6 +3274,11 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
     getManifest: async (hash) => {
       const canonicalHash = parseSha256(hash, "A manifest hash is invalid.");
       return (await readStoredManifests([canonicalHash])).get(canonicalHash)?.manifest;
+    },
+
+    storeManifest: async (hash, manifest) => {
+      const record = await validateStoredManifest({ hash, manifest });
+      await transact(db, "manifests", "readwrite", (transaction) => request(transaction.objectStore("manifests").put(record)));
     },
 
     getOperation: async (operationId) => {
@@ -3960,8 +3990,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       const manifests = await readStoredManifests([...new Set(versions.map(({ manifestHash }) => manifestHash))]);
       for (const version of versions) {
         const manifest = manifests.get(version.manifestHash);
-        if (!manifest) throw new Error("A file version references a missing manifest.");
-        if (manifest.manifest.size !== version.size) throw new Error("A file version has inconsistent manifest metadata.");
+        if (manifest && manifest.manifest.size !== version.size) throw new Error("A file version has inconsistent manifest metadata.");
       }
       return versions;
     },

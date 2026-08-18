@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import { installedAppAcceptsMatcher, type InstalledApp } from "../src/apps/installed-apps";
-import { AccountAppsRequestError, accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountMutation, accountResources, parseAccountAppsSnapshot, verifyLocalAccountPackage } from "../src/lib/account-apps";
+import { accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountResources, parseAccountAppsSnapshot, verifyLocalAccountPackage } from "../src/lib/account-apps";
 import { parseAccountAppOutboxRecord, projectAccountAppData, projectAccountApps, rebaseAccountAppOperation, type AccountAppOutboxRecord } from "../src/lib/account-app-outbox";
-import { API_ROUTES } from "../src/lib/api-routes";
 import { uploadBlobDigests } from "../src/lib/blob-transfer";
 import { ACCOUNT_APP_ATOMIC_STORES } from "../src/platform/storage/database-client";
 import { createElement } from "react";
@@ -39,13 +38,6 @@ describe("account app wire contract", () => {
     expect(() => parseAccountAppsSnapshot({ ...snapshot(), handlerHints: { ".txt": "dev.hiraya.missing" } })).toThrow("outside the inventory");
   });
 
-  test("constructs only contract routes with escaped path segments", () => {
-    expect(API_ROUTES.apps).toBe("/api/apps");
-    expect(API_ROUTES.appPackageCommit("upload/value")).toBe("/api/apps/packages/upload%2Fvalue/commit");
-    expect(API_ROUTES.appData(manifest.id, "folder/name draft")).toBe("/api/apps/dev.hiraya.notes/data/folder%2Fname%20draft");
-    expect(API_ROUTES.appResourceContent("manifests", manifest.id)).toBe("/api/apps/resources/manifests/dev.hiraya.notes/content");
-  });
-
   test("classifies permanent client failures separately from retryable responses", () => {
     for (const status of [400, 403, 404, 409, 413, 422]) expect(accountAppsRequestIsPermanent(status)).toBe(true);
     for (const status of [408, 425, 429, 500, 503]) {
@@ -54,15 +46,6 @@ describe("account app wire contract", () => {
     }
   });
 
-  test("preserves actionable server error codes and messages", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => Response.json({ error: "Account app storage quota exceeded.", code: "quota_exceeded" }, { status: 409 })) as typeof fetch;
-    try {
-      await expect(accountMutation("/api/apps/dev.hiraya.notes/data/state", "PUT", {}, "client", "operation")).rejects.toEqual(expect.objectContaining({ name: "AccountAppsRequestError", status: 409, code: "quota_exceeded", message: "Account app storage quota exceeded." } satisfies Partial<AccountAppsRequestError>));
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
 });
 
 describe("account app projection and ordered outbox", () => {
@@ -106,7 +89,7 @@ describe("account app projection and ordered outbox", () => {
     const factory = new IDBFactory();
     const accountId = "00000000-0000-4000-8000-000000000001";
     const clientId = "00000000-0000-4000-8000-000000000002";
-    const database = await openFilesystemDatabase(accountId, { indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
+    const database = await openFilesystemDatabase(accountId, { storageId: accountId, indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
     expect(await database.readAccountApps()).toEqual({ state: { id: "singleton", baseline: null, projection: { appsRevision: 0, apps: [], handlerHints: {} } }, outbox: [] });
     const baseline = parseAccountAppsSnapshot(snapshot());
     await database.reconcileAccountApps(baseline);
@@ -159,7 +142,7 @@ describe("account app projection and ordered outbox", () => {
     expect(pending.record).toMatchObject({ operationId: "0000000000000004", clientId, sequence: 4 });
     database.close();
 
-    const reopened = await openFilesystemDatabase(accountId, { indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
+    const reopened = await openFilesystemDatabase(accountId, { storageId: accountId, indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
     expect(await reopened.readAccountApps()).toEqual({ state: { id: "singleton", baseline, projection: projectAccountApps(baseline, [pending.record]) }, outbox: [pending.record] });
     const next = await reopened.enqueueAccountAppOperation({ schemaVersion: 1, kind: "handlers", hints: baseline.handlerHints });
     expect(next.record).toMatchObject({ operationId: "0000000000000005", clientId, sequence: 5 });

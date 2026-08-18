@@ -52,7 +52,7 @@ function useMenuPosition(x: number, y: number, enabled: boolean) {
   return { ref, style };
 }
 
-function useRovingMenu(ref: RefObject<HTMLDivElement | null>) {
+function useRovingMenu(ref: RefObject<HTMLDivElement>) {
   useLayoutEffect(() => {
     const menu = ref.current;
     if (!menu) return;
@@ -120,14 +120,14 @@ type Props = {
   onRename: () => void;
   onDownload?: () => void;
   onSetAsWallpaper?: () => void;
-  onCopy: () => void;
+  onCopy?: () => void;
   onPasteInto?: () => void;
   onUploadInto?: () => void;
   onImportFolderInto?: () => void;
   onGroup?: () => void;
-  onMove: () => void;
+  onMove?: () => void;
   onProperties: () => void;
-  onDelete: () => void;
+  onDelete?: () => void;
   onCopyLink?: () => void;
   onPublish?: () => void;
   publishDisabled?: boolean;
@@ -169,7 +169,7 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
         </button>
       )}
       {selectionCount === 1 && entry.kind === "file" && onSetAsWallpaper && <button type="button" role="menuitem" onClick={onSetAsWallpaper}><ImageSquare size={17} /> Set as desktop wallpaper</button>}
-      <button type="button" role="menuitem" onClick={onCopy}><Copy size={17} /> Copy {selectionCount > 1 ? `${selectionCount} items` : ""}<kbd>Ctrl/⌘ C</kbd></button>
+       {onCopy && <button type="button" role="menuitem" onClick={onCopy}><Copy size={17} /> Copy {selectionCount > 1 ? `${selectionCount} items` : ""}<kbd>Ctrl/⌘ C</kbd></button>}
       {selectionCount === 1 && onCopyLink && <button type="button" role="menuitem" onClick={onCopyLink}><LinkSimple size={17} /> Copy link</button>}
       {selectionCount === 1 && onPublish && <button type="button" role="menuitem" disabled={publishDisabled} onClick={onPublish}><Globe size={17} /> Publish...</button>}
       {offlineItems.length > 0 && <MenuSubmenu icon={<CloudArrowDown size={17} />} label="Offline" items={offlineItems} />}
@@ -177,15 +177,15 @@ export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownl
       {selectionCount === 1 && entry.kind === "folder" && onUploadInto && <button type="button" role="menuitem" disabled={readOnly} onClick={onUploadInto}><UploadSimple size={17} /> Upload files into</button>}
       {selectionCount === 1 && entry.kind === "folder" && onImportFolderInto && <button type="button" role="menuitem" disabled={readOnly} onClick={onImportFolderInto}><FolderOpen size={17} /> Import folder into</button>}
       {selectionCount === 1 && entry.kind === "folder" && onGroup && <button type="button" role="menuitem" disabled={readOnly} onClick={onGroup}><FolderOpen size={17} /> Show as icon group</button>}
-      <button className={!onPasteInto ? "context-menu__separated" : undefined} type="button" role="menuitem" disabled={readOnly} onClick={onMove}>
-        <ArrowsLeftRight size={17} /> Move to...
-      </button>
+       {onMove && <button className={!onPasteInto ? "context-menu__separated" : undefined} type="button" role="menuitem" disabled={readOnly} onClick={onMove}>
+         <ArrowsLeftRight size={17} /> Move to...
+       </button>}
       {selectionCount === 1 && <button className="context-menu__separated" type="button" role="menuitem" onClick={onProperties}>
         <Info size={17} /> Properties
       </button>}
-      <button className="context-menu__danger" type="button" role="menuitem" disabled={readOnly} onClick={onDelete}>
-        <Trash size={17} /> {trashSupported ? "Move to Trash" : "Delete permanently"}
-      </button>
+       {onDelete && <button className="context-menu__danger" type="button" role="menuitem" disabled={readOnly} onClick={onDelete}>
+         <Trash size={17} /> {trashSupported ? "Move to Trash" : "Delete permanently"}
+       </button>}
   </ActionMenuFrame>;
 }
 
@@ -193,8 +193,8 @@ type DesktopProps = {
   menu: Extract<Exclude<ContextMenuState, null>, { type: "desktop" }>;
   onCreateFile: () => void;
   onCreateFolder: () => void;
-  onUpload: () => void;
-  onImportFolder: () => void;
+  onUpload?: () => void;
+  onImportFolder?: () => void;
   onSettings?: () => void;
   onPaste?: () => void;
   onAddWidget?: (kind: "clock" | "calendar" | "status" | "todo" | "scene") => void;
@@ -222,12 +222,12 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
         { id: "todo", label: "Todo list", icon: <CheckSquare size={16} />, onSelect: () => onAddWidget("todo") },
         { id: "scene", label: "Scene...", icon: <Play size={16} />, onSelect: () => onAddWidget("scene") },
       ]} />}
-      <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onUpload}>
-        <UploadSimple size={17} /> Upload files
-      </button>
-      <button type="button" role="menuitem" disabled={readOnly} onClick={onImportFolder}>
-        <FolderOpen size={17} /> Import folder
-      </button>
+       {onUpload && <button className="context-menu__separated" type="button" role="menuitem" disabled={readOnly} onClick={onUpload}>
+         <UploadSimple size={17} /> Upload files
+       </button>}
+       {onImportFolder && <button type="button" role="menuitem" disabled={readOnly} onClick={onImportFolder}>
+         <FolderOpen size={17} /> Import folder
+       </button>}
       {onPaste && <button type="button" role="menuitem" disabled={readOnly} onClick={onPaste}><ClipboardText size={17} /> Paste<kbd>Ctrl/⌘ V</kbd></button>}
       {onSettings && <button className="context-menu__separated" type="button" role="menuitem" onClick={onSettings}>
         <GearSix size={17} /> Settings
@@ -253,7 +253,7 @@ export function WidgetContextMenu({ menu, label, onOpen, onResize, onRemove, onC
 }
 
 function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus, children }: {
-  menuRef: RefObject<HTMLDivElement | null>;
+  menuRef: RefObject<HTMLDivElement>;
   style: CSSProperties;
   presentation: "menu" | "sheet";
   label: string;

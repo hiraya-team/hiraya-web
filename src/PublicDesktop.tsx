@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import "./styles.css";
 import { ArrowLeft, DownloadSimple, Folder, SignIn, SpinnerGap, SquaresFour, WarningCircle, X } from "@phosphor-icons/react";
 import { AppWindow } from "./components/AppWindow";
 import { FolderExplorer } from "./components/FolderExplorer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
-import { loginUrl } from "./lib/auth";
+import { loginUrl } from "./lib/auth-route";
 import { DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
 import type { DesktopEntry, FileEntry, FolderEntry } from "./types";
 import { builtinAppWindow } from "./apps/registry";
@@ -15,8 +16,7 @@ import { ShellItemLayer } from "./components/ShellItems";
 import { resolveTouchRelease, type TouchTap } from "./ui/file-icon-gesture";
 import type { ExplorerView } from "./domain/preferences";
 import { usePublicDesktop } from "./features/public-desktop/controller";
-import { API_ROUTES } from "./lib/api-routes";
-import { fetchPublicFile, type PublicAuthority } from "./lib/public-desktop";
+import { fetchPublicFile, type PublicAuthority } from "./features/public-desktop/transport";
 import { TodoWidget } from "./features/widgets/TodoWidget";
 import { areaCameraPosition, areaWorldOrigin } from "./ui/area-camera";
 import { boundsIntersectSegment, iconAreaSize, intersectingSegments, projectLogicalPosition, responsiveDesktop, segmentKey, type SurfaceSegment } from "./ui/desktop-geometry";
@@ -30,7 +30,6 @@ import { isSceneFile } from "./domain/scene";
 import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
-const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
 
@@ -79,7 +78,7 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
       type="button"
       tabIndex={interactive ? undefined : -1}
       aria-hidden={interactive ? undefined : true}
-      inert={interactive ? undefined : true}
+      inert={interactive ? undefined : ""}
       aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}`}
       aria-pressed={selected}
       onClick={(event) => {
@@ -325,7 +324,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         ) : (
           <>
             <div className="brand-mark">
-              <img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" />
+              <img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}hiraya-icon.svg`} alt="" />
               <strong>Hiraya</strong>
               <span className="public-menu__desktop">{desktop?.name || "Public desktop"}</span>
             </div>
@@ -363,10 +362,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
         onPointerCancelCapture={observePointer}
         onContextMenuCapture={observeContextMenu}
       >
-        {wallpaper?.source.startsWith("theme:") && (() => {
-          const selected = appearance.customThemes.find((item) => item.id === wallpaper.source.slice(6) && item.wallpaper);
-          return selected?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={selected} accessUrl={API_ROUTES.publicDesktopContent(authority.desktopAlias, undefined, selected.wallpaper.assetId, selected.wallpaper.revision)} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
-        })() || <div className="wallpaper-image" aria-hidden="true" />}
+        <div className="wallpaper-image" aria-hidden="true" />
         {wholeDesktop && wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperFile.contentRevision} readContent={(file) => fetchPublicFile(authority, file, wallpaperFile.contentRevision)} mode="wallpaper" onWallpaperTarget={registerWallpaperScene} /></div></Suspense>}
         <div className="wallpaper-grain" aria-hidden="true" />
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: wallpaper?.dim ?? 0 }} />
@@ -412,7 +408,7 @@ export default function PublicDesktop({ authority }: { authority: PublicAuthorit
               {responsive.segments.map((desktopSegment) => {
                 const origin = areaWorldOrigin(desktopSegment.segment, iconArea);
                 const interactive = desktopSegment.entries.some((entry) => boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea));
-                return <div className="desktop-area-segment" key={desktopSegment.key} data-active={interactive || undefined} aria-hidden={!interactive || undefined} inert={!interactive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: interactive ? "visible" : "hidden" }}>
+                return <div className="desktop-area-segment" key={desktopSegment.key} data-active={interactive || undefined} aria-hidden={!interactive || undefined} inert={!interactive ? "" : undefined} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: interactive ? "visible" : "hidden" }}>
                   {desktopSegment.entries.map((entry) => {
                     const entryInteractive = boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea);
                     return <PublicIcon entry={{ ...entry, position: responsive.positions.get(entry.id) ?? entry.position }} key={entry.id} interactive={entryInteractive} loadThumbnail={entryInteractive && desktop.thumbnailProfile ? loadThumbnail : undefined} selected={selectedIds.has(entry.id)} onSelect={() => selectEntry(entry)} onOpen={() => openEntry(entry)} />;

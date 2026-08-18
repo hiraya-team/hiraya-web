@@ -386,7 +386,7 @@ export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onM
         type="button"
         tabIndex={interactive ? undefined : -1}
         aria-hidden={interactive ? undefined : true}
-        inert={interactive ? undefined : true}
+        inert={interactive ? undefined : ""}
         aria-label={`${entry.name}, ${entry.kind === "folder" ? "folder" : entry.mimeType || "file"}${offlineAvailability ? `, ${offlineStatusLabel(offlineAvailability)}` : ""}`}
         aria-pressed={selected}
         onClick={(event) => {

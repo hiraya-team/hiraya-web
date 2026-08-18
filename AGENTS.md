@@ -16,7 +16,7 @@ bun run dev
 
 ## Architecture
 
-- `src/App.tsx`: authenticated desktop composition root for cross-feature routing, preferences, synchronization, and shell orchestration.
+- `src/bootstrap.tsx` mounts the single React root. `src/shell/Shell.tsx` is the persistent core composition boundary; it owns startup and interaction-gated loading of `src/Desktop.tsx` for rich capabilities.
 - `src/PublicDesktop.tsx`: public desktop composition root; read-only remote authority belongs in `src/features/public-desktop/`.
 - `src/domain/`: browser-independent desktop, file, preference, and theme contracts.
 - `src/features/`: feature-owned controllers and render layers for windows, areas, selection, app management, and public desktop behavior.
@@ -74,7 +74,8 @@ Preserve the enforced dependency direction: domain code is browser- and React-in
 
 ## API Compatibility
 
-- The current HTTP catalog and desktop schema is version 1 and is validated by `src/lib/contracts.ts`.
+- The deployed legacy HTTP catalog and desktop schema is version 2, uses `entry-transactions-v2`, and is validated by `src/lib/contracts.ts`.
+- The frozen, inactive Web2 target uses schema 1 and `web2-sync-v1`. Its fresh IndexedDB and OPFS namespaces hash the selected account's `storageId` UTF-8 bytes, never its account ID; target modules and fixtures do not claim deployment activation.
 - Keep TypeScript IDs, names, hierarchy, MIME, coordinates, themes, layout, and settings validation equivalent to the server contract.
 - API paths, multipart field names, content types, and `X-Hiraya-Client-ID` / `X-Hiraya-Operation-ID` headers are durable replay contracts.
 - SSE carries `catalog` revision notifications; health polling remains a fallback for dead streams.

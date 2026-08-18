@@ -17,6 +17,10 @@ The synchronized build uses root-relative `/api` routes and Vite proxies them to
 HIRAYA_FRONTEND_ONLY=true bun run dev
 ```
 
+Frontend-only mode always uses the fresh Web2 filesystem, settings, workspace,
+window-session, and app repositories. It does not open legacy IndexedDB or OPFS
+namespaces.
+
 ## Checks
 
 ```sh
@@ -27,7 +31,14 @@ bun run build
 
 ## Server Contract
 
-The frontend accepts only remote schema version 2. In synchronized mode it first fetches `GET /api/auth/session`, which returns a stable opaque `storageId`, `user` display metadata, `directBlobOrigin`, `apiProtocol: "entry-transactions-v2"`, and the required `capabilities.entryTransactions: "prepare-commit-cancel-v1"`. A 401 redirects to the server-owned `/login` page with a root-relative return path. Authenticated requests send `X-Hiraya-Protocol: entry-transactions-v2`; EventSource uses `/api/events?protocol=entry-transactions-v2`. `GET /api/desktops` returns owned and shared desktops with roles and explicit capabilities, while `GET /api/desktops/{desktopId}?projection=web` preserves the logical layout, editor settings, appearance, and visible-entry projection. Anonymous read-only publications use `/published/{desktopAlias}` or `/published/{desktopAlias}/{itemAlias}` and the matching `/api/public/desktops/...` routes without entering authenticated storage. Events use the `catalog` SSE event; authenticated `/api/sync/health` polling remains a fallback, while `/api/health` remains the public build-health route.
+The deployed legacy frontend accepts only remote schema version 2. In synchronized mode it first fetches `GET /api/auth/session`, which returns a stable opaque `storageId`, `user` display metadata, `directBlobOrigin`, `apiProtocol: "entry-transactions-v2"`, and the required `capabilities.entryTransactions: "prepare-commit-cancel-v1"`. A 401 redirects to the server-owned `/login` page with a root-relative return path. Authenticated requests send `X-Hiraya-Protocol: entry-transactions-v2`; EventSource uses `/api/events?protocol=entry-transactions-v2`. `GET /api/desktops` returns owned and shared desktops with roles and explicit capabilities, while `GET /api/desktops/{desktopId}?projection=web` preserves the logical layout, editor settings, appearance, and visible-entry projection. Anonymous read-only publications use `/published/{desktopAlias}` or `/published/{desktopAlias}/{itemAlias}` and the matching `/api/public/desktops/...` routes without entering authenticated storage. Events use the `catalog` SSE event; authenticated `/api/sync/health` polling remains a fallback, while `/api/health` remains the public build-health route.
+
+The Web2 synchronization target uses schema 1 and `X-Hiraya-Protocol: web2-sync-v1`.
+Its fresh browser namespaces hash the selected account's server-issued
+`storageId` as exact UTF-8 bytes to full lowercase SHA-256 hexadecimal; they do
+not hash the account ID. Frontend-only mode uses the same normalized storage
+model with a fixed local account identity; synchronized production activation
+remains separate from that local runtime.
 
 A fresh synchronized browser discovers the server-created first empty desktop through the catalog and projects that desktop into its local cache. If the first catalog request is unavailable, it atomically creates a usable offline desktop and an unbound `create-desktop` record; the first successful catalog fetch binds and replays that record. The active desktop ID is tab-local `sessionStorage` state.
 
@@ -35,7 +46,7 @@ A fresh synchronized browser discovers the server-created first empty desktop th
 
 The build includes six trusted system app fallbacks under `system-apps/`. A synchronized deployment can publish a strict schema-1 `hiraya.apps.json` and immutable `.hiraya.app` releases through its administrator App Store desktop. Runtime catalog releases replace the fallbacks after size, SHA-256, manifest, and runtime compatibility checks. Trusted system releases update automatically and are retained in OPFS for offline launch; ordinary App Store releases retain explicit per-browser approval. User-selected file associations and app-local data are browser/account-local rather than desktop-synchronized.
 
-The browser hashes the session `storageId` into a safe account namespace before loading the desktop. IndexedDB metadata, OPFS file and staging directories, content markers, serialization locks, preferences, and the active desktop session key are scoped by that namespace. Desktops are stored as complete validated aggregate records; the durable outbox and other device-local data use separate stores so related updates commit in one native transaction. Frontend-only mode makes no auth request and keeps its OPFS payload at the origin root. Logout preserves every account namespace.
+The browser hashes the session `storageId` into a safe account namespace before loading the desktop. Fresh Web2 storage keeps normalized workspaces, nodes, settings, operations, retained versions, preferences, sessions, apps, app data, and associations in one account database while OPFS stores content-addressed chunks and approved archives. Frontend-only mode makes no auth request and uses this fresh namespace unconditionally. Synchronized production keeps its deployed storage path until Web2 server activation; logout preserves every account namespace.
 
 This pre-release storage cutover intentionally starts each namespace empty once. On first startup, Hiraya acquires the retired SQLite owner lock, removes that namespace's old SQLite and OPFS payload/cache data, clears its active desktop selection, and records a versioned reset marker. If an older tab still owns the retired storage, startup asks the user to close older tabs rather than deleting data concurrently.
 

@@ -37,8 +37,8 @@ export function UpdateToast({ applying, blocked, onConfirm, onDismiss }: Props) 
         <button className="notification-action" type="button" disabled={applying} onClick={onDismiss}>Later</button>
       </>}
     >
-      <strong id={titleId}>{blocked ? "Save changes before updating" : "A new Hiraya version is ready"}</strong>
-      <span id={descriptionId}>{blocked ? "An editor has unsaved changes. Save or discard them, then try again." : "Confirm to apply it and reload the desktop."}</span>
+      <strong id={titleId}>{blocked ? "Finish current work before updating" : "A new Hiraya version is ready"}</strong>
+      <span id={descriptionId}>{blocked ? "Save unsaved changes and wait for file operations to finish, then try again." : "Confirm to apply it and reload the desktop."}</span>
     </NotificationCard>
   );
 }

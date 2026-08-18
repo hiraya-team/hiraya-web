@@ -129,7 +129,7 @@ describe("workspace filesystem storage", () => {
       expect(locks.depth).toBe(2);
       return stableId(nextId++);
     };
-    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID, locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID, locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Offline", pinned: true, deviceId: DEVICE });
     const otherWorkspaceId = stableId(4);
@@ -267,7 +267,7 @@ describe("workspace filesystem storage", () => {
     const origin = new MemoryDirectory();
     const locks = new TestLocks();
     let nextId = 80;
-    const environment = { indexedDB, IDBKeyRange, now: () => 40, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 40, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Desktop grid", pinned: true, deviceId: DEVICE });
     database.close();
@@ -301,7 +301,7 @@ describe("workspace filesystem storage", () => {
     const broadcasts = new TestBroadcastChannels();
     let nextId = 100;
     const destinationWorkspace = stableId(4);
-    const environment = { indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
     await database.createWorkspace({ id: destinationWorkspace, name: "Destination", pinned: false, deviceId: DEVICE });
@@ -355,7 +355,7 @@ describe("workspace filesystem storage", () => {
     const origin = new MemoryDirectory();
     const locks = new TestLocks();
     const broadcasts = new TestBroadcastChannels();
-    const environment = { indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(120), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 50, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(120), locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Coverage", pinned: true, deviceId: DEVICE });
     database.close();
@@ -383,7 +383,7 @@ describe("workspace filesystem storage", () => {
     const origin = new MemoryDirectory();
     const locks = new TestLocks();
     let nextId = 200;
-    const environment = { indexedDB, IDBKeyRange, now: () => 100, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 100, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Forest", pinned: true, deviceId: DEVICE });
     database.close();
@@ -425,7 +425,7 @@ describe("workspace filesystem storage", () => {
     const origin = new MemoryDirectory();
     const locks = new TestLocks();
     let nextId = 300;
-    const environment = { indexedDB, IDBKeyRange, now: () => 200, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 200, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Preflight", pinned: true, deviceId: DEVICE });
     database.close();
@@ -480,7 +480,7 @@ describe("workspace filesystem storage", () => {
     const locks = new TestLocks();
     let nextId = 400;
     let timestamp = 300;
-    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Copy", pinned: true, deviceId: DEVICE });
     database.close();
@@ -541,7 +541,7 @@ describe("workspace filesystem storage", () => {
     const locks = new TestLocks();
     let nextId = 10_000;
     let timestamp = 700;
-    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Lifecycle history", pinned: true, deviceId: DEVICE });
     database.close();
@@ -601,7 +601,7 @@ describe("workspace filesystem storage", () => {
     const origin = new MemoryDirectory();
     const locks = new TestLocks();
     let nextId = 2_000;
-    const environment = { indexedDB, IDBKeyRange, now: () => 600, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 600, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Copy validation", pinned: true, deviceId: DEVICE });
     database.close();
@@ -645,7 +645,7 @@ describe("workspace filesystem storage", () => {
     const locks = new TestLocks();
     let nextId = 6_000;
     let timestamp = 800;
-    const environment = { indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => timestamp, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const destinationWorkspace = stableId(4);
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "Source", pinned: true, deviceId: DEVICE });
@@ -695,7 +695,7 @@ describe("workspace filesystem storage", () => {
     let nextId = 7_000;
     const secondWorkspace = stableId(4);
     const unrelatedWorkspace = stableId(5);
-    const environment = { indexedDB, IDBKeyRange, now: () => 1_000, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 1_000, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "First", pinned: true, deviceId: DEVICE });
     await database.createWorkspace({ id: secondWorkspace, name: "Second", pinned: false, deviceId: DEVICE });
@@ -757,7 +757,7 @@ describe("workspace filesystem storage", () => {
     const locks = new TestLocks();
     const otherWorkspace = stableId(4);
     let nextId = 5_000;
-    const environment = { indexedDB, IDBKeyRange, now: () => 700, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
+    const environment = { storageId: ACCOUNT, indexedDB, IDBKeyRange, now: () => 700, originRoot: memoryOpfsHandle(origin), randomUUID: () => stableId(nextId++), locks: locks as unknown as Pick<LockManager, "request"> };
     const database = await openFilesystemDatabase(ACCOUNT, environment);
     await database.createWorkspace({ id: WORKSPACE, name: "First", pinned: true, deviceId: DEVICE });
     await database.createWorkspace({ id: otherWorkspace, name: "Second", pinned: false, deviceId: DEVICE });

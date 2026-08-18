@@ -6,8 +6,16 @@
   },
   "gates": [
     {
+      "id": "web-unit",
+      "command": "bun test"
+    },
+    {
       "id": "web-local",
       "command": "bun run test:e2e"
+    },
+    {
+      "id": "server-unit",
+      "command": "go -C ../server test ./..."
     },
     {
       "id": "server-backed",
@@ -18,18 +26,178 @@
     {
       "id": "desktop",
       "gate": "web-local",
-      "file": "e2e/desktop.e2e.ts"
+      "file": "e2e/desktop.e2e.ts",
+      "ownsAllTests": true
     },
     {
       "id": "public-desktop",
       "gate": "web-local",
-      "file": "e2e/public-desktop.e2e.ts"
+      "file": "e2e/public-desktop.e2e.ts",
+      "ownsAllTests": true
     },
     {
       "id": "server-integration",
       "gate": "server-backed",
-      "file": "e2e/server-integration.e2e.ts"
+      "file": "e2e/server-integration.e2e.ts",
+      "ownsAllTests": true
+    },
+    {
+      "id": "web-file-templates",
+      "gate": "web-unit",
+      "file": "tests/file-creation-templates.test.ts"
+    },
+    {
+      "id": "web-account-apps",
+      "gate": "web-unit",
+      "file": "tests/account-apps.test.ts"
+    },
+    {
+      "id": "web-fresh-package-archives",
+      "gate": "web-unit",
+      "file": "tests/fresh-package-archives.test.ts"
+    },
+    {
+      "id": "web-filesystem-database",
+      "gate": "web-unit",
+      "file": "tests/filesystem-database.test.ts"
+    },
+    {
+      "id": "web-workspace-filesystem",
+      "gate": "web-unit",
+      "file": "tests/workspace-filesystem.test.ts"
+    },
+    {
+      "id": "web-workspace-catalog",
+      "gate": "web-unit",
+      "file": "tests/workspace-catalog.test.ts"
+    },
+    {
+      "id": "web-directory-import",
+      "gate": "web-unit",
+      "file": "tests/directory-import.test.ts"
+    },
+    {
+      "id": "web-clipboard",
+      "gate": "web-unit",
+      "file": "tests/clipboard.test.ts"
+    },
+    {
+      "id": "web-theme-package",
+      "gate": "web-unit",
+      "file": "tests/theme-package.test.ts"
+    },
+    {
+      "id": "web-scene-package",
+      "gate": "web-unit",
+      "file": "tests/scene-package.test.ts"
+    },
+    {
+      "id": "web-seeded-packages",
+      "gate": "web-unit",
+      "file": "tests/seeded-manifest.test.ts"
+    },
+    {
+      "id": "web-extension",
+      "gate": "web-unit",
+      "file": "tests/extension.test.ts"
+    },
+    {
+      "id": "web-pwa",
+      "gate": "web-unit",
+      "file": "tests/pwa-install.test.ts"
+    },
+    {
+      "id": "web-sync-engine",
+      "gate": "web-unit",
+      "file": "tests/sync-engine.test.ts"
+    },
+    {
+      "id": "web-sync-hydration",
+      "gate": "web-unit",
+      "file": "tests/sync-hydration.test.ts"
+    },
+    {
+      "id": "web-web2-runtime",
+      "gate": "web-unit",
+      "file": "tests/web2-runtime.test.ts"
+    },
+    {
+      "id": "web-opfs-staging",
+      "gate": "web-unit",
+      "file": "tests/opfs-staging.test.ts"
+    },
+    {
+      "id": "web-themes",
+      "gate": "web-unit",
+      "file": "tests/themes.test.ts"
+    },
+    {
+      "id": "web-editor-workspace",
+      "gate": "web-unit",
+      "file": "apps/system/text-editor/src/workspace.test.ts"
+    },
+    {
+      "id": "server-web2-http",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/web2_http_test.go"
+    },
+    {
+      "id": "server-web2-apps",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/web2_apps_test.go"
+    },
+    {
+      "id": "server-web2-thumbnails",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/web2_thumbnails_test.go"
+    },
+    {
+      "id": "server-thumbnails",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/thumbnails_test.go"
+    },
+    {
+      "id": "server-web2-application",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/web2_application_test.go"
+    },
+    {
+      "id": "server-web2-pull",
+      "gate": "server-unit",
+      "file": "../server/internal/syncapi/web2_pull_test.go"
     }
+  ],
+  "productContractCapabilityIds": [
+    "workspace.lifecycle",
+    "filesystem.import-copy-trash",
+    "filesystem.clipboard-file-operations",
+    "clipboard.links-and-shortcuts",
+    "search.commands-and-results",
+    "filesystem.activity",
+    "storage.persistence-and-media",
+    "shell.windows-keyboard-focus",
+    "desktop.spatial-layout",
+    "mobile.navigation-gestures-actions",
+    "desktop.widgets-groups-themes-scenes",
+    "settings.routing-preferences-updates",
+    "themes.packages-animated-wallpaper",
+    "apps.system-and-file-services",
+    "editor.templates",
+    "viewers.image-video-fallback",
+    "apps.install-sandbox-uninstall",
+    "apps.store-and-handlers",
+    "apps.data-permissions-associations",
+    "sharing.members-invitations",
+    "public.desktop-full-surface",
+    "publication.items-and-short-links",
+    "thumbnails.ffmpeg",
+    "packages.seeded-import-export",
+    "packages.browser-extension",
+    "pwa.install-controlled-update",
+    "accessibility.reduced-motion",
+    "accessibility.authenticated-zoom-forced-colors",
+    "accessibility.tree-live-axe",
+    "accessibility.high-contrast"
   ],
   "capabilities": [
     {
@@ -40,6 +208,7 @@
       "acceptance": {
         "state": "automated",
         "evidence": [
+          { "suite": "desktop", "test": "core React shell defers rich chunks until an explicit rich action" },
           { "suite": "desktop", "test": "keyboard modal traps focus, closes with Escape, and restores its invoker" },
           { "suite": "desktop", "test": "close-window shortcut closes the focused window without claiming the empty desktop" },
           { "suite": "desktop", "test": "clicking inside a sandbox app focuses and raises its window" },
@@ -65,6 +234,65 @@
           { "suite": "desktop", "test": "opens text MIME as editable text in Integrated Editor" },
           { "suite": "desktop", "test": "formats JavaScript in Integrated Editor" },
           { "suite": "desktop", "test": "edits structured text without changing its MIME type" }
+        ]
+      }
+    },
+    {
+      "id": "editor.templates",
+      "name": "Editor file templates remain available and preserve their exact content types",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-file-templates", "test": "supplies canonical defaults for older desktop settings" },
+          { "suite": "web-file-templates", "test": "matches compound extensions case-insensitively and keeps an explicit empty list" },
+          { "suite": "web-file-templates", "test": "keeps file templates out of Integrated Editor launch arguments" }
+        ]
+      }
+    },
+    {
+      "id": "apps.install-sandbox-uninstall",
+      "name": "Packaged apps install, run in the permission sandbox, and uninstall cleanly",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-apps", "test": "TestWeb2AccountAppsLifecycle" },
+          { "suite": "web-account-apps", "test": "checks size, SHA-256, manifest identity, and safe archive structure" },
+          { "suite": "web-fresh-package-archives", "test": "retains installed and queued packages and releases true orphans" },
+          { "suite": "desktop", "test": "clicking inside a sandbox app focuses and raises its window" }
+        ]
+      }
+    },
+    {
+      "id": "apps.store-and-handlers",
+      "name": "App Store releases and handler hints remain discoverable and usable",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-apps", "test": "TestWeb2AccountAppsLifecycle" },
+          { "suite": "web-account-apps", "test": "shows an account-approved package as synchronizing until its verified archive is local" },
+          { "suite": "web-account-apps", "test": "requires generation, digest, and exact ordered permissions before launch or handler activation" },
+          { "suite": "desktop", "test": "mobile Start and the unified switcher own distinct shell actions" }
+        ]
+      }
+    },
+    {
+      "id": "apps.data-permissions-associations",
+      "name": "Account app data, permissions, and file associations retain their boundaries",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-apps", "test": "TestWeb2AccountAppsLifecycle" },
+          { "suite": "web-account-apps", "test": "persists and atomically replays the fresh account app outbox" },
+          { "suite": "web-account-apps", "test": "requires generation, digest, and exact ordered permissions before launch or handler activation" },
+          { "suite": "web-filesystem-database", "test": "persists local app approvals, data, and associations with atomic uninstall cleanup" }
         ]
       }
     },
@@ -110,13 +338,14 @@
         "state": "automated",
         "evidence": [
           { "suite": "desktop", "test": "local mutation persists through reload" },
-          { "suite": "desktop", "test": "concurrent tabs serialize the first IndexedDB reset" },
+          { "suite": "desktop", "test": "concurrent tabs replay fresh filesystem revisions" },
           { "suite": "desktop", "test": "shows image thumbnails on the desktop and in folders" },
           { "suite": "desktop", "test": "sets an image as wallpaper from its context menu and keeps it after reload" },
           { "suite": "desktop", "test": "opens an imported RTF document in the document viewer" },
           { "suite": "desktop", "test": "opens GFM Markdown with safe relative and external images in the document viewer" },
           { "suite": "desktop", "test": "opens imported audio from a local Blob preview source" },
-          { "suite": "desktop", "test": "opening and restoring a text file preserves its loaded contents" }
+          { "suite": "desktop", "test": "opening and restoring a text file preserves its loaded contents" },
+          { "suite": "desktop", "test": "file Properties retains versions and supports undo, redo, and restore" }
         ]
       }
     },
@@ -131,6 +360,20 @@
           { "suite": "desktop", "test": "copy-link shortcut copies a deep link for the selected item" },
           { "suite": "desktop", "test": "pastes clipboard URL text as a named Internet Shortcut" },
           { "suite": "desktop", "test": "edits an Internet Shortcut as text while normal open follows its URL" }
+        ]
+      }
+    },
+    {
+      "id": "filesystem.clipboard-file-operations",
+      "name": "Clipboard copy, cut, and paste preserve files and folder trees",
+      "owners": ["web", "server"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-clipboard", "test": "round-trips recursive metadata, empty folders, and exact bytes" },
+          { "suite": "web-workspace-filesystem", "test": "copies nested and empty roots without chunk rewrites and verifies source chunks after destination preflight" },
+          { "suite": "web-workspace-filesystem", "test": "undoes and redoes created and copied forests across reload without rewriting chunks" }
         ]
       }
     },
@@ -167,6 +410,18 @@
           { "suite": "desktop", "test": "Show hidden files persists in the account IndexedDB preferences" },
           { "suite": "desktop", "test": "reduced motion disables desktop transitions and animations" },
           { "suite": "desktop", "test": "service worker excludes API responses from navigation fallback and caches" }
+        ]
+      }
+    },
+    {
+      "id": "accessibility.reduced-motion",
+      "name": "Reduced-motion preferences disable nonessential transitions and animation",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "reduced motion disables desktop transitions and animations" }
         ]
       }
     },
@@ -213,6 +468,20 @@
       }
     },
     {
+      "id": "publication.items-and-short-links",
+      "name": "Item publication and account short links resolve, revoke, and remain read only",
+      "owners": ["web", "server", "platform"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPPublicationControlsReserveAliases" },
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPShortLinksAreAccountOwnedAndIdempotent" },
+          { "suite": "public-desktop", "test": "public desktop hides descendants of dot-prefixed folders" }
+        ]
+      }
+    },
+    {
       "id": "sync.current-server-integration",
       "name": "Current authentication, synchronization, publication, app data, and restart behavior",
       "owners": ["web", "server"],
@@ -220,7 +489,8 @@
       "acceptance": {
         "state": "automated",
         "evidence": [
-          { "suite": "server-integration", "test": "server-backed authentication, convergence, replay, conflict, and restart persistence" }
+          { "suite": "server-integration", "test": "Web2 persistent profiles prove the fourteen architecture steps" },
+          { "suite": "server-integration", "test": "persistent Web2 profile survives a server restart" }
         ]
       }
     },
@@ -229,119 +499,268 @@
       "name": "Create, rename, order, pin, transfer, switch, and delete workspaces",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-workspace-catalog", "test": "creates, renames, orders, pins, selects, and deletes workspaces across reload" },
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPWorkspaceControls" },
+          { "suite": "web-workspace-filesystem", "test": "transfers a complete tree between facades without touching manifests or chunks" }
+        ]
+      }
     },
     {
       "id": "filesystem.import-copy-trash",
       "name": "Directory import, file and folder copy, Trash, restore, and purge",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-directory-import", "test": "preserves nested and empty folders with complete deterministic hierarchy" },
+          { "suite": "web-workspace-filesystem", "test": "copies nested and empty roots without chunk rewrites and verifies source chunks after destination preflight" },
+          { "suite": "server-web2-application", "test": "TestWeb2ApplicationTrashRestoreAndPurgeSubtree" }
+        ]
+      }
     },
     {
       "id": "filesystem.activity",
       "name": "Activity records remain complete and navigable",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPSearchAndActivityReadAcceptedRecords" },
+          { "suite": "desktop", "test": "Settings adapts to its window and preserves subpage navigation" }
+        ]
+      }
     },
     {
       "id": "sharing.members-invitations",
       "name": "Owners manage members, invitations, and role transitions",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPSharingControlsAccessAndPreferences" },
+          { "suite": "server-web2-http", "test": "TestWeb2HTTPWorkspaceInvitationRegistersAndGrants" },
+          { "suite": "server-integration", "test": "Web2 persistent profiles prove the fourteen architecture steps" }
+        ]
+      }
     },
     {
       "id": "themes.packages-animated-wallpaper",
       "name": "Custom theme import, authoring, packages, and animated wallpaper",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-theme-package", "test": "loads a verified Web2 filesystem package without a legacy content request" },
+          { "suite": "web-scene-package", "test": "keeps reduced-motion wallpaper execution disabled and widgets user-gated" },
+          { "suite": "desktop", "test": "Theme Editor selects a wallpaper with the Hiraya file picker" },
+          { "suite": "desktop", "test": "Theme Editor applies a selected theme and preserves it after reload" }
+        ]
+      }
     },
     {
       "id": "viewers.image-video-fallback",
       "name": "Image, video, document, media, and fallback viewers retain full behavior",
       "owners": ["web"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-editor-workspace", "test": "selects native previews and a safe fallback for non-text files" },
+          { "suite": "desktop", "test": "opens an imported RTF document in the document viewer" },
+          { "suite": "desktop", "test": "opens GFM Markdown with safe relative and external images in the document viewer" },
+          { "suite": "desktop", "test": "opens imported audio from a local Blob preview source" }
+        ]
+      }
     },
     {
       "id": "thumbnails.ffmpeg",
       "name": "Server ffmpeg thumbnails remain verified and retryable",
       "owners": ["web", "server", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-thumbnails", "test": "TestThumbnailToolValidation" },
+          { "suite": "server-web2-thumbnails", "test": "TestWeb2ThumbnailWorkerAuthenticatedAndPublicDescriptors" },
+          { "suite": "server-web2-thumbnails", "test": "TestWeb2ThumbnailReconcileRetriesTransientStorageFailure" }
+        ]
+      }
     },
     {
       "id": "packages.seeded-import-export",
       "name": "Seeded desktop import and export remain compatible",
       "owners": ["web", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-seeded-packages", "test": "preserves current layout, appearance, empty folders, and normalized content URLs" },
+          { "suite": "web-seeded-packages", "test": "exports a portable ZIP with exact bytes, hierarchy, and empty folders" }
+        ]
+      }
     },
     {
       "id": "packages.browser-extension",
       "name": "Browser extension packaging and new-tab startup remain functional",
       "owners": ["web", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-extension", "test": "packages a permission-free Manifest V3 new-tab redirect with every referenced asset" }
+        ]
+      }
     },
     {
       "id": "pwa.install-controlled-update",
       "name": "Installable PWA updates without discarding dirty or queued work",
       "owners": ["web", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-pwa", "test": "requests the protected manifest with same-origin credentials" },
+          { "suite": "web-pwa", "test": "prioritizes standalone and installed status over prompt guidance" },
+          { "suite": "web-pwa", "test": "blocks update activation while any app has dirty work" },
+          { "suite": "web-account-apps", "test": "persists and atomically replays the fresh account app outbox" },
+          { "suite": "web-filesystem-database", "test": "recovers validated device state and one operation by identity" },
+          { "suite": "desktop", "test": "local mutation persists through reload" },
+          { "suite": "desktop", "test": "service worker excludes API responses from navigation fallback and caches" },
+          { "suite": "desktop", "test": "service worker reloads the shell offline" },
+          { "suite": "desktop", "test": "update activation waits for dirty edits" },
+          { "suite": "desktop", "test": "update activation waits for storage operations and then removes obsolete shell caches" }
+        ]
+      }
     },
     {
       "id": "accessibility.authenticated-zoom-forced-colors",
       "name": "Authenticated shell works at 200 percent zoom and in forced colors",
       "owners": ["web"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "authenticated shell reflows at 200 percent zoom and preserves focus in forced colors and High Contrast" }
+        ]
+      }
+    },
+    {
+      "id": "accessibility.tree-live-axe",
+      "name": "Accessibility tree, live status announcements, and axe checks remain clean",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "keyboard modal traps focus, closes with Escape, and restores its invoker" },
+          { "suite": "desktop", "test": "desktop widgets and icon groups persist and remain usable on mobile" },
+          { "suite": "desktop", "test": "mobile root Back requires two additional presses and resets" }
+        ]
+      }
+    },
+    {
+      "id": "accessibility.high-contrast",
+      "name": "High-contrast and forced-colors modes retain visible focus and usable controls",
+      "owners": ["web"],
+      "activationCritical": true,
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "authenticated shell reflows at 200 percent zoom and preserves focus in forced colors and High Contrast" },
+          { "suite": "web-themes", "test": "checks the rendered text and indicator matrix" }
+        ]
+      }
     },
     {
       "id": "history.undo-redo-versions",
       "name": "Undo, redo, retained versions, comparison, keep-both, and restore survive reload",
       "owners": ["web", "server"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-workspace-filesystem", "test": "persists the locked offline create, write, undo, redo, restore, and cleanup journey" },
+          { "suite": "desktop", "test": "file Properties retains versions and supports undo, redo, and restore" },
+          { "suite": "server-integration", "test": "Web2 persistent profiles prove the fourteen architecture steps" }
+        ]
+      }
     },
     {
       "id": "sync.both-reconnect-orders",
       "name": "Two offline devices converge in both reconnect orders",
       "owners": ["web", "server", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-integration", "test": "Web2 persistent profiles prove the fourteen architecture steps" }
+        ]
+      }
     },
     {
       "id": "sync.cursor-reset-hydration",
       "name": "Pinned hydration and cursor reset preserve pending local overlays",
       "owners": ["web", "server", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-sync-hydration", "test": "resumes a multi-page cursor reset after leader failover and rebroadcasts recovery" },
+          { "suite": "web-filesystem-database", "test": "retains incoming transfer overlays and workspace-qualified settings through reset" },
+          { "suite": "server-web2-pull", "test": "TestWeb2PullBelowFloorReturnsResetWithoutPrematureAcknowledgment" }
+        ]
+      }
     },
     {
       "id": "multitab.revision-and-leadership",
       "name": "Multiple tabs replay revisions with one synchronization leader",
       "owners": ["web"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "web-local" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "desktop", "test": "concurrent tabs replay fresh filesystem revisions" },
+          { "suite": "web-sync-engine", "test": "elects one account leader, coalesces wakes, drains work, and catches up after failover" }
+        ]
+      }
     },
     {
       "id": "storage.crash-recovery",
       "name": "Chunk and metadata commits recover across every defined crash point",
       "owners": ["web", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "web-opfs-staging", "test": "restores previous bytes when local metadata commit fails" },
+          { "suite": "web-opfs-staging", "test": "removes the whole operation directory after a partial write failure" },
+          { "suite": "web-workspace-filesystem", "test": "rejects forest metadata and destination failures before OPFS, and leaves no projection after later staging failure" },
+          { "suite": "web-filesystem-database", "test": "rolls back authoritative records, settlement, coverage, cursor, and revision when pull publication fails" }
+        ]
+      }
     },
     {
       "id": "scale.exact-transfer-footprints",
       "name": "Large workspaces retain bounded bootstrap, hydration, mutation, and outbox work",
       "owners": ["web", "server", "platform"],
       "activationCritical": true,
-      "acceptance": { "state": "gap", "targetGate": "server-backed" }
+      "acceptance": {
+        "state": "automated",
+        "evidence": [
+          { "suite": "server-integration", "test": "Web2 persistent profiles prove the fourteen architecture steps" },
+          { "suite": "server-web2-application", "test": "TestWeb2ApplicationPositionConflictFootprintAndVersionChurn" },
+          { "suite": "server-web2-pull", "test": "TestWeb2PullCumulativeRecordBoundaryAndContinuation" },
+          { "suite": "web-filesystem-database", "test": "bounds authoritative copy expansion at 256 nodes before projection" },
+          { "suite": "web-web2-runtime", "test": "pages past a full rejected prefix to replay unrelated work" }
+        ]
+      }
     }
   ]
 }

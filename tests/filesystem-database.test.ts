@@ -20,17 +20,19 @@ import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
 const ACCOUNT = stableId(1);
+const STORAGE_ID = stableId(9);
 const WORKSPACE = stableId(2);
 const DEVICE = stableId(3);
 const DESTINATION = stableId(4);
 const ACCOUNT_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
+const STORAGE_HASH = "f3e028aaa6530055f01a5e1e849f67658d0daaf9bc64c2f95b6c5efd3595181e";
 
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
 function environment(factory: IDBFactory, now?: () => number) {
-  return { indexedDB: factory, IDBKeyRange, now };
+  return { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange, now };
 }
 
 function idbRequest<T>(value: IDBRequest<T>) {
@@ -124,19 +126,20 @@ async function expectEmptyCommit(database: FilesystemDatabase, factory: IDBFacto
 }
 
 describe("web2 filesystem database", () => {
-  test("uses only the fresh account namespace and leaves an old sentinel untouched", async () => {
+  test("hashes the per-account storageId as UTF-8 into only the fresh namespace", async () => {
     const factory = new IDBFactory();
     const oldName = "hiraya-indexeddb-v1-sentinel";
     const old = await openRaw(factory, oldName, 1, (database) => database.createObjectStore("sentinel"));
     await idbRequest(old.transaction("sentinel", "readwrite").objectStore("sentinel").put("untouched", "value"));
     old.close();
 
-    expect(await filesystemDatabaseName(ACCOUNT)).toBe(`hiraya-web2-v1-${ACCOUNT_HASH}`);
-    const database = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await filesystemDatabaseName(STORAGE_ID)).toBe(`hiraya-web2-v1-${STORAGE_HASH}`);
+    expect(await filesystemDatabaseName(STORAGE_ID)).not.toBe(`hiraya-web2-v1-${ACCOUNT_HASH}`);
+    const database = await openFilesystemDatabase(ACCOUNT, { ...environment(factory), storageId: STORAGE_ID });
     database.close();
 
     expect(await readStored(factory, oldName, "sentinel", "value")).toBe("untouched");
-    expect((await factory.databases()).map(({ name }) => name).sort()).toEqual([oldName, `hiraya-web2-v1-${ACCOUNT_HASH}`].sort());
+    expect((await factory.databases()).map(({ name }) => name).sort()).toEqual([oldName, `hiraya-web2-v1-${STORAGE_HASH}`].sort());
   });
 
   test("creates the exact version 1 schema and requests strict write durability", async () => {
@@ -453,6 +456,13 @@ describe("web2 filesystem database", () => {
     expect(changes).toMatchObject([{ kind: "pull", workspaceId: WORKSPACE, revision: 3, operationId, fromCursor: 10, cursor: 11 }]);
     expect(await database.listChanges(WORKSPACE, 2)).toEqual(changes);
     expect(await database.applyPullOperations(pull)).toEqual(changes);
+    const detachedOperationId = stableId(2_274);
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 11, cursor: 12, headSequence: 12, snapshotBarrier: 8, logFloor: 2, observedLogicalTime: rename.operation.logicalTime + 1, operations: [{ sequence: 12, operationId: detachedOperationId, companion: null, nodes: [{ workspaceId: WORKSPACE, id: nodeId, purged: true, logicalTime: rename.operation.logicalTime + 1, operationId: detachedOperationId }], settings: [] }] });
+    expect(await database.getNode(nodeId)).toBeUndefined();
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 12 });
+    const emptyOperationId = stableId(2_275);
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 12, cursor: 13, headSequence: 13, snapshotBarrier: 8, logFloor: 2, observedLogicalTime: rename.operation.logicalTime + 1, operations: [{ sequence: 13, operationId: emptyOperationId, companion: null, nodes: [], settings: [] }] });
+    expect(await database.getSyncState(WORKSPACE)).toMatchObject({ cursor: 13 });
     database.close();
   });
 
@@ -1402,7 +1412,7 @@ describe("web2 filesystem database", () => {
     expect(created.inverse).toEqual({ kind: "create", rootNodeIds: [rootId] });
     database.close();
 
-    const reopened = await openFilesystemDatabase(ACCOUNT, { indexedDB: factory, IDBKeyRange });
+    const reopened = await openFilesystemDatabase(ACCOUNT, { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange });
     expect((await reopened.listOperations(WORKSPACE)).slice(0, 2)).toEqual([redo, undo]);
     expect((await reopened.getNode(nestedId))?.lifecycle.kind).toBe("active");
     expect((await reopened.getNode(laterId))?.lifecycle.kind).toBe("trashed");
@@ -1414,7 +1424,7 @@ describe("web2 filesystem database", () => {
     const storedRedo = await idbRequest(operationStore.get(redoId));
     await idbRequest(operationStore.put({ ...storedRedo, compensatesOperationId: laterTrashId }));
     raw.close();
-    const corrupted = await openFilesystemDatabase(ACCOUNT, { indexedDB: factory, IDBKeyRange });
+    const corrupted = await openFilesystemDatabase(ACCOUNT, { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange });
     await expect(corrupted.commitOperation({ operation: { ...operationBase(stableId(172)), kind: "trash", nodeIds: [rootId], trashedAt: 40 }, intent: "undo", compensatesOperationId: redoId })).rejects.toThrow("exact created forest");
     expect((await corrupted.getNode(rootId))?.lifecycle.kind).toBe("active");
     corrupted.close();
@@ -2252,6 +2262,22 @@ describe("web2 filesystem database", () => {
     reopened.close();
   });
 
+  test("lists hydrated version metadata before its manifest is cached", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const manifest = await verifiedManifest(1, 15);
+    const nodeId = stableId(135);
+    const operationId = stableId(136);
+    await database.commitOperation({ operation: createDraft(operationId, [file(nodeId, "Remote.txt", manifest)]), manifests: [manifest] });
+    const raw = await openRaw(factory, await filesystemDatabaseName(ACCOUNT));
+    await idbRequest(raw.transaction("manifests", "readwrite").objectStore("manifests").delete(manifest.hash));
+    raw.close();
+
+    expect(await database.listFileVersions(WORKSPACE, nodeId)).toEqual([expect.objectContaining({ operationId, manifestHash: manifest.hash, current: true })]);
+    await expect(database.sweepManifests()).rejects.toThrow("A retained manifest is missing.");
+    database.close();
+  });
+
   test("rejects malformed stored nodes and inverse metadata instead of projecting them", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory);
@@ -2311,6 +2337,37 @@ describe("web2 filesystem database", () => {
     await database.completeRejectedDiscards([operationId]);
     expect(await database.getOperation(operationId)).toMatchObject({ stateKind: "rejected", overlayKind: "discarded" });
     expect((await database.listUnsettledOperations(WORKSPACE)).map(({ operationId }) => operationId)).not.toContain(operationId);
+    database.close();
+  });
+
+  test("authoritative hydration replaces a deferred rejected purge tombstone", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const nodeId = stableId(155);
+    const create = await database.commitOperation({ operation: createDraft(stableId(156), [folder(nodeId, "Restored")]) });
+    const active = await database.getNodeRecord(nodeId);
+    if (!active) throw new Error("The created node is missing.");
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 0, cursor: 1, headSequence: 1, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: create.operation.logicalTime, operations: [{ sequence: 1, operationId: create.operationId, companion: null, nodes: [active], settings: [] }] });
+
+    const trash = await database.commitOperation({ operation: { schemaVersion: 1, kind: "trash", operationId: stableId(157), workspaceId: WORKSPACE, deviceId: DEVICE, nodeIds: [nodeId], trashedAt: 20 } });
+    const trashed = await database.getNodeRecord(nodeId);
+    if (!trashed) throw new Error("The trashed node is missing.");
+    await database.applyPullOperations({ workspaceId: WORKSPACE, deviceId: DEVICE, fromCursor: 1, cursor: 2, headSequence: 2, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: trash.operation.logicalTime, operations: [{ sequence: 2, operationId: trash.operationId, companion: null, nodes: [trashed], settings: [] }] });
+
+    const purge = await database.commitOperation({ operation: { schemaVersion: 1, kind: "purge", operationId: stableId(158), workspaceId: WORKSPACE, deviceId: DEVICE, nodeIds: [nodeId] } });
+    await database.recordPushRejections([{ operationId: purge.operationId, workspaceId: WORKSPACE, code: "forbidden", message: "Denied" }]);
+    await database.deferRejectedOperation(purge.operationId);
+    expect(await database.getNodeRecord(nodeId)).toMatchObject({ purged: true });
+
+    const target = { kind: "exact-nodes" as const, workspaceId: WORKSPACE, asOf: 2, nodeIds: [nodeId] };
+    const targetId = hydrationTargetId(target);
+    const generationId = stableId(159);
+    await database.beginHydration(targetId, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, target });
+    await database.stageHydrationPage(targetId, null, { workspaceId: WORKSPACE, deviceId: DEVICE, generationId, pageIndex: 0, observedLogicalTime: trash.operation.logicalTime, target, nodes: [trashed], settings: [], nextPageToken: null });
+    await database.publishHydration(WORKSPACE, targetId, generationId);
+    expect(await database.getNode(nodeId)).toMatchObject({ name: "Restored", lifecycle: { kind: "trashed" } });
+    await database.completeRejectedDiscards([purge.operationId]);
+    expect(await database.getOperation(purge.operationId)).toMatchObject({ overlayKind: "discarded" });
     database.close();
   });
 

@@ -2,6 +2,7 @@ import {
   WEB2_MAX_BATCH_ITEMS,
   WEB2_SCHEMA_VERSION,
   assertExactKeys,
+  canonicalNameKey,
   isRecord,
   parseCanonicalName,
   parseMimeType,
@@ -111,7 +112,7 @@ function parseNewNodes(value: unknown) {
   const siblings = new Set<string>();
   for (const node of nodes) {
     if (node.parentId !== null && byId.get(node.parentId)?.kind === "file") throw new Error("A created node parent must be a folder.");
-    const sibling = `${node.parentId ?? ""}\0${node.name.toLowerCase()}`;
+    const sibling = `${node.parentId ?? ""}\0${canonicalNameKey(node.name)}`;
     if (siblings.has(sibling)) throw new Error("A created node batch contains duplicate sibling names.");
     siblings.add(sibling);
     const seen = new Set([node.id]);

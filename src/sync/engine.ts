@@ -46,9 +46,9 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
-export async function openAccountSyncClient(accountId: string, callbacks: AccountSyncCallbacks, environment: AccountSyncEnvironment = {}): Promise<AccountSyncClient> {
+export async function openAccountSyncClient(storageId: string, callbacks: AccountSyncCallbacks, environment: AccountSyncEnvironment = {}): Promise<AccountSyncClient> {
   if (!callbacks || typeof callbacks.synchronize !== "function" || callbacks.listen !== undefined && typeof callbacks.listen !== "function" || callbacks.onError !== undefined && typeof callbacks.onError !== "function") throw new TypeError("Account synchronization callbacks are invalid.");
-  const databaseName = await filesystemDatabaseName(accountId);
+  const databaseName = await filesystemDatabaseName(storageId);
   const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
   const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
   if (!locks || typeof locks.request !== "function" || typeof createBroadcastChannel !== "function") throw new Error("Web Locks and BroadcastChannel are required for account synchronization.");

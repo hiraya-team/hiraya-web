@@ -20,8 +20,8 @@ export type WorkspaceCatalogEnvironment = FilesystemDatabaseEnvironment & {
 
 export type WorkspaceCatalog = {
   listWorkspaces(): Promise<Workspace[]>;
-  createWorkspace(value: { name: string; pinned?: boolean }): Promise<Workspace>;
-  ensureInitialWorkspace(name?: string): Promise<Workspace>;
+  createWorkspace(value: { id?: string; name: string; pinned?: boolean }): Promise<Workspace>;
+  ensureInitialWorkspace(name?: string, pinned?: boolean): Promise<Workspace>;
   renameWorkspace(workspaceId: string, name: string): Promise<Workspace>;
   setWorkspacePreferences(preferences: Array<{ id: string; pinned: boolean }>): Promise<Workspace[]>;
   moveWorkspace(workspaceId: string, direction: -1 | 1): Promise<Workspace[]>;
@@ -37,11 +37,11 @@ function isCatalogNotification(value: unknown) {
   return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && value.kind === "catalog-change" && Object.keys(value).length === 2;
 }
 
-export async function openWorkspaceCatalog(accountId: string, deviceId: string, environment: WorkspaceCatalogEnvironment = {}): Promise<WorkspaceCatalog> {
+export async function openWorkspaceCatalog(accountId: string, deviceId: string, environment: WorkspaceCatalogEnvironment): Promise<WorkspaceCatalog> {
   const canonicalDeviceId = parseStableId(deviceId, "A workspace device ID is invalid.");
   const database = await openFilesystemDatabase(accountId, environment);
   try {
-    const databaseName = await filesystemDatabaseName(accountId);
+    const databaseName = await filesystemDatabaseName(environment.storageId);
     const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
     const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
     const storage = environment.sessionStorage ?? (typeof sessionStorage === "undefined" ? undefined : sessionStorage);
@@ -82,20 +82,20 @@ export async function openWorkspaceCatalog(accountId: string, deviceId: string, 
     return {
       listWorkspaces: () => database.listWorkspaces(),
       createWorkspace: (value) => locked(async () => {
-        if (!isRecord(value) || Object.keys(value).some((key) => key !== "name" && key !== "pinned") || typeof value.name !== "string" || value.pinned !== undefined && typeof value.pinned !== "boolean") throw new Error("A workspace creation request has an unsupported shape.");
+        if (!isRecord(value) || Object.keys(value).some((key) => key !== "id" && key !== "name" && key !== "pinned") || value.id !== undefined && typeof value.id !== "string" || typeof value.name !== "string" || value.pinned !== undefined && typeof value.pinned !== "boolean") throw new Error("A workspace creation request has an unsupported shape.");
         const wasEmpty = (await database.listWorkspaces()).length === 0;
-        const workspace = await database.createWorkspace({ id: randomUUID(), name: value.name, pinned: value.pinned ?? false, deviceId: canonicalDeviceId });
+        const workspace = await database.createWorkspace({ id: value.id === undefined ? randomUUID() : parseStableId(value.id), name: value.name, pinned: value.pinned ?? false, deviceId: canonicalDeviceId });
         if (wasEmpty) writeActiveId(workspace.id);
         notify();
         return workspace;
       }),
-      ensureInitialWorkspace: (name = "Home") => locked(async () => {
+      ensureInitialWorkspace: (name = "Home", pinned = true) => locked(async () => {
         const current = await database.listWorkspaces();
         if (current[0]) {
           if (!readActiveId()) writeActiveId(current[0].id);
           return current[0];
         }
-        const workspace = await database.createWorkspace({ id: randomUUID(), name, pinned: true, deviceId: canonicalDeviceId });
+        const workspace = await database.createWorkspace({ id: randomUUID(), name, pinned, deviceId: canonicalDeviceId });
         writeActiveId(workspace.id);
         notify();
         return workspace;

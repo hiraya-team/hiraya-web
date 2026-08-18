@@ -34,10 +34,10 @@ export type HydrationStorageEnvironment = FilesystemDatabaseEnvironment & {
   createBroadcastChannel?: (name: string) => FilesystemBroadcastChannel;
 };
 
-export async function openHydrationStorage(accountId: string, environment: HydrationStorageEnvironment = {}): Promise<HydrationStorage> {
+export async function openHydrationStorage(accountId: string, environment: HydrationStorageEnvironment): Promise<HydrationStorage> {
   const database = await openFilesystemDatabase(accountId, environment);
   try {
-    const databaseName = await filesystemDatabaseName(accountId);
+    const databaseName = await filesystemDatabaseName(environment.storageId);
     const locks = environment.locks ?? (typeof navigator === "undefined" ? undefined : navigator.locks);
     const createBroadcastChannel = environment.createBroadcastChannel ?? (typeof BroadcastChannel === "undefined" ? undefined : (name: string) => new BroadcastChannel(name));
     if (!locks || typeof locks.request !== "function" || typeof createBroadcastChannel !== "function") throw new Error("Web Locks and BroadcastChannel are required for hydration storage.");

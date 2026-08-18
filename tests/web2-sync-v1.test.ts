@@ -25,6 +25,7 @@ import { operationAffectedIdentities, parseWorkspaceOperation } from "../src/fil
 import {
   WEB2_SYNC_PROTOCOL,
   parseBootstrap,
+  parseBootstrapRequest,
   parseChunkDownloadRequest,
   parseChunkDownloadResult,
   parseChunkUploadRequest,
@@ -36,12 +37,16 @@ import {
   parsePullRequest,
   parsePullResult,
   parsePushRequest,
+  parsePushBatchResult,
   parsePushResult,
+  parsePublicNodeContent,
+  parseWeb2AccountAppPackage,
   replayOperationReceipt,
 } from "../src/sync/protocol";
 
 type Case = { name: string; value: unknown };
 type InvalidKindCase = Case & { kind: string };
+type PairCase = { name: string; kind: "continuation" | "reset"; request: unknown; result: unknown };
 type PrimitiveCase = { name: string; valid: boolean; value: unknown };
 type Corpus = {
   schemaVersion: number;
@@ -52,11 +57,14 @@ type Corpus = {
   operations: { valid: Array<Case & { affected: string[] }>; invalid: InvalidKindCase[] };
   hydrationTargets: { valid: Case[]; invalid: InvalidKindCase[] };
   hydrationRequests: { valid: Case[]; invalid: Case[] };
+  bootstrapRequests: { valid: Case[]; invalid: Case[] };
   bootstrap: { valid: Case[]; invalid: Case[] };
   hydrationPages: { valid: Case[]; invalid: Case[] };
   pullRequests: { valid: Case[]; invalid: Case[] };
   pullResults: { valid: Case[]; invalid: InvalidKindCase[] };
+  continuationResetPairs: { valid: PairCase[]; invalid: PairCase[] };
   pushResults: { valid: Case[]; invalid: InvalidKindCase[] };
+  pushBatchResults: { valid: Case[]; invalid: Case[] };
   pushRequests: { valid: Case[]; invalid: Case[] };
   conflictMatrix: { valid: Array<{ name: string; category: string; input: unknown; expected: unknown }>; invalid: Case[] };
   receipts: {
@@ -65,6 +73,10 @@ type Corpus = {
     replay: Array<{ name: string; receipt: unknown; operationId: string; inputHash: string; expected: unknown }>;
   };
   tupleOrdering: Array<{ name: string; left: OperationTuple; right: OperationTuple; winner: "left" | "right" }>;
+  manifestAccess: {
+    public: { valid: Case[]; invalid: Case[] };
+    accountAppPackages: { valid: Case[]; invalid: Case[] };
+  };
   chunkNegotiation: {
     uploadRequests: { valid: Case[]; invalid: Case[] };
     uploadResults: { valid: Array<Case & { expectedManifest: unknown }>; invalid: Array<Case & { expectedManifest: unknown }> };
@@ -102,7 +114,7 @@ function validAndInvalid(value: unknown, validKeys: readonly string[], invalidKe
 }
 
 function parseCorpus(value: unknown): Corpus {
-  exact(value, ["schemaVersion", "protocol", "constants", "primitives", "manifests", "operations", "hydrationTargets", "hydrationRequests", "bootstrap", "hydrationPages", "pullRequests", "pullResults", "pushResults", "pushRequests", "conflictMatrix", "receipts", "tupleOrdering", "chunkNegotiation"], "corpus");
+  exact(value, ["schemaVersion", "protocol", "constants", "primitives", "manifests", "operations", "hydrationTargets", "hydrationRequests", "bootstrapRequests", "bootstrap", "hydrationPages", "pullRequests", "pullResults", "continuationResetPairs", "pushResults", "pushBatchResults", "pushRequests", "conflictMatrix", "receipts", "tupleOrdering", "manifestAccess", "chunkNegotiation"], "corpus");
   exact(value.constants, ["indexedDbPrefix", "opfsPrefix", "chunkSize"], "constants");
   exact(value.primitives, ["stableIds", "names", "mimeTypes", "nonNegativeIntegers", "positions", "sha256"], "primitives");
   for (const [name, section] of Object.entries(value.primitives)) cases(section, ["name", "valid", "value"], `primitives.${name}`);
@@ -110,11 +122,14 @@ function parseCorpus(value: unknown): Corpus {
   validAndInvalid(value.operations, ["name", "value", "affected"], ["name", "kind", "value"], "operations");
   validAndInvalid(value.hydrationTargets, ["name", "value"], ["name", "kind", "value"], "hydrationTargets");
   validAndInvalid(value.hydrationRequests, ["name", "value"], ["name", "value"], "hydrationRequests");
+  validAndInvalid(value.bootstrapRequests, ["name", "value"], ["name", "value"], "bootstrapRequests");
   validAndInvalid(value.bootstrap, ["name", "value"], ["name", "value"], "bootstrap");
   validAndInvalid(value.hydrationPages, ["name", "value"], ["name", "value"], "hydrationPages");
   validAndInvalid(value.pullRequests, ["name", "value"], ["name", "value"], "pullRequests");
   validAndInvalid(value.pullResults, ["name", "value"], ["name", "kind", "value"], "pullResults");
+  validAndInvalid(value.continuationResetPairs, ["name", "kind", "request", "result"], ["name", "kind", "request", "result"], "continuationResetPairs");
   validAndInvalid(value.pushResults, ["name", "value"], ["name", "kind", "value"], "pushResults");
+  validAndInvalid(value.pushBatchResults, ["name", "value"], ["name", "value"], "pushBatchResults");
   validAndInvalid(value.pushRequests, ["name", "value"], ["name", "value"], "pushRequests");
   validAndInvalid(value.conflictMatrix, ["name", "category", "input", "expected"], ["name", "value"], "conflictMatrix");
   exact(value.receipts, ["valid", "invalid", "replay"], "receipts");
@@ -122,6 +137,9 @@ function parseCorpus(value: unknown): Corpus {
   cases(value.receipts.invalid, ["name", "value"], "receipts.invalid");
   cases(value.receipts.replay, ["name", "receipt", "operationId", "inputHash", "expected"], "receipts.replay");
   cases(value.tupleOrdering, ["name", "left", "right", "winner"], "tupleOrdering");
+  exact(value.manifestAccess, ["public", "accountAppPackages"], "manifestAccess");
+  validAndInvalid(value.manifestAccess.public, ["name", "value"], ["name", "value"], "manifestAccess.public");
+  validAndInvalid(value.manifestAccess.accountAppPackages, ["name", "value"], ["name", "value"], "manifestAccess.accountAppPackages");
   exact(value.chunkNegotiation, ["uploadRequests", "uploadResults", "downloadRequests", "downloadResults"], "chunkNegotiation");
   validAndInvalid(value.chunkNegotiation.uploadRequests, ["name", "value"], ["name", "value"], "chunkNegotiation.uploadRequests");
   validAndInvalid(value.chunkNegotiation.uploadResults, ["name", "expectedManifest", "value"], ["name", "expectedManifest", "value"], "chunkNegotiation.uploadResults");
@@ -135,6 +153,21 @@ const corpus = parseCorpus(raw);
 function accepts(parse: (value: unknown) => unknown, item: PrimitiveCase) {
   const accepted = (() => { try { parse(item.value); return true; } catch { return false; } })();
   expect(accepted, item.name).toBe(item.valid);
+}
+
+function acceptsContinuationResetPair(item: PairCase) {
+  try {
+    if (item.kind === "continuation") {
+      const request = parseHydrationRequest(item.request);
+      const prior = parseHydrationPage(item.result);
+      return request.workspaceId === prior.workspaceId && request.deviceId === prior.deviceId && request.generationId === prior.generationId && request.pageIndex === prior.pageIndex + 1 && request.pageToken !== null && request.pageToken === prior.nextPageToken && JSON.stringify(request.target) === JSON.stringify(prior.target);
+    }
+    const request = parsePullRequest(item.request);
+    const result = parsePullResult(item.result);
+    return result.kind === "reset" && request.workspaceId === result.workspaceId && request.deviceId === result.deviceId && request.cursor === result.fromCursor;
+  } catch {
+    return false;
+  }
 }
 
 const OPERATION_KINDS = ["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"];
@@ -151,7 +184,7 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("pins the authoritative corpus bytes", async () => {
-    expect(await sha256Hex(corpusBytes)).toBe("c8b2cfe73329f512ac71542101afde0278d5424eb64ca2fa769f6675d3187586");
+    expect(await sha256Hex(corpusBytes)).toBe("1908d3a0118928a6110d74e1e8dd42f7ed4d57742b46f0d1c3e61ee2df5ae230");
   });
 
   test("runs every primitive case through production validators", () => {
@@ -206,6 +239,8 @@ describe("web2-sync-v1 corpus", () => {
   });
 
   test("validates bootstrap, hydration, pull, and push envelopes", () => {
+    for (const item of corpus.bootstrapRequests.valid) expect(() => parseBootstrapRequest(item.value), item.name).not.toThrow();
+    for (const item of corpus.bootstrapRequests.invalid) expect(() => parseBootstrapRequest(item.value), item.name).toThrow();
     for (const item of corpus.bootstrap.valid) expect(() => parseBootstrap(item.value), item.name).not.toThrow();
     for (const item of corpus.bootstrap.invalid) expect(() => parseBootstrap(item.value), item.name).toThrow();
     for (const item of corpus.hydrationPages.valid) expect(() => parseHydrationPage(item.value), item.name).not.toThrow();
@@ -218,8 +253,24 @@ describe("web2-sync-v1 corpus", () => {
     for (const item of corpus.pullResults.invalid) expect(() => parsePullResult(item.value), item.name).toThrow();
     expect(new Set(corpus.pushResults.valid.map((item) => parsePushResult(item.value).kind))).toEqual(new Set(["accepted", "rejected"]));
     for (const item of corpus.pushResults.invalid) expect(() => parsePushResult(item.value), item.name).toThrow();
+    for (const item of corpus.pushBatchResults.valid) expect(() => parsePushBatchResult(item.value), item.name).not.toThrow();
+    for (const item of corpus.pushBatchResults.invalid) expect(() => parsePushBatchResult(item.value), item.name).toThrow();
     for (const item of corpus.pushRequests.valid) expect(() => parsePushRequest(item.value), item.name).not.toThrow();
     for (const item of corpus.pushRequests.invalid) expect(() => parsePushRequest(item.value), item.name).toThrow();
+  });
+
+  test("pairs hydration continuation and pull reset envelopes", () => {
+    expect(new Set(corpus.continuationResetPairs.valid.map(({ kind }) => kind))).toEqual(new Set(["continuation", "reset"]));
+    expect(new Set(corpus.continuationResetPairs.invalid.map(({ kind }) => kind))).toEqual(new Set(["continuation", "reset"]));
+    for (const item of corpus.continuationResetPairs.valid) expect(acceptsContinuationResetPair(item), item.name).toBe(true);
+    for (const item of corpus.continuationResetPairs.invalid) expect(acceptsContinuationResetPair(item), item.name).toBe(false);
+  });
+
+  test("validates public and account app manifest access", async () => {
+    for (const item of corpus.manifestAccess.public.valid) await expect(parsePublicNodeContent(item.value), item.name).resolves.toBeDefined();
+    for (const item of corpus.manifestAccess.public.invalid) await expect(parsePublicNodeContent(item.value), item.name).rejects.toThrow();
+    for (const item of corpus.manifestAccess.accountAppPackages.valid) await expect(parseWeb2AccountAppPackage(item.value, "https://objects.example.test"), item.name).resolves.toBeDefined();
+    for (const item of corpus.manifestAccess.accountAppPackages.invalid) await expect(parseWeb2AccountAppPackage(item.value, "https://objects.example.test"), item.name).rejects.toThrow();
   });
 
   test("bounds total authoritative records across an operation pull", () => {
@@ -234,6 +285,11 @@ describe("web2-sync-v1 corpus", () => {
     expect(() => parsePullResult(result)).toThrow();
     result.operations[1]!.settings.pop();
     expect(() => parsePullResult(result)).not.toThrow();
+  });
+
+  test("accepts a detached transfer cursor with no surviving records", () => {
+    const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+    expect(() => parsePullResult({ schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, kind: "operations", workspaceId: id(1), deviceId: id(2), fromCursor: 1, cursor: 2, headSequence: 2, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: 2, operations: [{ sequence: 2, operationId: id(3), companion: null, nodes: [], settings: [] }] })).not.toThrow();
   });
 
   test("uses logical time then operation ID as the winner tuple", () => {

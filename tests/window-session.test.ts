@@ -29,7 +29,7 @@ describe("window and browser sessions", () => {
     expect(windowsForHiddenFilePreference(apps, false).map((app) => app.id)).toEqual(["settings"]);
   });
   test("bypasses canonical entry dependency reconciliation for transient shell windows", async () => {
-    const source = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const source = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     expect(source.match(/if \(app\.transient\) return true;/g)).toHaveLength(1);
     expect(source.match(/if \(app\.transient\) return \[app\];/g)).toHaveLength(1);
   });

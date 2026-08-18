@@ -9,8 +9,8 @@ import {
   parseMimeType,
   parsePositiveSafeInteger,
   parseSha256,
-  parseStableId,
   sha256Hex,
+  storageNamespaceHash,
   type ChunkRef,
   type Manifest,
 } from "./model";
@@ -43,14 +43,13 @@ async function chunkFile(root: FileSystemDirectoryHandle, ref: ChunkRef, create:
   return shard.getFileHandle(ref.hash, create ? { create: true } : undefined);
 }
 
-export async function getAccountOpfsRoot(accountId: string, originRoot?: FileSystemDirectoryHandle) {
-  const canonicalId = parseStableId(accountId, "The account ID is invalid.");
-  const accountHash = await sha256Hex(new TextEncoder().encode(canonicalId));
+export async function getAccountOpfsRoot(storageId: string, originRoot?: FileSystemDirectoryHandle) {
+  const storageHash = await storageNamespaceHash(storageId);
   if (!originRoot) {
     if (typeof navigator === "undefined" || typeof navigator.storage?.getDirectory !== "function") throw new Error("Origin private file system storage is unavailable.");
     originRoot = await navigator.storage.getDirectory();
   }
-  return originRoot.getDirectoryHandle(`${WEB2_OPFS_PREFIX}${accountHash}`, { create: true });
+  return originRoot.getDirectoryHandle(`${WEB2_OPFS_PREFIX}${storageHash}`, { create: true });
 }
 
 export async function readChunk(root: FileSystemDirectoryHandle, value: ChunkRef) {

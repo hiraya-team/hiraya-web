@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test";
+import { strFromU8, unzipSync } from "fflate";
+import { exportSeededDesktop } from "../src/lib/seeded";
 import { parsePortableSeededManifest, toPortableSeededManifest } from "../src/lib/seeded-manifest";
 import { desktopStateSnapshot } from "./fixtures";
 import { DEFAULT_WALLPAPER } from "../src/types";
@@ -45,5 +47,28 @@ describe("seeded packages", () => {
     const value = toPortableSeededManifest(snapshot, () => "content/demo.hiraya.scene");
     expect(parsePortableSeededManifest(value).layout.widgets[0]).toMatchObject({ kind: "scene", fileId: "scene" });
     expect(() => parsePortableSeededManifest({ ...value, entries: value.entries.map((entry) => entry.kind === "file" ? { ...entry, mimeType: "application/zip" } : entry) })).toThrow("Scene widget must reference");
+  });
+
+  test("exports a portable ZIP with exact bytes, hierarchy, and empty folders", async () => {
+    const snapshot = desktopStateSnapshot();
+    snapshot.entries = [
+      { kind: "folder", id: "folder", name: "Project", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
+      { kind: "folder", id: "empty", name: "Empty", parentId: "folder", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
+      { kind: "file", id: "file", name: "read me.txt", parentId: "folder", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "text/plain", size: 5 },
+    ];
+    const archive = await exportSeededDesktop(snapshot, async (id) => {
+      expect(id).toBe("file");
+      return new Blob(["hello"], { type: "text/plain" });
+    });
+    const files = unzipSync(new Uint8Array(await archive.arrayBuffer()));
+    expect(archive.type).toBe("application/zip");
+    expect(strFromU8(files["hiraya-seeded/content/Project/read%20me.txt"]!)).toBe("hello");
+    expect(files["hiraya-seeded/content/Project/Empty/"]).toBeDefined();
+    const manifest = parsePortableSeededManifest(JSON.parse(strFromU8(files["hiraya-seeded/manifest.json"]!)));
+    expect(manifest.entries).toEqual([
+      snapshot.entries[0],
+      snapshot.entries[1],
+      { ...snapshot.entries[2], contentUrl: "content/Project/read%20me.txt" },
+    ]);
   });
 });

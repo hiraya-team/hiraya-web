@@ -2,8 +2,6 @@ import { inspectHirayaArchive, sha256, type ThemePackageInspection } from "@hira
 import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { ThemeWallpaperPackage } from "../domain/theme";
-import { parseContentAccessDescriptor, type DirectBlobAccess } from "./contracts";
-import { authenticatedHeaders } from "./api-routes";
 
 export const THEME_SCENE_CSP = SANDBOX_CSP.replace("frame-src data: blob:;", "frame-src 'none';").replace("allow-downloads", "");
 
@@ -12,32 +10,16 @@ export type ThemePackageCache = {
   write(themeId: string, expected: ThemeWallpaperPackage, content: Blob): Promise<unknown>;
 };
 
-export function parseThemePackageAccess(value: unknown, expected: ThemeWallpaperPackage, directBlobOrigin?: string): DirectBlobAccess {
-  const descriptor = parseContentAccessDescriptor(value, expected.assetId, expected.revision, expected.size, directBlobOrigin);
-  if (descriptor.sha256 !== expected.sha256) throw new Error("The theme package content does not match the selected theme.");
-  return descriptor.access;
-}
-
-export async function fetchThemePackage(accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, signal?: AbortSignal, cache?: ThemePackageCache, directBlobOrigin?: string): Promise<ThemePackageInspection> {
+export async function fetchThemePackage(_accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, _signal?: AbortSignal, cache?: ThemePackageCache, _directBlobOrigin?: string): Promise<ThemePackageInspection> {
+  void _accessUrl; void _signal; void _directBlobOrigin;
   let content: Blob | null = null;
   try { content = await cache?.readVerified(expectedThemeId, expected) ?? null; }
   catch (error) { console.warn("Hiraya could not read the cached theme package.", error); }
-  const cached = content !== null;
-  if (!content) {
-    const publicContent = accessUrl.startsWith("/api/public/");
-    const descriptorResponse = await fetch(accessUrl, { credentials: publicContent ? "omit" : "same-origin", cache: "no-store", headers: publicContent ? undefined : authenticatedHeaders(), signal });
-    if (!descriptorResponse.ok) throw new Error("The theme package is unavailable.");
-    const access = parseThemePackageAccess(await descriptorResponse.json(), expected, directBlobOrigin);
-    const response = await fetch(access.url, { method: access.method, headers: access.headers, credentials: "omit", cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
-    if (!response.ok) throw new Error("The theme package could not be downloaded.");
-    content = await response.blob();
-  }
+  if (!content) throw new Error("The theme package is unavailable.");
   const bytes = new Uint8Array(await content.arrayBuffer());
-  if (bytes.byteLength !== expected.size || !cached && await sha256(bytes) !== expected.sha256) throw new Error("The downloaded theme package failed integrity verification.");
+  if (bytes.byteLength !== expected.size || await sha256(bytes) !== expected.sha256) throw new Error("The downloaded theme package failed integrity verification.");
   const inspection = await inspectHirayaArchive(bytes);
   if (inspection.kind !== "theme" || inspection.manifest.id !== expectedThemeId || inspection.manifest.wallpaper?.kind !== expected.kind) throw new Error("The downloaded theme package does not match its saved wallpaper.");
-  if (cache && !cached) try { await cache.write(expectedThemeId, expected, content); }
-  catch (error) { console.warn("Hiraya could not cache the theme package.", error); }
   return inspection;
 }
 

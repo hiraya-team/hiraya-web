@@ -10,6 +10,7 @@ import {
   type BootstrapRequest,
   type ChunkUploadRequest,
   type HydrationRequest,
+  type PulledOperation,
   type PullRequest,
   type PushRequest,
 } from "./protocol";
@@ -25,9 +26,10 @@ import {
   uploadWeb2Chunk,
 } from "./transport";
 
-const supportedPushKinds = new Set<WorkspaceOperation["kind"]>(["write", "position", "set", "set-many", "unset", "unset-many"]);
+const supportedPushKinds = new Set<WorkspaceOperation["kind"]>(["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"]);
+const structuralPushKinds = new Set<WorkspaceOperation["kind"]>(["create", "copy", "move", "transfer", "trash", "restore", "purge"]);
 
-type RuntimeTransport = {
+export type Web2SyncRuntimeTransport = {
   bootstrap(request: BootstrapRequest, signal: AbortSignal): ReturnType<typeof bootstrapWeb2>;
   hydrate(request: HydrationRequest, signal: AbortSignal): ReturnType<typeof hydrateWeb2>;
   pull(request: PullRequest, signal: AbortSignal): ReturnType<typeof pullWeb2>;
@@ -35,10 +37,10 @@ type RuntimeTransport = {
   negotiateUpload(request: ChunkUploadRequest, origin: string, signal: AbortSignal): ReturnType<typeof negotiateWeb2ChunkUpload>;
   readLocalChunk: typeof readChunk;
   uploadChunk: typeof uploadWeb2Chunk;
-  listen(signal: AbortSignal, receive: Parameters<typeof listenForWeb2Events>[1]): ReturnType<typeof listenForWeb2Events>;
+  listen(signal: AbortSignal, receive: Parameters<typeof listenForWeb2Events>[1], directoryRevision?: number): ReturnType<typeof listenForWeb2Events>;
 };
 
-const nativeTransport: RuntimeTransport = {
+const nativeTransport: Web2SyncRuntimeTransport = {
   bootstrap: bootstrapWeb2,
   hydrate: hydrateWeb2,
   pull: pullWeb2,
@@ -51,6 +53,7 @@ const nativeTransport: RuntimeTransport = {
 
 export type Web2SyncRuntime = {
   bootstrap(workspaceId: string, signal?: AbortSignal): Promise<void>;
+  hydrate(target: HydrationTarget, signal?: AbortSignal): Promise<void>;
   callbacks: AccountSyncCallbacks;
 };
 
@@ -60,9 +63,11 @@ export type Web2SyncRuntimeOptions = {
   database: Pick<FilesystemDatabase, "completeRejectedDiscards" | "getManifest" | "getOrCreateDeviceId" | "getSyncState" | "getWorkspaceBootstrapState" | "listUnsettledOperations" | "listWorkspaces" | "recordPushRejections">;
   hydration: Pick<HydrationCoordinator, "applyPull" | "bootstrap" | "hydrate">;
   opfsRoot: FileSystemDirectoryHandle;
-  transport?: RuntimeTransport;
+  transport?: Web2SyncRuntimeTransport;
   randomUUID?: () => string;
   retryDelayMs?: number;
+  directoryRevision?: number;
+  onDirectoryChange?: (revision: number) => void;
 };
 
 function retryable(error: unknown) {
@@ -97,15 +102,15 @@ function operationBlockKeys(stored: StoredOperation) {
   const field = (workspaceId: string, nodeId: string, name: string) => `node:${workspaceId}:${nodeId}:${name}`;
   switch (operation.kind) {
     case "create":
-    case "copy": return operationTreeNodeIds(stored).map((id) => field(operation.workspaceId, id, "existence"));
+    case "copy": return [`structure:${operation.workspaceId}`, ...operationTreeNodeIds(stored).map((id) => field(operation.workspaceId, id, "existence"))];
     case "write": return [field(operation.workspaceId, operation.nodeId, "content")];
     case "rename": return [field(operation.workspaceId, operation.nodeId, "name")];
     case "move":
-      return operation.nodeIds.map((nodeId) => field(operation.workspaceId, nodeId, "parent"));
-    case "transfer": return operationTreeNodeIds(stored).flatMap((nodeId) => [field(operation.workspaceId, nodeId, "existence"), field(operation.destinationWorkspaceId, nodeId, "existence")]);
+      return [`structure:${operation.workspaceId}`, ...operation.nodeIds.map((nodeId) => field(operation.workspaceId, nodeId, "parent"))];
+    case "transfer": return [`structure:${operation.workspaceId}`, `structure:${operation.destinationWorkspaceId}`, ...operationTreeNodeIds(stored).flatMap((nodeId) => [field(operation.workspaceId, nodeId, "existence"), field(operation.destinationWorkspaceId, nodeId, "existence")])];
     case "trash":
-    case "restore": return operationTreeNodeIds(stored).map((nodeId) => field(operation.workspaceId, nodeId, "lifecycle"));
-    case "purge": return operationTreeNodeIds(stored).map((nodeId) => field(operation.workspaceId, nodeId, "existence"));
+    case "restore": return [`structure:${operation.workspaceId}`, ...operationTreeNodeIds(stored).map((nodeId) => field(operation.workspaceId, nodeId, "lifecycle"))];
+    case "purge": return [`structure:${operation.workspaceId}`, ...operationTreeNodeIds(stored).map((nodeId) => field(operation.workspaceId, nodeId, "existence"))];
     case "position": return operation.positions.map(({ nodeId }) => field(operation.workspaceId, nodeId, "position"));
     case "set":
     case "unset": return [`setting:${operation.workspaceId}:${operation.namespace}:${operation.key}`];
@@ -117,16 +122,27 @@ function operationBlockKeys(stored: StoredOperation) {
 function operationRequiredKeys(stored: StoredOperation) {
   const { operation } = stored;
   const existence = (workspaceId: string, nodeId: string) => `node:${workspaceId}:${nodeId}:existence`;
+  const parent = (workspaceId: string, nodeId: string) => [existence(workspaceId, nodeId), `node:${workspaceId}:${nodeId}:lifecycle`];
   const requirements = operationBlockKeys(stored);
   switch (operation.kind) {
+    case "create":
+    case "copy": {
+      const created = new Set(operation.nodes.map(({ id }) => id));
+      return [...requirements, ...operation.nodes.flatMap(({ parentId }) => parentId !== null && !created.has(parentId) ? parent(operation.workspaceId, parentId) : [])];
+    }
     case "write":
     case "rename": return [...requirements, existence(operation.workspaceId, operation.nodeId)];
-    case "move":
+    case "move": return [...requirements, ...operationTreeNodeIds(stored).flatMap((nodeId) => [existence(operation.workspaceId, nodeId), `node:${operation.workspaceId}:${nodeId}:lifecycle`]), ...(operation.parentId === null ? [] : parent(operation.workspaceId, operation.parentId))];
     case "trash":
-    case "restore":
-    case "purge": return [...requirements, ...operationTreeNodeIds(stored).map((nodeId) => existence(operation.workspaceId, nodeId))];
+    case "purge": return [...requirements, ...operationTreeNodeIds(stored).flatMap((nodeId) => [existence(operation.workspaceId, nodeId), `node:${operation.workspaceId}:${nodeId}:lifecycle`])];
+    case "restore": {
+      const originalParents = operation.destination === "original" && stored.inverse.kind === "restore"
+        ? stored.inverse.nodes.flatMap(({ lifecycle }) => lifecycle.originalParentId === null ? [] : parent(operation.workspaceId, lifecycle.originalParentId))
+        : [];
+      return [...requirements, ...operationTreeNodeIds(stored).flatMap((nodeId) => [existence(operation.workspaceId, nodeId), `node:${operation.workspaceId}:${nodeId}:lifecycle`]), ...originalParents];
+    }
     case "position": return [...requirements, ...operation.positions.map(({ nodeId }) => existence(operation.workspaceId, nodeId))];
-    case "transfer": return [...requirements, ...operationTreeNodeIds(stored).flatMap((nodeId) => [existence(operation.workspaceId, nodeId), existence(operation.destinationWorkspaceId, nodeId)])];
+    case "transfer": return [...requirements, ...operationTreeNodeIds(stored).flatMap((nodeId) => [existence(operation.workspaceId, nodeId), `node:${operation.workspaceId}:${nodeId}:lifecycle`, existence(operation.destinationWorkspaceId, nodeId)]), ...(operation.parentId === null ? [] : parent(operation.destinationWorkspaceId, operation.parentId))];
     default: return requirements;
   }
 }
@@ -160,6 +176,7 @@ function selectReplayableOperations(unsettled: StoredOperation[], externalBlocke
       if (blockers.get(key)?.size === 0) blockers.delete(key);
     }
     operations.push(stored.operation);
+    if (structuralPushKinds.has(stored.operation.kind)) break;
   }
   return operations;
 }
@@ -174,49 +191,106 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
   if (!Number.isSafeInteger(retryDelayMs) || retryDelayMs < 0) throw new Error("The synchronization retry delay is invalid.");
 
   const requestHydration = (request: HydrationRequest, signal: AbortSignal) => transport.hydrate(request, signal);
-  const uploadWriteChunks = async (operation: Extract<WorkspaceOperation, { kind: "write" }>, signal: AbortSignal) => {
-    const manifest = await options.database.getManifest(operation.manifestHash);
-    if (!manifest || manifest.size !== operation.size) throw new Error("A pending write references a missing manifest.");
-    const request: ChunkUploadRequest = {
-      schemaVersion: WEB2_SCHEMA_VERSION,
-      protocol: WEB2_SYNC_PROTOCOL,
-      kind: "chunk-upload-request",
-      workspaceId: operation.workspaceId,
-      deviceId: operation.deviceId,
-      operationId: operation.operationId,
-      manifestHash: operation.manifestHash,
-      manifest,
+  const uploadOperationChunks = async (operation: WorkspaceOperation, signal: AbortSignal) => {
+    const references = new Map<string, number>();
+    const add = (manifestHash: string, size: number) => {
+      const prior = references.get(manifestHash);
+      if (prior !== undefined && prior !== size) throw new Error("A pending operation references one manifest with inconsistent sizes.");
+      references.set(manifestHash, size);
     };
-    for (let attempt = 0; attempt < 4; attempt++) {
-      const result = await transport.negotiateUpload(request, options.directBlobOrigin, signal);
-      if (result.missingChunks.length === 0) return;
-      let expired = false;
-      for (const descriptor of result.missingChunks) {
-        const content = await transport.readLocalChunk(options.opfsRoot, descriptor);
-        try {
-          await transport.uploadChunk(descriptor, new Uint8Array(await content.arrayBuffer()), signal);
-        } catch (error) {
-          if (error instanceof Web2HTTPError && error.status === 403) { expired = true; break; }
-          throw error;
+    if (operation.kind === "write") add(operation.manifestHash, operation.size);
+    if (operation.kind === "create" || operation.kind === "copy") for (const node of operation.nodes) if (node.kind === "file") add(node.manifestHash, node.size);
+    for (const [manifestHash, size] of [...references].sort(([left], [right]) => left.localeCompare(right))) {
+      const manifest = await options.database.getManifest(manifestHash);
+      if (!manifest || manifest.size !== size) throw new Error("A pending operation references a missing manifest.");
+      const request: ChunkUploadRequest = {
+        schemaVersion: WEB2_SCHEMA_VERSION,
+        protocol: WEB2_SYNC_PROTOCOL,
+        kind: "chunk-upload-request",
+        workspaceId: operation.workspaceId,
+        deviceId: operation.deviceId,
+        operationId: operation.operationId,
+        manifestHash,
+        manifest,
+      };
+      let complete = false;
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const result = await transport.negotiateUpload(request, options.directBlobOrigin, signal);
+        if (result.missingChunks.length === 0) { complete = true; break; }
+        let expired = false;
+        for (const descriptor of result.missingChunks) {
+          const content = await transport.readLocalChunk(options.opfsRoot, { hash: descriptor.hash, size: descriptor.size });
+          try {
+            await transport.uploadChunk(descriptor, new Uint8Array(await content.arrayBuffer()), signal);
+          } catch (error) {
+            if (error instanceof Web2HTTPError && error.status === 403) { expired = true; break; }
+            throw error;
+          }
         }
+        if (expired) continue;
       }
-      if (expired) continue;
+      if (!complete) throw new Web2NetworkError();
     }
-    throw new Web2NetworkError();
   };
 
-  const pullToHead = async (workspaceId: string, signal: AbortSignal) => {
-    let sync = await options.database.getSyncState(workspaceId);
+  const repairPendingTransferCoverage = async (workspaceId: string, pulled: PulledOperation, signal: AbortSignal) => {
+    const changedNodeIds = new Set(pulled.nodes.map(({ id }) => id));
+    if (changedNodeIds.size === 0) return false;
+    let repaired = false;
+    for (const workspace of await options.database.listWorkspaces()) for (const stored of await scanUnsettled(workspace.id)) {
+      const operation = stored.operation;
+      if (stored.stateKind !== "pending" || stored.overlayKind !== "active" || operation.kind !== "transfer" || operation.workspaceId !== workspaceId && operation.destinationWorkspaceId !== workspaceId) continue;
+      const nodeIds = operationTreeNodeIds(stored);
+      if (!nodeIds.some((nodeId) => changedNodeIds.has(nodeId))) continue;
+      const destinationSync = await options.database.getSyncState(operation.destinationWorkspaceId);
+      const sourceSync = await options.database.getSyncState(operation.workspaceId);
+      await options.hydration.hydrate({ kind: "exact-nodes", workspaceId: operation.destinationWorkspaceId, asOf: Math.max(destinationSync.cursor, destinationSync.lastHydrationAsOf, operation.destinationWorkspaceId === workspaceId ? pulled.sequence : 0), nodeIds }, requestHydration, { signal });
+      await options.hydration.hydrate({ kind: "exact-nodes", workspaceId: operation.workspaceId, asOf: Math.max(sourceSync.cursor, sourceSync.lastHydrationAsOf, operation.workspaceId === workspaceId ? pulled.sequence : 0), nodeIds }, requestHydration, { signal });
+      repaired = true;
+    }
+    return repaired;
+  };
+
+  const pullWorkspaceThrough = async (workspaceId: string, targetCursor: number | null, signal: AbortSignal) => {
     // ponytail: 1024 data pages plus one final durable cursor acknowledgment.
     for (let page = 0; page < 1025; page++) {
+      let sync = await options.database.getSyncState(workspaceId);
+      if (targetCursor !== null && sync.cursor >= targetCursor) return;
+      const startingCursor = sync.cursor;
       const result = await transport.pull({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, workspaceId, deviceId: sync.deviceId, cursor: sync.cursor }, signal);
-      await options.hydration.applyPull(result, requestHydration, { signal });
-      if (result.cursor === result.headSequence && result.fromCursor === result.cursor) return;
-      if (result.kind === "operations" && result.cursor <= sync.cursor) throw new Error("Synchronization pull did not advance its cursor.");
-      sync = await options.database.getSyncState(workspaceId);
+      if (result.kind === "reset") {
+        await options.hydration.applyPull(result, requestHydration, { signal });
+      } else if (result.operations.length === 0) {
+        await options.hydration.applyPull(result, requestHydration, { signal });
+        if (result.cursor === result.headSequence && result.fromCursor === result.cursor) return;
+      } else {
+        for (const operation of result.operations) {
+          if (targetCursor !== null && operation.sequence > targetCursor) break;
+          sync = await options.database.getSyncState(workspaceId);
+          if (sync.cursor >= operation.sequence) continue;
+          if (sync.cursor !== operation.sequence - 1) throw new Error("Synchronization pull is not contiguous.");
+          if (operation.companion !== null) {
+            await pullWorkspaceThrough(operation.companion.workspaceId, operation.companion.sequence - 1, signal);
+            sync = await options.database.getSyncState(workspaceId);
+            if (sync.cursor >= operation.sequence) continue;
+          }
+          const page = { ...result, fromCursor: sync.cursor, cursor: operation.sequence, operations: [operation] };
+          try {
+            await options.hydration.applyPull(page, requestHydration, { signal });
+          } catch (error) {
+            if (!(error instanceof Error) || !error.message.includes("complete coverage to merge a pending transfer") || !await repairPendingTransferCoverage(workspaceId, operation, signal)) throw error;
+            await options.hydration.applyPull(page, requestHydration, { signal });
+          }
+          if (operation.companion !== null) await pullWorkspaceThrough(operation.companion.workspaceId, null, signal);
+        }
+      }
+      const advanced = await options.database.getSyncState(workspaceId);
+      if (targetCursor !== null && advanced.cursor >= targetCursor) return;
+      if (advanced.cursor <= startingCursor && !(result.kind === "operations" && result.fromCursor === result.cursor && result.cursor === result.headSequence)) throw new Error("Synchronization pull did not advance its cursor.");
     }
     throw new Error("Synchronization pull exceeded its page limit.");
   };
+  const pullToHead = (workspaceId: string, signal: AbortSignal) => pullWorkspaceThrough(workspaceId, null, signal);
 
   const scanUnsettled = async (workspaceId: string) => {
     const unsettled: StoredOperation[] = [];
@@ -242,69 +316,67 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
     return blocked;
   };
 
+  const transferPrerequisiteBlockers = async (workspaceId: string) => {
+    const blocked = new Set<string>();
+    for (const stored of await scanUnsettled(workspaceId)) {
+      const operation = stored.operation;
+      if (stored.stateKind !== "pending" || stored.overlayKind !== "active" || operation.kind !== "transfer" || operation.parentId === null) continue;
+      const parentKeys = new Set([`node:${operation.destinationWorkspaceId}:${operation.parentId}:existence`, `node:${operation.destinationWorkspaceId}:${operation.parentId}:lifecycle`]);
+      for (const destination of await scanUnsettled(operation.destinationWorkspaceId)) {
+        if (destination.overlayKind === "active") operationBlockKeys(destination).forEach((key) => { if (parentKeys.has(key)) blocked.add(key); });
+      }
+    }
+    return blocked;
+  };
+
   const selectOutboxBatch = async (workspaceId: string) => {
-    return selectReplayableOperations(await scanUnsettled(workspaceId), await destinationTransferBlockers(workspaceId)).slice(0, WEB2_MAX_BATCH_ITEMS);
+    const blockers = new Set([...await destinationTransferBlockers(workspaceId), ...await transferPrerequisiteBlockers(workspaceId)]);
+    return selectReplayableOperations(await scanUnsettled(workspaceId), blockers).slice(0, WEB2_MAX_BATCH_ITEMS);
   };
 
   const repairDeferredRejections = async (workspaceId: string, signal: AbortSignal) => {
     const deferred = (await scanUnsettled(workspaceId)).filter((stored) => stored.stateKind === "rejected" && stored.overlayKind === "deferred");
     if (deferred.length === 0) return;
     const workspaces = new Map((await options.database.listWorkspaces()).map((workspace) => [workspace.id, workspace]));
-    const nodes = new Map<string, Set<string>>();
-    const settings = new Map<string, { workspaceId: string; namespace: SettingNamespace; keys: Set<string> }>();
-    const addNode = (targetWorkspaceId: string, nodeId: string) => {
-      const ids = nodes.get(targetWorkspaceId) ?? new Set<string>();
-      ids.add(nodeId);
-      nodes.set(targetWorkspaceId, ids);
-    };
     for (const stored of deferred) {
+      const targets: HydrationTarget[] = [];
+      const addNodes = (targetWorkspaceId: string, nodeIds: string[]) => {
+        const workspace = workspaces.get(targetWorkspaceId);
+        if (!workspace) throw new Error("A rejected operation references an unavailable workspace.");
+        const sorted = [...new Set(nodeIds)].sort();
+        for (let index = 0; index < sorted.length; index += WEB2_MAX_BATCH_ITEMS) targets.push({ kind: "exact-nodes", workspaceId: targetWorkspaceId, asOf: workspace.headSequence, nodeIds: sorted.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
+      };
+      const addSettings = (targetWorkspaceId: string, namespace: SettingNamespace, keys: string[]) => {
+        const workspace = workspaces.get(targetWorkspaceId);
+        if (!workspace) throw new Error("A rejected operation references an unavailable workspace.");
+        const sorted = [...new Set(keys)].sort();
+        for (let index = 0; index < sorted.length; index += WEB2_MAX_BATCH_ITEMS) targets.push({ kind: "exact-settings", workspaceId: targetWorkspaceId, asOf: workspace.headSequence, namespace, keys: sorted.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
+      };
       const { operation } = stored;
       switch (operation.kind) {
         case "create":
-        case "copy": operation.nodes.forEach(({ id }) => addNode(operation.workspaceId, id)); break;
+        case "copy": addNodes(operation.workspaceId, operation.nodes.map(({ id }) => id)); break;
         case "write":
-        case "rename": addNode(operation.workspaceId, operation.nodeId); break;
+        case "rename": addNodes(operation.workspaceId, [operation.nodeId]); break;
         case "move":
         case "trash":
         case "restore":
-        case "purge": operationTreeNodeIds(stored).forEach((nodeId) => addNode(operation.workspaceId, nodeId)); break;
-        case "position": operation.positions.forEach(({ nodeId }) => addNode(operation.workspaceId, nodeId)); break;
-        case "transfer": operationTreeNodeIds(stored).forEach((nodeId) => { addNode(operation.workspaceId, nodeId); addNode(operation.destinationWorkspaceId, nodeId); }); break;
+        case "purge": addNodes(operation.workspaceId, operationTreeNodeIds(stored)); break;
+        case "position": addNodes(operation.workspaceId, operation.positions.map(({ nodeId }) => nodeId)); break;
+        case "transfer": {
+          const nodeIds = operationTreeNodeIds(stored);
+          addNodes(operation.destinationWorkspaceId, nodeIds);
+          addNodes(operation.workspaceId, nodeIds);
+          break;
+        }
         case "set":
-        case "unset": {
-          const id = `${operation.workspaceId}\0${operation.namespace}`;
-          const group = settings.get(id) ?? { workspaceId: operation.workspaceId, namespace: operation.namespace, keys: new Set<string>() };
-          group.keys.add(operation.key);
-          settings.set(id, group);
-          break;
-        }
-        case "set-many":
-        case "unset-many": {
-          const id = `${operation.workspaceId}\0${operation.namespace}`;
-          const group = settings.get(id) ?? { workspaceId: operation.workspaceId, namespace: operation.namespace, keys: new Set<string>() };
-          const keys = operation.kind === "set-many" ? operation.settings.map(({ key }) => key) : operation.keys;
-          keys.forEach((key) => group.keys.add(key));
-          settings.set(id, group);
-          break;
-        }
+        case "unset": addSettings(operation.workspaceId, operation.namespace, [operation.key]); break;
+        case "set-many": addSettings(operation.workspaceId, operation.namespace, operation.settings.map(({ key }) => key)); break;
+        case "unset-many": addSettings(operation.workspaceId, operation.namespace, operation.keys); break;
       }
+      for (const target of targets) await options.hydration.hydrate(target, requestHydration, { signal });
+      await options.database.completeRejectedDiscards([stored.operationId]);
     }
-    const targets: HydrationTarget[] = [];
-    for (const [targetWorkspaceId, ids] of nodes) {
-      const workspace = workspaces.get(targetWorkspaceId);
-      if (!workspace) throw new Error("A rejected operation references an unavailable workspace.");
-      const sorted = [...ids].sort();
-      for (let index = 0; index < sorted.length; index += WEB2_MAX_BATCH_ITEMS) targets.push({ kind: "exact-nodes", workspaceId: targetWorkspaceId, asOf: workspace.headSequence, nodeIds: sorted.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
-    }
-    for (const { workspaceId: targetWorkspaceId, namespace, keys } of settings.values()) {
-      const workspace = workspaces.get(targetWorkspaceId);
-      if (!workspace) throw new Error("A rejected operation references an unavailable workspace.");
-      const sorted = [...keys].sort();
-      for (let index = 0; index < sorted.length; index += WEB2_MAX_BATCH_ITEMS) targets.push({ kind: "exact-settings", workspaceId: targetWorkspaceId, asOf: workspace.headSequence, namespace, keys: sorted.slice(index, index + WEB2_MAX_BATCH_ITEMS) });
-    }
-    for (const target of targets) await options.hydration.hydrate(target, requestHydration, { signal });
-    const operationIds = deferred.map(({ operationId }) => operationId);
-    for (let index = 0; index < operationIds.length; index += WEB2_MAX_BATCH_ITEMS) await options.database.completeRejectedDiscards(operationIds.slice(index, index + WEB2_MAX_BATCH_ITEMS));
   };
 
   const synchronizeWorkspace = async (workspaceId: string, signal: AbortSignal) => {
@@ -314,8 +386,20 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
       const sync = await options.database.getSyncState(workspaceId);
       const operations = await selectOutboxBatch(workspaceId);
       if (operations.length === 0) return;
-      for (const operation of operations) if (operation.kind === "write") await uploadWriteChunks(operation, signal);
-      const result = await transport.push({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, workspaceId, deviceId: sync.deviceId, operations }, signal);
+      for (const operation of operations) await uploadOperationChunks(operation, signal);
+      const request = { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, workspaceId, deviceId: sync.deviceId, operations } as const;
+      const result = await (async () => {
+        let delay = retryDelayMs;
+        while (true) {
+          try { return await transport.push(request, signal); }
+          catch (error) {
+            if (!retryable(error)) throw error;
+            await wait(delay, signal);
+            signal.throwIfAborted();
+            delay = Math.min(Math.max(delay * 2, 1), 30_000);
+          }
+        }
+      })();
       const rejected = result.results.filter((candidate) => candidate.kind === "rejected");
       if (rejected.length > 0) await options.database.recordPushRejections(rejected.map(({ operationId, workspaceId, code, message }) => ({ operationId, workspaceId, code, message })));
       await pullToHead(workspaceId, signal);
@@ -325,10 +409,25 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
   };
 
   const synchronizeOnce = async (signal: AbortSignal) => {
-    for (const workspace of await options.database.listWorkspaces()) {
+    const workspaces = await options.database.listWorkspaces();
+    const available = new Set(workspaces.map(({ id }) => id));
+    const completed = new Set<string>();
+    const visiting = new Set<string>();
+    const synchronizeDependencies = async (workspaceId: string): Promise<void> => {
+      if (completed.has(workspaceId) || visiting.has(workspaceId)) return;
+      visiting.add(workspaceId);
+      for (const stored of await scanUnsettled(workspaceId)) {
+        const operation = stored.operation;
+        if (stored.stateKind === "pending" && stored.overlayKind === "active" && operation.kind === "transfer" && available.has(operation.destinationWorkspaceId)) await synchronizeDependencies(operation.destinationWorkspaceId);
+      }
       signal.throwIfAborted();
+      await synchronizeWorkspace(workspaceId, signal);
+      visiting.delete(workspaceId);
+      completed.add(workspaceId);
+    };
+    for (const workspace of workspaces) {
       if (!boundWorkspaces.has(workspace.id)) continue;
-      await synchronizeWorkspace(workspace.id, signal);
+      await synchronizeDependencies(workspace.id);
     }
   };
 
@@ -350,6 +449,10 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
       await options.hydration.hydrate(result.rootPage.target, requestHydration, { signal });
       boundWorkspaces.add(workspaceId);
     },
+    hydrate: async (target, suppliedSignal) => {
+      const signal = suppliedSignal ?? new AbortController().signal;
+      await options.hydration.hydrate(target, requestHydration, { signal });
+    },
     callbacks: {
       synchronize: async (signal) => {
         let delay = retryDelayMs;
@@ -364,9 +467,17 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
           }
         }
       },
-      listen: (signal, wake) => transport.listen(signal, (event) => {
-        if (event.accountId === accountId) wake();
-      }),
+      listen: async (signal, wake) => {
+        const poll = setInterval(wake, 15_000);
+        try {
+          await transport.listen(signal, (event) => {
+            if (event.kind === "directory") options.onDirectoryChange?.(event.revision);
+            else if (event.accountId === accountId) wake();
+          }, options.directoryRevision ?? 0);
+        } finally {
+          clearInterval(poll);
+        }
+      },
     },
   };
 }
