@@ -5,7 +5,7 @@ import { NotificationCard } from "../../components/NotificationCard";
 import { UpdateToast } from "../../components/UpdateToast";
 import { isRevisionConflictRecord, type OutboxRecord } from "../../lib/outbox";
 import type { TrashNotification } from "../../lib/trash-notifications";
-import type { FileTransferState } from "../../lib/sync";
+import type { FileTransferState } from "../../domain/sync-status";
 import { outboxRecordLabel } from "../../ui/panel-data";
 import { registerTransientDismiss } from "../../ui/transient-dismiss";
 import { nextNotificationOrder, nextUnreadNotificationIds } from "./controller";

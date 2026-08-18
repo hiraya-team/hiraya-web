@@ -1,15 +1,16 @@
-import { parseJsonValue, parseManifestV2, type HirayaAppManifestV2, type JsonValue } from "@hiraya-team/apps-contracts";
+import { parseManifestV2, type HirayaAppManifestV2, type JsonValue } from "@hiraya-team/apps-contracts";
 import type { InstalledApp } from "../apps/installed-apps";
 import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
-import { API_ROUTES, authenticatedHeaders } from "./api-routes";
-import { requireAuthenticatedResponse } from "./auth";
-import { responseBlobWithProgress, sha256Blob, uploadBlobDigests } from "./blob-transfer";
-import { isRecord, parseDirectBlobAccess, readRevision, type DirectBlobAccess } from "./contracts";
+import { sha256Blob } from "./blob-transfer";
+import { isRecord, readRevision } from "./contracts";
+import { accountStorage } from "../platform/storage/account-storage";
+import { downloadWeb2AccountAppPackage, fetchWeb2AccountAppData, fetchWeb2AccountApps } from "../sync/transport";
+import { parseAccountAppDataKey, parseAccountAppId } from "./account-app-contract";
+
+export { AccountAppsRequestError, parseAccountAppDataKey, parseAccountAppId } from "./account-app-contract";
 
 const SHA256 = /^[a-f0-9]{64}$/;
-const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
 const MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
-const MAX_DATA_BYTES = 64 * 1024;
 
 export type AccountAppGenerations = Readonly<{ installationGeneration: number; dataGeneration: number; itemRevision: number }>;
 export type AccountAppBlob = Readonly<{ blobId: string; revision: number; size: number; sha256: string }>;
@@ -45,11 +46,6 @@ export type AccountResource = Readonly<{
 
 function exactKeys(value: Record<string, unknown>, keys: readonly string[], message: string) {
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
-}
-
-export function parseAccountAppId(value: unknown) {
-  if (typeof value !== "string" || value.length > 256 || !APP_ID.test(value)) throw new Error("An account app has an invalid app ID.");
-  return value;
 }
 
 function nonNegative(value: unknown, message: string) {
@@ -93,14 +89,6 @@ function parseGenerations(value: unknown): AccountAppGenerations {
     dataGeneration: nonNegative(value.dataGeneration, "An account app has an invalid data generation."),
     itemRevision: positive(value.itemRevision, "An account app has an invalid item revision."),
   };
-}
-
-export function parseAccountAppDataKey(value: unknown) {
-  if (typeof value !== "string" || !value || new TextEncoder().encode(value).byteLength > 128 || [...value].some((character) => {
-    const point = character.codePointAt(0) ?? 0;
-    return point < 32 || point === 127;
-  })) throw new Error("An account app data key is invalid.");
-  return value;
 }
 
 function parseDataItem(value: unknown): AccountAppDataItem {
@@ -181,10 +169,6 @@ export function accountResources(snapshot: AccountAppsSnapshot): AccountResource
   ];
 }
 
-export class AccountAppsRequestError extends Error {
-  constructor(readonly status: number, message = `Account apps could not be synchronized (${status}).`, readonly code: string | null = null) { super(message); this.name = "AccountAppsRequestError"; }
-}
-
 export function accountAppsRequestIsTransient(status: number) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
@@ -193,139 +177,44 @@ export function accountAppsRequestIsPermanent(status: number) {
   return status >= 400 && status < 500 && !accountAppsRequestIsTransient(status);
 }
 
-async function accountAppsResponseError(response: Response, fallback: string) {
-  const value = await response.json().catch(() => null) as unknown;
-  const message = isRecord(value) && typeof value.error === "string" && value.error ? value.error : fallback;
-  const code = isRecord(value) && typeof value.code === "string" && value.code ? value.code : null;
-  return new AccountAppsRequestError(response.status, message, code);
-}
-
-async function authenticatedJson(input: RequestInfo | URL, init?: RequestInit) {
-  const response = requireAuthenticatedResponse(await fetch(input, { cache: "no-store", credentials: "same-origin", ...init, headers: authenticatedHeaders(init?.headers) }));
-  if (!response.ok) throw await accountAppsResponseError(response, `Account apps could not be synchronized (${response.status}).`);
-  return response.json() as Promise<unknown>;
-}
-
 export async function fetchAccountApps() {
-  return parseAccountAppsSnapshot(await authenticatedJson(API_ROUTES.apps));
-}
-
-function parseDownload(value: unknown, app: AccountApp, directBlobOrigin: string) {
-  if (!isRecord(value)) throw new Error("The app package download has an unsupported format.");
-  exactKeys(value, ["appId", "blobId", "revision", "size", "sha256", "access"], "The app package download has an unsupported shape.");
-  if (value.appId !== app.appId || value.blobId !== app.package.blobId || value.revision !== app.package.revision || value.size !== app.package.size || value.sha256 !== app.package.sha256) throw new Error("The app package download does not match the account inventory.");
-  return parseDirectBlobAccess(value.access, "GET", directBlobOrigin);
-}
-
-async function directDownload(access: DirectBlobAccess, expected: Pick<AccountAppBlob, "size" | "sha256">, type: string) {
-  const response = await fetch(access.url, { method: access.method, headers: access.headers, cache: "no-store", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
-  if (!response.ok) throw new AccountAppsRequestError(response.status, `The synchronized app resource could not be downloaded (${response.status}).`);
-  const downloaded = await responseBlobWithProgress(response, expected.size, () => undefined);
-  if (downloaded.blob.size !== expected.size || downloaded.sha256 !== expected.sha256) throw new Error("The synchronized app resource failed integrity verification.");
-  return new Blob([downloaded.blob], { type });
-}
-
-function accountResourceRoute(resource: AccountResource, content: boolean) {
-  const kind = resource.kind === "manifest" ? "manifests" : resource.kind;
-  return content ? API_ROUTES.appResourceContent(kind, resource.appId) : API_ROUTES.appResource(kind, resource.appId);
-}
-
-function parseAccountResourceResponse(value: unknown, expected: AccountResource, directBlobOrigin?: string) {
-  if (!isRecord(value)) throw new Error("The account resource response has an unsupported format.");
-  exactKeys(value, directBlobOrigin ? ["resource", "access"] : ["resource"], "The account resource response has an unsupported shape.");
-  const resource = parseAccountResourceBlob(value.resource, expected.kind, expected.appId);
-  if (resource.resourceId !== expected.id || resource.revision !== expected.revision || resource.size !== expected.size || resource.sha256 !== expected.sha256) throw new Error("The account resource changed while it was being opened.");
-  return directBlobOrigin ? parseDirectBlobAccess(value.access, "GET", directBlobOrigin) : null;
+  const remote = await fetchWeb2AccountApps(accountStorage().accountId);
+  const resource = async (id: string, revision: number, value: unknown, kind: AccountResource["kind"], appId = ""): Promise<AccountAppResourceBlob> => {
+    const content = new Blob([JSON.stringify(value)], { type: "application/json" });
+    return { blobId: id, resourceId: id, revision, size: content.size, sha256: await sha256Blob(content), path: kind === "manifest" ? `.hiraya/account/apps/${appId}/manifest.json` : `.hiraya/account/${kind}.json`, name: `${kind}.json`, mimeType: "application/json" };
+  };
+  const apps = await Promise.all(remote.apps.map(async (app): Promise<AccountApp> => ({
+    ...app,
+    manifestResource: await resource(app.package.manifestHash, app.generations.itemRevision, app.manifest, "manifest", app.appId),
+    package: { blobId: app.package.manifestHash, revision: app.generations.itemRevision, size: app.package.size, sha256: app.package.sha256 },
+  })));
+  const installation = { apps: apps.map((app) => { const { data, ...installed } = app; void data; return installed; }) };
+  const [installationResource, handlersResource] = await Promise.all([
+    resource(`${accountStorage().accountId}:installation`, remote.appsRevision, installation, "installation"),
+    resource(`${accountStorage().accountId}:handlers`, remote.appsRevision, remote.handlerHints, "handlers"),
+  ]);
+  return { appsRevision: remote.appsRevision, apps, handlerHints: remote.handlerHints, resources: { installation: installationResource, handlers: handlersResource }, installation };
 }
 
 export async function downloadAccountResource(resource: AccountResource, directBlobOrigin: string) {
-  const value = await authenticatedJson(accountResourceRoute(resource, true));
-  const access = parseAccountResourceResponse(value, resource, directBlobOrigin)!;
-  const blob = await directDownload(access, resource, resource.mimeType);
-  JSON.parse(await blob.text());
-  return new File([blob], resource.name, { type: resource.mimeType });
+  void directBlobOrigin;
+  const snapshot = await fetchAccountApps();
+  const value = resource.kind === "handlers" ? snapshot.handlerHints
+    : resource.kind === "installation" ? snapshot.installation
+      : snapshot.apps.find(({ appId }) => appId === resource.appId)?.manifest;
+  if (value === undefined) throw new Error("That account app resource no longer exists.");
+  return new File([JSON.stringify(value)], resource.name, { type: resource.mimeType });
 }
 
 export async function downloadAccountAppPackage(app: AccountApp, directBlobOrigin: string) {
-  const access = parseDownload(await authenticatedJson(API_ROUTES.appPackageDownload(app.appId)), app, directBlobOrigin);
-  const archive = await directDownload(access, app.package, "application/vnd.hiraya.app+zip");
-  const { inspectAppArchive } = await import("@hiraya-team/app-cli");
-  const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
-  if (inspection.digest !== app.package.sha256 || JSON.stringify(inspection.manifest) !== JSON.stringify(app.manifest)) throw new Error("The synchronized app package does not match its manifest.");
-  return { archive, inspection };
+  return downloadWeb2AccountAppPackage(accountStorage().accountId, { appId: app.appId, manifest: app.manifest, generations: app.generations, package: { manifestHash: app.package.blobId, size: app.package.size, sha256: app.package.sha256 }, data: app.data }, directBlobOrigin);
 }
 
 export async function downloadAccountAppData(app: AccountApp, key: string, directBlobOrigin: string): Promise<JsonValue | undefined> {
+  void directBlobOrigin;
   const item = app.data.find((candidate) => candidate.key === key);
   if (!item) return undefined;
-  const value = await authenticatedJson(API_ROUTES.appData(app.appId, key));
-  if (!isRecord(value)) throw new Error("The app data download has an unsupported format.");
-  exactKeys(value, ["appId", "key", "dataGeneration", "revision", "size", "sha256", "access"], "The app data download has an unsupported shape.");
-  if (value.appId !== app.appId || value.key !== key || value.dataGeneration !== item.dataGeneration || value.revision !== item.revision || value.size !== item.size || value.sha256 !== item.sha256) throw new Error("The app data download does not match the account inventory.");
-  const blob = await directDownload(parseDirectBlobAccess(value.access, "GET", directBlobOrigin), item, "application/json");
-  if (blob.size > MAX_DATA_BYTES) throw new Error("The synchronized app data is too large.");
-  return parseJsonValue(JSON.parse(await blob.text()));
-}
-
-export type PreparedAccountPackage = Readonly<{ uploadId: string; access: DirectBlobAccess; expectedInstallationGeneration: number; expectedItemRevision: number }>;
-
-export async function prepareAccountPackage(archive: Blob, manifest: HirayaAppManifestV2, clientId: string, operationId: string, directBlobOrigin: string): Promise<PreparedAccountPackage | null> {
-  if (archive.size < 1 || archive.size > MAX_PACKAGE_BYTES) throw new Error("The app package has an unsupported size.");
-  const hashes = await uploadBlobDigests(archive);
-  const value = await authenticatedJson(API_ROUTES.appPackages, { method: "POST", headers: { "Content-Type": "application/json", "X-Hiraya-Client-ID": clientId, "X-Hiraya-Operation-ID": operationId }, body: JSON.stringify({ appId: manifest.id, manifest, size: archive.size, ...hashes }) });
-  if (!isRecord(value)) throw new Error("The app package preparation has an unsupported format.");
-  if (value.state === "committed") {
-    exactKeys(value, ["state", "appsRevision"], "The app package preparation has an unsupported replay shape.");
-    readRevision(value.appsRevision);
-    return null;
-  }
-  exactKeys(value, ["state", "uploadId", "expiresAt", "expectedInstallationGeneration", "expectedItemRevision", "package"], "The app package preparation has an unsupported shape.");
-  if (value.state !== "prepared" || typeof value.uploadId !== "string" || !value.uploadId || !isRecord(value.package)) throw new Error("The app package preparation has invalid metadata.");
-  exactKeys(value.package, ["blobId", "size", "sha256", "access"], "The app package preparation has an unsupported package shape.");
-  if (value.package.size !== archive.size || value.package.sha256 !== hashes.sha256) throw new Error("The app package preparation changed the package identity.");
-  nonNegative(value.expiresAt, "The app package preparation has an invalid expiration.");
-  nonNegative(value.expectedInstallationGeneration, "The app package preparation has an invalid generation.");
-  nonNegative(value.expectedItemRevision, "The app package preparation has an invalid revision.");
-  return { uploadId: value.uploadId, access: parseDirectBlobAccess(value.package.access, "PUT", directBlobOrigin), expectedInstallationGeneration: Number(value.expectedInstallationGeneration), expectedItemRevision: Number(value.expectedItemRevision) };
-}
-
-export async function uploadPreparedAccountPackage(prepared: PreparedAccountPackage, archive: Blob, manifest: HirayaAppManifestV2, digestValue: string, clientId: string, operationId: string) {
-  const upload = await fetch(prepared.access.url, { method: prepared.access.method, headers: prepared.access.headers, body: archive, cache: "no-store", credentials: "omit", redirect: "error", referrerPolicy: "no-referrer" });
-  if (!upload.ok) throw new AccountAppsRequestError(upload.status, `The app package could not be uploaded (${upload.status}).`);
-  const commit = requireAuthenticatedResponse(await fetch(API_ROUTES.appPackageCommit(prepared.uploadId), { method: "POST", cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders({ "X-Hiraya-Client-ID": clientId, "X-Hiraya-Operation-ID": operationId }) }));
-  if (commit.status === 409) {
-    const value = await commit.json().catch(() => null) as unknown;
-    if (isRecord(value) && value.code === "generation_conflict") throw new AccountAppsRequestError(409, "The app changed on another device before this operation was replayed.", "generation_conflict");
-    const message = isRecord(value) && typeof value.error === "string" && value.error ? value.error : `The app package could not be committed (${commit.status}).`;
-    const code = isRecord(value) && typeof value.code === "string" && value.code ? value.code : null;
-    throw new AccountAppsRequestError(commit.status, message, code);
-  }
-  if (!commit.ok) throw await accountAppsResponseError(commit, `The app package could not be committed (${commit.status}).`);
-  const value = await commit.json() as unknown;
-  if (!isRecord(value)) throw new Error("The app package commit has an unsupported format.");
-  exactKeys(value, ["state", "appsRevision", "appId", "generations", "package", "manifestResource"], "The app package commit has an unsupported shape.");
-  if (value.state !== "committed" || value.appId !== manifest.id || !isRecord(value.generations) || !isRecord(value.package) || !isRecord(value.manifestResource)) throw new Error("The app package commit has invalid metadata.");
-  readRevision(value.appsRevision);
-  const generations = parseGenerations(value.generations);
-  const packageRef = parseAccountAppBlob(value.package);
-  parseAccountResourceBlob(value.manifestResource, "manifest", manifest.id);
-  if (packageRef.sha256 !== digestValue || packageRef.size !== archive.size) throw new Error("The app package commit changed the package identity.");
-  return generations;
-}
-
-export async function cancelPreparedAccountPackage(prepared: PreparedAccountPackage, clientId: string, operationId: string) {
-  const response = requireAuthenticatedResponse(await fetch(API_ROUTES.appPackage(prepared.uploadId), { method: "DELETE", cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders({ "X-Hiraya-Client-ID": clientId, "X-Hiraya-Operation-ID": operationId }) }));
-  if (!response.ok && response.status !== 404) throw new Error(`The app package reservation could not be cancelled (${response.status}).`);
-}
-
-export async function accountMutation(path: string, method: "PUT" | "DELETE", body: unknown, clientId: string, operationId: string) {
-  const response = requireAuthenticatedResponse(await fetch(path, { method, cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders({ "Content-Type": "application/json", "X-Hiraya-Client-ID": clientId, "X-Hiraya-Operation-ID": operationId }), body: JSON.stringify(body) }));
-  if (!response.ok) {
-    const error = await accountAppsResponseError(response, `The account app change could not be synchronized (${response.status}).`);
-    if (error.code === "generation_conflict") throw new AccountAppsRequestError(409, "The app changed on another device before this operation was replayed.", error.code);
-    throw error;
-  }
-  return response.status === 204 ? null : response.json() as Promise<unknown>;
+  return fetchWeb2AccountAppData(accountStorage().accountId, { appId: app.appId, manifest: app.manifest, generations: app.generations, package: { manifestHash: app.package.blobId, size: app.package.size, sha256: app.package.sha256 }, data: app.data }, key);
 }
 
 export async function verifyLocalAccountPackage(archive: Blob, expectedDigest: string, manifest: HirayaAppManifestV2) {

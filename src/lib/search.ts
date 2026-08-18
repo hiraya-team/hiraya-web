@@ -1,7 +1,6 @@
 import type { DesktopEntry, DesktopIdentity } from "../types";
 import { assertValidId, isRecord, normalizeDesktopName, normalizeEntryName, parseRemoteEntry } from "./contracts";
-import { API_ROUTES, authenticatedHeaders } from "./api-routes";
-import { requireAuthenticatedResponse } from "./auth";
+import { searchWeb2 } from "../sync/transport";
 
 export type DesktopSearchResult = {
   authorityCatalogId: string | null;
@@ -107,8 +106,26 @@ export function localSearchResults(desktop: DesktopIdentity, entries: readonly D
   return entries.map((entry) => ({ authorityCatalogId: desktop.authorityCatalogId, catalogRevision: null, desktopId: desktop.id, desktopName: desktop.name, entry, breadcrumb: breadcrumbForEntry(entries, entry), stale }));
 }
 
-export async function searchAccessibleDesktops(query: string, signal: AbortSignal, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  const response = requireAuthenticatedResponse(await fetchImpl(API_ROUTES.search(query), { cache: "no-store", credentials: "same-origin", headers: authenticatedHeaders(), signal }));
-  if (!response.ok) throw new Error(`Hiraya search is unavailable (${response.status}).`);
-  return parseSearchResponse(await response.json(), query);
+export async function searchAccessibleDesktops(query: string, signal: AbortSignal, _fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<DesktopSearchResponse> {
+  void _fetchImpl;
+  const response = await searchWeb2(query, 50, signal);
+  return {
+    query: response.query,
+    limit: response.limit,
+    truncated: response.truncated,
+    results: response.results.map(({ accountId, workspaceId, workspaceName, node, breadcrumbs }) => {
+      if ("purged" in node) throw new Error("A search result references a purged node.");
+      return {
+        authorityCatalogId: accountId,
+        catalogRevision: null,
+        desktopId: workspaceId,
+        desktopName: workspaceName,
+        entry: node.kind === "folder"
+          ? { id: node.id, kind: "folder" as const, name: node.name, parentId: node.parentId, createdAt: node.createdAt, modifiedAt: node.modifiedAt, position: node.position }
+          : { id: node.id, kind: "file" as const, name: node.name, parentId: node.parentId, createdAt: node.createdAt, modifiedAt: node.modifiedAt, position: node.position, mimeType: node.mimeType, size: node.size },
+        breadcrumb: breadcrumbs.map(({ name }) => name),
+        stale: false,
+      };
+    }),
+  };
 }

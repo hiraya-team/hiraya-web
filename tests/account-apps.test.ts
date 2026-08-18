@@ -1,14 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import { installedAppAcceptsMatcher, type InstalledApp } from "../src/apps/installed-apps";
-import { AccountAppsRequestError, accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountMutation, accountResources, parseAccountAppsSnapshot, verifyLocalAccountPackage } from "../src/lib/account-apps";
+import { accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountResources, parseAccountAppsSnapshot, verifyLocalAccountPackage } from "../src/lib/account-apps";
 import { parseAccountAppOutboxRecord, projectAccountAppData, projectAccountApps, rebaseAccountAppOperation, type AccountAppOutboxRecord } from "../src/lib/account-app-outbox";
-import { API_ROUTES } from "../src/lib/api-routes";
 import { uploadBlobDigests } from "../src/lib/blob-transfer";
 import { ACCOUNT_APP_ATOMIC_STORES } from "../src/platform/storage/database-client";
 import { createElement } from "react";
 import { renderToString } from "react-dom/server";
 import { AppStoreWindow } from "../src/components/AppStoreWindow";
+import { IDBFactory, IDBKeyRange, IDBObjectStore } from "fake-indexeddb";
+import { openFilesystemDatabase } from "../src/filesystem/database";
 
 const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: "dev.hiraya.notes", name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const, "files:read" as const], fileTypes: [".txt"] };
 const blob = (id: string, revision = 4, size = 100, sha256 = "a".repeat(64)) => ({ blobId: id, revision, size, sha256 });
@@ -37,13 +38,6 @@ describe("account app wire contract", () => {
     expect(() => parseAccountAppsSnapshot({ ...snapshot(), handlerHints: { ".txt": "dev.hiraya.missing" } })).toThrow("outside the inventory");
   });
 
-  test("constructs only contract routes with escaped path segments", () => {
-    expect(API_ROUTES.apps).toBe("/api/apps");
-    expect(API_ROUTES.appPackageCommit("upload/value")).toBe("/api/apps/packages/upload%2Fvalue/commit");
-    expect(API_ROUTES.appData(manifest.id, "folder/name draft")).toBe("/api/apps/dev.hiraya.notes/data/folder%2Fname%20draft");
-    expect(API_ROUTES.appResourceContent("manifests", manifest.id)).toBe("/api/apps/resources/manifests/dev.hiraya.notes/content");
-  });
-
   test("classifies permanent client failures separately from retryable responses", () => {
     for (const status of [400, 403, 404, 409, 413, 422]) expect(accountAppsRequestIsPermanent(status)).toBe(true);
     for (const status of [408, 425, 429, 500, 503]) {
@@ -52,15 +46,6 @@ describe("account app wire contract", () => {
     }
   });
 
-  test("preserves actionable server error codes and messages", async () => {
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => Response.json({ error: "Account app storage quota exceeded.", code: "quota_exceeded" }, { status: 409 })) as typeof fetch;
-    try {
-      await expect(accountMutation("/api/apps/dev.hiraya.notes/data/state", "PUT", {}, "client", "operation")).rejects.toEqual(expect.objectContaining({ name: "AccountAppsRequestError", status: 409, code: "quota_exceeded", message: "Account app storage quota exceeded." } satisfies Partial<AccountAppsRequestError>));
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
 });
 
 describe("account app projection and ordered outbox", () => {
@@ -98,6 +83,70 @@ describe("account app projection and ordered outbox", () => {
     const baseline = parseAccountAppsSnapshot(snapshot());
     const stale = { schemaVersion: 1 as const, kind: "delete-data" as const, appId: manifest.id, key: "state", dataGeneration: 1 };
     expect(rebaseAccountAppOperation(stale, baseline)).toEqual({ ...stale, dataGeneration: 3 });
+  });
+
+  test("persists and atomically replays the fresh account app outbox", async () => {
+    const factory = new IDBFactory();
+    const accountId = "00000000-0000-4000-8000-000000000001";
+    const clientId = "00000000-0000-4000-8000-000000000002";
+    const database = await openFilesystemDatabase(accountId, { storageId: accountId, indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
+    expect(await database.readAccountApps()).toEqual({ state: { id: "singleton", baseline: null, projection: { appsRevision: 0, apps: [], handlerHints: {} } }, outbox: [] });
+    const baseline = parseAccountAppsSnapshot(snapshot());
+    await database.reconcileAccountApps(baseline);
+    const app = baseline.apps[0]!;
+    await database.installApp({ appId: app.appId, source: "account", packageEntryId: null, archivePath: null, installationGeneration: app.generations.installationGeneration, digest: app.package.sha256, version: app.manifest.version, manifest: app.manifest, approvedAt: 1 });
+    await database.writeAppStorage(app.appId, "state", { draft: false }, 64 * 1024, 128);
+
+    const originalAdd = IDBObjectStore.prototype.add;
+    IDBObjectStore.prototype.add = function (value, key) {
+      if (this.name === "account-app-outbox") throw new DOMException("Injected account app enqueue failure", "AbortError");
+      return key === undefined ? originalAdd.call(this, value) : originalAdd.call(this, value, key);
+    };
+    try {
+      await expect(database.enqueueAccountAppOperation({ schemaVersion: 1, kind: "put-data", appId: app.appId, key: "state", dataGeneration: 0, value: { draft: true } })).rejects.toThrow("Injected account app enqueue failure");
+    } finally {
+      IDBObjectStore.prototype.add = originalAdd;
+    }
+    expect(await database.readAppStorage(app.appId, "state")).toEqual({ draft: false });
+    expect((await database.readAccountApps()).outbox).toEqual([]);
+
+    const queued = await database.enqueueAccountAppOperation({ schemaVersion: 1, kind: "put-data", appId: app.appId, key: "state", dataGeneration: 0, value: { draft: true } });
+    expect(queued.record).toMatchObject({ operationId: "0000000000000001", clientId, sequence: 1, operation: { kind: "put-data", dataGeneration: 3 } });
+    expect(await database.readAppStorage(app.appId, "state")).toEqual({ draft: true });
+    await database.blockAccountAppOperation(queued.record.operationId, "stale", "generation_conflict");
+    expect((await database.readAccountApps()).outbox[0]).toMatchObject({ status: "blocked", errorCode: "generation_conflict" });
+    await expect(database.discardAccountAppOperation(queued.record.operationId, { kind: "put", appId: app.appId, key: "state", value: "x".repeat(70_000) })).rejects.toThrow("quota");
+    expect((await database.readAccountApps()).outbox[0]?.status).toBe("blocked");
+    await database.discardAccountAppOperation(queued.record.operationId, { kind: "replace", appId: app.appId, values: [["state", { draft: false }]] });
+    expect(await database.readAppStorage(app.appId, "state")).toEqual({ draft: false });
+    expect((await database.readAccountApps()).outbox).toEqual([]);
+
+    const deletion = await database.enqueueAccountAppOperation({ schemaVersion: 1, kind: "delete-data", appId: app.appId, key: "state", dataGeneration: 0 });
+    await database.blockAccountAppOperation(deletion.record.operationId, "stale", "generation_conflict");
+    const retried = await database.retryAccountAppOperation(deletion.record.operationId);
+    expect(retried).toMatchObject({ status: "pending", operation: { kind: "delete-data", dataGeneration: 3 } });
+    await database.recordAccountAppAttempt(retried.operationId, 77);
+    expect((await database.readAccountApps()).outbox[0]).toMatchObject({ attemptCount: 1, lastAttemptAt: 77 });
+    await database.reconcileAccountApps(baseline, retried.operationId);
+    expect((await database.readAccountApps()).outbox).toEqual([]);
+
+    await database.writeAppStorage(app.appId, "first", 1, 64 * 1024, 128);
+    await database.writeAppStorage(app.appId, "second", 2, 64 * 1024, 128);
+    const cleared = await database.enqueueAccountAppOperation({ schemaVersion: 1, kind: "clear-data", appId: app.appId, dataGeneration: 0 });
+    expect(await database.readAppStorage(app.appId, "first")).toBeUndefined();
+    await database.blockAccountAppOperation(cleared.record.operationId, "stale", "generation_conflict");
+    await database.discardAccountAppOperation(cleared.record.operationId, { kind: "replace", appId: app.appId, values: [["first", 1], ["second", 2]] });
+    expect(await database.readAppStorage(app.appId, "first")).toBe(1);
+    expect(await database.readAppStorage(app.appId, "second")).toBe(2);
+    const pending = await database.enqueueAccountAppOperation({ schemaVersion: 1, kind: "handlers", hints: { ".md": app.appId } });
+    expect(pending.record).toMatchObject({ operationId: "0000000000000004", clientId, sequence: 4 });
+    database.close();
+
+    const reopened = await openFilesystemDatabase(accountId, { storageId: accountId, indexedDB: factory, IDBKeyRange, randomUUID: () => clientId });
+    expect(await reopened.readAccountApps()).toEqual({ state: { id: "singleton", baseline, projection: projectAccountApps(baseline, [pending.record]) }, outbox: [pending.record] });
+    const next = await reopened.enqueueAccountAppOperation({ schemaVersion: 1, kind: "handlers", hints: baseline.handlerHints });
+    expect(next.record).toMatchObject({ operationId: "0000000000000005", clientId, sequence: 5 });
+    reopened.close();
   });
 });
 

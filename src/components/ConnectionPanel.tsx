@@ -1,6 +1,6 @@
 import type { OutboxRecord } from "../lib/outbox";
 import type { OfflineStorageInventory } from "../lib/offline-availability";
-import type { OfflineOperationProgress, SyncStatus } from "../lib/sync";
+import type { OfflineOperationProgress, SyncStatus } from "../domain/sync-status";
 import type { DesktopEntry } from "../types";
 import type { StoragePersistenceStatus } from "../lib/storage-persistence";
 import { OfflineStoragePanel } from "./OfflineStoragePanel";

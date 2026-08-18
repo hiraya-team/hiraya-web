@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canMutateDesktop, localDesktopIdentity, OWNER_CAPABILITIES, READ_ONLY_CAPABILITIES, settingsRestrictionReason, sharedOfflineMessage } from "../src/lib/permissions";
+import { canMutateDesktop, localDesktopIdentity, OWNER_CAPABILITIES, READ_ONLY_CAPABILITIES, settingsRestrictionReason } from "../src/lib/permissions";
 import type { DesktopIdentity } from "../src/types";
 
 function shared(role: DesktopIdentity["role"], capabilities: DesktopIdentity["capabilities"]): DesktopIdentity {
@@ -11,11 +11,10 @@ describe("desktop permissions", () => {
     expect(localDesktopIdentity("desk", "Desktop")).toMatchObject({ ownership: "owned", role: "owner", capabilities: OWNER_CAPABILITIES });
   });
 
-  test("requires write capability and disables shared offline mutation", () => {
+  test("requires write capability and preserves shared offline mutation", () => {
     const writer = shared("writer", { ...READ_ONLY_CAPABILITIES, write: true });
     expect(canMutateDesktop(writer, "online")).toBe(true);
-    expect(canMutateDesktop(writer, "offline")).toBe(false);
-    expect(sharedOfflineMessage(writer, "offline")).toContain("unavailable offline");
+    expect(canMutateDesktop(writer, "offline")).toBe(true);
     expect(canMutateDesktop(shared("reader", READ_ONLY_CAPABILITIES), "online")).toBe(false);
   });
 
@@ -25,11 +24,11 @@ describe("desktop permissions", () => {
     expect(canMutateDesktop(localDesktopIdentity("desk", "Desktop"), "blocked")).toBe(true);
   });
 
-  test("distinguishes role, offline, and connecting restrictions", () => {
+  test("distinguishes role and connection restrictions", () => {
     const reader = shared("reader", READ_ONLY_CAPABILITIES);
     const manager = shared("manager", { ...OWNER_CAPABILITIES, delete: false });
     expect(settingsRestrictionReason(reader, "online")).toContain("role");
-    expect(settingsRestrictionReason(manager, "offline")).toContain("offline");
+    expect(settingsRestrictionReason(manager, "offline")).toContain("read-only");
     expect(settingsRestrictionReason(manager, "connecting")).toContain("Connecting");
     expect(settingsRestrictionReason(manager, "blocked")).toContain("unrelated");
   });

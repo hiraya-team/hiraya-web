@@ -15,7 +15,7 @@ import type { ThemeDefinition } from "../../domain/theme";
 import { launchSandboxApp } from "../app-management/launch";
 import type { SandboxApp } from "../windows/model";
 import { remoteDesktopSnapshot } from "../../lib/desktop-state";
-import { fetchPublicFile, LargeDownloadAuthRequiredError, type PublicAuthority, type PublicDesktopState } from "../../lib/public-desktop";
+import { fetchPublicFile, LargeDownloadAuthRequiredError, type PublicAuthority, type PublicDesktopState } from "./transport";
 import type { DesktopEntry, FileEntry } from "../../types";
 import { resolveTheme } from "../../lib/themes";
 import { initialWindowBounds } from "../../ui/window-manager";

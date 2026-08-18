@@ -149,7 +149,7 @@ describe("desktop timing reliability", () => {
   });
 
   test("components guard async and direct-style cleanup by committed generations", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const fileIcon = await Bun.file(new URL("../src/components/FileIcon.tsx", import.meta.url)).text();
     const search = await Bun.file(new URL("../src/components/SearchCommandPalette.tsx", import.meta.url)).text();
     const sharing = await Bun.file(new URL("../src/components/SharingDialog.tsx", import.meta.url)).text();

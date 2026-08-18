@@ -1,0 +1,2722 @@
+{
+  "schemaVersion": 1,
+  "protocol": "web2-sync-v1",
+  "constants": {
+    "indexedDbPrefix": "hiraya-web2-v1-",
+    "opfsPrefix": ".hiraya-web2-",
+    "chunkSize": 1048576
+  },
+  "primitives": {
+    "stableIds": [
+      {
+        "name": "canonical UUID",
+        "valid": true,
+        "value": "00000000-0000-4000-8000-000000000001"
+      },
+      {
+        "name": "uppercase UUID",
+        "valid": false,
+        "value": "00000000-0000-4000-8000-00000000000A"
+      },
+      { "name": "path-like ID", "valid": false, "value": "../workspace" }
+    ],
+    "names": [
+      { "name": "canonical name", "valid": true, "value": "Project Notes" },
+      { "name": "decomposed Unicode name", "valid": true, "value": "Café" },
+      {
+        "name": "202 multibyte code points",
+        "valid": false,
+        "value": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      {
+        "name": "211 multibyte code points",
+        "valid": false,
+        "value": "ééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé"
+      },
+      {
+        "name": "180 multibyte code points",
+        "valid": true,
+        "value": "éàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœ"
+      },
+      {
+        "name": "181 multibyte code points",
+        "valid": false,
+        "value": "éàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœéàèìòùäëïöüñçåøßæœé"
+      },
+      {
+        "name": "leading whitespace",
+        "valid": false,
+        "value": " Project Notes"
+      },
+      { "name": "path separator", "valid": false, "value": "Project/Notes" }
+    ],
+    "mimeTypes": [
+      {
+        "name": "plain text",
+        "valid": true,
+        "value": "text/plain; charset=utf-8"
+      },
+      { "name": "missing subtype", "valid": false, "value": "text" },
+      {
+        "name": "duplicate parameter",
+        "valid": false,
+        "value": "text/plain; charset=utf-8; CHARSET=ascii"
+      }
+    ],
+    "nonNegativeIntegers": [
+      { "name": "zero", "valid": true, "value": 0 },
+      {
+        "name": "largest safe integer",
+        "valid": true,
+        "value": 9007199254740991
+      },
+      { "name": "negative", "valid": false, "value": -1 },
+      { "name": "unsafe integer", "valid": false, "value": 9007199254740992 }
+    ],
+    "positions": [
+      {
+        "name": "signed finite position",
+        "valid": true,
+        "value": { "x": -12.5, "y": 42 }
+      },
+      {
+        "name": "string coordinate",
+        "valid": false,
+        "value": { "x": "0", "y": 42 }
+      },
+      {
+        "name": "unknown position field",
+        "valid": false,
+        "value": { "x": 0, "y": 0, "z": 0 }
+      }
+    ],
+    "sha256": [
+      {
+        "name": "lowercase digest",
+        "valid": true,
+        "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      {
+        "name": "uppercase digest",
+        "valid": false,
+        "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+      },
+      { "name": "short digest", "valid": false, "value": "aaaa" }
+    ]
+  },
+  "manifests": {
+    "valid": [
+      {
+        "name": "empty",
+        "value": {
+          "schemaVersion": 1,
+          "size": 0,
+          "chunkSize": 1048576,
+          "chunks": []
+        },
+        "canonicalJson": "{\"schemaVersion\":1,\"size\":0,\"chunkSize\":1048576,\"chunks\":[]}",
+        "sha256": "d76845a0f6bb357481c9d592f86775f971fa32f78ac09c5e312e2f956e3f538a"
+      },
+      {
+        "name": "short",
+        "value": {
+          "schemaVersion": 1,
+          "size": 5,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 5
+            }
+          ]
+        },
+        "canonicalJson": "{\"schemaVersion\":1,\"size\":5,\"chunkSize\":1048576,\"chunks\":[{\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":5}]}",
+        "sha256": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
+      },
+      {
+        "name": "full",
+        "value": {
+          "schemaVersion": 1,
+          "size": 1048576,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 1048576
+            }
+          ]
+        },
+        "canonicalJson": "{\"schemaVersion\":1,\"size\":1048576,\"chunkSize\":1048576,\"chunks\":[{\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1048576}]}",
+        "sha256": "1e3f9c713ce12e653ebe0b5e98e794bbf981b60372b957215da54624b0a76b99"
+      },
+      {
+        "name": "multi-chunk",
+        "value": {
+          "schemaVersion": 1,
+          "size": 1048581,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 1048576
+            },
+            {
+              "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "size": 5
+            }
+          ]
+        },
+        "canonicalJson": "{\"schemaVersion\":1,\"size\":1048581,\"chunkSize\":1048576,\"chunks\":[{\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1048576},{\"hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":5}]}",
+        "sha256": "6d9d172f831726ff498365c53e0ac5afdb9393d9d0c08d89e1e245c6944958a1"
+      },
+      {
+        "name": "repeated hash",
+        "value": {
+          "schemaVersion": 1,
+          "size": 2097157,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 1048576
+            },
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 1048576
+            },
+            {
+              "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "size": 5
+            }
+          ]
+        },
+        "canonicalJson": "{\"schemaVersion\":1,\"size\":2097157,\"chunkSize\":1048576,\"chunks\":[{\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1048576},{\"hash\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"size\":1048576},{\"hash\":\"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",\"size\":5}]}",
+        "sha256": "965e603ad5bf6d13bd9beea4740844a8182d84a222245836352383d752f3e436"
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown manifest field",
+        "value": {
+          "schemaVersion": 1,
+          "size": 0,
+          "chunkSize": 1048576,
+          "chunks": [],
+          "extra": true
+        }
+      },
+      {
+        "name": "uppercase chunk hash",
+        "value": {
+          "schemaVersion": 1,
+          "size": 5,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+              "size": 5
+            }
+          ]
+        }
+      },
+      {
+        "name": "wrong fixed chunk size",
+        "value": {
+          "schemaVersion": 1,
+          "size": 5,
+          "chunkSize": 524288,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 5
+            }
+          ]
+        }
+      },
+      {
+        "name": "short non-final chunk",
+        "value": {
+          "schemaVersion": 1,
+          "size": 10,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 5
+            },
+            {
+              "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "size": 5
+            }
+          ]
+        }
+      },
+      {
+        "name": "total size mismatch",
+        "value": {
+          "schemaVersion": 1,
+          "size": 6,
+          "chunkSize": 1048576,
+          "chunks": [
+            {
+              "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "size": 5
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "operations": {
+    "valid": [
+      {
+        "name": "create forest",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "create",
+          "operationId": "00000000-0000-4000-8000-000000000101",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 10,
+          "nodes": [
+            {
+              "id": "00000000-0000-4000-8000-000000000201",
+              "kind": "folder",
+              "name": "Documents",
+              "parentId": null,
+              "position": { "x": 10, "y": 20 },
+              "createdAt": 1,
+              "modifiedAt": 1
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000202",
+              "kind": "file",
+              "name": "note.txt",
+              "parentId": "00000000-0000-4000-8000-000000000201",
+              "position": { "x": 0, "y": 0 },
+              "createdAt": 1,
+              "modifiedAt": 1,
+              "mimeType": "text/plain",
+              "size": 5,
+              "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
+            }
+          ]
+        },
+        "affected": [
+          "content:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202",
+          "folder:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "folder:00000000-0000-4000-8000-000000000001:root",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202"
+        ]
+      },
+      {
+        "name": "write file",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "write",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 11,
+          "nodeId": "00000000-0000-4000-8000-000000000202",
+          "mimeType": "text/plain",
+          "size": 5,
+          "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+          "modifiedAt": 2
+        },
+        "affected": [
+          "content:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202"
+        ]
+      },
+      {
+        "name": "copy tree",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "copy",
+          "operationId": "00000000-0000-4000-8000-000000000103",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 12,
+          "sourceNodeIds": ["00000000-0000-4000-8000-000000000201"],
+          "nodes": [
+            {
+              "id": "00000000-0000-4000-8000-000000000203",
+              "kind": "folder",
+              "name": "Documents copy",
+              "parentId": null,
+              "position": { "x": 40, "y": 50 },
+              "createdAt": 3,
+              "modifiedAt": 3
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000204",
+              "kind": "file",
+              "name": "note.txt",
+              "parentId": "00000000-0000-4000-8000-000000000203",
+              "position": { "x": 0, "y": 0 },
+              "createdAt": 3,
+              "modifiedAt": 3,
+              "mimeType": "text/plain",
+              "size": 5,
+              "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
+            }
+          ]
+        },
+        "affected": [
+          "content:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000204",
+          "folder:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000203",
+          "folder:00000000-0000-4000-8000-000000000001:root",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000203",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000204"
+        ]
+      },
+      {
+        "name": "rename node",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "rename",
+          "operationId": "00000000-0000-4000-8000-000000000104",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 13,
+          "nodeId": "00000000-0000-4000-8000-000000000202",
+          "name": "renamed.txt",
+          "modifiedAt": 4
+        },
+        "affected": [
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202"
+        ]
+      },
+      {
+        "name": "move roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "move",
+          "operationId": "00000000-0000-4000-8000-000000000105",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 14,
+          "nodeIds": [
+            "00000000-0000-4000-8000-000000000202",
+            "00000000-0000-4000-8000-000000000204"
+          ],
+          "parentId": "00000000-0000-4000-8000-000000000201",
+          "modifiedAt": 5
+        },
+        "affected": [
+          "folder:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000202",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000204"
+        ]
+      },
+      {
+        "name": "position roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "position",
+          "operationId": "00000000-0000-4000-8000-000000000106",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 15,
+          "positions": [
+            {
+              "nodeId": "00000000-0000-4000-8000-000000000201",
+              "position": { "x": -20, "y": 30 }
+            },
+            {
+              "nodeId": "00000000-0000-4000-8000-000000000203",
+              "position": { "x": 50, "y": 60 }
+            }
+          ]
+        },
+        "affected": [
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000203"
+        ]
+      },
+      {
+        "name": "transfer roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "transfer",
+          "operationId": "00000000-0000-4000-8000-000000000107",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 16,
+          "nodeIds": ["00000000-0000-4000-8000-000000000201"],
+          "destinationWorkspaceId": "00000000-0000-4000-8000-000000000002",
+          "parentId": null,
+          "modifiedAt": 6
+        },
+        "affected": [
+          "folder:00000000-0000-4000-8000-000000000002:root",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "node:00000000-0000-4000-8000-000000000002:00000000-0000-4000-8000-000000000201"
+        ]
+      },
+      {
+        "name": "trash roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "trash",
+          "operationId": "00000000-0000-4000-8000-000000000108",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 17,
+          "nodeIds": ["00000000-0000-4000-8000-000000000201"],
+          "trashedAt": 7
+        },
+        "affected": [
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "trash:00000000-0000-4000-8000-000000000001"
+        ]
+      },
+      {
+        "name": "restore roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "restore",
+          "operationId": "00000000-0000-4000-8000-000000000109",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 18,
+          "nodeIds": ["00000000-0000-4000-8000-000000000201"],
+          "destination": "root",
+          "modifiedAt": 8
+        },
+        "affected": [
+          "folder:00000000-0000-4000-8000-000000000001:root",
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "trash:00000000-0000-4000-8000-000000000001"
+        ]
+      },
+      {
+        "name": "purge roots",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "purge",
+          "operationId": "00000000-0000-4000-8000-000000000110",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 19,
+          "nodeIds": ["00000000-0000-4000-8000-000000000201"]
+        },
+        "affected": [
+          "node:00000000-0000-4000-8000-000000000001:00000000-0000-4000-8000-000000000201",
+          "trash:00000000-0000-4000-8000-000000000001"
+        ]
+      },
+      {
+        "name": "set one setting",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000111",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 20,
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid",
+          "value": true
+        },
+        "affected": [
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:snap-to-grid"
+        ]
+      },
+      {
+        "name": "set many settings",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set-many",
+          "operationId": "00000000-0000-4000-8000-000000000112",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 21,
+          "namespace": "desktop-grid",
+          "settings": [
+            { "key": "auto-arrange-icons", "value": false },
+            { "key": "grid-size", "value": 36 }
+          ]
+        },
+        "affected": [
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:grid-size"
+        ]
+      },
+      {
+        "name": "unset one setting",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000121",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 30,
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid"
+        },
+        "affected": ["setting:00000000-0000-4000-8000-000000000001:desktop-grid:snap-to-grid"]
+      },
+      {
+        "name": "unset many settings",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000122",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 31,
+          "namespace": "desktop-grid",
+          "keys": ["grid-size", "auto-arrange-icons"]
+        },
+        "affected": [
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:auto-arrange-icons",
+          "setting:00000000-0000-4000-8000-000000000001:desktop-grid:grid-size"
+        ]
+      }
+    ],
+    "invalid": [
+      {
+        "name": "invalid create",
+        "kind": "create",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "create",
+          "operationId": "00000000-0000-4000-8000-000000000101",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "nodes": []
+        }
+      },
+      {
+        "name": "invalid write",
+        "kind": "write",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "write",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid copy",
+        "kind": "copy",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "copy",
+          "operationId": "00000000-0000-4000-8000-000000000103",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid rename",
+        "kind": "rename",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "rename",
+          "operationId": "00000000-0000-4000-8000-000000000104",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid move",
+        "kind": "move",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "move",
+          "operationId": "00000000-0000-4000-8000-000000000105",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid position",
+        "kind": "position",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "position",
+          "operationId": "00000000-0000-4000-8000-000000000106",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid transfer",
+        "kind": "transfer",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "transfer",
+          "operationId": "00000000-0000-4000-8000-000000000107",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid trash",
+        "kind": "trash",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "trash",
+          "operationId": "00000000-0000-4000-8000-000000000108",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid restore",
+        "kind": "restore",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "restore",
+          "operationId": "00000000-0000-4000-8000-000000000109",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid purge",
+        "kind": "purge",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "purge",
+          "operationId": "00000000-0000-4000-8000-000000000110",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid set",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000111",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid set-many",
+        "kind": "set-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set-many",
+          "operationId": "00000000-0000-4000-8000-000000000112",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 1,
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid desktop grid key",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000113",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 22,
+          "namespace": "desktop-grid",
+          "key": "unknown",
+          "value": true
+        }
+      },
+      {
+        "name": "invalid desktop grid boolean",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000114",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 23,
+          "namespace": "desktop-grid",
+          "key": "snap-to-grid",
+          "value": null
+        }
+      },
+      {
+        "name": "invalid desktop grid size",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000115",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 24,
+          "namespace": "desktop-grid",
+          "key": "grid-size",
+          "value": 16
+        }
+      },
+      {
+        "name": "device setting is not a workspace operation",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000116",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 25,
+          "namespace": "shell",
+          "key": "show-hidden-files",
+          "value": false
+        }
+      },
+      {
+        "name": "workspace directory is not a replicated setting",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000117",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 26,
+          "namespace": "workspace-directory",
+          "key": "value",
+          "value": null
+        }
+      },
+      {
+        "name": "file associations are not replicated settings",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000118",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 27,
+          "namespace": "file-associations",
+          "key": "text-plain",
+          "value": "app"
+        }
+      },
+      {
+        "name": "handler preferences are not replicated settings",
+        "kind": "set",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set",
+          "operationId": "00000000-0000-4000-8000-000000000119",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 28,
+          "namespace": "handler-preferences",
+          "key": "text-plain",
+          "value": "app"
+        }
+      },
+      {
+        "name": "invalid desktop grid batch value",
+        "kind": "set-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "set-many",
+          "operationId": "00000000-0000-4000-8000-000000000120",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 29,
+          "namespace": "desktop-grid",
+          "settings": [{ "key": "grid-size", "value": 16 }]
+        }
+      },
+      {
+        "name": "invalid desktop grid unset key",
+        "kind": "unset",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000123",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 32,
+          "namespace": "desktop-grid",
+          "key": "unknown"
+        }
+      },
+      {
+        "name": "invalid duplicate unset batch",
+        "kind": "unset-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000124",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 33,
+          "namespace": "desktop-grid",
+          "keys": ["grid-size", "grid-size"]
+        }
+      },
+      {
+        "name": "invalid desktop grid unset batch key",
+        "kind": "unset-many",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset-many",
+          "operationId": "00000000-0000-4000-8000-000000000125",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 34,
+          "namespace": "desktop-grid",
+          "keys": ["unknown"]
+        }
+      },
+      {
+        "name": "device setting cannot be unset by workspace operation",
+        "kind": "unset",
+        "value": {
+          "schemaVersion": 1,
+          "kind": "unset",
+          "operationId": "00000000-0000-4000-8000-000000000126",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "logicalTime": 35,
+          "namespace": "shell",
+          "key": "show-hidden-files"
+        }
+      }
+    ]
+  },
+  "hydrationTargets": {
+    "valid": [
+      {
+        "name": "root folder page",
+        "value": {
+          "kind": "folder-page",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "parentId": null,
+          "limit": 100
+        }
+      },
+      {
+        "name": "exact nodes",
+        "value": {
+          "kind": "exact-nodes",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "nodeIds": [
+            "00000000-0000-4000-8000-000000000201",
+            "00000000-0000-4000-8000-000000000202"
+          ]
+        }
+      },
+      {
+        "name": "bounded ancestry",
+        "value": {
+          "kind": "ancestry",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "nodeId": "00000000-0000-4000-8000-000000000202",
+          "maxDepth": 32
+        }
+      },
+      {
+        "name": "exact settings",
+        "value": {
+          "kind": "exact-settings",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "namespace": "desktop-grid",
+          "keys": ["auto-arrange-icons", "grid-size"]
+        }
+      },
+      {
+        "name": "bounded setting namespace",
+        "value": {
+          "kind": "setting-namespace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "namespace": "custom-themes",
+          "limit": 100
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "invalid folder page",
+        "kind": "folder-page",
+        "value": {
+          "kind": "folder-page",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "parentId": null,
+          "limit": 0
+        }
+      },
+      {
+        "name": "invalid exact nodes",
+        "kind": "exact-nodes",
+        "value": {
+          "kind": "exact-nodes",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "nodeIds": []
+        }
+      },
+      {
+        "name": "invalid ancestry",
+        "kind": "ancestry",
+        "value": {
+          "kind": "ancestry",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "nodeId": "00000000-0000-4000-8000-000000000202",
+          "maxDepth": 65
+        }
+      },
+      {
+        "name": "invalid exact settings",
+        "kind": "exact-settings",
+        "value": {
+          "kind": "exact-settings",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "namespace": "desktop-grid",
+          "keys": ["unknown"]
+        }
+      },
+      {
+        "name": "invalid setting namespace",
+        "kind": "setting-namespace",
+        "value": {
+          "kind": "setting-namespace",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "asOf": 10,
+          "namespace": "everything",
+          "limit": 100
+        }
+      }
+    ]
+  },
+  "hydrationRequests": {
+    "valid": [
+      {
+        "name": "initial exact-node hydration",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000301",
+          "pageIndex": 0,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "pageToken": null
+        }
+      },
+      {
+        "name": "continued folder hydration",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000302",
+          "pageIndex": 1,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "parentId": null, "limit": 100 },
+          "pageToken": "next-page"
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "initial hydration carries a page token",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000303", "pageIndex": 0,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "parentId": null, "limit": 100 }, "pageToken": "unexpected"
+        }
+      },
+      {
+        "name": "exact-node hydration attempts continuation",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000304", "pageIndex": 1,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "nodeIds": ["00000000-0000-4000-8000-000000000202"] }, "pageToken": "unexpected"
+        }
+      }
+    ]
+  },
+  "bootstrapRequests": {
+    "valid": [
+      {
+        "name": "bounded root bootstrap request",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "rootLimit": 100 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "zero root bootstrap limit",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "rootLimit": 0 }
+      }
+    ]
+  },
+  "bootstrap": {
+    "valid": [
+      {
+        "name": "active workspace root bootstrap",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "accountId": "00000000-0000-4000-8000-000000000004",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "cursor": 9,
+          "workspaces": [
+            {
+              "id": "00000000-0000-4000-8000-000000000001",
+              "name": "Main",
+              "pinned": true
+            },
+            {
+              "id": "00000000-0000-4000-8000-000000000002",
+              "name": "Archive",
+              "pinned": false
+            }
+          ],
+          "workspace": {
+            "id": "00000000-0000-4000-8000-000000000001",
+            "name": "Main",
+            "pinned": true,
+            "headSequence": 10,
+            "snapshotBarrier": 8,
+            "logFloor": 2
+          },
+          "rootPage": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "generationId": "00000000-0000-4000-8000-000000000301",
+            "pageIndex": 0,
+            "observedLogicalTime": 10,
+            "target": {
+              "kind": "folder-page",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "asOf": 10,
+              "parentId": null,
+              "limit": 100
+            },
+            "nodes": [
+              {
+                "workspaceId": "00000000-0000-4000-8000-000000000001",
+                "id": "00000000-0000-4000-8000-000000000201",
+                "kind": "folder",
+                "name": "Documents",
+                "parentId": null,
+                "lifecycle": { "kind": "active" },
+                "position": { "x": 10, "y": 20 },
+                "createdAt": 1,
+                "modifiedAt": 1,
+                "fieldTuples": {
+                  "name": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "parent": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "lifecycle": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "position": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                  "content": null
+                }
+              }
+            ],
+            "settings": [],
+            "nextPageToken": null
+          },
+          "workspaceSettings": [
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "namespace": "desktop-grid",
+              "key": "auto-arrange-icons",
+              "deleted": false,
+              "value": true,
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000111"
+            },
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "namespace": "desktop-grid",
+              "key": "snap-to-grid",
+              "deleted": true,
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000121"
+            }
+          ]
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown bootstrap field",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "extra": true
+        }
+      },
+      {
+        "name": "active bootstrap summary differs from directory",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Other", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": []
+        }
+      },
+      {
+        "name": "pinned bootstrap workspace follows unpinned workspace",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }, { "id": "00000000-0000-4000-8000-000000000002", "name": "Archive", "pinned": true }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": []
+        }
+      },
+      {
+        "name": "bootstrap setting exceeds root watermark",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000111" }]
+        }
+      },
+      {
+        "name": "bootstrap includes a non-shell setting",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0,
+          "workspaces": [{ "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false }],
+          "workspace": { "id": "00000000-0000-4000-8000-000000000001", "name": "Main", "pinned": false, "headSequence": 0, "snapshotBarrier": 0, "logFloor": 0 },
+          "rootPage": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000301", "pageIndex": 0, "observedLogicalTime": 0, "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 0, "parentId": null, "limit": 100 }, "nodes": [], "settings": [], "nextPageToken": null },
+          "workspaceSettings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "editor", "key": "font-size", "deleted": false, "value": 14, "logicalTime": 0, "operationId": "00000000-0000-4000-8000-000000000111" }]
+        }
+      }
+    ]
+  },
+  "hydrationPages": {
+    "valid": [
+      {
+        "name": "exact node page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000302",
+          "pageIndex": 0,
+          "observedLogicalTime": 10,
+          "target": {
+            "kind": "exact-nodes",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "asOf": 10,
+            "nodeIds": ["00000000-0000-4000-8000-000000000202"]
+          },
+          "nodes": [
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "id": "00000000-0000-4000-8000-000000000202",
+              "kind": "file",
+              "name": "note.txt",
+              "parentId": null,
+              "lifecycle": { "kind": "active" },
+              "position": { "x": 10, "y": 20 },
+              "createdAt": 1,
+              "modifiedAt": 1,
+              "fieldTuples": {
+                "name": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "parent": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "lifecycle": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "position": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" },
+                "content": { "logicalTime": 10, "operationId": "00000000-0000-4000-8000-000000000101" }
+              },
+              "mimeType": "text/plain",
+              "size": 5,
+              "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
+            }
+          ],
+          "settings": [],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "purged node page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000303",
+          "pageIndex": 0,
+          "observedLogicalTime": 11,
+          "target": {
+            "kind": "exact-nodes",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "asOf": 11,
+            "nodeIds": ["00000000-0000-4000-8000-000000000202"]
+          },
+          "nodes": [
+            {
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "id": "00000000-0000-4000-8000-000000000202",
+              "purged": true,
+              "logicalTime": 11,
+              "operationId": "00000000-0000-4000-8000-000000000103"
+            }
+          ],
+          "settings": [],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "child-to-root ancestry page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000305",
+          "pageIndex": 0,
+          "observedLogicalTime": 8,
+          "target": { "kind": "ancestry", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 8, "nodeId": "00000000-0000-4000-8000-000000000201", "maxDepth": 64 },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000201", "kind": "folder", "name": "Documents", "parentId": null, "lifecycle": { "kind": "active" }, "position": { "x": 10, "y": 20 }, "createdAt": 1, "modifiedAt": 1, "fieldTuples": { "name": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "parent": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "lifecycle": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "position": { "logicalTime": 8, "operationId": "00000000-0000-4000-8000-000000000101" }, "content": null } }],
+          "settings": [],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "exact setting page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000306",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "setting namespace page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000307",
+          "pageIndex": 1,
+          "observedLogicalTime": 3,
+          "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }, { "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "grid-size", "deleted": false, "value": 36, "logicalTime": 3, "operationId": "00000000-0000-4000-8000-000000000112" }],
+          "nextPageToken": "next-page"
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown hydration page field",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000311",
+          "pageIndex": 0,
+          "observedLogicalTime": 0,
+          "target": {
+            "kind": "exact-nodes",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "asOf": 10,
+            "nodeIds": ["00000000-0000-4000-8000-000000000201"]
+          },
+          "nodes": [],
+          "settings": [],
+          "nextPageToken": null,
+          "extra": true
+        }
+      },
+      {
+        "name": "setting record missing deleted flag",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000312",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "setting tombstone carries a value",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000313",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": true, "value": null, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "active setting record has no value",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000314",
+          "pageIndex": 0,
+          "observedLogicalTime": 2,
+          "target": { "kind": "exact-settings", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "keys": ["snap-to-grid"] },
+          "nodes": [],
+          "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "snap-to-grid", "deleted": false, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000121" }],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "purge tombstone has false discriminator",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "generationId": "00000000-0000-4000-8000-000000000315",
+          "pageIndex": 0,
+          "observedLogicalTime": 11,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": false, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }],
+          "settings": [],
+          "nextPageToken": null
+        }
+      },
+      {
+        "name": "hydration watermark is below its record",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000308", "pageIndex": 0, "observedLogicalTime": 10,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000202"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
+        }
+      },
+      {
+        "name": "exact node page returns an unrequested ID",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000309", "pageIndex": 0, "observedLogicalTime": 11,
+          "target": { "kind": "exact-nodes", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "nodeIds": ["00000000-0000-4000-8000-000000000201"] },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
+        }
+      },
+      {
+        "name": "folder page returns a purge tombstone",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000310", "pageIndex": 0, "observedLogicalTime": 11,
+          "target": { "kind": "folder-page", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 11, "parentId": null, "limit": 100 },
+          "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 11, "operationId": "00000000-0000-4000-8000-000000000103" }], "settings": [], "nextPageToken": null
+        }
+      }
+    ]
+  },
+  "pullRequests": {
+    "valid": [
+      {
+        "name": "current workspace cursor",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 10 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "negative pull cursor",
+        "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": -1 }
+      }
+    ]
+  },
+  "pullResults": {
+    "valid": [
+      {
+        "name": "authoritative setting operation page",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "operations",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 10,
+          "cursor": 11,
+          "headSequence": 12,
+          "snapshotBarrier": 8,
+          "logFloor": 2,
+          "observedLogicalTime": 13,
+          "operations": [
+            {
+              "sequence": 11,
+              "operationId": "00000000-0000-4000-8000-000000000104",
+              "companion": null,
+              "nodes": [],
+              "settings": [
+                {
+                  "workspaceId": "00000000-0000-4000-8000-000000000001",
+                  "namespace": "editor",
+                  "key": "font-size",
+                  "deleted": false,
+                  "value": 18,
+                  "logicalTime": 13,
+                  "operationId": "00000000-0000-4000-8000-000000000104"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      {
+        "name": "cross-workspace companion page",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "operations",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 11, "cursor": 12, "headSequence": 12, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 14,
+          "operations": [
+            {
+              "sequence": 12,
+              "operationId": "00000000-0000-4000-8000-000000000105",
+              "companion": { "workspaceId": "00000000-0000-4000-8000-000000000002", "sequence": 4 },
+              "nodes": [{ "workspaceId": "00000000-0000-4000-8000-000000000002", "id": "00000000-0000-4000-8000-000000000202", "purged": true, "logicalTime": 14, "operationId": "00000000-0000-4000-8000-000000000105" }],
+              "settings": []
+            }
+          ]
+        }
+      },
+      {
+        "name": "cursor reset",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "reset",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 1,
+          "cursor": 8,
+          "headSequence": 10,
+          "snapshotBarrier": 8,
+          "logFloor": 2,
+          "observedLogicalTime": 8,
+          "resetBarrier": 8
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "gapped operation pull",
+        "kind": "operations",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "operations",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 10, "cursor": 12, "headSequence": 12, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 13,
+          "operations": [{ "sequence": 12, "operationId": "00000000-0000-4000-8000-000000000104", "companion": null, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "editor", "key": "font-size", "deleted": false, "value": 18, "logicalTime": 13, "operationId": "00000000-0000-4000-8000-000000000104" }] }]
+        }
+      },
+      {
+        "name": "reset without a cursor gap",
+        "kind": "reset",
+        "value": {
+          "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset",
+          "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003",
+          "fromCursor": 2, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8
+        }
+      }
+    ]
+  },
+  "continuationResetPairs": {
+    "valid": [
+      {
+        "name": "hydration page token continues the same generation",
+        "kind": "continuation",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 1, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "pageToken": "next-page" },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 0, "observedLogicalTime": 2, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }], "nextPageToken": "next-page" }
+      },
+      {
+        "name": "pull request cursor pairs with reset fromCursor",
+        "kind": "reset",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 1 },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "fromCursor": 1, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8 }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "hydration continuation token does not match the prior page",
+        "kind": "continuation",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 1, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "pageToken": "wrong-page" },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "generationId": "00000000-0000-4000-8000-000000000307", "pageIndex": 0, "observedLogicalTime": 2, "target": { "kind": "setting-namespace", "workspaceId": "00000000-0000-4000-8000-000000000001", "asOf": 10, "namespace": "desktop-grid", "limit": 2 }, "nodes": [], "settings": [{ "workspaceId": "00000000-0000-4000-8000-000000000001", "namespace": "desktop-grid", "key": "auto-arrange-icons", "deleted": false, "value": true, "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000111" }], "nextPageToken": "next-page" }
+      },
+      {
+        "name": "reset fromCursor does not match the pull request",
+        "kind": "reset",
+        "request": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "cursor": 0 },
+        "result": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "reset", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "fromCursor": 1, "cursor": 8, "headSequence": 10, "snapshotBarrier": 8, "logFloor": 2, "observedLogicalTime": 8, "resetBarrier": 8 }
+      }
+    ]
+  },
+  "pushResults": {
+    "valid": [
+      {
+        "name": "accepted and applied",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "accepted",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "sequence": 11,
+          "headSequence": 12,
+          "outcome": "applied"
+        }
+      },
+      {
+        "name": "durably rejected",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "rejected",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "code": "missing-chunks",
+          "message": "Required chunks are unavailable."
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "invalid accepted result",
+        "kind": "accepted",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "accepted",
+          "extra": true
+        }
+      },
+      {
+        "name": "invalid rejected result",
+        "kind": "rejected",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "rejected",
+          "extra": true
+        }
+      }
+    ]
+  },
+  "pushBatchResults": {
+    "valid": [
+      {
+        "name": "ordered mixed push batch result",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "results": [
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "accepted", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "sequence": 11, "headSequence": 12, "outcome": "applied" },
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "rejected", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000103", "code": "missing-chunks", "message": "Required chunks are unavailable." }
+          ]
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "duplicate push batch operation IDs",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "results": [
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "accepted", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "sequence": 11, "headSequence": 12, "outcome": "applied" },
+            { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "rejected", "workspaceId": "00000000-0000-4000-8000-000000000001", "operationId": "00000000-0000-4000-8000-000000000102", "code": "missing-chunks", "message": "Required chunks are unavailable." }
+          ]
+        }
+      }
+    ]
+  },
+  "pushRequests": {
+    "valid": [
+      {
+        "name": "matching bounded operation batch",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": [
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "00000000-0000-4000-8000-000000000003",
+              "logicalTime": 20,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "hiraya-dusk"
+            }
+          ]
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "empty operation batch",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": []
+        }
+      },
+      {
+        "name": "mismatched operation workspace",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": [
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000002",
+              "deviceId": "00000000-0000-4000-8000-000000000003",
+              "logicalTime": 20,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "hiraya-dusk"
+            }
+          ]
+        }
+      },
+      {
+        "name": "mismatched operation device",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": [
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "00000000-0000-4000-8000-000000000004",
+              "logicalTime": 20,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "hiraya-dusk"
+            }
+          ]
+        }
+      },
+      {
+        "name": "unknown push request field",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": [
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "00000000-0000-4000-8000-000000000003",
+              "logicalTime": 20,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "hiraya-dusk"
+            }
+          ],
+          "extra": true
+        }
+      },
+      {
+        "name": "duplicate operation IDs",
+        "value": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "deviceId": "00000000-0000-4000-8000-000000000003",
+          "operations": [
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "00000000-0000-4000-8000-000000000003",
+              "logicalTime": 20,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "hiraya-dusk"
+            },
+            {
+              "schemaVersion": 1,
+              "kind": "set",
+              "operationId": "00000000-0000-4000-8000-000000000111",
+              "workspaceId": "00000000-0000-4000-8000-000000000001",
+              "deviceId": "00000000-0000-4000-8000-000000000003",
+              "logicalTime": 21,
+              "namespace": "theme-selection",
+              "key": "value",
+              "value": "warm-paper"
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "conflictMatrix": {
+    "valid": [
+      {
+        "name": "name uses the higher logical time",
+        "category": "name",
+        "input": {
+          "category": "name",
+          "current": {
+            "value": "Old name",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "New name",
+            "tuple": {
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": "New name",
+          "tuple": {
+            "logicalTime": 2,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          }
+        }
+      },
+      {
+        "name": "parent resolves independently",
+        "category": "parent",
+        "input": {
+          "category": "parent",
+          "current": {
+            "value": null,
+            "tuple": {
+              "logicalTime": 3,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "00000000-0000-4000-8000-000000000201",
+            "tuple": {
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "current",
+          "value": null,
+          "tuple": {
+            "logicalTime": 3,
+            "operationId": "00000000-0000-4000-8000-000000000101"
+          }
+        }
+      },
+      {
+        "name": "lifecycle ties use operation ID",
+        "category": "lifecycle",
+        "input": {
+          "category": "lifecycle",
+          "current": {
+            "value": "active",
+            "tuple": {
+              "logicalTime": 4,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "trashed",
+            "tuple": {
+              "logicalTime": 4,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": "trashed",
+          "tuple": {
+            "logicalTime": 4,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          }
+        }
+      },
+      {
+        "name": "position ties use operation ID",
+        "category": "position",
+        "input": {
+          "category": "position",
+          "current": {
+            "value": { "x": 10, "y": 20 },
+            "tuple": {
+              "logicalTime": 5,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": { "x": 30, "y": 40 },
+            "tuple": {
+              "logicalTime": 5,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": { "x": 30, "y": 40 },
+          "tuple": {
+            "logicalTime": 5,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          }
+        }
+      },
+      {
+        "name": "content write preserves lifecycle",
+        "category": "content",
+        "input": {
+          "category": "content",
+          "lifecycle": "trashed",
+          "current": {
+            "value": {
+              "mimeType": "text/plain",
+              "size": 5,
+              "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff"
+            },
+            "tuple": {
+              "logicalTime": 5,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": {
+              "mimeType": "text/markdown",
+              "size": 1048576,
+              "manifestHash": "1e3f9c713ce12e653ebe0b5e98e794bbf981b60372b957215da54624b0a76b99"
+            },
+            "tuple": {
+              "logicalTime": 6,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": {
+            "mimeType": "text/markdown",
+            "size": 1048576,
+            "manifestHash": "1e3f9c713ce12e653ebe0b5e98e794bbf981b60372b957215da54624b0a76b99"
+          },
+          "tuple": {
+            "logicalTime": 6,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          },
+          "lifecycle": "trashed"
+        }
+      },
+      {
+        "name": "setting tombstone wins independently",
+        "category": "setting",
+        "input": {
+          "category": "setting",
+          "current": {
+            "value": { "deleted": false, "value": null },
+            "tuple": {
+              "logicalTime": 8,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": { "deleted": true },
+            "tuple": {
+              "logicalTime": 9,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": { "deleted": true },
+          "tuple": {
+            "logicalTime": 9,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          }
+        }
+      },
+      {
+        "name": "purge is terminal over restore",
+        "category": "delete-restore-purge",
+        "input": {
+          "category": "delete-restore-purge",
+          "current": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "active",
+            "tuple": {
+              "logicalTime": 100,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "current",
+          "value": "purged",
+          "tuple": {
+            "logicalTime": 1,
+            "operationId": "00000000-0000-4000-8000-000000000101"
+          }
+        }
+      },
+      {
+        "name": "incoming purge is terminal over newer Trash",
+        "category": "delete-restore-purge",
+        "input": {
+          "category": "delete-restore-purge",
+          "current": {
+            "value": "trashed",
+            "tuple": {
+              "logicalTime": 100,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          },
+          "incoming": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": "purged",
+          "tuple": {
+            "logicalTime": 1,
+            "operationId": "00000000-0000-4000-8000-000000000101"
+          }
+        }
+      },
+      {
+        "name": "newer purge advances an existing purge",
+        "category": "delete-restore-purge",
+        "input": {
+          "category": "delete-restore-purge",
+          "current": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "purged",
+            "tuple": {
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          }
+        },
+        "expected": {
+          "winner": "incoming",
+          "value": "purged",
+          "tuple": {
+            "logicalTime": 2,
+            "operationId": "00000000-0000-4000-8000-000000000102"
+          }
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "unknown conflict field",
+        "value": {
+          "category": "name",
+          "current": {
+            "value": "Old",
+            "tuple": {
+              "logicalTime": 1,
+              "operationId": "00000000-0000-4000-8000-000000000101"
+            }
+          },
+          "incoming": {
+            "value": "New",
+            "tuple": {
+              "logicalTime": 2,
+              "operationId": "00000000-0000-4000-8000-000000000102"
+            }
+          },
+          "extra": true
+        }
+      },
+      {
+        "name": "setting conflict missing deleted flag",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "value": null }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
+        }
+      },
+      {
+        "name": "setting conflict tombstone carries value",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "deleted": true, "value": null }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
+        }
+      },
+      {
+        "name": "active setting conflict missing value",
+        "value": {
+          "category": "setting",
+          "current": { "value": { "deleted": false }, "tuple": { "logicalTime": 1, "operationId": "00000000-0000-4000-8000-000000000101" } },
+          "incoming": { "value": { "deleted": true }, "tuple": { "logicalTime": 2, "operationId": "00000000-0000-4000-8000-000000000102" } }
+        }
+      }
+    ]
+  },
+  "receipts": {
+    "valid": [
+      {
+        "name": "stored accepted result",
+        "value": {
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "accepted",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "sequence": 11,
+            "headSequence": 12,
+            "outcome": "applied"
+          }
+        }
+      }
+    ],
+    "invalid": [
+      {
+        "name": "receipt result identity mismatch",
+        "value": {
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "accepted",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "operationId": "00000000-0000-4000-8000-000000000103",
+            "sequence": 11,
+            "headSequence": 12,
+            "outcome": "applied"
+          }
+        }
+      }
+    ],
+    "replay": [
+      {
+        "name": "same canonical input replays original result",
+        "receipt": {
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "accepted",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "sequence": 11,
+            "headSequence": 12,
+            "outcome": "applied"
+          }
+        },
+        "operationId": "00000000-0000-4000-8000-000000000102",
+        "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "expected": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "accepted",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "sequence": 11,
+          "headSequence": 12,
+          "outcome": "applied"
+        }
+      },
+      {
+        "name": "different canonical input rejects operation ID reuse",
+        "receipt": {
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "inputHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "result": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "accepted",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "sequence": 11,
+            "headSequence": 12,
+            "outcome": "applied"
+          }
+        },
+        "operationId": "00000000-0000-4000-8000-000000000102",
+        "inputHash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "expected": {
+          "schemaVersion": 1,
+          "protocol": "web2-sync-v1",
+          "kind": "rejected",
+          "workspaceId": "00000000-0000-4000-8000-000000000001",
+          "operationId": "00000000-0000-4000-8000-000000000102",
+          "code": "operation-id-reuse",
+          "message": "The operation ID was reused with different canonical input."
+        }
+      }
+    ]
+  },
+  "tupleOrdering": [
+    {
+      "name": "higher left logical time",
+      "left": {
+        "logicalTime": 12,
+        "operationId": "00000000-0000-4000-8000-000000000101"
+      },
+      "right": {
+        "logicalTime": 11,
+        "operationId": "00000000-0000-4000-8000-000000000199"
+      },
+      "winner": "left"
+    },
+    {
+      "name": "higher right logical time",
+      "left": {
+        "logicalTime": 11,
+        "operationId": "00000000-0000-4000-8000-000000000199"
+      },
+      "right": {
+        "logicalTime": 12,
+        "operationId": "00000000-0000-4000-8000-000000000101"
+      },
+      "winner": "right"
+    },
+    {
+      "name": "operation ID breaks tie",
+      "left": {
+        "logicalTime": 12,
+        "operationId": "00000000-0000-4000-8000-000000000101"
+      },
+      "right": {
+        "logicalTime": 12,
+        "operationId": "00000000-0000-4000-8000-000000000102"
+      },
+      "winner": "right"
+    }
+  ],
+  "manifestAccess": {
+    "public": {
+      "valid": [
+        {
+          "name": "published file exposes its complete canonical manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": "note", "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "published file carries the wrong canonical manifest hash",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": "note", "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        },
+        {
+          "name": "published file omits a manifest chunk descriptor",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "workspaceAlias": "public-workspace", "itemAlias": null, "nodeId": "00000000-0000-4000-8000-000000000202", "asOf": 10, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [] }
+        }
+      ]
+    },
+    "accountAppPackages": {
+      "valid": [
+        {
+          "name": "account app package exposes its complete canonical manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.notes", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "account app identity differs from its package manifest",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.other", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "GET", "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "headers": {} }] }
+        },
+        {
+          "name": "account app package omits a manifest chunk descriptor",
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "accountId": "00000000-0000-4000-8000-000000000004", "appId": "dev.hiraya.notes", "appManifest": { "schemaVersion": 2, "uiRuntime": 1, "id": "dev.hiraya.notes", "name": "Notes", "version": "1.0.0", "entrypoint": "index.html", "permissions": ["storage"] }, "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "size": 5, "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "manifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] }, "chunks": [] }
+        }
+      ]
+    }
+  },
+  "chunkNegotiation": {
+    "uploadRequests": {
+      "valid": [
+        {
+          "name": "short manifest upload",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-request",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "mismatched upload manifest hash",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-request",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "uploadResults": {
+      "valid": [
+        {
+          "name": "one missing upload chunk",
+          "expectedManifest": {
+            "schemaVersion": 1,
+            "size": 5,
+            "chunkSize": 1048576,
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5
+              }
+            ]
+          },
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "transferId": "00000000-0000-4000-8000-000000000901",
+            "expiresAt": 2000000000000,
+            "missingChunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5,
+                "method": "PUT",
+                "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?signature=test",
+                "headers": { "x-amz-checksum-sha256": "qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqo=" }
+              }
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "upload chunk outside manifest",
+          "expectedManifest": {
+            "schemaVersion": 1,
+            "size": 5,
+            "chunkSize": 1048576,
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5
+              }
+            ]
+          },
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "transferId": "00000000-0000-4000-8000-000000000901",
+            "expiresAt": 2000000000000,
+            "missingChunks": [
+              {
+                "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "size": 5,
+                "method": "PUT",
+                "url": "https://objects.example.test/chunks/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "headers": { "x-amz-checksum-sha256": "u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7u7s=" }
+              }
+            ]
+          }
+        },
+        {
+          "name": "upload descriptor omits the required checksum header",
+          "expectedManifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] },
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "chunk-upload-result", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "operationId": "00000000-0000-4000-8000-000000000102", "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "transferId": "00000000-0000-4000-8000-000000000901", "expiresAt": 2000000000000, "missingChunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "PUT", "url": "https://objects.example.test/chunk", "headers": {} }] }
+        },
+        {
+          "name": "upload descriptor carries the wrong checksum header",
+          "expectedManifest": { "schemaVersion": 1, "size": 5, "chunkSize": 1048576, "chunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5 }] },
+          "value": { "schemaVersion": 1, "protocol": "web2-sync-v1", "kind": "chunk-upload-result", "workspaceId": "00000000-0000-4000-8000-000000000001", "deviceId": "00000000-0000-4000-8000-000000000003", "operationId": "00000000-0000-4000-8000-000000000102", "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff", "transferId": "00000000-0000-4000-8000-000000000901", "expiresAt": 2000000000000, "missingChunks": [{ "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "size": 5, "method": "PUT", "url": "https://objects.example.test/chunk", "headers": { "x-amz-checksum-sha256": "wrong" } }] }
+        },
+        {
+          "name": "upload descriptor uses GET",
+          "expectedManifest": {
+            "schemaVersion": 1,
+            "size": 5,
+            "chunkSize": 1048576,
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5
+              }
+            ]
+          },
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "transferId": "00000000-0000-4000-8000-000000000901",
+            "expiresAt": 2000000000000,
+            "missingChunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5,
+                "method": "GET",
+                "url": "https://objects.example.test/chunk",
+                "headers": {}
+              }
+            ]
+          }
+        },
+        {
+          "name": "oversized upload descriptor",
+          "expectedManifest": {
+            "schemaVersion": 1,
+            "size": 5,
+            "chunkSize": 1048576,
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5
+              }
+            ]
+          },
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "transferId": "00000000-0000-4000-8000-000000000901",
+            "expiresAt": 2000000000000,
+            "missingChunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 1048577,
+                "method": "PUT",
+                "url": "https://objects.example.test/chunk",
+                "headers": {}
+              }
+            ]
+          }
+        },
+        {
+          "name": "unsafe upload URL",
+          "expectedManifest": {
+            "schemaVersion": 1,
+            "size": 5,
+            "chunkSize": 1048576,
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5
+              }
+            ]
+          },
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-upload-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "operationId": "00000000-0000-4000-8000-000000000102",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "transferId": "00000000-0000-4000-8000-000000000901",
+            "expiresAt": 2000000000000,
+            "missingChunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5,
+                "method": "PUT",
+                "url": "http://objects.example.test/chunk",
+                "headers": {}
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "downloadRequests": {
+      "valid": [
+        {
+          "name": "download with no local chunks",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-request",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "haveChunks": []
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "duplicate local chunk hash",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-request",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "haveChunks": [
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+              "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+            ]
+          }
+        }
+      ]
+    },
+    "downloadResults": {
+      "valid": [
+        {
+          "name": "one negotiated download chunk",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            },
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5,
+                "method": "GET",
+                "url": "https://objects.example.test/chunks/aa/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa?signature=test",
+                "headers": {}
+              }
+            ]
+          }
+        }
+      ],
+      "invalid": [
+        {
+          "name": "download chunk outside manifest",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            },
+            "chunks": [
+              {
+                "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "size": 5,
+                "method": "GET",
+                "url": "https://objects.example.test/chunks/bb/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                "headers": {}
+              }
+            ]
+          }
+        },
+        {
+          "name": "download descriptor uses PUT",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            },
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 5,
+                "method": "PUT",
+                "url": "https://objects.example.test/chunk",
+                "headers": {}
+              }
+            ]
+          }
+        },
+        {
+          "name": "oversized download descriptor",
+          "value": {
+            "schemaVersion": 1,
+            "protocol": "web2-sync-v1",
+            "kind": "chunk-download-result",
+            "workspaceId": "00000000-0000-4000-8000-000000000001",
+            "deviceId": "00000000-0000-4000-8000-000000000003",
+            "manifestHash": "1125e633916539c69ebf77f18a8d07b0ed9096f7e1db0679371ad406d13d66ff",
+            "manifest": {
+              "schemaVersion": 1,
+              "size": 5,
+              "chunkSize": 1048576,
+              "chunks": [
+                {
+                  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "size": 5
+                }
+              ]
+            },
+            "chunks": [
+              {
+                "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "size": 1048577,
+                "method": "GET",
+                "url": "https://objects.example.test/chunk",
+                "headers": {}
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

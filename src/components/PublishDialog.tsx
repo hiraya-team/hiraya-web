@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowSquareOut, Check, Copy, Globe, X } from "@phosphor-icons/react";
 import {
   confirmDesktopAliasChange,
@@ -13,6 +13,7 @@ import {
 import type { DesktopEntry, DesktopIdentity } from "../types";
 import { writeClipboardText } from "../ui/clipboard-copy";
 import { useNativeDialog } from "../ui/modal-dialog";
+import { useStableHandler } from "../ui/use-stable-handler";
 
 export function PublishDialog({
   desktop,
@@ -45,7 +46,7 @@ export function PublishDialog({
     );
     if (published) setItemAlias(published.alias);
   }
-  const loadSharing = useEffectEvent(() =>
+  const loadSharing = useStableHandler(() =>
     refresh().catch((reason) =>
       setError(
         reason instanceof Error
@@ -56,9 +57,7 @@ export function PublishDialog({
   );
   useEffect(() => {
     void loadSharing();
-    // useEffectEvent callbacks are intentionally non-reactive.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [desktop.id, entry.id]);
+  }, [desktop.id, entry.id, loadSharing]);
   const published = sharing?.publication.items.find(
     (item) => item.entryId === entry.id,
   );

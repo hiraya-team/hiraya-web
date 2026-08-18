@@ -1,6 +1,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
+import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 
 const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAHP6KseYAAABXAQAACgAAAGluZGV4Lmh0bWxVUMFOxSAQ/JXaU0l8POPRFi7GizGa2KPxQGG1G3mAsFSJ8d/F18b4brszOzOZHc6M11QCNDMdrBymTOSdfMyuGTU4GPYbMiQdMZDU3iVqVlBUbT6AI/6eIZYRLGjysWtXumX9OnDvtEX9Jjom5AYRfNK1d1TVoj1GNRE04AKmQRcytf0a5acEcVGEdRNPz70y5mapqjtMVQw1bcaoirr6UNYGFSDugsdqHNtz+D0U8uu/Bw85zd2R4QZIoWX9X4/Jm8KNIpWA+GaTxO34cM8TRXSv+FK6E7dUi0G3u7xg7JsN++1LP1BLAQIUABQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAAAAAAAAAAAAAAAAAAABoaXJheWEuc2NlbmUuanNvblBLAQIUABQAAAAIAAAAIQAc/oqx5gAAAFcBAAAKAAAAAAAAAAAAAAAAAF4AAABpbmRleC5odG1sUEsFBgAAAAACAAIAdwAAAGwBAAAAAA==", "base64");
 
@@ -29,20 +30,105 @@ const publicDesktop = {
   appearance: { selectedThemeId: "hiraya-dusk", selectionRevision: 0, customThemes: [] },
 };
 
-async function mockPublicDesktop(page: Page) {
-	await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: publicDesktop }));
-	await page.route("**/api/public/desktops/e2e-desk/entries/*/content?*", (route) => {
+type PublicFixture = {
+  name: string;
+  entries: Array<{ kind: string; id: string; name: string; parentId: string | null; createdAt: number; modifiedAt: number; position: { x: number; y: number }; mimeType?: string; size?: number }>;
+  layout?: { autoArrangeIcons?: boolean; snapToGrid: boolean; gridSize?: number; wallpaper: unknown; widgets?: unknown[]; iconGroups?: unknown[] };
+  appearance?: { selectedThemeId: string; customThemes: Array<{ id: string; revision?: number; [key: string]: unknown }> };
+};
+
+function stableId(value: string) {
+  const hex = createHash("sha256").update(value).digest("hex");
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+async function mockPublicDesktop(page: Page, desktop: PublicFixture = publicDesktop, contents: ReadonlyMap<string, Uint8Array> = new Map()) {
+  const workspaceId = stableId("public-workspace");
+  const chunks = new Map<string, Uint8Array>();
+  const files = new Map<string, { manifestHash: string; manifest: { schemaVersion: number; size: number; chunkSize: number; chunks: Array<{ hash: string; size: number }> } }>();
+  const nodes = desktop.entries.map((entry) => {
+    const id = stableId(`node:${entry.id}`);
+    const operationId = stableId(`operation:${entry.id}`);
+    const tuple = { logicalTime: 1, operationId };
+    const base = { workspaceId, id, kind: entry.kind, name: entry.name, parentId: entry.parentId ? stableId(`node:${entry.parentId}`) : null, lifecycle: { kind: "active" }, position: entry.position, createdAt: entry.createdAt, modifiedAt: entry.modifiedAt, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: entry.kind === "file" ? tuple : null } };
+    if (entry.kind !== "file") return base;
+    const content = contents.get(entry.id) ?? Buffer.from("test");
+    const chunkHash = createHash("sha256").update(content).digest("hex");
+    const manifest = { schemaVersion: 1, size: content.byteLength, chunkSize: 1_048_576, chunks: content.byteLength === 0 ? [] : [{ hash: chunkHash, size: content.byteLength }] };
+    const manifestHash = createHash("sha256").update(JSON.stringify(manifest)).digest("hex");
+    if (content.byteLength > 0) chunks.set(chunkHash, content);
+    files.set(id, { manifestHash, manifest });
+    return { ...base, mimeType: entry.mimeType ?? "application/octet-stream", size: content.byteLength, manifestHash };
+  }).sort((left, right) => left.id.localeCompare(right.id));
+  const layout = desktop.layout ?? publicDesktop.layout;
+  const appearance = desktop.appearance ?? publicDesktop.appearance;
+  const wallpaper = layout.wallpaper as Record<string, unknown>;
+  const publicWallpaper = typeof wallpaper.source === "string" && wallpaper.source.startsWith("file:")
+    ? { ...wallpaper, source: `file:${stableId(`node:${wallpaper.source.slice(5)}`)}` }
+    : wallpaper;
+  const publicWidgets = (layout.widgets ?? []).map((value) => {
+    const widget = value as Record<string, unknown>;
+    return typeof widget.fileId === "string" ? { ...widget, fileId: stableId(`node:${widget.fileId}`) } : widget;
+  });
+  const publicGroups = (layout.iconGroups ?? []).map((value) => {
+    const group = value as Record<string, unknown>;
+    return typeof group.folderId === "string" ? { ...group, folderId: stableId(`node:${group.folderId}`) } : group;
+  });
+  const setting = (namespace: string, key: string, value: unknown) => ({ workspaceId, namespace, key, deleted: false, value, logicalTime: 1, operationId: stableId(`setting:${namespace}:${key}`) });
+  const settings = [
+    ...appearance.customThemes.map((storedTheme) => {
+      const theme = { ...storedTheme };
+      delete theme.revision;
+      const packaged = theme.wallpaper as Record<string, unknown> | undefined;
+      return setting("custom-themes", theme.id, packaged && typeof packaged.assetId === "string" ? { ...theme, wallpaper: { ...packaged, assetId: stableId(`node:${packaged.assetId}`) } } : theme);
+    }),
+    setting("desktop-grid", "auto-arrange-icons", layout.autoArrangeIcons ?? true),
+    setting("desktop-grid", "grid-size", layout.gridSize ?? 24),
+    setting("desktop-grid", "snap-to-grid", layout.snapToGrid),
+    setting("icon-groups", "layout", publicGroups),
+    setting("theme-selection", "selected", appearance.selectedThemeId),
+    setting("wallpaper", "layout", publicWallpaper),
+    setting("widgets", "layout", publicWidgets),
+  ].sort((left, right) => {
+    const leftIdentity = `${left.namespace}\0${left.key}`;
+    const rightIdentity = `${right.namespace}\0${right.key}`;
+    return leftIdentity < rightIdentity ? -1 : leftIdentity > rightIdentity ? 1 : 0;
+  });
+  await page.route("**/api/public/workspaces/e2e-desk?*", (route) => route.fulfill({ json: {
+    schemaVersion: 1,
+    protocol: "web2-sync-v1",
+    workspaceAlias: "e2e-desk",
+    itemAlias: null,
+    workspaceId,
+    workspaceName: desktop.name,
+    publishedRootId: null,
+    asOf: 1,
+    owner: { id: stableId("public-owner"), displayName: "Hiraya Owner", avatar: "identicon:0123456789abcdef" },
+    nodes,
+    settings,
+    nextAfter: null,
+  } }));
+  await page.route("**/api/public/workspaces/e2e-desk/nodes/*/content?*", (route) => {
     const requestUrl = new URL(route.request().url());
-    const entryId = requestUrl.pathname.split("/").at(-2)!;
+    const nodeId = requestUrl.pathname.split("/").at(-2)!;
+    const file = files.get(nodeId);
+    if (!file) return route.fulfill({ status: 404 });
     return route.fulfill({ json: {
-      entryId,
-      contentRevision: 1,
-      size: 4,
-      sha256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-      access: { url: `${requestUrl.origin}/__public-content/${entryId}`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
+      schemaVersion: 1,
+      protocol: "web2-sync-v1",
+      workspaceAlias: "e2e-desk",
+      itemAlias: null,
+      nodeId,
+      asOf: 1,
+      manifestHash: file.manifestHash,
+      manifest: file.manifest,
+      chunks: file.manifest.chunks.map(({ hash, size }) => ({ hash, size, method: "GET", url: `${requestUrl.origin}/__public-chunk/${hash}`, headers: {} })),
     } });
   });
-  await page.route("**/__public-content/*", (route) => route.fulfill({ body: "test", headers: { "content-type": "text/plain" } }));
+  await page.route("**/__public-chunk/*", (route) => {
+    const chunk = chunks.get(new URL(route.request().url()).pathname.split("/").at(-1)!);
+    return chunk ? route.fulfill({ body: Buffer.from(chunk) }) : route.fulfill({ status: 404 });
+  });
 }
 
 async function overflow(page: Page) {
@@ -65,14 +151,14 @@ test("public desktop reflows without page overflow at 390px", async ({ page }) =
 });
 
 test("public desktop hides descendants of dot-prefixed folders", async ({ page }) => {
-  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+  await mockPublicDesktop(page, {
     ...publicDesktop,
     entries: [
       { kind: "folder", id: "hidden", name: ".private", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 10, y: 10 }, revision: 1, contentRevision: 0 },
       { kind: "file", id: "hidden-child", name: "leak.txt", parentId: "hidden", createdAt: 1, modifiedAt: 1, position: { x: 20, y: 20 }, mimeType: "text/plain", size: 4, revision: 1, contentRevision: 1 },
       { ...publicDesktop.entries[0], id: "visible", name: "visible.txt" },
     ],
-  } }));
+  });
   await page.goto("/published/e2e-desk");
   await expect(page.getByRole("button", { name: "visible.txt, text/plain" })).toBeVisible();
   await expect(page.getByRole("button", { name: "leak.txt, text/plain" })).toHaveCount(0);
@@ -157,18 +243,22 @@ test("public desktop reflows at 200 percent zoom", async ({ page }) => {
 test("whole public desktops render widgets and folder-backed groups read only", async ({ page }) => {
   const folder = { kind: "folder", id: "public-group", name: "Reference", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 420, y: 90 }, revision: 1, contentRevision: 0 };
   const child = { ...publicDesktop.entries[0], id: "group-child", name: "Inside.txt", parentId: folder.id, position: { x: 0, y: 0 } };
-  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+  const customTheme = { id: "public-theme", name: "Public theme", definition: { ...BUILTIN_THEMES[DEFAULT_THEME_ID].definition, iconSize: 72 }, revision: 4 };
+  await mockPublicDesktop(page, {
     ...publicDesktop,
     entries: [folder, child],
+    appearance: { selectedThemeId: customTheme.id, customThemes: [customTheme] },
     layout: {
       ...publicDesktop.layout,
       widgets: [{ id: "status", kind: "status", x: 90, y: 90, width: 240, height: 150 }],
       iconGroups: [{ folderId: folder.id, width: 320, height: 240 }],
     },
-  } }));
+  });
   await page.goto("/published/e2e-desk");
 
   await expect(page.getByText("Shared desktop", { exact: true })).toBeVisible();
+  await expect(page.locator("main.public-desktop")).toHaveAttribute("data-theme", "custom");
+  await expect.poll(() => page.locator("main.public-desktop").evaluate((element) => getComputedStyle(element).getPropertyValue("--theme-icon-size"))).toBe("72px");
   await expect(page.getByLabel("Published work public desktop").getByText("Read only", { exact: true })).toBeVisible();
   const group = page.locator(".shell-item", { hasText: "Reference" });
   await expect(group.getByRole("listbox", { name: "Contents of Reference" })).not.toHaveAttribute("aria-multiselectable");
@@ -186,7 +276,7 @@ test("public desktop keeps overlapping icons and shell items usable in each area
   const folder = { kind: "folder", id: "overlap-group", name: "Cross-area reference", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 350, y: 360 }, revision: 1, contentRevision: 0 };
   const child = { ...publicDesktop.entries[0], id: "overlap-child", name: "Inside overlap.txt", parentId: folder.id, position: { x: 0, y: 0 } };
   const icon = { ...publicDesktop.entries[0], id: "overlap-icon", name: "Cross-area.txt", position: { x: 350, y: 84 } };
-  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+  await mockPublicDesktop(page, {
     ...publicDesktop,
     entries: [folder, child, icon],
     layout: {
@@ -194,7 +284,7 @@ test("public desktop keeps overlapping icons and shell items usable in each area
       widgets: [{ id: "status", kind: "status", x: 250, y: 160, width: 300, height: 150 }],
       iconGroups: [{ folderId: folder.id, width: 500, height: 240 }],
     },
-  } }));
+  });
   await page.goto("/published/e2e-desk");
   await page.getByRole("button", { name: /Open public desktop area navigator/ }).click();
   const navigator = page.getByRole("navigation", { name: "Published work public desktop areas" });
@@ -214,19 +304,11 @@ test("public desktop keeps overlapping icons and shell items usable in each area
 test("whole public desktops render linked Todo widgets read only", async ({ page }) => {
   const body = JSON.stringify({ schemaVersion: 2, tasks: [{ id: "public-task", title: "Read public notes", completed: false, priority: "normal", subitems: [] }] });
   const file = { ...publicDesktop.entries[0], id: "public-todo", name: "Shared.hiraya.todo", mimeType: "application/vnd.hiraya.todo+json", size: new TextEncoder().encode(body).byteLength };
-  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+  await mockPublicDesktop(page, {
     ...publicDesktop,
     entries: [file],
     layout: { ...publicDesktop.layout, widgets: [{ id: "todo", kind: "todo", fileId: file.id, x: 90, y: 90, width: 340, height: 300 }], iconGroups: [] },
-  } }));
-  await page.route("**/api/public/desktops/e2e-desk/entries/public-todo/content?*", (route) => route.fulfill({ json: {
-    entryId: file.id,
-    contentRevision: 1,
-    size: file.size,
-    sha256: createHash("sha256").update(body).digest("hex"),
-    access: { url: `${new URL(route.request().url()).origin}/__public-todo`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
-  } }));
-  await page.route("**/__public-todo", (route) => route.fulfill({ body, headers: { "content-type": file.mimeType } }));
+  }, new Map([[file.id, Buffer.from(body)]]));
   await page.goto("/published/e2e-desk");
 
   await expect(page.getByText("Read public notes", { exact: true })).toBeVisible();
@@ -235,7 +317,7 @@ test("whole public desktops render linked Todo widgets read only", async ({ page
 
 test("whole public desktops run Scene widgets and interactive Scene wallpaper", async ({ page }) => {
   const file = { ...publicDesktop.entries[0], id: "public-scene", name: "Public.hiraya.scene", mimeType: "application/vnd.hiraya.scene+zip", size: sceneFile.byteLength };
-  await page.route("**/api/public/desktops/e2e-desk", (route) => route.fulfill({ json: {
+  await mockPublicDesktop(page, {
     ...publicDesktop,
     entries: [file],
     layout: {
@@ -244,15 +326,7 @@ test("whole public desktops run Scene widgets and interactive Scene wallpaper", 
       widgets: [{ id: "scene", kind: "scene", fileId: file.id, x: 90, y: 90, width: 420, height: 300 }],
       iconGroups: [],
     },
-  } }));
-  await page.route("**/api/public/desktops/e2e-desk/entries/public-scene/content?*", (route) => route.fulfill({ json: {
-    entryId: file.id,
-    contentRevision: 1,
-    size: file.size,
-    sha256: createHash("sha256").update(sceneFile).digest("hex"),
-    access: { url: `${new URL(route.request().url()).origin}/__public-scene`, method: "GET", headers: {}, expiresAt: 2_000_000_000_000 },
-  } }));
-  await page.route("**/__public-scene", (route) => route.fulfill({ body: sceneFile, headers: { "content-type": file.mimeType } }));
+  }, new Map([[file.id, sceneFile]]));
   await page.goto("/published/e2e-desk");
 
   const widget = page.frameLocator('iframe[title="Public.hiraya.scene widget"]');

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "measuredAt": "2026-08-18",
+  "build": "bun run build",
+  "oldInitialJavaScriptGzip": 95112,
+  "interactiveJavaScriptGzip": 703349,
+  "initialCssGzip": 38814,
+  "serviceWorkerAndRuntimeGzip": 7017,
+  "htmlManifestStartupIconsGzip": 297401,
+  "contingencyGzip": 0,
+  "totalInitialShellGzip": 1046581,
+  "largestJavaScriptChunkGzip": 223762,
+  "largestJavaScriptChunk": "editor-runtime-DGGW32Ue.js",
+  "totalJavaScriptGzip": 1344860,
+  "systemAppBytes": {
+    "file-viewer.hiraya.app": 12989,
+    "image-viewer.hiraya.app": 13238,
+    "media-viewer.hiraya.app": 1054205,
+    "terminal.hiraya.app": 20415,
+    "text-editor.hiraya.app": 350679,
+    "theme-editor.hiraya.app": 22771
+  }
+}

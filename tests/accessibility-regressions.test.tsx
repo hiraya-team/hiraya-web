@@ -131,7 +131,7 @@ describe("accessibility regressions", () => {
   });
 
   test("focused surfaces retain explicit authenticated and public action slots", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const publicDesktop = await Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
@@ -155,7 +155,7 @@ describe("accessibility regressions", () => {
   });
 
   test("the universal header uses one desktop and area switcher", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const areaSwitcher = await Bun.file(new URL("../src/features/areas/AreaSwitcher.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
@@ -168,7 +168,7 @@ describe("accessibility regressions", () => {
     expect(app).toContain("areaSwitcherRestoreFocusRef.current = minimapExpanded;");
     expect(app).toContain("setMinimapExpanded(!minimapExpanded);");
     expect(app).toContain('{ id: "area-switcher", group: "Navigation", label: "Toggle desktop and area switcher", keys: ["Ctrl", "Space"] }');
-    expect(app).toContain('className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher"');
+    expect(app).toContain('className="mobile-desktop-summary" type="button" popovertarget="desktop-switcher"');
     expect(app).toContain("<DesktopSwitcher desktops={desktopChoices}");
     expect(desktopSwitcher).toContain('className="desktop-switcher__picker" aria-label="Desktops" popover="auto"');
     expect(desktopSwitcher).toContain('className="desktop-switcher__row desktop-switcher__row--switch"');
@@ -209,7 +209,7 @@ describe("accessibility regressions", () => {
     expect(areaSwitcher).toContain("segments.map((desktopSegment, visibleIndex)");
     expect(areaSwitcher).toContain('className="desktop-minimap__direction"');
     expect(areaSwitcher).toContain('`${occupied ? "Go to" : "Add"} ${areaDirectionalLabel(target, activeSegment)} area`');
-    expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? true : undefined}');
+    expect(areaSwitcher).toContain('className="desktop-minimap__body" aria-hidden={!detailed} inert={!detailed ? "" : undefined}');
     expect(app).toContain("if (nextSegment) selectAreaFromSwitcher(nextSegment);");
     expect(app).toContain("collapseAreaMap();");
     expect(app).toContain("onPointerDownCapture={handleShellAreaSwitcherInteraction}");
@@ -252,7 +252,7 @@ describe("accessibility regressions", () => {
   });
 
   test("live area transitions project windowed apps while focused surfaces stay viewport-owned", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const appWindow = await Bun.file(new URL("../src/components/AppWindow.tsx", import.meta.url)).text();
     const windowLayer = await Bun.file(new URL("../src/features/windows/WindowLayer.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
@@ -294,7 +294,7 @@ describe("accessibility regressions", () => {
   });
 
   test("viewport resize preserves the signed route and pre-resize window area", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const resizeEffect = app.slice(app.indexOf("const previousDesktopSizeRef"), app.indexOf("if (loading || !windowSessionRestored)"));
 
     expect(resizeEffect).toContain("projectLogicalPosition(app.bounds, previous)");
@@ -305,7 +305,7 @@ describe("accessibility regressions", () => {
   });
 
   test("only desktop icons intersecting the active area are reachable", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const markup = renderToStaticMarkup(<FileIcon
       entry={{ kind: "folder", id: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } }}
       selected={false}
@@ -324,7 +324,7 @@ describe("accessibility regressions", () => {
 
     expect(app).toContain("const segmentActive = desktopSegment.key === activeSegmentKey;");
     expect(app).toContain("const segmentInteractive = segmentDragging || desktopSegment.entries.some((entry) => boundsIntersectSegment");
-    expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive}');
+    expect(app).toContain('data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive ? "" : undefined}');
     expect(app).toContain("const entryInteractive = segmentDragging || boundsIntersectSegment");
     expect(app).toContain("interactive={entryInteractive}");
     expect(markup).toContain('tabindex="-1"');
@@ -341,7 +341,7 @@ describe("accessibility regressions", () => {
   });
 
   test("programmatically activated file inputs are not hidden keyboard stops", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const themeEditor = await Bun.file(new URL("../apps/system/theme-editor/index.html", import.meta.url)).text();
 
     expect(app.match(/type="file"\s+tabIndex=\{-1\}\s+aria-hidden="true"/g)).toHaveLength(2);
@@ -350,7 +350,7 @@ describe("accessibility regressions", () => {
   });
 
   test("file dialogs restore their invoker or focus the successful result", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const dialog = await Bun.file(new URL("../src/components/FileDialog.tsx", import.meta.url)).text();
     const modal = await Bun.file(new URL("../src/ui/modal-dialog.ts", import.meta.url)).text();
 
@@ -371,7 +371,7 @@ describe("accessibility regressions", () => {
   });
 
   test("mobile destination launches suppress menu refocus and establish destination focus", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const menu = await Bun.file(new URL("../src/components/MobileHeaderMenu.tsx", import.meta.url)).text();
 
     expect(menu).toContain("const dismiss = (restoreFocus = true)");
@@ -385,7 +385,7 @@ describe("accessibility regressions", () => {
   });
 
   test("notifications use a dedicated keyboard-reachable panel", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
     const notifications = await Bun.file(new URL("../src/features/notifications/ShellNotifications.tsx", import.meta.url)).text();
     const css = await Bun.file(new URL("../src/styles.css", import.meta.url)).text();
 

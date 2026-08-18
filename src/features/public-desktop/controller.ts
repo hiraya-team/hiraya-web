@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
-import { fetchPublicDesktop, fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, type PublicAuthority } from "../../lib/public-desktop";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { fetchPublicDesktop, fetchPublicFile, fetchPublicThumbnail, LargeDownloadAuthRequiredError, type PublicAuthority } from "./transport";
 import type { DesktopEntry, FileEntry } from "../../types";
 import { reservedFileHandler, type ReservedFileHandler } from "../../apps/file-associations";
 import { parseInternetShortcut } from "../../lib/internet-shortcut";
 import { withoutDotEntries } from "../../ui/hidden-entries";
 import type { PublicAppRuntime } from "./app-runtime";
 import { isSceneFile } from "../../domain/scene";
+import { useStableHandler } from "../../ui/use-stable-handler";
 
 export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: ReservedFileHandler; error?: string };
 
@@ -18,7 +19,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
   const [downloadGate, setDownloadGate] = useState<{ loginUrl: string; fileName: string } | null>(null);
   const [wallpaperUrl, setWallpaperUrl] = useState("");
 	const [wallpaperFailed, setWallpaperFailed] = useState(false);
-	const loadInitialFile = useEffectEvent((file: FileEntry, next: Awaited<ReturnType<typeof fetchPublicDesktop>>) => loadFile(file, false, next));
+	const loadInitialFile = useStableHandler((file: FileEntry, next: Awaited<ReturnType<typeof fetchPublicDesktop>>) => loadFile(file, false, next));
 
 	useEffect(() => {
 		let cancelled = false;
@@ -37,9 +38,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
     return () => {
       cancelled = true;
     };
-    // useEffectEvent callbacks are intentionally non-reactive.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authority.desktopAlias, authority.itemAlias]);
+  }, [authority.desktopAlias, authority.itemAlias, loadInitialFile]);
 
   useEffect(() => () => runtimeRef.current?.close(), []);
 

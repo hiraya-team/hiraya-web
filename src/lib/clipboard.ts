@@ -1,4 +1,4 @@
-import { strToU8, unzip, zip, type Zippable } from "fflate";
+import type { Zippable } from "fflate";
 import type { DesktopEntry } from "../types";
 import { isRecord, isValidId, parseEntries } from "./contracts";
 import { fileFromEntry, readAllDirectoryEntries } from "./file-system-entry";
@@ -85,13 +85,15 @@ function validateSnapshot(snapshot: ClipboardEntrySnapshot) {
   return manifest;
 }
 
-function createZip(files: Zippable) {
+async function createZip(files: Zippable) {
+  const { zip } = await import("fflate");
   return new Promise<Uint8Array>((resolve, reject) => {
     zip(files, { level: 6 }, (error, archive) => error ? reject(error) : resolve(archive));
   });
 }
 
-function openZip(bytes: Uint8Array) {
+async function openZip(bytes: Uint8Array) {
+  const { unzip } = await import("fflate");
   return new Promise<Record<string, Uint8Array>>((resolve, reject) => {
     unzip(bytes, (error, files) => error ? reject(new Error("The clipboard archive is not a valid ZIP file.", { cause: error })) : resolve(files));
   });
@@ -99,7 +101,7 @@ function openZip(bytes: Uint8Array) {
 
 export async function encodeClipboardArchive(snapshot: ClipboardEntrySnapshot): Promise<Blob> {
   const manifest = validateSnapshot(snapshot);
-  const files: Zippable = { [MANIFEST_PATH]: strToU8(JSON.stringify(manifest)) };
+  const files: Zippable = { [MANIFEST_PATH]: new TextEncoder().encode(JSON.stringify(manifest)) };
   await Promise.all(manifest.entries.map(async (entry) => {
     if (entry.kind === "file") files[contentPath(entry.id)] = new Uint8Array(await snapshot.contents.get(entry.id)!.arrayBuffer());
   }));

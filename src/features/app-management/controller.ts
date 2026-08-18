@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { AppInstanceOwner } from "../../apps/host";
 import { AppHostServices, AppLifecycleService, AppPersistentStorageService, AppThemeService, CapabilityStore, type AppNotification, type DialogRequest } from "../../apps/host";
 import { parseFileAssociation, type FileAssociation, type InstalledApp } from "../../apps/installed-apps";
@@ -16,11 +16,12 @@ import {
   setFileAssociation,
   uninstallApp,
   writeAppStorage,
-} from "../../platform/storage/repositories";
-import { readApprovedPackageArchive, releaseApprovedPackageArchive } from "../../platform/storage/blobs";
+} from "../../platform/storage/app-repositories";
+import { readApprovedPackageArchive, releaseApprovedPackageArchive } from "../../platform/storage/package-archives";
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { AccountAppsClient, type AccountAppsClientState } from "./account-sync";
 import { accountApprovalMatches, type AccountApp, type AccountAppsSnapshot } from "../../lib/account-apps";
+import { useStableHandler } from "../../ui/use-stable-handler";
 
 type AppPlatformOptions = {
   enabled: boolean;
@@ -168,7 +169,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     }
   }
 
-  const reconcileAccountInstalls = useEffectEvent((snapshot: AccountAppsSnapshot) => {
+  const reconcileAccountInstalls = useStableHandler((snapshot: AccountAppsSnapshot) => {
     void enqueueAccountAppWork(async () => {
       if (accountClient?.snapshot()?.appsRevision !== snapshot.appsRevision) return;
       const local = await listInstalledApps();
@@ -192,9 +193,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
     const baseline = accountState?.state.baseline;
     if (!enabled || !appsLoaded || !accountClient || !baseline) return;
     reconcileAccountInstalls(baseline);
-    // useEffectEvent keeps local app state current without restarting an active download.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [accountClient, accountState?.state.baseline, appsLoaded, enabled]);
+  }, [accountClient, accountState?.state.baseline, appsLoaded, enabled, reconcileAccountInstalls]);
 
   async function removeInstall(appId: string) {
     await uninstallApp(appId);

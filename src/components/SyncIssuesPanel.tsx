@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { ArrowsClockwise, CloudCheck, CloudSlash, GitMerge, Trash, WarningCircle } from "@phosphor-icons/react";
 import { isRevisionConflictRecord, outboxBlockingRecord, type OutboxRecord } from "../lib/outbox";
-import type { SyncStatus } from "../lib/sync";
+import type { SyncStatus } from "../domain/sync-status";
 import { outboxRecordLabel, partitionSyncRecords } from "../ui/panel-data";
 import { ItemList } from "./ItemList";
 

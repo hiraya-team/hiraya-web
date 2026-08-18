@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { breadcrumbForEntry, localSearchResults, parseSearchResponse, searchAccessibleDesktops } from "../src/lib/search";
+import { breadcrumbForEntry, localSearchResults, parseSearchResponse } from "../src/lib/search";
 import { localDesktopIdentity } from "../src/lib/permissions";
 import type { DesktopEntry } from "../src/types";
 
@@ -37,14 +37,4 @@ describe("desktop search models", () => {
     expect(() => parseSearchResponse({ ...response, results: [{ ...result, breadcrumbs: [{ id: folder.id, name: folder.name }, { id: folder.id, name: folder.name }] }] })).toThrow("duplicate or cyclic");
   });
 
-  test("uses the same-origin search route and validates echoed query metadata", async () => {
-    const requests: Array<{ url: string; init?: RequestInit }> = [];
-    const parsed = await searchAccessibleDesktops("plans / q3", new AbortController().signal, (async (input, init) => {
-      requests.push({ url: String(input), init });
-      return Response.json({ ...response, query: "plans / q3" });
-    }) as typeof fetch);
-    expect(requests[0].url).toBe("/api/search?q=plans%20%2F%20q3");
-    expect(requests[0].init).toMatchObject({ cache: "no-store", credentials: "same-origin" });
-    expect(parsed.results[0].entry).toEqual(file);
-  });
 });

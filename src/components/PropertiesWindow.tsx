@@ -1,4 +1,5 @@
-import { CircleHalf, CloudArrowDown, CloudCheck, CloudSlash, Folder, HardDrive, SpinnerGap } from "@phosphor-icons/react";
+import { useState } from "react";
+import { ArrowsLeftRight, CircleHalf, CloudArrowDown, CloudCheck, CloudSlash, Copy, Folder, HardDrive, SpinnerGap } from "@phosphor-icons/react";
 import type { DesktopEntry, FolderEntry } from "../types";
 import { offlineStatusDescription, offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 import { EntryIcon, StatusBadge } from "./VisualPrimitives";
@@ -12,6 +13,13 @@ type Props = {
   offlineBusy?: boolean;
   onMakeAvailableOffline?: () => void;
   onRemoveOfflineCopy?: () => void;
+  fileVersions?: readonly { operationId: string; modifiedAt: number; size: number; current: boolean }[];
+  historyBusy?: boolean;
+  onUndoLatestChange?: () => void;
+  onRedoLatestChange?: () => void;
+  onRestoreFileVersion?: (operationId: string) => void;
+  onCompareFileVersion?: (operationId: string) => Promise<{ current: string; retained: string } | null>;
+  onKeepBothFileVersion?: (operationId: string) => void;
 };
 
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
@@ -33,7 +41,9 @@ function formatSize(bytes: number) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]} (${numberFormatter.format(bytes)} bytes)`;
 }
 
-export function PropertiesWindow({ entry, rootLabel, ancestors, descendants, offlineAvailability, offlineBusy = false, onMakeAvailableOffline, onRemoveOfflineCopy }: Props) {
+export function PropertiesWindow({ entry, rootLabel, ancestors, descendants, offlineAvailability, offlineBusy = false, onMakeAvailableOffline, onRemoveOfflineCopy, fileVersions, historyBusy = false, onUndoLatestChange, onRedoLatestChange, onRestoreFileVersion, onCompareFileVersion, onKeepBothFileVersion }: Props) {
+  const [comparison, setComparison] = useState<{ operationId: string; current: string; retained: string } | null>(null);
+  const [comparisonMessage, setComparisonMessage] = useState("");
   const files = entry.kind === "folder" ? descendants.filter((item) => item.kind === "file") : [];
   const folders = entry.kind === "folder" ? descendants.filter((item) => item.kind === "folder") : [];
   const size = entry.kind === "file" ? entry.size : files.reduce((total, file) => total + file.size, 0);
@@ -54,6 +64,25 @@ export function PropertiesWindow({ entry, rootLabel, ancestors, descendants, off
         <div><dt>Modified</dt><dd><time dateTime={new Date(entry.modifiedAt).toISOString()}>{formatDate(entry.modifiedAt)}</time></dd></div>
         <div><dt>ID</dt><dd className="properties-window__id">{entry.id}</dd></div>
       </dl>
+      {entry.kind === "file" && fileVersions && <section className="properties-window__versions" aria-labelledby="properties-version-history">
+        <header>
+          <div><strong id="properties-version-history">Version history</strong><small>Saved versions retained in this workspace</small></div>
+          {onUndoLatestChange && <button className="button button--quiet" type="button" disabled={historyBusy || fileVersions.length < 2} onClick={onUndoLatestChange}>Undo latest change</button>}
+          {onRedoLatestChange && <button className="button button--quiet" type="button" disabled={historyBusy} onClick={onRedoLatestChange}>Redo latest change</button>}
+        </header>
+        <ul>
+          {fileVersions.map((version) => <li key={version.operationId} data-current={version.current || undefined}>
+            <div><strong>{version.current ? "Current version" : dateFormatter.format(version.modifiedAt)}</strong><span>{formatSize(version.size)}</span></div>
+            {!version.current && <div className="properties-window__version-actions">
+              {onCompareFileVersion && <button className="button button--quiet" type="button" disabled={historyBusy} onClick={() => { setComparisonMessage(""); void onCompareFileVersion(version.operationId).then((value) => value ? setComparison({ operationId: version.operationId, ...value }) : setComparisonMessage("Text comparison is unavailable for this file type or size. You can still keep both versions.")).catch((error: unknown) => setComparisonMessage(error instanceof Error ? error.message : "The versions could not be compared.")); }}><ArrowsLeftRight size={15} />Compare</button>}
+              {onKeepBothFileVersion && <button className="button button--quiet" type="button" disabled={historyBusy} onClick={() => onKeepBothFileVersion(version.operationId)}><Copy size={15} />Keep both</button>}
+              {onRestoreFileVersion && <button className="button button--quiet" type="button" disabled={historyBusy} onClick={() => onRestoreFileVersion(version.operationId)}>Restore this version</button>}
+            </div>}
+          </li>)}
+        </ul>
+        {comparisonMessage && <p className="form-error" role="status">{comparisonMessage}</p>}
+        {comparison && <div className="properties-window__comparison"><header><strong>Version comparison</strong><button className="button button--quiet" type="button" onClick={() => setComparison(null)}>Close comparison</button></header><div><section><strong>Current</strong><pre>{comparison.current}</pre></section><section><strong>Retained</strong><pre>{comparison.retained}</pre></section></div></div>}
+      </section>}
       {offlineAvailability && <section className="properties-window__offline" aria-label="Offline availability">
         <div>{offlineAvailability.status === "updating" ? <SpinnerGap size={18} className="activity-spinner" /> : offlineAvailability.status === "local" ? <HardDrive size={18} /> : offlineAvailability.status === "available" ? <CloudCheck size={18} /> : offlineAvailability.status === "partial" ? <CircleHalf size={18} /> : offlineAvailability.status === "empty" ? <Folder size={18} /> : <CloudSlash size={18} />}<span><StatusBadge tone={offlineAvailability.status === "updating" ? "progress" : offlineAvailability.status === "local" || offlineAvailability.status === "available" ? "success" : "neutral"}>{offlineStatusLabel(offlineAvailability)}</StatusBadge><strong>Offline availability</strong><small>{offlineStatusDescription(offlineAvailability)}</small></span></div>
         {(offlineAvailability.status === "partial" || offlineAvailability.status === "online-only") && onMakeAvailableOffline && <button className="button button--quiet" type="button" disabled={offlineBusy} onClick={onMakeAvailableOffline}><CloudArrowDown size={15} /> {offlineBusy ? "Downloading..." : "Make available offline"}</button>}

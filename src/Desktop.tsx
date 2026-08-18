@@ -1,4 +1,5 @@
-import { lazy, Suspense, useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import "./styles.css";
 import { ArrowLeft, ArrowsIn, ArrowsLeftRight, Bell, CaretRight, ClipboardText, Copy, Desktop, DotsThree, File as FileGlyph, FolderOpen, FolderPlus, GearSix, HardDrive, IdentificationCard, MagnifyingGlass, Minus, Package, Plus, SignOut, SquaresFour, Trash, UploadSimple, X } from "@phosphor-icons/react";
 import seededDesktop from "virtual:hiraya-seeded";
 import { ContextMenu, DesktopContextMenu, WidgetContextMenu } from "./components/ContextMenu";
@@ -6,18 +7,16 @@ import { ShellItemLayer } from "./components/ShellItems";
 import { FileDialog } from "./components/FileDialog";
 import { FileIcon } from "./components/FileIcon";
 import { FolderExplorer } from "./components/FolderExplorer";
-import { FileWindow } from "./components/FileWindow";
 import { MoveDialog } from "./components/MoveDialog";
 import { DesktopSwitcher } from "./components/DesktopSwitcher";
 import type { CatalogQuota } from "./lib/desktop-catalog";
 import { PasteConflictDialog } from "./components/PasteConflictDialog";
 import { PasteFromDeviceDialog } from "./components/PasteFromDeviceDialog";
-import { PropertiesWindow } from "./components/PropertiesWindow";
-import { SettingsWindow } from "./components/SettingsWindow";
 import { GettingStartedDialog } from "./components/GettingStartedDialog";
 import { AppPickerDialog } from "./components/AppPickerDialog";
 import { TodoWidget } from "./features/widgets/TodoWidget";
 import { TODO_EXTENSION, TODO_MIME_TYPE } from "./features/widgets/todo-document";
+import { useStableHandler } from "./ui/use-stable-handler";
 import { HIRAYA_SCENE_EXTENSION, HIRAYA_SCENE_MIME_TYPE, isSceneFile } from "./domain/scene";
 import { MobileSelectionToolbar } from "./components/MobileSelectionToolbar";
 import {
@@ -40,12 +39,16 @@ import {
   transferEntries,
   pasteEntries,
   readFile,
+  hydrateFolder,
+  hydrateNode,
   previewFile,
   refreshDesktopCatalog,
   thumbnailFile,
   renameEntry,
+  deleteEntry as deleteAppEntry,
   renameDesktop as renameDesktopMutation,
   saveCustomTheme,
+  saveFile as saveAppFile,
   saveDesktopLayout,
   saveEditorSettings,
   selectTheme,
@@ -83,15 +86,31 @@ import {
   type OfflineOperationProgress,
   type FileTransferState,
   type ContentConflictBundle,
+  type FileHistory,
   updateDesktopPreferences as updateDesktopPreferencesMutation,
-  VirtualFileChangedError,
-} from "./lib/sync";
-import { cacheThemePackage, pruneLocalDesktops, readCachedThemePackage, readDesktopEntries, readLocalPreferences, readWindowSession, saveLocalPreferences, saveWindowSession, switchDesktop as switchLocalDesktop } from "./lib/opfs";
+  cacheThemePackage,
+  pruneLocalDesktops,
+  readCachedThemePackage,
+  readDesktopEntries,
+  readLocalPreferences,
+  readWindowSession,
+  saveLocalPreferences,
+  saveWindowSession,
+  switchDesktop as switchLocalDesktop,
+  listFileHistory,
+  undoLatestFileChange,
+  redoLatestFileChange,
+  restoreFileVersion,
+  readFileVersion,
+  keepBothFileVersion,
+  serializeRuntimeStorage,
+  createFile as createAppFile,
+  moveEntry as moveAppEntry,
+} from "./platform/storage/desktop-runtime";
 import type { DesktopStateSnapshot } from "./domain/desktop-state";
 import { DEFAULT_EDITOR_SETTINGS } from "./lib/desktop-state";
 import type { ExplorerView, LocalPreferences } from "./domain/preferences";
 import { createPwaUpdater, type PwaUpdater } from "./lib/pwa-update";
-import { exportSeededDesktop } from "./lib/seeded";
 import { CLIPBOARD_ARCHIVE_WEB_MIME_TYPE, clipboardSnapshotIdentity, decodeClipboardArchiveItem, encodeClipboardArchive, isClipboardArchiveType, snapshotFromClipboardItems, type ClipboardEntrySnapshot } from "./lib/clipboard";
 import { formatDesktopRoute, normalizeDesktopRoute, parseDesktopRoute, resolveOpenFilePath, routeTargetsAppEntry, SETTINGS_PAGE_TITLES, SETTINGS_PARENTS, type DesktopRoute, type SettingsPage } from "./lib/routes";
 import { BUILTIN_THEME_IDS, BUILTIN_THEMES, DEFAULT_THEME_STATE, isBuiltinThemeId, resolveTheme, themeIconMetrics, themeStyle } from "./lib/themes";
@@ -113,29 +132,21 @@ import { createLatestTaskQueue, createSerialTaskQueue } from "./lib/serial-task"
 import { validateWallpaperImage } from "./lib/wallpaper-image";
 import { MobileHeaderMenu } from "./components/MobileHeaderMenu";
 import type { AuthSession } from "./lib/auth";
-import { SearchCommandPalette } from "./components/SearchCommandPalette";
-import { KeyboardShortcutsPanel } from "./components/KeyboardShortcutsPanel";
-import { TrashWindow } from "./components/TrashWindow";
+import type { KeyboardShortcut } from "./ui/panel-data";
 import { PanelDialog } from "./components/PanelDialog";
-import { ConfirmationDialog, type ConfirmationRequest } from "./components/ConfirmationDialog";
-import { SharingDialog } from "./components/SharingDialog";
-import { PublishDialog } from "./components/PublishDialog";
+import type { ConfirmationRequest } from "./components/ConfirmationDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
 import { iconGroupsAfterEntryChange, isRevisionConflictRecord, mergeDesktopLayout, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
 import { accountResources, downloadAccountResource } from "./lib/account-apps";
-import type { KeyboardShortcut } from "./ui/panel-data";
-import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason, sharedOfflineMessage } from "./lib/permissions";
+import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
 import { TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "@hiraya/app-runtime";
 import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import type { AppPackageInspection, ServiceMethods, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-contracts";
-import { SandboxAppFrame } from "@hiraya/app-runtime/react";
 import type { ThemePackageCache } from "./lib/theme-package";
-import { API_ROUTES } from "./lib/api-routes";
 import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
-import { createFile as createAppFile, deleteEntry as deleteAppEntry, moveEntry as moveAppEntry, saveFile as saveAppFile } from "./lib/sync";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
@@ -145,17 +156,15 @@ import type { SystemAppTarget } from "./apps/types";
 import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
 import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
 import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
-import { isStandalone, pwaInstallState, type InstallPromptEvent } from "./lib/pwa-install";
+import { isStandalone, pwaInstallState, updateActivationBlocked, type InstallPromptEvent } from "./lib/pwa-install";
 import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
 import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
-import { HelpPanel } from "./components/HelpPanel";
 import type { HelpSectionId } from "./lib/help";
-import { ConnectionPanel } from "./components/ConnectionPanel";
 import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, swipeAxis, swipePreviewReady, type AreaSwitcherTap } from "./ui/shell";
-import { SERVER_ROUTES } from "./lib/api-routes";
+import { SERVER_ROUTES } from "./lib/server-routes";
 import { actionSheetHistoryState, actionSheetHistoryToken } from "./ui/action-sheet-history";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer, type ClipboardOfferState } from "./ui/clipboard-offer";
 import { historyInstanceIds, historySettingsPage, removedHistoryInstanceIds } from "./ui/app-history";
@@ -178,17 +187,30 @@ import { ShellNotifications, type ShellMessage } from "./features/notifications/
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { nextQuitBack, type QuitBackState } from "./ui/back-navigation";
 import { desktopEntities, desktopEntityMovementPlan, desktopEntityParts, desktopSelectionCanDropIntoFolder, entryEntityId, groupEntityId, retainedDesktopEntityIds, widgetEntityId } from "./ui/desktop-entity";
-import { AppStoreWindow, type StorePackageView } from "./components/AppStoreWindow";
+import type { StorePackageView } from "./components/AppStoreWindow";
 import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
-import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/blobs";
-import { serializeStorage } from "./platform/storage/namespace";
-import { MergeWindow, type MergeFileVersion, type MergeTextConflict, type MergeTextResolution } from "./components/MergeWindow";
+import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/package-archives";
+import type { MergeFileVersion, MergeTextConflict, MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
 import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
 import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
+const SandboxAppFrame = lazy(() => import("./features/app-management/SandboxFrame"));
+const AppStoreWindow = lazy(() => import("./components/AppStoreWindow").then((module) => ({ default: module.AppStoreWindow })));
+const ConfirmationDialog = lazy(() => import("./components/ConfirmationDialog").then((module) => ({ default: module.ConfirmationDialog })));
+const ConnectionPanel = lazy(() => import("./components/ConnectionPanel").then((module) => ({ default: module.ConnectionPanel })));
+const FileWindow = lazy(() => import("./components/FileWindow").then((module) => ({ default: module.FileWindow })));
+const HelpPanel = lazy(() => import("./components/HelpPanel").then((module) => ({ default: module.HelpPanel })));
+const KeyboardShortcutsPanel = lazy(() => import("./components/KeyboardShortcutsPanel").then((module) => ({ default: module.KeyboardShortcutsPanel })));
+const MergeWindow = lazy(() => import("./components/MergeWindow").then((module) => ({ default: module.MergeWindow })));
+const PropertiesWindow = lazy(() => import("./components/PropertiesWindow").then((module) => ({ default: module.PropertiesWindow })));
+const PublishDialog = lazy(() => import("./components/PublishDialog").then((module) => ({ default: module.PublishDialog })));
+const SearchCommandPalette = lazy(() => import("./components/SearchCommandPalette").then((module) => ({ default: module.SearchCommandPalette })));
+const SettingsWindow = lazy(() => import("./components/SettingsWindow").then((module) => ({ default: module.SettingsWindow })));
+const SharingDialog = lazy(() => import("./components/SharingDialog").then((module) => ({ default: module.SharingDialog })));
+const TrashWindow = lazy(() => import("./components/TrashWindow").then((module) => ({ default: module.TrashWindow })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type PendingDevicePaste = { parentId: string | null; position?: EntryPosition; error?: string };
@@ -289,7 +311,7 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   };
 }
 
-function App({ session, warmStart = false }: { session: AuthSession | null; warmStart?: boolean }) {
+function FullDesktop({ session, warmStart = false }: { session: AuthSession | null; warmStart?: boolean }) {
   const commandService = useMemo(createAppCommandService, []);
   const [loading, setLoading] = useState(true);
   const {
@@ -418,6 +440,8 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const [storeInstallKey, setStoreInstallKey] = useState<string | null>(null);
   const [storeLoading, setStoreLoading] = useState(false);
   const [storeError, setStoreError] = useState("");
+  const [fileHistories, setFileHistories] = useState<Record<string, FileHistory | undefined>>({});
+  const [historyBusyId, setHistoryBusyId] = useState<string | null>(null);
   const storeInspectionCacheRef = useRef(new Map<string, InspectedStorePackage>());
   const storeRefreshGenerationRef = useRef(0);
   const storeManagedRef = useRef(false);
@@ -448,7 +472,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const areaTransitionNavigationRef = useRef<{ generation: number; mode: "push" | "replace"; route: DesktopRoute } | null>(null);
   const immediateAreaTransitionRef = useRef<{ generation: number; target: SurfaceSegment } | null>(null);
   const uploadRef = useRef<HTMLInputElement>(null);
-  const directoryRef = useRef<HTMLInputElement>(null);
+  const directoryRef = useRef<HTMLInputElement | null>(null);
   const uploadParentRef = useRef<string | null>(null);
   const uploadPositionRef = useRef<EntryPosition | undefined>(undefined);
   const importOperationRef = useRef<ImportOperationContext | null>(null);
@@ -462,7 +486,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     timer: number;
   } | null>(null);
   const desktopTouchPointersRef = useRef(new Set<number>());
-  const areaSwitcherTriggerRef = useRef<HTMLButtonElement>(null);
+  const areaSwitcherTriggerRef = useRef<HTMLButtonElement | null>(null);
   const restoreNotificationFocus = useCallback(() => areaSwitcherTriggerRef.current?.focus(), []);
   const areaSwitcherTapRef = useRef<AreaSwitcherTap | null>(null);
   const areaSwitcherRef = useRef<HTMLElement>(null);
@@ -568,7 +592,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const rootBackGuardInstalledRef = useRef(false);
   const quitBackRef = useRef<QuitBackState>({ count: 0, lastAt: 0 });
   const quitBackTimerRef = useRef<number | null>(null);
-  const navigateBackEvent = useEffectEvent((source: "ui" | "history", historyState?: unknown) => navigateBack(source, historyState));
+  const navigateBackEvent = useStableHandler((source: "ui" | "history", historyState?: unknown) => navigateBack(source, historyState));
   const activeSegment = { column: route?.column ?? 0, row: route?.row ?? 0 };
   areaTransitionRef.current = areaTransition;
   desktopSizeRef.current = desktopSize;
@@ -589,12 +613,11 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   syncStatusRef.current = syncStatus;
   const canViewActivity = canViewDesktopActivity(activeDesktop, syncStatus);
   const activityScope = activeDesktop?.ownership === "shared" ? "desktop" : "catalog";
-  const canOpenTrash = Boolean(activeDesktop?.capabilities.write && syncStatus !== "local");
-  const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "accessible-desktops-v1";
-  const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "account-short-links-v1");
-  const publicationsAvailable = Boolean(session?.capabilities.publications === "alias-publications-v1");
+  const canOpenTrash = Boolean(activeDesktop?.capabilities.write);
+  const desktopSearchAvailable = session === null || session.capabilities.desktopSearch === "web2-search-v1";
+  const shortLinksAvailable = Boolean(session?.capabilities.shortLinks === "web2-short-links-v1");
+  const publicationsAvailable = Boolean(session?.capabilities.publications === "web2-publications-v1");
   const installState = pwaInstallState(installPrompt, pwaInstalled, isStandalone());
-  const offlineSharedNotice = sharedOfflineMessage(activeDesktop, syncStatus);
   const activeDesktopName = desktops.find((desktop) => desktop.id === activeDesktopId)?.name ?? "Desktop";
   const actionSheetOpen = contextMenu?.presentation === "sheet";
   const entryIndex = useMemo(() => createEntryIndex(entries), [entries]);
@@ -622,7 +645,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   const iconArea = useMemo(() => iconAreaSize(desktopSize, layout.gridSize), [desktopSize, layout.gridSize]);
   iconAreaSizeRef.current = iconArea;
   const thumbnailHierarchyAvailable = session?.capabilities.thumbnails === "thumbnail-v1";
-  const copyDeepLinkEvent = useEffectEvent(copyDeepLink);
+  const copyDeepLinkEvent = useStableHandler(copyDeepLink);
 
   useEffect(() => {
     let active = true;
@@ -643,21 +666,16 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       setSystemDocument(null);
       setSystemLoad({ status: "error", message: reason instanceof Error ? reason.message : "System resources could not be loaded." });
     });
-    if (syncStatus === "local") {
-      setShellTrash(null);
+    setTrashLoad({ status: "loading" });
+    void listTrash(activeDesktopId).then((document) => {
+      if (!active) return;
+      setShellTrash(document);
       setTrashLoad({ status: "ready" });
-    } else {
-      setTrashLoad({ status: "loading" });
-      void listTrash(activeDesktopId).then((document) => {
-        if (!active) return;
-        setShellTrash(document);
-        setTrashLoad({ status: "ready" });
-      }).catch((reason: unknown) => {
-        if (!active) return;
-        setShellTrash(null);
-        setTrashLoad({ status: "error", message: reason instanceof Error ? reason.message : "Trash contents could not be loaded." });
-      });
-    }
+    }).catch((reason: unknown) => {
+      if (!active) return;
+      setShellTrash(null);
+      setTrashLoad({ status: "error", message: reason instanceof Error ? reason.message : "Trash contents could not be loaded." });
+    });
     return () => { active = false; };
   }, [activeDesktopId, appearance, entries, layout, loading, protectedRefreshToken, showHiddenFiles, syncStatus]);
   const activeSystemDocument = systemDocument?.desktopId === activeDesktopId ? systemDocument : null;
@@ -941,7 +959,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     systemReconciliationQueueRef.current = result.catch(() => undefined);
     return result;
   }
-  const reconcileSystemPackage = useEffectEvent((item: StorePackage, value: InspectedStorePackage) => enqueueSystemReconciliation(async () => {
+  const reconcileSystemPackage = useStableHandler((item: StorePackage, value: InspectedStorePackage) => enqueueSystemReconciliation(async () => {
     if (item.source !== "remote" || item.kind !== "system" || !activeSystemDigestsRef.current.has(value.inspection.digest) || systemPackageReconciliationRef.current.has(value.inspection.digest)) return;
     const catalogItem = publishedSystemApp(item);
     if (!catalogItem) throw new Error("Trusted system apps require a runtime catalog release.");
@@ -953,7 +971,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Update ${value.inspection.manifest.name}?`, message: "This trusted system app has unsaved changes. Close it and apply the administrator's update?", confirmLabel: "Close and update" })) return;
       if (!activeSystemDigestsRef.current.has(value.inspection.digest)) return;
       const expected = { schemaVersion: 2 as const, catalogId: item.catalogId, catalogRevision: item.catalogRevision, desktopId: item.desktopId };
-      await serializeStorage(async () => {
+      await serializeRuntimeStorage(async () => {
         if (!await appStoreDescriptorIsCurrent(expected)) return;
         await saveApprovedPackageArchive(value.inspection.digest, value.archive);
         if (!await appStoreDescriptorIsCurrent(expected) || !activeSystemDigestsRef.current.has(value.inspection.digest)) return;
@@ -966,7 +984,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       systemPackageReconciliationRef.current.delete(value.inspection.digest);
     }
   }));
-  const reconcileMissingSystemPackages = useEffectEvent((packages: readonly StorePackage[], managed: boolean, descriptor: AppStoreDescriptor | null, generation: number) => enqueueSystemReconciliation(async () => {
+  const reconcileMissingSystemPackages = useStableHandler((packages: readonly StorePackage[], managed: boolean, descriptor: AppStoreDescriptor | null, generation: number) => enqueueSystemReconciliation(async () => {
     if (!managed || !descriptor || generation !== storeRefreshGenerationRef.current) return;
     const activeIds = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.manifest.id] : []));
     for (const current of installedApps) {
@@ -976,7 +994,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === current.appId).map((app) => app.id);
       if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Restore ${current.manifest.name}?`, message: "This trusted system release was withdrawn but has unsaved changes. Close it and restore Hiraya's bundled version?", confirmLabel: "Close and restore", danger: true })) continue;
       if (generation !== storeRefreshGenerationRef.current || !storeManagedRef.current || activeSystemAppIdsRef.current.has(current.appId)) return;
-      await serializeStorage(async () => {
+      await serializeRuntimeStorage(async () => {
         if (!await appStoreDescriptorIsCurrent(descriptor) || activeSystemAppIdsRef.current.has(current.appId)) return;
         forceCloseRunningAppInstances([...runningAppsRef.current], current.appId, closeApp);
         await approveInstall(systemInstallFromCatalog(fallback, current));
@@ -1059,7 +1077,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       unsubscribe();
       if (refreshStoreRef.current) refreshStoreRef.current = () => undefined;
     };
-  // The reconciliation callback is a useEffectEvent and intentionally not an effect dependency.
+  // The stable reconciliation callback always reads the latest package state.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appsLoaded, desktops, session]);
   useEffect(() => {
@@ -1895,7 +1913,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       onUpdateAvailable: () => {
         if (!active) return;
         setUpdateReady(true);
-        if (manualUpdateCheckRef.current || (updatePreferenceLoadedRef.current && autoUpdateRef.current)) setShowUpdateToast(true);
+        setShowUpdateToast(true);
       },
       onError: () => {
         if (active) setError("Hiraya could not check for app updates.");
@@ -2256,7 +2274,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       window.removeEventListener("keydown", onKeyDown);
       window.removeEventListener("paste", onPaste);
     };
-    // copyDeepLinkEvent is a useEffectEvent and intentionally non-reactive.
+    // copyDeepLinkEvent is stable and intentionally non-reactive.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDesktopSegment.entries, canMutate, entryIndex, focusedAppIdRef, openFileDialog, pendingDevicePaste, replaceSelection, runningAppsRef, selectedIdsRef, selectionScope, shortcutsSuspended]);
 
@@ -3179,7 +3197,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   }
 
   async function activateUpdate() {
-    if (Object.values(fileDirtyRef.current).some(Boolean)) {
+    if (await updateActivationBlocked(Object.values(fileDirtyRef.current))) {
       setUpdateBlocked(true);
       return;
     }
@@ -3687,6 +3705,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   function openPropertiesWindow(entryId: string, syncRoute = true) {
     const entry = entriesRef.current.find((candidate) => candidate.id === entryId);
     if (!entry) return false;
+    if (entry.kind === "file") void refreshFileHistory(entry.id);
     const id = builtinAppTargetId({ kind: "properties", entryId });
     if (runningAppsRef.current.some((app) => app.id === id)) {
       focusApp(id, syncRoute);
@@ -3699,6 +3718,31 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const currentRoute = routeRef.current;
     if (syncRoute && currentRoute) navigateRoute({ column: currentRoute.column, row: currentRoute.row, propertiesEntryId: entryId }, "push", previousApps);
     return true;
+  }
+
+  async function refreshFileHistory(entryId: string) {
+    try {
+      const history = await listFileHistory(entryId);
+      setFileHistories((current) => ({ ...current, [entryId]: history }));
+      return history;
+    } catch {
+      setFileHistories((current) => ({ ...current, [entryId]: undefined }));
+      return undefined;
+    }
+  }
+
+  async function changeFileHistory(entryId: string, operation: () => Promise<void>, success: string) {
+    setHistoryBusyId(entryId);
+    setError("");
+    try {
+      await operation();
+      await refreshFileHistory(entryId);
+      setNotice(success);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "File history could not be changed.");
+    } finally {
+      setHistoryBusyId(null);
+    }
   }
 
   async function launchInstalledApp(install: InstalledApp, target?: AppLaunchTarget, launchSource: AppLaunchSource = target ? "file" : "launcher") {
@@ -4083,7 +4127,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, blob: opened, loadError: undefined } : candidate));
     }).catch((openError) => {
       if (fileLoadGenerationsRef.current[id] !== generation) return;
-      if (openError instanceof VirtualFileChangedError) setProtectedRefreshToken((value) => value + 1);
+      if (openError instanceof Error && openError.name === "VirtualFileChangedError") setProtectedRefreshToken((value) => value + 1);
       updateRunningApps((current) => current.map((candidate) => candidate.id === id && candidate.kind === "file" ? { ...candidate, loadError: openError instanceof Error ? openError.message : "The protected file could not be opened." } : candidate));
     });
   }
@@ -4113,7 +4157,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     loadProtectedWindow(id, file, details.revision, details.load);
   }
 
-  const reconcileProtectedWindows = useEffectEvent(() => {
+  const reconcileProtectedWindows = useStableHandler(() => {
     for (const app of runningAppsRef.current) {
       if (app.kind !== "file" || !app.transient || !app.file || virtualThumbnailSource(app.file)) continue;
       const source = protectedShellSource(app.file);
@@ -4162,6 +4206,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     const currentRoute = routeRef.current;
     if (!currentRoute) return;
     if (entry.kind === "folder") {
+      void hydrateFolder(entry.id).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "That folder could not be loaded."));
       const existingId = builtinAppTargetId({ kind: "explorer", folderId: entry.id });
       if (runningAppsRef.current.some((app) => app.id === existingId)) {
         focusApp(existingId);
@@ -4304,6 +4349,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       return;
     }
     if (result.desktopId !== activeDesktopIdRef.current && !(await activateDesktop(result.desktopId))) return;
+    await hydrateNode(result.entry.id);
     const current = entriesRef.current.find((entry) => entry.id === result.entry.id);
     if (!current) {
       setError("That search result is stale. Search again after reconnecting.");
@@ -4430,7 +4476,9 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
     setError("");
     setExporting(true);
     try {
-      const archive = await exportSeededDesktop(readFile);
+      const snapshot = appSnapshotRef.current;
+      if (!snapshot) throw new Error("The desktop is unavailable.");
+      const archive = await import("./lib/seeded").then(({ exportSeededDesktop }) => exportSeededDesktop(snapshot, readFile));
       const url = URL.createObjectURL(archive);
       const anchor = document.createElement("a");
       anchor.href = url;
@@ -5481,7 +5529,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
   />;
 
   return (
-    <main className="desktop-shell" data-windowed={windowed || undefined} data-integrated-app={focusedIntegratedApp ? true : undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
+    <main className="desktop-shell" data-storage-runtime={import.meta.env.HIRAYA_FRONTEND_ONLY === "true" ? "web2" : "legacy"} data-windowed={windowed || undefined} data-integrated-app={focusedIntegratedApp ? true : undefined} data-mobile-selection-toolbar={showMobileSelectionToolbar || undefined} data-theme={isBuiltinThemeId(appearance.selectedThemeId) ? appearance.selectedThemeId : "custom"} style={themeStyle(activeTheme)} onPointerDownCapture={handleShellAreaSwitcherInteraction} onKeyDownCapture={handleShellAreaSwitcherInteraction} onClickCapture={captureAreaSwitcherActivation} onFocusCapture={handleShellAreaSwitcherFocus}>
       <header className="menu-bar">
         <nav className="mobile-window-nav" data-integrated={focusedIntegratedApp ? true : undefined} aria-label={focusedIntegratedApp ? `${runningAppLabel(focusedIntegratedApp)} window controls` : "Desktop navigation"}>
             <div className="mobile-window-nav__leading">
@@ -5498,14 +5546,14 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                   </div>)
                 : <MobileHeaderMenu
                     label={`${syncStatus === "offline" ? "Offline; " : syncStatus === "online" && isSyncing ? "Syncing; " : ""}Start; account, system, and applications`}
-                    icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}pwa-192x192.png`} alt="" /></span>}
+                    icon={<span className="mobile-start-menu__icon" data-syncing={syncStatus === "online" && isSyncing || undefined} data-offline={syncStatus === "offline" || undefined}><img className="brand-mark__shape" src={`${import.meta.env.BASE_URL}hiraya-icon.svg`} alt="" /></span>}
                   >
                     {renderMobileStartMenu}
                   </MobileHeaderMenu>}
             </div>
             {focusedApp
               ? <span className="mobile-window-nav__title">{runningAppLabel(focusedApp)}</span>
-              : activeDesktopId && <button className="mobile-desktop-summary" type="button" popoverTarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
+              : activeDesktopId && <button className="mobile-desktop-summary" type="button" popovertarget="desktop-switcher" aria-label={`Switch desktop, current desktop ${activeDesktopName}`}><strong>{activeDesktopName}</strong><small>{homeRelativeAreaLabel(activeSegment)}</small></button>}
         </nav>
         <div className="menu-bar__actions">
           {focusedIntegratedApp ? <>
@@ -5610,7 +5658,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         {layout.wallpaper.source.startsWith("theme:") && activeDesktopId && (() => {
           const themeId = layout.wallpaper.source.slice(6);
           const theme = appearance.customThemes.find((item) => item.id === themeId && item.wallpaper);
-          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl={API_ROUTES.desktopContent(activeDesktopId, theme.wallpaper.assetId, theme.wallpaper.revision)} cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
+          return theme?.wallpaper ? <Suspense fallback={<div className="wallpaper-image" aria-hidden="true" />}><ThemeWallpaper theme={theme} accessUrl="" cache={themePackageCache} directBlobOrigin={session?.directBlobOrigin} onWallpaperTarget={registerWallpaperScene} /></Suspense> : <div className="wallpaper-image" aria-hidden="true" />;
         })() || <div className="wallpaper-image" aria-hidden="true" />}
         {wallpaperFile && isSceneFile(wallpaperFile) && <Suspense fallback={null}><div className="scene-wallpaper-layer"><SceneFrame file={wallpaperFile} contentRevision={wallpaperContentRevision} readContent={(file) => readFile(file.id)} mode="wallpaper" onWallpaperTarget={registerWallpaperScene} /></div></Suspense>}
         <div className="wallpaper-dim" aria-hidden="true" style={{ backgroundColor: "#000000", opacity: layout.wallpaper.dim }} />
@@ -5639,7 +5687,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             const segmentDragging = desktopSegment.entries.some((entry) => entry.id === edgeNavigationRef.current?.draftEntryId);
             const segmentInteractive = segmentDragging || desktopSegment.entries.some((entry) => boundsIntersectSegment(entry.position, iconMetrics, activeSegment, iconArea));
             const segmentVisible = segmentInteractive || transitionSegmentKeys.has(desktopSegment.key);
-            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
+            return <div className="desktop-area-segment" key={desktopSegment.key} data-active={segmentActive || undefined} aria-hidden={!segmentInteractive || undefined} inert={!segmentInteractive ? "" : undefined} style={{ left: origin.x, top: origin.y, width: iconArea.width, height: iconArea.height, visibility: segmentVisible ? "visible" : "hidden" }}>
             {desktopSegment.entries.map((entry) => {
               const projectedPosition = responsive.positions.get(entry.id) ?? entry.position;
               const renderedEntry = { ...entry, position: projectedPosition };
@@ -5811,7 +5859,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
               <HardDrive size={28} weight="duotone" />
             </span>
             <h1>Your space is ready.</h1>
-            <p>{offlineSharedNotice || (syncStatus === "local" ? "Create an item, import a folder, or drop files anywhere. Items are saved only in this browser." : canMutate ? "Create an item, import a folder, or drop files anywhere. Items are saved to this shared desktop and synchronized by the Hiraya server." : "This desktop is read only for your account.")}</p>
+            <p>{syncStatus === "local" ? "Create an item, import a folder, or drop files anywhere. Items are saved only in this browser." : canMutate ? "Create an item, import a folder, or drop files anywhere. Items are saved to this shared desktop and synchronized by the Hiraya server." : "This desktop is read only for your account."}</p>
             <div className="empty-state__actions">
               <button className="button button--primary" type="button" disabled={!canMutate} onClick={() => openFileDialog({ type: "create-file", parentId: null })}>
                 <Plus size={17} /> New text file
@@ -5879,7 +5927,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
             const mergeReview = app.kind === "merge" ? mergeReviews[app.operationId] : null;
             const mergeConflicts: MergeTextConflict[] = mergeReview?.mode === "text" ? mergeReview.regions.flatMap((region, index) => region.kind === "unresolved" && !mergeReview.resolutions[String(index)] ? [{ id: String(index), label: `Overlapping edit ${index + 1}`, base: region.base, mine: region.mine, server: region.server, resolution: null }] : []) : [];
             return (
-              <>
+              <Suspense fallback={<div className="app-window__loading" role="status">Opening {runningAppLabel(app)}...</div>}>
                     {app.kind === "sandbox" && <SandboxAppFrame package={app.package} dispatcher={app.dispatcher} title={app.title} uiRuntime={APPS_UI_RUNTIME} csp={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? trustedDocumentMediaCsp(session?.directBlobOrigin) : undefined} sandbox={app.install.source === "system" && app.install.appId === SYSTEM_APP_IDS.mediaViewer ? TRUSTED_DOCUMENT_MEDIA_FLAGS : undefined} onActivate={() => { if (focusedAppIdRef.current !== app.id) focusApp(app.id); }} onNavigation={() => closeApp(app.id)} />}
                     {app.kind === "explorer" && (
                       <FolderExplorer
@@ -5959,7 +6007,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                       onResolveLink={async () => { throw new Error("Protected files do not expose file links."); }}
                       onOpenLinkedFile={() => undefined}
                     /> : app.loadError ? <div className="app-window__loading" role="alert"><span>{app.loadError}</span><button className="button button--primary" type="button" onClick={() => virtualThumbnailSource(app.file!) ? openVirtualThumbnail(app.file!) : openProtectedFile(app.file!)}>Retry</button></div> : <div className="app-window__loading" role="status">Opening {app.file.name}...</div>)}
-                    {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} />}
+                    {app.kind === "properties" && propertiesEntry && <PropertiesWindow entry={propertiesEntry} rootLabel={activeDesktopName} ancestors={entryIndex.ancestors(propertiesEntry.id)} descendants={propertiesEntry.kind === "folder" ? entryIndex.descendants(propertiesEntry.id) : []} offlineAvailability={offlineModel.entries[propertiesEntry.id]} offlineBusy={offlineBusy || offlineProgress?.phase === "downloading"} onMakeAvailableOffline={syncStatus !== "local" ? () => void makeAvailableOffline([propertiesEntry.id]) : undefined} onRemoveOfflineCopy={syncStatus !== "local" ? () => void removeDownloadedCopies([propertiesEntry.id]) : undefined} fileVersions={propertiesEntry.kind === "file" ? fileHistories[propertiesEntry.id]?.versions : undefined} historyBusy={historyBusyId === propertiesEntry.id} onUndoLatestChange={propertiesEntry.kind === "file" && fileHistories[propertiesEntry.id]?.canUndo ? () => void changeFileHistory(propertiesEntry.id, () => undoLatestFileChange(propertiesEntry.id), "Latest file change undone") : undefined} onRedoLatestChange={propertiesEntry.kind === "file" && fileHistories[propertiesEntry.id]?.canRedo ? () => void changeFileHistory(propertiesEntry.id, () => redoLatestFileChange(propertiesEntry.id), "Latest file change redone") : undefined} onRestoreFileVersion={propertiesEntry.kind === "file" && fileHistories[propertiesEntry.id] ? (operationId) => void changeFileHistory(propertiesEntry.id, () => restoreFileVersion(propertiesEntry.id, operationId), "File version restored") : undefined} onCompareFileVersion={propertiesEntry.kind === "file" ? async (operationId) => { const [current, retained] = await Promise.all([readFile(propertiesEntry.id), readFileVersion(propertiesEntry.id, operationId)]); return current.size <= 1024 * 1024 && retained.size <= 1024 * 1024 && (/^text\//.test(current.type) || /(?:json|javascript|xml)/.test(current.type)) ? { current: await current.text(), retained: await retained.text() } : null; } : undefined} onKeepBothFileVersion={propertiesEntry.kind === "file" ? (operationId) => void changeFileHistory(propertiesEntry.id, () => keepBothFileVersion(propertiesEntry.id, operationId).then(() => undefined), "Both file versions were kept") : undefined} />}
                     {app.kind === "merge" && mergeReview && (mergeReview.mode === "text" ? <MergeWindow
                       mode="text"
                       active={focusedAppId === app.id}
@@ -6150,7 +6198,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
                         }
                       })
                     } />}
-              </>
+              </Suspense>
             );
           }}
         </WindowLayer>
@@ -6339,6 +6387,7 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
         </MobileSelectionToolbar>
       )}
 
+      <Suspense fallback={<div className="app-window__loading" role="status">Opening...</div>}>
       {contextMenu?.type === "entry" && contextMenuEntry && (
         <ContextMenu
           menu={contextMenu}
@@ -6691,9 +6740,10 @@ function App({ session, warmStart = false }: { session: AuthSession | null; warm
       )}
       {publishEntryId && activeDesktop?.capabilities.manage && entries.find((entry) => entry.id === publishEntryId) && <PublishDialog desktop={activeDesktop} entry={entries.find((entry) => entry.id === publishEntryId)!} onClose={() => setPublishEntryId(null)} />}
       {confirmation && <ConfirmationDialog {...confirmation} onClose={resolveConfirmation} />}
+      </Suspense>
       {showGettingStarted && <GettingStartedDialog local={syncStatus === "local"} installState={installState} onInstall={() => void installPwa()} onClose={() => void closeGettingStarted()} />}
     </main>
   );
 }
 
-export default App;
+export default FullDesktop;

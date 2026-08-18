@@ -1,10 +1,10 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
-import { VitePWA } from "vite-plugin-pwa";
+import path from "node:path";
 import { seededDesktopPlugin } from "./build/seeded";
 import { systemAppsPlugin } from "./build/system-apps";
-import { navigationFallbackDenylist } from "./build/navigation";
 import { appsUiRuntimePlugin } from "./build/apps-ui-runtime";
+import { serviceWorkerPlugin } from "./build/service-worker";
 
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), "HIRAYA_"), ...process.env };
@@ -23,28 +23,7 @@ export default defineConfig(({ mode }) => {
       seededDesktopPlugin(process.cwd(), env.HIRAYA_SEEDED_DIR),
       systemAppsPlugin(process.cwd()),
       react(),
-      VitePWA({
-        useCredentials: true,
-        includeAssets: ["favicon.png", "apple-touch-icon.png", "logo.png"],
-        manifest: {
-          name: "Hiraya Desktop",
-          short_name: "Hiraya",
-          description: "A private, browser-native desktop for your files.",
-          theme_color: "#24333b",
-          background_color: "#172329",
-          start_url: ".",
-          scope: ".",
-          icons: [
-            { src: "pwa-192x192.png", sizes: "192x192", type: "image/png" },
-            { src: "logo.png", sizes: "512x512", type: "image/png" },
-            { src: "pwa-maskable-512x512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-          ],
-        },
-        workbox: {
-          globPatterns: ["**/*.{js,css,html,ico,png,svg,wasm,webmanifest,json}"],
-          navigateFallbackDenylist: navigationFallbackDenylist(),
-        },
-      }),
+      serviceWorkerPlugin(base),
     ],
     server: {
       allowedHosts: [".exe.xyz"],
@@ -58,9 +37,18 @@ export default defineConfig(({ mode }) => {
     },
     build: {
       manifest: true,
+      modulePreload: false,
+      minify: "terser",
+      terserOptions: { module: true, compress: { passes: 3 } },
       rollupOptions: {
+        input: {
+          app: path.resolve(process.cwd(), "index.html"),
+          sw: path.resolve(process.cwd(), "src/sw.ts"),
+        },
         output: {
+          entryFileNames: (chunk) => chunk.name === "sw" ? "sw.js" : "assets/[name]-[hash].js",
           manualChunks(id) {
+            if (/\/src\/(?:filesystem\/ids|lib\/publication-alias|platform\/storage\/account-storage)\.ts$/.test(id)) return "startup-shared";
             if (id.includes("/node_modules/") && (id.includes("/@codemirror/") || id.includes("/codemirror/") || id.includes("/@lezer/"))) return "editor-runtime";
           },
         },

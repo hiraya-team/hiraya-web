@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 describe("custom wallpaper lifecycle", () => {
   test("keeps the neutral paint guard until the persisted wallpaper is restored", async () => {
-    const app = await Bun.file(new URL("../src/App.tsx", import.meta.url)).text();
+    const app = await Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text();
 
     expect(app).toContain("data-loading={loading || undefined}");
   });

@@ -1,6 +1,7 @@
-import { isSafeRootRelativePath, requireAuthenticatedResponse } from "./auth";
-import { API_ROUTES, authenticatedHeaders } from "./api-routes";
+import { isSafeRootRelativePath } from "./auth";
 import { isRecord } from "./contracts";
+import { accountStorage } from "../platform/storage/account-storage";
+import { deleteWeb2ShortLink, fetchWeb2ShortLinks, putWeb2ShortLink } from "../sync/transport";
 
 export type ShortLink = {
   slug: string;
@@ -30,7 +31,9 @@ export function parseShortLink(value: unknown): ShortLink {
   if (!isRecord(value) || Object.keys(value).length !== SHORT_LINK_KEYS.length || SHORT_LINK_KEYS.some((key) => !(key in value))) throw new Error("A short link has an unsupported format.");
   if (typeof value.slug !== "string" || !value.slug || typeof value.enabled !== "boolean") throw new Error("A short link has an unsupported format.");
   if (typeof value.createdAt !== "string" || !Number.isFinite(Date.parse(value.createdAt)) || typeof value.updatedAt !== "string" || !Number.isFinite(Date.parse(value.updatedAt))) throw new Error("A short link contains an invalid timestamp.");
-  return { slug: value.slug, destinationUrl: absoluteUrl(value.destinationUrl, "destination URL", true), url: publicUrl(value.url), enabled: value.enabled, createdAt: value.createdAt, updatedAt: value.updatedAt };
+  const url = publicUrl(value.url);
+  if (url !== `/r/${value.slug}`) throw new Error("A short link contains an invalid public URL.");
+  return { slug: value.slug, destinationUrl: absoluteUrl(value.destinationUrl, "destination URL", true), url, enabled: value.enabled, createdAt: value.createdAt, updatedAt: value.updatedAt };
 }
 
 export function parseShortLinks(value: unknown) {
@@ -44,18 +47,31 @@ export function resolveShortLinkUrl(value: string, origin: string) {
   return new URL(value, origin).href;
 }
 
-async function request(input: string, init?: RequestInit, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
-  const response = requireAuthenticatedResponse(await fetchImpl(input, { credentials: "same-origin", cache: "no-store", ...init, headers: authenticatedHeaders(init?.headers) }));
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: unknown } | null;
-    throw new Error(typeof body?.error === "string" && body.error ? body.error : `The short-link request failed (${response.status}).`);
-  }
-  return response.status === 204 ? null : response.json();
+function projected(value: Awaited<ReturnType<typeof fetchWeb2ShortLinks>>["shortLinks"][number]): ShortLink {
+  return { ...value, createdAt: new Date(value.createdAt).toISOString(), updatedAt: new Date(value.updatedAt).toISOString() };
 }
 
-const json = (body: unknown): RequestInit => ({ headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+export async function listShortLinks(_fetchImpl?: typeof fetch) {
+  void _fetchImpl;
+  return (await fetchWeb2ShortLinks(accountStorage().accountId)).shortLinks.map(projected);
+}
 
-export async function listShortLinks(fetchImpl?: typeof fetch) { return parseShortLinks(await request(API_ROUTES.shortLinks, undefined, fetchImpl)); }
-export async function createShortLink(input: { slug?: string; destinationUrl: string }, fetchImpl?: typeof fetch) { return parseShortLink(await request(API_ROUTES.shortLinks, { method: "POST", ...json(input) }, fetchImpl)); }
-export async function updateShortLink(slug: string, input: { destinationUrl?: string; enabled?: boolean }, fetchImpl?: typeof fetch) { return parseShortLink(await request(API_ROUTES.shortLink(slug), { method: "PATCH", ...json(input) }, fetchImpl)); }
-export async function deleteShortLink(slug: string, fetchImpl?: typeof fetch) { await request(API_ROUTES.shortLink(slug), { method: "DELETE" }, fetchImpl); }
+export async function createShortLink(input: { slug?: string; destinationUrl: string }, _fetchImpl?: typeof fetch) {
+  void _fetchImpl;
+  const slug = input.slug ?? `link-${crypto.randomUUID().slice(0, 8)}`;
+  await putWeb2ShortLink(accountStorage().accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: "web2-sync-v1", slug, destinationUrl: input.destinationUrl, enabled: true });
+  return projected((await fetchWeb2ShortLinks(accountStorage().accountId)).shortLinks.find((link) => link.slug === slug)!);
+}
+
+export async function updateShortLink(slug: string, input: { destinationUrl?: string; enabled?: boolean }, _fetchImpl?: typeof fetch) {
+  void _fetchImpl;
+  const current = (await fetchWeb2ShortLinks(accountStorage().accountId)).shortLinks.find((link) => link.slug === slug);
+  if (!current) throw new Error("That short link no longer exists.");
+  await putWeb2ShortLink(accountStorage().accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: "web2-sync-v1", slug, destinationUrl: input.destinationUrl ?? current.destinationUrl, enabled: input.enabled ?? current.enabled });
+  return projected((await fetchWeb2ShortLinks(accountStorage().accountId)).shortLinks.find((link) => link.slug === slug)!);
+}
+
+export async function deleteShortLink(slug: string, _fetchImpl?: typeof fetch) {
+  void _fetchImpl;
+  await deleteWeb2ShortLink(accountStorage().accountId, slug, crypto.randomUUID());
+}

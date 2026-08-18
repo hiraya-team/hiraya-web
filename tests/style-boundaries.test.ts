@@ -2,12 +2,15 @@ import { describe, expect, test } from "bun:test";
 
 describe("style ownership", () => {
   test("loads foundation before the order-sensitive desktop cascade", async () => {
-    const entry = await Bun.file(new URL("../src/styles/index.css", import.meta.url)).text();
-    const foundationIndex = entry.indexOf('@import "./foundation.css";');
-    const desktopIndex = entry.indexOf('@import "../styles.css";');
+    const [entry, desktop, publicDesktop] = await Promise.all([
+      Bun.file(new URL("../src/styles/index.css", import.meta.url)).text(),
+      Bun.file(new URL("../src/Desktop.tsx", import.meta.url)).text(),
+      Bun.file(new URL("../src/PublicDesktop.tsx", import.meta.url)).text(),
+    ]);
 
-    expect(foundationIndex).toBeGreaterThanOrEqual(0);
-    expect(desktopIndex).toBeGreaterThan(foundationIndex);
+    expect(entry).toBe('@import "./foundation.css";\n');
+    expect(desktop).toContain('import "./styles.css";');
+    expect(publicDesktop).toContain('import "./styles.css";');
   });
 
   test("keeps document reset ownership out of feature styles", async () => {
