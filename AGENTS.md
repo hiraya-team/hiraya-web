@@ -16,7 +16,7 @@ bun run dev
 
 ## Architecture
 
-- `src/bootstrap.tsx` mounts the single React root. `src/shell/Shell.tsx` is the persistent core composition boundary; it owns startup and interaction-gated loading of `src/Desktop.tsx` for rich capabilities.
+- `src/bootstrap.tsx` mounts the single React root. `src/shell/Shell.tsx` is the persistent core composition boundary; it owns startup and automatic loading of `src/Desktop.tsx`.
 - `src/PublicDesktop.tsx`: public desktop composition root; read-only remote authority belongs in `src/features/public-desktop/`.
 - `src/domain/`: browser-independent desktop, file, preference, and theme contracts.
 - `src/features/`: feature-owned controllers and render layers for windows, areas, selection, app management, and public desktop behavior.

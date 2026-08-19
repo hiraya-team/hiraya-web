@@ -1,45 +1,23 @@
 import AxeBuilder from "@axe-core/playwright";
 import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
-test("core React shell defers rich chunks until an explicit rich action", async ({ page }) => {
+test("root opens the full desktop automatically", async ({ page }) => {
   const richScripts: string[] = [];
   page.on("response", (response) => {
     if (/\/assets\/(?:Desktop|PublicDesktop|TextEditor|ImagePreview|MarkdownRenderer|SettingsWindow|SharingDialog|PropertiesWindow|MergeWindow|SandboxFrame|AppStoreWindow)-/.test(response.url())) richScripts.push(response.url());
   });
   await page.goto("/");
-  await expect(page.locator(".shell-desktop")).toBeVisible();
-  await page.waitForTimeout(800);
-  expect(richScripts).toEqual([]);
-
-  const folderName = `core-folder-${Date.now()}`;
-  await page.getByRole("button", { name: "New folder" }).click();
-  await page.getByLabel("Name").fill(folderName);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  const folder = page.getByRole("button", { name: `${folderName}, folder` });
-  await expect(folder).toBeVisible();
-  await folder.dblclick();
-  await expect(page.getByRole("dialog", { name: folderName })).toBeVisible();
-
-  const fileName = `core-file-${Date.now()}.txt`;
-  await page.getByRole("button", { name: "New file" }).click();
-  await page.getByLabel("Name").fill(fileName);
-  await page.getByRole("button", { name: "Create", exact: true }).click();
-  const file = page.getByRole("button", { name: `${fileName}, file` });
-  await expect(file).toBeVisible();
-  await file.dblclick();
-  await expect(page.getByRole("dialog", { name: fileName })).toBeVisible();
-  await page.waitForTimeout(800);
-  expect(richScripts).toEqual([]);
-
-  await page.getByRole("button", { name: "Edit with Integrated Editor" }).click();
   await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect(page.locator(".shell-desktop")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Open full desktop" })).toHaveCount(0);
   await expect.poll(() => richScripts.some((url) => /\/assets\/Desktop-/.test(url))).toBe(true);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".desktop-shell")).toBeVisible();
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
 async function openLocalDesktop(page: Page, timeout = 5_000) {
   await page.goto("/");
-  await expect(page.locator(".shell-desktop")).toBeVisible({ timeout });
-  await page.getByRole("button", { name: "Open full desktop" }).click();
   await expect(page.locator(".desktop-shell")).toBeVisible({ timeout });
   await expect(page.locator(".desktop-shell")).toHaveAttribute("data-storage-runtime", "web2");
   await expect(page.getByText("Loading desktop...", { exact: true })).toBeHidden({ timeout });
@@ -2219,6 +2197,9 @@ test("service worker reloads the shell offline", async ({ page }) => {
   });
   expect(cachedShell).toContain("/");
   expect(cachedShell.some((path) => /\/assets\/app-.*\.js$/.test(path))).toBe(true);
+  expect(cachedShell.some((path) => /\/assets\/rich-.*\.js$/.test(path))).toBe(true);
+  expect(cachedShell.some((path) => /\/assets\/Desktop-.*\.js$/.test(path))).toBe(true);
+  expect(cachedShell.some((path) => /\/assets\/local-desktop-runtime-.*\.js$/.test(path))).toBe(true);
   await page.evaluate(() => new Promise<void>((resolve) => {
     const ready = (event: MessageEvent) => {
       if (event.data?.type !== "HIRAYA_E2E_OFFLINE_READY") return;
@@ -2229,7 +2210,7 @@ test("service worker reloads the shell offline", async ({ page }) => {
     navigator.serviceWorker.controller?.postMessage({ type: "HIRAYA_E2E_OFFLINE" });
   }));
   await page.goto(page.url(), { waitUntil: "domcontentloaded" });
-  await expect(page.locator(".shell-desktop, .desktop-shell"), pageErrors.join("\n") || await page.locator("html").innerHTML()).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator(".desktop-shell"), pageErrors.join("\n") || await page.locator("html").innerHTML()).toBeVisible({ timeout: 15_000 });
 });
 
 test("update activation waits for dirty edits", async ({ page }) => {

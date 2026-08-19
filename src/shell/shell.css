@@ -1,41 +1,7 @@
 .startup-state,
-.startup-error,
-.shell-desktop { min-height: 100dvh; background: radial-gradient(circle at 76% 20%, #3d5b5d 0, #25383d 44%, #172329 100%); color: #f4f6f1; }
+.startup-error { min-height: 100dvh; background: radial-gradient(circle at 76% 20%, #3d5b5d 0, #25383d 44%, #172329 100%); color: #f4f6f1; }
 .startup-state { display: flex; gap: 12px; align-items: center; justify-content: center; }
 .startup-state img { width: 42px; height: 42px; }
 .startup-state div { display: grid; gap: 3px; }
 .startup-state span { color: #bdc8c3; font-size: 12px; }
 .startup-error { display: grid; place-content: center; justify-items: start; padding: 32px; }
-.shell-menu-bar { display: flex; position: relative; z-index: 2; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 18px; border-bottom: 1px solid #ffffff21; background: #141c1faf; backdrop-filter: blur(20px); }
-.shell-brand, .shell-menu-bar nav, .shell-dialog span { display: flex; gap: 8px; align-items: center; }
-.shell-brand img { width: 25px; height: 25px; }
-.shell-menu-bar button, .shell-dialog button, .shell-window button, .shell-error button { min-height: 32px; padding: 0 10px; border: 1px solid #ffffff20; border-radius: 8px; background: #ffffff10; cursor: pointer; }
-.shell-menu-bar button:disabled, .shell-dialog button:disabled { cursor: wait; opacity: .5; }
-.shell-surface { display: flex; gap: 18px; align-content: flex-start; height: calc(100dvh - 44px); padding: 28px; }
-.shell-empty { color: #bdc8c3; }
-.shell-entry { display: grid; gap: 6px; justify-items: center; width: 82px; padding: 8px 5px; border: 0; border-radius: 9px; color: inherit; background: transparent; cursor: default; }
-.shell-entry:hover, .shell-entry:focus-visible { background: #ffffff18; }
-.shell-entry__icon { position: relative; display: block; width: 30px; height: 24px; border-radius: 3px; background: #e7b964; }
-.shell-entry__icon--folder::before { position: absolute; top: -5px; left: 1px; width: 13px; height: 7px; border-radius: 3px 3px 0 0; background: inherit; content: ""; }
-.shell-entry__icon--file { width: 23px; height: 30px; background: #f1d394; }
-.shell-entry__icon--file::after { position: absolute; top: 6px; left: 5px; width: 13px; height: 2px; background: #9a7131; box-shadow: 0 5px #9a7131, 0 10px #9a7131; content: ""; }
-.shell-entry__label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-.shell-window { position: fixed; z-index: 5; top: 16%; left: 50%; width: min(560px, calc(100vw - 32px)); min-height: 260px; overflow: hidden; border: 1px solid #ffffff2b; border-radius: 14px; color: #192229; background: #f2f1eb; box-shadow: 0 24px 70px #0008; transform: translateX(-50%); }
-.shell-window > header { display: flex; align-items: center; justify-content: space-between; min-height: 42px; padding: 0 10px 0 16px; border-bottom: 1px solid #1b29231f; background: #e6e5de; }
-.shell-window > header button, .shell-error button { display: grid; place-items: center; padding: 0; width: 32px; }
-.shell-window__content { display: flex; flex-wrap: wrap; gap: 8px; padding: 20px; }
-.shell-entry--row { color: #192229; }
-.shell-file-details { align-items: center; }
-.shell-file-details > .shell-entry__icon { flex: 0 0 auto; }
-.shell-file-details p { display: grid; gap: 3px; margin-right: auto; }
-.shell-file-details p span { color: #52605a; }
-.shell-dialog { display: grid; position: fixed; z-index: 7; top: 50%; left: 50%; gap: 16px; width: min(360px, calc(100vw - 32px)); padding: 20px; border: 1px solid #ffffff24; border-radius: 14px; color: #192229; background: #f2f1eb; box-shadow: 0 24px 70px #0008; transform: translate(-50%, -50%); }
-.shell-dialog label { display: grid; gap: 7px; font-weight: 700; }
-.shell-dialog input { min-height: 38px; padding: 0 10px; border: 1px solid #33433e66; border-radius: 7px; }
-.shell-dialog span { justify-content: flex-end; }
-.shell-error { position: fixed; right: 16px; bottom: 16px; display: flex; gap: 12px; align-items: center; padding: 12px; border-radius: 10px; color: #fff; background: #8c3f3f; }
-.shell-close-icon { position: relative; width: 14px; height: 14px; }
-.shell-close-icon::before, .shell-close-icon::after { position: absolute; top: 6px; left: 1px; width: 12px; height: 2px; background: currentColor; content: ""; transform: rotate(45deg); }
-.shell-close-icon::after { transform: rotate(-45deg); }
-@media (max-width: 620px) { .shell-menu-bar { padding: 0 8px; } .shell-brand strong { display: none; } .shell-surface { padding: 18px 10px; } .shell-window { top: 44px; width: 100%; height: calc(100dvh - 44px); border-radius: 0; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; } }
