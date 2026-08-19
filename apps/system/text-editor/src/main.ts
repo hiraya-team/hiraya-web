@@ -390,6 +390,7 @@ async function closeTab(tab: DocumentTab, confirm = true) {
 
 async function save(saveAs: boolean) {
   if (formatting) return;
+  if (!saveAs && (scene?.handle && !scene.archive.dirty || activeTab?.handle && !activeTab.state?.dirty)) return;
   if (scene) await saveScene(saveAs);
   else if (activeTab) await saveTab(activeTab, saveAs);
 }
@@ -883,7 +884,7 @@ async function importSceneAssets() {
       imported += 1;
     } catch (error) { setStatus(describeError(error, "Could not import a Scene asset."), true); }
   }
-  renderWorkspace(); scheduleScenePreview();
+  renderWorkspace(); renderDocumentState(); scheduleScenePreview();
   if (imported) setStatus(`Imported ${imported} ${imported === 1 ? "asset" : "assets"}.`);
 }
 
@@ -1122,7 +1123,7 @@ function publishCommands() {
   const documentCommands = canWrite && savable ? [
     ...(activeTab?.state ? [{ id: "format", title: "Format", enabled: initialized && !saving && !formatting && !opening, promoted: true }] : []),
     { id: "save-as", title: "Save As", shortcut: "Ctrl+Shift+S", enabled: initialized && !saving && !formatting && !opening, promoted: true },
-    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !formatting && !opening, promoted: true },
+    { id: "save", title: "Save", shortcut: "Ctrl+S", enabled: initialized && !saving && !formatting && !opening && (scene ? !scene.handle || scene.archive.dirty : !activeTab?.handle || Boolean(activeTab?.state?.dirty)), promoted: true },
   ] : [];
   const commands = [
     { id: "open", title: "Open", shortcut: "Ctrl+O", enabled: initialized && !saving && !opening, promoted: true },

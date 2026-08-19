@@ -72,7 +72,7 @@ export type Web2SyncRuntimeOptions = {
 };
 
 function retryable(error: unknown) {
-  return error instanceof Web2NetworkError || error instanceof Web2HTTPError && (error.status === 408 || error.status === 429 || error.status >= 500);
+  return error instanceof Web2NetworkError || error instanceof Web2HTTPError && (error.code === "upload-incomplete" || error.status === 408 || error.status === 429 || error.status >= 500);
 }
 
 function wait(ms: number, signal: AbortSignal) {
@@ -231,6 +231,8 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
           }
         }
         if (expired) continue;
+        complete = true;
+        break;
       }
       if (!complete) throw new Web2NetworkError();
     }
@@ -255,8 +257,8 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
   };
 
   const pullWorkspaceThrough = async (workspaceId: string, targetCursor: number | null, signal: AbortSignal) => {
-    // ponytail: 1024 data pages plus one final durable cursor acknowledgment.
-    for (let page = 0; page < 1025; page++) {
+    // ponytail: 1024 data pages; the next real pull acknowledges the final cursor.
+    for (let page = 0; page < 1024; page++) {
       let sync = await options.database.getSyncState(workspaceId);
       if (targetCursor !== null && sync.cursor >= targetCursor) return;
       const startingCursor = sync.cursor;
@@ -289,6 +291,7 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
       }
       const advanced = await options.database.getSyncState(workspaceId);
       if (targetCursor !== null && advanced.cursor >= targetCursor) return;
+      if (targetCursor === null && advanced.cursor === result.cursor && result.cursor === result.headSequence) return;
       if (advanced.cursor <= startingCursor && !(result.kind === "operations" && result.fromCursor === result.cursor && result.cursor === result.headSequence)) throw new Error("Synchronization pull did not advance its cursor.");
     }
     throw new Error("Synchronization pull exceeded its page limit.");
@@ -298,7 +301,7 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
     if (active) return active;
     const pull = (async () => {
       const sync = await options.database.getSyncState(workspaceId);
-      if (pulledHeads.get(workspaceId) === sync.cursor && (await options.database.listUnsettledOperations(workspaceId, 0, 1)).length === 0) return;
+      if (pulledHeads.get(workspaceId) === sync.cursor) return;
       await pullWorkspaceThrough(workspaceId, null, signal);
       pulledHeads.set(workspaceId, (await options.database.getSyncState(workspaceId)).cursor);
     })().finally(() => {
@@ -398,28 +401,38 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
   const synchronizeWorkspace = async (workspaceId: string, signal: AbortSignal) => {
     await pullToHead(workspaceId, signal);
     await repairDeferredRejections(workspaceId, signal);
-    for (let batch = 0; batch < 40; batch++) {
+    for (let batch = 0; batch < 40;) {
       const sync = await options.database.getSyncState(workspaceId);
       const operations = await selectOutboxBatch(workspaceId);
       if (operations.length === 0) return;
       for (const operation of operations) await uploadOperationChunks(operation, signal);
-      const request = { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, workspaceId, deviceId: sync.deviceId, operations } as const;
-      const result = await (async () => {
-        let delay = retryDelayMs;
-        while (true) {
-          try { return await transport.push(request, signal); }
-          catch (error) {
-            if (!retryable(error)) throw error;
-            await wait(delay, signal);
-            signal.throwIfAborted();
-            delay = Math.min(Math.max(delay * 2, 1), 30_000);
+      const request = { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, workspaceId, deviceId: sync.deviceId, baseCursor: sync.cursor, operations } as const;
+      let result;
+      try {
+        result = await (async () => {
+          let delay = retryDelayMs;
+          while (true) {
+            try { return await transport.push(request, signal); }
+            catch (error) {
+              if (!retryable(error)) throw error;
+              if (error instanceof Web2HTTPError && error.code === "upload-incomplete") for (const operation of operations) await uploadOperationChunks(operation, signal);
+              await wait(delay, signal);
+              signal.throwIfAborted();
+              delay = Math.min(Math.max(delay * 2, 1), 30_000);
+            }
           }
-        }
-      })();
+        })();
+      } catch (error) {
+        if (!(error instanceof Web2HTTPError) || error.code !== "pull-required") throw error;
+        pulledHeads.delete(workspaceId);
+        await pullToHead(workspaceId, signal);
+        continue;
+      }
       const rejected = result.results.filter((candidate) => candidate.kind === "rejected");
       if (rejected.length > 0) await options.database.recordPushRejections(rejected.map(({ operationId, workspaceId, code, message }) => ({ operationId, workspaceId, code, message })));
       pulledHeads.delete(workspaceId);
       await pullToHead(workspaceId, signal);
+      batch++;
     }
     if ((await selectOutboxBatch(workspaceId)).length === 0) return;
     throw new Error("Synchronization outbox exceeded its batch limit.");

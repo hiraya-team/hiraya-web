@@ -85,7 +85,7 @@ const systemAppLimits: Record<string, number> = {
   "image-viewer.hiraya.app": 13238,
   "media-viewer.hiraya.app": 1054205,
   "terminal.hiraya.app": 20415,
-  "text-editor.hiraya.app": 350679,
+  "text-editor.hiraya.app": 350723,
   "theme-editor.hiraya.app": 22771,
 };
 for (const [file, limit] of Object.entries(systemAppLimits)) measurements.push({ label: `system app ${file}`, actual: (await stat(path.join(DIST, "system-apps", file))).size, limit });

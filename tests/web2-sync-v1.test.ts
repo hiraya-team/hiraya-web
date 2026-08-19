@@ -257,6 +257,10 @@ describe("web2-sync-v1 corpus", () => {
     for (const item of corpus.pushBatchResults.invalid) expect(() => parsePushBatchResult(item.value), item.name).toThrow();
     for (const item of corpus.pushRequests.valid) expect(() => parsePushRequest(item.value), item.name).not.toThrow();
     for (const item of corpus.pushRequests.invalid) expect(() => parsePushRequest(item.value), item.name).toThrow();
+    const push = corpus.pushRequests.valid[0]!.value;
+    expect(parsePushRequest({ ...push, baseCursor: 0 }).baseCursor).toBe(0);
+    expect(() => parsePushRequest({ ...push, baseCursor: -1 })).toThrow("base cursor");
+    expect(() => parsePushRequest({ ...push, baseCursor: 1.5 })).toThrow("base cursor");
   });
 
   test("pairs hydration continuation and pull reset envelopes", () => {

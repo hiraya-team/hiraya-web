@@ -57,6 +57,8 @@ describe("Integrated Editor document behavior", () => {
     expect(source).toContain("const documentCommands = canWrite && savable");
     expect(source).toContain("if (signature === commandSignature) return");
     expect(source).toContain("if (dirty !== windowDirty)");
+    expect(source).toContain("if (!saveAs && (scene?.handle && !scene.archive.dirty || activeTab?.handle && !activeTab.state?.dirty)) return;");
+    expect(source).toContain("renderWorkspace(); renderDocumentState(); scheduleScenePreview();");
   });
 
   test("keeps settings in the sidebar and the filename in tabs", async () => {

@@ -16,6 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
+- **Save only changed documents.** **Integrated Editor** now disables **Save** after autosave finishes, preventing clean files and Scenes from being written again while keeping **Save As** and untitled files available.
 - **Open the full desktop automatically and update safely.** Hiraya now opens the complete desktop without a separate upgrade step, while editors and settings still load only when needed and **Update now** stays blocked until unsaved edits and active file operations finish.
 - **Edit shared desktops offline.** Writers and managers can now change downloaded shared files while disconnected. Hiraya queues those changes, checks current access when the connection returns, and converges independent edits automatically.
 - **Work offline from the first synchronized session.** Hiraya's offline shell now takes control as soon as it is installed and keeps built-in app packages available, so new work can be edited and reloaded through a connection loss without another online launch.

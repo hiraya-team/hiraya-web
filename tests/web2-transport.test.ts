@@ -55,6 +55,7 @@ describe("Web2 transport", () => {
       protocol: WEB2_SYNC_PROTOCOL,
       workspaceId,
       deviceId,
+      baseCursor: 0,
       operations: [{ schemaVersion: WEB2_SCHEMA_VERSION, kind: "set", operationId, workspaceId, deviceId, logicalTime: 1, namespace: "desktop-grid", key: "grid-size", value: 24 }],
     };
     globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
