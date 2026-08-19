@@ -74,7 +74,7 @@ describe("Integrated Editor document behavior", () => {
     const html = await Bun.file(new URL("../index.html", import.meta.url)).text();
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     const manifest = await Bun.file(new URL("../public/hiraya.app.json", import.meta.url)).json();
-    expect(manifest.version).toBe("1.5.6");
+    expect(manifest.version).toBe("1.5.7");
     expect(manifest.window).toMatchObject({ renderWidth: 818, renderHeight: 572 });
     expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
     expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
