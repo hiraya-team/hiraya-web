@@ -37,10 +37,9 @@ async function expectServiceWorker(page: Page) {
 }
 
 async function expectDesktop(page: Page) {
-  await expect(page.locator(".shell-desktop, .desktop-shell, .startup-error")).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator(".desktop-shell, .startup-error")).toBeVisible({ timeout: 30_000 });
   const startupError = page.locator(".startup-error");
   if (await startupError.isVisible()) throw new Error(await startupError.innerText());
-  if (await page.locator(".shell-desktop").isVisible()) await page.getByRole("button", { name: "Open full desktop" }).click();
   await expect(page.locator(".desktop-shell")).toBeVisible({ timeout: 30_000 });
 }
 
@@ -48,7 +47,6 @@ async function signIn(context: BrowserContext) {
   const page = context.pages()[0] ?? await context.newPage();
   await page.goto("/login");
   if (await page.locator(".desktop-shell").isVisible().catch(() => false)) return page;
-  if (await page.locator(".shell-desktop").isVisible().catch(() => false)) { await expectDesktop(page); return page; }
   await page.getByLabel("Email").fill(ownerEmail);
   await page.getByLabel("Password").fill(ownerPassword);
   await Promise.all([page.waitForURL("/"), page.getByRole("button", { name: "Sign in" }).click()]);

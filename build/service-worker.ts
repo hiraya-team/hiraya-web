@@ -38,17 +38,29 @@ export function serviceWorkerPlugin(base: string): Plugin {
       const worker = Object.values(bundle).find((item) => item.type === "chunk" && item.facadeModuleId?.endsWith("/src/sw.ts"));
       const application = Object.values(bundle).find((item) => item.type === "chunk" && item.isEntry && item !== worker);
       const startup = Object.values(bundle).find((item) => item.type === "chunk" && item.facadeModuleId?.endsWith("/src/shell/startup.ts"));
-      if (worker?.type !== "chunk" || application?.type !== "chunk" || startup?.type !== "chunk") throw new Error("The service worker build entries are incomplete.");
+      const rich = Object.values(bundle).find((item) => item.type === "chunk" && item.facadeModuleId?.endsWith("/src/shell/rich.ts"));
+      if (worker?.type !== "chunk" || application?.type !== "chunk" || startup?.type !== "chunk" || rich?.type !== "chunk") throw new Error("The service worker build entries are incomplete.");
       const root = base.endsWith("/") ? base : `${base}/`;
-      const interactiveFiles = new Set<string>();
-      for (const chunk of [application, startup]) for (const file of staticFiles(chunk, bundle as Record<string, BuildItem>)) interactiveFiles.add(file);
+      const startupFiles = new Set<string>();
+      for (const chunk of [application, startup]) for (const file of staticFiles(chunk, bundle as Record<string, BuildItem>)) startupFiles.add(file);
       for (const imported of startup.dynamicImports ?? []) {
         const dependency = bundle[imported] as BuildItem | undefined;
-        if (dependency?.type === "chunk") for (const file of staticFiles(dependency, bundle as Record<string, BuildItem>)) interactiveFiles.add(file);
+        if (dependency?.type === "chunk") for (const file of staticFiles(dependency, bundle as Record<string, BuildItem>)) startupFiles.add(file);
       }
-      const forbidden = [...interactiveFiles].filter((file) => /(?:Desktop|Editor|Viewer|Settings|Markdown|Sharing|Properties|Merge|Sandbox|archive|seeded)/i.test(file));
-      if (forbidden.length) throw new Error(`Rich features entered the shell precache: ${forbidden.join(", ")}.`);
-      const precache = [root, `${root}manifest.webmanifest`, `${root}hiraya-icon.svg`, ...[...interactiveFiles].map((file) => `${root}${file}`)];
+      const forbidden = [...startupFiles].filter((file) => /(?:Desktop|Editor|Viewer|Settings|Markdown|Sharing|Properties|Merge|Sandbox|archive|seeded)/i.test(file));
+      if (forbidden.length) throw new Error(`Rich features entered the bootstrap closure: ${forbidden.join(", ")}.`);
+      const desktopFiles = new Set(staticFiles(rich, bundle as Record<string, BuildItem>));
+      for (const imported of rich.dynamicImports ?? []) {
+        const dependency = bundle[imported] as BuildItem | undefined;
+        if (dependency?.type !== "chunk") continue;
+        for (const file of staticFiles(dependency, bundle as Record<string, BuildItem>)) desktopFiles.add(file);
+        if (!dependency.facadeModuleId?.endsWith("/src/platform/storage/desktop-runtime.ts")) continue;
+        for (const runtimeImport of dependency.dynamicImports ?? []) {
+          const runtime = bundle[runtimeImport] as BuildItem | undefined;
+          if (runtime?.type === "chunk") for (const file of staticFiles(runtime, bundle as Record<string, BuildItem>)) desktopFiles.add(file);
+        }
+      }
+      const precache = [root, `${root}manifest.webmanifest`, `${root}hiraya-icon.svg`, ...new Set([...startupFiles, ...desktopFiles].map((file) => `${root}${file}`))];
       const versionHash = createHash("sha256").update(precache.join("\n"));
       for (const file of ["index.html", "public/manifest.webmanifest", "public/hiraya-icon.svg"]) versionHash.update(readFileSync(path.resolve(process.cwd(), file)));
       const version = versionHash.digest("hex").slice(0, 16);

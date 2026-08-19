@@ -208,7 +208,7 @@
       "acceptance": {
         "state": "automated",
         "evidence": [
-          { "suite": "desktop", "test": "core React shell defers rich chunks until an explicit rich action" },
+          { "suite": "desktop", "test": "root opens the full desktop automatically" },
           { "suite": "desktop", "test": "keyboard modal traps focus, closes with Escape, and restores its invoker" },
           { "suite": "desktop", "test": "close-window shortcut closes the focused window without claiming the empty desktop" },
           { "suite": "desktop", "test": "clicking inside a sandbox app focuses and raises its window" },

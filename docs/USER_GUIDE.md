@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Open Hiraya faster and update safely.** Hiraya opens a compact file-and-folder desktop first, loads editors and settings only when needed, and keeps **Update now** blocked until unsaved edits and active file operations finish.
+- **Open the full desktop automatically and update safely.** Hiraya now opens the complete desktop without a separate upgrade step, while editors and settings still load only when needed and **Update now** stays blocked until unsaved edits and active file operations finish.
 - **Edit shared desktops offline.** Writers and managers can now change downloaded shared files while disconnected. Hiraya queues those changes, checks current access when the connection returns, and converges independent edits automatically.
 - **Work offline from the first synchronized session.** Hiraya's offline shell now takes control as soon as it is installed and keeps built-in app packages available, so new work can be edited and reloaded through a connection loss without another online launch.
 - **Recover earlier file contents.** Open a file's **Properties** and use **Version history** to undo or redo its latest saved change, or restore any retained version.
