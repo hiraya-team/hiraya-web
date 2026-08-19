@@ -24,7 +24,7 @@ import { openHydrationStorage, type HydrationStorage } from "./hydration-storage
 import { ProjectedDesktopRuntime } from "./local-desktop-runtime";
 import type { LocalWeb2Startup } from "./local-startup";
 import type { DesktopRegistry, SyncStatus } from "./runtime-types";
-import { synchronizedSession } from "./synchronized-session";
+import { publishSynchronizedAccountAppsRevision, synchronizedSession } from "./synchronized-session";
 import { openWorkspaceCatalog } from "./workspace-catalog";
 
 const roleCapabilities: Record<DesktopIdentity["role"], DesktopCapabilities> = {
@@ -127,6 +127,7 @@ async function initialize(): Promise<LocalWeb2Startup> {
     opfsRoot,
     directoryRevision: session.directoryRevision,
     onDirectoryChange: () => { void reconcileDirectory().catch((error) => { if (!authenticationFailure(error)) setStatus("error"); }); },
+    onAccountAppsChange: publishSynchronizedAccountAppsRevision,
   });
   const existing = await database.listWorkspaces();
   const initialWorkspaceId = existing[0]?.id ?? session.account.workspaces[0]!.id;

@@ -37,7 +37,7 @@ export type Web2SyncRuntimeTransport = {
   negotiateUpload(request: ChunkUploadRequest, origin: string, signal: AbortSignal): ReturnType<typeof negotiateWeb2ChunkUpload>;
   readLocalChunk: typeof readChunk;
   uploadChunk: typeof uploadWeb2Chunk;
-  listen(signal: AbortSignal, receive: Parameters<typeof listenForWeb2Events>[1], directoryRevision?: number): ReturnType<typeof listenForWeb2Events>;
+  listen(signal: AbortSignal, receive: Parameters<typeof listenForWeb2Events>[1], directoryRevision?: number, activity?: () => void): ReturnType<typeof listenForWeb2Events>;
 };
 
 const nativeTransport: Web2SyncRuntimeTransport = {
@@ -68,6 +68,7 @@ export type Web2SyncRuntimeOptions = {
   retryDelayMs?: number;
   directoryRevision?: number;
   onDirectoryChange?: (revision: number) => void;
+  onAccountAppsChange?: (revision: number) => void;
 };
 
 function retryable(error: unknown) {
@@ -188,6 +189,8 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
   const randomUUID = options.randomUUID ?? (() => crypto.randomUUID());
   const retryDelayMs = options.retryDelayMs ?? 500;
   const boundWorkspaces = new Set<string>();
+  const activePulls = new Map<string, Promise<void>>();
+  const pulledHeads = new Map<string, number>();
   if (!Number.isSafeInteger(retryDelayMs) || retryDelayMs < 0) throw new Error("The synchronization retry delay is invalid.");
 
   const requestHydration = (request: HydrationRequest, signal: AbortSignal) => transport.hydrate(request, signal);
@@ -290,7 +293,20 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
     }
     throw new Error("Synchronization pull exceeded its page limit.");
   };
-  const pullToHead = (workspaceId: string, signal: AbortSignal) => pullWorkspaceThrough(workspaceId, null, signal);
+  const pullToHead = (workspaceId: string, signal: AbortSignal) => {
+    const active = activePulls.get(workspaceId);
+    if (active) return active;
+    const pull = (async () => {
+      const sync = await options.database.getSyncState(workspaceId);
+      if (pulledHeads.get(workspaceId) === sync.cursor && (await options.database.listUnsettledOperations(workspaceId, 0, 1)).length === 0) return;
+      await pullWorkspaceThrough(workspaceId, null, signal);
+      pulledHeads.set(workspaceId, (await options.database.getSyncState(workspaceId)).cursor);
+    })().finally(() => {
+      if (activePulls.get(workspaceId) === pull) activePulls.delete(workspaceId);
+    });
+    activePulls.set(workspaceId, pull);
+    return pull;
+  };
 
   const scanUnsettled = async (workspaceId: string) => {
     const unsettled: StoredOperation[] = [];
@@ -402,6 +418,7 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
       })();
       const rejected = result.results.filter((candidate) => candidate.kind === "rejected");
       if (rejected.length > 0) await options.database.recordPushRejections(rejected.map(({ operationId, workspaceId, code, message }) => ({ operationId, workspaceId, code, message })));
+      pulledHeads.delete(workspaceId);
       await pullToHead(workspaceId, signal);
     }
     if ((await selectOutboxBatch(workspaceId)).length === 0) return;
@@ -468,14 +485,28 @@ export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2Sync
         }
       },
       listen: async (signal, wake) => {
-        const poll = setInterval(wake, 15_000);
+        let fallback: ReturnType<typeof setTimeout> | undefined;
+        const resetFallback = () => {
+          if (fallback) clearTimeout(fallback);
+          fallback = setTimeout(() => {
+            boundWorkspaces.forEach((workspaceId) => pulledHeads.delete(workspaceId));
+            wake();
+            resetFallback();
+          }, 45_000);
+        };
+        resetFallback();
         try {
-          await transport.listen(signal, (event) => {
+          await transport.listen(signal, async (event) => {
             if (event.kind === "directory") options.onDirectoryChange?.(event.revision);
-            else if (event.accountId === accountId) wake();
-          }, options.directoryRevision ?? 0);
+            else if (event.accountId !== accountId) return;
+            else if (event.kind === "account-apps") options.onAccountAppsChange?.(event.appsRevision);
+            else if (boundWorkspaces.has(event.workspaceId) && event.headSequence > (await options.database.getSyncState(event.workspaceId)).cursor) {
+              pulledHeads.delete(event.workspaceId);
+              wake();
+            }
+          }, options.directoryRevision ?? 0, resetFallback);
         } finally {
-          clearInterval(poll);
+          if (fallback) clearTimeout(fallback);
         }
       },
     },

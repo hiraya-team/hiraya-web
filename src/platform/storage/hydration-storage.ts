@@ -58,10 +58,10 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
       return acquire(0);
     });
     const notify = (change: ChangeRecord) => {
-      try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, workspaceId: change.workspaceId, revision: change.revision }); } catch { /* The durable change log remains authoritative. */ }
+      try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, workspaceId: change.workspaceId, revision: change.revision, source: "remote" }); } catch { /* The durable change log remains authoritative. */ }
     };
     const notifyCatalog = () => {
-      try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, kind: "catalog-change" }); } catch { /* A later catalog read recovers a missed advisory wake-up. */ }
+      try { revisions.postMessage({ schemaVersion: WEB2_SCHEMA_VERSION, kind: "catalog-change", source: "remote" }); } catch { /* A later catalog read recovers a missed advisory wake-up. */ }
     };
 
     return {

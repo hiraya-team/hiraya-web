@@ -76,9 +76,10 @@ function parseTransientKey(value: unknown, message: string) {
 export function parseRevisionNotification(value: unknown) {
   if (!isRecord(value)) return;
   try {
-    assertShape(value, ["schemaVersion", "workspaceId", "revision"], [], "A revision notification has an unsupported shape.");
+    assertShape(value, ["schemaVersion", "workspaceId", "revision"], ["source"], "A revision notification has an unsupported shape.");
     if (value.schemaVersion !== WEB2_SCHEMA_VERSION) return;
-    return { workspaceId: parseStableId(value.workspaceId), revision: parsePositiveSafeInteger(value.revision) };
+    if (value.source !== undefined && value.source !== "remote") return;
+    return { workspaceId: parseStableId(value.workspaceId), revision: parsePositiveSafeInteger(value.revision), source: value.source };
   } catch {
     return;
   }

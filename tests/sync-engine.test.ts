@@ -182,6 +182,22 @@ test("wakes the leader from workspace revision and catalog notifications", async
   await client.close();
 });
 
+test("ignores revision and catalog notifications emitted by remote hydration", async () => {
+  const locks = new TestLeaderLocks();
+  const broadcasts = new TestBroadcastChannels();
+  let runs = 0;
+  const client = await openAccountSyncClient(ACCOUNT, {
+    synchronize: async () => { runs += 1; },
+  }, { locks: locks as unknown as Pick<LockManager, "request">, createBroadcastChannel: broadcasts.create });
+  await waitFor(() => runs === 1);
+  const channel = filesystemRevisionChannelName(await filesystemDatabaseName(ACCOUNT));
+  broadcasts.broadcast(channel, { schemaVersion: 1, workspaceId: stableId(2), revision: 1, source: "remote" });
+  broadcasts.broadcast(channel, { schemaVersion: 1, kind: "catalog-change", source: "remote" });
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(runs).toBe(1);
+  await client.close();
+});
+
 test("releases leadership when the event listener fails and promotes a queued client", async () => {
   const locks = new TestLeaderLocks();
   const broadcasts = new TestBroadcastChannels();

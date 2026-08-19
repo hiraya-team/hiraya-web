@@ -16,7 +16,7 @@ import {
 import { projectAccountAppData, type AccountAppDataRestoration, type AccountAppOperation, type AccountAppOutboxRecord, type PersistedAccountApps } from "../../lib/account-app-outbox";
 import { uploadBlobDigests } from "../../lib/blob-transfer";
 import { accountStorage } from "../../platform/storage/account-storage";
-import { synchronizedSession } from "../../platform/storage/synchronized-session";
+import { subscribeSynchronizedAccountAppsRevision, synchronizedSession } from "../../platform/storage/synchronized-session";
 import { Web2HTTPError, clearWeb2AccountAppData, deleteWeb2AccountApp, deleteWeb2AccountAppData, negotiateWeb2ChunkUpload, putWeb2AccountApp, putWeb2AccountAppData, putWeb2AccountAppHandlers, uploadWeb2Chunk } from "../../sync/transport";
 import { readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../../platform/storage/package-archives";
 import {
@@ -43,8 +43,10 @@ export class AccountAppsClient {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private active = false;
+  private unsubscribeAccountApps: () => void = () => undefined;
+  private refreshing: Promise<AccountAppsSnapshot> | null = null;
   private replaying: Promise<void> | null = null;
-  private readonly online = () => { this.clearRetry(); void this.replay(); };
+  private readonly online = () => { this.clearRetry(); this.accountAppsChanged(Number.MAX_SAFE_INTEGER); };
 
   constructor(private readonly directBlobOrigin: string) {}
 
@@ -53,6 +55,7 @@ export class AccountAppsClient {
   async start(listener: (state: AccountAppsClientState) => void) {
     this.active = true;
     window.addEventListener("online", this.online);
+    this.unsubscribeAccountApps = subscribeSynchronizedAccountAppsRevision((revision) => this.accountAppsChanged(revision));
     this.listener = listener;
     const stored = await readAccountApps();
     this.publish({ ...stored, error: "" });
@@ -68,6 +71,8 @@ export class AccountAppsClient {
     this.timer = null;
     this.clearRetry();
     window.removeEventListener("online", this.online);
+    this.unsubscribeAccountApps();
+    this.unsubscribeAccountApps = () => undefined;
   }
 
   private publish(value: AccountAppsClientState) {
@@ -80,12 +85,21 @@ export class AccountAppsClient {
     this.publish({ ...this.current, error: error instanceof Error ? error.message : "Account apps could not be synchronized." });
   }
 
-  private schedulePoll(delay = 5_000) {
+  private schedulePoll(delay = 5 * 60_000) {
     if (!this.active || this.timer) return;
     this.timer = setTimeout(() => {
       this.timer = null;
       void this.refresh().then(() => this.replay()).catch((error) => this.fail(error)).finally(() => this.schedulePoll());
     }, delay);
+  }
+
+  private accountAppsChanged(revision: number) {
+    if (!this.active || (this.current.state.baseline?.appsRevision ?? -1) >= revision) return;
+    if (this.timer) clearTimeout(this.timer);
+    this.timer = null;
+    void this.replay().then(() => {
+      if ((this.current.state.baseline?.appsRevision ?? -1) < revision) return this.refresh();
+    }).catch((error) => this.fail(error)).finally(() => this.schedulePoll());
   }
 
   private clearRetry() {
@@ -101,7 +115,14 @@ export class AccountAppsClient {
     }, Math.min(60_000, 1_000 * 2 ** Math.min(attemptCount, 6)));
   }
 
-  async refresh() {
+  refresh() {
+    if (this.refreshing) return this.refreshing;
+    const refresh = this.refreshOnce().finally(() => { if (this.refreshing === refresh) this.refreshing = null; });
+    this.refreshing = refresh;
+    return refresh;
+  }
+
+  private async refreshOnce() {
     const snapshot = await fetchAccountApps();
     await reconcileAccountApps(snapshot);
     let stored = await readAccountApps();

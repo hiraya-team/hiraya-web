@@ -439,6 +439,20 @@ describe("Web2 transport", () => {
     expect(received).toEqual(event);
   });
 
+  test("reports heartbeat and event stream activity", async () => {
+    const event = { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "workspace-head", accountId: id("2"), workspaceId: id("4"), headSequence: 7 } as const;
+    globalThis.fetch = (async () => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(`: heartbeat\n\nevent: workspace-head\ndata: ${JSON.stringify(event)}\n\n`));
+        controller.close();
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } })) as typeof fetch;
+    const controller = new AbortController();
+    let activity = 0;
+    await listenForWeb2Events(controller.signal, () => controller.abort(), 0, () => { activity++; });
+    expect(activity).toBe(2);
+  });
+
   test("accepts many bounded SSE frames delivered in one read", async () => {
     const events = Array.from({ length: 600 }, (_, index) => ({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "workspace-head", accountId: id("2"), workspaceId: id("4"), headSequence: index + 1 } as const));
     globalThis.fetch = (async () => new Response(new ReadableStream({
