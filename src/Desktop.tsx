@@ -238,6 +238,12 @@ const AREA_TRANSITION_WATCHDOG_MS = 10_000;
 const WHEEL_SWIPE_END_MS = 160;
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .shell-item, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
 const ONBOARDING_VERSION = 1;
+const AUTOMATIC_UPDATE_CHECK_COOLDOWN_MS = 60_000;
+const UPDATE_CHECK_ERROR = "Could not check for updates. Check your connection and try again.";
+
+function reportUpdateCheckError(error: unknown) {
+  console.warn("Hiraya could not check for app updates.", error);
+}
 
 function isDesktopSurface(desktop: DesktopIdentity) {
   return desktop.purpose !== "app-store" || desktop.ownership === "owned";
@@ -396,6 +402,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   const [updateSupported, setUpdateSupported] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
   const [updateChecking, setUpdateChecking] = useState(false);
+  const [updateCheckError, setUpdateCheckError] = useState("");
   const [showUpdateToast, setShowUpdateToast] = useState(false);
   const [updateBlocked, setUpdateBlocked] = useState(false);
   const [updateApplying, setUpdateApplying] = useState(false);
@@ -583,8 +590,8 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   }>({ maximize: () => {}, move: () => {}, adjust: () => {} });
   const autoUpdateRef = useRef(true);
   const localPreferencesRef = useRef<LocalPreferences>({ autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] });
-  const updatePreferenceLoadedRef = useRef(false);
   const manualUpdateCheckRef = useRef(false);
+  const lastUpdateCheckAtRef = useRef(0);
   const actionSheetHistoryRef = useRef<string | null>(null);
   const restoringHistoryRef = useRef(false);
   const restoreOnlyPopRef = useRef(false);
@@ -1912,21 +1919,20 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     const updater = createPwaUpdater({
       onUpdateAvailable: () => {
         if (!active) return;
+        setUpdateCheckError("");
         setUpdateReady(true);
         setShowUpdateToast(true);
       },
-      onError: () => {
-        if (active) setError("Hiraya could not check for app updates.");
-      },
+      onError: reportUpdateCheckError,
     });
     updaterRef.current = updater;
     setUpdateSupported(updater.supported);
 
     const checkAutomatically = () => {
-      if (!active || !autoUpdateRef.current || !updater.supported) return;
-      void updater.check().catch(() => {
-        if (active) setError("Hiraya could not check for app updates.");
-      });
+      const now = Date.now();
+      if (!active || !autoUpdateRef.current || !updater.supported || !navigator.onLine || manualUpdateCheckRef.current || now - lastUpdateCheckAtRef.current < AUTOMATIC_UPDATE_CHECK_COOLDOWN_MS) return;
+      lastUpdateCheckAtRef.current = now;
+      void updater.check().catch(reportUpdateCheckError);
     };
     const checkWhenVisible = () => {
       if (document.visibilityState === "visible") checkAutomatically();
@@ -1939,7 +1945,6 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
         if (!active) return;
         autoUpdateRef.current = preferences.autoUpdate;
         localPreferencesRef.current = preferences;
-        updatePreferenceLoadedRef.current = true;
         setAutoUpdate(preferences.autoUpdate);
         setExternalEmbeddedPreviews(preferences.externalEmbeddedPreviews);
         setAllowBrowserPinchZoom(preferences.allowBrowserPinchZoom);
@@ -1952,7 +1957,6 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
       })
       .catch(() => {
         if (!active) return;
-        updatePreferenceLoadedRef.current = true;
         setPreferencesLoaded(true);
         setError("The local update preference could not be loaded.");
         checkAutomatically();
@@ -2952,12 +2956,15 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
       return;
     }
     manualUpdateCheckRef.current = true;
+    lastUpdateCheckAtRef.current = Date.now();
     setUpdateChecking(true);
+    setUpdateCheckError("");
     try {
       const result = await updater.check();
       if (result === "current") setNotice("Hiraya is already up to date.");
-    } catch {
-      setError("Hiraya could not check for app updates.");
+    } catch (error) {
+      reportUpdateCheckError(error);
+      setUpdateCheckError(UPDATE_CHECK_ERROR);
     } finally {
       manualUpdateCheckRef.current = false;
       setUpdateChecking(false);
@@ -2972,7 +2979,10 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     setAutoUpdate(enabled);
     try {
       await saveLocalPreferences(next);
-      if (enabled) void updaterRef.current?.check().catch(() => setError("Hiraya could not check for app updates."));
+      if (enabled && navigator.onLine) {
+        lastUpdateCheckAtRef.current = Date.now();
+        void updaterRef.current?.check().catch(reportUpdateCheckError);
+      }
     } catch {
       autoUpdateRef.current = previous.autoUpdate;
       localPreferencesRef.current = previous;
@@ -6085,6 +6095,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
                         updateSupported={updateSupported}
                         updateReady={updateReady}
                         updateChecking={updateChecking}
+                        updateCheckError={updateCheckError}
                         autoUpdate={autoUpdate}
                         externalEmbeddedPreviews={externalEmbeddedPreviews === true}
                         allowBrowserPinchZoom={allowBrowserPinchZoom}

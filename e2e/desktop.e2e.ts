@@ -2213,6 +2213,68 @@ test("service worker reloads the shell offline", async ({ page }) => {
   await expect(page.locator(".desktop-shell"), pageErrors.join("\n") || await page.locator("html").innerHTML()).toBeVisible({ timeout: 15_000 });
 });
 
+test("automatic update checks recover from registration failure without notifying", async ({ page }) => {
+  await page.addInitScript(() => {
+    const probe = { registerCalls: 0, updateCalls: 0 };
+    (window as typeof window & { __hirayaUpdateProbe: typeof probe }).__hirayaUpdateProbe = probe;
+    const register = ServiceWorkerContainer.prototype.register;
+    ServiceWorkerContainer.prototype.register = function (scriptURL, options) {
+      probe.registerCalls += 1;
+      if (probe.registerCalls === 1) return Promise.reject(new TypeError("The service worker script was temporarily unavailable."));
+      return register.call(this, scriptURL, options);
+    };
+    ServiceWorkerRegistration.prototype.update = function () {
+      probe.updateCalls += 1;
+      return Promise.reject(new TypeError("The service worker update fetch failed."));
+    };
+  });
+
+  await openLocalDesktop(page, 10_000);
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hirayaUpdateProbe: { registerCalls: number; updateCalls: number } }).__hirayaUpdateProbe)).toEqual({ registerCalls: 2, updateCalls: 1 });
+  await expect(page.getByRole("button", { name: /Notifications, \d+ unread/ })).toHaveCount(0);
+});
+
+test("automatic update checks skip offline and concurrent events while manual failures stay inline", async ({ page }) => {
+  await page.addInitScript(() => {
+    const probe = { online: false, updateCalls: 0, rejectChecks: [] as Array<() => void> };
+    (window as typeof window & { __hirayaUpdateProbe: typeof probe }).__hirayaUpdateProbe = probe;
+    Object.defineProperty(Navigator.prototype, "onLine", { configurable: true, get: () => probe.online });
+    ServiceWorkerRegistration.prototype.update = function () {
+      probe.updateCalls += 1;
+      return new Promise((_, reject) => probe.rejectChecks.push(() => reject(new TypeError("The service worker update fetch failed."))));
+    };
+  });
+
+  await openLocalDesktop(page, 10_000);
+  expect(await page.evaluate(() => (window as typeof window & { __hirayaUpdateProbe: { updateCalls: number } }).__hirayaUpdateProbe.updateCalls)).toBe(0);
+
+  await page.evaluate(() => {
+    const probe = (window as typeof window & { __hirayaUpdateProbe: { online: boolean } }).__hirayaUpdateProbe;
+    probe.online = true;
+    window.dispatchEvent(new Event("online"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hirayaUpdateProbe: { updateCalls: number } }).__hirayaUpdateProbe.updateCalls)).toBe(1);
+  await page.evaluate(() => {
+    const probe = (window as typeof window & { __hirayaUpdateProbe: { rejectChecks: Array<() => void> } }).__hirayaUpdateProbe;
+    probe.rejectChecks.splice(0).forEach((reject) => reject());
+  });
+  await expect(page.getByRole("button", { name: /Notifications, \d+ unread/ })).toHaveCount(0);
+
+  await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
+  await page.getByRole("dialog", { name: /Start; account, system, and applications/ }).getByRole("button", { name: "Settings" }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: "System", exact: true }).click();
+  await page.locator('[data-app-window="settings"]').getByRole("button", { name: /Updates/ }).click();
+  await page.getByRole("button", { name: "Check now" }).click();
+  await expect.poll(() => page.evaluate(() => (window as typeof window & { __hirayaUpdateProbe: { updateCalls: number } }).__hirayaUpdateProbe.updateCalls)).toBe(2);
+  await page.evaluate(() => {
+    const probe = (window as typeof window & { __hirayaUpdateProbe: { rejectChecks: Array<() => void> } }).__hirayaUpdateProbe;
+    probe.rejectChecks.splice(0).forEach((reject) => reject());
+  });
+  await expect(page.getByText("Could not check for updates. Check your connection and try again.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Notifications, \d+ unread/ })).toHaveCount(0);
+});
+
 test("update activation waits for dirty edits", async ({ page }) => {
   await openLocalDesktop(page);
   await page.evaluate(async () => { await navigator.serviceWorker.ready; });
