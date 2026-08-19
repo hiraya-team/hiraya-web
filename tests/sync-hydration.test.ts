@@ -187,8 +187,23 @@ test("applies a parsed operation pull under storage locks and broadcasts after c
     observedLogicalTime: 11,
     operations: [{ sequence: 11, operationId, companion: null, nodes: [], settings: [{ workspaceId: WORKSPACE, namespace: "editor", key: "font-size", deleted: false, value: 18, logicalTime: 11, operationId }] }],
   });
+  const terminal = await coordinator.applyPull({
+    schemaVersion: 1,
+    protocol: WEB2_SYNC_PROTOCOL,
+    kind: "operations",
+    workspaceId: WORKSPACE,
+    deviceId: DEVICE,
+    fromCursor: 11,
+    cursor: 11,
+    headSequence: 11,
+    snapshotBarrier: 8,
+    logFloor: 2,
+    observedLogicalTime: 11,
+    operations: [],
+  });
   await coordinator.close();
   expect(result.changes).toMatchObject([{ kind: "pull", workspaceId: WORKSPACE, revision: 2, operationId, fromCursor: 10, cursor: 11 }]);
+  expect(terminal.changes).toEqual([]);
   expect(revisions.messages).toEqual([{ schemaVersion: 1, kind: "catalog-change" }, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2 }]);
   expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-workspace-${WORKSPACE}`);
   const published = await openFilesystemDatabase(ACCOUNT, environment);

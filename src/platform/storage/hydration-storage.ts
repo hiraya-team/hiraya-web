@@ -76,7 +76,7 @@ export async function openHydrationStorage(accountId: string, environment: Hydra
         open();
         return withAllWorkspaces(signal, async () => {
           const changes = await database.applyPullOperations(value);
-          notifyCatalog();
+          if (changes.length > 0) notifyCatalog();
           changes.forEach(notify);
           return changes;
         });
