@@ -634,6 +634,8 @@
           { "suite": "desktop", "test": "local mutation persists through reload" },
           { "suite": "desktop", "test": "service worker excludes API responses from navigation fallback and caches" },
           { "suite": "desktop", "test": "service worker reloads the shell offline" },
+          { "suite": "desktop", "test": "automatic update checks recover from registration failure without notifying" },
+          { "suite": "desktop", "test": "automatic update checks skip offline and concurrent events while manual failures stay inline" },
           { "suite": "desktop", "test": "update activation waits for dirty edits" },
           { "suite": "desktop", "test": "update activation waits for storage operations and then removes obsolete shell caches" }
         ]
