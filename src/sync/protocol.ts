@@ -125,6 +125,7 @@ export type PushRequest = {
   protocol: typeof WEB2_SYNC_PROTOCOL;
   workspaceId: string;
   deviceId: string;
+  baseCursor?: number;
   operations: WorkspaceOperation[];
 };
 type PullBase = {
@@ -861,14 +862,15 @@ export function parsePushBatchResult(value: unknown): PushBatchResult {
 
 export function parsePushRequest(value: unknown): PushRequest {
   if (!isRecord(value)) throw new Error("A push request has an unsupported shape.");
-  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "operations"], "A push request has an unsupported shape.");
+  assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", ...(value.baseCursor === undefined ? [] : ["baseCursor"]), "operations"], "A push request has an unsupported shape.");
   const wire = parseWireBase(value);
   const workspaceId = parseStableId(value.workspaceId, "A push workspace ID is invalid.");
   const deviceId = parseStableId(value.deviceId, "A push device ID is invalid.");
+  const baseCursor = value.baseCursor === undefined ? undefined : parseNonNegativeSafeInteger(value.baseCursor, "A push base cursor is invalid.");
   if (!Array.isArray(value.operations) || value.operations.length === 0 || value.operations.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A push operation batch is invalid.");
   const operations = value.operations.map(parseWorkspaceOperation);
   if (operations.some((operation) => operation.workspaceId !== workspaceId || operation.deviceId !== deviceId) || new Set(operations.map(({ operationId }) => operationId)).size !== operations.length) throw new Error("A push operation batch is inconsistent.");
-  return { ...wire, workspaceId, deviceId, operations };
+  return { ...wire, workspaceId, deviceId, ...(baseCursor === undefined ? {} : { baseCursor }), operations };
 }
 
 export function parseOperationReceipt(value: unknown): OperationReceipt {

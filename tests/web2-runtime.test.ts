@@ -208,7 +208,7 @@ describe("Web2 synchronization runtime", () => {
     expect(base.calls.pulls).toEqual([0]);
   });
 
-  test("acknowledges the final applied pull cursor", async () => {
+  test("defers the final applied pull cursor acknowledgment", async () => {
     const base = setup([]);
     base.transport.pull = async (request) => {
       base.calls.pulls.push(request.cursor);
@@ -217,7 +217,78 @@ describe("Web2 synchronization runtime", () => {
     const runtime = createWeb2SyncRuntime(base.options);
     await runtime.bootstrap(WORKSPACE);
     await runtime.callbacks.synchronize(new AbortController().signal);
+    expect(base.calls.pulls).toEqual([0]);
+    base.transport.listen = async (_signal, receive) => receive({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "workspace-head", accountId: ACCOUNT, workspaceId: WORKSPACE, headSequence: 2 });
+    await runtime.callbacks.listen!(new AbortController().signal, () => undefined);
+    await runtime.callbacks.synchronize(new AbortController().signal);
     expect(base.calls.pulls).toEqual([0, 1]);
+  });
+
+  test("pushes local work without another preflight after reaching head", async () => {
+    const position: WorkspaceOperation = { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: id(16), workspaceId: WORKSPACE, deviceId: DEVICE, logicalTime: 1, positions: [{ nodeId: id(17), position: { x: 10, y: 20 } }] };
+    let pending: StoredOperation[] = [];
+    const base = setup([]);
+    base.options.database.getWorkspaceBootstrapState = async () => ({ target: { kind: "folder-page", workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 256 }, staged: false });
+    base.options.database.listUnsettledOperations = async () => pending;
+    base.options.database.listWorkspaces = async () => [{ id: WORKSPACE, name: "Desktop", pinned: false, ordinal: 0, headSequence: 0, snapshotBarrier: 0, logFloor: 0, localRevision: pending.length }];
+    base.transport.push = async (request) => {
+      base.calls.order.push("push");
+      expect(request.baseCursor).toBe(0);
+      pending = [];
+      return accepted(position);
+    };
+    const runtime = createWeb2SyncRuntime(base.options);
+    await runtime.bootstrap(WORKSPACE);
+    pending = [stored(position, [])];
+    await runtime.callbacks.synchronize(new AbortController().signal);
+    expect(base.calls.order).toEqual(["pull", "push", "pull"]);
+  });
+
+  test("pulls and retries when a remote operation wins the push race", async () => {
+    const position: WorkspaceOperation = { schemaVersion: WEB2_SCHEMA_VERSION, kind: "position", operationId: id(18), workspaceId: WORKSPACE, deviceId: DEVICE, logicalTime: 2, positions: [{ nodeId: id(19), position: { x: 30, y: 40 } }] };
+    let pending: StoredOperation[] = [];
+    const base = setup([]);
+    base.options.database.getWorkspaceBootstrapState = async () => ({ target: { kind: "folder-page", workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 256 }, staged: false });
+    base.options.database.listUnsettledOperations = async () => pending;
+    base.options.database.listWorkspaces = async () => [{ id: WORKSPACE, name: "Desktop", pinned: false, ordinal: 0, headSequence: base.cursors.get(WORKSPACE) ?? 0, snapshotBarrier: 0, logFloor: 0, localRevision: pending.length }];
+    let pulls = 0;
+    base.transport.pull = async (request) => {
+      base.calls.order.push("pull");
+      base.calls.pulls.push(request.cursor);
+      if (pulls++ === 1) return { ...pull(0, 1), cursor: 1, operations: [{ sequence: 1, operationId: id(20), companion: null, nodes: [], settings: [] }] };
+      return pull(request.cursor, request.cursor);
+    };
+    let pushes = 0;
+    base.transport.push = async (request) => {
+      base.calls.order.push("push");
+      if (pushes++ === 0) throw new Web2HTTPError(409, "Pull required.", "pull-required");
+      expect(request.baseCursor).toBe(1);
+      pending = [];
+      return accepted(position);
+    };
+    const runtime = createWeb2SyncRuntime(base.options);
+    await runtime.bootstrap(WORKSPACE);
+    pending = [stored(position, [])];
+    await runtime.callbacks.synchronize(new AbortController().signal);
+    expect(base.calls.order).toEqual(["pull", "push", "pull", "push", "pull"]);
+  });
+
+  test("does not count pull-required retries against the outbox batch limit", async () => {
+    const operations = Array.from({ length: 40 }, (_, index): StoredOperation => {
+      const operation: WorkspaceOperation = { schemaVersion: WEB2_SCHEMA_VERSION, kind: "create", operationId: id(210 + index), workspaceId: WORKSPACE, deviceId: DEVICE, logicalTime: index + 1, nodes: [{ id: id(310 + index), kind: "folder", name: `Folder ${index}`, parentId: null, position: { x: index, y: index }, createdAt: 1, modifiedAt: 1 }] };
+      return { ...stored(operation, []), localRevision: index + 1 };
+    });
+    const base = setup(operations);
+    const push = base.transport.push;
+    let attempts = 0;
+    base.transport.push = async (request) => {
+      if (attempts++ === 0) throw new Web2HTTPError(409, "Pull required.", "pull-required");
+      return push(request);
+    };
+    await base.runtime.bootstrap(WORKSPACE);
+    await base.runtime.callbacks.synchronize(new AbortController().signal);
+    expect(attempts).toBe(41);
+    expect(base.calls.pushes).toHaveLength(40);
   });
 
   test("replays unrelated supported intents and durably records rejection", async () => {
@@ -426,7 +497,7 @@ describe("Web2 synchronization runtime", () => {
     const runtime = createWeb2SyncRuntime(base.options);
     await runtime.bootstrap(WORKSPACE);
     await runtime.callbacks.synchronize(new AbortController().signal);
-    expect(base.calls.pullWorkspaces).toEqual([WORKSPACE, destinationWorkspace, destinationWorkspace, WORKSPACE]);
+    expect(base.calls.pullWorkspaces).toEqual([WORKSPACE, destinationWorkspace, destinationWorkspace]);
     expect(base.calls.appliedOperations).toEqual([destinationPreparationId, transferId]);
     expect(base.cursors.get(destinationWorkspace)).toBe(2);
   });
@@ -547,10 +618,33 @@ describe("Web2 synchronization runtime", () => {
     const runtime = createWeb2SyncRuntime(base.options);
     await runtime.bootstrap(WORKSPACE);
     await runtime.callbacks.synchronize(new AbortController().signal);
-    expect(negotiations).toBe(2);
+    expect(negotiations).toBe(1);
     expect(base.calls.uploads).toBe(1);
     expect(base.calls.pushes).toHaveLength(1);
-    expect(base.calls.order).toEqual(["pull", "negotiate", "upload", "negotiate", "push", "pull"]);
+    expect(base.calls.order).toEqual(["pull", "negotiate", "upload", "push", "pull"]);
+  });
+
+  test("renegotiates when push cannot confirm an upload", async () => {
+    const hash = "e".repeat(64);
+    const manifest: Manifest = { schemaVersion: WEB2_SCHEMA_VERSION, size: 5, chunkSize: 1_048_576, chunks: [{ hash, size: 5 }] };
+    const write: WorkspaceOperation = { schemaVersion: WEB2_SCHEMA_VERSION, kind: "write", operationId: id(63), workspaceId: WORKSPACE, deviceId: DEVICE, logicalTime: 1, nodeId: id(64), mimeType: "text/plain", size: 5, manifestHash: "f".repeat(64), modifiedAt: 1 };
+    const base = setup([stored(write, [])]);
+    base.options.database.getManifest = async () => manifest;
+    let negotiations = 0;
+    base.transport.negotiateUpload = async () => ({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "chunk-upload-result", workspaceId: WORKSPACE, deviceId: DEVICE, operationId: write.operationId, manifestHash: write.manifestHash, transferId: id(65), expiresAt: 1, missingChunks: negotiations++ < 2 ? [{ hash, size: 5, method: "PUT", url: "https://objects.example/chunk", headers: {} }] : [] });
+    base.transport.readLocalChunk = async () => new Blob(["hello"]);
+    let pushes = 0;
+    base.transport.push = async () => {
+      if (pushes++ === 0) throw new Web2HTTPError(409, "Chunk upload incomplete.", "upload-incomplete");
+      base.settle([write.operationId]);
+      return accepted(write);
+    };
+    const runtime = createWeb2SyncRuntime(base.options);
+    await runtime.bootstrap(WORKSPACE);
+    await runtime.callbacks.synchronize(new AbortController().signal);
+    expect(negotiations).toBe(2);
+    expect(base.calls.uploads).toBe(2);
+    expect(pushes).toBe(2);
   });
 
   test("renegotiates an expired direct upload before pushing", async () => {
@@ -569,7 +663,7 @@ describe("Web2 synchronization runtime", () => {
     const runtime = createWeb2SyncRuntime(base.options);
     await runtime.bootstrap(WORKSPACE);
     await runtime.callbacks.synchronize(new AbortController().signal);
-    expect(negotiations).toBe(3);
+    expect(negotiations).toBe(2);
     expect(uploads).toBe(2);
     expect(base.calls.pushes).toHaveLength(1);
   });
