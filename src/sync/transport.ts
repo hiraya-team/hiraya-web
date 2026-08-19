@@ -642,7 +642,7 @@ function eventData(block: string) {
   return lines.length === 0 ? null : lines.map((line) => line.slice(5).replace(/^ /, "")).join("\n");
 }
 
-export async function listenForWeb2Events(signal: AbortSignal, receive: (event: Web2EventHint) => void | Promise<void>, directoryRevision = 0) {
+export async function listenForWeb2Events(signal: AbortSignal, receive: (event: Web2EventHint) => void | Promise<void>, directoryRevision = 0, activity: () => void = () => undefined) {
   if (!Number.isSafeInteger(directoryRevision) || directoryRevision < 0) throw new Error("The directory revision is invalid.");
   const response = await networkFetch(`/api/sync/events?protocol=${encodeURIComponent(WEB2_SYNC_PROTOCOL)}&directoryRevision=${directoryRevision}`, {
     credentials: "same-origin",
@@ -663,6 +663,7 @@ export async function listenForWeb2Events(signal: AbortSignal, receive: (event: 
       buffer = blocks.pop()!;
       for (const block of blocks) {
         if (block.length > 64 * 1024) throw new Error("The synchronization event stream exceeded its message limit.");
+        activity();
         const data = eventData(block);
         if (data !== null) await receive(parseWeb2EventHint(JSON.parse(data)));
         if (signal.aborted) return;

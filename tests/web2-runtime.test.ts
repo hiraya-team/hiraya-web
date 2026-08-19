@@ -55,7 +55,7 @@ function accepted(operation: WorkspaceOperation): PushBatchResult {
 }
 
 function setup(pending: StoredOperation[], overrides: Partial<Web2SyncRuntimeOptions> = {}) {
-  const calls = { pushes: [] as PushRequest[], pulls: [] as number[], pullWorkspaces: [] as string[], rejected: [] as unknown[], completed: [] as string[], hydrationTargets: [] as unknown[], appliedOperations: [] as string[], directoryRevisions: [] as number[], applied: 0, bootstrap: 0, hydrated: 0, uploads: 0, order: [] as string[] };
+  const calls = { pushes: [] as PushRequest[], pulls: [] as number[], pullWorkspaces: [] as string[], rejected: [] as unknown[], completed: [] as string[], hydrationTargets: [] as unknown[], appliedOperations: [] as string[], directoryRevisions: [] as number[], accountAppRevisions: [] as number[], applied: 0, bootstrap: 0, hydrated: 0, uploads: 0, order: [] as string[] };
   const cursors = new Map<string, number>([[WORKSPACE, 0]]);
   let initialized = false;
   let unsettled = [...pending];
@@ -78,6 +78,7 @@ function setup(pending: StoredOperation[], overrides: Partial<Web2SyncRuntimeOpt
       calls.directoryRevisions.push(directoryRevision ?? -1);
       await receive({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "directory", revision: 7 });
       await receive({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "workspace-head", accountId: id(50), workspaceId: WORKSPACE, headSequence: 1 });
+      await receive({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "account-apps", accountId: ACCOUNT, appsRevision: 8 });
       await receive({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "workspace-head", accountId: ACCOUNT, workspaceId: WORKSPACE, headSequence: 1 });
     },
   } satisfies Web2SyncRuntimeTransport;
@@ -118,6 +119,7 @@ function setup(pending: StoredOperation[], overrides: Partial<Web2SyncRuntimeOpt
     transport,
     randomUUID: () => id(10),
     retryDelayMs: 0,
+    onAccountAppsChange: (revision: number) => { calls.accountAppRevisions.push(revision); },
     ...overrides,
   };
   return { runtime: createWeb2SyncRuntime(options), calls, cursors, transport, options, settle };
@@ -134,6 +136,43 @@ describe("Web2 synchronization runtime", () => {
     expect(wakes).toBe(1);
     expect(directoryRevision).toBe(7);
     expect(calls.directoryRevisions).toEqual([6]);
+    expect(calls.accountAppRevisions).toEqual([8]);
+  });
+
+  test("coalesces concurrent pulls for one bootstrapped workspace", async () => {
+    const base = setup([]);
+    const release = Promise.withResolvers<void>();
+    const bothStarted = Promise.withResolvers<void>();
+    const pullStarted = Promise.withResolvers<void>();
+    let bootstrapReads = 0;
+    base.options.database.getWorkspaceBootstrapState = async () => {
+      if (++bootstrapReads === 2) bothStarted.resolve();
+      return { target: { kind: "folder-page", workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 256 }, staged: false };
+    };
+    base.transport.pull = async (request) => {
+      base.calls.pulls.push(request.cursor);
+      pullStarted.resolve();
+      await release.promise;
+      return pull(request.cursor);
+    };
+    const runtime = createWeb2SyncRuntime(base.options);
+    const first = runtime.bootstrap(WORKSPACE);
+    const second = runtime.bootstrap(WORKSPACE);
+    await bothStarted.promise;
+    await pullStarted.promise;
+    expect(base.calls.pulls).toEqual([0]);
+    release.resolve();
+    await Promise.all([first, second]);
+  });
+
+  test("does not repeat a completed head pull without local work", async () => {
+    const base = setup([]);
+    base.options.database.getWorkspaceBootstrapState = async () => ({ target: { kind: "folder-page", workspaceId: WORKSPACE, asOf: 0, parentId: null, limit: 256 }, staged: false });
+    const runtime = createWeb2SyncRuntime(base.options);
+    await runtime.bootstrap(WORKSPACE);
+    await runtime.bootstrap(WORKSPACE);
+    await runtime.callbacks.synchronize(new AbortController().signal);
+    expect(base.calls.pulls).toEqual([0]);
   });
 
   test("synchronizes only explicitly bootstrapped workspaces", async () => {

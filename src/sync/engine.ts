@@ -66,7 +66,8 @@ export async function openAccountSyncClient(storageId: string, callbacks: Accoun
     try { void Promise.resolve(callbacks.onError?.(error)).catch(() => undefined); } catch { /* Error reporting must not stop later synchronization. */ }
   };
   const onRevision = (event: MessageEvent<unknown>) => {
-    if (parseRevisionNotification(event.data) || isSyncWake(event.data)) leaderWake?.();
+    const revision = parseRevisionNotification(event.data);
+    if (revision?.source !== "remote" && (revision || isSyncWake(event.data))) leaderWake?.();
   };
   channel.addEventListener("message", onRevision);
 

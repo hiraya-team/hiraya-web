@@ -34,7 +34,7 @@ export type WorkspaceCatalog = {
 };
 
 function isCatalogNotification(value: unknown) {
-  return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && value.kind === "catalog-change" && Object.keys(value).length === 2;
+  return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && value.kind === "catalog-change" && (Object.keys(value).length === 2 || Object.keys(value).length === 3 && value.source === "remote");
 }
 
 export async function openWorkspaceCatalog(accountId: string, deviceId: string, environment: WorkspaceCatalogEnvironment): Promise<WorkspaceCatalog> {

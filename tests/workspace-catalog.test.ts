@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import { IDBDatabase, IDBFactory, IDBKeyRange } from "fake-indexeddb";
 import { filesystemDatabaseName, openFilesystemDatabase } from "../src/filesystem/database";
 import { openWorkspaceCatalog, type WorkspaceCatalogEnvironment } from "../src/platform/storage/workspace-catalog";
-import { openWorkspaceFilesystem, type FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
+import { filesystemRevisionChannelName, openWorkspaceFilesystem, type FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
 import { MemoryDirectory, memoryOpfsHandle } from "./support/memory-opfs";
 import { initializeLocalWeb2Storage, LOCAL_WEB2_ACCOUNT_ID } from "../src/platform/storage/local-startup";
 
@@ -57,6 +57,13 @@ class TestBroadcastChannels {
       },
     };
   };
+
+  broadcast(name: string, value: unknown) {
+    const peers = this.channels.get(name);
+    if (peers) for (const listeners of peers) setTimeout(() => {
+      if (peers.has(listeners)) for (const listener of listeners) listener({ data: value } as MessageEvent<unknown>);
+    }, 0);
+  }
 }
 
 class TestLocks {
@@ -106,7 +113,7 @@ function testEnvironment(indexedDB = new IDBFactory()) {
     sessionStorage,
     randomUUID: () => stableId(nextId++),
   } satisfies WorkspaceCatalogEnvironment;
-  return { environment, locks };
+  return { environment, locks, broadcasts };
 }
 
 test("initializes one stable browser-local identity and workspace across tabs and reload", async () => {
@@ -123,6 +130,18 @@ test("initializes one stable browser-local identity and workspace across tabs an
   expect(reopened).toMatchObject({ accountId: LOCAL_WEB2_ACCOUNT_ID, deviceId: first.deviceId, activeWorkspaceId: first.activeWorkspaceId });
   expect(await reopened.catalog.listWorkspaces()).toHaveLength(1);
   reopened.catalog.close();
+});
+
+test("reports catalog changes published by remote hydration", async () => {
+  const { environment, broadcasts } = testEnvironment();
+  const catalog = await openWorkspaceCatalog(ACCOUNT, DEVICE, environment);
+  let wakeups = 0;
+  const stop = catalog.onChangesAvailable(() => { wakeups += 1; });
+  broadcasts.broadcast(filesystemRevisionChannelName(await filesystemDatabaseName(ACCOUNT)), { schemaVersion: 1, kind: "catalog-change", source: "remote" });
+  await flushBroadcasts();
+  expect(wakeups).toBe(1);
+  stop();
+  catalog.close();
 });
 
 test("creates, renames, orders, pins, selects, and deletes workspaces across reload", async () => {

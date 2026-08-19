@@ -123,9 +123,9 @@ test("publishes bootstrap metadata and resumes its private root generation", asy
   await coordinator.close();
   expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 1, operationId: generationId }]);
   expect(revisions.messages).toEqual([
-    { schemaVersion: 1, kind: "catalog-change" },
-    { schemaVersion: 1, kind: "catalog-change" },
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+    { schemaVersion: 1, kind: "catalog-change", source: "remote" },
+    { schemaVersion: 1, kind: "catalog-change", source: "remote" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1, source: "remote" },
   ]);
   const published = await openFilesystemDatabase(ACCOUNT, environment);
   expect((await published.listChildren(WORKSPACE, null)).map(({ id }) => id).sort()).toEqual([firstNode.id, secondNode.id, finalNode.id].sort());
@@ -204,7 +204,7 @@ test("applies a parsed operation pull under storage locks and broadcasts after c
   await coordinator.close();
   expect(result.changes).toMatchObject([{ kind: "pull", workspaceId: WORKSPACE, revision: 2, operationId, fromCursor: 10, cursor: 11 }]);
   expect(terminal.changes).toEqual([]);
-  expect(revisions.messages).toEqual([{ schemaVersion: 1, kind: "catalog-change" }, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2 }]);
+  expect(revisions.messages).toEqual([{ schemaVersion: 1, kind: "catalog-change", source: "remote" }, { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2, source: "remote" }]);
   expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-workspace-${WORKSPACE}`);
   const published = await openFilesystemDatabase(ACCOUNT, environment);
   expect(await published.getSetting(WORKSPACE, "editor", "font-size")).toMatchObject({ value: 18 });
@@ -269,8 +269,8 @@ test("resumes a durable hydration generation and broadcasts its published revisi
   expect(changes).toMatchObject([{ kind: "hydration", workspaceId: WORKSPACE, revision: 1, targetId }]);
   expect(recoveredChanges).toEqual(changes);
   expect(revisions.messages).toEqual([
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1, source: "remote" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1, source: "remote" },
   ]);
   expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-storage`);
   expect(locks.names).toContain(`${await filesystemDatabaseName(ACCOUNT)}-workspace-${WORKSPACE}`);
@@ -362,8 +362,8 @@ test("concurrent callers share one generation and publication", async () => {
   expect(nextGeneration).toBe(701);
   expect(results.map((changes) => changes.length)).toEqual([1, 1]);
   expect(revisions.messages).toEqual([
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1 },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1, source: "remote" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 1, source: "remote" },
   ]);
 });
 
@@ -395,8 +395,8 @@ test("broadcasts every workspace revision changed by transfer replay", async () 
 
   expect(changes.map(({ workspaceId }) => workspaceId).sort()).toEqual([WORKSPACE, DESTINATION].sort());
   expect(revisions.messages).toEqual([
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 3 },
-    { schemaVersion: 1, workspaceId: DESTINATION, revision: 2 },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 3, source: "remote" },
+    { schemaVersion: 1, workspaceId: DESTINATION, revision: 2, source: "remote" },
   ]);
 });
 
@@ -457,10 +457,10 @@ test("resumes a multi-page cursor reset after leader failover and rebroadcasts r
   expect((await recovered.applyPull(reset, async () => { throw new Error("A committed reset must not fetch pages."); })).changes).toEqual(result.changes);
   await recovered.close();
   expect(revisions.messages).toEqual([
-    { schemaVersion: 1, kind: "catalog-change" },
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2 },
-    { schemaVersion: 1, kind: "catalog-change" },
-    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2 },
+    { schemaVersion: 1, kind: "catalog-change", source: "remote" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2, source: "remote" },
+    { schemaVersion: 1, kind: "catalog-change", source: "remote" },
+    { schemaVersion: 1, workspaceId: WORKSPACE, revision: 2, source: "remote" },
   ]);
 });
 
