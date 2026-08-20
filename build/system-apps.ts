@@ -11,6 +11,7 @@ export const SYSTEM_APP_SLUGS = ["text-editor", "image-viewer", "media-viewer", 
 
 export function systemAppsPlugin(projectRoot: string): Plugin {
   let catalog = "";
+  let deploymentCatalog = "";
   const archives = new Map<string, Uint8Array>();
 
   return {
@@ -27,9 +28,10 @@ export function systemAppsPlugin(projectRoot: string): Plugin {
         this.addWatchFile(manifestPath);
         archives.set(slug, archive);
         const digest = createHash("sha256").update(archive).digest("hex");
-        items.push({ slug, archivePath: `system-apps/${slug}.hiraya.app`, digest, manifest });
+        items.push({ slug, archivePath: `system-apps/${slug}.hiraya.app`, digest, size: archive.byteLength, manifest });
       }
       catalog = `export default ${JSON.stringify(items)};`;
+      deploymentCatalog = `${JSON.stringify({ schemaVersion: 1, apps: items }, null, 2)}\n`;
     },
     resolveId(id) {
       return id === PUBLIC_ID ? RESOLVED_ID : undefined;
@@ -55,6 +57,7 @@ export function systemAppsPlugin(projectRoot: string): Plugin {
     },
     generateBundle() {
       for (const [slug, source] of archives) this.emitFile({ type: "asset", fileName: `system-apps/${slug}.hiraya.app`, source });
+      this.emitFile({ type: "asset", fileName: "system-apps/catalog.json", source: deploymentCatalog });
     },
   };
 }
