@@ -16,7 +16,7 @@ New user-facing features are listed newest first.
 
 ### August 2026
 
-- **Open PDF previews reliably.** PDF files and PDF versions now open without browser sandbox errors while retaining preview isolation.
+- **Open PDF previews reliably.** PDF files and PDF versions now open in built-in previews and **Document & Media Viewer** without browser sandbox errors.
 - **Keep automatic update checks quiet.** Brief connection or server interruptions no longer add repeated update errors to **Notifications**. If a manual **Check now** fails, **Settings > System > Updates** explains how to retry.
 - **Save only changed documents.** **Integrated Editor** now disables **Save** after autosave finishes, preventing clean files and Scenes from being written again while keeping **Save As** and untitled files available.
 - **Open the full desktop automatically and update safely.** Hiraya now opens the complete desktop without a separate upgrade step, while editors and settings still load only when needed and **Update now** stays blocked until unsaved edits and active file operations finish.

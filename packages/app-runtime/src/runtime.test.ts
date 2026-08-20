@@ -234,6 +234,7 @@ describe("app runtime", () => {
     expect(SANDBOX_FLAGS).not.toContain("allow-top-navigation");
     expect(TRUSTED_DOCUMENT_MEDIA_CSP).toContain("img-src data: blob: https: http:");
     expect(TRUSTED_DOCUMENT_MEDIA_CSP).toContain("connect-src 'none'");
+    expect(TRUSTED_DOCUMENT_MEDIA_FLAGS).toContain("allow-same-origin");
     expect(TRUSTED_DOCUMENT_MEDIA_FLAGS).toContain("allow-popups-to-escape-sandbox");
     expect(TRUSTED_DOCUMENT_MEDIA_FLAGS).not.toContain("allow-top-navigation");
     expect(trustedDocumentMediaCsp("https://objects.test")).toContain("media-src data: blob: https://objects.test");
