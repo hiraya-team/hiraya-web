@@ -16,7 +16,7 @@ declare module "virtual:hiraya-seeded" {
 declare module "virtual:hiraya-system-apps" {
   import type { HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 
-  const catalog: readonly { slug: string; archivePath: string; digest: string; manifest: HirayaAppManifestV2 }[];
+  const catalog: readonly { slug: string; archivePath: string; digest: string; size: number; manifest: HirayaAppManifestV2 }[];
   export default catalog;
 }
 

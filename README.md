@@ -44,7 +44,7 @@ A fresh synchronized browser discovers the server-created first empty desktop th
 
 ## Runtime Apps And Offline Storage
 
-The build includes six trusted system app fallbacks under `system-apps/`. A synchronized deployment can publish a strict schema-1 `hiraya.apps.json` and immutable `.hiraya.app` releases through its administrator App Store desktop. Runtime catalog releases replace the fallbacks after size, SHA-256, manifest, and runtime compatibility checks. Trusted system releases update automatically and are retained in OPFS for offline launch; ordinary App Store releases retain explicit per-browser approval. User-selected file associations and app-local data are browser/account-local rather than desktop-synchronized.
+The build includes six authoritative trusted system apps under `system-apps/` and emits `system-apps/catalog.json` with their exact manifests, sizes, and SHA-256 digests. Trusted system releases update from the deployed image and are retained in OPFS for offline launch. User-selected file associations and app-local data are browser/account-local rather than desktop-synchronized.
 
 The browser hashes the session `storageId` into a safe account namespace before loading the desktop. Fresh Web2 storage keeps normalized workspaces, nodes, settings, operations, retained versions, preferences, sessions, apps, app data, and associations in one account database while OPFS stores content-addressed chunks and approved archives. Frontend-only mode makes no auth request and uses this fresh namespace unconditionally. Synchronized production keeps its deployed storage path until Web2 server activation; logout preserves every account namespace.
 
@@ -72,10 +72,8 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
-Calculator, ZIP Browser, Pixel Editor, Project Studio, Hiraya POS, and Todo are released from `hiraya-team/hiraya-apps` and installed through the runtime App Store catalog. To publish an app without rebuilding Hiraya, initialize a CLI synchronization root for the designated App Store desktop, then run:
+Web2 installs ordinary apps through account app APIs rather than an administrator App Store desktop. Verify the trusted system apps in a deployed image with:
 
 ```sh
-bun run apps:release -- --server https://hiraya.example --store-root /path/to/app-store --kind store --slug calculator calculator.hiraya.app
+bun run apps:system:verify -- https://hiraya.example
 ```
-
-The release command checks the target runtime contract, uploads the immutable package first, then activates it by updating `hiraya.apps.json`. Use `--kind system` for trusted system releases.
