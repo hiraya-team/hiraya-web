@@ -185,7 +185,7 @@
     "editor.templates",
     "viewers.image-video-fallback",
     "apps.install-sandbox-uninstall",
-    "apps.store-and-handlers",
+    "apps.account-and-handlers",
     "apps.data-permissions-associations",
     "sharing.members-invitations",
     "public.desktop-full-surface",
@@ -267,8 +267,8 @@
       }
     },
     {
-      "id": "apps.store-and-handlers",
-      "name": "App Store releases and handler hints remain discoverable and usable",
+      "id": "apps.account-and-handlers",
+      "name": "Account apps and handler hints remain discoverable and usable",
       "owners": ["web", "server", "platform"],
       "activationCritical": true,
       "acceptance": {

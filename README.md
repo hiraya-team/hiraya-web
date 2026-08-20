@@ -72,7 +72,7 @@ HIRAYA_SEEDED_DIR=examples/seeded bun run build
 
 Seeded content is used only for a fresh frontend-only origin. Synchronized installs converge from the server catalog.
 
-Web2 installs ordinary apps through account app APIs rather than an administrator App Store desktop. Verify the trusted system apps in a deployed image with:
+Verify the trusted system apps in a deployed image with:
 
 ```sh
 bun run apps:system:verify -- https://hiraya.example
