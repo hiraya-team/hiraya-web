@@ -141,12 +141,12 @@ test("application shortcuts launch from the desktop and persist", async ({ page 
   await page.getByRole("button", { name: /Start; account, system, and applications/ }).click();
   const startMenu = page.getByRole("dialog", { name: /Start; account, system, and applications/ });
   await startMenu.locator(".mobile-start-applications > summary").click();
-  await startMenu.getByRole("button", { name: "App Store" }).click();
+  await startMenu.getByRole("button", { name: "Applications" }).click();
   const appStore = page.locator('[data-app-window="store"]');
   const editorRow = appStore.getByRole("listitem").filter({ hasText: "Integrated Editor" });
   await editorRow.getByRole("button", { name: "Add to desktop" }).click();
   await expect(page.getByText("Integrated Editor added to the desktop")).toBeVisible();
-  await page.getByRole("button", { name: "Close App Store" }).click();
+  await page.getByRole("button", { name: "Close Applications" }).click();
 
   const shortcut = page.locator('.file-icon[data-entry-id]').filter({ hasText: "Integrated Editor" });
   await expect(shortcut).toBeVisible();
@@ -2348,7 +2348,7 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(page.locator(".menu-bar__store")).toHaveCount(0);
   await startMenu.locator(".mobile-start-applications > summary").click();
   await expect(startMenu.getByRole("button", { name: "Integrated Editor" })).toBeVisible();
-  await expect(startMenu.getByRole("button", { name: "App Store" })).toBeVisible();
+  await expect(startMenu.getByRole("button", { name: "Applications" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(start).toBeFocused();
 
@@ -2361,16 +2361,14 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(desktopTrigger).toBeFocused();
   await start.click();
   await startMenu.locator(".mobile-start-applications > summary").click();
-  await startMenu.getByRole("button", { name: "App Store" }).click();
+  await startMenu.getByRole("button", { name: "Applications" }).click();
   const appStore = page.locator('[data-app-window="store"]');
   await expect(appStore.getByRole("heading", { name: "Applications" })).toBeVisible();
   await expect(appStore.getByRole("heading", { name: "Installed" })).toBeVisible();
   await expect(appStore.getByText("Integrated Editor", { exact: true })).toBeVisible();
   await expect(appStore.getByRole("button", { name: "Add to desktop" }).first()).toBeVisible();
-  await expect(appStore.getByRole("heading", { name: "Administrator store unavailable" })).toBeVisible();
-  await expect(appStore.getByText("The App Store requires a synchronized Hiraya account.")).toBeVisible();
   await expect(start).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Back from App Store" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Back from Applications" })).toBeVisible();
   const system = page.getByRole("button", { name: "System" });
   const openIntegratedSwitcher = async () => {
     await system.click();
@@ -2389,19 +2387,19 @@ test("mobile Start and the unified switcher own distinct shell actions", async (
   await expect(switcher).toHaveCount(0);
 
   await trigger.click();
-  await switcher.getByRole("button", { name: "Switch to App Store" }).click();
+  await switcher.getByRole("button", { name: "Switch to Applications" }).click();
   await expect(switcher).toHaveCount(0);
 
   await openIntegratedSwitcher();
-  await switcher.getByRole("button", { name: "Minimize App Store" }).click();
+  await switcher.getByRole("button", { name: "Minimize Applications" }).click();
   await expect(switcher).toHaveCount(0);
 
   await trigger.click();
-  await switcher.getByRole("button", { name: "Switch to App Store" }).click();
+  await switcher.getByRole("button", { name: "Switch to Applications" }).click();
   await expect(switcher).toHaveCount(0);
 
   await openIntegratedSwitcher();
-  await switcher.getByRole("button", { name: "Close App Store" }).click();
+  await switcher.getByRole("button", { name: "Close Applications" }).click();
   await expect(switcher).toHaveCount(0);
   await expect(appStore).toHaveCount(0);
   await expect(page.locator(".desktop-minimap__handle")).toHaveCount(0);

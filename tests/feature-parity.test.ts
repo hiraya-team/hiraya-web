@@ -36,7 +36,7 @@ const PRODUCT_CONTRACT_CAPABILITY_IDS = [
   "editor.templates",
   "viewers.image-video-fallback",
   "apps.install-sandbox-uninstall",
-  "apps.store-and-handlers",
+  "apps.account-and-handlers",
   "apps.data-permissions-associations",
   "sharing.members-invitations",
   "public.desktop-full-surface",

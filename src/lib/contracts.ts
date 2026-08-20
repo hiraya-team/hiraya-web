@@ -212,7 +212,6 @@ export function parseDesktopIdentity(value: unknown, localDefaults = false): Des
     throw new Error("A desktop has invalid capabilities.");
   }
   if (value.authorityCatalogId !== null && !isValidId(value.authorityCatalogId)) throw new Error("A desktop has an invalid authority catalog.");
-  if (value.purpose !== undefined && value.purpose !== "app-store") throw new Error("A desktop has an invalid purpose.");
   return {
     id: value.id,
     name,
@@ -229,7 +228,6 @@ export function parseDesktopIdentity(value: unknown, localDefaults = false): Des
       activity: capabilities.activity as boolean,
     },
     authorityCatalogId: value.authorityCatalogId,
-    ...(value.purpose === "app-store" ? { purpose: value.purpose } : {}),
   };
 }
 
