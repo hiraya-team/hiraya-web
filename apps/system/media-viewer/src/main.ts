@@ -102,7 +102,7 @@ async function load(handle: FileHandle, generation = operations.begin(), relativ
         const frame = document.createElement("iframe");
         frame.src = nextUrl;
         frame.title = name;
-        frame.setAttribute("sandbox", "");
+        frame.setAttribute("sandbox", "allow-same-origin");
         frame.referrerPolicy = "no-referrer";
         element = frame;
       } else {

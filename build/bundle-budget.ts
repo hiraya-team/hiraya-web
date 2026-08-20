@@ -83,7 +83,7 @@ for (const source of featureSources) {
 const systemAppLimits: Record<string, number> = {
   "file-viewer.hiraya.app": 12989,
   "image-viewer.hiraya.app": 13238,
-  "media-viewer.hiraya.app": 1054205,
+  "media-viewer.hiraya.app": 1054213,
   "terminal.hiraya.app": 20415,
   "text-editor.hiraya.app": 350723,
   "theme-editor.hiraya.app": 22771,

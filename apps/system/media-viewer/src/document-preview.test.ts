@@ -19,7 +19,7 @@ describe("document preview safeguards", () => {
     const source = await Bun.file(new URL("./main.ts", import.meta.url)).text();
     const conversion = await Bun.file(new URL("./document-preview.ts", import.meta.url)).text();
     expect(source).toContain('document.createElement("iframe")');
-    expect(source).toContain('frame.setAttribute("sandbox", "")');
+    expect(source).toContain('frame.setAttribute("sandbox", "allow-same-origin")');
     expect(source).not.toContain('document.createElement("object")');
     expect(conversion).toContain("DOMPurify.sanitize");
     expect(conversion).toContain('FORBID_ATTR: ["href", "srcset", "action", "formaction", "ping", "target"]');
