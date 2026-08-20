@@ -8,6 +8,12 @@ describe("PWA installation state", () => {
     expect(html).toContain('crossorigin="use-credentials"');
   });
 
+  test("reuses an installed service worker before registering one", async () => {
+    const source = await Bun.file(new URL("../src/lib/pwa-update.ts", import.meta.url)).text();
+    expect(source).toContain("navigator.serviceWorker.getRegistration");
+    expect(source.indexOf("navigator.serviceWorker.getRegistration")).toBeLessThan(source.indexOf("navigator.serviceWorker.register"));
+  });
+
   test("prioritizes standalone and installed status over prompt guidance", () => {
     const prompt = {} as InstallPromptEvent;
     expect(pwaInstallState(prompt, false, true)).toBe("standalone");

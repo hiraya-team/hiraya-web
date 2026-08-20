@@ -58,7 +58,8 @@ export function createPwaUpdater({ onUpdateAvailable, onError }: Options): PwaUp
   navigator.serviceWorker.addEventListener("controllerchange", onControllerChange);
   const ensureRegistration = () => {
     if (registration) return Promise.resolve(registration);
-    registrationTask ??= navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, type: "module", updateViaCache: "none" })
+    registrationTask ??= navigator.serviceWorker.getRegistration(import.meta.env.BASE_URL)
+      .then((existing) => existing ?? navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`, { scope: import.meta.env.BASE_URL, type: "module", updateViaCache: "none" }))
       .then((nextRegistration) => {
         if (disposed) return nextRegistration;
         registration = nextRegistration;
