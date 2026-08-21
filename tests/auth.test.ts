@@ -1,11 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import { AuthenticationRequiredError, bootstrapSession, lockAuthBootstrap, loginUrl, parseAuthSession, readCachedSession, safeReturnPath } from "../src/lib/auth";
 
+/** Provides the user ID test fixture. */
 const userId = "10000000-0000-4000-8000-000000000001";
+/** Provides the account ID test fixture. */
 const accountId = "20000000-0000-4000-8000-000000000002";
+/** Provides the storage ID test fixture. */
 const storageId = "30000000-0000-4000-8000-000000000003";
+/** Provides the workspace ID test fixture. */
 const workspaceId = "40000000-0000-4000-8000-000000000004";
 
+/** Builds the wire session test fixture. */
 function wireSession(overrides: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
@@ -19,6 +24,7 @@ function wireSession(overrides: Record<string, unknown> = {}) {
   };
 }
 
+/** Builds the memory storage test fixture. */
 function memoryStorage() {
   const values = new Map<string, string>();
   return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } };

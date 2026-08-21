@@ -3,9 +3,13 @@ import { breadcrumbForEntry, localSearchResults, parseSearchResponse } from "../
 import { localDesktopIdentity } from "../src/lib/permissions";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the folder test fixture. */
 const folder: DesktopEntry = { kind: "folder", id: "folder", name: "Plans", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } };
+/** Provides the file test fixture. */
 const file: DesktopEntry = { kind: "file", id: "file", name: "Q3.txt", parentId: folder.id, createdAt: 1, modifiedAt: 2, position: { x: 1, y: 1 }, mimeType: "text/plain", size: 3 };
+/** Provides the wire file test fixture. */
 const wireFile = { ...file, revision: 4, contentRevision: 4 };
+/** Provides the result test fixture. */
 const result = {
   authorityCatalogId: "authority",
   catalogRevision: 5,
@@ -13,6 +17,7 @@ const result = {
   entry: wireFile,
   breadcrumbs: [{ id: folder.id, name: folder.name }],
 };
+/** Provides the response test fixture. */
 const response = { schemaVersion: 1, query: "plans q3", limit: 50, truncated: false, results: [result] };
 
 describe("desktop search models", () => {

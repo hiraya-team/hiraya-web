@@ -13,6 +13,7 @@ type Props = ConfirmationRequest & {
   onClose: (confirmed: boolean) => void;
 };
 
+/** Renders the confirmation dialog interface. */
 export function ConfirmationDialog({ title, message, confirmLabel, danger = false, onClose }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const dialogRef = useRef<HTMLDialogElement>(null);

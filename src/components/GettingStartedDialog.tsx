@@ -5,6 +5,7 @@ import type { PwaInstallState } from "../lib/pwa-install";
 
 type Props = { local: boolean; installState: PwaInstallState; onInstall: () => void; onClose: () => void };
 
+/** Renders the getting started dialog interface. */
 export function GettingStartedDialog({ local, installState, onInstall, onClose }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const panelRef = useRef<HTMLElement>(null);

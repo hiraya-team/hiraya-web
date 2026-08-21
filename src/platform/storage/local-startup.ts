@@ -13,6 +13,7 @@ export type LocalWeb2Startup = {
   catalog: WorkspaceCatalog;
 };
 
+/** Initializes local Web2 storage. */
 export async function initializeLocalWeb2Storage(environment: Omit<WorkspaceCatalogEnvironment, "storageId"> = {}): Promise<LocalWeb2Startup> {
   configureAccountStorage(LOCAL_WEB2_ACCOUNT_ID, LOCAL_WEB2_ACCOUNT_ID);
   const localEnvironment = { ...environment, storageId: LOCAL_WEB2_ACCOUNT_ID };

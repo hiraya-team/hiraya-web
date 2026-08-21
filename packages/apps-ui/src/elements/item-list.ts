@@ -2,6 +2,14 @@ import { hirayaEvent, HTMLElementBase } from "./shared";
 
 export type ItemListDirection = "asc" | "desc";
 
+/** Names the custom events emitted by a Hiraya item list. */
+export const ITEM_LIST_EVENTS = {
+  select: "hiraya-item-select",
+  activate: "hiraya-item-activate",
+  context: "hiraya-item-context",
+  reorder: "hiraya-item-reorder",
+} as const;
+
 export type ItemListEventDetail = Readonly<{
   id: string;
   clientX: number;
@@ -17,11 +25,13 @@ export type ItemListReorderDetail = Readonly<{
   toIndex: number;
 }>;
 
+/** Sorts item list. */
 export function sortItemList<T>(items: readonly T[], compare: (left: T, right: T) => number, direction: ItemListDirection = "asc"): T[] {
   const sign = direction === "asc" ? 1 : -1;
   return items.map((item, index) => ({ item, index })).toSorted((left, right) => sign * compare(left.item, right.item) || left.index - right.index).map(({ item }) => item);
 }
 
+/** Moves item list item. */
 export function moveItemListItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
   if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length) return [...items];
   const next = [...items];
@@ -55,9 +65,12 @@ type Reorder = {
   moved: boolean;
 };
 
+/** Selects items managed by the list. */
 const ITEM_SELECTOR = "[data-item-id]";
+/** Selects interactive controls nested inside list items. */
 const INTERACTIVE_SELECTOR = "button, a[href], input, select, textarea, summary, [contenteditable=true]";
 
+/** Implements the Hiraya item list. */
 export class HirayaItemList extends HTMLElementBase {
   static readonly observedAttributes = ["label", "list-role", "orientation"];
 
@@ -69,6 +82,7 @@ export class HirayaItemList extends HTMLElementBase {
   #suppressClickUntil = 0;
   #openedContext: { id: string; until: number } | null = null;
 
+  /** Creates a hiraya item list instance. */
   constructor() {
     super();
     this.addEventListener("click", this.#onClick);
@@ -82,10 +96,14 @@ export class HirayaItemList extends HTMLElementBase {
     this.addEventListener("lostpointercapture", this.#onLostPointerCapture);
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Releases listeners when the element leaves the document. */
   disconnectedCallback(): void { this.#finishPress(true); this.#finishReorder(true); this.#pointerOwner = null; this.#doubleClickOwner = null; }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     const role = this.getAttribute("list-role") ?? "list";
     this.setAttribute("role", role);
@@ -97,20 +115,24 @@ export class HirayaItemList extends HTMLElementBase {
     else this.removeAttribute("aria-orientation");
   }
 
+  /** Returns the current item elements. */
   #items(): HTMLElement[] {
     return Array.from(this.querySelectorAll<HTMLElement>(ITEM_SELECTOR)).filter((item) => item.closest("hiraya-item-list") === this && item.dataset.itemDisabled !== "true");
   }
 
+  /** Returns the item for an event target. */
   #item(target: EventTarget | null): HTMLElement | null {
     const item = target instanceof Element ? target.closest<HTMLElement>(ITEM_SELECTOR) : null;
     return item?.closest("hiraya-item-list") === this ? item : null;
   }
 
+  /** Reports whether an event target is a control nested inside an item. */
   #isNestedControl(target: EventTarget | null, item: HTMLElement): boolean {
     const control = target instanceof Element ? target.closest<HTMLElement>(INTERACTIVE_SELECTOR) : null;
     return Boolean(control && control !== item);
   }
 
+  /** Emits an event to the connected client. */
   #emit(name: string, item: HTMLElement, clientX = 0, clientY = 0, presentation: "menu" | "sheet" = "menu", source?: MouseEvent | KeyboardEvent | PointerEvent): void {
     hirayaEvent<ItemListEventDetail>(this, name, { id: item.dataset.itemId!, clientX, clientY, presentation, toggle: Boolean(source?.metaKey || source?.ctrlKey), range: Boolean(source?.shiftKey) });
   }
@@ -124,7 +146,7 @@ export class HirayaItemList extends HTMLElementBase {
       return;
     }
     if (!item || this.#isNestedControl(event.target, item) || !item.hasAttribute("data-item-select")) return;
-    this.#emit("hiraya-item-select", item, event.clientX, event.clientY, "menu", event);
+    this.#emit(ITEM_LIST_EVENTS.select, item, event.clientX, event.clientY, "menu", event);
   };
 
   #onDoubleClick = (event: MouseEvent): void => {
@@ -132,7 +154,7 @@ export class HirayaItemList extends HTMLElementBase {
     const owner = this.#doubleClickOwner;
     this.#doubleClickOwner = null;
     if (!item || item.dataset.itemId !== owner || this.#isNestedControl(event.target, item) || !item.hasAttribute("data-item-activate")) return;
-    this.#emit("hiraya-item-activate", item, event.clientX, event.clientY, "menu", event);
+    this.#emit(ITEM_LIST_EVENTS.activate, item, event.clientX, event.clientY, "menu", event);
   };
 
   #onContextMenu = (event: MouseEvent): void => {
@@ -149,7 +171,7 @@ export class HirayaItemList extends HTMLElementBase {
     if (openedContext && openedContext.id === item.dataset.itemId && performance.now() < openedContext.until) return;
     this.#openedContext = { id: item.dataset.itemId!, until: performance.now() + 700 };
     const pointerType = "pointerType" in event ? String(event.pointerType) : "mouse";
-    this.#emit("hiraya-item-context", item, event.clientX, event.clientY, pointerType === "touch" ? "sheet" : "menu", event);
+    this.#emit(ITEM_LIST_EVENTS.context, item, event.clientX, event.clientY, pointerType === "touch" ? "sheet" : "menu", event);
   };
 
   #onKeyDown = (event: KeyboardEvent): void => {
@@ -165,19 +187,19 @@ export class HirayaItemList extends HTMLElementBase {
     if (handle && (event.key === previousKey || event.key === nextKey)) {
       event.preventDefault();
       const toIndex = Math.max(0, Math.min(items.length - 1, index + (event.key === previousKey ? -1 : 1)));
-      if (toIndex !== index) hirayaEvent<ItemListReorderDetail>(this, "hiraya-item-reorder", { id: item.dataset.itemId!, fromIndex: index, toIndex });
+      if (toIndex !== index) hirayaEvent<ItemListReorderDetail>(this, ITEM_LIST_EVENTS.reorder, { id: item.dataset.itemId!, fromIndex: index, toIndex });
       return;
     }
     if (this.#isNestedControl(event.target, item)) return;
     if (event.key === "Enter" && item.hasAttribute("data-item-activate") && !this.#isNestedControl(event.target, item)) {
       event.preventDefault();
-      this.#emit("hiraya-item-activate", item);
+      this.#emit(ITEM_LIST_EVENTS.activate, item);
       return;
     }
     if ((event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) && item.hasAttribute("data-item-context")) {
       event.preventDefault();
       const bounds = item.getBoundingClientRect();
-      this.#emit("hiraya-item-context", item, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
+      this.#emit(ITEM_LIST_EVENTS.context, item, bounds.left + bounds.width / 2, bounds.top + bounds.height / 2);
       return;
     }
     const target = event.key === "Home" ? items[0] : event.key === "End" ? items.at(-1) : event.key === previousKey ? items[index - 1] : event.key === nextKey ? items[index + 1] : null;
@@ -211,7 +233,7 @@ export class HirayaItemList extends HTMLElementBase {
       this.#lastTap = null;
       this.#suppressClickUntil = performance.now() + 700;
       this.#openedContext = { id: item.dataset.itemId!, until: performance.now() + 700 };
-      this.#emit("hiraya-item-context", item, event.clientX, event.clientY, "sheet");
+      this.#emit(ITEM_LIST_EVENTS.context, item, event.clientX, event.clientY, "sheet");
     }, 500);
     this.#press = press;
   };
@@ -267,6 +289,7 @@ export class HirayaItemList extends HTMLElementBase {
     if (this.#press?.pointerId === event.pointerId) this.#finishPress(true);
   };
 
+  /** Finishes press. */
   #finishPress(cancelled: boolean, event?: PointerEvent): void {
     const press = this.#press;
     if (!press) return;
@@ -278,10 +301,11 @@ export class HirayaItemList extends HTMLElementBase {
     const tap = { id: press.id, x: event.clientX, y: event.clientY, at: performance.now() };
     const doubleTap = this.#lastTap?.id === tap.id && tap.at - this.#lastTap.at <= 400 && Math.hypot(tap.x - this.#lastTap.x, tap.y - this.#lastTap.y) <= 24;
     this.#lastTap = doubleTap ? null : tap;
-    if (doubleTap && press.item.hasAttribute("data-item-activate")) this.#emit("hiraya-item-activate", press.item, event.clientX, event.clientY, "sheet");
-    else if (press.item.hasAttribute("data-item-select")) this.#emit("hiraya-item-select", press.item, event.clientX, event.clientY, "sheet");
+    if (doubleTap && press.item.hasAttribute("data-item-activate")) this.#emit(ITEM_LIST_EVENTS.activate, press.item, event.clientX, event.clientY, "sheet");
+    else if (press.item.hasAttribute("data-item-select")) this.#emit(ITEM_LIST_EVENTS.select, press.item, event.clientX, event.clientY, "sheet");
   }
 
+  /** Finishes reorder. */
   #finishReorder(cancelled: boolean): void {
     const reorder = this.#reorder;
     if (!reorder) return;
@@ -289,6 +313,6 @@ export class HirayaItemList extends HTMLElementBase {
     if (reorder.handle.hasPointerCapture(reorder.pointerId)) reorder.handle.releasePointerCapture(reorder.pointerId);
     reorder.item.style.removeProperty("transform");
     delete reorder.item.dataset.itemDragging;
-    if (!cancelled && reorder.moved && reorder.toIndex !== reorder.fromIndex) hirayaEvent<ItemListReorderDetail>(this, "hiraya-item-reorder", { id: reorder.id, fromIndex: reorder.fromIndex, toIndex: reorder.toIndex });
+    if (!cancelled && reorder.moved && reorder.toIndex !== reorder.fromIndex) hirayaEvent<ItemListReorderDetail>(this, ITEM_LIST_EVENTS.reorder, { id: reorder.id, fromIndex: reorder.fromIndex, toIndex: reorder.toIndex });
   }
 }

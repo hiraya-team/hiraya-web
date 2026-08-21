@@ -1,3 +1,4 @@
+/** Defines the stable identifiers reserved for bundled system apps. */
 export const SYSTEM_APP_IDS = {
   textEditor: "app.hiraya.text-editor",
   imageViewer: "app.hiraya.image-viewer",
@@ -7,4 +8,5 @@ export const SYSTEM_APP_IDS = {
   themeEditor: "app.hiraya.theme-editor",
 } as const;
 
+/** Provides constant-time checks for reserved system app identifiers. */
 export const RESERVED_SYSTEM_APP_IDS: ReadonlySet<string> = new Set(Object.values(SYSTEM_APP_IDS));

@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ShellNotifications } from "../src/features/notifications/ShellNotifications";
 
+/** Provides the base props test fixture. */
 const baseProps = {
   syncIssue: null,
   syncIssueLabels: [],

@@ -5,6 +5,7 @@ import { MarkdownRenderer } from "./MarkdownRenderer";
 
 type Props = { section: HelpSectionId; onSectionChange: (section: HelpSectionId) => void };
 
+/** Renders the help panel interface. */
 export function HelpPanel({ section, onSectionChange }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
   const [query, setQuery] = useState("");

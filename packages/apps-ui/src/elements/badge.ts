@@ -1,9 +1,11 @@
 import { elementStyles, HTMLElementBase } from "./shared";
 
+/** Implements the Hiraya badge. */
 export class HirayaBadge extends HTMLElementBase {
   static readonly observedAttributes = ["tone"];
   readonly #badge: HTMLSpanElement;
 
+  /** Creates a hiraya badge instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -18,7 +20,10 @@ export class HirayaBadge extends HTMLElementBase {
     </style><span part="badge"><slot name="icon"></slot><slot></slot></span>`;
     this.#badge = root.querySelector("span")!;
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void { if (this.#badge) this.#badge.className = this.getAttribute("tone") ?? "neutral"; }
 }

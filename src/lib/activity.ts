@@ -1,7 +1,10 @@
 import { isRecord, isValidId } from "./contracts";
 
+/** Defines the default activity page limit. */
 export const DEFAULT_ACTIVITY_PAGE_LIMIT = 50;
+/** Defines the maximum activity page size. */
 export const MAX_ACTIVITY_PAGE_LIMIT = 100;
+/** Defines the maximum activity query length. */
 export const MAX_ACTIVITY_QUERY_LENGTH = 200;
 
 export type ValidActivityRecord = {
@@ -37,11 +40,13 @@ export type ActivityQuery = {
 
 export type NewActivityRecord = Omit<ValidActivityRecord, "catalogRevision">;
 
+/** Validates and returns a positive integer. */
 function positiveInteger(value: unknown, message: string) {
   if (!Number.isSafeInteger(value) || (value as number) <= 0) throw new Error(message);
   return value as number;
 }
 
+/** Parses and validates valid record. */
 function parseValidRecord(value: unknown): ValidActivityRecord {
   if (!isRecord(value) || typeof value.action !== "string" || !value.action.trim() || value.action.length > 120 || typeof value.source !== "string" || !value.source.trim() || value.source.length > 120 || typeof value.summary !== "string" || !value.summary.trim() || value.summary.length > 500 || !Array.isArray(value.details)) {
     throw new Error("An activity record has an unsupported format.");
@@ -70,6 +75,7 @@ function parseValidRecord(value: unknown): ValidActivityRecord {
   };
 }
 
+/** Parses and validates record. */
 function parseRecord(value: unknown): ActivityRecord {
   if (!isRecord(value)) throw new Error("An activity record has an unsupported format.");
   const catalogRevision = positiveInteger(value.catalogRevision, "An activity record has an invalid catalog revision.");
@@ -82,6 +88,7 @@ function parseRecord(value: unknown): ActivityRecord {
   }
 }
 
+/** Parses and validates activity page. */
 export function parseActivityPage(value: unknown): ActivityPage {
   if (!isRecord(value) || !Array.isArray(value.activities)) throw new Error("The activity response has an unsupported format.");
   const activities = value.activities.map(parseRecord);
@@ -93,6 +100,7 @@ export function parseActivityPage(value: unknown): ActivityPage {
   return { activities, nextBefore };
 }
 
+/** Parses and validates activity query. */
 export function parseActivityQuery(value: ActivityQuery = {}): Required<Pick<ActivityQuery, "limit">> & Omit<ActivityQuery, "limit"> {
   if (value.q !== undefined && typeof value.q !== "string") throw new Error("The activity search has an unsupported format.");
   const q = value.q?.trim();
@@ -104,6 +112,7 @@ export function parseActivityQuery(value: ActivityQuery = {}): Required<Pick<Act
   return { ...(q ? { q } : {}), ...(before === undefined ? {} : { before }), limit, ...(value.desktopId ? { desktopId: value.desktopId } : {}) };
 }
 
+/** Builds an activity action for a local change. */
 function localAction(summary: string) {
   if (summary.startsWith("Created custom theme")) return "theme-create";
   if (/^(Created|Pasted)/.test(summary)) return "create";
@@ -121,6 +130,7 @@ function localAction(summary: string) {
   return "update";
 }
 
+/** Builds a normalized activity record. */
 export function activityRecord(summary: string, details: string[], timestamp = Date.now(), action = localAction(summary)): NewActivityRecord {
   const { catalogRevision: _catalogRevision, ...record } = parseValidRecord({ catalogRevision: 1, action, source: "frontend", timestamp, summary, details });
   void _catalogRevision;

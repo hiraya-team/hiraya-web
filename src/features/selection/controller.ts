@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 export type SelectionOptions = { toggle?: boolean; range?: boolean; orderedIds?: string[] };
 
+/** Computes the next desktop selection for a pointer or keyboard action. */
 export function selectedEntryIds(current: readonly string[], entryId: string, anchorId: string | null, options: SelectionOptions = {}) {
   if (options.range && anchorId && options.orderedIds) {
     const start = options.orderedIds.indexOf(anchorId);
@@ -13,6 +14,7 @@ export function selectedEntryIds(current: readonly string[], entryId: string, an
   return { ids: [entryId], anchorId: entryId };
 }
 
+/** Owns desktop selection state and range-selection behavior. */
 export function useDesktopSelection() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const selectedIdsRef = useRef<string[]>([]);

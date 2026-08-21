@@ -1,12 +1,18 @@
 import { DEFAULT_GRID_SIZE, MAX_LAYOUT_DIMENSION, type DesktopEntry, type DesktopIconGroup, type DesktopWidget, type EntryPosition, type RootEntryPositionUpdate } from "../types";
 import type { DesktopIconMetrics } from "../lib/themes";
 
+/** Defines the default desktop icon footprint. */
 export const FILE_ICON_SIZE = { width: 98, height: 102 } as const;
+/** Defines the first valid desktop grid coordinate. */
 export const GRID_ORIGIN = { x: 22, y: 22 } as const;
+/** Defines horizontal and vertical spacing between icon slots. */
 export const GRID_STEP = { x: 104, y: 112 } as const;
+/** Combines the default icon footprint and slot spacing. */
 export const DEFAULT_ICON_METRICS: DesktopIconMetrics = { ...FILE_ICON_SIZE, stepX: GRID_STEP.x, stepY: GRID_STEP.y };
+/** Defines the smallest resizable shell-item footprint. */
 export const MIN_SHELL_ITEM_SIZE = { width: 180, height: 112 } as const;
 
+/** Reserves desktop space occupied by the area minimap. */
 const MINIMAP_RESERVED_SIZE = { width: 138, height: 111 } as const;
 
 export type SurfaceSegment = { column: number; row: number };
@@ -32,22 +38,26 @@ export type ResponsiveDesktop = {
   positions: ReadonlyMap<string, EntryPosition>;
 };
 
+/** Encodes a desktop segment as a stable map key. */
 export function segmentKey(segment: SurfaceSegment) {
   return `${segment.row}:${segment.column}`;
 }
 
+/** Finds the next available position for a root entry. */
 export function nextRootEntryPosition(index: number, viewportHeight: number, base?: EntryPosition, metrics = DEFAULT_ICON_METRICS) {
   if (base) return { x: base.x + (index % 4) * 18, y: base.y + (index % 4) * 18 };
   const rows = Math.max(1, Math.floor((viewportHeight - 130) / metrics.stepY));
   return { x: GRID_ORIGIN.x + Math.floor(index / rows) * metrics.stepX, y: GRID_ORIGIN.y + (index % rows) * metrics.stepY };
 }
 
+/** Snaps one coordinate to the nearest valid grid position. */
 export function snapAxis(value: number, origin: number, step: number, max: number) {
   if (max <= origin) return Math.max(8, max);
   const index = Math.max(0, Math.min(Math.floor((max - origin) / step), Math.round((value - origin) / step)));
   return origin + index * step;
 }
 
+/** Enumerates valid icon slots within a desktop area. */
 export function desktopSlots(size: { width: number; height: number }, reserveMinimap = false, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []) {
   const maxX = Math.max(8, size.width - metrics.width);
   const maxY = Math.max(8, size.height - metrics.height);
@@ -69,20 +79,24 @@ export function desktopSlots(size: { width: number; height: number }, reserveMin
   return slots;
 }
 
+/** Reports whether two positioned footprints overlap. */
 function positionsOverlap(a: EntryPosition, aFootprint: DesktopIconFootprint, b: EntryPosition, bFootprint: DesktopIconFootprint) {
   return a.x < b.x + bFootprint.width && a.x + aFootprint.width > b.x
     && a.y < b.y + bFootprint.height && a.y + aFootprint.height > b.y;
 }
 
+/** Reports whether a positioned footprint intersects an obstacle. */
 export function positionOverlapsObstacles(position: EntryPosition, footprint: DesktopIconFootprint, obstacles: readonly DesktopObstacle[]) {
   return obstacles.some((obstacle) => positionsOverlap(position, footprint, obstacle, obstacle));
 }
 
+/** Finds the next available desktop slot. */
 export function nextAvailableDesktopSlot(size: { width: number; height: number }, occupied: readonly EntryPosition[], reserveMinimap = false, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []) {
   const slots = desktopSlots(size, reserveMinimap, metrics, obstacles);
   return slots.find((slot) => occupied.every((position) => !positionsOverlap(position, metrics, slot, metrics))) ?? null;
 }
 
+/** Arranges root entries into available slots within one segment. */
 export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
   const arranged = entries
     .filter((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(segment))
@@ -96,6 +110,7 @@ export function arrangeDesktopSegment(entries: readonly DesktopEntry[], segment:
   return arranged.map((entry, index) => ({ entryId: entry.id, position: restoreLogicalPosition(slots[index], segment, size) }));
 }
 
+/** Plans a collision-free multi-entry drag across a desktop segment. */
 export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntryIds: ReadonlySet<string>, anchorEntryId: string, anchorPosition: EntryPosition, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, footprintFor: (entry: DesktopEntry) => DesktopIconFootprint = () => metrics, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
   const roots = entries.filter((entry) => entry.parentId === null);
   const anchor = roots.find((entry) => entry.id === anchorEntryId && movingEntryIds.has(entry.id));
@@ -174,6 +189,7 @@ export function arrangeDesktopDrag(entries: readonly DesktopEntry[], movingEntry
     .sort((a, b) => a.entryId.localeCompare(b.entryId));
 }
 
+/** Moves colliding entries around a newly placed shell item. */
 export function arrangeDesktopAroundObstacle(entries: readonly DesktopEntry[], obstacle: DesktopObstacle, targetSegment: SurfaceSegment, size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS, gridSize = DEFAULT_GRID_SIZE, obstacles: readonly DesktopObstacle[] = []): RootEntryPositionUpdate[] | null {
   const roots = entries
     .filter((entry) => entry.parentId === null && segmentKey(projectLogicalPosition(entry.position, size).segment) === segmentKey(targetSegment))
@@ -230,6 +246,7 @@ export function arrangeDesktopAroundObstacle(entries: readonly DesktopEntry[], o
   return [...positions].map(([entryId, position]) => ({ entryId, position })).sort((a, b) => a.entryId.localeCompare(b.entryId));
 }
 
+/** Clamps shell item bounds to valid bounds. */
 export function clampShellItemBounds(position: EntryPosition, width: number, height: number, area: { width: number; height: number }): DesktopObstacle {
   const nextWidth = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, width, area.width));
   const nextHeight = Math.max(1, Math.min(MAX_LAYOUT_DIMENSION, height, area.height));
@@ -241,6 +258,7 @@ export function clampShellItemBounds(position: EntryPosition, width: number, hei
   };
 }
 
+/** Snaps shell-item size and position to the desktop grid. */
 export function snapShellItemBounds(position: EntryPosition, width: number, height: number, area: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE): DesktopObstacle {
   const snappedWidth = Math.max(Math.ceil(MIN_SHELL_ITEM_SIZE.width / gridSize), Math.round(width / gridSize)) * gridSize;
   const snappedHeight = Math.max(Math.ceil(MIN_SHELL_ITEM_SIZE.height / gridSize), Math.round(height / gridSize)) * gridSize;
@@ -251,6 +269,7 @@ export function snapShellItemBounds(position: EntryPosition, width: number, heig
   }, bounds.width, bounds.height, area);
 }
 
+/** Projects widgets and icon groups into placement obstacles. */
 export function desktopShellItemObstacles(widgets: readonly DesktopWidget[], groups: readonly DesktopIconGroup[], entries: readonly DesktopEntry[], segment: SurfaceSegment, area: { width: number; height: number }) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const obstacles = widgets.flatMap((widget) => {
@@ -266,6 +285,7 @@ export function desktopShellItemObstacles(widgets: readonly DesktopWidget[], gro
   return obstacles;
 }
 
+/** Rounds the usable icon area to complete grid cells. */
 export function iconAreaSize(viewport: { width: number; height: number }, gridSize = DEFAULT_GRID_SIZE) {
   return {
     width: Math.max(gridSize, Math.floor(viewport.width / gridSize) * gridSize),
@@ -273,12 +293,14 @@ export function iconAreaSize(viewport: { width: number; height: number }, gridSi
   };
 }
 
+/** Projects a logical coordinate onto a responsive axis. */
 export function projectLogicalAxis(value: number, viewportExtent: number) {
   const extent = Math.max(1, viewportExtent);
   const segment = Math.floor(value / extent);
   return { segment, local: value - segment * extent };
 }
 
+/** Projects a logical position into a responsive segment. */
 export function projectLogicalPosition(position: EntryPosition, size: { width: number; height: number }) {
   const x = projectLogicalAxis(position.x, size.width);
   const y = projectLogicalAxis(position.y, size.height);
@@ -288,6 +310,7 @@ export function projectLogicalPosition(position: EntryPosition, size: { width: n
   };
 }
 
+/** Reports whether logical bounds intersect a desktop segment. */
 export function boundsIntersectSegment(position: EntryPosition, footprint: { width: number; height: number }, segment: SurfaceSegment, size: { width: number; height: number }) {
   const left = segment.column * size.width;
   const top = segment.row * size.height;
@@ -297,6 +320,7 @@ export function boundsIntersectSegment(position: EntryPosition, footprint: { wid
     && position.y + footprint.height > top;
 }
 
+/** Enumerates every desktop segment touched by logical bounds. */
 export function intersectingSegments(position: EntryPosition, footprint: { width: number; height: number }, size: { width: number; height: number }) {
   const minColumn = Math.floor(position.x / size.width);
   const maxColumn = Math.ceil((position.x + footprint.width) / size.width) - 1;
@@ -309,6 +333,7 @@ export function intersectingSegments(position: EntryPosition, footprint: { width
   return segments;
 }
 
+/** Restores a projected position to logical coordinates. */
 export function restoreLogicalPosition(position: EntryPosition, segment: SurfaceSegment, size: { width: number; height: number }) {
   return {
     x: segment.column * Math.max(1, size.width) + position.x,
@@ -316,6 +341,7 @@ export function restoreLogicalPosition(position: EntryPosition, segment: Surface
   };
 }
 
+/** Projects logical root entries into responsive desktop segments. */
 export function responsiveDesktop(entries: readonly DesktopEntry[], size: { width: number; height: number }, metrics = DEFAULT_ICON_METRICS): ResponsiveDesktop {
   const buckets = new Map<string, DesktopSegment>();
   const positions = new Map<string, EntryPosition>();

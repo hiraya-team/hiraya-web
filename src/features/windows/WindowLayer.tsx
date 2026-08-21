@@ -28,6 +28,7 @@ type WindowLayerProps = WindowCallbacks & {
   children: (app: RunningApp, headerElements: AppWindowHeaderElements) => ReactNode;
 };
 
+/** Renders running app windows in their active desktop segment. */
 export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, windowed, mobileHeaderActionsElement, restingCamera, trackRef, transitionSegmentKeys, titleForApp, isMaximized, onExecuteCommand, children, ...windowCallbacks }: WindowLayerProps) {
   return <div className="desktop-area-stage desktop-area-stage--windows">
     <div
@@ -79,6 +80,7 @@ export function WindowLayer({ apps, activeSegment, desktopSize, focusedAppId, wi
   </div>;
 }
 
+/** Portals a sandbox app's promoted commands into window chrome. */
 export function RuntimeAppActions({ app, target, onExecute }: { app: Extract<RunningApp, { kind: "sandbox" }>; target: HTMLDivElement | null; onExecute: (id: CommandId) => void }) {
   const commands = useSyncExternalStore(app.commands.subscribe, app.commands.getPromoted, app.commands.getPromoted);
   const primary = commands.at(-1);

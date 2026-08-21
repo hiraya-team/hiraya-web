@@ -45,6 +45,7 @@ export type SearchCommandPaletteProps<Id extends CommandId> = {
 
 type PaletteItem = SearchItem & { action: () => void; disabled?: boolean };
 
+/** Maps search result categories to user-facing labels. */
 const CATEGORY_LABELS: Record<SearchCategory, string> = {
   apps: "Apps",
   files: "Files",
@@ -53,6 +54,7 @@ const CATEGORY_LABELS: Record<SearchCategory, string> = {
   commands: "Commands",
 };
 
+/** Renders the result icon interface. */
 function ResultIcon({ category }: { category: SearchCategory }) {
   if (category === "apps") return <Package size={18} weight="duotone" aria-hidden="true" />;
   if (category === "files") return <File size={18} weight="duotone" aria-hidden="true" />;
@@ -61,6 +63,7 @@ function ResultIcon({ category }: { category: SearchCategory }) {
   return <TerminalWindow size={18} weight="duotone" aria-hidden="true" />;
 }
 
+/** Renders the search command palette interface. */
 export function SearchCommandPalette<Id extends CommandId>({ entries, activeDesktopId, activeDesktopName, activeAuthorityCatalogId, cachedDesktopResults, searchAllDesktops, allDesktopsAvailable, online, onSearchAllDesktops, onSearchAllDesktopsChange, apps, windows, commands, onOpenEntry, onLaunchApp, onFocusWindow, onRunCommand, onClose }: SearchCommandPaletteProps<Id>) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);

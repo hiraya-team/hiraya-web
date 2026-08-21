@@ -12,6 +12,7 @@ export type DesktopRoute = {
   settings?: SettingsPage;
 };
 
+/** Defines the settings pages. */
 export const SETTINGS_PAGES = [
   "desktop", "desktop/desktops",
   "files-apps", "files-apps/file-types", "files-apps/new-file-defaults",
@@ -20,6 +21,7 @@ export const SETTINGS_PAGES = [
   "system", "system/updates", "system/about",
 ] as const;
 export type SettingsPage = typeof SETTINGS_PAGES[number];
+/** Defines the settings page titles. */
 export const SETTINGS_PAGE_TITLES: Record<SettingsPage, string> = {
   desktop: "Desktop", "desktop/desktops": "Desktops",
   "files-apps": "Files & apps", "files-apps/file-types": "File type defaults", "files-apps/new-file-defaults": "New file defaults",
@@ -27,6 +29,7 @@ export const SETTINGS_PAGE_TITLES: Record<SettingsPage, string> = {
   "sync-storage": "Sync & storage", "sync-storage/connection": "Connection & Offline", "sync-storage/activity": "Activity", "sync-storage/export": "Export",
   system: "System", "system/updates": "Updates", "system/about": "About",
 };
+/** Defines the settings parents. */
 export const SETTINGS_PARENTS: Partial<Record<SettingsPage, SettingsPage>> = {
   "desktop/desktops": "desktop",
   "files-apps/file-types": "files-apps", "files-apps/new-file-defaults": "files-apps",
@@ -35,6 +38,7 @@ export const SETTINGS_PARENTS: Partial<Record<SettingsPage, SettingsPage>> = {
   "system/updates": "system", "system/about": "system",
 };
 
+/** Returns route targets app entry. */
 export function routeTargetsAppEntry(route: DesktopRoute | null, target: { targetKind: "file" | "folder" | "root"; entryId: string | null }) {
   if (!route) return false;
   if (target.targetKind === "file") return route.fileId === target.entryId;
@@ -42,6 +46,7 @@ export function routeTargetsAppEntry(route: DesktopRoute | null, target: { targe
   return route.explorerFolderId === null;
 }
 
+/** Decodes ID. */
 function decodeId(value: string) {
   try {
     const decoded = decodeURIComponent(value);
@@ -51,6 +56,7 @@ function decodeId(value: string) {
   }
 }
 
+/** Parses and validates suffix. */
 function parseSuffix(parts: string[], route: DesktopRoute, startIndex: number) {
   const next = { ...route };
   let index = startIndex;
@@ -91,6 +97,7 @@ function parseSuffix(parts: string[], route: DesktopRoute, startIndex: number) {
   return index === parts.length ? next : null;
 }
 
+/** Parses and validates desktop route. */
 export function parseDesktopRoute(pathname: string): DesktopRoute | null {
   const parts = pathname.split("/").filter(Boolean);
   if (parts.length < 2) return null;
@@ -105,6 +112,7 @@ export function parseDesktopRoute(pathname: string): DesktopRoute | null {
   return null;
 }
 
+/** Formats desktop route. */
 export function formatDesktopRoute(route: DesktopRoute) {
   if (!route.desktopId) throw new Error("A desktop route requires a desktop ID.");
   let pathname = `/desktops/${encodeURIComponent(route.desktopId)}/areas/${route.column}/${route.row}`;
@@ -116,6 +124,7 @@ export function formatDesktopRoute(route: DesktopRoute) {
   return pathname;
 }
 
+/** Normalizes desktop route. */
 export function normalizeDesktopRoute(route: DesktopRoute | null, entries: DesktopEntry[], desktopId: string): DesktopRoute {
   const column = route && Number.isSafeInteger(route.column) ? route.column : 0;
   const row = route && Number.isSafeInteger(route.row) ? route.row : 0;
@@ -130,6 +139,7 @@ export function normalizeDesktopRoute(route: DesktopRoute | null, entries: Deskt
   return next;
 }
 
+/** Resolves open file path. */
 export function resolveOpenFilePath(entries: DesktopEntry[], path: string) {
   const segments = path.split("/");
   if (!path || segments.some((segment) => !segment || segment === "." || segment === ".." || segment.includes("\\") || [...segment].some((character) => {

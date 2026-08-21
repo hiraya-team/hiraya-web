@@ -8,6 +8,7 @@ import type { AccountApp } from "../lib/account-apps";
 import type { AccountAppOutboxRecord } from "../lib/account-app-outbox";
 import { ItemList } from "./ItemList";
 
+/** Identifies the retired built-in app-store catalog. */
 const LEGACY_HIRAYA_STORE_CATALOG_ID = "hiraya-app-store";
 
 export type StorePackageView = Readonly<{
@@ -46,20 +47,24 @@ type Props = {
   onUninstallAccount?: (appId: string) => void;
 };
 
+/** Formats bytes for display. */
 function formatBytes(value: number) {
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
   if (value >= 1_000) return `${(value / 1_000).toFixed(1)} kB`;
   return `${value} bytes`;
 }
 
+/** Describes where an installed app package originated. */
 function installedSource(app: InstalledApp) {
   return app.source === "system" ? "Trusted system app" : app.source === "account" ? "Synchronized account app" : app.source === "store" && app.sourceCatalogId === LEGACY_HIRAYA_STORE_CATALOG_ID ? "Hiraya App Store" : app.source === "store" ? "Administrator App Store" : "Desktop package";
 }
 
+/** Describes the trust level of an installed app package. */
 function installedTrust(app: InstalledApp) {
   return app.source === "system" ? "Trusted by Hiraya" : app.source === "account" ? "Approved for this account" : app.source === "store" && app.sourceCatalogId === LEGACY_HIRAYA_STORE_CATALOG_ID ? "Published by Hiraya; approved in this browser" : "Approved in this browser";
 }
 
+/** Renders the app store window interface. */
 export function AppStoreWindow({ packages, installedApps, entries, loading, error, offline, installingPackageKey, onRetry, onInstall, canAddToDesktop, onAddToDesktop, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onSyncAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);

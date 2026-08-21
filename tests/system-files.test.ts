@@ -6,6 +6,7 @@ import { SyncEngine, type SyncEngineOptions } from "../src/lib/sync";
 import { desktopStateSnapshot } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 
+/** Provides the base entry test fixture. */
 const baseEntry: SystemEntry = {
   kind: "file",
   id: "desk:system:layout",
@@ -19,6 +20,7 @@ const baseEntry: SystemEntry = {
   sha256: "a".repeat(64),
 };
 
+/** Provides the required entries test fixture. */
 const requiredEntries: SystemEntry[] = [
   baseEntry,
   { ...baseEntry, id: "desk:system:editor-settings", name: "editor-settings.json", systemRole: "editor-settings", path: systemEntryPath("editor-settings") },

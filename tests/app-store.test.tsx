@@ -4,6 +4,7 @@ import type { InstalledApp } from "../src/apps/installed-apps";
 import { storePackageKey, storePackageManifest, storePackageNeedsRefreshInspection, storeSearchMatches, type StorePackage } from "../src/lib/app-store";
 import { AppStoreWindow, type StorePackageView } from "../src/components/AppStoreWindow";
 
+/** Defines the system app. */
 const systemApp: InstalledApp = {
   appId: "app.hiraya.text-editor",
   source: "system",
@@ -23,6 +24,7 @@ const systemApp: InstalledApp = {
   },
 };
 
+/** Provides the base test fixture. */
 const base = {
   packages: [],
   installedApps: [systemApp],
@@ -40,6 +42,7 @@ const base = {
   onUninstall: () => undefined,
 };
 
+/** Provides the todo package test fixture. */
 const todoPackage: StorePackage = {
   source: "remote",
   kind: "store",
@@ -49,12 +52,15 @@ const todoPackage: StorePackage = {
   contentRevision: 1,
   entry: { id: "admin-todo", kind: "file", name: "todo.hiraya.app", parentId: null, createdAt: null, modifiedAt: 0, position: { x: 0, y: 0 }, mimeType: "application/zip", size: 1024 },
 };
+/** Provides the managed todo package test fixture. */
 const managedTodoPackage: StorePackage = {
   ...todoPackage,
   release: { kind: "store", slug: "todo", fileName: todoPackage.entry.name, digest: "b".repeat(64), size: todoPackage.entry.size, manifest: { ...systemApp.manifest, id: "dev.hiraya.todo", name: "Todo", description: "Keep portable task lists." } },
 };
+/** Provides the managed todo release test fixture. */
 const managedTodoRelease = managedTodoPackage.release;
 
+/** Provides the todo view test fixture. */
 const todoView: StorePackageView = { item: todoPackage, name: "Todo", description: "Keep portable task lists.", version: "0.1.0", appId: "dev.hiraya.todo", digest: null, loading: false, error: "" };
 
 describe("App Store", () => {

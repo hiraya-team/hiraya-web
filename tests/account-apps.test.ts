@@ -1,7 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { strToU8, zipSync } from "fflate";
 import { installedAppAcceptsMatcher, type InstalledApp } from "../src/apps/installed-apps";
-import { accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountResources, parseAccountAppsSnapshot, verifyLocalAccountPackage } from "../src/lib/account-apps";
+import { accountApprovalMatches, accountAppsRequestIsPermanent, accountAppsRequestIsTransient, accountResources, parseAccountAppsSnapshot } from "../src/lib/account-apps";
+import { verifyLocalAccountPackage } from "../src/lib/account-apps-remote";
 import { parseAccountAppOutboxRecord, projectAccountAppData, projectAccountApps, rebaseAccountAppOperation, type AccountAppOutboxRecord } from "../src/lib/account-app-outbox";
 import { uploadBlobDigests } from "../src/lib/blob-transfer";
 import { ACCOUNT_APP_ATOMIC_STORES } from "../src/platform/storage/database-client";
@@ -11,15 +12,20 @@ import { AppStoreWindow } from "../src/components/AppStoreWindow";
 import { IDBFactory, IDBKeyRange, IDBObjectStore } from "fake-indexeddb";
 import { openFilesystemDatabase } from "../src/filesystem/database";
 
+/** Provides the manifest test fixture. */
 const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: "dev.hiraya.notes", name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const, "files:read" as const], fileTypes: [".txt"] };
+/** Builds the blob test fixture. */
 const blob = (id: string, revision = 4, size = 100, sha256 = "a".repeat(64)) => ({ blobId: id, revision, size, sha256 });
+/** Builds the resource test fixture. */
 const resource = (kind: "installation" | "handlers" | "manifest", id: string, revision: number, size: number, sha256: string, appId = "") => ({ ...blob(id, revision, size, sha256), resourceId: id, path: kind === "manifest" ? `.hiraya/account/apps/${appId}/manifest.json` : `.hiraya/account/${kind}.json`, name: `${kind}.json`, mimeType: "application/json" });
 
+/** Builds the snapshot test fixture. */
 function snapshot() {
   const app = { appId: manifest.id, manifest, generations: { installationGeneration: 2, dataGeneration: 3, itemRevision: 5 }, manifestResource: resource("manifest", "manifest", 4, 50, "b".repeat(64), manifest.id), package: blob("package"), data: [{ key: "state", dataGeneration: 3, revision: 5, size: 12, sha256: "c".repeat(64) }] };
   return { appsRevision: 5, apps: [app], handlerHints: { ".txt": manifest.id }, resources: { installation: resource("installation", "installation", 5, 200, "d".repeat(64)), handlers: resource("handlers", "handlers", 5, 30, "e".repeat(64)) }, installation: { apps: [{ appId: app.appId, manifest: app.manifest, generations: app.generations, manifestResource: app.manifestResource, package: app.package }] } };
 }
 
+/** Builds the record test fixture. */
 function record(sequence: number, operation: AccountAppOutboxRecord["operation"], status: AccountAppOutboxRecord["status"] = "pending") {
   return parseAccountAppOutboxRecord({ operationId: String(sequence).padStart(16, "0"), clientId: "device", sequence, operation, status, error: status === "blocked" ? "stale" : null, errorCode: status === "blocked" ? "generation_conflict" : null, attemptCount: 0, lastAttemptAt: null });
 }

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { canMutateDesktop, localDesktopIdentity, OWNER_CAPABILITIES, READ_ONLY_CAPABILITIES, settingsRestrictionReason } from "../src/lib/permissions";
 import type { DesktopIdentity } from "../src/types";
 
+/** Builds the shared test fixture. */
 function shared(role: DesktopIdentity["role"], capabilities: DesktopIdentity["capabilities"]): DesktopIdentity {
   return { id: "shared", name: "Shared", ownership: "shared", role, owner: { id: "owner", displayName: "Owner", avatar: null }, capabilities, authorityCatalogId: "owner-catalog" };
 }

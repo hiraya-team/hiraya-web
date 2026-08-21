@@ -12,6 +12,7 @@ type Options = {
   onError: (error: unknown) => void;
 };
 
+/** Waits for a service worker to finish installing. */
 function waitForInstall(worker: ServiceWorker) {
   if (worker.state === "installed" || worker.state === "redundant") return Promise.resolve();
   return new Promise<void>((resolve) => {
@@ -24,12 +25,14 @@ function waitForInstall(worker: ServiceWorker) {
   });
 }
 
+/** Waits for ing registration. */
 function waitingRegistration(registration: ServiceWorkerRegistration, onUpdateAvailable: () => void) {
   if (!registration.waiting || !navigator.serviceWorker.controller) return false;
   onUpdateAvailable();
   return true;
 }
 
+/** Creates PWA updater. */
 export function createPwaUpdater({ onUpdateAvailable, onError }: Options): PwaUpdater {
   if (!import.meta.env.PROD || !("serviceWorker" in navigator)) {
     return {

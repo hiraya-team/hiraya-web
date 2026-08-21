@@ -1,16 +1,22 @@
 import { parseStableId } from "../filesystem/ids";
+import { WEB2_SYNC_PROTOCOL } from "./constants";
 
+/** Defines the Web2 schema version. */
 const WEB2_SCHEMA_VERSION = 1 as const;
+/** Defines the maximum Web2 batch size. */
 const WEB2_MAX_BATCH_ITEMS = 256;
 
+/** Reports whether a value is a plain record. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Validates exact keys. */
 function assertExactKeys(value: Record<string, unknown>, keys: readonly string[], message: string) {
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
 }
 
+/** Parses and validates a canonical display name. */
 function parseCanonicalName(value: unknown, message: string) {
   if (typeof value !== "string" || !value || value !== value.trim() || value === "." || value === ".." || value.includes("/") || value.includes("\\") || [...value].length > 180 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
@@ -19,11 +25,13 @@ function parseCanonicalName(value: unknown, message: string) {
   return value;
 }
 
+/** Parses and validates a non-negative safe integer. */
 function parseNonNegativeSafeInteger(value: unknown, message: string) {
   if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error(message);
   return Number(value);
 }
 
+/** Parses and validates positive safe integer. */
 function parsePositiveSafeInteger(value: unknown, message: string) {
   const result = parseNonNegativeSafeInteger(value, message);
   if (result === 0) throw new Error(message);
@@ -34,7 +42,7 @@ export type QuotaMeasure = { used: number; limit: number };
 export type AccountQuota = { storageBytes: QuotaMeasure; workspaces: QuotaMeasure; nodes: QuotaMeasure };
 export type Web2Session = {
   schemaVersion: typeof WEB2_SCHEMA_VERSION;
-  protocol: "web2-sync-v1";
+  protocol: typeof WEB2_SYNC_PROTOCOL;
   user: { id: string; email: string; displayName: string; deploymentAdmin: boolean };
   accounts: { id: string; name: string; storageId: string; quota: AccountQuota | null; workspaces: { id: string; name: string; pinned: boolean; role: "owner" | "manager" | "writer" | "reader" }[] }[];
   directoryRevision: number;
@@ -42,6 +50,7 @@ export type Web2Session = {
   buildTimestamp: string;
 };
 
+/** Parses and validates direct blob origin. */
 function parseDirectBlobOrigin(value: unknown) {
   if (value === null) return null;
   if (typeof value !== "string" || value.length > 2048) throw new Error("The authenticated chunk origin is invalid.");
@@ -53,10 +62,11 @@ function parseDirectBlobOrigin(value: unknown) {
   return value;
 }
 
+/** Parses and validates a Web2 session. */
 export function parseWeb2Session(value: unknown): Web2Session {
   if (!isRecord(value)) throw new Error("A session response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "user", "accounts", "directoryRevision", "directBlobOrigin", "buildTimestamp"], "A session response has an unsupported shape.");
-  if (value.schemaVersion !== WEB2_SCHEMA_VERSION || value.protocol !== "web2-sync-v1") throw new Error("A synchronization message has unsupported protocol metadata.");
+  if (value.schemaVersion !== WEB2_SCHEMA_VERSION || value.protocol !== WEB2_SYNC_PROTOCOL) throw new Error("A synchronization message has unsupported protocol metadata.");
   if (!isRecord(value.user)) throw new Error("A session user has an unsupported shape.");
   assertExactKeys(value.user, ["id", "email", "displayName", "deploymentAdmin"], "A session user has an unsupported shape.");
   if (typeof value.user.email !== "string" || !value.user.email || value.user.email.length > 320 || typeof value.user.deploymentAdmin !== "boolean") throw new Error("A session user is invalid.");
@@ -94,7 +104,7 @@ export function parseWeb2Session(value: unknown): Web2Session {
   if (typeof value.buildTimestamp !== "string" || !value.buildTimestamp || value.buildTimestamp.length > 1024) throw new Error("A session build identity is invalid.");
   return {
     schemaVersion: WEB2_SCHEMA_VERSION,
-    protocol: "web2-sync-v1",
+    protocol: WEB2_SYNC_PROTOCOL,
     user: { id: parseStableId(value.user.id, "A session user ID is invalid."), email: value.user.email, displayName: value.user.displayName, deploymentAdmin: value.user.deploymentAdmin },
     accounts,
     directoryRevision: parseNonNegativeSafeInteger(value.directoryRevision, "A session directory revision is invalid."),

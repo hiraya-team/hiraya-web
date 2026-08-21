@@ -10,6 +10,7 @@ import {
   type ClipboardEntrySnapshot,
 } from "../src/lib/clipboard";
 
+/** Builds the snapshot test fixture. */
 function snapshot(): ClipboardEntrySnapshot {
   return {
     selectedRootIds: ["folder", "empty"],
@@ -27,10 +28,12 @@ function snapshot(): ClipboardEntrySnapshot {
   };
 }
 
+/** Builds the archive files test fixture. */
 async function archiveFiles(blob: Blob) {
   return unzipSync(new Uint8Array(await blob.arrayBuffer()));
 }
 
+/** Builds the archive blob test fixture. */
 function archiveBlob(files: Record<string, Uint8Array>) {
   const bytes = zipSync(files);
   return new Blob([bytes.slice().buffer as ArrayBuffer], { type: CLIPBOARD_ARCHIVE_MIME_TYPE });

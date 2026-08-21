@@ -1,16 +1,13 @@
-import { parseManifestV2, type HirayaAppManifestV2, type JsonValue } from "@hiraya-team/apps-contracts";
+import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 import type { InstalledApp } from "../apps/installed-apps";
 import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
-import { sha256Blob } from "./blob-transfer";
 import { isRecord, readRevision } from "./contracts";
-import { accountStorage } from "../platform/storage/account-storage";
-import { downloadWeb2AccountAppPackage, fetchWeb2AccountAppData, fetchWeb2AccountApps } from "../sync/transport";
 import { parseAccountAppDataKey, parseAccountAppId } from "./account-app-contract";
 
 export { AccountAppsRequestError, parseAccountAppDataKey, parseAccountAppId } from "./account-app-contract";
 
+/** Matches a lowercase SHA-256 digest. */
 const SHA256 = /^[a-f0-9]{64}$/;
-const MAX_PACKAGE_BYTES = 32 * 1024 * 1024;
 
 export type AccountAppGenerations = Readonly<{ installationGeneration: number; dataGeneration: number; itemRevision: number }>;
 export type AccountAppBlob = Readonly<{ blobId: string; revision: number; size: number; sha256: string }>;
@@ -44,26 +41,31 @@ export type AccountResource = Readonly<{
   appId?: string;
 }>;
 
+/** Validates that a record contains exactly the expected keys. */
 function exactKeys(value: Record<string, unknown>, keys: readonly string[], message: string) {
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
 }
 
+/** Validates and returns a non-negative integer. */
 function nonNegative(value: unknown, message: string) {
   if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error(message);
   return Number(value);
 }
 
+/** Validates and returns a positive integer. */
 function positive(value: unknown, message: string) {
   const result = nonNegative(value, message);
   if (result < 1) throw new Error(message);
   return result;
 }
 
+/** Validates and returns a SHA-256 digest. */
 function digest(value: unknown) {
   if (typeof value !== "string" || !SHA256.test(value)) throw new Error("An account app resource has an invalid SHA-256 digest.");
   return value;
 }
 
+/** Parses and validates account app blob. */
 export function parseAccountAppBlob(value: unknown): AccountAppBlob {
   if (!isRecord(value)) throw new Error("An account app resource has an unsupported format.");
   exactKeys(value, ["blobId", "revision", "size", "sha256"], "An account app resource has an unsupported shape.");
@@ -71,6 +73,7 @@ export function parseAccountAppBlob(value: unknown): AccountAppBlob {
   return { blobId: value.blobId, revision: readRevision(value.revision), size: nonNegative(value.size, "An account app resource has an invalid size."), sha256: digest(value.sha256) };
 }
 
+/** Parses and validates account resource blob. */
 function parseAccountResourceBlob(value: unknown, kind: AccountResource["kind"], expectedAppId = ""): AccountAppResourceBlob {
   if (!isRecord(value)) throw new Error("An account app resource has an unsupported format.");
   exactKeys(value, ["blobId", "revision", "size", "sha256", "resourceId", "path", "name", "mimeType"], "An account app resource has an unsupported shape.");
@@ -81,6 +84,7 @@ function parseAccountResourceBlob(value: unknown, kind: AccountResource["kind"],
   return { ...base, resourceId: value.resourceId, path: value.path, name: value.name, mimeType: value.mimeType } as AccountAppResourceBlob;
 }
 
+/** Parses and validates generations. */
 function parseGenerations(value: unknown): AccountAppGenerations {
   if (!isRecord(value)) throw new Error("An account app has invalid generations.");
   exactKeys(value, ["installationGeneration", "dataGeneration", "itemRevision"], "An account app has invalid generations.");
@@ -91,12 +95,14 @@ function parseGenerations(value: unknown): AccountAppGenerations {
   };
 }
 
+/** Parses and validates data item. */
 function parseDataItem(value: unknown): AccountAppDataItem {
   if (!isRecord(value)) throw new Error("An account app data item has an unsupported format.");
   exactKeys(value, ["key", "dataGeneration", "revision", "size", "sha256"], "An account app data item has an unsupported shape.");
   return { key: parseAccountAppDataKey(value.key), dataGeneration: nonNegative(value.dataGeneration, "An account app data item has an invalid generation."), revision: readRevision(value.revision), size: nonNegative(value.size, "An account app data item has an invalid size."), sha256: digest(value.sha256) };
 }
 
+/** Parses and validates app. */
 function parseApp(value: unknown, withData: boolean): AccountApp | Omit<AccountApp, "data"> {
   if (!isRecord(value)) throw new Error("An account app has an unsupported format.");
   exactKeys(value, withData ? ["appId", "manifest", "generations", "manifestResource", "package", "data"] : ["appId", "manifest", "generations", "manifestResource", "package"], "An account app has an unsupported shape.");
@@ -114,6 +120,7 @@ function parseApp(value: unknown, withData: boolean): AccountApp | Omit<AccountA
   return { ...base, data };
 }
 
+/** Parses and validates hints. */
 function parseHints(value: unknown) {
   if (!isRecord(value) || Object.keys(value).length > 128) throw new Error("Account app handler hints have an unsupported format.");
   return Object.fromEntries(Object.entries(value).map(([key, value]) => {
@@ -122,6 +129,7 @@ function parseHints(value: unknown) {
   }));
 }
 
+/** Parses and validates account apps snapshot. */
 export function parseAccountAppsSnapshot(value: unknown): AccountAppsSnapshot {
   if (!isRecord(value)) throw new Error("The account apps response has an unsupported format.");
   exactKeys(value, ["appsRevision", "apps", "handlerHints", "resources", "installation"], "The account apps response has an unsupported shape.");
@@ -146,12 +154,14 @@ export function parseAccountAppsSnapshot(value: unknown): AccountAppsSnapshot {
   return snapshot;
 }
 
+/** Parses and validates apps revision event. */
 export function parseAppsRevisionEvent(value: unknown) {
   if (!isRecord(value)) throw new Error("The account apps event has an unsupported format.");
   exactKeys(value, ["appsRevision"], "The account apps event has an unsupported shape.");
   return readRevision(value.appsRevision);
 }
 
+/** Determines whether an approval matches an account app. */
 export function accountApprovalMatches(approval: InstalledApp | undefined, app: AccountApp) {
   return approval?.source === "account"
     && approval.appId === app.appId
@@ -161,6 +171,7 @@ export function accountApprovalMatches(approval: InstalledApp | undefined, app: 
     && approval.manifest.permissions.every((permission, index) => permission === app.manifest.permissions[index]);
 }
 
+/** Collects resources referenced by an account-app snapshot. */
 export function accountResources(snapshot: AccountAppsSnapshot): AccountResource[] {
   return [
     { id: snapshot.resources.installation.resourceId, kind: "installation", ...snapshot.resources.installation },
@@ -169,57 +180,12 @@ export function accountResources(snapshot: AccountAppsSnapshot): AccountResource
   ];
 }
 
+/** Reports whether an account-app request failure is transient. */
 export function accountAppsRequestIsTransient(status: number) {
   return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
+/** Reports whether an account-app request failure is permanent. */
 export function accountAppsRequestIsPermanent(status: number) {
   return status >= 400 && status < 500 && !accountAppsRequestIsTransient(status);
-}
-
-export async function fetchAccountApps() {
-  const remote = await fetchWeb2AccountApps(accountStorage().accountId);
-  const resource = async (id: string, revision: number, value: unknown, kind: AccountResource["kind"], appId = ""): Promise<AccountAppResourceBlob> => {
-    const content = new Blob([JSON.stringify(value)], { type: "application/json" });
-    return { blobId: id, resourceId: id, revision, size: content.size, sha256: await sha256Blob(content), path: kind === "manifest" ? `.hiraya/account/apps/${appId}/manifest.json` : `.hiraya/account/${kind}.json`, name: `${kind}.json`, mimeType: "application/json" };
-  };
-  const apps = await Promise.all(remote.apps.map(async (app): Promise<AccountApp> => ({
-    ...app,
-    manifestResource: await resource(app.package.manifestHash, app.generations.itemRevision, app.manifest, "manifest", app.appId),
-    package: { blobId: app.package.manifestHash, revision: app.generations.itemRevision, size: app.package.size, sha256: app.package.sha256 },
-  })));
-  const installation = { apps: apps.map((app) => { const { data, ...installed } = app; void data; return installed; }) };
-  const [installationResource, handlersResource] = await Promise.all([
-    resource(`${accountStorage().accountId}:installation`, remote.appsRevision, installation, "installation"),
-    resource(`${accountStorage().accountId}:handlers`, remote.appsRevision, remote.handlerHints, "handlers"),
-  ]);
-  return { appsRevision: remote.appsRevision, apps, handlerHints: remote.handlerHints, resources: { installation: installationResource, handlers: handlersResource }, installation };
-}
-
-export async function downloadAccountResource(resource: AccountResource, directBlobOrigin: string) {
-  void directBlobOrigin;
-  const snapshot = await fetchAccountApps();
-  const value = resource.kind === "handlers" ? snapshot.handlerHints
-    : resource.kind === "installation" ? snapshot.installation
-      : snapshot.apps.find(({ appId }) => appId === resource.appId)?.manifest;
-  if (value === undefined) throw new Error("That account app resource no longer exists.");
-  return new File([JSON.stringify(value)], resource.name, { type: resource.mimeType });
-}
-
-export async function downloadAccountAppPackage(app: AccountApp, directBlobOrigin: string) {
-  return downloadWeb2AccountAppPackage(accountStorage().accountId, { appId: app.appId, manifest: app.manifest, generations: app.generations, package: { manifestHash: app.package.blobId, size: app.package.size, sha256: app.package.sha256 }, data: app.data }, directBlobOrigin);
-}
-
-export async function downloadAccountAppData(app: AccountApp, key: string, directBlobOrigin: string): Promise<JsonValue | undefined> {
-  void directBlobOrigin;
-  const item = app.data.find((candidate) => candidate.key === key);
-  if (!item) return undefined;
-  return fetchWeb2AccountAppData(accountStorage().accountId, { appId: app.appId, manifest: app.manifest, generations: app.generations, package: { manifestHash: app.package.blobId, size: app.package.size, sha256: app.package.sha256 }, data: app.data }, key);
-}
-
-export async function verifyLocalAccountPackage(archive: Blob, expectedDigest: string, manifest: HirayaAppManifestV2) {
-  if (archive.size < 1 || archive.size > MAX_PACKAGE_BYTES || await sha256Blob(archive) !== expectedDigest) throw new Error("The queued app package failed integrity verification.");
-  const { inspectAppArchive } = await import("@hiraya-team/app-cli");
-  const inspection = await inspectAppArchive(new Uint8Array(await archive.arrayBuffer()));
-  if (inspection.digest !== expectedDigest || JSON.stringify(inspection.manifest) !== JSON.stringify(manifest)) throw new Error("The queued app package failed archive inspection.");
 }

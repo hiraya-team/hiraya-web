@@ -1,6 +1,7 @@
 import type { DesktopEntry } from "../types";
 import { foldEntryName, normalizeEntryName } from "./contracts";
 
+/** Validates entry name. */
 export function validateEntryName(value: string) {
   const name = value.trim();
   if (!name) throw new Error("Enter a name.");
@@ -14,10 +15,12 @@ export function validateEntryName(value: string) {
   return normalizeEntryName(value);
 }
 
+/** Returns names match. */
 export function namesMatch(left: string, right: string) {
   return foldEntryName(left) === foldEntryName(right);
 }
 
+/** Validates unique name. */
 export function assertUniqueName(entries: DesktopEntry[], name: string, parentId: string | null, exceptId?: string) {
   const duplicate = entries.some(
     (entry) => entry.id !== exceptId && entry.parentId === parentId && namesMatch(entry.name, name),

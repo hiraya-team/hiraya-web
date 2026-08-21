@@ -3,6 +3,7 @@ import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiray
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import type { ThemeWallpaperPackage } from "../domain/theme";
 
+/** Defines the theme scene CSP. */
 export const THEME_SCENE_CSP = SANDBOX_CSP.replace("frame-src data: blob:;", "frame-src 'none';").replace("allow-downloads", "");
 
 export type ThemePackageCache = {
@@ -10,6 +11,7 @@ export type ThemePackageCache = {
   write(themeId: string, expected: ThemeWallpaperPackage, content: Blob): Promise<unknown>;
 };
 
+/** Fetches theme package. */
 export async function fetchThemePackage(_accessUrl: string, expectedThemeId: string, expected: ThemeWallpaperPackage, _signal?: AbortSignal, cache?: ThemePackageCache, _directBlobOrigin?: string): Promise<ThemePackageInspection> {
   void _accessUrl; void _signal; void _directBlobOrigin;
   let content: Blob | null = null;
@@ -23,6 +25,7 @@ export async function fetchThemePackage(_accessUrl: string, expectedThemeId: str
   return inspection;
 }
 
+/** Computes wallpaper asset blob. */
 export function wallpaperAssetBlob(inspection: ThemePackageInspection) {
   const wallpaper = inspection.manifest.wallpaper;
   if (!wallpaper || wallpaper.kind === "scene") throw new Error("The theme package does not contain a media wallpaper.");
@@ -33,6 +36,7 @@ export function wallpaperAssetBlob(inspection: ThemePackageInspection) {
   return new Blob([bytes], { type: mime });
 }
 
+/** Materializes a theme scene from its package archive. */
 export function materializeThemeScene(inspection: ThemePackageInspection): MaterializedApp {
   const wallpaper = inspection.manifest.wallpaper;
   if (!wallpaper || wallpaper.kind !== "scene") throw new Error("The theme package does not contain a scene wallpaper.");

@@ -3,6 +3,7 @@ import { buildOfflineAvailability, dedupeOfflineRoots, offlineFilesUnderRoots, o
 import type { OutboxRecord } from "../src/lib/outbox";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the entries test fixture. */
 const entries: DesktopEntry[] = [
   { kind: "folder", id: "root", name: "Root", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
   { kind: "file", id: "a", name: "a.txt", parentId: "root", mimeType: "text/plain", size: 10, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
@@ -11,6 +12,7 @@ const entries: DesktopEntry[] = [
   { kind: "folder", id: "empty", name: "Empty", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
 ];
 
+/** Creates an inventory test fixture. */
 function inventory(overrides: Partial<OfflineStorageInventory> = {}): OfflineStorageInventory {
   return { desktopId: "desktop", authoritativeLocal: false, files: {}, cachedBytes: 0, protectedBytes: 0, releasableBytes: 0, browserStorage: null, ...overrides };
 }

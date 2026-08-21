@@ -7,19 +7,26 @@ import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, sha256Hex } from "../src/filesystem/
 import { openWorkspaceFilesystem, type WorkspaceFilesystemEnvironment } from "../src/platform/storage/workspace-filesystem";
 import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
 
+/** Provides the account test fixture. */
 const ACCOUNT = stableId(1);
+/** Provides the workspace test fixture. */
 const WORKSPACE = stableId(2);
+/** Provides the device test fixture. */
 const DEVICE = stableId(3);
+/** Provides the account hash test fixture. */
 const ACCOUNT_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
 
+/** Builds the stable ID test fixture. */
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
+/** Builds the blob hash test fixture. */
 async function blobHash(value: Blob) {
   return sha256Hex(await value.arrayBuffer());
 }
 
+/** Implements an in-memory Web Locks test double. */
 class TestLocks {
   readonly calls: Array<{ name: string; mode?: LockMode }> = [];
   readonly acquisitions: Array<{ name: string; mode: LockMode }> = [];
@@ -27,6 +34,7 @@ class TestLocks {
   private readonly states = new Map<string, { readers: number; writer: boolean; queue: Array<{ mode: LockMode; operation: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void }> }>();
   private readonly callWaiters: Array<{ name: string; count: number; resolve: () => void }> = [];
 
+  /** Queues a test lock request. */
   request<T>(name: string, options: LockOptions, operation: () => Promise<T>) {
     this.calls.push({ name, mode: options.mode });
     this.resolveCallWaiters();
@@ -37,11 +45,13 @@ class TestLocks {
     return result;
   }
 
+  /** Waits until a lock has been requested the expected number of times. */
   waitForCallCount(name: string, count: number) {
     if (this.calls.filter((call) => call.name === name).length >= count) return Promise.resolve();
     return new Promise<void>((resolve) => this.callWaiters.push({ name, count, resolve }));
   }
 
+  /** Resolves call waiters. */
   private resolveCallWaiters() {
     for (let index = this.callWaiters.length - 1; index >= 0; index -= 1) {
       const waiter = this.callWaiters[index]!;
@@ -52,6 +62,7 @@ class TestLocks {
     }
   }
 
+  /** Starts queued test lock requests when compatible. */
   private drain(name: string) {
     const state = this.states.get(name)!;
     if (state.writer || state.queue.length === 0 || state.readers > 0 && state.queue[0]!.mode === "exclusive") return;
@@ -79,6 +90,7 @@ class TestLocks {
   }
 }
 
+/** Implements an in-memory BroadcastChannel test double. */
 class TestBroadcastChannels {
   readonly names: string[] = [];
   private readonly channels = new Map<string, Set<Set<(event: MessageEvent<unknown>) => void>>>();
@@ -108,6 +120,7 @@ class TestBroadcastChannels {
     };
   };
 
+  /** Broadcasts a value to test channel peers. */
   broadcast(name: string, value: unknown) {
     const peers = this.channels.get(name);
     if (peers) for (const listeners of peers) setTimeout(() => {
@@ -116,6 +129,7 @@ class TestBroadcastChannels {
   }
 }
 
+/** Builds the flush broadcasts test fixture. */
 const flushBroadcasts = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
 describe("workspace filesystem storage", () => {

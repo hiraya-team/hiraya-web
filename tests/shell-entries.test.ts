@@ -4,6 +4,7 @@ import type { SystemEntry, TrashItem } from "../src/lib/contracts";
 import { isValidId, systemEntryPath } from "../src/lib/contracts";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the entries test fixture. */
 const entries: DesktopEntry[] = [
   { kind: "folder", id: "hidden", name: ".hiraya", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 1, y: 1 } },
   { kind: "file", id: "image-id", name: "photo.jpg", parentId: null, createdAt: 1, modifiedAt: 2, position: { x: 2, y: 2 }, mimeType: "image/jpeg", size: 10 },

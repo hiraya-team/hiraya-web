@@ -13,6 +13,7 @@ type DragState = {
   snapPreview?: HTMLElement | null;
 };
 
+/** Coordinates pointer dragging for selected desktop entries. */
 export function useEntryPointerDrag({ disabled, onMove, getDesktopDropPreview, gridSize }: {
   disabled: (entry: DesktopEntry) => boolean;
   onMove: (entry: DesktopEntry, destination: EntryDropDestination, point: { clientX: number; clientY: number }) => void;

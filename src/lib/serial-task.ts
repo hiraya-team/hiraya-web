@@ -1,3 +1,4 @@
+/** Creates serial task queue. */
 export function createSerialTaskQueue() {
   let sequence = 0;
   let work: Promise<void> = Promise.resolve();
@@ -15,6 +16,7 @@ export function createSerialTaskQueue() {
   };
 }
 
+/** Creates latest task queue. */
 export function createLatestTaskQueue<T>(task: (value: T) => Promise<void>, delay = 0) {
   let pending: { value: T; waiters: Array<{ resolve: () => void; reject: (error: unknown) => void }> } | null = null;
   let timer: ReturnType<typeof setTimeout> | null = null;

@@ -1,5 +1,6 @@
 type AnimationHost = Pick<Element, "getAnimations">;
 
+/** Waits for animations. */
 export function waitForAnimations(hosts: readonly AnimationHost[], onComplete: () => void) {
   let active = true;
   const observed = new Set<Animation>();

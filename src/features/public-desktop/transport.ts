@@ -9,7 +9,9 @@ import { supportsThumbnailMime, THUMBNAIL_MAX_SOURCE_SIZE, THUMBNAIL_PROFILE } f
 import { downloadWeb2Chunk, fetchPublicNodeContent, fetchPublicWeb2Thumbnail, fetchPublicWorkspacePage, Web2HTTPError } from "../../sync/transport";
 import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, parseLayout, type RemoteDesktopState } from "../../lib/contracts";
 
+/** Signals that a public large-file download requires authentication. */
 export class LargeDownloadAuthRequiredError extends Error {
+  /** Creates the error with the server login destination. */
   constructor(readonly loginUrl: string) {
     super("Sign in to download this large file.");
     this.name = "LargeDownloadAuthRequiredError";
@@ -21,20 +23,25 @@ export type { PublicAuthority } from "../../lib/publication-alias";
 export type PublicDesktopState = RemoteDesktopState & { publishedRootId?: string; thumbnailProfile?: typeof THUMBNAIL_PROFILE };
 
 type PublicContentIdentity = { manifestHash: string; contentOperationId: string; asOf: number };
+/** Caches immutable content identities from fetched public snapshots. */
 const contentIdentities = new Map<string, PublicContentIdentity>();
 
+/** Builds a snapshot-scoped cache key for public file content. */
 function contentKey(authority: PublicAuthority, fileId: string) {
   return `${authority.desktopAlias}\0${authority.itemAlias ?? ""}\0${fileId}`;
 }
 
+/** Derives the latest logical revision represented by a public node. */
 function nodeRevision(node: Exclude<Awaited<ReturnType<typeof fetchPublicWorkspacePage>>["nodes"][number], { purged: true }>) {
   return Math.max(node.fieldTuples.lifecycle.logicalTime, node.fieldTuples.name.logicalTime, node.fieldTuples.parent.logicalTime, node.fieldTuples.position.logicalTime, node.fieldTuples.content?.logicalTime ?? 0);
 }
 
+/** Reads an active public setting or returns its domain default. */
 function publicSettingValue(settings: ActiveSetting[], namespace: SettingNamespace, key: string, fallback: unknown) {
   return settings.find((setting) => setting.namespace === namespace && setting.key === key)?.value ?? fallback;
 }
 
+/** Fetches and validates a complete read-only public desktop snapshot. */
 export async function fetchPublicDesktop(authority: PublicAuthority, _fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<PublicDesktopState> {
   void _fetchImpl;
   let page = await fetchPublicWorkspacePage(authority.desktopAlias, { itemAlias: authority.itemAlias, limit: 256 });
@@ -96,12 +103,14 @@ export async function fetchPublicDesktop(authority: PublicAuthority, _fetchImpl:
   };
 }
 
+/** Returns the content identity captured for a public file snapshot. */
 async function publicIdentity(authority: PublicAuthority, file: FileEntry) {
   const identity = contentIdentities.get(contentKey(authority, file.id));
   if (!identity) throw new Error("That file is not part of this public snapshot.");
   return identity;
 }
 
+/** Downloads and reconstructs a public file from verified chunks. */
 export async function fetchPublicFile(authority: PublicAuthority, file: FileEntry, _contentRevision: number, _fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis), _purpose?: "preview") {
   void _contentRevision; void _fetchImpl; void _purpose;
   const identity = await publicIdentity(authority, file);
@@ -119,6 +128,7 @@ export async function fetchPublicFile(authority: PublicAuthority, file: FileEntr
   return new File([blob], file.name, { type: file.mimeType, lastModified: file.modifiedAt });
 }
 
+/** Downloads and verifies a generated public thumbnail. */
 export async function fetchPublicThumbnail(authority: PublicAuthority, file: FileEntry, contentRevision: number, fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
   if (!supportsThumbnailMime(file.mimeType) || file.size > THUMBNAIL_MAX_SOURCE_SIZE || !Number.isSafeInteger(contentRevision) || contentRevision <= 0) throw new Error("Generated thumbnails are unavailable for this file.");
   const identity = await publicIdentity(authority, file);

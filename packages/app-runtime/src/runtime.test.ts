@@ -4,6 +4,7 @@ import type { AppPackageInspection, ServiceMethod } from "@hiraya-team/apps-cont
 import { createPackageAssetResolver, initializeSandboxFrame, injectSandboxUiRuntime, isAppPackageName, materializeAppPackage, ObjectUrlLease, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime, TRUSTED_DOCUMENT_MEDIA_CSP, TRUSTED_DOCUMENT_MEDIA_FLAGS, trustedDocumentMediaCsp } from "./sandbox";
 import { terminateSandboxNavigation } from "./navigation";
 
+/** Builds the host test fixture. */
 function host() {
   let closed = false;
   return {
@@ -16,8 +17,10 @@ function host() {
   };
 }
 
+/** Provides the files test fixture. */
 const files = new Proxy({}, { get: () => async () => undefined }) as never;
 
+/** Builds the messages test fixture. */
 function messages(port: MessagePort, count: number): Promise<unknown[]> {
   return new Promise((resolve) => {
     const received: unknown[] = [];

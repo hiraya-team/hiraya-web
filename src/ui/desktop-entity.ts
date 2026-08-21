@@ -7,10 +7,14 @@ export type DesktopEntity =
 
 export type DesktopEntityTransform = { entityId: string; delta: { x: number; y: number } };
 
+/** Builds the spatial entity identifier for a desktop entry. */
 export const entryEntityId = (id: string): `entry:${string}` => `entry:${id}`;
+/** Builds the spatial entity identifier for a desktop widget. */
 export const widgetEntityId = (id: string): `widget:${string}` => `widget:${id}`;
+/** Builds the spatial entity identifier for an icon group. */
 export const groupEntityId = (id: string): `group:${string}` => `group:${id}`;
 
+/** Decodes a spatial desktop entity identifier. */
 export function desktopEntityParts(id: string) {
   const separator = id.indexOf(":");
   if (separator < 1) return null;
@@ -19,6 +23,7 @@ export function desktopEntityParts(id: string) {
   return { kind, sourceId: id.slice(separator + 1) } as const;
 }
 
+/** Builds the movable spatial entities on the desktop. */
 export function desktopEntities(entries: readonly DesktopEntry[], widgets: readonly DesktopWidget[], groups: readonly DesktopIconGroup[], iconSize: { width: number; height: number }) {
   const grouped = new Map(groups.map((group) => [group.folderId, group]));
   return [
@@ -29,6 +34,7 @@ export function desktopEntities(entries: readonly DesktopEntry[], widgets: reado
   ];
 }
 
+/** Plans position updates for selected desktop entities. */
 export function desktopEntityMovementPlan(entities: readonly { id: DesktopEntity["id"]; kind: DesktopEntity["kind"]; x: number; y: number }[], selectedIds: ReadonlySet<string>, anchorId: string, position: { x: number; y: number }) {
   const anchor = entities.find((entity) => entity.id === anchorId);
   if (!anchor || !selectedIds.has(anchorId)) return null;
@@ -39,16 +45,19 @@ export function desktopEntityMovementPlan(entities: readonly { id: DesktopEntity
   };
 }
 
+/** Reports whether the selected entities may enter a folder. */
 export function desktopSelectionCanDropIntoFolder(entities: readonly Pick<DesktopEntity, "id" | "kind">[], selectedIds: ReadonlySet<string>) {
   const selected = entities.filter((entity) => selectedIds.has(entity.id));
   return selected.length > 0 && selected.every((entity) => entity.kind === "entry");
 }
 
+/** Keeps selected entity IDs that still exist on the desktop. */
 export function retainedDesktopEntityIds(entities: readonly Pick<DesktopEntity, "id">[], selectedIds: readonly string[]) {
   const available = new Set(entities.map((entity) => entity.id));
   return new Set(selectedIds.filter((id) => available.has(id as DesktopEntity["id"])));
 }
 
+/** Returns the spatial entity ID represented by an element. */
 export function spatialEntityId(entities: readonly { id: string; x: number; y: number; width: number; height: number }[], currentId: string, key: string) {
   const ordered = [...entities].sort((a, b) => a.y - b.y || a.x - b.x || a.id.localeCompare(b.id));
   if (key === "Home") return ordered[0]?.id;
@@ -67,6 +76,7 @@ export function spatialEntityId(entities: readonly { id: string; x: number; y: n
     .sort((a, b) => a.distance - b.distance)[0]?.entity.id;
 }
 
+/** Moves keyboard focus to a spatial desktop entity. */
 export function focusSpatialDesktopEntity(current: HTMLElement, key: string) {
   const desktop = current.closest<HTMLElement>(".desktop");
   const currentEntity = current.closest<HTMLElement>("[data-desktop-entity-id]");

@@ -19,6 +19,7 @@ type Props = {
   onKeyDown?: KeyboardEventHandler<HTMLDivElement>;
 };
 
+/** Renders the notification card interface. */
 export function NotificationCard({ badge, tone = "neutral", icon, children, actions, dismissLabel, dismissDisabled = false, onDismiss, role, ariaLive, ariaAtomic, ariaLabelledBy, ariaDescribedBy, onKeyDown }: Props) {
   return <div className="notification-card" data-tone={tone} role={role} aria-live={ariaLive} aria-atomic={ariaAtomic} aria-labelledby={ariaLabelledBy} aria-describedby={ariaDescribedBy} onKeyDown={onKeyDown}>
     <div className="notification-card__header">

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { sha256Blob } from "../src/lib/blob-transfer";
 import { loadThumbnail, parseThumbnailDescriptor, supportsThumbnailMime, thumbnailLogicalPath, THUMBNAIL_PROFILE } from "../src/lib/thumbnails";
 
+/** Builds the descriptor test fixture. */
 function descriptor(entryId: string, revision: number, blob: Blob, sha256: string) {
   return {
     entryId,

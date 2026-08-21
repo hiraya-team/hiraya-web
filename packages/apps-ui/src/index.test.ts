@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ThemeTokens } from "@hiraya-team/apps-contracts";
 import { applyThemeTokens, bindTheme, type ThemeTarget } from "./index";
 
+/** Provides the dark theme test fixture. */
 const darkTheme: ThemeTokens = {
   mode: "dark",
   background: "#101a17",
@@ -16,6 +17,7 @@ const darkTheme: ThemeTokens = {
   focus: "#f7c66b",
 };
 
+/** Builds the fake target test fixture. */
 function fakeTarget(): { target: ThemeTarget; properties: Map<string, string> } {
   const properties = new Map<string, string>();
   return {

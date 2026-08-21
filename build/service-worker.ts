@@ -11,9 +11,11 @@ type BuildItem = {
   isEntry?: boolean;
   imports?: string[];
   dynamicImports?: string[];
+  moduleIds?: string[];
   viteMetadata?: { importedCss?: Set<string> };
 };
 
+/** Collects files in a bundle entry's static import closure. */
 function staticFiles(entry: BuildItem, bundle: Record<string, BuildItem>) {
   const files = new Set<string>();
   const visit = (chunk: BuildItem) => {
@@ -29,7 +31,8 @@ function staticFiles(entry: BuildItem, bundle: Record<string, BuildItem>) {
   return files;
 }
 
-export function serviceWorkerPlugin(base: string): Plugin {
+/** Creates the service worker plugin. */
+export function serviceWorkerPlugin(base: string, frontendOnly: boolean): Plugin {
   return {
     name: "hiraya-service-worker",
     apply: "build",
@@ -60,6 +63,11 @@ export function serviceWorkerPlugin(base: string): Plugin {
           if (runtime?.type === "chunk") for (const file of staticFiles(runtime, bundle as Record<string, BuildItem>)) desktopFiles.add(file);
         }
       }
+      const desktopModuleIds = (Object.values(bundle) as BuildItem[]).filter((item) => item.type === "chunk" && desktopFiles.has(item.fileName)).flatMap((item) => item.moduleIds ?? []);
+      if (frontendOnly) {
+        const serverOnly = desktopModuleIds.filter((id) => /\/src\/(?:sync\/|platform\/storage\/synchronized-|features\/app-management\/account-sync\.ts|lib\/(?:account-apps-remote|auth|sharing|short-links)\.ts)/.test(id));
+        if (serverOnly.length) throw new Error(`Server-only modules entered the frontend-only precache: ${serverOnly.join(", ")}.`);
+      } else if (!desktopModuleIds.some((id) => id.endsWith("/src/platform/storage/synchronized-desktop-runtime.ts"))) throw new Error("The server build omitted its synchronized desktop runtime from the precache.");
       const precache = [root, `${root}manifest.webmanifest`, `${root}hiraya-icon.svg`, ...new Set([...startupFiles, ...desktopFiles].map((file) => `${root}${file}`))];
       const versionHash = createHash("sha256").update(precache.join("\n"));
       for (const file of ["index.html", "public/manifest.webmanifest", "public/hiraya-icon.svg"]) versionHash.update(readFileSync(path.resolve(process.cwd(), file)));

@@ -24,20 +24,25 @@ type DirectoryPickerEnvironment = {
   showDirectoryPicker?: unknown;
 };
 
+/** Explains when a dropped folder format is unsupported. */
 const unsupportedDropMessage = "Folder drag and drop is not supported by this browser. Use Import folder or upload the files separately.";
 
+/** Reports whether the browser supports the directory picker. */
 export function supportsDirectoryPicker(environment: DirectoryPickerEnvironment = globalThis) {
   return typeof environment.showDirectoryPicker === "function" || Boolean(environment.HTMLInputElement && "webkitdirectory" in environment.HTMLInputElement.prototype);
 }
 
+/** Reports whether a value is a directory picker handle. */
 export function supportsDirectoryHandlePicker(environment: DirectoryPickerEnvironment = globalThis) {
   return typeof environment.showDirectoryPicker === "function";
 }
 
+/** Returns sources from directory picker. */
 export function sourcesFromDirectoryPicker(files: readonly File[]): ImportSource[] {
   return files.map((file) => ({ relativePath: file.webkitRelativePath, file }));
 }
 
+/** Returns sources from entry. */
 async function sourcesFromEntry(entry: FileSystemEntry, parentPath = ""): Promise<ImportSource[]> {
   const relativePath = parentPath ? `${parentPath}/${entry.name}` : entry.name;
   if (entry.isDirectory) {
@@ -54,6 +59,7 @@ type IterableDirectoryHandle = FileSystemDirectoryHandle & {
   values(): AsyncIterableIterator<FileSystemFileHandle | IterableDirectoryHandle>;
 };
 
+/** Returns sources from handle. */
 async function sourcesFromHandle(handle: FileSystemFileHandle | IterableDirectoryHandle, parentPath = ""): Promise<ImportSource[]> {
   const relativePath = parentPath ? `${parentPath}/${handle.name}` : handle.name;
   if (handle.kind === "file") return [{ relativePath, file: await handle.getFile() }];
@@ -62,12 +68,14 @@ async function sourcesFromHandle(handle: FileSystemFileHandle | IterableDirector
   return result;
 }
 
+/** Returns sources from directory handle. */
 export function sourcesFromDirectoryHandle(handle: FileSystemDirectoryHandle) {
   const iterable = handle as IterableDirectoryHandle;
   if (typeof iterable.values !== "function") throw new Error("This browser cannot enumerate the selected folder safely.");
   return sourcesFromHandle(iterable);
 }
 
+/** Returns sources from drop. */
 export async function sourcesFromDrop(dataTransfer: Pick<DataTransfer, "items" | "files">): Promise<ImportSource[]> {
   const items = Array.from(dataTransfer.items).filter((item) => item.kind === "file");
   const roots: FileSystemEntry[] = [];
@@ -103,6 +111,7 @@ export type ImportOperationContext = {
   position?: EntryPosition;
 };
 
+/** Validates import operation current. */
 export function assertImportOperationCurrent(context: ImportOperationContext, current: { desktopId: string; activationGeneration: number; entries: readonly DesktopEntry[] }) {
   if (context.desktopId !== current.desktopId || context.activationGeneration !== current.activationGeneration) {
     throw new DOMException("The import was cancelled because the active desktop changed.", "AbortError");
@@ -112,6 +121,7 @@ export function assertImportOperationCurrent(context: ImportOperationContext, cu
   }
 }
 
+/** Validates and returns safe relative path segments. */
 function safeSegments(path: string) {
   if (!path || path.startsWith("/") || path.includes("\\")) throw new Error(`The import contains an unsafe path: “${path || "(empty)"}”.`);
   const segments = path.split("/");
@@ -127,6 +137,7 @@ function safeSegments(path: string) {
   });
 }
 
+/** Builds import plan. */
 export function buildImportPlan(
   sources: readonly ImportSource[],
   options: {

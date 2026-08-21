@@ -3,6 +3,7 @@ import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { RpcDispatcher } from "./dispatcher";
 import { initializeSandboxFrame, materializeAppPackage, SANDBOX_CSP, SANDBOX_FLAGS, type SandboxUiRuntime } from "./sandbox";
 
+/** Renders and manages an application sandbox frame. */
 export function SandboxAppFrame({ package: appPackage, dispatcher, title, uiRuntime, onActivate, onNavigation, csp = SANDBOX_CSP, sandbox = SANDBOX_FLAGS }: { package: AppPackageInspection; dispatcher: RpcDispatcher; title: string; uiRuntime: SandboxUiRuntime; onActivate?: () => void; onNavigation?: () => void; csp?: string; sandbox?: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const onActivateRef = useRef(onActivate);

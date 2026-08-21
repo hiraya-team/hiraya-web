@@ -6,17 +6,21 @@ export type ClipboardOfferState = {
 
 type ClipboardOfferStorage = Pick<Storage, "getItem" | "setItem" | "removeItem">;
 
+/** Keys persisted dismissal of a clipboard import offer. */
 const DISMISSED_CLIPBOARD_OFFER_KEY = "hiraya-dismissed-clipboard-offer-v1";
 
+/** Determines whether clipboard content should be offered for import. */
 export function observeClipboardOffer(current: ClipboardOfferState | null, key: string, force = false): ClipboardOfferState {
   if (!force && current?.key === key) return current;
   return { dismissed: false, key, revision: (current?.revision ?? 0) + 1 };
 }
 
+/** Records dismissal of the current clipboard import offer. */
 export function dismissClipboardOffer(current: ClipboardOfferState | null): ClipboardOfferState | null {
   return current ? { ...current, dismissed: true } : null;
 }
 
+/** Restores a persisted clipboard import offer. */
 export function restoreClipboardOffer(storage: ClipboardOfferStorage | null): ClipboardOfferState | null {
   try {
     const key = storage?.getItem(DISMISSED_CLIPBOARD_OFFER_KEY);
@@ -26,6 +30,7 @@ export function restoreClipboardOffer(storage: ClipboardOfferStorage | null): Cl
   }
 }
 
+/** Persists clipboard-offer state for later navigation. */
 export function persistClipboardOffer(storage: ClipboardOfferStorage | null, current: ClipboardOfferState | null) {
   try {
     if (current?.dismissed) storage?.setItem(DISMISSED_CLIPBOARD_OFFER_KEY, current.key);

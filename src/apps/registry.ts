@@ -7,10 +7,12 @@ import type {
   SystemAppTarget,
 } from "./types";
 
+/** Reports whether an unknown value is a plain record-like object. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Defines default and minimum window dimensions for built-in apps. */
 const BUILTIN_APP_WINDOWS: Record<BuiltinAppKind, BuiltinAppWindow> = {
   file: { width: 920, height: 680, minWidth: 420, minHeight: 320 },
   explorer: { width: 760, height: 590, minWidth: 360, minHeight: 280 },
@@ -19,10 +21,12 @@ const BUILTIN_APP_WINDOWS: Record<BuiltinAppKind, BuiltinAppWindow> = {
   store: { width: 780, height: 680, minWidth: 360, minHeight: 320 },
 };
 
+/** Returns the window geometry assigned to a built-in app kind. */
 export function builtinAppWindow(kind: BuiltinAppKind): BuiltinAppWindow {
   return BUILTIN_APP_WINDOWS[kind];
 }
 
+/** Parses a history value into a supported built-in app target. */
 export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null {
   if (!isRecord(value)) return null;
   if (value.kind === "file") return isValidId(value.fileId) && (value.editMode === undefined || typeof value.editMode === "boolean")
@@ -47,6 +51,7 @@ export function extractBuiltinAppTarget(value: unknown): BuiltinAppTarget | null
   return null;
 }
 
+/** Produces the stable identity used to deduplicate a built-in target. */
 export function builtinAppTargetId(target: BuiltinAppTarget): string {
   if (target.kind === "file") return `file:${target.fileId}`;
   if (target.kind === "explorer") return `explorer:${target.folderId ?? "root"}`;
@@ -56,11 +61,13 @@ export function builtinAppTargetId(target: BuiltinAppTarget): string {
   return `system:${target.appId}:${target.targetKind}:${target.entryId ?? "root"}`;
 }
 
+/** Reports whether a built-in target currently owns a file. */
 export function builtinAppTargetOpensFile(target: BuiltinAppTarget, fileId: string): boolean {
   if (target.kind === "file") return target.fileId === fileId;
   return target.kind === "system" && target.targetKind === "file" && target.entryId === fileId;
 }
 
+/** Returns the desktop entry required to restore a built-in app target. */
 export function builtinAppEntryDependency(target: BuiltinAppTarget): BuiltinAppEntryDependency | null {
   if (target.kind === "file") return { entryId: target.fileId, kind: "file" };
   if (target.kind === "explorer") return target.folderId === null ? null : { entryId: target.folderId, kind: "folder" };

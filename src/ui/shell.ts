@@ -12,6 +12,7 @@ export type AreaSwitcherTap = {
   at: number;
 };
 
+/** Selects visible app windows for the desktop minimap. */
 export function minimapWindows<T extends MinimapWindow>(windows: readonly T[], currentAreaId: string, limit = 6) {
   const ordered = [...windows].sort((left, right) => {
     const leftRank = left.focused ? 0 : left.areaId === currentAreaId ? 1 : 2;
@@ -21,12 +22,14 @@ export function minimapWindows<T extends MinimapWindow>(windows: readonly T[], c
   return ordered.slice(0, limit);
 }
 
+/** Calculates how many windows a minimap area can display. */
 export function minimapWindowCapacity(viewportWidth: number, compact: boolean) {
   if (viewportWidth <= 760) return 2;
   if (compact || viewportWidth <= 1024) return 5;
   return 7;
 }
 
+/** Describes one desktop area's direction from another. */
 export function areaDirectionalLabel(segment: SurfaceSegment, current: SurfaceSegment) {
   const column = segment.column - current.column;
   const row = segment.row - current.row;
@@ -39,6 +42,7 @@ export function areaDirectionalLabel(segment: SurfaceSegment, current: SurfaceSe
   return `${vertical} ${horizontal}`;
 }
 
+/** Describes a desktop area relative to the home area. */
 export function homeRelativeAreaLabel(segment: SurfaceSegment) {
   if (segment.column === 0 && segment.row === 0) return "Home";
   const horizontal = segment.column === 0 ? "" : `${Math.abs(segment.column)} ${segment.column < 0 ? "left" : "right"}`;
@@ -46,12 +50,14 @@ export function homeRelativeAreaLabel(segment: SurfaceSegment) {
   return [vertical, horizontal].filter(Boolean).join(", ") + " of Home";
 }
 
+/** Chooses the dominant axis of a swipe gesture. */
 export function swipeAxis(deltaX: number, deltaY: number): "x" | "y" | null {
   if (Math.hypot(deltaX, deltaY) < 12) return null;
   if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < Math.min(Math.abs(deltaX), Math.abs(deltaY)) * 1.2) return null;
   return Math.abs(deltaX) > Math.abs(deltaY) ? "x" : "y";
 }
 
+/** Returns the desktop area targeted by a swipe. */
 export function adjacentSwipeArea(current: SurfaceSegment, axis: "x" | "y", delta: number): SurfaceSegment {
   const direction = delta < 0 ? 1 : -1;
   return axis === "x"
@@ -59,19 +65,23 @@ export function adjacentSwipeArea(current: SurfaceSegment, axis: "x" | "y", delt
     : { column: current.column, row: current.row + direction };
 }
 
+/** Reports whether a swipe has crossed the preview threshold. */
 export function swipePreviewReady(delta: number, viewportDistance: number) {
   return Math.abs(delta) >= Math.min(88, Math.max(52, viewportDistance * 0.16));
 }
 
+/** Calculates transition depth from pending area movements. */
 export function areaTransitionDepth(delta: number, viewportDistance: number) {
   if (viewportDistance <= 0) return 0;
   return Math.min(1, Math.abs(delta) / (viewportDistance * 0.28));
 }
 
+/** Chooses the area committed by a completed swipe. */
 export function committedSwipeTarget(previewTarget: SurfaceSegment | null, cancelled: boolean) {
   return cancelled ? null : previewTarget;
 }
 
+/** Reports whether a tap completes an area-switcher double tap. */
 export function isAreaSwitcherDoubleTap(previous: AreaSwitcherTap | null, current: AreaSwitcherTap) {
   if (!previous) return false;
   const delay = current.at - previous.at;

@@ -18,6 +18,7 @@ import { ItemList } from "./ItemList";
 import { FileCreationTemplatesSettings } from "./FileCreationTemplatesSettings";
 import type { FileCreationTemplate } from "../types";
 
+/** Defines the ordered categories available in desktop settings. */
 const SETTINGS_CATEGORIES = [
   { id: "desktop", label: "Desktop" },
   { id: "files-apps", label: "Files & apps" },
@@ -100,10 +101,12 @@ type Props = {
   canManageDesktop: (desktop: DesktopIdentity) => boolean;
 };
 
+/** Renders the navigation row interface. */
 function NavigationRow({ id, icon, title, description, disabled, onClick }: { id: string; icon: ReactNode; title: string; description: string; disabled?: boolean; onClick: () => void }) {
   return <section className="settings-section" aria-labelledby={id}><button className="settings-row settings-row--navigation" type="button" disabled={disabled} data-settings-page={id.replace(/-link-heading$/, "")} onClick={onClick}><span className="settings-row__icon">{icon}</span><span className="settings-row__copy"><strong id={id}>{title}</strong><small>{description}</small></span><CaretRight className="settings-row__chevron" size={17} aria-hidden="true" /></button></section>;
 }
 
+/** Renders the settings window interface. */
 export function SettingsWindow(props: Props) {
   const { page, onPageChange } = props;
   const contentRef = useRef<HTMLDivElement>(null);

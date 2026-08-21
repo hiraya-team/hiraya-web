@@ -2,15 +2,21 @@ import { describe, expect, test } from "bun:test";
 import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FolderHandle, type HirayaClient } from "@hiraya-team/apps-sdk";
 import { HirayaFileSystem } from "./vfs";
 
+/** Provides the root test fixture. */
 const root = "folder_root0000000000" as FolderHandle;
+/** Provides the first folder test fixture. */
 const folderA = "folder_aaaaaaaaaaaaaaaa" as FolderHandle;
+/** Provides the second folder test fixture. */
 const folderB = "folder_bbbbbbbbbbbbbbbb" as FolderHandle;
+/** Provides the file test fixture. */
 const file = "file_aaaaaaaaaaaaaaaa" as FileHandle;
 
+/** Creates a folder test fixture. */
 function folder(handle: FolderHandle, name: string, parent: FolderHandle | null): DirectoryEntry {
   return { kind: "folder", metadata: { handle, name, parent, modifiedAt: 0 } };
 }
 
+/** Builds the source file test fixture. */
 function sourceFile(parent: FolderHandle = root): DirectoryEntry {
   return { kind: "file", metadata: { handle: file, name: "source.txt", parent, modifiedAt: 0, size: 4, mimeType: "text/plain", contentRevision: 1 } };
 }

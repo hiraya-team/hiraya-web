@@ -6,6 +6,7 @@ import { terminateSandboxNavigation } from "./navigation";
 export type MaterializedApp = { html: string; navigationToken: string; revoke(): void };
 export interface SandboxUiRuntime { readonly abi: 1; readonly script: string; readonly styles: string }
 
+/** Injects sandbox ui runtime. */
 export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiRuntime, csp: string, navigationToken: string): void {
   const meta = document.createElement("meta");
   meta.httpEquiv = "Content-Security-Policy";
@@ -22,12 +23,15 @@ export function injectSandboxUiRuntime(document: Document, uiRuntime: SandboxUiR
   document.head.prepend(meta, foundation, navigationGuard, runtime);
 }
 
+/** Implements the object URL lease. */
 export class ObjectUrlLease {
   readonly #urls: string[] = [];
   #revoked = false;
 
+  /** Creates an object URL lease instance. */
   constructor(private readonly urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL) {}
 
+  /** Creates a sandbox resource URL. */
   create(blob: Blob): string {
     if (this.#revoked) throw new Error("Object URL lease is closed.");
     const url = this.urls.createObjectURL(blob);
@@ -35,6 +39,7 @@ export class ObjectUrlLease {
     return url;
   }
 
+  /** Revokes the leased object URLs. */
   revoke(): void {
     if (this.#revoked) return;
     this.#revoked = true;
@@ -45,13 +50,20 @@ export class ObjectUrlLease {
 
 // Apps have an opaque origin. Direct fetch sinks are blocked; navigation is also denied in
 // browsers that implement navigate-to and monitored by the host as a fallback.
+/** Defines the default application sandbox CSP. */
 export const SANDBOX_CSP = "default-src 'none'; script-src data: 'unsafe-inline'; style-src data: 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; frame-src data: blob:; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'";
+/** Defines the CSP for trusted document media. */
 export const TRUSTED_DOCUMENT_MEDIA_CSP = SANDBOX_CSP.replace("img-src data: blob:", "img-src data: blob: https: http:").replace("navigate-to 'none'", "navigate-to https: http: mailto:");
+/** Builds the CSP for trusted document media. */
 export const trustedDocumentMediaCsp = (origin?: string) => origin ? TRUSTED_DOCUMENT_MEDIA_CSP.replace("media-src data: blob:", `media-src data: blob: ${origin}`) : TRUSTED_DOCUMENT_MEDIA_CSP;
+/** Defines the default application sandbox permissions. */
 export const SANDBOX_FLAGS = "allow-scripts allow-downloads allow-forms";
+/** Defines sandbox permissions for trusted document media. */
 export const TRUSTED_DOCUMENT_MEDIA_FLAGS = `${SANDBOX_FLAGS} allow-same-origin allow-popups allow-popups-to-escape-sandbox`;
+/** Defines the maximum size of materialized text assets. */
 const MAX_MATERIALIZED_ASSET_CHARACTERS = 64 * 1024 * 1024;
 
+/** Creates package asset resolver. */
 export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array>, entrypoint: string) {
   const assetURLs = new Map<string, string>();
   const resolving = new Set<string>();
@@ -86,6 +98,7 @@ export function createPackageAssetResolver(files: ReadonlyMap<string, Uint8Array
   return resolve;
 }
 
+/** Materializes an app package for sandbox execution. */
 export function materializeAppPackage(pkg: AppPackageInspection, uiRuntime: SandboxUiRuntime, urls: Pick<typeof URL, "createObjectURL" | "revokeObjectURL"> = URL, csp = SANDBOX_CSP): MaterializedApp {
   if (uiRuntime.abi !== 1 || pkg.manifest.uiRuntime !== uiRuntime.abi) throw new TypeError("App UI runtime ABI is unsupported.");
   const lease = new ObjectUrlLease(urls);
@@ -144,6 +157,7 @@ export function materializeAppPackage(pkg: AppPackageInspection, uiRuntime: Sand
   return { html, navigationToken, revoke: () => { if (revoked) return; revoked = true; lease.revoke(); } };
 }
 
+/** Reports whether a path is a valid app-package name. */
 export function isAppPackageName(name: string): boolean {
   return name.toLowerCase().endsWith(".hiraya.app");
 }
@@ -158,6 +172,7 @@ export interface SandboxFrameOptions {
   timers?: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
 }
 
+/** Initializes sandbox frame. */
 export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, dispatcher: RpcDispatcher, navigationToken: string, options: SandboxFrameOptions = {}): () => void {
   let state: SandboxFrameState = "boot";
   let channel: MessageChannel | null = null;
@@ -224,6 +239,7 @@ export function initializeSandboxFrame(frame: HTMLIFrameElement, appId: string, 
   return () => dispose(false);
 }
 
+/** Resolves package path. */
 function resolvePackagePath(reference: string, from: string): string | null {
   const trimmed = reference.trim();
   if (!trimmed || trimmed.startsWith("#") || trimmed.startsWith("data:")) return null;
@@ -234,6 +250,7 @@ function resolvePackagePath(reference: string, from: string): string | null {
   } catch { return null; }
 }
 
+/** Returns the MIME type for a package path. */
 function mimeType(path: string): string {
   if (/\.m?js$/i.test(path)) return "text/javascript";
   if (/\.css$/i.test(path)) return "text/css";
@@ -247,6 +264,7 @@ function mimeType(path: string): string {
   return "application/octet-stream";
 }
 
+/** Encodes bytes as a data URL. */
 function dataURL(bytes: Uint8Array, type: string): string {
   let binary = "";
   const chunkSize = 0x8000;

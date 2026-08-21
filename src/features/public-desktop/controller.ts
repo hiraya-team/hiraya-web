@@ -10,6 +10,7 @@ import { useStableHandler } from "../../ui/use-stable-handler";
 
 export type PublicOpenView = { kind: "folder"; folderId: string | null } | { kind: "file"; file: FileEntry; runtime?: PublicAppRuntime; reserved?: ReservedFileHandler; error?: string };
 
+/** Loads a public desktop and coordinates its read-only app runtime. */
 export function usePublicDesktop(authority: PublicAuthority) {
   const [desktop, setDesktop] = useState<Awaited<ReturnType<typeof fetchPublicDesktop>> | null>(null);
   const [error, setError] = useState("");
@@ -168,6 +169,7 @@ export function usePublicDesktop(authority: PublicAuthority) {
   };
 }
 
+/** Resolves a relative link without escaping the public entry tree. */
 export function resolvePublicLinkedEntry(entries: readonly DesktopEntry[], from: FileEntry, relativePath: string): FileEntry {
     const path = relativePath.split(/[?#]/, 1)[0];
     if (!path || path.startsWith("/") || path.startsWith("\\") || /^[a-z][a-z\d+.-]*:/i.test(path)) throw new Error("That link is not a local relative file path.");

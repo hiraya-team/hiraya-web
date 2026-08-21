@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { activityEntryIds, canOpenActivity } from "../src/ui/activity-navigation";
 import type { ActivityRecord } from "../src/lib/activity";
 
+/** Provides the activity test fixture. */
 const activity: ActivityRecord = { catalogRevision: 1, timestamp: 1, action: "move", source: "api", summary: "Moved files", details: [] };
 
 describe("activity navigation", () => {

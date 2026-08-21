@@ -1,11 +1,15 @@
+/** Defines the maximum wallpaper file size. */
 const MAX_BYTES = 20 * 1024 * 1024;
+/** Defines the maximum wallpaper dimension. */
 const MAX_DIMENSION = 8192;
+/** Defines the maximum wallpaper pixel count. */
 const MAX_PIXELS = 40_000_000;
 
 
 type ImageDimensions = { width: number; height: number };
 type ImageDecoder = (file: File) => Promise<ImageDimensions>;
 
+/** Returns detected MIME type. */
 function detectedMimeType(bytes: Uint8Array) {
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a) return "image/png";
@@ -13,12 +17,14 @@ function detectedMimeType(bytes: Uint8Array) {
   return null;
 }
 
+/** Decodes in browser. */
 async function decodeInBrowser(file: File): Promise<ImageDimensions> {
   const bitmap = await createImageBitmap(file);
   try { return { width: bitmap.width, height: bitmap.height }; }
   finally { bitmap.close(); }
 }
 
+/** Validates wallpaper image. */
 export async function validateWallpaperImage(file: File, decode: ImageDecoder = decodeInBrowser) {
   if (file.size > MAX_BYTES) throw new Error("Wallpaper images must be no larger than 20 MiB.");
   const mediaType = file.type.split(";", 1)[0].trim().toLowerCase();

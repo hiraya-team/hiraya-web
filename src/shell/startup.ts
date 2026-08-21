@@ -2,6 +2,7 @@ import type { AuthSession } from "../lib/auth";
 import { publicAuthorityFromPath, type PublicAuthority } from "../lib/publication-alias";
 import { configureAccountStorage } from "../platform/storage/account-storage";
 
+/** Indicates whether startup should use browser-local authority. */
 const frontendOnly = import.meta.env.HIRAYA_FRONTEND_ONLY === "true";
 
 export type DesktopStart = { session: AuthSession | null; warmStart?: boolean };
@@ -9,15 +10,16 @@ export type ShellStartup =
   | { kind: "desktop"; start: DesktopStart }
   | { kind: "public"; authority: PublicAuthority };
 
+/** Selects public, browser-local, or synchronized startup authority. */
 export async function startShell(): Promise<ShellStartup> {
-  const authority = publicAuthorityFromPath(window.location.pathname);
-  if (authority) return { kind: "public", authority };
-
   if (frontendOnly) {
     const { LOCAL_WEB2_ACCOUNT_ID } = await import("../platform/storage/local-identity");
     configureAccountStorage(LOCAL_WEB2_ACCOUNT_ID, LOCAL_WEB2_ACCOUNT_ID);
     return { kind: "desktop", start: { session: null, warmStart: false } };
   }
+
+  const authority = publicAuthorityFromPath(window.location.pathname);
+  if (authority) return { kind: "public", authority };
 
   const { bootstrapSession, readCachedSession } = await import("../lib/auth");
   const cachedSession = readCachedSession();

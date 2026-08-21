@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { ThemeDefinition, ThemeEditorState, ThemeEditorTheme } from "@hiraya-team/apps-sdk";
 import { backAction, contrastIssues, contrastRatio, copyDraft, draftChanged, editDraft, mergeThemeState, nextCopyName } from "./editor";
 
+/** Provides the definition test fixture. */
 const definition: ThemeDefinition = {
   colors: {
     shell: "#172329", chrome: "#202f34", chromeText: "#f4f6f1", window: "#f2f1eb", windowMuted: "#d8d9d3",
@@ -12,6 +13,7 @@ const definition: ThemeDefinition = {
   treatment: { gradientStrength: 0, gradientAngle: 0, texture: "none", textureStrength: 0, textureScale: 4, pixelated: false },
   typography: { family: "system", scale: 1, weight: 500 }, density: 1, motion: 1, iconSize: 56,
 };
+/** Provides the theme test fixture. */
 const theme: ThemeEditorTheme = { id: "custom", name: "Custom", definition, builtIn: false, hasWallpaper: false };
 
 describe("theme drafts", () => {
@@ -66,6 +68,6 @@ test("uses the shared item list for the theme library", async () => {
   expect(manifest.version).toBe("1.0.3");
   expect(html).toContain('<hiraya-item-list id="theme-list" class="theme-list" list-role="listbox" label="Available themes">');
   expect(source).toContain('button.dataset.itemId = theme.id;');
-  expect(source).toContain('themeList.addEventListener("hiraya-item-select"');
+  expect(source).toContain("themeList.addEventListener(ITEM_LIST_EVENTS.select");
   expect(source).not.toContain("moveThemeFocus");
 });

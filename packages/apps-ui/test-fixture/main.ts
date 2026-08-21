@@ -3,10 +3,15 @@ import "../src/styles.css";
 
 defineHirayaElements();
 
+/** References the dialog interface element. */
 const dialog = document.querySelector<HirayaDialog>("#dialog")!;
+/** References the sheet interface element. */
 const sheet = document.querySelector<HirayaActionSheet>("#sheet")!;
+/** References the image interface element. */
 const image = document.querySelector<HirayaImageViewer>("#image")!;
+/** References the selection interface element. */
 const selection = document.querySelector<HTMLOutputElement>("#selection")!;
+/** References the item event interface element. */
 const itemEvent = document.querySelector<HTMLOutputElement>("#item-event")!;
 
 document.querySelector("#dialog-trigger")?.addEventListener("click", () => dialog.showModal());

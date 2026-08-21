@@ -33,10 +33,12 @@ export type WorkspaceCatalog = {
   close(): void;
 };
 
+/** Reports whether an event is a workspace catalog notification. */
 function isCatalogNotification(value: unknown) {
   return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && value.kind === "catalog-change" && (Object.keys(value).length === 2 || Object.keys(value).length === 3 && value.source === "remote");
 }
 
+/** Opens workspace catalog. */
 export async function openWorkspaceCatalog(accountId: string, deviceId: string, environment: WorkspaceCatalogEnvironment): Promise<WorkspaceCatalog> {
   const canonicalDeviceId = parseStableId(deviceId, "A workspace device ID is invalid.");
   const database = await openFilesystemDatabase(accountId, environment);

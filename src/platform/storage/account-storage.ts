@@ -7,6 +7,7 @@ export type AccountStorageContext = {
 
 let selected: AccountStorageContext | undefined;
 
+/** Configures account storage. */
 export function configureAccountStorage(accountIdValue: string, storageIdValue: string) {
   const next = {
     accountId: parseStableId(accountIdValue, "The selected account ID is invalid."),
@@ -17,6 +18,7 @@ export function configureAccountStorage(accountIdValue: string, storageIdValue: 
   return next;
 }
 
+/** Returns account storage. */
 export function accountStorage() {
   if (!selected) throw new Error("Account storage was used before an account was selected.");
   return selected;

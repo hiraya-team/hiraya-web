@@ -7,20 +7,27 @@ import { createHydrationCoordinator } from "../src/sync/hydration";
 import { WEB2_SYNC_PROTOCOL, type HydrationRequest } from "../src/sync/protocol";
 import type { FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
 
+/** Provides the account test fixture. */
 const ACCOUNT = stableId(1);
+/** Provides the workspace test fixture. */
 const WORKSPACE = stableId(2);
+/** Provides the device test fixture. */
 const DEVICE = stableId(3);
+/** Provides the destination test fixture. */
 const DESTINATION = stableId(4);
 
+/** Builds the stable ID test fixture. */
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
+/** Provides an immediate locks test double. */
 class ImmediateLocks {
   readonly names: string[] = [];
   active = 0;
   private readonly tails = new Map<string, Promise<void>>();
 
+  /** Runs a test lock request immediately. */
   async request<T>(name: string, _options: LockOptions, callback: (lock: Lock) => Promise<T> | T) {
     this.names.push(name);
     _options.signal?.throwIfAborted();
@@ -43,6 +50,7 @@ class ImmediateLocks {
   }
 }
 
+/** Implements the revision recorder. */
 class RevisionRecorder {
   readonly messages: unknown[] = [];
   readonly names: string[] = [];
@@ -58,11 +66,13 @@ class RevisionRecorder {
   };
 }
 
+/** Builds the remote folder test fixture. */
 function remoteFolder(id: string, name: string, logicalTime: number) {
   const tuple = { logicalTime, operationId: stableId(300 + logicalTime) };
   return { workspaceId: WORKSPACE, id, kind: "folder" as const, name, parentId: null, lifecycle: { kind: "active" as const }, position: { x: 0, y: 0 }, createdAt: 1, modifiedAt: 1, fieldTuples: { name: tuple, parent: tuple, lifecycle: tuple, position: tuple, content: null } };
 }
 
+/** Builds the response test fixture. */
 function response(request: HydrationRequest, nodes: ReturnType<typeof remoteFolder>[], nextPageToken: string | null, observedLogicalTime = 10) {
   return {
     schemaVersion: 1,

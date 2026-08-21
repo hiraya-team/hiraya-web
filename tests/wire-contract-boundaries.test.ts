@@ -8,6 +8,7 @@ type Corpus = {
   revisions: Array<{ value: number; valid: boolean }>;
 };
 
+/** Provides the corpus test fixture. */
 const corpus = await Bun.file(new URL("./fixtures/wire-contract-boundaries.json", import.meta.url)).json() as Corpus;
 
 describe("shared Go and TypeScript wire boundaries", () => {

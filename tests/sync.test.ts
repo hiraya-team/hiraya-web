@@ -7,30 +7,39 @@ import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 import { sha256Blob } from "../src/lib/blob-transfer";
 
+/** Provides the catalog quota test fixture. */
 const catalogQuota = { storageBytes: { used: 12, limit: 100 }, desktops: { used: 1, limit: 10 }, entries: { used: 2, limit: 5000 } };
 
+/** Provides a fake event source test double. */
 class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  /** Accepts event listeners for the test double. */
   addEventListener(type: string, listener: EventListenerOrEventListenerObject) { void type; void listener; }
+  /** Closes the test event source. */
   close() {}
 }
 
+/** Provides a capturing event source test double. */
 class CapturingEventSource extends FakeEventSource {
   static latest: CapturingEventSource | null = null;
   private catalogListener: ((event: MessageEvent<string>) => void) | null = null;
+  /** Creates a capturing event source instance. */
   constructor(readonly url: string) {
     super();
     CapturingEventSource.latest = this;
   }
+  /** Registers a listener on the capturing event source. */
   override addEventListener(type: string, listener: EventListenerOrEventListenerObject) {
     if (type === "catalog") this.catalogListener = listener as (event: MessageEvent<string>) => void;
   }
+  /** Emits a catalog event to the registered listener. */
   emitCatalog(catalogId: string, catalogRevision: number, schemaVersion = 2) {
     this.catalogListener?.({ data: JSON.stringify({ schemaVersion, catalogId, catalogRevision }) } as MessageEvent<string>);
   }
 }
 
+/** Builds the XHR-over-fetch test fixture. */
 function xhrUsingFetch(fetchImpl: typeof fetch) {
   return () => {
     let method = "GET";
@@ -58,6 +67,7 @@ function xhrUsingFetch(fetchImpl: typeof fetch) {
   };
 }
 
+/** Builds the block engine queue test fixture. */
 async function blockEngineQueue(engine: SyncEngine) {
   let release!: () => void;
   let markStarted!: () => void;
@@ -69,6 +79,7 @@ async function blockEngineQueue(engine: SyncEngine) {
   return { release, pending };
 }
 
+/** Builds the wait for test fixture. */
 async function waitFor(condition: () => boolean | Promise<boolean>, message = "Timed out waiting for background synchronization.") {
   const deadline = Date.now() + 2_000;
   while (!await condition()) {
@@ -77,10 +88,12 @@ async function waitFor(condition: () => boolean | Promise<boolean>, message = "T
   }
 }
 
+/** Builds the wait for outbox drain test fixture. */
 async function waitForOutboxDrain(engine: SyncEngine) {
   await waitFor(async () => (await engine.getOutboxStatus()).records.length === 0);
 }
 
+/** Builds the remote storage test fixture. */
 function remoteStorage(initial = desktopStateSnapshot()) {
   let current = initial;
   let outbox: OutboxRecord[] = [];

@@ -4,6 +4,7 @@ import { filterAndGroupShortcuts, type KeyboardShortcut } from "../ui/panel-data
 
 export type KeyboardShortcutsPanelProps = { shortcuts: readonly KeyboardShortcut[] };
 
+/** Renders the keyboard shortcuts panel interface. */
 export function KeyboardShortcutsPanel({ shortcuts }: KeyboardShortcutsPanelProps) {
   const [query, setQuery] = useState("");
   const groups = filterAndGroupShortcuts(shortcuts, useDeferredValue(query));

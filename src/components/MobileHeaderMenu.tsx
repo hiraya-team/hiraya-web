@@ -8,6 +8,7 @@ type Props = {
   children: (dismiss: (restoreFocus?: boolean) => void) => ReactNode;
 };
 
+/** Renders the mobile header menu interface. */
 export function MobileHeaderMenu({ label, icon, onTriggerElement, children }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);

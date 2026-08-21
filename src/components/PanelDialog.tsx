@@ -4,6 +4,7 @@ import { useNativeDialog } from "../ui/modal-dialog";
 
 type Props = { title: string; onClose: () => void; children: ReactNode; restoreFocus?: () => HTMLElement | null };
 
+/** Renders the panel dialog interface. */
 export function PanelDialog({ title, onClose, children, restoreFocus }: Props) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const titleId = useId();

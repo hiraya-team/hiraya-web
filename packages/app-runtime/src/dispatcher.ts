@@ -50,24 +50,37 @@ export interface RpcDispatcherOptions {
   timers?: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void };
 }
 
+/** Defines the default RPC timeout in milliseconds. */
 export const DEFAULT_RPC_TIMEOUT_MS = 15_000;
+/** Defines the timeout for long-running RPC calls. */
 export const LONG_RUNNING_RPC_TIMEOUT_MS = 120_000;
+/** Lists long-running file mutation methods. */
 export const LONG_RUNNING_FILE_MUTATION_METHODS = [
   "files.write", "files.beginWrite", "files.writeChunk", "files.commitWrite", "files.abortWrite",
   "files.createFile", "files.createFolder", "files.rename", "files.move", "files.delete", "files.deleteMany",
 ] as const satisfies readonly ServiceMethod[];
+/** Lists long-running host methods. */
 const longRunningFileMutationMethods = new Set<ServiceMethod>(LONG_RUNNING_FILE_MUTATION_METHODS);
+/** Lists RPC methods that require a user interaction. */
 const userInteractionMethods = new Set<ServiceMethod>(["dialogs.openFile", "dialogs.openFolder", "dialogs.saveFile", "dialogs.confirm"]);
 
+/** Names file permissions enforced by the app runtime dispatcher. */
+export const APP_FILE_PERMISSIONS = {
+  read: "files:read",
+  write: "files:write",
+} as const satisfies Record<string, AppPermission>;
+
+/** Reports whether an operation uses the long-running RPC deadline. */
 export function usesLongRunningRpcDeadline(method: ServiceMethod): boolean {
   return longRunningFileMutationMethods.has(method) || userInteractionMethods.has(method);
 }
 
+/** Maps RPC methods to their required app permissions. */
 const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
-  "files.stat": "files:read", "files.read": "files:read", "files.readChunk": "files:read", "files.resolve": "files:read", "files.list": "files:read",
-  "files.write": "files:write", "files.beginWrite": "files:write", "files.writeChunk": "files:write", "files.commitWrite": "files:write", "files.abortWrite": "files:write", "files.createFile": "files:write", "files.createFolder": "files:write", "files.rename": "files:write", "files.move": "files:write", "files.delete": "files:write", "files.deleteMany": "files:write",
-  "host.openEntry": "files:read", "host.showEntryActions": "files:read", "host.getEntryStatus": "files:read", "host.getFilePreviewSource": "files:read", "host.setOfflinePinned": "files:read",
-  "host.importFiles": "files:write", "host.importFolder": "files:write",
+  "files.stat": APP_FILE_PERMISSIONS.read, "files.read": APP_FILE_PERMISSIONS.read, "files.readChunk": APP_FILE_PERMISSIONS.read, "files.resolve": APP_FILE_PERMISSIONS.read, "files.list": APP_FILE_PERMISSIONS.read,
+  "files.write": APP_FILE_PERMISSIONS.write, "files.beginWrite": APP_FILE_PERMISSIONS.write, "files.writeChunk": APP_FILE_PERMISSIONS.write, "files.commitWrite": APP_FILE_PERMISSIONS.write, "files.abortWrite": APP_FILE_PERMISSIONS.write, "files.createFile": APP_FILE_PERMISSIONS.write, "files.createFolder": APP_FILE_PERMISSIONS.write, "files.rename": APP_FILE_PERMISSIONS.write, "files.move": APP_FILE_PERMISSIONS.write, "files.delete": APP_FILE_PERMISSIONS.write, "files.deleteMany": APP_FILE_PERMISSIONS.write,
+  "host.openEntry": APP_FILE_PERMISSIONS.read, "host.showEntryActions": APP_FILE_PERMISSIONS.read, "host.getEntryStatus": APP_FILE_PERMISSIONS.read, "host.getFilePreviewSource": APP_FILE_PERMISSIONS.read, "host.setOfflinePinned": APP_FILE_PERMISSIONS.read,
+  "host.importFiles": APP_FILE_PERMISSIONS.write, "host.importFolder": APP_FILE_PERMISSIONS.write,
   "dialogs.openFile": "dialogs", "dialogs.openFolder": "dialogs", "dialogs.saveFile": "dialogs", "dialogs.confirm": "dialogs",
   "window.getState": "window", "window.setTitle": "window", "window.setDirty": "window", "window.setSize": "window", "window.setFullscreen": "window", "window.close": "window",
   "commands.set": "commands", "commands.clear": "commands", "notifications.show": "notifications", "notifications.dismiss": "notifications",
@@ -76,6 +89,7 @@ const METHOD_PERMISSION: Partial<Record<ServiceMethod, AppPermission>> = {
   "storage.get": "storage", "storage.set": "storage", "storage.remove": "storage", "storage.clear": "storage",
 };
 
+/** Implements the RPC dispatcher. */
 export class RpcDispatcher {
   readonly #maxRequestBytes: number;
   readonly #maxRequestsPerSecond: number;
@@ -87,6 +101,7 @@ export class RpcDispatcher {
   #windowStarted = performance.now();
   #windowRequests = 0;
 
+  /** Creates an RPC dispatcher instance. */
   constructor(private readonly options: RpcDispatcherOptions) {
     this.#maxRequestBytes = options.maxRequestBytes ?? 4 * 1024 * 1024;
     this.#maxRequestsPerSecond = options.maxRequestsPerSecond ?? 60;
@@ -99,6 +114,7 @@ export class RpcDispatcher {
     if (![this.#maxRequestBytes, this.#maxRequestsPerSecond, this.#timeoutMs, this.#longRunningTimeoutMs].every((value) => Number.isFinite(value) && value > 0) || this.#longRunningTimeoutMs < this.#timeoutMs || this.#longRunningTimeoutMs > LONG_RUNNING_RPC_TIMEOUT_MS) throw new TypeError("RPC limits must be positive, ordered, and within the host cap.");
   }
 
+  /** Attaches the communication channel. */
   attach(port: MessagePort): void {
     if (this.#closed || this.#port) throw new Error("RPC dispatcher can only attach one channel.");
     this.#port = port;
@@ -107,6 +123,7 @@ export class RpcDispatcher {
     port.start();
   }
 
+  /** Detaches the communication channel. */
   detach(): void {
     if (!this.#port) return;
     this.#port.removeEventListener("message", this.#onMessage);
@@ -115,6 +132,7 @@ export class RpcDispatcher {
     this.#port = null;
   }
 
+  /** Releases resources owned by this instance. */
   dispose(): void {
     if (this.#closed) return;
     this.#closed = true;
@@ -124,11 +142,13 @@ export class RpcDispatcher {
     this.options.host.close();
   }
 
+  /** Emits an event to the connected client. */
   emit<E extends ServiceEvent>(event: E, payload: ServiceEvents[E]): void {
     const parsed = parseServiceEventPayload(event, payload);
     this.#post({ protocolVersion: APPS_PROTOCOL_VERSION, type: "event", event, payload: parsed });
   }
 
+  /** Dispatches an incoming request. */
   async dispatch(value: unknown): Promise<void> {
     let request: RpcRequest | null = null;
     try {
@@ -149,6 +169,7 @@ export class RpcDispatcher {
     }
   }
 
+  /** Invokes the requested host service method. */
   #invoke(request: RpcRequest): unknown {
     const [group, name] = request.method.split(".");
     if (group === "files") {
@@ -177,12 +198,14 @@ export class RpcDispatcher {
     return method.call(api, params);
   }
 
+  /** Consumes one request-rate token when available. */
   #takeRateToken(): void {
     const now = performance.now();
     if (now - this.#windowStarted >= 1_000) { this.#windowStarted = now; this.#windowRequests = 0; }
     if (++this.#windowRequests > this.#maxRequestsPerSecond) throw rpcError("QUOTA_EXCEEDED", "The app is sending requests too quickly.");
   }
 
+  /** Posts a response to the connected client. */
   #post(value: unknown, transfer: Transferable[] = []): void {
     if (!this.#closed) this.#port?.postMessage(value, transfer);
   }
@@ -191,20 +214,24 @@ export class RpcDispatcher {
   readonly #onMessageError = () => this.dispose();
 }
 
+/** Creates a safe RPC error. */
 function rpcError(code: string, message: string) {
   return Object.assign(new Error(message), { code });
 }
 
+/** Converts an unknown failure into a safe RPC error. */
 function sanitizeError(error: unknown) {
   const code = typeof error === "object" && error !== null && "code" in error && typeof error.code === "string" && ["INVALID_REQUEST", "METHOD_NOT_FOUND", "PERMISSION_DENIED", "NOT_FOUND", "ALREADY_EXISTS", "CONFLICT", "CANCELLED", "OFFLINE", "QUOTA_EXCEEDED", "TIMEOUT", "UNAVAILABLE", "INTERNAL"].includes(error.code) ? error.code : error instanceof TypeError ? "INVALID_REQUEST" : "INTERNAL";
   const safe = code === "INTERNAL" ? "The app request could not be completed." : error instanceof Error ? error.message.slice(0, 1_000) : "The app request could not be completed.";
   return { code, message: safe };
 }
 
+/** Extracts a valid request ID. */
 function requestId(value: unknown): string | null {
   return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" && value.id.length <= 256 ? value.id : null;
 }
 
+/** Estimates the size of a request payload. */
 function estimateBytes(value: unknown, seen = new Set<object>()): number {
   if (value instanceof ArrayBuffer) return value.byteLength;
   if (typeof value === "string") return value.length * 2;
@@ -216,6 +243,7 @@ function estimateBytes(value: unknown, seen = new Set<object>()): number {
   return size;
 }
 
+/** Applies a deadline to an operation. */
 async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number, sideEffecting: boolean, timers: { set(callback: () => void, timeoutMs: number): number; clear(timer: number): void }): Promise<T> {
   let timer = 0;
   try {
@@ -223,6 +251,7 @@ async function withTimeout<T>(operation: T | Promise<T>, timeoutMs: number, side
   } finally { timers.clear(timer); }
 }
 
+/** Reports whether an RPC method has side effects. */
 function hasSideEffects(method: ServiceMethod): boolean {
   return !new Set<ServiceMethod>([
     "app.getLaunchContext", "app.getCapabilities", "files.stat", "files.read", "files.readChunk", "files.resolve", "files.list",

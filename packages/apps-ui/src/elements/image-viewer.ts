@@ -2,10 +2,12 @@ import { elementStyles, hirayaEvent, HTMLElementBase } from "./shared";
 
 export type HirayaImageZoom = "fit" | number;
 
+/** Clamps image zoom to the supported range. */
 export function clampImageZoom(value: number, minimum: number, maximum: number): number {
   return Math.min(maximum, Math.max(minimum, value));
 }
 
+/** Calculates the zoom needed to fit an image in the viewport. */
 export function calculateImageFitZoom(
   viewportWidth: number,
   viewportHeight: number,
@@ -20,6 +22,7 @@ export function calculateImageFitZoom(
 
 type Point = { x: number; y: number };
 
+/** Implements the Hiraya image viewer. */
 export class HirayaImageViewer extends HTMLElementBase {
   static readonly observedAttributes = ["src", "alt", "zoom", "min-zoom", "max-zoom", "rotation"];
 
@@ -39,6 +42,7 @@ export class HirayaImageViewer extends HTMLElementBase {
   #lastPointer: Point | null = null;
   #renderedSrc: string | null = null;
 
+  /** Creates a hiraya image viewer instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -53,6 +57,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#image = root.querySelector<HTMLImageElement>("img")!;
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void {
     this.#connectListeners();
     this.#syncAttributes();
@@ -65,6 +70,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     }
   }
 
+  /** Releases listeners when the element leaves the document. */
   disconnectedCallback(): void {
     this.#listeners?.abort();
     this.#listeners = null;
@@ -76,36 +82,51 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#frame = null;
   }
 
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void {
     if (this.#image) this.#syncAttributes();
   }
 
+  /** Returns the image source URL. */
   get src(): string { return this.getAttribute("src") ?? ""; }
+  /** Sets the image source URL. */
   set src(value: string) { if (value) this.setAttribute("src", value); else this.removeAttribute("src"); }
+  /** Returns the image alternative text. */
   get alt(): string { return this.getAttribute("alt") ?? ""; }
+  /** Sets the image alternative text. */
   set alt(value: string) { this.setAttribute("alt", value); }
+  /** Returns the requested zoom mode or scale. */
   get zoom(): HirayaImageZoom {
     const value = this.getAttribute("zoom");
     if (!value || value === "fit") return "fit";
     const numeric = Number(value);
     return Number.isFinite(numeric) && numeric > 0 ? numeric : "fit";
   }
+  /** Sets the requested zoom mode or scale. */
   set zoom(value: HirayaImageZoom) { this.setAttribute("zoom", value === "fit" ? value : String(value)); }
+  /** Returns the minimum zoom scale. */
   get minZoom(): number { return this.#positiveAttribute("min-zoom", 0.1); }
+  /** Sets the minimum zoom scale. */
   set minZoom(value: number) { this.setAttribute("min-zoom", String(value)); }
+  /** Returns the maximum zoom scale. */
   get maxZoom(): number { return Math.max(this.minZoom, this.#positiveAttribute("max-zoom", 8)); }
+  /** Sets the maximum zoom scale. */
   set maxZoom(value: number) { this.setAttribute("max-zoom", String(value)); }
+  /** Returns the normalized image rotation. */
   get rotation(): number {
     const value = Number(this.getAttribute("rotation"));
     return Number.isFinite(value) ? ((value % 360) + 360) % 360 : 0;
   }
+  /** Sets the image rotation in degrees. */
   set rotation(value: number) { this.setAttribute("rotation", String(value)); }
 
+  /** Fits the content within the viewport. */
   fit(): void {
     this.#applyFit(true);
     if (this.getAttribute("zoom") !== "fit") this.setAttribute("zoom", "fit");
   }
 
+  /** Restores the default state. */
   reset(): void {
     if (!this.#image.naturalWidth) return;
     this.#panX = 0;
@@ -113,11 +134,13 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#setNumericZoom(1, true);
   }
 
+  /** Adjusts the image zoom by a relative amount. */
   zoomBy(delta: number): void {
     if (!this.#image.naturalWidth || !Number.isFinite(delta) || delta === 0) return;
     this.#setNumericZoom(this.#scale + delta, true);
   }
 
+  /** Rotates the image by a relative number of degrees. */
   rotateBy(degrees: number): void {
     if (!this.#image.naturalWidth || !Number.isFinite(degrees)) return;
     this.rotation += degrees;
@@ -125,6 +148,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     else this.#constrainPan();
   }
 
+  /** Connects listeners. */
   #connectListeners(): void {
     this.#listeners?.abort();
     const controller = new AbortController();
@@ -139,6 +163,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#viewport.addEventListener("pointercancel", (event) => this.#pointerEnd(event), options);
   }
 
+  /** Synchronizes attributes. */
   #syncAttributes(): void {
     this.#image.alt = this.alt;
     const nextSrc = this.src;
@@ -154,6 +179,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     else this.#setScale(requested, false);
   }
 
+  /** Applies the requested scale after the image loads. */
   #loaded(): void {
     if (this.zoom === "fit") this.#applyFit(false);
     else this.#setScale(this.zoom, false);
@@ -164,6 +190,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     });
   }
 
+  /** Applies image controls from a keyboard event. */
   #keyDown(event: KeyboardEvent): void {
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key === "+" || event.key === "=") this.zoomBy(0.25);
@@ -178,6 +205,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     event.preventDefault();
   }
 
+  /** Begins pointer interaction. */
   #pointerDown(event: PointerEvent): void {
     if (event.pointerType === "mouse" && event.button !== 0) return;
     this.#viewport.focus({ preventScroll: true });
@@ -188,6 +216,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     else if (this.#pointers.size === 2) this.#beginPinch();
   }
 
+  /** Updates the active pointer interaction. */
   #pointerMove(event: PointerEvent): void {
     if (!this.#pointers.has(event.pointerId)) return;
     this.#pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -200,6 +229,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     event.preventDefault();
   }
 
+  /** Finishes the active pointer interaction. */
   #pointerEnd(event: PointerEvent): void {
     if (!this.#pointers.delete(event.pointerId)) return;
     if (this.#viewport.hasPointerCapture(event.pointerId)) this.#viewport.releasePointerCapture(event.pointerId);
@@ -209,6 +239,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#viewport.toggleAttribute("data-panning", this.#pointers.size > 0);
   }
 
+  /** Begins pinch. */
   #beginPinch(): void {
     const [first, second] = [...this.#pointers.values()];
     if (!first || !second) return;
@@ -218,6 +249,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#gesturePan = { x: this.#panX, y: this.#panY };
   }
 
+  /** Updates pinch. */
   #updatePinch(): void {
     const [first, second] = [...this.#pointers.values()];
     if (!first || !second || this.#gestureDistance <= 0) return;
@@ -237,12 +269,14 @@ export class HirayaImageViewer extends HTMLElementBase {
     if (this.getAttribute("zoom") !== serialized) this.setAttribute("zoom", serialized);
   }
 
+  /** Pans the image by the requested offset. */
   #panBy(x: number, y: number): void {
     this.#panX += x;
     this.#panY += y;
     this.#constrainPan();
   }
 
+  /** Fits the image within the current viewport. */
   #applyFit(announce: boolean): void {
     if (!this.#image.naturalWidth || !this.#viewport.clientWidth || !this.#viewport.clientHeight) return;
     this.#panX = 0;
@@ -259,6 +293,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#setScale(scale, announce, "fit");
   }
 
+  /** Sets numeric zoom. */
   #setNumericZoom(value: number, announce: boolean): void {
     const next = clampImageZoom(value, this.minZoom, this.maxZoom);
     const previous = this.#scale;
@@ -271,6 +306,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     if (this.getAttribute("zoom") !== serialized) this.setAttribute("zoom", serialized);
   }
 
+  /** Applies and announces the image scale. */
   #setScale(value: number, announce: boolean, mode: HirayaImageZoom = this.zoom): void {
     const next = clampImageZoom(value, this.minZoom, this.maxZoom);
     const changed = next !== this.#scale;
@@ -279,6 +315,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     if (changed || announce) hirayaEvent(this, "hiraya-zoom-change", { zoom: next, mode });
   }
 
+  /** Constrains image panning to the visible bounds. */
   #constrainPan(): void {
     const rotated = this.rotation % 180 !== 0;
     const width = rotated ? this.#image.naturalHeight : this.#image.naturalWidth;
@@ -290,6 +327,7 @@ export class HirayaImageViewer extends HTMLElementBase {
     this.#scheduleRender();
   }
 
+  /** Schedules render. */
   #scheduleRender(): void {
     if (this.#frame !== null) return;
     if (typeof requestAnimationFrame === "undefined") {
@@ -302,10 +340,12 @@ export class HirayaImageViewer extends HTMLElementBase {
     });
   }
 
+  /** Renders the current image transform. */
   #render(): void {
     this.#image.style.transform = `translate3d(calc(-50% + ${this.#panX}px), calc(-50% + ${this.#panY}px), 0) scale(${this.#scale}) rotate(${this.rotation}deg)`;
   }
 
+  /** Reads a positive numeric attribute or returns its fallback. */
   #positiveAttribute(name: string, fallback: number): number {
     const value = Number(this.getAttribute(name));
     return Number.isFinite(value) && value > 0 ? value : fallback;

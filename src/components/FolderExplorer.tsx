@@ -45,10 +45,12 @@ export interface FolderExplorerProps {
   protectedStatus?: { message: string; error?: boolean; onRetry?: () => void };
 }
 
+/** Formats dates and times using the current locale. */
 const dateFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
 });
 
+/** Renders the folder explorer interface. */
 export function FolderExplorer({ folder, rootLabel, breadcrumbs, children, onNavigate, onOpen, onCreateFolder, onCreateFile, onUpload, onImportFolder, onExternalDrop, onContextMenu, onBlankContextMenu, onClearSelection, selectedIds, onSelect, mobileMultiSelect = false, onMove, getDesktopDropPreview, gridSize, readOnly = false, headerElements, offlineAvailability = {}, view, onViewChange, viewChangeDisabled = false, loadPreview, isEntryReadOnly = () => false, protectedStatus }: FolderExplorerProps) {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<FolderSortKey>("name");

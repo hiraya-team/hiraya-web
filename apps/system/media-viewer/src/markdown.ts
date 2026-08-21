@@ -2,6 +2,7 @@ import DOMPurify from "dompurify";
 import { micromark } from "micromark";
 import { gfm, gfmHtml } from "micromark-extension-gfm";
 
+/** Defines allowed markup for Markdown previews. */
 const SANITIZE_OPTIONS = {
   USE_PROFILES: { html: true },
   ALLOW_DATA_ATTR: false,
@@ -9,10 +10,12 @@ const SANITIZE_OPTIONS = {
   FORBID_ATTR: ["style", "srcset", "action", "formaction", "ping"],
 };
 
+/** Reports whether a URL is a safe relative reference. */
 function isSafeRelative(value: string) {
   return Boolean(value) && !/^(?:[a-z][a-z\d+.-]*:|\/\/|\/)/i.test(value) && !value.includes("\\");
 }
 
+/** Resolves a Markdown URL relative to the current document. */
 export function markdownRelativePath(value: string): string | null {
   try {
     const decoded = decodeURIComponent(value);
@@ -22,15 +25,18 @@ export function markdownRelativePath(value: string): string | null {
   }
 }
 
+/** Classifies a Markdown URL as a link or image resource. */
 export function markdownResourceKind(value: string): "external" | "relative" | "blocked" {
   if (/^https?:\/\//i.test(value)) return "external";
   return markdownRelativePath(value) ? "relative" : "blocked";
 }
 
+/** Converts Markdown to sanitized preview HTML. */
 export function markdownHtml(source: string): string {
   return micromark(source, { extensions: [gfm()], htmlExtensions: [gfmHtml()] });
 }
 
+/** Renders markdown. */
 export function renderMarkdown(source: string): HTMLElement {
   const article = document.createElement("article");
   article.className = "markdown-page";

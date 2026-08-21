@@ -12,10 +12,14 @@ type Props = {
   onAnchorLink?: (href: string) => void;
 };
 
+/** Reports whether a URL is an allowed external link. */
 function isExternalLink(value: string) { return /^(?:https?:|mailto:)/i.test(value); }
+/** Reports whether a URL is an allowed external image. */
 function isExternalImage(value: string) { return /^https?:\/\//i.test(value); }
+/** Reports whether a URL uses the expected scheme. */
 function hasScheme(value: string) { return /^(?:[a-z][a-z\d+.-]*:|\/\/)/i.test(value); }
 
+/** Renders the local image interface. */
 function LocalImage({ src, alt, externalEmbeddedPreviews, onResolveLink }: {
   src: string;
   alt: string;
@@ -52,6 +56,7 @@ function LocalImage({ src, alt, externalEmbeddedPreviews, onResolveLink }: {
   return <span className="markdown-renderer__missing-media">{alt || src}</span>;
 }
 
+/** Derives a stable anchor ID from heading content. */
 function headingId(children: ReactNode) {
   const text = Children.toArray(children).map((child) => {
     if (typeof child === "string" || typeof child === "number") return String(child);
@@ -62,10 +67,12 @@ function headingId(children: ReactNode) {
   return explicit?.[1] ?? text.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 }
 
+/** Normalizes heading content for anchored rendering. */
 function headingChildren(children: ReactNode) {
   return Children.map(children, (child) => typeof child === "string" ? child.replace(/\s*\{#[a-z][a-z0-9-]*\}\s*$/, "") : child);
 }
 
+/** Lazily loads rendered Markdown content. */
 export function MarkdownRenderer({ content, externalEmbeddedPreviews, onResolveLink, onOpenLinkedFile, onLinkError, onAnchorLink }: Props) {
   const [linkError, setLinkError] = useState("");
   const linkGenerationRef = useRef(0);

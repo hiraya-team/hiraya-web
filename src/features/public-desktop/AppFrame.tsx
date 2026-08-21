@@ -4,6 +4,7 @@ import { APPS_UI_RUNTIME } from "../../apps/ui-runtime";
 import { SYSTEM_APP_IDS } from "../../apps/system-app-ids";
 import type { PublicAppRuntime } from "./app-runtime";
 
+/** Renders a read-only public app with its required sandbox policy. */
 export default function PublicAppFrame({ runtime, onNavigation }: { runtime: PublicAppRuntime; onNavigation: () => void }) {
   return <SandboxAppFrame
     package={runtime.app.package}

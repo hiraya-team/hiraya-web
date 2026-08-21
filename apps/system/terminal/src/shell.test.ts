@@ -1,24 +1,39 @@
 import { describe, expect, test } from "bun:test";
 import { HirayaShell, type ShellEntry, type ShellHost } from "./shell";
 
+/** Provides a memory host test double. */
 class MemoryHost implements ShellHost {
   entries = new Map<string, { kind: "file" | "folder"; text: string }>([["/", { kind: "folder", text: "" }], ["/docs", { kind: "folder", text: "" }], ["/docs/readme.txt", { kind: "file", text: "beta\nalpha\nbeta\n" }]]);
   opened = "";
+  /** Lists the available entries. */
   async list(path: string) { this.require(path, "folder"); return [...this.entries].filter(([candidate]) => candidate !== path && candidate.slice(0, candidate.lastIndexOf("/")).replace(/^$/, "/") === path).map(([candidate, value]) => this.entry(candidate, value)); }
+  /** Returns metadata for an entry. */
   async stat(path: string) { const value = this.require(path); return this.entry(path, value); }
+  /** Reads an entry's contents. */
   async read(path: string) { return this.require(path, "file").text; }
+  /** Writes an entry's contents. */
   async write(path: string, text: string, append: boolean) { const current = this.entries.get(path); this.entries.set(path, { kind: "file", text: append ? (current?.text ?? "") + text : text }); }
+  /** Creates or updates a file entry. */
   async touch(path: string) { this.entries.set(path, { kind: "file", text: this.entries.get(path)?.text ?? "" }); }
+  /** Creates a directory entry. */
   async mkdir(path: string) { this.entries.set(path, { kind: "folder", text: "" }); }
+  /** Copies an entry. */
   async copy(source: string, destination: string) { this.entries.set(destination, { ...this.require(source) }); }
+  /** Moves an entry. */
   async move(source: string, destination: string) { this.entries.set(destination, this.require(source)); this.entries.delete(source); }
+  /** Removes an entry. */
   async remove(path: string) { this.entries.delete(path); }
+  /** Records a request to open an entry. */
   async open(path: string) { this.require(path); this.opened = path; }
+  /** Imports an entry. */
   async import() {}
+  /** Returns a required test entry. */
   private require(path: string, kind?: "file" | "folder") { const value = this.entries.get(path); if (!value || kind && value.kind !== kind) throw new Error(`${path}: not found`); return value; }
+  /** Returns the requested entry. */
   private entry(path: string, value: { kind: "file" | "folder"; text: string }): ShellEntry { return { path, name: path.split("/").at(-1) || "/", kind: value.kind, size: value.text.length, modifiedAt: 0 }; }
 }
 
+/** Runs a shell command against the memory host. */
 async function run(shell: HirayaShell, command: string) {
   const output: string[] = [];
   const status = await shell.run(command, (text, tone) => output.push(`${tone ?? "output"}:${text}`));

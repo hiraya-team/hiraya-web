@@ -1,4 +1,5 @@
 import { parseWeb2Session, type Web2Session } from "../sync/session";
+import { WEB2_SYNC_PROTOCOL } from "../sync/constants";
 import { loginUrl } from "./auth-route";
 
 export { loginUrl, safeReturnPath } from "./auth-route";
@@ -12,7 +13,7 @@ export type SessionUser = {
 
 export type AuthSession = {
   schemaVersion: 1;
-  apiProtocol: "web2-sync-v1";
+  apiProtocol: typeof WEB2_SYNC_PROTOCOL;
   accountId: string;
   catalogId: string;
   storageId: string;
@@ -31,17 +32,22 @@ export type AuthSession = {
   publicationBaseUrl: "/published";
 };
 
+/** Defines the auth bootstrap cache key. */
 const AUTH_BOOTSTRAP_CACHE_KEY = "hiraya-auth-bootstrap-web2-v1";
+/** Defines the selected account key. */
 const SELECTED_ACCOUNT_KEY = "hiraya-selected-account-web2-v1";
 type BootstrapStorage = Pick<Storage, "getItem" | "setItem">;
 
+/** Reports authentication required failures. */
 export class AuthenticationRequiredError extends Error {
+  /** Creates a AuthenticationRequiredError instance. */
   constructor() {
     super("Your Hiraya session has expired.");
     this.name = "AuthenticationRequiredError";
   }
 }
 
+/** Reports whether a path is a safe root-relative URL. */
 export function isSafeRootRelativePath(value: string) {
   if (!value.startsWith("/") || value.startsWith("//")) return false;
   try {
@@ -52,6 +58,7 @@ export function isSafeRootRelativePath(value: string) {
   }
 }
 
+/** Selects an authenticated account. */
 function selectedAccount(session: Web2Session, storage?: BootstrapStorage, preferredAccountId?: string) {
   const preferred = preferredAccountId ?? storage?.getItem(SELECTED_ACCOUNT_KEY) ?? null;
   const account = session.accounts.find(({ id }) => id === preferred) ?? session.accounts[0];
@@ -60,13 +67,14 @@ function selectedAccount(session: Web2Session, storage?: BootstrapStorage, prefe
   return account;
 }
 
+/** Parses and validates auth session. */
 export function parseAuthSession(value: unknown, storage?: BootstrapStorage, preferredAccountId?: string): AuthSession {
   const session = parseWeb2Session(value);
   const account = selectedAccount(session, storage, preferredAccountId);
   if (!session.directBlobOrigin) throw new Error("The Web2 session does not provide direct chunk storage.");
   return {
     schemaVersion: 1,
-    apiProtocol: "web2-sync-v1",
+    apiProtocol: WEB2_SYNC_PROTOCOL,
     accountId: account.id,
     catalogId: account.id,
     storageId: account.storageId,
@@ -81,10 +89,12 @@ export function parseAuthSession(value: unknown, storage?: BootstrapStorage, pre
   };
 }
 
+/** Returns redirect to login. */
 export function redirectToLogin() {
   window.location.replace(loginUrl());
 }
 
+/** Validates authenticated response. */
 export function requireAuthenticatedResponse(response: Response, onUnauthorized: () => void = redirectToLogin, storage?: BootstrapStorage) {
   if (response.status !== 401) return response;
   const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
@@ -93,6 +103,7 @@ export function requireAuthenticatedResponse(response: Response, onUnauthorized:
   throw new AuthenticationRequiredError();
 }
 
+/** Reads cached session. */
 export function readCachedSession(storage?: BootstrapStorage): AuthSession | null {
   const bootstrapStorage = storage ?? (typeof localStorage === "undefined" ? undefined : localStorage);
   if (!bootstrapStorage) return null;
@@ -105,10 +116,12 @@ export function readCachedSession(storage?: BootstrapStorage): AuthSession | nul
   }
 }
 
+/** Returns lock auth bootstrap. */
 export function lockAuthBootstrap(storage: BootstrapStorage = localStorage) {
   try { storage.setItem(AUTH_BOOTSTRAP_CACHE_KEY, JSON.stringify({ version: 1, locked: true })); } catch { /* Logout must continue when browser storage is unavailable. */ }
 }
 
+/** Loads and validates the authenticated bootstrap session. */
 export async function bootstrapSession(
   frontendOnly: boolean,
   _fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis),

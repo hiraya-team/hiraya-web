@@ -30,17 +30,22 @@ export type InitialWindowOptions = WindowMinimumSize & {
   stagger?: number;
 };
 
+/** Sets the fallback minimum desktop-window width. */
 export const DEFAULT_WINDOW_MIN_WIDTH = 320;
+/** Sets the fallback minimum desktop-window height. */
 export const DEFAULT_WINDOW_MIN_HEIGHT = 220;
 
+/** Replaces a non-finite numeric value with a fallback. */
 function finite(value: number, fallback = 0) {
   return Number.isFinite(value) ? value : fallback;
 }
 
+/** Clamps a number between lower and upper bounds. */
 function limit(value: number, minimum: number, maximum: number) {
   return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
 }
 
+/** Normalizes requested window dimensions against viewport limits. */
 function dimensions(viewport: WindowViewport) {
   return {
     width: Math.max(0, finite(viewport.width)),
@@ -48,6 +53,7 @@ function dimensions(viewport: WindowViewport) {
   };
 }
 
+/** Normalizes minimum window dimensions against the viewport. */
 function minimums(viewport: WindowViewport, minimumSize: WindowMinimumSize) {
   return {
     width: Math.min(viewport.width, Math.max(0, finite(minimumSize.minWidth ?? DEFAULT_WINDOW_MIN_WIDTH))),
@@ -55,6 +61,7 @@ function minimums(viewport: WindowViewport, minimumSize: WindowMinimumSize) {
   };
 }
 
+/** Clamps window bounds to valid bounds. */
 export function clampWindowBounds(
   bounds: WindowBounds,
   viewportValue: WindowViewport,
@@ -73,6 +80,7 @@ export function clampWindowBounds(
   };
 }
 
+/** Calculates centered initial bounds for a desktop window. */
 export function initialWindowBounds(
   viewportValue: WindowViewport,
   options: InitialWindowOptions = {},
@@ -101,6 +109,7 @@ export function initialWindowBounds(
   }, viewport, options);
 }
 
+/** Applies a directional resize while preserving window limits. */
 export function resizeWindowBounds(
   boundsValue: WindowBounds,
   direction: ResizeDirection,

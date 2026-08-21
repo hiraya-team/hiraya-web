@@ -1,4 +1,5 @@
 import { parseManifestV2, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
+import { APP_PERMISSIONS } from "./permissions";
 import type { SystemAppTarget } from "./types";
 
 type InstalledAppBase = Readonly<{
@@ -18,9 +19,12 @@ export type InstalledApp = InstalledAppBase & Readonly<
 
 export type FileAssociation = Readonly<{ matcher: string; appId: string; createdAt: number }>;
 
+/** Matches canonical lowercase SHA-256 digests. */
 const DIGEST = /^[a-f0-9]{64}$/;
+/** Restricts bundled app archives to the generated system-app directory. */
 const ARCHIVE_PATH = /^system-apps\/[a-z0-9-]+\.hiraya\.app$/;
 
+/** Normalizes and validates a file extension or MIME association matcher. */
 export function normalizeAssociationMatcher(value: string): string {
   const matcher = value.trim().toLowerCase();
   if (matcher.startsWith(".")) {
@@ -31,6 +35,7 @@ export function normalizeAssociationMatcher(value: string): string {
   return matcher;
 }
 
+/** Parses persisted file-association data into its validated domain shape. */
 export function parseFileAssociation(value: unknown): FileAssociation {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("File association must be an object.");
   const item = value as Record<string, unknown>;
@@ -41,6 +46,7 @@ export function parseFileAssociation(value: unknown): FileAssociation {
   return { matcher, appId: item.appId, createdAt: item.createdAt };
 }
 
+/** Parses persisted installed-app data and validates its source metadata. */
 export function parseInstalledApp(value: unknown): InstalledApp {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new TypeError("Installed app must be an object.");
   const item = value as Record<string, unknown>;
@@ -70,10 +76,12 @@ export function parseInstalledApp(value: unknown): InstalledApp {
   return { ...base, source, packageEntryId: item.packageEntryId, archivePath: null };
 }
 
+/** Reports whether a desktop package still matches its approved installation. */
 export function packageMatchesInstall(install: InstalledApp | undefined, packageEntryId: string, digest: string, version: string): boolean {
   return Boolean(install?.source === "desktop" && install.packageEntryId === packageEntryId && install.digest === digest && install.version === version);
 }
 
+/** Reports whether an installation matches a saved running-app identity. */
 export function installedAppMatchesSavedIdentity(install: InstalledApp, saved: Pick<SystemAppTarget, "appId" | "source" | "digest" | "permissions">): boolean {
   if (install.appId !== saved.appId) return false;
   if (!saved.digest) return true;
@@ -84,10 +92,12 @@ export function installedAppMatchesSavedIdentity(install: InstalledApp, saved: P
     && install.manifest.permissions.every((permission) => saved.permissions?.includes(permission));
 }
 
+/** Reports whether an installed app's package remains available. */
 export function installedAppIsAvailable(install: InstalledApp, entries: readonly { id: string; kind: "file" | "folder" }[]): boolean {
   return install.source !== "desktop" || entries.some((entry) => entry.id === install.packageEntryId && entry.kind === "file");
 }
 
+/** Tests a file against a normalized extension or MIME matcher. */
 export function matchingFileType(file: { name: string; mimeType: string }, matcher: string): boolean {
   const type = normalizeAssociationMatcher(matcher);
   const mimeType = file.mimeType.split(";", 1)[0].trim().toLowerCase();
@@ -96,13 +106,15 @@ export function matchingFileType(file: { name: string; mimeType: string }, match
   return type === mimeType;
 }
 
+/** Reports whether an installed app declares support for a file. */
 export function installedAppAcceptsFile(install: InstalledApp, file: { name: string; mimeType: string }): boolean {
   return install.manifest.fileTypes?.some((value) => matchingFileType(file, value)) ?? false;
 }
 
+/** Reports whether an app can safely own an association matcher. */
 export function installedAppAcceptsMatcher(install: InstalledApp, matcher: string): boolean {
   const expected = normalizeAssociationMatcher(matcher);
-  return install.manifest.permissions.includes("files:read") && Boolean(install.manifest.fileTypes?.some((value) => {
+  return install.manifest.permissions.includes(APP_PERMISSIONS.filesRead) && Boolean(install.manifest.fileTypes?.some((value) => {
     const declared = normalizeAssociationMatcher(value);
     if (declared.startsWith(".") || expected.startsWith(".")) return declared === expected;
     if (declared === expected) return true;

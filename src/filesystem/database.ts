@@ -60,10 +60,15 @@ import {
   type PersistedAccountApps,
 } from "../lib/account-app-outbox";
 
+/** Defines the database version. */
 const DATABASE_VERSION = 1;
+/** Defines the file version history limit. */
 const FILE_VERSION_HISTORY_LIMIT = 20;
+/** Defines the maximum number of workspaces. */
 const MAX_WORKSPACES = WEB2_MAX_BATCH_ITEMS;
+/** Defines the stores. */
 const STORES = ["workspaces", "nodes", "manifests", "operations", "changes", "sync", "settings", "hydration-pages", "hydration-coverage", "window-sessions", "device-preferences", "installed-apps", "app-storage", "file-associations", "account-apps", "account-app-outbox", "account-app-client-state"] as const;
+/** Defines the store schema. */
 const STORE_SCHEMA = {
   workspaces: { keyPath: "id", indexes: {} },
   nodes: {
@@ -358,16 +363,22 @@ type StoredResetPlan = { workspaceId: string; targetId: string; pageIndex: -3; k
 type StoredHydrationCoverage = HydrationCoverage;
 type StoredManifest = { hash: string; manifest: Manifest };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
-type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
+/** Identifies records stored once per filesystem database. */
+const SINGLETON_RECORD_ID = "singleton" as const;
+type AccountAppClientState = { id: typeof SINGLETON_RECORD_ID; clientId: string; nextSequence: number };
 
+/** Defines the app ID. */
 const APP_ID = /^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$/;
+/** Defines the reset target ID. */
 const RESET_TARGET_ID = "0".repeat(64);
 
+/** Parses and validates app ID. */
 function parseAppId(value: unknown) {
   if (typeof value !== "string" || value.length > 256 || !APP_ID.test(value)) throw new Error("An app ID is invalid.");
   return value;
 }
 
+/** Parses and validates app storage key. */
 function parseAppStorageKey(value: unknown) {
   if (typeof value !== "string" || value.length === 0 || value.length > 128 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
@@ -376,10 +387,12 @@ function parseAppStorageKey(value: unknown) {
   return value;
 }
 
+/** Returns app storage bytes. */
 function appStorageBytes(key: string, value: JsonValue) {
   return new TextEncoder().encode(JSON.stringify(key)).byteLength + new TextEncoder().encode(JSON.stringify(value)).byteLength;
 }
 
+/** Parses and validates app storage record. */
 function parseAppStorageRecord(value: unknown, expectedAppId?: string): AppStorageRecord {
   if (!isRecord(value)) throw new Error("A stored app data record has an unsupported shape.");
   assertExactKeys(value, ["appId", "key", "value", "bytes"], "A stored app data record has an unsupported shape.");
@@ -391,6 +404,7 @@ function parseAppStorageRecord(value: unknown, expectedAppId?: string): AppStora
   return { appId, key, value: parsed, bytes };
 }
 
+/** Removes app data rows. */
 async function clearAppDataRows(transaction: IDBTransaction, appId: string) {
   const storage = transaction.objectStore("app-storage");
   const associations = transaction.objectStore("file-associations");
@@ -400,11 +414,13 @@ async function clearAppDataRows(transaction: IDBTransaction, appId: string) {
   ]);
 }
 
+/** Parses and validates account app operation ID. */
 function parseAccountAppOperationId(value: unknown) {
   if (typeof value !== "string" || !/^\d{16}$/.test(value)) throw new Error("An account app operation ID is invalid.");
   return value;
 }
 
+/** Reads account app outbox. */
 async function readAccountAppOutbox(store: IDBObjectStore) {
   return (await request(store.getAll())).map((value) => {
     const record = parseAccountAppOutboxRecord(value);
@@ -413,33 +429,36 @@ async function readAccountAppOutbox(store: IDBObjectStore) {
   }).sort((left, right) => left.sequence - right.sequence);
 }
 
+/** Reads account app state. */
 async function readAccountAppState(store: IDBObjectStore, outbox: readonly AccountAppOutboxRecord[]): Promise<PersistedAccountApps> {
-  const value = await request(store.get("singleton"));
-  if (value === undefined) return { id: "singleton", baseline: null, projection: projectAccountApps(null, outbox) };
+  const value = await request(store.get(SINGLETON_RECORD_ID));
+  if (value === undefined) return { id: SINGLETON_RECORD_ID, baseline: null, projection: projectAccountApps(null, outbox) };
   if (!isRecord(value)) throw new Error("Stored account apps have an unsupported shape.");
   assertExactKeys(value, ["id", "baseline", "projection"], "Stored account apps have an unsupported shape.");
-  if (value.id !== "singleton") throw new Error("Stored account apps have an invalid identity.");
+  if (value.id !== SINGLETON_RECORD_ID) throw new Error("Stored account apps have an invalid identity.");
   const baseline = value.baseline === null ? null : parseAccountAppsSnapshot(value.baseline);
   const projection = projectAccountApps(baseline, outbox);
   if (JSON.stringify(value.projection) !== JSON.stringify(projection)) throw new Error("The account app projection does not match its baseline and outbox.");
-  return { id: "singleton", baseline, projection };
+  return { id: SINGLETON_RECORD_ID, baseline, projection };
 }
 
+/** Reserves account app operation. */
 async function reserveAccountAppOperation(store: IDBObjectStore, randomUUID: () => string) {
-  const value = await request(store.get("singleton"));
+  const value = await request(store.get(SINGLETON_RECORD_ID));
   let state: AccountAppClientState;
-  if (value === undefined) state = { id: "singleton", clientId: parseStableId(randomUUID(), "The account app client ID is invalid."), nextSequence: 1 };
+  if (value === undefined) state = { id: SINGLETON_RECORD_ID, clientId: parseStableId(randomUUID(), "The account app client ID is invalid."), nextSequence: 1 };
   else {
     if (!isRecord(value)) throw new Error("The account app operation identity is invalid.");
     assertExactKeys(value, ["id", "clientId", "nextSequence"], "The account app operation identity is invalid.");
-    if (value.id !== "singleton") throw new Error("The account app operation identity is invalid.");
-    state = { id: "singleton", clientId: parseStableId(value.clientId, "The account app client ID is invalid."), nextSequence: parsePositiveSafeInteger(value.nextSequence, "The account app operation sequence is invalid.") };
+    if (value.id !== SINGLETON_RECORD_ID) throw new Error("The account app operation identity is invalid.");
+    state = { id: SINGLETON_RECORD_ID, clientId: parseStableId(value.clientId, "The account app client ID is invalid."), nextSequence: parsePositiveSafeInteger(value.nextSequence, "The account app operation sequence is invalid.") };
   }
   const sequence = state.nextSequence;
   await request(store.put({ ...state, nextSequence: nextSafeInteger(sequence, "The account app operation sequence is exhausted.") } satisfies AccountAppClientState));
   return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
 }
 
+/** Writes local account app data. */
 async function writeLocalAccountAppData(transaction: IDBTransaction, operation: Extract<AccountAppOperation, { kind: "put-data" | "delete-data" | "clear-data" }>) {
   const store = transaction.objectStore("app-storage");
   if (operation.kind === "delete-data") {
@@ -461,6 +480,7 @@ async function writeLocalAccountAppData(transaction: IDBTransaction, operation: 
   await request(store.put({ appId: operation.appId, key, value, bytes } satisfies AppStorageRecord));
 }
 
+/** Restores local account app data. */
 async function restoreLocalAccountAppData(transaction: IDBTransaction, operation: AccountAppOperation, restoration?: AccountAppDataRestoration) {
   if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") {
     if (restoration) throw new Error("That account app change does not restore local data.");
@@ -495,6 +515,7 @@ async function restoreLocalAccountAppData(transaction: IDBTransaction, operation
   await request(store.put({ appId: operation.appId, key: operation.key, value, bytes } satisfies AppStorageRecord));
 }
 
+/** Parses and validates stored window session. */
 function parseStoredWindowSession(value: unknown, expectedWorkspaceId: string) {
   if (!isRecord(value)) throw new Error("A stored window session has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "session"], "A stored window session has an unsupported shape.");
@@ -503,13 +524,15 @@ function parseStoredWindowSession(value: unknown, expectedWorkspaceId: string) {
   return parseWindowSession(value.session);
 }
 
+/** Parses and validates stored device preferences. */
 function parseStoredDevicePreferences(value: unknown) {
   if (!isRecord(value)) throw new Error("Stored device preferences have an unsupported shape.");
   assertExactKeys(value, ["id", "schemaVersion", "preferences"], "Stored device preferences have an unsupported shape.");
-  if (value.id !== "singleton" || value.schemaVersion !== 1) throw new Error("Stored device preferences have an unsupported format.");
+  if (value.id !== SINGLETON_RECORD_ID || value.schemaVersion !== 1) throw new Error("Stored device preferences have an unsupported format.");
   return parseDevicePreferences(value.preferences);
 }
 
+/** Parses and validates stored device identity. */
 function parseStoredDeviceIdentity(value: unknown) {
   if (!isRecord(value)) throw new Error("Stored device identity has an unsupported shape.");
   assertExactKeys(value, ["id", "schemaVersion", "deviceId"], "Stored device identity has an unsupported shape.");
@@ -517,6 +540,7 @@ function parseStoredDeviceIdentity(value: unknown) {
   return parseStableId(value.deviceId, "Stored device identity is invalid.");
 }
 
+/** Resolves an IndexedDB request as a promise. */
 function request<T>(value: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     value.onsuccess = () => resolve(value.result);
@@ -524,6 +548,7 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
   });
 }
 
+/** Resolves when an IndexedDB transaction completes. */
 function transactionDone(transaction: IDBTransaction) {
   return new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -532,6 +557,7 @@ function transactionDone(transaction: IDBTransaction) {
   });
 }
 
+/** Runs work in an IndexedDB transaction. */
 async function transact<T>(db: IDBDatabase, stores: string | string[], mode: IDBTransactionMode, operation: (transaction: IDBTransaction) => Promise<T>) {
   const transaction = mode === "readwrite"
     ? db.transaction(stores, mode, { durability: "strict" })
@@ -548,6 +574,7 @@ async function transact<T>(db: IDBDatabase, stores: string | string[], mode: IDB
   }
 }
 
+/** Parses and validates workspace. */
 function parseWorkspace(value: unknown): Workspace {
   if (!isRecord(value)) throw new Error("A stored workspace has an unsupported shape.");
   assertExactKeys(value, ["id", "name", "pinned", "ordinal", "headSequence", "snapshotBarrier", "logFloor", "localRevision"], "A stored workspace has an unsupported shape.");
@@ -566,10 +593,12 @@ function parseWorkspace(value: unknown): Workspace {
   return workspace;
 }
 
+/** Computes workspace name key. */
 function workspaceNameKey(name: string) {
   return canonicalNameKey(name);
 }
 
+/** Parses and validates workspace list. */
 function parseWorkspaceList(values: unknown[]) {
   const workspaces = values.map(parseWorkspace).sort((left, right) => left.ordinal - right.ordinal);
   if (workspaces.length > MAX_WORKSPACES || workspaces.some(({ ordinal }, index) => ordinal !== index) || new Set(workspaces.map(({ name }) => workspaceNameKey(name))).size !== workspaces.length) throw new Error("Stored workspace directory metadata is invalid.");
@@ -581,6 +610,7 @@ function parseWorkspaceList(values: unknown[]) {
   return workspaces;
 }
 
+/** Parses and validates sync state. */
 function parseSyncState(value: unknown): SyncState {
   if (!isRecord(value)) throw new Error("Stored synchronization state has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "deviceId", "cursor", "lastHydrationAsOf", "lastObservedLogicalTime", "lastLocalLogicalTime"], "Stored synchronization state has an unsupported shape.");
@@ -594,6 +624,7 @@ function parseSyncState(value: unknown): SyncState {
   };
 }
 
+/** Parses and validates hydration generation. */
 function parseHydrationGeneration(value: unknown): HydrationGeneration {
   if (!isRecord(value)) throw new Error("A hydration generation has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "deviceId", "generationId", "target"], "A hydration generation has an unsupported shape.");
@@ -603,6 +634,7 @@ function parseHydrationGeneration(value: unknown): HydrationGeneration {
   return { workspaceId, deviceId: parseStableId(value.deviceId, "A hydration device ID is invalid."), generationId: parseStableId(value.generationId, "A hydration generation ID is invalid."), target };
 }
 
+/** Parses and validates filesystem bootstrap. */
 function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
   if (!isRecord(value)) throw new Error("A filesystem bootstrap has an unsupported shape.");
   assertExactKeys(value, ["accountId", "deviceId", "cursor", "workspaces", "workspace", "rootPage", "workspaceSettings"], "A filesystem bootstrap has an unsupported shape.");
@@ -637,6 +669,7 @@ function parseFilesystemBootstrap(value: unknown): FilesystemBootstrap {
   return { accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
 
+/** Parses and validates filesystem pull operations. */
 function parseFilesystemPullOperations(value: unknown): FilesystemPullOperations {
   if (!isRecord(value)) throw new Error("A filesystem pull has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "operations"], "A filesystem pull has an unsupported shape.");
@@ -670,6 +703,7 @@ function parseFilesystemPullOperations(value: unknown): FilesystemPullOperations
   return { workspaceId, deviceId, fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime, operations };
 }
 
+/** Parses and validates filesystem reset. */
 function parseFilesystemReset(value: unknown): FilesystemReset {
   if (!isRecord(value)) throw new Error("A filesystem reset has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "resetBarrier"], "A filesystem reset has an unsupported shape.");
@@ -688,6 +722,7 @@ function parseFilesystemReset(value: unknown): FilesystemReset {
   return reset;
 }
 
+/** Parses and validates stored hydration header. */
 function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
   if (!isRecord(value)) throw new Error("A stored hydration header has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "deviceId", "generationId", "target", "nextPageIndex", "pageToken", "complete", "lastIdentity"], "A stored hydration header has an unsupported shape.");
@@ -699,6 +734,7 @@ function parseStoredHydrationHeader(value: unknown): StoredHydrationHeader {
   return { ...parseHydrationGeneration({ workspaceId: value.workspaceId, deviceId: value.deviceId, generationId: value.generationId, target: value.target }), targetId: parseSha256(value.targetId, "A hydration target ID is invalid."), pageIndex: -1, kind: "header", nextPageIndex, pageToken, complete: value.complete, lastIdentity: value.lastIdentity };
 }
 
+/** Parses and validates stored hydration page. */
 function parseStoredHydrationPage(value: unknown): StoredHydrationPage {
   if (!isRecord(value)) throw new Error("A stored hydration page has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "requestPageToken", "page"], "A stored hydration page has an unsupported shape.");
@@ -712,6 +748,7 @@ function parseStoredHydrationPage(value: unknown): StoredHydrationPage {
   return { workspaceId, targetId: parseSha256(value.targetId, "A hydration target ID is invalid."), pageIndex, kind: "page", requestPageToken, page };
 }
 
+/** Parses and validates stored bootstrap. */
 function parseStoredBootstrap(value: unknown): StoredBootstrap {
   if (!isRecord(value)) throw new Error("A stored bootstrap has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "bootstrap"], "A stored bootstrap has an unsupported shape.");
@@ -723,6 +760,7 @@ function parseStoredBootstrap(value: unknown): StoredBootstrap {
   return { workspaceId, targetId, pageIndex: -2, kind: "bootstrap", bootstrap };
 }
 
+/** Parses and validates stored reset plan. */
 function parseStoredResetPlan(value: unknown): StoredResetPlan {
   if (!isRecord(value)) throw new Error("A stored reset plan has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "pageIndex", "kind", "resetId", "reset", "targets"], "A stored reset plan has an unsupported shape.");
@@ -735,10 +773,12 @@ function parseStoredResetPlan(value: unknown): StoredResetPlan {
   return { workspaceId, targetId: RESET_TARGET_ID, pageIndex: -3, kind: "reset", resetId: parseStableId(value.resetId, "A reset ID is invalid."), reset, targets };
 }
 
+/** Resets plans. */
 function resetPlans(values: unknown[]) {
   return values.filter((value) => isRecord(value) && value.kind === "reset").map(parseStoredResetPlan);
 }
 
+/** Parses and validates stored hydration coverage. */
 function parseStoredHydrationCoverage(value: unknown): StoredHydrationCoverage {
   if (!isRecord(value)) throw new Error("Stored hydration coverage has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "targetId", "generationId", "target", "memberIds"], "Stored hydration coverage has an unsupported shape.");
@@ -757,10 +797,12 @@ function parseStoredHydrationCoverage(value: unknown): StoredHydrationCoverage {
   return { workspaceId, targetId, generationId, target, memberIds };
 }
 
+/** Returns the identities available for hydration. */
 function available<T>(value: T): CacheQuery<T> {
   return { availability: "available", value };
 }
 
+/** Resolves missing exact. */
 function resolveMissingExact(proofs: Array<{ asOf: number; kind: "positive" | "negative" }>): CacheQuery<undefined> {
   if (proofs.length === 0) return { availability: "unavailable" };
   const freshest = Math.max(...proofs.map(({ asOf }) => asOf));
@@ -770,6 +812,7 @@ function resolveMissingExact(proofs: Array<{ asOf: number; kind: "positive" | "n
       : { availability: "unavailable" };
 }
 
+/** Computes hydration target affected identities. */
 function hydrationTargetAffectedIdentities(target: HydrationTarget) {
   switch (target.kind) {
     case "folder-page": return [`folder:${target.workspaceId}:${target.parentId ?? "root"}`];
@@ -780,10 +823,12 @@ function hydrationTargetAffectedIdentities(target: HydrationTarget) {
   }
 }
 
+/** Computes hydration page identities. */
 function hydrationPageIdentities(page: HydrationPageData) {
   return page.target.kind === "folder-page" ? page.nodes.map(({ id }) => id) : page.target.kind === "setting-namespace" ? page.settings.map(({ key }) => key) : [];
 }
 
+/** Validates stored hydration generation. */
 function validateStoredHydrationGeneration(header: StoredHydrationHeader, pages: StoredHydrationPage[]) {
   if (pages.length !== header.nextPageIndex) throw new Error("Stored hydration page count is inconsistent.");
   let pageToken: string | null = null;
@@ -804,6 +849,7 @@ function validateStoredHydrationGeneration(header: StoredHydrationHeader, pages:
   if (header.pageToken !== pageToken || header.complete !== (pageToken === null && pages.length > 0) || header.lastIdentity !== lastIdentity) throw new Error("Stored hydration progress is inconsistent.");
 }
 
+/** Validates completed hydration generation. */
 async function validateCompletedHydrationGeneration(store: IDBObjectStore, keyRange: typeof IDBKeyRange, header: StoredHydrationHeader) {
   if (!header.complete) return;
   const range = keyRange.bound([header.workspaceId, header.targetId, 0], [header.workspaceId, header.targetId, Number.MAX_SAFE_INTEGER]);
@@ -811,6 +857,7 @@ async function validateCompletedHydrationGeneration(store: IDBObjectStore, keyRa
   validateStoredHydrationGeneration(header, pages);
 }
 
+/** Parses and validates stored node. */
 function parseStoredNode(value: unknown): StoredNode {
   if (!isRecord(value) || typeof value.parentKey !== "string" || typeof value.lifecycleKey !== "string") throw new Error("A stored node has an unsupported shape.");
   const nodeValue = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "parentKey" && key !== "lifecycleKey"));
@@ -820,30 +867,36 @@ function parseStoredNode(value: unknown): StoredNode {
   return { ...node, parentKey, lifecycleKey: node.lifecycle.kind };
 }
 
+/** Parses and validates stored node record. */
 function parseStoredNodeRecord(value: unknown): StoredNodeRecord {
   if (isRecord(value) && value.purged === true) return parseNodeRecord(value) as Extract<NodeRecord, { purged: true }>;
   return parseStoredNode(value);
 }
 
+/** Reports whether a stored node is a purge tombstone. */
 function isPurgeTombstone(value: NodeRecord): value is PurgeTombstone {
   return "purged" in value;
 }
 
+/** Builds a persisted node record. */
 function nodeRecord(value: StoredNode) {
   return parseNode(Object.fromEntries(Object.entries(value).filter(([key]) => key !== "parentKey" && key !== "lifecycleKey")));
 }
 
+/** Converts a node to its persisted database record. */
 function storeNode(value: Node | StoredNode): StoredNode {
   const node = "parentKey" in value ? nodeRecord(value) : parseNode(value);
   return { ...node, parentKey: node.parentId ?? "", lifecycleKey: node.lifecycle.kind };
 }
 
+/** Parses and validates stored manifest. */
 function parseStoredManifest(value: unknown): StoredManifest {
   if (!isRecord(value)) throw new Error("A stored manifest has an unsupported shape.");
   assertExactKeys(value, ["hash", "manifest"], "A stored manifest has an unsupported shape.");
   return { hash: parseSha256(value.hash, "A stored manifest hash is invalid."), manifest: parseManifest(value.manifest) };
 }
 
+/** Validates stored manifest. */
 async function validateStoredManifest(value: unknown, expectedHash?: string) {
   const record = parseStoredManifest(value);
   if (expectedHash !== undefined && record.hash !== expectedHash) throw new Error("Stored manifest identity metadata is inconsistent.");
@@ -851,11 +904,13 @@ async function validateStoredManifest(value: unknown, expectedHash?: string) {
   return record;
 }
 
+/** Parses and validates intent. */
 function parseIntent(value: unknown): OperationIntent {
   if (value !== "forward" && value !== "undo" && value !== "redo" && value !== "restore") throw new Error("An operation intent is invalid.");
   return value;
 }
 
+/** Parses and validates string set. */
 function parseStringSet(value: unknown, message: string) {
   if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item)) throw new Error(message);
   const result = value as string[];
@@ -863,6 +918,7 @@ function parseStringSet(value: unknown, message: string) {
   return result;
 }
 
+/** Parses and validates stored IDs. */
 function parseStoredIds(value: unknown, message: string, allowEmpty = false, maxItems: number | null = WEB2_MAX_BATCH_ITEMS) {
   if (!Array.isArray(value) || !allowEmpty && value.length === 0 || maxItems !== null && value.length > maxItems) throw new Error(message);
   const result = value.map((id) => parseStableId(id, message));
@@ -870,16 +926,19 @@ function parseStoredIds(value: unknown, message: string, allowEmpty = false, max
   return result;
 }
 
+/** Reports whether values are in lexical order. */
 function isSorted(values: readonly string[]) {
   return values.every((value, index) => index === 0 || values[index - 1]! <= value);
 }
 
+/** Parses and validates inverse root. */
 function parseInverseRoot(value: unknown, message: string) {
   if (!isRecord(value)) throw new Error(message);
   assertExactKeys(value, ["nodeId", "parentId"], message);
   return { nodeId: parseStableId(value.nodeId, message), parentId: value.parentId === null ? null : parseStableId(value.parentId, message) };
 }
 
+/** Parses and validates previous setting. */
 function parsePreviousSetting(value: unknown, namespace: SettingNamespace, key: string): PreviousSetting {
   if (!isRecord(value) || typeof value.exists !== "boolean") throw new Error("Stored setting inverse metadata has an unsupported shape.");
   if (!value.exists) {
@@ -890,6 +949,7 @@ function parsePreviousSetting(value: unknown, namespace: SettingNamespace, key: 
   return { exists: true, value: parseWorkspaceSetting(namespace, key, value.value).value };
 }
 
+/** Parses and validates operation inverse. */
 function parseOperationInverse(value: unknown): OperationInverse {
   if (!isRecord(value) || typeof value.kind !== "string") throw new Error("Stored operation inverse metadata has an unsupported shape.");
   switch (value.kind) {
@@ -1019,20 +1079,24 @@ function parseOperationInverse(value: unknown): OperationInverse {
   }
 }
 
+/** Returns node IDs affected by a version operation. */
 function operationVersionNodeIds(operation: LocallyCommittableOperation) {
   if (operation.kind === "create" || operation.kind === "copy") return operation.nodes.filter((node) => node.kind === "file").map(({ id }) => id);
   return operation.kind === "write" ? [operation.nodeId] : [];
 }
 
+/** Collects root IDs created by an operation. */
 function createdRootIds(operation: Extract<WorkspaceOperation, { kind: "create" | "copy" }>) {
   const ids = new Set(operation.nodes.map(({ id }) => id));
   return operation.nodes.filter(({ parentId }) => parentId === null || !ids.has(parentId)).map(({ id }) => id);
 }
 
+/** Reports whether two persisted values are deeply equal. */
 function equalValues(left: unknown, right: unknown) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/** Computes local affected identities. */
 function localAffectedIdentities(operation: LocallyCommittableOperation, inverse: OperationInverse) {
   if (operation.kind === "transfer" && inverse.kind === "transfer") {
     const { source, destination } = transferAffectedIdentities(operation, inverse);
@@ -1072,6 +1136,7 @@ function localAffectedIdentities(operation: LocallyCommittableOperation, inverse
   return [...affected].sort();
 }
 
+/** Transfers affected identities. */
 function transferAffectedIdentities(operation: Extract<LocallyCommittableOperation, { kind: "transfer" }>, inverse: Extract<OperationInverse, { kind: "transfer" }>) {
   const source = new Set<string>();
   const destination = new Set<string>();
@@ -1092,6 +1157,7 @@ function transferAffectedIdentities(operation: Extract<LocallyCommittableOperati
   return { source: [...source].sort(), destination: [...destination].sort() };
 }
 
+/** Returns change for workspace. */
 function changeForWorkspace(stored: StoredOperation, workspaceId: string): ChangeRecord | undefined {
   if (stored.operation.kind === "transfer" && stored.inverse.kind === "transfer") {
     const identities = transferAffectedIdentities(stored.operation, stored.inverse);
@@ -1103,6 +1169,7 @@ function changeForWorkspace(stored: StoredOperation, workspaceId: string): Chang
   return { kind: "operation", workspaceId, revision: stored.localRevision, operationId: stored.operationId, affectedIdentities: stored.affectedIdentities };
 }
 
+/** Parses and validates stored operation. */
 function parseStoredOperation(value: unknown): StoredOperation {
   if (!isRecord(value)) throw new Error("A stored operation has an unsupported shape.");
   const baseKeys = ["operationId", "workspaceId", "localRevision", "destinationLocalRevision", "stateKind", "overlayKind", "intent", "compensatesOperationId", "expectedContentTuple", "operation", "inverse", "affectedIdentities", "versionNodeIds"];
@@ -1197,6 +1264,7 @@ function parseStoredOperation(value: unknown): StoredOperation {
   return stored;
 }
 
+/** Parses and validates change record. */
 function parseChangeRecord(value: unknown): ChangeRecord {
   if (!isRecord(value) || value.kind !== "operation" && value.kind !== "hydration" && value.kind !== "pull" && value.kind !== "reset") throw new Error("A stored change record has an unsupported shape.");
   assertExactKeys(value, value.kind === "hydration" ? ["kind", "workspaceId", "revision", "operationId", "targetId", "affectedIdentities"] : value.kind === "pull" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "affectedIdentities"] : value.kind === "reset" ? ["kind", "workspaceId", "revision", "operationId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime", "affectedIdentities"] : ["kind", "workspaceId", "revision", "operationId", "affectedIdentities"], "A stored change record has an unsupported shape.");
@@ -1227,10 +1295,12 @@ function parseChangeRecord(value: unknown): ChangeRecord {
   return { ...base, kind: "operation" };
 }
 
+/** Determines whether two IndexedDB key paths match. */
 function sameKeyPath(left: string | string[] | null, right: string | readonly string[]) {
   return equalValues(left, right);
 }
 
+/** Validates the IndexedDB store schema. */
 function validateSchema(db: IDBDatabase) {
   if (db.version !== DATABASE_VERSION || !equalValues([...db.objectStoreNames], [...STORES].sort())) throw new Error("The filesystem database schema is malformed.");
   const transaction = db.transaction([...STORES], "readonly");
@@ -1246,6 +1316,7 @@ function validateSchema(db: IDBDatabase) {
   }
 }
 
+/** Creates the IndexedDB store schema. */
 function createSchema(db: IDBDatabase) {
   db.createObjectStore("workspaces", { keyPath: "id" });
   const nodes = db.createObjectStore("nodes", { keyPath: "id" });
@@ -1280,6 +1351,7 @@ function createSchema(db: IDBDatabase) {
   db.createObjectStore("account-app-client-state", { keyPath: "id" });
 }
 
+/** Opens database. */
 function openDatabase(factory: IDBFactory, name: string) {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const open = factory.open(name, DATABASE_VERSION);
@@ -1322,15 +1394,18 @@ function openDatabase(factory: IDBFactory, name: string) {
   });
 }
 
+/** Computes filesystem database name. */
 export async function filesystemDatabaseName(storageId: string) {
   return `${WEB2_INDEXED_DB_PREFIX}${await storageNamespaceHash(storageId)}`;
 }
 
+/** Increments a safe integer without exceeding its maximum. */
 function nextSafeInteger(value: number, message: string) {
   if (value >= Number.MAX_SAFE_INTEGER) throw new Error(message);
   return value + 1;
 }
 
+/** Normalizes commit input. */
 async function normalizeCommitInput(value: CommitOperationInput) {
   if (!isRecord(value) || !("operation" in value) || Object.keys(value).some((key) => !["operation", "manifests", "intent", "compensatesOperationId", "expectedContentTuple"].includes(key))) throw new Error("A filesystem commit has an unsupported shape.");
   if (!isRecord(value.operation) || Object.prototype.hasOwnProperty.call(value.operation, "logicalTime")) throw new Error("An operation draft must not supply a logical time.");
@@ -1366,30 +1441,36 @@ async function normalizeCommitInput(value: CommitOperationInput) {
   };
 }
 
+/** Replays operation. */
 function replayOperation(operation: LocallyCommittableOperation) {
   return { ...operation, logicalTime: 0 };
 }
 
+/** Reports whether a manifest contains the expected hashes. */
 function manifestHashes(operation: LocallyCommittableOperation) {
   if (operation.kind === "create" || operation.kind === "copy") return [...new Set(operation.nodes.filter((node) => node.kind === "file").map(({ manifestHash }) => manifestHash))];
   return operation.kind === "write" ? [operation.manifestHash] : [];
 }
 
+/** Reports whether a stored manifest contains the expected hashes. */
 function storedManifestHashes(stored: StoredOperation) {
   const hashes = manifestHashes(stored.operation);
   if (stored.inverse.kind === "write") hashes.push(stored.inverse.manifestHash);
   return hashes;
 }
 
+/** Computes operation tuple. */
 function operationTuple(stored: StoredOperation) {
   return { logicalTime: stored.operation.logicalTime, operationId: stored.operationId };
 }
 
+/** Reports whether an operation tuple supersedes the current tuple. */
 function tupleApplies(incoming: OperationTuple, current: OperationTuple, missing = false) {
   const compared = compareOperationTuples(incoming, current);
   return compared > 0 || missing && compared === 0;
 }
 
+/** Replays pending operation. */
 function replayPendingOperation(projection: Map<string, NodeRecord>, projectedSettings: Map<string, Setting>, currentSettings: Map<string, Setting>, coveredNodeIds: Set<string>, hierarchyNodes: Set<string>, siblingNodes: Set<string>, deferredOperations: Set<string>, stored: StoredOperation) {
   if (stored.overlayKind !== "active") return;
   const operation = stored.operation;
@@ -1571,6 +1652,7 @@ function replayPendingOperation(projection: Map<string, NodeRecord>, projectedSe
   }
 }
 
+/** Validates projected nodes. */
 function validateProjectedNodes(records: Map<string, NodeRecord>, authoritativeIds: Set<string>, overlayIds: Set<string>, completeSiblingIds: Set<string>, allowAuthoritativePurgeParent: boolean) {
   for (const id of new Set([...overlayIds, ...completeSiblingIds])) {
     const record = records.get(id);
@@ -1602,6 +1684,7 @@ function validateProjectedNodes(records: Map<string, NodeRecord>, authoritativeI
   }
 }
 
+/** Merges cross workspace node. */
 function mergeCrossWorkspaceNode(remote: Node, current: Node) {
   if (remote.id !== current.id || remote.kind !== current.kind || remote.createdAt !== current.createdAt) throw new Error("Hydration changes immutable node metadata.");
   const currentParentWins = compareOperationTuples(current.fieldTuples.parent, remote.fieldTuples.parent) > 0;
@@ -1617,6 +1700,7 @@ function mergeCrossWorkspaceNode(remote: Node, current: Node) {
   return parseNode({ ...base, lifecycle: lifecycle.lifecycle, name: name.name, position: position.position, mimeType: content.mimeType, size: content.size, manifestHash: content.manifestHash, modifiedAt: Math.max(remote.modifiedAt, current.modifiedAt), fieldTuples: { ...base.fieldTuples, lifecycle: lifecycle.fieldTuples.lifecycle, name: name.fieldTuples.name, position: position.fieldTuples.position, content: content.fieldTuples.content } });
 }
 
+/** Merges pulled node. */
 function mergePulledNode(remote: NodeRecord, current: NodeRecord | undefined): NodeRecord {
   if (!current) return remote;
   if (isPurgeTombstone(remote)) return isPurgeTombstone(current) && compareOperationTuples({ logicalTime: current.logicalTime, operationId: current.operationId }, { logicalTime: remote.logicalTime, operationId: remote.operationId }) > 0 ? current : remote;
@@ -1624,6 +1708,7 @@ function mergePulledNode(remote: NodeRecord, current: NodeRecord | undefined): N
   return mergeCrossWorkspaceNode(remote, current);
 }
 
+/** Returns pending node dependencies. */
 function pendingNodeDependencies(stored: StoredOperation) {
   const operation = stored.operation;
   switch (operation.kind) {
@@ -1644,6 +1729,7 @@ function pendingNodeDependencies(stored: StoredOperation) {
   }
 }
 
+/** Returns pending setting dependencies. */
 function pendingSettingDependencies(stored: StoredOperation) {
   const operation = stored.operation;
   if (operation.kind === "set" || operation.kind === "unset") return [{ namespace: operation.namespace, key: operation.key }];
@@ -1652,18 +1738,22 @@ function pendingSettingDependencies(stored: StoredOperation) {
   return [];
 }
 
+/** Retains a rejected operation's optimistic overlay. */
 function retainsOperationOverlay(stored: StoredOperation) {
   return stored.stateKind !== "accepted" && stored.overlayKind === "active";
 }
 
+/** Returns rejected purge node IDs that may be replaced. */
 function replaceableRejectedPurgeNodeIds(operations: StoredOperation[], workspaceId: string) {
   return new Set(operations.filter((stored) => stored.workspaceId === workspaceId && stored.stateKind === "rejected" && stored.overlayKind === "deferred" && stored.inverse.kind === "purge").flatMap((stored) => stored.inverse.kind === "purge" ? stored.inverse.nodeIds : []));
 }
 
+/** Returns node IDs covered by an incoming transfer overlay. */
 function incomingTransferOverlayNodeIds(operations: StoredOperation[], workspaceId: string) {
   return new Set(operations.filter((stored) => retainsOperationOverlay(stored) && stored.overlayKind === "active" && stored.operation.kind === "transfer" && stored.operation.destinationWorkspaceId === workspaceId && stored.workspaceId !== workspaceId && stored.inverse.kind === "transfer").flatMap(({ inverse }) => inverse.kind === "transfer" ? inverse.nodes.map(({ nodeId }) => nodeId) : []));
 }
 
+/** Validates incoming transfer parents. */
 function validateIncomingTransferParents(nodes: Map<string, NodeRecord>, operations: StoredOperation[], workspaceId: string, deferredOperations: Set<string>) {
   for (const stored of operations) {
     const operation = stored.operation;
@@ -1673,6 +1763,7 @@ function validateIncomingTransferParents(nodes: Map<string, NodeRecord>, operati
   }
 }
 
+/** Derives node and setting targets for a reset operation. */
 function deriveResetTargets(reset: FilesystemReset, coverages: StoredHydrationCoverage[], nodes: NodeRecord[], settings: Setting[], operations: StoredOperation[]) {
   const targets = new Map<string, HydrationTarget>();
   const add = (target: HydrationTarget) => targets.set(hydrationTargetId(target), target);
@@ -1703,12 +1794,14 @@ function deriveResetTargets(reset: FilesystemReset, coverages: StoredHydrationCo
   return result;
 }
 
+/** Resets change matches. */
 function resetChangeMatches(change: ChangeRecord, reset: FilesystemReset): change is Extract<ChangeRecord, { kind: "reset" }> {
   return change.kind === "reset" && change.workspaceId === reset.workspaceId && change.fromCursor === reset.fromCursor && change.cursor === reset.cursor && change.headSequence === reset.headSequence && change.snapshotBarrier === reset.snapshotBarrier && change.logFloor === reset.logFloor && change.observedLogicalTime === reset.observedLogicalTime;
 }
 
 type CompletedHydration = { targetId: string; header: StoredHydrationHeader; staged: StoredHydrationPage[] };
 
+/** Projects hydration bases. */
 function projectHydrationBases(completed: CompletedHydration[], currentNodes: Map<string, NodeRecord>, currentSettings: Map<string, Setting>, coverages: StoredHydrationCoverage[], protectedNodeIds: ReadonlySet<string> = new Set(), replaceTombstoneIds: ReadonlySet<string> = new Set()) {
   const projectedNodes = new Map(currentNodes);
   const projectedSettings = new Map(currentSettings);
@@ -1806,6 +1899,7 @@ function projectHydrationBases(completed: CompletedHydration[], currentNodes: Ma
   return { projectedNodes, projectedSettings, authoritativeNodeIds, completeSiblingIds, coveredNodeIds, obsoleteCoverageIds, nextCoverages, allowAuthoritativePurgeParent };
 }
 
+/** Returns file version from operation. */
 function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId: string): FileVersion | undefined {
   if (operation.kind === "write") {
     if (operation.nodeId !== nodeId) return undefined;
@@ -1819,6 +1913,7 @@ function fileVersionFromOperation(operation: LocallyCommittableOperation, nodeId
 
 type LifecycleUndoExpectation = { rootNodeIds: string[]; nodeIds: string[] };
 
+/** Computes lifecycle undo expectation. */
 async function lifecycleUndoExpectation(target: StoredOperation, readOperation: (operationId: string) => Promise<StoredOperation | undefined>, seen = new Set<string>()): Promise<LifecycleUndoExpectation | undefined> {
   if (seen.has(target.operationId)) return undefined;
   seen.add(target.operationId);
@@ -1835,6 +1930,7 @@ async function lifecycleUndoExpectation(target: StoredOperation, readOperation: 
   return { rootNodeIds: target.operation.nodeIds, nodeIds: target.inverse.nodes.map(({ nodeId }) => nodeId).sort() };
 }
 
+/** Opens filesystem database. */
 export async function openFilesystemDatabase(accountId: string, environment: FilesystemDatabaseEnvironment): Promise<FilesystemDatabase> {
   const factory = environment.indexedDB ?? globalThis.indexedDB;
   const keyRange = environment.IDBKeyRange ?? globalThis.IDBKeyRange;
@@ -2027,14 +2123,14 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
     },
 
     readDevicePreferences: () => transact(db, "device-preferences", "readonly", async (transaction) => {
-      const value = await request(transaction.objectStore("device-preferences").get("singleton"));
+      const value = await request(transaction.objectStore("device-preferences").get(SINGLETON_RECORD_ID));
       return value === undefined ? { ...DEFAULT_DEVICE_PREFERENCES } : parseStoredDevicePreferences(value);
     }),
 
     writeDevicePreferences: async (preferences) => {
       const parsed = parseDevicePreferences(preferences);
       await transact(db, "device-preferences", "readwrite", async (transaction) => {
-        await request(transaction.objectStore("device-preferences").put({ id: "singleton", schemaVersion: 1, preferences: parsed }));
+        await request(transaction.objectStore("device-preferences").put({ id: SINGLETON_RECORD_ID, schemaVersion: 1, preferences: parsed }));
       });
     },
 
@@ -2177,7 +2273,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const record = parseAccountAppOutboxRecord({ ...reserved, operation, status: "pending", error: null, errorCode: null, attemptCount: 0, lastAttemptAt: null });
         if (operation.kind === "put-data" || operation.kind === "delete-data" || operation.kind === "clear-data") await writeLocalAccountAppData(transaction, operation);
         await request(outboxStore.add(record));
-        const state = { id: "singleton" as const, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
+        const state = { id: SINGLETON_RECORD_ID, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
         await request(transaction.objectStore("account-apps").put(state));
         return { state, record };
       });
@@ -2193,7 +2289,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
           if (selected !== undefined) await request(outboxStore.delete(parseAccountAppOutboxRecord(selected).sequence));
         }
         const outbox = await readAccountAppOutbox(outboxStore);
-        const state = { id: "singleton" as const, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
+        const state = { id: SINGLETON_RECORD_ID, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
         await request(transaction.objectStore("account-apps").put(state));
         return state;
       });
@@ -2210,7 +2306,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         await request(store.put({ ...selected, status: "blocked", error, errorCode }));
         const outbox = await readAccountAppOutbox(store);
         const current = await readAccountAppState(transaction.objectStore("account-apps"), outbox.map((candidate) => candidate.operationId === operationId ? { ...candidate, status: "pending" as const } : candidate));
-        await request(transaction.objectStore("account-apps").put({ id: "singleton", baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
+        await request(transaction.objectStore("account-apps").put({ id: SINGLETON_RECORD_ID, baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
       });
     },
 
@@ -2228,7 +2324,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const changed = parseAccountAppOutboxRecord({ ...selected, operation: rebaseAccountAppOperation(selected.operation, stored.baseline), status: "pending", error: null, errorCode: null });
         await request(outboxStore.put(changed));
         const outbox = await readAccountAppOutbox(outboxStore);
-        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        await request(accountStore.put({ id: SINGLETON_RECORD_ID, baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
         return changed;
       });
     },
@@ -2246,7 +2342,7 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
         const accountStore = transaction.objectStore("account-apps");
         const outbox = await readAccountAppOutbox(outboxStore);
         const stored = await readAccountAppState(accountStore, [...outbox, selected]);
-        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        await request(accountStore.put({ id: SINGLETON_RECORD_ID, baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
       });
     },
 

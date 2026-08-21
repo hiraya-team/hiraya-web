@@ -4,11 +4,14 @@ import { APPROVED_PACKAGE_ARCHIVES_DIRECTORY, CONTENT_CACHE_DIRECTORY, FILES_DIR
 import { callDatabase } from "./database-client";
 
 export type ContentCacheMarker = { catalogId: string; contentRevision: number; size: number; sha256: string };
+/** Matches a lowercase SHA-256 digest. */
 const SHA256_HEX = /^[a-f0-9]{64}$/;
+/** Identifies staged server content for conflict resolution. */
 const CONFLICT_SERVER = ".content-conflict-server";
 let packageArchiveWork = Promise.resolve();
 let contentWriteWork = Promise.resolve();
 
+/** Serializes package archives. */
 function serializePackageArchives<T>(operation: () => Promise<T>) {
   const locked = () => typeof navigator !== "undefined" && typeof navigator.locks?.request === "function"
     ? navigator.locks.request("hiraya-approved-package-archives", operation)
@@ -18,6 +21,7 @@ function serializePackageArchives<T>(operation: () => Promise<T>) {
   return next;
 }
 
+/** Serializes content writes. */
 function serializeContentWrites<T>(operation: () => Promise<T>) {
   const locked = () => typeof navigator !== "undefined" && typeof navigator.locks?.request === "function"
     ? navigator.locks.request("hiraya-opfs-writes", operation)
@@ -27,15 +31,18 @@ function serializeContentWrites<T>(operation: () => Promise<T>) {
   return next;
 }
 
+/** Computes conflict base name. */
 function conflictBaseName(revision: number) {
   if (!Number.isSafeInteger(revision) || revision < 0) throw new Error("The content conflict base revision is invalid.");
   return `.content-conflict-base-${revision}`;
 }
 
+/** Reports whether content matches its cache marker. */
 export async function contentMatchesCacheMarker(content: Blob, marker: ContentCacheMarker) {
   return content.size === marker.size && await sha256Blob(content) === marker.sha256;
 }
 
+/** Parses and validates content cache marker. */
 export function parseContentCacheMarker(value: unknown): ContentCacheMarker | null {
   if (!value || typeof value !== "object") return null;
   const marker = value as Partial<ContentCacheMarker>;
@@ -43,26 +50,32 @@ export function parseContentCacheMarker(value: unknown): ContentCacheMarker | nu
   return marker as ContentCacheMarker;
 }
 
+/** Returns the persisted files directory. */
 export async function getFilesDirectory() {
   return (await getRoot()).getDirectoryHandle(FILES_DIRECTORY, { create: true });
 }
 
+/** Returns the pending-content directory. */
 async function getPendingDirectory() {
   return (await getRoot()).getDirectoryHandle(PENDING_DIRECTORY, { create: true });
 }
 
+/** Returns the content-cache directory. */
 async function getContentCacheDirectory() {
   return (await getRoot()).getDirectoryHandle(CONTENT_CACHE_DIRECTORY, { create: true });
 }
 
+/** Returns the local-mutations directory. */
 async function getLocalMutationsDirectory() {
   return (await getRoot()).getDirectoryHandle(LOCAL_MUTATIONS_DIRECTORY, { create: true });
 }
 
+/** Returns the approved-package archives directory. */
 async function getApprovedPackageArchivesDirectory() {
   return (await getRoot()).getDirectoryHandle(APPROVED_PACKAGE_ARCHIVES_DIRECTORY, { create: true });
 }
 
+/** Writes handle content. */
 async function writeHandleContent(directory: FileSystemDirectoryHandle, name: string, content: Blob | string) {
   await serializeContentWrites(async () => {
     const handle = await directory.getFileHandle(name, { create: true });
@@ -72,6 +85,7 @@ async function writeHandleContent(directory: FileSystemDirectoryHandle, name: st
   });
 }
 
+/** Reads content cache marker. */
 export async function readContentCacheMarker(id: string): Promise<ContentCacheMarker | null> {
   try {
     const directory = await getContentCacheDirectory();
@@ -85,10 +99,12 @@ export async function readContentCacheMarker(id: string): Promise<ContentCacheMa
   }
 }
 
+/** Writes content cache marker. */
 export async function writeContentCacheMarker(id: string, marker: ContentCacheMarker) {
   await writeHandleContent(await getContentCacheDirectory(), id, JSON.stringify(marker));
 }
 
+/** Removes content cache marker. */
 export async function removeContentCacheMarker(id: string) {
   try {
     await (await getContentCacheDirectory()).removeEntry(id);
@@ -97,6 +113,7 @@ export async function removeContentCacheMarker(id: string) {
   }
 }
 
+/** Removes unretained cached content. */
 export async function removeUnretainedCachedContent(retained: ReadonlySet<string>, cache?: FileSystemDirectoryHandle, files?: FileSystemDirectoryHandle) {
   cache ??= await getContentCacheDirectory();
   files ??= await getFilesDirectory();
@@ -108,14 +125,17 @@ export async function removeUnretainedCachedContent(retained: ReadonlySet<string
   }
 }
 
+/** Writes content. */
 export async function writeContent(id: string, content: Blob | string) {
   await writeHandleContent(await getFilesDirectory(), id, content);
 }
 
+/** Validates package digest. */
 function validatePackageDigest(digest: string) {
   if (!SHA256_HEX.test(digest)) throw new TypeError("Approved package digest is invalid.");
 }
 
+/** Saves approved package archive. */
 export async function saveApprovedPackageArchive(digest: string, archive: Blob, retain?: () => Promise<void>) {
   validatePackageDigest(digest);
   return await serializePackageArchives(async () => {
@@ -125,6 +145,7 @@ export async function saveApprovedPackageArchive(digest: string, archive: Blob, 
   });
 }
 
+/** Reads approved package archive. */
 export async function readApprovedPackageArchive(digest: string) {
   validatePackageDigest(digest);
   const archive = await (await (await getApprovedPackageArchivesDirectory()).getFileHandle(digest)).getFile();
@@ -132,6 +153,7 @@ export async function readApprovedPackageArchive(digest: string) {
   return archive;
 }
 
+/** Removes approved package archive without acquiring serialization locks. */
 async function deleteApprovedPackageArchiveUnsafe(digest: string) {
   try {
     await (await getApprovedPackageArchivesDirectory()).removeEntry(digest);
@@ -140,6 +162,7 @@ async function deleteApprovedPackageArchiveUnsafe(digest: string) {
   }
 }
 
+/** Removes approved package archive. */
 export async function releaseApprovedPackageArchive(digest: string) {
   validatePackageDigest(digest);
   await serializePackageArchives(async () => {
@@ -158,6 +181,7 @@ export type LocalContentJournal = {
 
 type PreparedLocalReplacement = { operationId: string; journal: LocalContentJournal };
 
+/** Rolls back a safely prepared content replacement. */
 export async function rollbackSafeReplacement(
   publish: () => Promise<void>,
   commitMetadata: () => Promise<void>,
@@ -174,6 +198,7 @@ export async function rollbackSafeReplacement(
   try { await cleanup(); } catch (error) { console.warn("Hiraya could not clean up a committed local file journal.", error); }
 }
 
+/** Prepares local content replacement. */
 export async function prepareLocalContentReplacement(desktopId: string, id: string, saved: LocalContentJournal["saved"], content: Blob): Promise<PreparedLocalReplacement> {
   const mutations = await getLocalMutationsDirectory();
   const operationId = crypto.randomUUID();
@@ -195,6 +220,7 @@ export async function prepareLocalContentReplacement(desktopId: string, id: stri
   }
 }
 
+/** Rolls back a prepared local content replacement. */
 async function rollbackPreparedLocalReplacement(operationId: string, journal: LocalContentJournal) {
   const mutations = await getLocalMutationsDirectory();
   const directory = await mutations.getDirectoryHandle(operationId);
@@ -205,6 +231,7 @@ async function rollbackPreparedLocalReplacement(operationId: string, journal: Lo
   await mutations.removeEntry(operationId, { recursive: true });
 }
 
+/** Publishes local content replacement. */
 export async function publishLocalContentReplacement(prepared: PreparedLocalReplacement, commitMetadata: () => Promise<void>) {
   const mutations = await getLocalMutationsDirectory();
   const directory = await mutations.getDirectoryHandle(prepared.operationId);
@@ -216,6 +243,7 @@ export async function publishLocalContentReplacement(prepared: PreparedLocalRepl
   );
 }
 
+/** Recovers interrupted local content replacements. */
 export async function recoverLocalContentReplacements(metadataCommitted: (journal: LocalContentJournal) => Promise<boolean>) {
   const mutations = await getLocalMutationsDirectory();
   const entries = mutations as FileSystemDirectoryHandle & { entries(): AsyncIterableIterator<[string, FileSystemHandle]> };
@@ -236,6 +264,7 @@ export async function recoverLocalContentReplacements(metadataCommitted: (journa
   }
 }
 
+/** Returns content IDs written by an operation. */
 export function operationContentIds(operation: OutboxOperation) {
   if (operation.kind === "save-content") return [operation.entryId];
   if (operation.kind === "create") return operation.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id);
@@ -243,10 +272,12 @@ export function operationContentIds(operation: OutboxOperation) {
   return [];
 }
 
+/** Returns content IDs needed to materialize an operation. */
 export function operationMaterializationContentIds(operation: OutboxOperation) {
   return operation.kind === "install-theme-package" ? [] : operationContentIds(operation);
 }
 
+/** Stages operation contents in directory. */
 export async function stageOperationContentsInDirectory(
   pending: FileSystemDirectoryHandle,
   operationId: string,
@@ -268,10 +299,12 @@ export async function stageOperationContentsInDirectory(
   }
 }
 
+/** Stages operation contents. */
 export async function stageOperationContents(operationId: string, contents: Map<string, Blob>) {
   await stageOperationContentsInDirectory(await getPendingDirectory(), operationId, contents);
 }
 
+/** Reads staged content. */
 export async function readStagedContent(operationId: string, id: string, selectedKey?: string) {
   const pending = await getPendingDirectory();
   const directory = await pending.getDirectoryHandle(operationId);
@@ -290,16 +323,19 @@ export async function readStagedContent(operationId: string, id: string, selecte
   return content;
 }
 
+/** Stages staged content variant. */
 export async function stageStagedContentVariant(operationId: string, content: Blob) {
   return stageStagedContentVariantInDirectory(await (await getPendingDirectory()).getDirectoryHandle(operationId), content);
 }
 
+/** Stages staged content variant in directory. */
 export async function stageStagedContentVariantInDirectory(directory: FileSystemDirectoryHandle, content: Blob, key = `.mine-${crypto.randomUUID()}`, write: (directory: FileSystemDirectoryHandle, name: string, content: Blob) => Promise<void> = writeHandleContent) {
   if (!/^\.mine-[0-9a-f-]{36}$/.test(key)) throw new Error("Pending file content has an invalid storage key.");
   await write(directory, key, content);
   return key;
 }
 
+/** Reads optional staged file. */
 async function readOptionalStagedFile(operationId: string, name: string) {
   try {
     const directory = await (await getPendingDirectory()).getDirectoryHandle(operationId);
@@ -310,22 +346,27 @@ async function readOptionalStagedFile(operationId: string, name: string) {
   }
 }
 
+/** Reads content conflict base. */
 export function readContentConflictBase(operationId: string, revision: number) {
   return readOptionalStagedFile(operationId, conflictBaseName(revision));
 }
 
+/** Reads content conflict server. */
 export function readContentConflictServer(operationId: string) {
   return readOptionalStagedFile(operationId, CONFLICT_SERVER);
 }
 
+/** Writes content conflict base. */
 export async function writeContentConflictBase(operationId: string, revision: number, content: Blob) {
   await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), conflictBaseName(revision), content);
 }
 
+/** Writes content conflict server. */
 export async function writeContentConflictServer(operationId: string, content: Blob) {
   await writeHandleContent(await (await getPendingDirectory()).getDirectoryHandle(operationId), CONFLICT_SERVER, content);
 }
 
+/** Materializes content required by outbox operations. */
 export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = false) {
   if (pruneOrphans) {
     const pending = await getPendingDirectory();
@@ -344,6 +385,7 @@ export async function materializeOutbox(records: OutboxRecord[], pruneOrphans = 
   }
 }
 
+/** Removes staged operation. */
 export async function removeStagedOperation(operationId: string) {
   try {
     await (await getPendingDirectory()).removeEntry(operationId, { recursive: true });

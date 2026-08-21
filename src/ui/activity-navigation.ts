@@ -6,12 +6,14 @@ type ActivityWithEntryIds = ActivityRecord & {
   entryIds?: unknown;
 };
 
+/** Extracts affected desktop entry IDs from an activity record. */
 export function activityEntryIds(activity: ActivityRecord) {
   const candidate = activity as ActivityWithEntryIds;
   const values = [candidate.entryId, ...(Array.isArray(candidate.entryIds) ? candidate.entryIds : [])];
   return [...new Set(values.filter((value): value is string => typeof value === "string" && value.trim().length > 0))];
 }
 
+/** Reports whether an activity record can be opened. */
 export function canOpenActivity(activity: ActivityRecord, currentDesktopId: string, entries: readonly DesktopEntry[], desktopIds: readonly string[]) {
   if ("broken" in activity || !activity.desktopId || activityEntryIds(activity).length === 0) return false;
   if (activity.desktopId !== currentDesktopId) return desktopIds.includes(activity.desktopId);

@@ -1,3 +1,4 @@
+/** Defines the server routes. */
 export const SERVER_ROUTES = {
   login: "/login",
   profile: "/profile",

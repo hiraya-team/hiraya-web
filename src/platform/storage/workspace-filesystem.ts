@@ -59,20 +59,24 @@ type PreparedForestNode =
   | Omit<CreateForestNodeBase, "modifiedAt" | "position"> & { kind: "folder"; position: Position; modifiedAt: number }
   | Omit<CreateForestNodeBase, "modifiedAt" | "position"> & { kind: "file"; position: Position; modifiedAt: number; content: Blob; mimeType: string };
 
+/** Determines whether an object owns a property. */
 function hasOwn(value: Record<string, unknown>, key: string) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
 
+/** Validates an object's exact property shape. */
 function assertShape(value: Record<string, unknown>, required: readonly string[], optional: readonly string[], message: string) {
   const allowed = new Set([...required, ...optional]);
   if (required.some((key) => !hasOwn(value, key)) || Object.keys(value).some((key) => !allowed.has(key))) throw new Error(message);
 }
 
+/** Parses and validates transient key. */
 function parseTransientKey(value: unknown, message: string) {
   if (typeof value !== "string" || value.length === 0) throw new Error(message);
   return value;
 }
 
+/** Parses and validates revision notification. */
 export function parseRevisionNotification(value: unknown) {
   if (!isRecord(value)) return;
   try {
@@ -85,10 +89,12 @@ export function parseRevisionNotification(value: unknown) {
   }
 }
 
+/** Computes filesystem revision channel name. */
 export function filesystemRevisionChannelName(databaseName: string) {
   return `${databaseName}-revisions`;
 }
 
+/** Validates and indexes a forest of incoming nodes. */
 function prepareForest(value: unknown, timestamp: number) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A created forest must contain between 1 and 256 nodes.");
   const nodes = value.map((candidate): PreparedForestNode => {
@@ -138,6 +144,7 @@ function prepareForest(value: unknown, timestamp: number) {
   return { nodes, maxDepth: Math.max(...depths.values()) };
 }
 
+/** Prepares copy roots. */
 function prepareCopyRoots(value: unknown) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A copy must contain between 1 and 256 roots.");
   const roots = value.map((candidate): CopyNodeRoot => {
@@ -191,6 +198,7 @@ export type WorkspaceFilesystem = {
   close(): void;
 };
 
+/** Opens workspace filesystem. */
 export async function openWorkspaceFilesystem(accountId: string, workspaceId: string, environment: WorkspaceFilesystemEnvironment): Promise<WorkspaceFilesystem> {
   const database = await openFilesystemDatabase(accountId, environment);
   try {

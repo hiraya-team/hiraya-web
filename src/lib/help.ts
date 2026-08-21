@@ -1,5 +1,6 @@
 import guideMarkdown from "../../docs/USER_GUIDE.md?raw";
 
+/** Defines the help sections. */
 export const HELP_SECTIONS = [
   { id: "start-here", title: "Start here", summary: "Product model and where work lives", keywords: ["local first", "server", "browser local"] },
   { id: "changelog", title: "Changelog", summary: "Recent user-facing features and where to find them", keywords: ["new", "recent", "features", "updates"] },
@@ -15,10 +16,12 @@ export const HELP_SECTIONS = [
 
 export type HelpSectionId = typeof HELP_SECTIONS[number]["id"];
 
+/** Reports whether a value is a help section ID. */
 export function isHelpSectionId(value: string): value is HelpSectionId {
   return HELP_SECTIONS.some((section) => section.id === value);
 }
 
+/** Returns guide section markdown. */
 export function guideSectionMarkdown(markdown: string, section: HelpSectionId) {
   const heading = new RegExp(`^##\\s+.+?\\s+\\{#${section}\\}\\s*$`, "m");
   const match = heading.exec(markdown);
@@ -28,6 +31,7 @@ export function guideSectionMarkdown(markdown: string, section: HelpSectionId) {
   return next < 0 ? rest.trim() : rest.slice(0, match[0].length + next).trim();
 }
 
+/** Validates guide links. */
 export function validateGuideLinks(markdown: string, headingIds: ReadonlySet<string>) {
   if (/!\[[^\]]*\]\(/.test(markdown)) throw new Error("The user guide must not contain images.");
   if (/\[[^\]\n]+\]\[[^\]\n]*\]/.test(markdown) || /^\[[^\]\n]+\]:\s*/m.test(markdown)) throw new Error("The user guide must use inline fragment links.");
@@ -44,6 +48,7 @@ export function validateGuideLinks(markdown: string, headingIds: ReadonlySet<str
   return targets;
 }
 
+/** Stores the guide heading IDs. */
 const guideHeadingIds = new Set(Array.from(guideMarkdown.matchAll(/^#{1,6}\s+.+?\s+\{#([a-z][a-z0-9-]*)\}\s*$/gm), (match) => match[1]));
 validateGuideLinks(guideMarkdown, guideHeadingIds);
 

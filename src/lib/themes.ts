@@ -4,20 +4,27 @@ import type { CustomTheme, ThemeColors, ThemeDefinition, ThemeFontFamily, ThemeS
 
 export { parseThemeDefinition };
 
+/** Lists the supported built-in theme IDs. */
 export const BUILTIN_THEME_IDS = ["hiraya-dusk", "warm-paper", "midnight-glass", "high-contrast"] as const;
 export type BuiltinThemeId = typeof BUILTIN_THEME_IDS[number];
 
+/** Defines the default theme ID. */
 export const DEFAULT_THEME_ID: BuiltinThemeId = "hiraya-dusk";
+/** Defines the default theme state. */
 export const DEFAULT_THEME_STATE: ThemeState = { selectedThemeId: DEFAULT_THEME_ID, customThemes: [] };
+/** Defines the maximum number of custom themes. */
 export const MAX_CUSTOM_THEMES = 24;
+/** Defines the default theme treatment. */
 export const DEFAULT_THEME_TREATMENT: ThemeTreatment = { gradientStrength: 0, gradientAngle: 135, texture: "none", textureStrength: 0, textureScale: 6, pixelated: false };
 
+/** Defines the Dusk theme color palette. */
 const duskColors: ThemeColors = {
   shell: "#25383d", chrome: "#141c1f", chromeText: "#f4f6f1", window: "#f2f1eb", windowMuted: "#e4e4dd",
   text: "#192229", textMuted: "#59625f", accent: "#e7b964", accentText: "#20261f", border: "#c6c9c1",
   danger: "#983c34", dangerSurface: "#f3dfdc", desktopText: "#ffffff", selection: "#96651d",
 };
 
+/** Defines the built-in themes. */
 export const BUILTIN_THEMES: Record<BuiltinThemeId, { name: string; description: string; definition: ThemeDefinition }> = {
   "hiraya-dusk": {
     name: "Hiraya Dusk",
@@ -69,15 +76,18 @@ export const BUILTIN_THEMES: Record<BuiltinThemeId, { name: string; description:
   },
 };
 
+/** Reports whether an ID belongs to a built-in theme. */
 export function isBuiltinThemeId(value: string): value is BuiltinThemeId {
   return (BUILTIN_THEME_IDS as readonly string[]).includes(value);
 }
 
+/** Converts an unknown value to a plain record. */
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("The theme has an unsupported format.");
   return value as Record<string, unknown>;
 }
 
+/** Reports whether an element contains an interactive control. */
 function containsControl(value: string) {
   return [...value].some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -85,22 +95,26 @@ function containsControl(value: string) {
   });
 }
 
+/** Computes relative luminance. */
 function relativeLuminance(color: string) {
   const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255)
     .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
+/** Computes theme contrast ratio. */
 export function themeContrastRatio(foreground: string, background: string) {
   const first = relativeLuminance(foreground);
   const second = relativeLuminance(background);
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
+/** Computes color channels. */
 function colorChannels(color: string) {
   return [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
 }
 
+/** Mixes two theme colors by the requested ratio. */
 export function mixThemeColors(foreground: string, background: string, foregroundRatio: number) {
   const first = colorChannels(foreground);
   const second = colorChannels(background);
@@ -134,10 +148,12 @@ export type ThemeSemanticRoles = {
   focusChrome: string;
 };
 
+/** Computes strongest contrast. */
 function strongestContrast(background: string, candidates: readonly string[]) {
   return candidates.reduce((best, candidate) => themeContrastRatio(candidate, background) > themeContrastRatio(best, background) ? candidate : best);
 }
 
+/** Computes strongest minimum contrast. */
 function strongestMinimumContrast(backgrounds: readonly string[], candidates: readonly string[]) {
   const minimum = (candidate: string) => Math.min(...backgrounds.map((background) => themeContrastRatio(candidate, background)));
   return candidates.reduce((best, candidate) => minimum(candidate) > minimum(best) ? candidate : best);
@@ -187,6 +203,7 @@ export function themeSemanticRoles(definition: ThemeDefinition): ThemeSemanticRo
 
 export type ThemeContrastCheck = { label: string; foreground: string; background: string; ratio: number; minimum: 3 | 4.5 };
 
+/** Computes theme contrast checks. */
 export function themeContrastChecks(definition: ThemeDefinition): ThemeContrastCheck[] {
   const { colors } = definition;
   const roles = themeSemanticRoles(definition);
@@ -242,10 +259,12 @@ export function themeContrastChecks(definition: ThemeDefinition): ThemeContrastC
   ];
 }
 
+/** Reports whether a theme has contrast issues. */
 export function themeContrastIssues(definition: ThemeDefinition) {
   return themeContrastChecks(definition).filter((check) => check.ratio < check.minimum).map((check) => check.label);
 }
 
+/** Parses and validates custom theme. */
 export function parseCustomTheme(value: unknown): CustomTheme {
   const candidate = record(value);
   const theme = parsePortableCustomTheme(value);
@@ -264,6 +283,7 @@ export function parseCustomTheme(value: unknown): CustomTheme {
   return { ...theme, ...(wallpaper ? { wallpaper } : {}) };
 }
 
+/** Parses and validates theme state. */
 export function parseThemeState(value: unknown): ThemeState {
   const candidate = record(value);
   if (typeof candidate.selectedThemeId !== "string" || !Array.isArray(candidate.customThemes) || candidate.customThemes.length > MAX_CUSTOM_THEMES) {
@@ -281,21 +301,25 @@ export function parseThemeState(value: unknown): ThemeState {
   return { selectedThemeId: candidate.selectedThemeId, customThemes };
 }
 
+/** Resolves theme. */
 export function resolveTheme(state: ThemeState) {
   if (isBuiltinThemeId(state.selectedThemeId)) return BUILTIN_THEMES[state.selectedThemeId].definition;
   return state.customThemes.find((theme) => theme.id === state.selectedThemeId)?.definition ?? BUILTIN_THEMES[DEFAULT_THEME_ID].definition;
 }
 
+/** Defines the font stacks. */
 const FONT_STACKS: Record<ThemeFontFamily, string> = {
   humanist: '"Avenir Next", "Segoe UI", ui-sans-serif, system-ui, sans-serif',
   system: 'system-ui, -apple-system, "Segoe UI", sans-serif',
   mono: 'ui-monospace, "SFMono-Regular", Consolas, "Liberation Mono", monospace',
 };
 
+/** Converts a hexadecimal color to RGB channels. */
 function hexToRgb(hex: string) {
   return `${Number.parseInt(hex.slice(1, 3), 16)} ${Number.parseInt(hex.slice(3, 5), 16)} ${Number.parseInt(hex.slice(5, 7), 16)}`;
 }
 
+/** Returns the CSS texture for a theme treatment. */
 function treatmentTexture(treatment: ThemeTreatment, color: string) {
   if (treatment.texture === "none" || treatment.textureStrength === 0) return "none";
   const ink = `rgb(${hexToRgb(color)} / ${(treatment.textureStrength * 0.18).toFixed(3)})`;
@@ -304,6 +328,7 @@ function treatmentTexture(treatment: ThemeTreatment, color: string) {
     : `conic-gradient(from 90deg, ${ink} 25%, transparent 0 75%, ${ink} 0)`;
 }
 
+/** Computes theme style. */
 export function themeStyle(definition: ThemeDefinition): CSSProperties {
   const { colors, shape, effects, typography, density, motion, iconSize } = definition;
   const treatment = definition.treatment ?? DEFAULT_THEME_TREATMENT;
@@ -375,6 +400,7 @@ export function themeStyle(definition: ThemeDefinition): CSSProperties {
 
 export type DesktopIconMetrics = { width: number; height: number; stepX: number; stepY: number };
 
+/** Computes theme icon metrics. */
 export function themeIconMetrics(definition: ThemeDefinition): DesktopIconMetrics {
   const width = Math.round(definition.iconSize + 38);
   const height = Math.round(definition.iconSize + 42);

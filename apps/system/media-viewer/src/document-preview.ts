@@ -3,6 +3,7 @@ import mammoth from "mammoth";
 import { RTFJS } from "rtf.js";
 import type { ParsedDocumentKind } from "./document-types";
 
+/** Defines allowed markup for parsed document previews. */
 const SANITIZE_OPTIONS = {
   USE_PROFILES: { html: true },
   ALLOW_DATA_ATTR: false,
@@ -11,6 +12,7 @@ const SANITIZE_OPTIONS = {
   FORBID_ATTR: ["href", "srcset", "action", "formaction", "ping", "target"],
 };
 
+/** Builds a sanitized HTML page for document preview. */
 function sanitizedPage(html: string): HTMLElement {
   const page = document.createElement("article");
   page.className = "document-page";
@@ -23,6 +25,7 @@ function sanitizedPage(html: string): HTMLElement {
   return page;
 }
 
+/** Renders parsed document. */
 export async function renderParsedDocument(kind: ParsedDocumentKind, data: ArrayBuffer): Promise<HTMLElement> {
   if (kind === "docx") {
     const result = await mammoth.convertToHtml({ arrayBuffer: data }, { externalFileAccess: false, includeEmbeddedStyleMap: false });

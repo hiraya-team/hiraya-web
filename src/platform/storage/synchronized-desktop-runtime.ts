@@ -4,6 +4,7 @@ import { WEB2_MAX_BATCH_ITEMS, sha256Hex } from "../../filesystem/model";
 import { createHydrationCoordinator } from "../../sync/hydration";
 import { openAccountSyncClient, type AccountSyncClient } from "../../sync/engine";
 import { createWeb2SyncRuntime, type Web2SyncRuntime } from "../../sync/runtime";
+import { WEB2_SYNC_PROTOCOL } from "../../sync/constants";
 import {
   Web2HTTPError,
   Web2NetworkError,
@@ -27,6 +28,7 @@ import type { DesktopRegistry, SyncStatus } from "./runtime-types";
 import { publishSynchronizedAccountAppsRevision, synchronizedSession } from "./synchronized-session";
 import { openWorkspaceCatalog } from "./workspace-catalog";
 
+/** Maps workspace roles to desktop capabilities. */
 const roleCapabilities: Record<DesktopIdentity["role"], DesktopCapabilities> = {
   owner: { read: true, write: true, manage: true, delete: true, settings: true, activity: true },
   manager: { read: true, write: true, manage: true, delete: false, settings: true, activity: true },
@@ -35,7 +37,9 @@ const roleCapabilities: Record<DesktopIdentity["role"], DesktopCapabilities> = {
 };
 
 let status: SyncStatus = navigator.onLine ? "connecting" : "offline";
+/** Tracks status listeners. */
 const statusListeners = new Set<(next: SyncStatus) => void>();
+/** Lists supported workspace roles. */
 const workspaceRoles = new Map<string, DesktopIdentity["role"]>();
 let syncRuntime: Web2SyncRuntime | undefined;
 let syncClient: AccountSyncClient | undefined;
@@ -45,12 +49,14 @@ let opfsRoot: FileSystemDirectoryHandle | undefined;
 let startupPromise: Promise<LocalWeb2Startup> | undefined;
 let startupValue: LocalWeb2Startup | undefined;
 
+/** Sets status. */
 function setStatus(next: SyncStatus) {
   if (status === next) return;
   status = next;
   statusListeners.forEach((listener) => listener(next));
 }
 
+/** Returns authentication failure. */
 function authenticationFailure(error: unknown) {
   if (!(error instanceof Web2HTTPError) || error.status !== 401) return false;
   lockAuthBootstrap();
@@ -58,6 +64,7 @@ function authenticationFailure(error: unknown) {
   return true;
 }
 
+/** Returns the synchronized account identity. */
 function identity(workspace: Workspace, accountId: string, user: { id: string; displayName: string }): DesktopIdentity {
   const role = workspaceRoles.get(workspace.id) ?? "owner";
   return {
@@ -72,6 +79,7 @@ function identity(workspace: Workspace, accountId: string, user: { id: string; d
   };
 }
 
+/** Reconciles directory. */
 async function reconcileDirectory() {
   if (!startupValue || !syncRuntime) return;
   const selected = synchronizedSession();
@@ -94,6 +102,7 @@ async function reconcileDirectory() {
   if (refreshed.length === account.workspaces.length) await startupValue.catalog.setWorkspacePreferences(account.workspaces.map(({ id, pinned }) => ({ id, pinned })));
 }
 
+/** Validates and prepares a synchronized file manifest. */
 async function prepareManifest(workspaceId: string, manifestHash: string) {
   const session = synchronizedSession();
   const storedManifest = await syncDatabase!.getManifest(manifestHash);
@@ -105,11 +114,12 @@ async function prepareManifest(workspaceId: string, manifestHash: string) {
     if (haveChunks.length === storedManifest.chunks.length) return;
   }
   const sync = await syncDatabase!.getSyncState(workspaceId);
-  const result = await negotiateWeb2ChunkDownload({ schemaVersion: 1, protocol: "web2-sync-v1", kind: "chunk-download-request", workspaceId, deviceId: sync.deviceId, manifestHash, haveChunks }, session.directBlobOrigin);
+  const result = await negotiateWeb2ChunkDownload({ schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, kind: "chunk-download-request", workspaceId, deviceId: sync.deviceId, manifestHash, haveChunks }, session.directBlobOrigin);
   await syncDatabase!.storeManifest(result.manifestHash, result.manifest);
   for (const descriptor of result.chunks) await writeChunk(opfsRoot!, { hash: descriptor.hash, size: descriptor.size }, new Blob([await downloadWeb2Chunk(descriptor)]));
 }
 
+/** Initializes synchronized storage and the active desktop runtime. */
 async function initialize(): Promise<LocalWeb2Startup> {
   const session = synchronizedSession();
   const { accountId, storageId } = configureAccountStorage(session.accountId, session.storageId);
@@ -163,11 +173,14 @@ async function initialize(): Promise<LocalWeb2Startup> {
   return startupValue = { accountId, storageId, deviceId, activeWorkspaceId: active.id, catalog };
 }
 
+/** Starts up. */
 function startup() {
   return startupPromise ??= initialize();
 }
 
+/** Stores the active synchronized session. */
 const session = synchronizedSession();
+/** Returns the current workspace registry. */
 const registry = (workspaces: Workspace[], active: Workspace): DesktopRegistry => ({
   schemaVersion: 2,
   catalogId: session.accountId,
@@ -177,6 +190,7 @@ const registry = (workspaces: Workspace[], active: Workspace): DesktopRegistry =
   quota: null,
 });
 
+/** Stores the active synchronized desktop runtime. */
 const runtime = new ProjectedDesktopRuntime({
   initialize: startup,
   status: () => status,
@@ -221,7 +235,7 @@ const runtime = new ProjectedDesktopRuntime({
   },
   createWorkspace: async (current, name) => {
     const id = crypto.randomUUID();
-    await createWeb2Workspace(session.accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: "web2-sync-v1", id, name });
+    await createWeb2Workspace(session.accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, id, name });
     workspaceRoles.set(id, "owner");
     const workspace = await current.catalog.createWorkspace({ id, name });
     await syncRuntime!.bootstrap(id);
@@ -229,11 +243,11 @@ const runtime = new ProjectedDesktopRuntime({
     return workspace;
   },
   updateWorkspacePreferences: async (current, preferences) => {
-    await setWeb2WorkspacePreferences(session.accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: "web2-sync-v1", workspaces: preferences });
+    await setWeb2WorkspacePreferences(session.accountId, crypto.randomUUID(), { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, workspaces: preferences });
     await current.catalog.setWorkspacePreferences(preferences);
   },
   renameWorkspace: async (current, workspaceId, name) => {
-    await renameWeb2Workspace(workspaceId, crypto.randomUUID(), { schemaVersion: 1, protocol: "web2-sync-v1", name });
+    await renameWeb2Workspace(workspaceId, crypto.randomUUID(), { schemaVersion: 1, protocol: WEB2_SYNC_PROTOCOL, name });
     return current.catalog.renameWorkspace(workspaceId, name);
   },
   deleteWorkspace: async (current, workspaceId) => {

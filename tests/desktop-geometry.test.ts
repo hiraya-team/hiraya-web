@@ -3,6 +3,7 @@ import { DEFAULT_GRID_SIZE, type DesktopEntry } from "../src/types";
 import { arrangeDesktopAroundObstacle, arrangeDesktopDrag, arrangeDesktopSegment, boundsIntersectSegment, clampShellItemBounds, desktopShellItemObstacles, desktopSlots, iconAreaSize, intersectingSegments, nextAvailableDesktopSlot, positionOverlapsObstacles, projectLogicalAxis, projectLogicalPosition, responsiveDesktop, restoreLogicalPosition, snapAxis, snapShellItemBounds } from "../src/ui/desktop-geometry";
 import { adjacentArea } from "../src/ui/desktop-areas";
 
+/** Creates a file test fixture. */
 function file(id: string, x = 22, y = 22): DesktopEntry {
   return { kind: "file", id, name: `${id}.txt`, parentId: null, modifiedAt: 1, position: { x, y }, mimeType: "text/plain", size: 0 };
 }

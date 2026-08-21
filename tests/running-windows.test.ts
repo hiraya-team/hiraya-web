@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { runningAppIds, runningAppIsInSegment, runningAppSegment, runningAppTargets, topRunningAppInSegment, type RunningApp } from "../src/features/windows/model";
 import { createRouteHistoryState, parseRunningAppHistory, routeForRunningApp } from "../src/features/windows/history";
 
+/** Provides the size test fixture. */
 const size = { width: 1000, height: 700 };
+/** Provides the apps test fixture. */
 const apps: RunningApp[] = [
   { id: "settings", kind: "settings", bounds: { x: 20, y: 20, width: 500, height: 400 }, minimized: false, zIndex: 2 },
   { id: "folder", kind: "explorer", folderId: "folder-id", bounds: { x: 1020, y: 20, width: 500, height: 400 }, minimized: false, zIndex: 4 },

@@ -1,6 +1,8 @@
 import { diff3Merge } from "node-diff3";
 
+/** Defines the maximum byte size for a three-way text merge. */
 export const THREE_WAY_TEXT_MERGE_MAX_BYTES = 1024 * 1024;
+/** Defines the maximum line count for a three-way text merge. */
 export const THREE_WAY_TEXT_MERGE_MAX_LINES = 20_000;
 
 export type ThreeWayTextMergeSource = "base" | "mine" | "server";
@@ -19,12 +21,15 @@ export type ThreeWayTextMergeResult =
   | { status: "conflict"; regions: ThreeWayTextMergeRegion[] }
   | { status: "unavailable"; reason: ThreeWayTextMergeUnavailableReason };
 
+/** Decodes UTF-8 bytes for text merging. */
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
+/** Splits text into mergeable lines. */
 function lines(text: string) {
   return text.match(/[^\r\n]*(?:\r\n|\r|\n)|[^\r\n]+$/g) ?? [];
 }
 
+/** Decodes a text version within the merge size limit. */
 function decode(source: ThreeWayTextMergeSource, bytes: Uint8Array): string | ThreeWayTextMergeUnavailableReason {
   if (bytes.byteLength > THREE_WAY_TEXT_MERGE_MAX_BYTES) {
     return { kind: "too-large", source, limitBytes: THREE_WAY_TEXT_MERGE_MAX_BYTES };
@@ -43,6 +48,7 @@ function decode(source: ThreeWayTextMergeSource, bytes: Uint8Array): string | Th
   return text;
 }
 
+/** Performs a three-way text merge. */
 export function mergeThreeWayText(baseBytes: Uint8Array, mineBytes: Uint8Array, serverBytes: Uint8Array): ThreeWayTextMergeResult {
   const decoded: Partial<Record<ThreeWayTextMergeSource, string>> = {};
   for (const [source, bytes] of [["base", baseBytes], ["mine", mineBytes], ["server", serverBytes]] as const) {

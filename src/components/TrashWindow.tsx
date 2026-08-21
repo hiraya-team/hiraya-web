@@ -11,12 +11,14 @@ export type TrashWindowProps = {
   readOnly?: boolean;
 };
 
+/** Finds the deletion timestamp used to sort a trash item. */
 function deletedAt(timestamp: number) {
   const date = new Date(timestamp);
   if (Number.isNaN(date.valueOf())) return { label: "Unknown deletion time", iso: undefined };
   return { label: new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date), iso: date.toISOString() };
 }
 
+/** Renders the trash window interface. */
 export function TrashWindow({ onListTrash, onRestore, onPermanentlyDelete, onRequestPermanentDelete, readOnly = false }: TrashWindowProps) {
   const [items, setItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(true);

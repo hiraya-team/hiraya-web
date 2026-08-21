@@ -4,17 +4,21 @@ import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isReco
 import { parseThemeState } from "./themes";
 import { DEFAULT_FILE_CREATION_TEMPLATES } from "./file-creation-templates";
 
+/** Defines the default editor settings. */
 export const DEFAULT_EDITOR_SETTINGS: EditorSettings = { autoSave: true, autoFormat: false, fontSize: 13, language: "auto", lineWrap: true, fileCreationTemplates: DEFAULT_FILE_CREATION_TEMPLATES };
 
+/** Returns empty sync state. */
 export function emptySyncState(): DesktopSyncState {
   return { catalogId: null, catalogRevision: 0, entryRevisions: {}, contentRevisions: {}, layoutRevision: 0, settingsRevision: 0, themeSelectionRevision: 0, themeRevisions: {} };
 }
 
+/** Parses and validates revision map. */
 function parseRevisionMap(value: unknown) {
   if (!isRecord(value)) throw new Error("The desktop sync state has an unsupported format.");
   return Object.fromEntries(Object.entries(value).map(([id, revision]) => [id, readRevision(revision)]));
 }
 
+/** Parses and validates sync state. */
 function parseSyncState(value: unknown): DesktopSyncState {
   if (!isRecord(value)) throw new Error("The desktop sync state has an unsupported format.");
   return {
@@ -32,6 +36,7 @@ function parseSyncState(value: unknown): DesktopSyncState {
   };
 }
 
+/** Parses and validates desktop state. */
 export function parseDesktopState(value: unknown): PersistedDesktopState {
   if (!isRecord(value)) throw new Error("The desktop state has an unsupported format.");
   const entries = parseEntries(value.entries);
@@ -54,10 +59,12 @@ export function parseDesktopState(value: unknown): PersistedDesktopState {
   };
 }
 
+/** Computes desktop state layout. */
 export function desktopStateLayout(state: PersistedDesktopState): DesktopLayout {
   return { autoArrangeIcons: state.autoArrangeIcons, snapToGrid: state.snapToGrid, gridSize: state.gridSize, wallpaper: state.wallpaper, widgets: state.widgets, iconGroups: state.iconGroups };
 }
 
+/** Computes local entry. */
 function localEntry(entry: RemoteEntry): DesktopEntry {
   const { revision: _revision, contentRevision: _contentRevision, ...local } = entry;
   void _revision;
@@ -65,6 +72,7 @@ function localEntry(entry: RemoteEntry): DesktopEntry {
   return local;
 }
 
+/** Computes remote desktop snapshot. */
 export function remoteDesktopSnapshot(remote: RemoteDesktopState, includedEntryIds?: ReadonlySet<string>): DesktopStateSnapshot {
   const entries = includedEntryIds ? remote.entries.filter((entry) => includedEntryIds.has(entry.id)) : remote.entries;
   const entryRevisions: Record<string, number> = {};

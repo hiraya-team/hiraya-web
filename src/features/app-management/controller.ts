@@ -19,7 +19,7 @@ import {
 } from "../../platform/storage/app-repositories";
 import { readApprovedPackageArchive, releaseApprovedPackageArchive } from "../../platform/storage/package-archives";
 import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
-import { AccountAppsClient, type AccountAppsClientState } from "./account-sync";
+import type { AccountAppsClient, AccountAppsClientState } from "./account-sync";
 import { accountApprovalMatches, type AccountApp, type AccountAppsSnapshot } from "../../lib/account-apps";
 import { useStableHandler } from "../../ui/use-stable-handler";
 
@@ -29,9 +29,11 @@ type AppPlatformOptions = {
   onCloseRequest: (owner: AppInstanceOwner) => boolean | void | Promise<boolean | void>;
   onError: (error: Error) => void;
   accountSyncOrigin: string | null;
+  createAccountAppsClient: (directBlobOrigin: string) => AccountAppsClient | null;
 };
 
-export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError, accountSyncOrigin }: AppPlatformOptions) {
+/** Composes hosted-app services, installations, and optional account sync. */
+export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError, accountSyncOrigin, createAccountAppsClient }: AppPlatformOptions) {
   const closeRequestRef = useRef(onCloseRequest);
   closeRequestRef.current = onCloseRequest;
   const errorRef = useRef(onError);
@@ -40,7 +42,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
 
   const lifecycle = useMemo(() => new AppLifecycleService(2_000, (owner) => closeRequestRef.current(owner)), []);
   const theme = useMemo(() => new AppThemeService(initialThemeRef.current), []);
-  const accountClient = useMemo(() => accountSyncOrigin ? new AccountAppsClient(accountSyncOrigin) : null, [accountSyncOrigin]);
+  const accountClient = useMemo(() => accountSyncOrigin ? createAccountAppsClient(accountSyncOrigin) : null, [accountSyncOrigin, createAccountAppsClient]);
   const hostServices = useMemo(() => new AppHostServices(lifecycle, theme, new AppPersistentStorageService(accountClient ? {
     get: (appId, key) => accountClient.owns(appId) ? accountClient.getData(appId, key) : readAppStorage(appId, key),
     set: (appId, key, value, maxBytes, maxEntries) => accountClient.owns(appId) ? accountClient.setData(appId, key, value).then(() => undefined) : writeAppStorage(appId, key, value, maxBytes, maxEntries),
@@ -279,6 +281,7 @@ export function useAppPlatform({ enabled, initialTheme, onCloseRequest, onError,
   };
 }
 
+/** Reports whether an installed system app matches its bundled catalog item. */
 export function systemInstallMatchesCatalog(install: InstalledApp, item: SystemAppCatalogItem): boolean {
   return install.source === "system"
     && install.appId === item.manifest.id

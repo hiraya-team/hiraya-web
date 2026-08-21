@@ -18,8 +18,10 @@ type Props = {
   onCreateFolder?: (name: string, parentId: string | null) => Promise<FolderEntry>;
 };
 
+/** Identifies the synthetic root shown by the app file picker. */
 const ROOT_ID = "desktop-root";
 
+/** Renders the app picker dialog interface. */
 export function AppPickerDialog({ request, entries, onCancel, onOpenFiles, onOpenFolder, onSave, onCreateFolder }: Props) {
   const pickingFile = request.kind === "openFile" || request.kind === "pickFile";
   const dialogRef = useRef<HTMLDialogElement>(null);

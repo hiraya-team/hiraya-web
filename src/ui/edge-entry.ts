@@ -1,5 +1,6 @@
 export type EdgeDirection = "left" | "right" | "up" | "down";
 
+/** Sets the pointer dwell required to cross a browser edge. */
 export const EDGE_DWELL_MS = 700;
 
 export type EdgeDwellState = {
@@ -13,11 +14,13 @@ type EdgeDwellTimers = {
   clear: (timer: number) => void;
 };
 
+/** Tracks edge-dwell timers by pointer ID. */
 export const browserEdgeDwellTimers: EdgeDwellTimers = {
   set: (callback, delay) => window.setTimeout(callback, delay),
   clear: (timer) => window.clearTimeout(timer),
 };
 
+/** Tracks pointer dwell at a browser edge before navigation. */
 export function updateEdgeDwell(
   state: EdgeDwellState,
   direction: EdgeDirection | null,
@@ -42,6 +45,7 @@ export function updateEdgeDwell(
   }, EDGE_DWELL_MS);
 }
 
+/** Resets pointer dwell tracking at the browser edge. */
 export function resetEdgeDwell(state: EdgeDwellState, onChange: (direction: EdgeDirection | null) => void, timers: EdgeDwellTimers) {
   if (state.timer !== null) timers.clear(state.timer);
   if (state.direction !== null) onChange(null);

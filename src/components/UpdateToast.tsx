@@ -9,6 +9,7 @@ type Props = {
   onDismiss: () => void;
 };
 
+/** Renders the update toast interface. */
 export function UpdateToast({ applying, blocked, onConfirm, onDismiss }: Props) {
   const titleId = useId();
   const descriptionId = useId();

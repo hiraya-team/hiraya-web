@@ -4,33 +4,44 @@ import { supportsThumbnailMime, THUMBNAIL_MAX_SOURCE_SIZE, THUMBNAIL_PROFILE } f
 import type { DesktopEntry, FileEntry } from "../types";
 import { withoutDotEntries } from "./hidden-entries";
 
+/** Namespaces synthetic thumbnail entries. */
 export const VIRTUAL_THUMBNAIL_PREFIX = "virtual:thumbnail/";
+/** Namespaces protected synthetic shell entries. */
 export const VIRTUAL_PROTECTED_PREFIX = "virtual:protected/";
+/** Identifies the synthetic protected-resource root folder. */
 export const VIRTUAL_HIRAYA_ROOT_ID = `${VIRTUAL_THUMBNAIL_PREFIX}.hiraya`;
 
+/** Provides the origin used by synthetic shell entries. */
 const position = { x: 0, y: 0 };
+/** Creates a synthetic folder for the protected shell hierarchy. */
 const folder = (id: string, name: string, parentId: string | null, modifiedAt: number): DesktopEntry => ({ kind: "folder", id, name, parentId, createdAt: null, modifiedAt, position });
 
+/** Reports whether an entry belongs to the protected shell hierarchy. */
 export function isProtectedShellEntry(entryOrId: DesktopEntry | string | null | undefined) {
   const id = typeof entryOrId === "string" ? entryOrId : entryOrId?.id;
   return Boolean(id?.startsWith(VIRTUAL_THUMBNAIL_PREFIX) || id?.startsWith(VIRTUAL_PROTECTED_PREFIX));
 }
 
+/** Reports whether an entry belongs to the protected virtual hierarchy. */
 export const isVirtualThumbnailEntry = isProtectedShellEntry;
 
+/** Reports whether a shell drop may mutate the destination. */
 export function canMutateShellDrop(entryOrId: DesktopEntry | string, destinationParentId: string | null) {
   return !isProtectedShellEntry(entryOrId) && !isProtectedShellEntry(destinationParentId);
 }
 
+/** Removes stale IDs from a desktop selection. */
 export function canonicalSelectionIds(entries: readonly DesktopEntry[], ids: readonly string[]) {
   const canonical = new Set(entries.map((entry) => entry.id));
   return ids.filter((id) => canonical.has(id));
 }
 
+/** Chooses whether a protected window stays open, reloads, or closes. */
 export function protectedWindowDisposition(openRevision: number, currentRevision: number | null) {
   return currentRevision === null ? "close" : currentRevision === openRevision ? "keep" : "reload";
 }
 
+/** Decodes the source identity from a virtual thumbnail entry. */
 export function virtualThumbnailSource(entryOrId: DesktopEntry | string): { entryId: string; contentRevision: number } | null {
   const id = typeof entryOrId === "string" ? entryOrId : entryOrId.id;
   const match = /^virtual:thumbnail\/file\/([^/]+)\/(\d+)$/.exec(id);
@@ -45,6 +56,7 @@ export type ProtectedShellSource =
   | { kind: "trash"; rootId: string; entryId: string }
   | { kind: "account"; resourceId: string };
 
+/** Decodes the backing source of a protected shell entry. */
 export function protectedShellSource(entryOrId: DesktopEntry | string): ProtectedShellSource | null {
   const id = typeof entryOrId === "string" ? entryOrId : entryOrId.id;
   const system = /^virtual:protected\/system\/([^/]+)$/.exec(id);
@@ -58,10 +70,12 @@ export function protectedShellSource(entryOrId: DesktopEntry | string): Protecte
   return null;
 }
 
+/** Updates virtual thumbnail metadata from downloaded bytes. */
 export function downloadedThumbnailEntry(file: FileEntry, blob: Blob): FileEntry {
   return { ...file, mimeType: blob.type || "image/webp", size: blob.size };
 }
 
+/** Chooses a case-insensitively unique name within a folder. */
 function availableName(name: string, used: Set<string>) {
   if (!used.has(name.toLowerCase())) {
     used.add(name.toLowerCase());
@@ -79,6 +93,7 @@ function availableName(name: string, used: Set<string>) {
   }
 }
 
+/** Combines visible desktop entries with protected virtual resources. */
 export function shellEntries(
   entries: readonly DesktopEntry[],
   contentRevisions: Readonly<Record<string, number>>,

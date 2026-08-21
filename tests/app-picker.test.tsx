@@ -4,6 +4,7 @@ import { AppPickerDialog } from "../src/components/AppPickerDialog";
 import type { DialogRequest } from "../src/apps/host/dialogs";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the entries test fixture. */
 const entries: DesktopEntry[] = [
   { id: "projects", kind: "folder", name: "Projects", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
   { id: "archive", kind: "folder", name: "Archive", parentId: "projects", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 } },
@@ -12,10 +13,12 @@ const entries: DesktopEntry[] = [
   { id: "image", kind: "file", name: "a-very-long-screenshot-name.png", parentId: "projects", createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "image/png", size: 20 },
 ];
 
+/** Builds the request test fixture. */
 function request(params: Extract<DialogRequest, { kind: "openFile" }>["params"] = {}): Extract<DialogRequest, { kind: "openFile" }> {
   return { id: "dialog", owner: { appId: "test.viewer", instanceId: "one" }, kind: "openFile", params };
 }
 
+/** Builds the render test fixture. */
 function render(dialogRequest: Extract<DialogRequest, { kind: "openFile" | "openFolder" | "saveFile" }> = request(), desktopEntries = entries, canCreateFolder = false) {
   return renderToStaticMarkup(<AppPickerDialog
     request={dialogRequest}

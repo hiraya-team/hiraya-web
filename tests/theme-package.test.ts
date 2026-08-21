@@ -4,6 +4,7 @@ import { strToU8, zipSync } from "fflate";
 import { BUILTIN_THEMES } from "../src/lib/themes";
 import { fetchThemePackage } from "../src/lib/theme-package";
 
+/** Creates an archive test fixture. */
 function archive(id = "aurora") {
   return zipSync({
     [THEME_MANIFEST_PATH]: strToU8(JSON.stringify({ schemaVersion: 1, id, name: "Aurora", definition: BUILTIN_THEMES["hiraya-dusk"].definition, wallpaper: { kind: "static", entrypoint: "wallpaper.png" } })),

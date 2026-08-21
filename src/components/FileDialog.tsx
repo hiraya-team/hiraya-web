@@ -13,6 +13,7 @@ type Props = {
   restoreFocus?: () => HTMLElement | null;
 };
 
+/** Renders the file dialog interface. */
 export function FileDialog({ dialog, entry, entryCount = 1, onClose, onSubmit, trashSupported = true, restoreFocus }: Props) {
   const creatingFile = dialog.type === "create-file";
   const creatingShortcut = dialog.type === "create-shortcut";

@@ -1,7 +1,9 @@
 import type { AppBackRequestResult, WindowState } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, unavailable, type AppInstanceOwner } from "./types";
 
+/** Caps titles supplied by hosted apps. */
 export const MAX_APP_WINDOW_TITLE_LENGTH = 120;
+/** Defines the default deadline for hosted app lifecycle handlers. */
 export const DEFAULT_APP_HANDLER_DEADLINE_MS = 2_000;
 
 export type AppWindowSnapshot = WindowState & {
@@ -42,10 +44,12 @@ export interface AppWindowApi {
   onSave(handler: SaveHandler | undefined): void;
 }
 
+/** Coordinates hosted app window state and lifecycle requests. */
 export class AppLifecycleService {
   readonly #instances = new Map<string, InstanceRecord>();
   readonly #listeners = new Set<AppWindowListener>();
 
+  /** Creates a lifecycle service with bounded app-handler execution. */
   constructor(
     private readonly handlerDeadlineMs = DEFAULT_APP_HANDLER_DEADLINE_MS,
     private readonly onCloseRequest?: (owner: AppInstanceOwner) => boolean | void | Promise<boolean | void>,
@@ -53,6 +57,7 @@ export class AppLifecycleService {
     if (!Number.isFinite(handlerDeadlineMs) || handlerDeadlineMs <= 0) throw new TypeError("Handler deadline must be positive.");
   }
 
+  /** Opens and registers a hosted app window. */
   open(owner: AppInstanceOwner, initial: WindowState, title: string): AppWindowApi {
     const key = instanceKey(owner);
     if (this.#instances.has(key)) throw new HostServiceError(`App instance ${owner.instanceId} is already open.`, "ALREADY_EXISTS");
@@ -72,15 +77,18 @@ export class AppLifecycleService {
     };
   }
 
+  /** Returns a defensive snapshot of an app window. */
   snapshot(owner: AppInstanceOwner): AppWindowSnapshot {
     return { ...this.#record(owner).state };
   }
 
+  /** Returns the public window state for an app instance. */
   getState(owner: AppInstanceOwner): WindowState {
     const { focused, maximized, fullscreen, width, height } = this.#record(owner).state;
     return { focused, maximized, fullscreen, width, height };
   }
 
+  /** Applies host-owned window state and publishes the change. */
   setHostState(owner: AppInstanceOwner, state: Partial<WindowState>): void {
     const record = this.#record(owner);
     const next = { ...record.state, ...state };
@@ -89,6 +97,7 @@ export class AppLifecycleService {
     this.#publish(record);
   }
 
+  /** Updates the title supplied by a hosted app. */
   setTitle(owner: AppInstanceOwner, title: string): void {
     validateTitle(title);
     const record = this.#record(owner);
@@ -96,6 +105,7 @@ export class AppLifecycleService {
     this.#publish(record);
   }
 
+  /** Updates whether a hosted app has unsaved changes. */
   setDirty(owner: AppInstanceOwner, dirty: boolean): void {
     if (typeof dirty !== "boolean") throw new TypeError("Dirty state must be boolean.");
     const record = this.#record(owner);
@@ -103,6 +113,7 @@ export class AppLifecycleService {
     this.#publish(record);
   }
 
+  /** Resizes a hosted app window within contract limits. */
   setSize(owner: AppInstanceOwner, width: number, height: number): WindowState {
     validateDimension(width, "width");
     validateDimension(height, "height");
@@ -112,6 +123,7 @@ export class AppLifecycleService {
     return this.getState(owner);
   }
 
+  /** Updates a hosted app's fullscreen state. */
   setFullscreen(owner: AppInstanceOwner, fullscreen: boolean): WindowState {
     if (typeof fullscreen !== "boolean") throw new TypeError("Fullscreen state must be boolean.");
     const record = this.#record(owner);
@@ -120,14 +132,17 @@ export class AppLifecycleService {
     return this.getState(owner);
   }
 
+  /** Registers the app callback consulted before closing. */
   setBeforeCloseHandler(owner: AppInstanceOwner, handler: BeforeCloseHandler | undefined): void {
     this.#record(owner).beforeClose = handler;
   }
 
+  /** Registers the app callback invoked for save requests. */
   setSaveHandler(owner: AppInstanceOwner, handler: SaveHandler | undefined): void {
     this.#record(owner).save = handler;
   }
 
+  /** Enables or disables app handling of shell Back requests. */
   setBackHandler(owner: AppInstanceOwner, enabled: boolean): void {
     if (typeof enabled !== "boolean") throw new TypeError("Back handler state must be boolean.");
     const record = this.#record(owner);
@@ -135,6 +150,7 @@ export class AppLifecycleService {
     if (!enabled) this.#finishBackRequest(record, "unsupported");
   }
 
+  /** Sends a bounded Back request to a hosted app. */
   requestBack(owner: AppInstanceOwner, emit: (requestId: string) => void): Promise<AppBackRequestOutcome> {
     const record = this.#record(owner);
     if (!record.backHandler || record.backRequest) return Promise.resolve("unsupported");
@@ -154,6 +170,7 @@ export class AppLifecycleService {
     return result;
   }
 
+  /** Resolves the matching pending Back request. */
   resolveBackRequest(owner: AppInstanceOwner, requestId: string, result: AppBackRequestResult): void {
     if (result !== "handled" && result !== "home" && result !== "failed") throw new TypeError("Back request result is invalid.");
     const record = this.#record(owner);
@@ -161,6 +178,7 @@ export class AppLifecycleService {
     this.#finishBackRequest(record, result);
   }
 
+  /** Consults app and host close guards before allowing closure. */
   async requestClose(owner: AppInstanceOwner): Promise<boolean> {
     const record = this.#record(owner);
     if (record.beforeClose && await this.#runWithDeadline(record, record.beforeClose) === false) return false;
@@ -168,6 +186,7 @@ export class AppLifecycleService {
     return true;
   }
 
+  /** Invokes the registered save handler when available. */
   async requestSave(owner: AppInstanceOwner): Promise<boolean> {
     const record = this.#record(owner);
     if (!record.save) return false;
@@ -175,11 +194,13 @@ export class AppLifecycleService {
     return true;
   }
 
+  /** Subscribes to hosted app window changes. */
   subscribe(listener: AppWindowListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 
+  /** Removes an app instance and aborts its pending lifecycle work. */
   closeInstance(owner: AppInstanceOwner): void {
     const key = instanceKey(owner);
     const record = this.#instances.get(key);
@@ -190,15 +211,18 @@ export class AppLifecycleService {
     record.pending.clear();
   }
 
+  /** Returns the live lifecycle record for an app instance. */
   #record(owner: AppInstanceOwner): InstanceRecord {
     return this.#instances.get(instanceKey(owner)) ?? (() => { throw unavailable(owner); })();
   }
 
+  /** Publishes a defensive window snapshot to listeners. */
   #publish(record: InstanceRecord): void {
     const state = { ...record.state };
     for (const listener of this.#listeners) listener(record.owner, state);
   }
 
+  /** Completes and clears a pending Back request. */
   #finishBackRequest(record: InstanceRecord, outcome: AppBackRequestOutcome): void {
     const request = record.backRequest;
     if (!request) return;
@@ -207,6 +231,7 @@ export class AppLifecycleService {
     request.resolve(outcome);
   }
 
+  /** Runs an app handler with timeout and close cancellation support. */
   async #runWithDeadline<T>(record: InstanceRecord, handler: (signal: AbortSignal) => T | Promise<T>): Promise<T> {
     const controller = new AbortController();
     record.pending.add(controller);
@@ -223,16 +248,19 @@ export class AppLifecycleService {
   }
 }
 
+/** Validates a hosted app window title. */
 function validateTitle(title: string): void {
   if (typeof title !== "string" || title.length === 0 || title.length > MAX_APP_WINDOW_TITLE_LENGTH || hasControlCharacters(title)) {
     throw new TypeError(`Window title must contain 1-${MAX_APP_WINDOW_TITLE_LENGTH} printable characters.`);
   }
 }
 
+/** Validates one hosted app window dimension. */
 function validateDimension(value: number, label: string): void {
   if (!Number.isInteger(value) || value <= 0 || value > 16_384) throw new TypeError(`Window ${label} is invalid.`);
 }
 
+/** Validates the complete public window state contract. */
 function validateWindowState(state: WindowState): void {
   validateDimension(state.width, "width");
   validateDimension(state.height, "height");

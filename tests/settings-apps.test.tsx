@@ -4,6 +4,7 @@ import { SettingsWindow } from "../src/components/SettingsWindow";
 import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import type { InstalledApp } from "../src/apps/installed-apps";
 
+/** Defines the system app. */
 const systemApp: InstalledApp = {
   appId: "app.hiraya.text-editor",
   source: "system",

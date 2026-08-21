@@ -1,3 +1,4 @@
+/** Builds the service-worker navigation fallback denylist. */
 export function navigationFallbackDenylist() {
   return [
     /^\/(?:api|assets)(?:[/?]|$)/,

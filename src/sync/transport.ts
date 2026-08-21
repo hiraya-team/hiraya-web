@@ -90,13 +90,16 @@ import {
   type WorkspaceRenameRequest,
 } from "./protocol";
 
+/** Reports Web2 HTTP failures. */
 export class Web2HTTPError extends Error {
+  /** Creates a Web2HTTPError instance. */
   constructor(readonly status: number, message?: string, readonly code: string | null = null) {
 		super(message ?? (status === 401 ? "Authentication is required." : `Synchronization request failed with status ${status}.`));
     this.name = "Web2HTTPError";
   }
 }
 
+/** Converts a failed response to a Web2 HTTP error. */
 async function web2HTTPError(response: Response) {
   let payload: unknown = null;
   const contentLength = Number(response.headers.get("Content-Length"));
@@ -130,13 +133,16 @@ async function web2HTTPError(response: Response) {
   return new Web2HTTPError(response.status, message, code);
 }
 
+/** Reports Web2 network failures. */
 export class Web2NetworkError extends Error {
+  /** Creates a Web2NetworkError instance. */
   constructor() {
     super("The synchronization network is unavailable.");
     this.name = "Web2NetworkError";
   }
 }
 
+/** Wraps fetch failures as Web2 network errors. */
 async function networkFetch(input: RequestInfo | URL, init?: RequestInit) {
   try {
     return await fetch(input, init);
@@ -146,6 +152,7 @@ async function networkFetch(input: RequestInfo | URL, init?: RequestInit) {
   }
 }
 
+/** Parses a successful response as JSON. */
 async function responseJSON(response: Response, expectedStatus = 200) {
   if (response.status !== expectedStatus) throw await web2HTTPError(response);
   if (response.headers.get("Content-Type")?.split(";", 1)[0]?.trim().toLowerCase() !== "application/json") throw new Error("A synchronization response is not JSON.");
@@ -156,6 +163,7 @@ async function responseJSON(response: Response, expectedStatus = 200) {
   }
 }
 
+/** Posts a validated synchronization request. */
 async function post(path: string, value: unknown, signal?: AbortSignal) {
   return responseJSON(await networkFetch(path, {
     method: "POST",
@@ -167,6 +175,7 @@ async function post(path: string, value: unknown, signal?: AbortSignal) {
   }));
 }
 
+/** Sends an account control request. */
 async function control(operationIdValue: string, method: "POST" | "PUT" | "PATCH" | "DELETE", path: string, expectedStatus: 201 | 204, value?: unknown, signal?: AbortSignal) {
   const operationId = parseStableId(operationIdValue, "The control operation ID is invalid.");
   const response = await networkFetch(path, {
@@ -182,10 +191,12 @@ async function control(operationIdValue: string, method: "POST" | "PUT" | "PATCH
   return response;
 }
 
+/** Computes workspace route. */
 function workspaceRoute(workspaceId: string, suffix: string) {
   return `/api/workspaces/${encodeURIComponent(workspaceId)}/sync/${suffix}`;
 }
 
+/** Fetches the Web2 session. */
 export async function fetchWeb2Session(signal?: AbortSignal, fetchImpl: typeof fetch = fetch): Promise<Web2Session> {
   let response: Response;
   try {
@@ -197,10 +208,12 @@ export async function fetchWeb2Session(signal?: AbortSignal, fetchImpl: typeof f
   return parseWeb2Session(await responseJSON(response));
 }
 
+/** Returns account apps route. */
 function accountAppsRoute(accountId: string, appId?: string, suffix = "") {
   return `/api/accounts/${encodeURIComponent(accountId)}/apps${appId === undefined ? "" : `/${encodeURIComponent(appId)}`}${suffix}`;
 }
 
+/** Sends a Web2 account-app control request. */
 async function web2AccountAppControl(accountIdValue: string, operationIdValue: string, method: "PUT" | "DELETE", path: string, value: unknown, signal?: AbortSignal) {
   parseStableId(accountIdValue, "The account app account ID is invalid.");
   const operationId = parseStableId(operationIdValue, "The account app operation ID is invalid.");
@@ -214,6 +227,7 @@ async function web2AccountAppControl(accountIdValue: string, operationIdValue: s
   if (await response.text() !== "") throw new Error("An account app control response is not empty.");
 }
 
+/** Fetches Web2 account apps. */
 export async function fetchWeb2AccountApps(accountIdValue: string, signal?: AbortSignal): Promise<Web2AccountAppsSnapshot> {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const response = await networkFetch(accountAppsRoute(accountId), { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
@@ -222,6 +236,7 @@ export async function fetchWeb2AccountApps(accountIdValue: string, signal?: Abor
   return result;
 }
 
+/** Installs or updates a Web2 account app. */
 export async function putWeb2AccountApp(accountIdValue: string, appIdValue: string, operationId: string, requestValue: Web2AccountAppInstallRequest, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(appIdValue);
@@ -230,6 +245,7 @@ export async function putWeb2AccountApp(accountIdValue: string, appIdValue: stri
   await web2AccountAppControl(accountId, operationId, "PUT", accountAppsRoute(accountId, appId), request, signal);
 }
 
+/** Removes a Web2 account app. */
 export async function deleteWeb2AccountApp(accountIdValue: string, appIdValue: string, operationId: string, installationGeneration: number, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(appIdValue);
@@ -237,12 +253,14 @@ export async function deleteWeb2AccountApp(accountIdValue: string, appIdValue: s
   await web2AccountAppControl(accountId, operationId, "DELETE", accountAppsRoute(accountId, appId), request, signal);
 }
 
+/** Updates handlers for a Web2 account app. */
 export async function putWeb2AccountAppHandlers(accountIdValue: string, operationId: string, hints: Record<string, string>, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const request = parseWeb2AccountAppHandlersRequest({ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, hints });
   await web2AccountAppControl(accountId, operationId, "PUT", `${accountAppsRoute(accountId)}/handlers`, request, signal);
 }
 
+/** Writes data for a Web2 account app. */
 export async function putWeb2AccountAppData(accountIdValue: string, appIdValue: string, keyValue: string, operationId: string, requestValue: Web2AccountAppDataRequest, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(appIdValue);
@@ -251,6 +269,7 @@ export async function putWeb2AccountAppData(accountIdValue: string, appIdValue: 
   await web2AccountAppControl(accountId, operationId, "PUT", `${accountAppsRoute(accountId, appId)}/data/${encodeURIComponent(key)}`, request, signal);
 }
 
+/** Removes Web2 account-app data. */
 export async function deleteWeb2AccountAppData(accountIdValue: string, appIdValue: string, keyValue: string, operationId: string, dataGeneration: number, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(appIdValue);
@@ -259,6 +278,7 @@ export async function deleteWeb2AccountAppData(accountIdValue: string, appIdValu
   await web2AccountAppControl(accountId, operationId, "DELETE", `${accountAppsRoute(accountId, appId)}/data/${encodeURIComponent(key)}`, request, signal);
 }
 
+/** Clears Web2 account-app data. */
 export async function clearWeb2AccountAppData(accountIdValue: string, appIdValue: string, operationId: string, dataGeneration: number, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(appIdValue);
@@ -266,6 +286,7 @@ export async function clearWeb2AccountAppData(accountIdValue: string, appIdValue
   await web2AccountAppControl(accountId, operationId, "DELETE", `${accountAppsRoute(accountId, appId)}/data`, request, signal);
 }
 
+/** Fetches Web2 account-app data. */
 export async function fetchWeb2AccountAppData(accountIdValue: string, app: Web2AccountApp, keyValue: string, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(app.appId);
@@ -278,6 +299,7 @@ export async function fetchWeb2AccountAppData(accountIdValue: string, app: Web2A
   return result.value;
 }
 
+/** Downloads a Web2 account-app package. */
 export async function downloadWeb2AccountAppPackage(accountIdValue: string, app: Web2AccountApp, directBlobOrigin: string, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The account app account ID is invalid.");
   const appId = parseAccountAppId(app.appId);
@@ -300,6 +322,7 @@ export async function downloadWeb2AccountAppPackage(accountIdValue: string, app:
   return { archive: new Blob([archiveBytes], { type: "application/vnd.hiraya.app+zip" }), inspection };
 }
 
+/** Creates a Web2 workspace. */
 export async function createWeb2Workspace(accountIdValue: string, operationId: string, requestValue: WorkspaceCreateRequest, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The workspace account ID is invalid.");
   const request = parseWorkspaceCreateRequest(requestValue);
@@ -307,27 +330,32 @@ export async function createWeb2Workspace(accountIdValue: string, operationId: s
   if (response.headers.get("Location") !== `/api/workspaces/${encodeURIComponent(request.id)}`) throw new Error("A workspace creation response has an invalid location.");
 }
 
+/** Renames a Web2 workspace. */
 export async function renameWeb2Workspace(workspaceIdValue: string, operationId: string, requestValue: WorkspaceRenameRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The workspace ID is invalid.");
   const request = parseWorkspaceRenameRequest(requestValue);
   await control(operationId, "PATCH", `/api/workspaces/${encodeURIComponent(workspaceId)}`, 204, request, signal);
 }
 
+/** Removes a Web2 workspace. */
 export async function deleteWeb2Workspace(workspaceIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The workspace ID is invalid.");
   await control(operationId, "DELETE", `/api/workspaces/${encodeURIComponent(workspaceId)}`, 204, undefined, signal);
 }
 
+/** Sets Web2 workspace preferences. */
 export async function setWeb2WorkspacePreferences(accountIdValue: string, operationId: string, requestValue: WorkspacePreferencesRequest, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The workspace account ID is invalid.");
   const request = parseWorkspacePreferencesRequest(requestValue);
   await control(operationId, "PUT", `/api/accounts/${encodeURIComponent(accountId)}/workspace-preferences`, 204, request, signal);
 }
 
+/** Returns sharing route. */
 function sharingRoute(workspaceId: string, suffix = "") {
   return `/api/workspaces/${encodeURIComponent(workspaceId)}/sharing${suffix}`;
 }
 
+/** Fetches Web2 sharing settings. */
 export async function fetchWeb2Sharing(workspaceIdValue: string, signal?: AbortSignal): Promise<SharingState> {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   const response = await networkFetch(sharingRoute(workspaceId), { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
@@ -336,39 +364,46 @@ export async function fetchWeb2Sharing(workspaceIdValue: string, signal?: AbortS
   return result;
 }
 
+/** Adds or updates a Web2 sharing member. */
 export async function putWeb2SharingMember(workspaceIdValue: string, operationId: string, requestValue: SharingMemberRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   await control(operationId, "PUT", sharingRoute(workspaceId, "/members"), 204, parseSharingMemberRequest(requestValue), signal);
 }
 
+/** Updates a Web2 sharing member. */
 export async function updateWeb2SharingMember(workspaceIdValue: string, userIdValue: string, operationId: string, requestValue: SharingRoleRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   const userId = parseStableId(userIdValue, "The sharing user ID is invalid.");
   await control(operationId, "PUT", sharingRoute(workspaceId, `/members/${encodeURIComponent(userId)}`), 204, parseSharingRoleRequest(requestValue), signal);
 }
 
+/** Removes a Web2 sharing member. */
 export async function deleteWeb2SharingMember(workspaceIdValue: string, userIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   const userId = parseStableId(userIdValue, "The sharing user ID is invalid.");
   await control(operationId, "DELETE", sharingRoute(workspaceId, `/members/${encodeURIComponent(userId)}`), 204, undefined, signal);
 }
 
+/** Adds or updates a Web2 sharing audience. */
 export async function putWeb2SharingAudience(workspaceIdValue: string, operationId: string, requestValue: SharingRoleRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   await control(operationId, "PUT", sharingRoute(workspaceId, "/audience"), 204, parseSharingRoleRequest(requestValue), signal);
 }
 
+/** Removes a Web2 sharing audience. */
 export async function deleteWeb2SharingAudience(workspaceIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The sharing workspace ID is invalid.");
   await control(operationId, "DELETE", sharingRoute(workspaceId, "/audience"), 204, undefined, signal);
 }
 
+/** Searches Web2 workspaces. */
 export async function searchWeb2(query: string, limit = 50, signal?: AbortSignal): Promise<Web2SearchResponse> {
   if (typeof query !== "string" || [...query].length < 1 || [...query].length > 200 || !query.trim() || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error("The search request is invalid.");
   const response = await networkFetch(`/api/search?q=${encodeURIComponent(query)}&limit=${limit}`, { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
   return parseWeb2SearchResponse(await responseJSON(response), query);
 }
 
+/** Fetches Web2 activity. */
 export async function fetchWeb2Activity(query: { before?: number; limit?: number; workspaceId?: string; q?: string } = {}, signal?: AbortSignal): Promise<Web2ActivityResponse> {
   const parameters = new URLSearchParams();
   const limit = query.limit ?? 50;
@@ -384,10 +419,12 @@ export async function fetchWeb2Activity(query: { before?: number; limit?: number
   return parseWeb2ActivityResponse(await responseJSON(response));
 }
 
+/** Computes publication route. */
 function publicationRoute(workspaceId: string, nodeId?: string) {
   return `/api/workspaces/${encodeURIComponent(workspaceId)}/publication${nodeId === undefined ? "" : `/nodes/${encodeURIComponent(nodeId)}`}`;
 }
 
+/** Fetches a Web2 publication. */
 export async function fetchWeb2Publication(workspaceIdValue: string, signal?: AbortSignal): Promise<PublicationState> {
   const workspaceId = parseStableId(workspaceIdValue, "The publication workspace ID is invalid.");
   const response = await networkFetch(publicationRoute(workspaceId), { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
@@ -396,36 +433,43 @@ export async function fetchWeb2Publication(workspaceIdValue: string, signal?: Ab
   return result;
 }
 
+/** Publishes or updates a Web2 workspace. */
 export async function putWeb2Publication(workspaceIdValue: string, operationId: string, requestValue: PublicationRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The publication workspace ID is invalid.");
   await control(operationId, "PUT", publicationRoute(workspaceId), 204, parsePublicationRequest(requestValue), signal);
 }
 
+/** Removes a Web2 publication. */
 export async function deleteWeb2Publication(workspaceIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The publication workspace ID is invalid.");
   await control(operationId, "DELETE", publicationRoute(workspaceId), 204, undefined, signal);
 }
 
+/** Publishes or updates a Web2 node. */
 export async function putWeb2NodePublication(workspaceIdValue: string, nodeIdValue: string, operationId: string, requestValue: NodePublicationRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The publication workspace ID is invalid.");
   const nodeId = parseStableId(nodeIdValue, "The published node ID is invalid.");
   await control(operationId, "PUT", publicationRoute(workspaceId, nodeId), 204, parseNodePublicationRequest(requestValue), signal);
 }
 
+/** Removes a Web2 node publication. */
 export async function deleteWeb2NodePublication(workspaceIdValue: string, nodeIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The publication workspace ID is invalid.");
   const nodeId = parseStableId(nodeIdValue, "The published node ID is invalid.");
   await control(operationId, "DELETE", publicationRoute(workspaceId, nodeId), 204, undefined, signal);
 }
 
+/** Computes public alias. */
 function publicAlias(value: string) {
   return parseNodePublicationRequest({ ...web2ProtocolMetadata, alias: value }).alias;
 }
 
+/** Computes public workspace route. */
 function publicWorkspaceRoute(workspaceAlias: string, itemAlias?: string) {
   return `/api/public/workspaces/${encodeURIComponent(workspaceAlias)}${itemAlias === undefined ? "" : `/items/${encodeURIComponent(itemAlias)}`}`;
 }
 
+/** Fetches public workspace page. */
 export async function fetchPublicWorkspacePage(workspaceAliasValue: string, options: { itemAlias?: string; asOf?: number; after?: string; limit?: number } = {}, signal?: AbortSignal): Promise<PublicWorkspacePage> {
   const workspaceAlias = publicAlias(workspaceAliasValue);
   const itemAlias = options.itemAlias === undefined ? undefined : publicAlias(options.itemAlias);
@@ -446,6 +490,7 @@ export async function fetchPublicWorkspacePage(workspaceAliasValue: string, opti
   return result;
 }
 
+/** Fetches public node content. */
 export async function fetchPublicNodeContent(workspaceAliasValue: string, nodeIdValue: string, manifestHashValue: string, asOfValue: number, itemAliasValue?: string, signal?: AbortSignal): Promise<PublicNodeContent> {
   const workspaceAlias = publicAlias(workspaceAliasValue);
   const itemAlias = itemAliasValue === undefined ? undefined : publicAlias(itemAliasValue);
@@ -461,12 +506,14 @@ export async function fetchPublicNodeContent(workspaceAliasValue: string, nodeId
 
 export type Web2ThumbnailFetchResult<T extends Web2ThumbnailDescriptor = Web2ThumbnailDescriptor> = { state: "pending"; value: Web2ThumbnailPending; retryAfterMs: number } | { state: "ready"; value: T };
 
+/** Returns a retry delay from response headers. */
 function thumbnailRetryAfter(response: Response) {
   const header = response.headers.get("Retry-After");
   const seconds = Number(header);
   return header !== null && Number.isFinite(seconds) && seconds >= 0 ? Math.min(3_600_000, Math.ceil(seconds * 1_000)) : 250;
 }
 
+/** Fetches a Web2 thumbnail. */
 export async function fetchWeb2Thumbnail(workspaceIdValue: string, nodeIdValue: string, contentOperationIdValue: string, manifestHashValue: string, expectedOrigin: string, signal?: AbortSignal): Promise<Web2ThumbnailFetchResult> {
   const expected = { workspaceId: parseStableId(workspaceIdValue, "The thumbnail workspace ID is invalid."), nodeId: parseStableId(nodeIdValue, "The thumbnail node ID is invalid."), contentOperationId: parseStableId(contentOperationIdValue, "The thumbnail content operation ID is invalid."), manifestHash: parseSha256(manifestHashValue, "The thumbnail manifest hash is invalid.") };
   const parameters = new URLSearchParams({ contentOperationId: expected.contentOperationId, manifestHash: expected.manifestHash, profile: "thumbnail-v1" });
@@ -477,6 +524,7 @@ export async function fetchWeb2Thumbnail(workspaceIdValue: string, nodeIdValue: 
   return { state: "ready", value: parseWeb2ThumbnailDescriptor(value, expected, expectedOrigin) };
 }
 
+/** Fetches a public Web2 thumbnail. */
 export async function fetchPublicWeb2Thumbnail(workspaceAliasValue: string, nodeIdValue: string, contentOperationIdValue: string, manifestHashValue: string, asOfValue: number, itemAliasValue?: string, signal?: AbortSignal): Promise<Web2ThumbnailFetchResult<PublicWeb2ThumbnailDescriptor>> {
   const workspaceAlias = publicAlias(workspaceAliasValue);
   const itemAlias = itemAliasValue === undefined ? undefined : publicAlias(itemAliasValue);
@@ -495,10 +543,12 @@ export async function fetchPublicWeb2Thumbnail(workspaceAliasValue: string, node
   return { state: "ready", value: parsePublicWeb2ThumbnailDescriptor(value, expected) };
 }
 
+/** Returns short link route. */
 function shortLinkRoute(accountId: string, slug?: string) {
   return `/api/accounts/${encodeURIComponent(accountId)}/short-links${slug === undefined ? "" : `/${encodeURIComponent(slug)}`}`;
 }
 
+/** Fetches Web2 short links. */
 export async function fetchWeb2ShortLinks(accountIdValue: string, signal?: AbortSignal): Promise<ShortLinkList> {
   const accountId = parseStableId(accountIdValue, "The short-link account ID is invalid.");
   const response = await networkFetch(shortLinkRoute(accountId), { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
@@ -507,18 +557,21 @@ export async function fetchWeb2ShortLinks(accountIdValue: string, signal?: Abort
   return result;
 }
 
+/** Creates or updates a Web2 short link. */
 export async function putWeb2ShortLink(accountIdValue: string, operationId: string, requestValue: ShortLinkRequest, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The short-link account ID is invalid.");
   const request = parseShortLinkRequest(requestValue);
   await control(operationId, "PUT", shortLinkRoute(accountId, request.slug), 204, request, signal);
 }
 
+/** Removes a Web2 short link. */
 export async function deleteWeb2ShortLink(accountIdValue: string, slugValue: string, operationId: string, signal?: AbortSignal) {
   const accountId = parseStableId(accountIdValue, "The short-link account ID is invalid.");
   const slug = publicAlias(slugValue);
   await control(operationId, "DELETE", shortLinkRoute(accountId, slug), 204, undefined, signal);
 }
 
+/** Creates a Web2 invitation token. */
 export function createWeb2InvitationToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   let binary = "";
@@ -526,25 +579,30 @@ export function createWeb2InvitationToken() {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
+/** Fetches Web2 invitations. */
 export async function fetchWeb2Invitations(signal?: AbortSignal): Promise<InvitationList> {
   const response = await networkFetch("/api/admin/invitations", { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
   return parseInvitationList(await responseJSON(response));
 }
 
+/** Creates or updates a Web2 invitation. */
 export async function putWeb2Invitation(operationId: string, requestValue: InvitationRequest, signal?: AbortSignal) {
   const request = parseInvitationRequest(requestValue);
   await control(operationId, "PUT", `/api/admin/invitations/${encodeURIComponent(request.id)}`, 204, request, signal);
 }
 
+/** Removes a Web2 invitation. */
 export async function deleteWeb2Invitation(invitationIdValue: string, operationId: string, signal?: AbortSignal) {
   const invitationId = parseStableId(invitationIdValue, "The invitation ID is invalid.");
   await control(operationId, "DELETE", `/api/admin/invitations/${encodeURIComponent(invitationId)}`, 204, undefined, signal);
 }
 
+/** Computes workspace invitation route. */
 function workspaceInvitationRoute(workspaceId: string, invitationId?: string) {
   return `/api/workspaces/${encodeURIComponent(workspaceId)}/sharing/invitations${invitationId === undefined ? "" : `/${encodeURIComponent(invitationId)}`}`;
 }
 
+/** Fetches Web2 workspace invitations. */
 export async function fetchWeb2WorkspaceInvitations(workspaceIdValue: string, signal?: AbortSignal): Promise<WorkspaceInvitationList> {
   const workspaceId = parseStableId(workspaceIdValue, "The workspace invitation workspace ID is invalid.");
   const response = await networkFetch(workspaceInvitationRoute(workspaceId), { credentials: "same-origin", cache: "no-store", headers: { [WEB2_PROTOCOL_HEADER]: WEB2_SYNC_PROTOCOL }, signal });
@@ -553,18 +611,21 @@ export async function fetchWeb2WorkspaceInvitations(workspaceIdValue: string, si
   return result;
 }
 
+/** Creates or updates a Web2 workspace invitation. */
 export async function putWeb2WorkspaceInvitation(workspaceIdValue: string, operationId: string, requestValue: WorkspaceInvitationRequest, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The workspace invitation workspace ID is invalid.");
   const request = parseWorkspaceInvitationRequest(requestValue);
   await control(operationId, "PUT", workspaceInvitationRoute(workspaceId, request.id), 204, request, signal);
 }
 
+/** Removes a Web2 workspace invitation. */
 export async function deleteWeb2WorkspaceInvitation(workspaceIdValue: string, invitationIdValue: string, operationId: string, signal?: AbortSignal) {
   const workspaceId = parseStableId(workspaceIdValue, "The workspace invitation workspace ID is invalid.");
   const invitationId = parseStableId(invitationIdValue, "The workspace invitation ID is invalid.");
   await control(operationId, "DELETE", workspaceInvitationRoute(workspaceId, invitationId), 204, undefined, signal);
 }
 
+/** Requests Web2 bootstrap data. */
 export async function bootstrapWeb2(requestValue: BootstrapRequest, signal?: AbortSignal): Promise<Bootstrap> {
   const request = parseBootstrapRequest(requestValue);
   const result = parseBootstrap(await post(workspaceRoute(request.workspaceId, "bootstrap"), request, signal));
@@ -572,6 +633,7 @@ export async function bootstrapWeb2(requestValue: BootstrapRequest, signal?: Abo
   return result;
 }
 
+/** Hydrates Web2 workspace data. */
 export async function hydrateWeb2(requestValue: HydrationRequest, signal?: AbortSignal): Promise<HydrationPage> {
   const request = parseHydrationRequest(requestValue);
   const result = parseHydrationPage(await post(workspaceRoute(request.workspaceId, "hydrate"), request, signal));
@@ -579,6 +641,7 @@ export async function hydrateWeb2(requestValue: HydrationRequest, signal?: Abort
   return result;
 }
 
+/** Pulls synchronized Web2 operations. */
 export async function pullWeb2(requestValue: PullRequest, signal?: AbortSignal): Promise<PullResult> {
   const request = parsePullRequest(requestValue);
   const result = parsePullResult(await post(workspaceRoute(request.workspaceId, "pull"), request, signal));
@@ -586,6 +649,7 @@ export async function pullWeb2(requestValue: PullRequest, signal?: AbortSignal):
   return result;
 }
 
+/** Pushes synchronized Web2 operations. */
 export async function pushWeb2(requestValue: PushRequest, signal?: AbortSignal): Promise<PushBatchResult> {
   const request = parsePushRequest(requestValue);
   const result = parsePushBatchResult(await post(workspaceRoute(request.workspaceId, "push"), request, signal));
@@ -593,6 +657,7 @@ export async function pushWeb2(requestValue: PushRequest, signal?: AbortSignal):
   return result;
 }
 
+/** Negotiates a Web2 chunk upload. */
 export async function negotiateWeb2ChunkUpload(requestValue: ChunkUploadRequest, directBlobOrigin: string, signal?: AbortSignal): Promise<ChunkUploadResult> {
   const request = await parseChunkUploadRequest(requestValue);
   const result = await parseChunkUploadResult(await post(workspaceRoute(request.workspaceId, "chunks/uploads"), request, signal), request.manifest, directBlobOrigin);
@@ -600,6 +665,7 @@ export async function negotiateWeb2ChunkUpload(requestValue: ChunkUploadRequest,
   return result;
 }
 
+/** Negotiates a Web2 chunk download. */
 export async function negotiateWeb2ChunkDownload(requestValue: ChunkDownloadRequest, directBlobOrigin: string, signal?: AbortSignal): Promise<ChunkDownloadResult> {
   const request = parseChunkDownloadRequest(requestValue);
   const result = await parseChunkDownloadResult(await post(workspaceRoute(request.workspaceId, "chunks/downloads"), request, signal), directBlobOrigin, request.haveChunks);
@@ -607,12 +673,14 @@ export async function negotiateWeb2ChunkDownload(requestValue: ChunkDownloadRequ
   return result;
 }
 
+/** Uploads a Web2 chunk. */
 export async function uploadWeb2Chunk(descriptor: ChunkTransferDescriptor<"PUT">, bytes: Uint8Array, signal?: AbortSignal) {
   if (bytes.byteLength !== descriptor.size || await sha256Hex(bytes) !== descriptor.hash) throw new Error("A local chunk does not match its transfer descriptor.");
   const response = await networkFetch(descriptor.url, { method: "PUT", credentials: "omit", headers: descriptor.headers, body: Uint8Array.from(bytes).buffer, redirect: "error", referrerPolicy: "no-referrer", signal });
   if (!response.ok) throw new Web2HTTPError(response.status);
 }
 
+/** Downloads a Web2 chunk. */
 export async function downloadWeb2Chunk(descriptor: ChunkTransferDescriptor<"GET">, signal?: AbortSignal) {
   const response = await networkFetch(descriptor.url, { method: "GET", credentials: "omit", headers: descriptor.headers, cache: "no-store", redirect: "error", referrerPolicy: "no-referrer", signal });
   if (!response.ok) throw new Web2HTTPError(response.status);
@@ -637,11 +705,13 @@ export async function downloadWeb2Chunk(descriptor: ChunkTransferDescriptor<"GET
   return bytes;
 }
 
+/** Parses an event-stream message. */
 function eventData(block: string) {
   const lines = block.split(/\r?\n/).filter((line) => line.startsWith("data:"));
   return lines.length === 0 ? null : lines.map((line) => line.slice(5).replace(/^ /, "")).join("\n");
 }
 
+/** Listens for Web2 event-stream updates. */
 export async function listenForWeb2Events(signal: AbortSignal, receive: (event: Web2EventHint) => void | Promise<void>, directoryRevision = 0, activity: () => void = () => undefined) {
   if (!Number.isSafeInteger(directoryRevision) || directoryRevision < 0) throw new Error("The directory revision is invalid.");
   const response = await networkFetch(`/api/sync/events?protocol=${encodeURIComponent(WEB2_SYNC_PROTOCOL)}&directoryRevision=${directoryRevision}`, {
@@ -677,4 +747,5 @@ export async function listenForWeb2Events(signal: AbortSignal, receive: (event: 
   if (!signal.aborted) throw new Error("The synchronization event stream ended unexpectedly.");
 }
 
+/** Describes the Web2 synchronization protocol. */
 export const web2ProtocolMetadata = { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL } as const;

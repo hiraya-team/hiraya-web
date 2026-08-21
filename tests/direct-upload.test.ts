@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { uploadDirectBlob } from "../src/platform/sync/direct-upload";
 
+/** Builds the fake request test fixture. */
 function fakeRequest() {
   const headers: Array<[string, string]> = [];
   const request = {

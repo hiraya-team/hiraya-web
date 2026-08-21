@@ -5,10 +5,14 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import { parseManifestV2 } from "@hiraya-team/apps-contracts";
 
+/** Identifies the public system-app catalog virtual module. */
 const PUBLIC_ID = "virtual:hiraya-system-apps";
+/** Identifies the resolved system-app catalog virtual module. */
 const RESOLVED_ID = `\0${PUBLIC_ID}`;
+/** Defines the system app slugs. */
 export const SYSTEM_APP_SLUGS = ["text-editor", "image-viewer", "media-viewer", "file-viewer", "terminal", "theme-editor"] as const;
 
+/** Creates the system apps plugin. */
 export function systemAppsPlugin(projectRoot: string): Plugin {
   let catalog = "";
   let deploymentCatalog = "";

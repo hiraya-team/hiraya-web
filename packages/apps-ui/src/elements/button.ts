@@ -2,11 +2,13 @@ import { elementStyles, hasBooleanAttribute, HTMLElementBase, setBooleanAttribut
 
 export type HirayaButtonVariant = "secondary" | "primary" | "quiet" | "danger";
 
+/** Implements the Hiraya button. */
 export class HirayaButton extends HTMLElementBase {
   static readonly observedAttributes = ["variant", "disabled", "loading", "aria-label", "title"];
 
   readonly #button: HTMLButtonElement;
 
+  /** Creates a hiraya button instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -25,17 +27,27 @@ export class HirayaButton extends HTMLElementBase {
     this.#button = root.querySelector("button")!;
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Reports whether the button is disabled. */
   get disabled(): boolean { return hasBooleanAttribute(this, "disabled"); }
+  /** Sets whether the button is disabled. */
   set disabled(value: boolean) { setBooleanAttribute(this, "disabled", value); }
+  /** Reports whether the button is loading. */
   get loading(): boolean { return hasBooleanAttribute(this, "loading"); }
+  /** Sets whether the button is loading. */
   set loading(value: boolean) { setBooleanAttribute(this, "loading", value); }
+  /** Returns the button's visual variant. */
   get variant(): HirayaButtonVariant { return (this.getAttribute("variant") as HirayaButtonVariant | null) ?? "secondary"; }
+  /** Sets the button's visual variant. */
   set variant(value: HirayaButtonVariant) { this.setAttribute("variant", value); }
+  /** Moves focus to this element. */
   focus(options?: FocusOptions): void { this.#button.focus(options); }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#button) return;
     const unavailable = this.disabled || this.loading;

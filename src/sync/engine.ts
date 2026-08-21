@@ -25,14 +25,17 @@ export type AccountSyncEnvironment = {
   leadershipRetryMs?: number;
 };
 
+/** Reports whether an error represents an aborted operation. */
 function isAbortError(error: unknown) {
   return error instanceof DOMException && error.name === "AbortError";
 }
 
+/** Reports whether an event should wake synchronization. */
 function isSyncWake(value: unknown) {
   return isRecord(value) && value.schemaVersion === WEB2_SCHEMA_VERSION && (value.kind === "sync-wake" || value.kind === "catalog-change") && Object.keys(value).length === 2;
 }
 
+/** Waits until the supplied condition succeeds or times out. */
 function wait(ms: number, signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => {
@@ -46,6 +49,7 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
+/** Opens account sync client. */
 export async function openAccountSyncClient(storageId: string, callbacks: AccountSyncCallbacks, environment: AccountSyncEnvironment = {}): Promise<AccountSyncClient> {
   if (!callbacks || typeof callbacks.synchronize !== "function" || callbacks.listen !== undefined && typeof callbacks.listen !== "function" || callbacks.onError !== undefined && typeof callbacks.onError !== "function") throw new TypeError("Account synchronization callbacks are invalid.");
   const databaseName = await filesystemDatabaseName(storageId);

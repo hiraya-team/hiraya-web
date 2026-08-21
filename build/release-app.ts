@@ -5,9 +5,12 @@ import { inspectAppArchive } from "@hiraya-team/app-cli";
 import { APP_CATALOG_SCHEMA_VERSION, APPS_PROTOCOL_VERSION, parseAppCatalog, type AppCatalog, type AppCatalogRelease, type HirayaAppManifestV2 } from "@hiraya-team/apps-contracts";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
+/** Identifies the app catalog file. */
 const CATALOG_FILE = "hiraya.apps.json";
+/** Lists system app IDs. */
 const SYSTEM_APP_ID_SET = new Set<string>(Object.values(SYSTEM_APP_IDS));
 
+/** Adds a release descriptor to an app catalog. */
 export function catalogWithRelease(catalog: AppCatalog, kind: "store" | "system", slug: string, digest: string, size: number, manifest: HirayaAppManifestV2) {
   if (kind === "system" && !SYSTEM_APP_ID_SET.has(manifest.id)) throw new Error("That app ID is not supported as a trusted system app by the target Hiraya runtime.");
   const version = manifest.version.replace(/[^0-9A-Za-z.-]+/g, "-");
@@ -17,6 +20,7 @@ export function catalogWithRelease(catalog: AppCatalog, kind: "store" | "system"
   return parseAppCatalog({ schemaVersion: APP_CATALOG_SCHEMA_VERSION, releases: [...catalog.releases.filter((item) => item.manifest.id !== manifest.id), release].toSorted((left, right) => left.manifest.id.localeCompare(right.manifest.id)) });
 }
 
+/** Verifies that the target supports the package's app runtime. */
 async function requireCompatibleRuntime(server: string) {
   const response = await fetch(new URL("api/health", server.endsWith("/") ? server : `${server}/`), { redirect: "error" });
   if (!response.ok) throw new Error(`Hiraya runtime compatibility could not be read (${response.status}).`);
@@ -24,6 +28,7 @@ async function requireCompatibleRuntime(server: string) {
   if (value.catalogSchema !== APP_CATALOG_SCHEMA_VERSION || value.manifestSchema !== 2 || value.uiRuntime !== 1 || value.protocolVersion !== APPS_PROTOCOL_VERSION) throw new Error("The target Hiraya runtime does not support this app release contract.");
 }
 
+/** Releases app. */
 async function releaseApp(server: string, storeRoot: string, kind: "store" | "system", slug: string, archivePath: string) {
   await requireCompatibleRuntime(server);
   if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)) throw new Error("Release slug must contain lowercase words separated by hyphens.");
@@ -58,6 +63,7 @@ async function releaseApp(server: string, storeRoot: string, kind: "store" | "sy
   console.log(`Published ${inspection.manifest.id}@${inspection.manifest.version} as ${release.fileName}`);
 }
 
+/** Prints command usage and exits. */
 function usage(): never {
   console.error("Usage: bun run apps:release -- --server URL --store-root DIR --kind <store|system> --slug SLUG APP.hiraya.app");
   process.exit(2);

@@ -1,4 +1,6 @@
+/** Matches the expected absolute URL. */
 const ABSOLUTE_URL = /^[a-z][a-z\d+.-]*:/i;
+/** Lists the supported blocked schemes. */
 const BLOCKED_SCHEMES = new Set(["javascript", "vbscript", "data", "blob", "file", "filesystem"]);
 
 export type InternetShortcut = {
@@ -6,8 +8,10 @@ export type InternetShortcut = {
   scheme: string;
 };
 
+/** Matches the expected internet shortcut MIME type. */
 export const INTERNET_SHORTCUT_MIME_TYPE = "application/internet-shortcut";
 
+/** Parses and validates shortcut URL. */
 export function parseShortcutUrl(value: string): InternetShortcut {
   const url = value.trim();
   if (!url || !ABSOLUTE_URL.test(url)) throw new Error("Enter a complete URL including its scheme, such as https://.");
@@ -25,6 +29,7 @@ export function parseShortcutUrl(value: string): InternetShortcut {
   return { url, scheme };
 }
 
+/** Creates internet shortcut. */
 export function createInternetShortcut(value: string) {
   const shortcut = parseShortcutUrl(value);
   const hostname = new URL(shortcut.url).hostname;
@@ -36,10 +41,12 @@ export function createInternetShortcut(value: string) {
   };
 }
 
+/** Parses and validates internet shortcut. */
 export function parseInternetShortcut(content: string): InternetShortcut {
   return parseShortcutUrl(readInternetShortcutUrl(content));
 }
 
+/** Reads internet shortcut URL. */
 export function readInternetShortcutUrl(content: string) {
   const lines = content.replace(/^\uFEFF/, "").split(/\r?\n/);
   let inShortcutSection = false;

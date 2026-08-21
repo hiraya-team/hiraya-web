@@ -1,3 +1,4 @@
+/** Implements the memory file. */
 export class MemoryFile {
   content: Blob;
   reads = 0;
@@ -5,21 +6,26 @@ export class MemoryFile {
   corruptNextClose = false;
   beforeClose?: () => Promise<void>;
 
+  /** Creates a memory file instance. */
   constructor(content = new Blob()) {
     this.content = content;
   }
 }
 
+/** Implements the memory file handle. */
 class MemoryFileHandle {
   readonly kind = "file";
 
+  /** Creates a memory file handle instance. */
   constructor(readonly name: string, readonly entry: MemoryFile) {}
 
+  /** Returns the in-memory file contents. */
   async getFile() {
     this.entry.reads += 1;
     return this.entry.content as File;
   }
 
+  /** Creates an in-memory writable file stream. */
   async createWritable() {
     let pending = this.entry.content;
     return {
@@ -40,6 +46,7 @@ class MemoryFileHandle {
   }
 }
 
+/** Implements the memory directory. */
 export class MemoryDirectory {
   readonly kind = "directory";
   readonly directories = new Map<string, MemoryDirectory>();
@@ -48,14 +55,17 @@ export class MemoryDirectory {
   directoryReads = 0;
   beforeFileClose?: (name: string) => Promise<void>;
 
+  /** Creates a memory directory instance. */
   constructor(readonly name = "") {}
 
+  /** Creates and registers an in-memory child directory. */
   directory(name: string) {
     const directory = new MemoryDirectory(name);
     this.directories.set(name, directory);
     return directory;
   }
 
+  /** Creates a file test fixture. */
   file(name: string, content = new Blob()) {
     const file = new MemoryFile(content);
     if (this.beforeFileClose) file.beforeClose = () => this.beforeFileClose!(name);
@@ -63,6 +73,7 @@ export class MemoryDirectory {
     return file;
   }
 
+  /** Returns or creates an in-memory directory handle. */
   async getDirectoryHandle(name: string, options?: FileSystemGetDirectoryOptions) {
     this.directoryReads += 1;
     this.directoryRequests.push(name);
@@ -72,6 +83,7 @@ export class MemoryDirectory {
     return this.directory(name) as unknown as FileSystemDirectoryHandle;
   }
 
+  /** Returns or creates an in-memory file handle. */
   async getFileHandle(name: string, options?: FileSystemGetFileOptions) {
     let entry = this.files.get(name);
     if (!entry && !options?.create) throw new DOMException("Not found", "NotFoundError");
@@ -79,6 +91,7 @@ export class MemoryDirectory {
     return new MemoryFileHandle(name, entry) as unknown as FileSystemFileHandle;
   }
 
+  /** Removes an in-memory file or directory entry. */
   async removeEntry(name: string, options?: FileSystemRemoveOptions) {
     if (this.files.delete(name)) return;
     const directory = this.directories.get(name);
@@ -86,16 +99,19 @@ export class MemoryDirectory {
     this.directories.delete(name);
   }
 
+  /** Iterates over in-memory directory entries. */
   async *entries(): AsyncIterableIterator<[string, FileSystemHandle]> {
     for (const [name, directory] of [...this.directories]) yield [name, directory as unknown as FileSystemDirectoryHandle];
     for (const [name, entry] of [...this.files]) yield [name, new MemoryFileHandle(name, entry) as unknown as FileSystemFileHandle];
   }
 }
 
+/** Exposes an in-memory directory as an OPFS handle. */
 export function memoryOpfsHandle(directory: MemoryDirectory) {
   return directory as unknown as FileSystemDirectoryHandle;
 }
 
+/** Returns a stored in-memory chunk by hash. */
 export function memoryChunk(root: MemoryDirectory, hash: string) {
   return root.directories.get("chunks")?.directories.get(hash.slice(0, 2))?.files.get(hash);
 }

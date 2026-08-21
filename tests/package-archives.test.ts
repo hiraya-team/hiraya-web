@@ -6,10 +6,12 @@ import { configureStorageNamespace } from "../src/platform/storage/namespace";
 import { initializeDatabase } from "../src/platform/storage/database-client";
 import { blockAccountAppOperation, discardAccountAppOperation, enqueueAccountAppOperation, readAccountApps, readAppStorage, reconcileAccountApps, retryAccountAppOperation } from "../src/platform/storage/repositories";
 
+/** Provides a memory directory test double. */
 class MemoryDirectory {
   readonly directories = new Map<string, MemoryDirectory>();
   readonly files = new Map<string, Blob>();
 
+  /** Returns or creates an in-memory directory handle. */
   async getDirectoryHandle(name: string, options?: FileSystemGetDirectoryOptions) {
     const existing = this.directories.get(name);
     if (existing) return existing as unknown as FileSystemDirectoryHandle;
@@ -19,6 +21,7 @@ class MemoryDirectory {
     return directory as unknown as FileSystemDirectoryHandle;
   }
 
+  /** Returns or creates an in-memory file handle. */
   async getFileHandle(name: string, options?: FileSystemGetFileOptions) {
     if (!this.files.has(name) && !options?.create) throw new DOMException("Not found", "NotFoundError");
     if (!this.files.has(name)) this.files.set(name, new Blob());
@@ -34,6 +37,7 @@ class MemoryDirectory {
     } as unknown as FileSystemFileHandle;
   }
 
+  /** Removes an in-memory file or directory entry. */
   async removeEntry(name: string) {
     if (!this.files.delete(name) && !this.directories.delete(name)) throw new DOMException("Not found", "NotFoundError");
   }

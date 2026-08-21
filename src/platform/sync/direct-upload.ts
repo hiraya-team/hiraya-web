@@ -6,6 +6,7 @@ export type DirectUploadOptions = {
   createRequest?: () => XMLHttpRequest;
 };
 
+/** Uploads direct blob. */
 export function uploadDirectBlob(access: DirectBlobAccess, content: Blob, options: DirectUploadOptions = {}) {
   return new Promise<void>((resolve, reject) => {
     const request = options.createRequest?.() ?? new XMLHttpRequest();

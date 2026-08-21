@@ -4,10 +4,12 @@ import { DEFAULT_GRID_SIZE, DEFAULT_WALLPAPER } from "../src/types";
 import { OWNER_CAPABILITIES } from "../src/lib/permissions";
 import { DEFAULT_FILE_CREATION_TEMPLATES } from "../src/lib/file-creation-templates";
 
+/** Builds a remote desktop identity test fixture. */
 export function remoteDesktopIdentity(id = "desk", name = "Desktop") {
   return { id, name, pinned: false, ownership: "owned" as const, role: "owner" as const, owner: { id: "user-1", displayName: "Owner", avatar: null }, capabilities: { ...OWNER_CAPABILITIES }, authorityCatalogId: "catalog-1" };
 }
 
+/** Builds an empty desktop snapshot test fixture. */
 export function desktopStateSnapshot(): DesktopStateSnapshot {
   return {
     entries: [],
@@ -18,6 +20,7 @@ export function desktopStateSnapshot(): DesktopStateSnapshot {
   };
 }
 
+/** Builds a remote desktop state test fixture. */
 export function remoteDesktopState() {
   return {
     schemaVersion: 2 as const,

@@ -13,6 +13,7 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "strict": true,
+    "paths": { "@hiraya/deployment": ["./src/deployment/server.ts"] },
     "noUnusedLocals": true,
     "noUnusedParameters": true
   },

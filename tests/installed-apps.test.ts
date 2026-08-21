@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { installedAppAcceptsFile, installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, parseInstalledApp, type InstalledApp } from "../src/apps/installed-apps";
 import { resolveFileApp } from "../src/apps/file-associations";
 
+/** Creates an installed-app test fixture. */
 function install(version = "1.0.0", digest = "a".repeat(64), packageEntryId = "package-one"): InstalledApp {
   return { appId: "test.editor", source: "desktop", packageEntryId, archivePath: null, digest, version, approvedAt: 10, manifest: { schemaVersion: 2, uiRuntime: 1, id: "test.editor", name: "Editor", version, entrypoint: "index.html", permissions: ["files:read"] } };
 }

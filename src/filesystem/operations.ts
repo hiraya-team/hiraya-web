@@ -54,12 +54,15 @@ export type WorkspaceOperation = OperationBase & (
   | { kind: "unset-many"; namespace: SettingNamespace; keys: string[] }
 );
 
+/** Lists the supported base keys. */
 const BASE_KEYS = ["schemaVersion", "kind", "operationId", "workspaceId", "deviceId", "logicalTime"] as const;
 
+/** Validates that an operation contains exactly the expected keys. */
 function exactOperation(value: Record<string, unknown>, payloadKeys: readonly string[]) {
   assertExactKeys(value, [...BASE_KEYS, ...payloadKeys], "An operation has an unsupported shape.");
 }
 
+/** Parses and validates base. */
 function parseBase(value: Record<string, unknown>): OperationBase {
   if (value.schemaVersion !== WEB2_SCHEMA_VERSION) throw new Error("An operation has an unsupported schema version.");
   return {
@@ -71,17 +74,20 @@ function parseBase(value: Record<string, unknown>): OperationBase {
   };
 }
 
+/** Parses a bounded, non-empty array. */
 function boundedNonemptyArray(value: unknown, message: string) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error(message);
   return value;
 }
 
+/** Parses and validates ID array. */
 function parseIdArray(value: unknown, message: string) {
   const ids = boundedNonemptyArray(value, message).map((id) => parseStableId(id, message));
   if (new Set(ids).size !== ids.length) throw new Error(message);
   return ids;
 }
 
+/** Parses and validates new node. */
 function parseNewNode(value: unknown): NewNode {
   if (!isRecord(value) || value.kind !== "folder" && value.kind !== "file") throw new Error("A created node has an unsupported shape.");
   const baseKeys = ["id", "kind", "name", "parentId", "position", "createdAt", "modifiedAt"];
@@ -105,6 +111,7 @@ function parseNewNode(value: unknown): NewNode {
   };
 }
 
+/** Parses and validates new nodes. */
 function parseNewNodes(value: unknown) {
   const nodes = boundedNonemptyArray(value, "A created node batch is invalid.").map(parseNewNode);
   const byId = new Map(nodes.map((node) => [node.id, node]));
@@ -126,6 +133,7 @@ function parseNewNodes(value: unknown) {
   return nodes;
 }
 
+/** Parses and validates positions. */
 function parsePositions(value: unknown) {
   const positions = boundedNonemptyArray(value, "A position batch is invalid.").map((candidate) => {
     if (!isRecord(candidate)) throw new Error("A position update has an unsupported shape.");
@@ -136,6 +144,7 @@ function parsePositions(value: unknown) {
   return positions;
 }
 
+/** Parses and validates settings. */
 function parseSettings(value: unknown, namespace: SettingNamespace) {
   const settings = boundedNonemptyArray(value, "A setting batch is invalid.").map((candidate): SettingChange => {
     if (!isRecord(candidate)) throw new Error("A setting change has an unsupported shape.");
@@ -147,12 +156,14 @@ function parseSettings(value: unknown, namespace: SettingNamespace) {
   return settings;
 }
 
+/** Parses and validates setting keys. */
 function parseSettingKeys(value: unknown, namespace: SettingNamespace) {
   const keys = boundedNonemptyArray(value, "A setting key batch is invalid.").map((key) => parseSettingKeyForNamespace(namespace, key).key);
   if (new Set(keys).size !== keys.length) throw new Error("A setting key batch contains duplicate keys.");
   return keys;
 }
 
+/** Parses and validates workspace operation. */
 export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
   if (!isRecord(value) || typeof value.kind !== "string") throw new Error("An operation has an unsupported shape.");
   const base = parseBase(value);
@@ -224,10 +235,12 @@ export function parseWorkspaceOperation(value: unknown): WorkspaceOperation {
   }
 }
 
+/** Rejects an unreachable operation variant. */
 function assertNever(value: never): never {
   throw new Error(`Unsupported operation: ${JSON.stringify(value)}`);
 }
 
+/** Computes operation affected identities. */
 export function operationAffectedIdentities(operation: WorkspaceOperation) {
   const affected = new Set<string>();
   const node = (workspaceId: string, nodeId: string) => affected.add(`node:${workspaceId}:${nodeId}`);

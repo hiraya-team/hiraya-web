@@ -1,11 +1,12 @@
 import { defineConfig, devices } from "@playwright/test";
 
+/** Selects the local Playwright server port. */
 const port = process.env.PLAYWRIGHT_PORT ?? "4173";
 
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.e2e.ts",
-  testIgnore: "**/server-integration.e2e.ts",
+  testIgnore: process.env.HIRAYA_PUBLIC_E2E === "true" ? ["**/server-integration.e2e.ts", "**/desktop.e2e.ts"] : ["**/server-integration.e2e.ts", "**/public-desktop.e2e.ts"],
   fullyParallel: true,
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,

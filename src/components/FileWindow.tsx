@@ -6,10 +6,14 @@ import { editorLanguageFor, fileCapabilities } from "../ui/file-capabilities";
 import type { ThemeDefinition } from "../domain/theme";
 import { MobileHeaderMenu } from "./MobileHeaderMenu";
 
+/** Lazily loads the image preview surface. */
 const ImagePreview = lazy(() => import("./ImagePreview").then((module) => ({ default: module.ImagePreview })));
+/** Lazily loads rendered Markdown content. */
 const MarkdownRenderer = lazy(() => import("./MarkdownRenderer").then((module) => ({ default: module.MarkdownRenderer })));
+/** Provides a themed text editor with save and preview support. */
 const TextEditor = lazy(() => import("./TextEditor").then((module) => ({ default: module.TextEditor })));
 
+/** Lists language modes available to the text editor. */
 const LANGUAGE_OPTIONS: Array<{ value: EditorLanguage; label: string }> = [
   { value: "auto", label: "Auto" },
   { value: "plain", label: "Plain text" },
@@ -25,6 +29,7 @@ const LANGUAGE_OPTIONS: Array<{ value: EditorLanguage; label: string }> = [
   { value: "yaml", label: "YAML" },
 ];
 
+/** Lists supported image preview zoom levels. */
 const IMAGE_ZOOM_OPTIONS = [25, 50, 75, 100, 125, 150, 200];
 
 type ImageZoom = "fit" | number;
@@ -34,6 +39,7 @@ type ImageZoomControlProps = {
   onChange: (zoom: ImageZoom) => void;
 };
 
+/** Renders the image zoom control interface. */
 function ImageZoomControl({ value, onChange }: ImageZoomControlProps) {
   return (
     <label className="image-zoom-control">
@@ -74,6 +80,7 @@ type Props = {
   onDirtyChange?: (dirty: boolean) => void;
 };
 
+/** Renders the file window interface. */
 export function FileWindow({ file, blob, editable, editMode = false, readOnly = false, canChangeSettings = !readOnly, remoteChanged = false, headerActionsTarget, editorSettings, externalEmbeddedPreviews, theme, onSave, onDownload, onEdit, onEditorSettingsChange, onResolveLink, onOpenLinkedFile, onDirtyChange }: Props) {
   const [content, setContent] = useState("");
   const [savedContent, setSavedContent] = useState("");

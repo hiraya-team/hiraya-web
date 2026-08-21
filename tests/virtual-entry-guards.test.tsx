@@ -5,7 +5,9 @@ import { FolderExplorer } from "../src/components/FolderExplorer";
 import { isVirtualThumbnailEntry, VIRTUAL_HIRAYA_ROOT_ID } from "../src/ui/shell-entries";
 import type { FolderEntry } from "../src/types";
 
+/** Provides the folder test fixture. */
 const folder: FolderEntry = { kind: "folder", id: VIRTUAL_HIRAYA_ROOT_ID, name: ".hiraya", parentId: null, createdAt: null, modifiedAt: 1, position: { x: 0, y: 0 } };
+/** Builds the noop test fixture. */
 const noop = () => undefined;
 
 describe("virtual entry interaction guards", () => {

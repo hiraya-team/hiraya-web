@@ -5,6 +5,7 @@ import { PanelDialog } from "../src/components/PanelDialog";
 import { SearchCommandPalette } from "../src/components/SearchCommandPalette";
 import { indexSearchBreadcrumbs } from "../src/ui/search-breadcrumbs";
 
+/** Provides the base props test fixture. */
 const baseProps = {
   entries: [],
   activeDesktopId: "desktop",

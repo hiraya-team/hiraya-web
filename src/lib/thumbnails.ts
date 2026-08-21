@@ -1,11 +1,17 @@
 import { sha256Blob } from "./blob-transfer";
 import { isRecord, parseDirectBlobAccess, type DirectBlobAccess } from "./contracts";
 
+/** Defines the thumbnail profile. */
 export const THUMBNAIL_PROFILE = "thumbnail-v1" as const;
+/** Defines the thumbnail cache name. */
 export const THUMBNAIL_CACHE_NAME = "hiraya-thumbnails-v1";
+/** Defines the maximum thumbnail edge length. */
 export const THUMBNAIL_MAX_EDGE = 320;
+/** Defines the maximum thumbnail output size. */
 export const THUMBNAIL_MAX_OUTPUT_SIZE = 256 * 1024;
+/** Defines the maximum thumbnail source size. */
 export const THUMBNAIL_MAX_SOURCE_SIZE = 100 * 1024 * 1024;
+/** Lists the supported thumbnail MIME types. */
 const THUMBNAIL_MIME_TYPES = new Set([
   "image/jpeg", "image/png", "image/apng", "image/gif", "image/webp", "image/avif", "image/bmp", "image/tiff", "image/heic", "image/heif", "image/x-icon", "image/vnd.microsoft.icon",
   "video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/mpeg", "video/ogg", "video/3gpp", "video/3gpp2", "video/x-msvideo",
@@ -38,14 +44,22 @@ type ThumbnailRequest = {
   onDescriptorResponse?: (response: Response) => void;
 };
 
+/** Lists the supported descriptor keys. */
 const DESCRIPTOR_KEYS = new Set(["entryId", "contentRevision", "profile", "logicalPath", "mimeType", "width", "height", "size", "sha256", "access"]);
+/** Lists the supported access keys. */
 const ACCESS_KEYS = new Set(["url", "method", "headers", "expiresAt"]);
+/** Matches a lowercase SHA-256 digest. */
 const SHA256_HEX = /^[a-f0-9]{64}$/;
+/** Matches the expected MIME token. */
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
+/** Matches the expected MIME type. */
 const MIME_TYPE = new RegExp(`^(${MIME_TOKEN}/${MIME_TOKEN})(?:\\s*;\\s*(${MIME_TOKEN})\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`, "i");
+/** Defines the MIME parameter. */
 const MIME_PARAMETER = new RegExp(`;\\s*(${MIME_TOKEN})\\s*=`, "gi");
+/** Tracks thumbnail requests currently in flight. */
 const inFlight = new Map<string, Promise<Blob>>();
 
+/** Reports whether a MIME type supports thumbnail generation. */
 export function supportsThumbnailMime(value: string) {
   const match = MIME_TYPE.exec(value);
   if (!match || !THUMBNAIL_MIME_TYPES.has(match[1].toLowerCase())) return false;
@@ -53,19 +67,23 @@ export function supportsThumbnailMime(value: string) {
   return new Set(names).size === names.length;
 }
 
+/** Validates that a record contains exactly the expected keys. */
 function exactKeys(value: Record<string, unknown>, keys: ReadonlySet<string>) {
   return Object.keys(value).length === keys.size && Object.keys(value).every((key) => keys.has(key));
 }
 
+/** Validates and returns a non-negative integer. */
 function nonNegativeInteger(value: unknown, label: string) {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`The thumbnail has an invalid ${label}.`);
   return value as number;
 }
 
+/** Builds the logical cache path for a thumbnail. */
 export function thumbnailLogicalPath(entryId: string, contentRevision: number) {
   return `.hiraya/thumbnails/${entryId}/${contentRevision}/${THUMBNAIL_PROFILE}.webp`;
 }
 
+/** Parses and validates thumbnail descriptor. */
 export function parseThumbnailDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedDirectOrigin?: string): ThumbnailDescriptor {
   if (!isRecord(value) || !exactKeys(value, DESCRIPTOR_KEYS)) throw new Error("The thumbnail response has an unsupported format.");
   if (value.entryId !== expectedEntryId) throw new Error("The thumbnail response is for a different entry.");
@@ -84,10 +102,12 @@ export function parseThumbnailDescriptor(value: unknown, expectedEntryId: string
   return { entryId: expectedEntryId, contentRevision, profile: THUMBNAIL_PROFILE, logicalPath: value.logicalPath, mimeType: "image/webp", width, height, size, sha256: value.sha256, access: parseDirectBlobAccess(value.access, "GET", expectedDirectOrigin) };
 }
 
+/** Builds the cache key for a thumbnail descriptor. */
 function cacheKey(authority: string, entryId: string) {
   return `https://thumbnail-cache.hiraya.invalid/${encodeURIComponent(authority)}/${encodeURIComponent(entryId)}/${THUMBNAIL_PROFILE}`;
 }
 
+/** Reads cached thumbnail. */
 async function readCachedThumbnail(cache: Cache, key: string, revision: number) {
   try {
     const response = await cache.match(key);
@@ -103,6 +123,7 @@ async function readCachedThumbnail(cache: Cache, key: string, revision: number) 
   return null;
 }
 
+/** Parses a Retry-After header as milliseconds. */
 function retryAfterMilliseconds(value: string | null) {
   if (!value) return 250;
   const seconds = Number(value);
@@ -111,6 +132,7 @@ function retryAfterMilliseconds(value: string | null) {
   return Number.isFinite(date) ? Math.min(3_000, Math.max(0, date - Date.now())) : 250;
 }
 
+/** Reads thumbnail body. */
 async function readThumbnailBody(response: Response, expectedSize: number) {
   if (!response.body) throw new Error("The thumbnail response could not be streamed.");
   const contentLength = Number(response.headers.get("Content-Length"));
@@ -135,6 +157,7 @@ async function readThumbnailBody(response: Response, expectedSize: number) {
   return new Blob(chunks, { type: response.headers.get("Content-Type") ?? "" });
 }
 
+/** Fetches thumbnail. */
 async function fetchThumbnail(request: ThumbnailRequest) {
   const fetchImpl = request.fetchImpl ?? globalThis.fetch.bind(globalThis);
   const cacheStorage = request.cacheStorage ?? (typeof caches === "undefined" ? undefined : caches);
@@ -164,6 +187,7 @@ async function fetchThumbnail(request: ThumbnailRequest) {
   return blob;
 }
 
+/** Loads thumbnail. */
 export function loadThumbnail(request: ThumbnailRequest) {
   const key = `${request.authority}\0${request.entryId}\0${request.contentRevision}\0${THUMBNAIL_PROFILE}`;
   const current = inFlight.get(key);

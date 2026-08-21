@@ -10,6 +10,7 @@ import { inspectSceneFile, materializeScene, sceneMotionBlocked, SCENE_CSP } fro
 type Props = { file: FileEntry | null; contentRevision: number; readContent: (file: FileEntry) => Promise<Blob>; mode: "widget" | "wallpaper"; onPointerObservation?: (observation: SandboxPointerObservation, frame: HTMLIFrameElement) => void; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void };
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; html: string; navigationToken: string; revoke(): void };
 
+/** Renders a Scene as a wallpaper or consent-gated desktop widget. */
 export function SceneFrame({ file, contentRevision, readContent, mode, onPointerObservation, onWallpaperTarget }: Props) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [ready, setReady] = useState(false);

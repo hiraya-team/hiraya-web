@@ -10,10 +10,12 @@ export type ActivityLogProps = {
   canOpenAffectedEntries?: (activity: ActivityRecord, entryIds: readonly string[]) => boolean;
 };
 
+/** Formats action for display. */
 function formatAction(action: string) {
   return action.replaceAll("-", " ");
 }
 
+/** Formats source for display. */
 function formatSource(source: string) {
   if (source === "api") return "Shared desktop";
   if (source === "filesystem") return "Files directory";
@@ -21,6 +23,7 @@ function formatSource(source: string) {
   return source;
 }
 
+/** Renders the activity log interface. */
 export function ActivityLog({ onListActivity, onSubscribe, onOpenAffectedEntries, canOpenAffectedEntries }: ActivityLogProps) {
   const [search, setSearch] = useState("");
   const deferredSearch = useDeferredValue(search.trim());

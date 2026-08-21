@@ -12,12 +12,16 @@ import {
   mapThemeTokens,
 } from "../src/apps/host";
 
+/** Provides the window state test fixture. */
 const windowState: WindowState = { focused: true, maximized: false, fullscreen: false, width: 640, height: 480 };
+/** Provides the theme definition test fixture. */
 const themeDefinition = BUILTIN_THEMES["hiraya-dusk"].definition;
+/** Provides the empty storage test fixture. */
 const emptyStorage = {
   forInstance: () => ({ get: async () => undefined, set: async () => undefined, remove: async () => undefined, clear: async () => undefined }),
 };
 
+/** Launches a browser session. */
 function launch(appId = "test.editor", launchId = "launch-1"): LaunchContext {
   return { protocolVersion: 1, appId, launchId, source: "launcher", files: [], folders: [], arguments: [], theme: mapThemeTokens(themeDefinition) };
 }

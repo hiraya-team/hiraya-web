@@ -3,8 +3,10 @@ import { toPortableSeededManifest } from "./seeded-manifest";
 import type { DesktopStateSnapshot } from "../domain/desktop-state";
 import type { DesktopEntry } from "../types";
 
+/** Defines the export root. */
 const EXPORT_ROOT = "hiraya-seeded";
 
+/** Returns logical path. */
 function logicalPath(entry: DesktopEntry, byId: Map<string, DesktopEntry>) {
   const segments = [entry.name];
   let parentId = entry.parentId;
@@ -17,10 +19,12 @@ function logicalPath(entry: DesktopEntry, byId: Map<string, DesktopEntry>) {
   return segments.join("/");
 }
 
+/** Returns portable path. */
 function portablePath(entry: DesktopEntry, byId: Map<string, DesktopEntry>) {
   return logicalPath(entry, byId).split("/").map((segment) => encodeURIComponent(segment)).join("/");
 }
 
+/** Creates zip. */
 function createZip(files: Zippable) {
   return new Promise<Uint8Array>((resolve, reject) => {
     zip(files, { level: 6 }, (error, archive) => {
@@ -30,6 +34,7 @@ function createZip(files: Zippable) {
   });
 }
 
+/** Returns export seeded desktop. */
 export async function exportSeededDesktop(snapshot: DesktopStateSnapshot, readContent: (id: string) => Promise<Blob>) {
   const byId = new Map(snapshot.entries.map((entry) => [entry.id, entry]));
   const archive: Zippable = { [`${EXPORT_ROOT}/`]: new Uint8Array() };

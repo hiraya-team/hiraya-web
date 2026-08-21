@@ -6,11 +6,16 @@ import { WEB2_SYNC_PROTOCOL, type PullResult, type PushBatchResult, type PushReq
 import { createWeb2SyncRuntime, type Web2SyncRuntimeOptions, type Web2SyncRuntimeTransport } from "../src/sync/runtime";
 import { Web2HTTPError, Web2NetworkError } from "../src/sync/transport";
 
+/** Builds the ID test fixture. */
 const id = (value: number) => `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
+/** Provides the account test fixture. */
 const ACCOUNT = id(1);
+/** Provides the workspace test fixture. */
 const WORKSPACE = id(2);
+/** Provides the device test fixture. */
 const DEVICE = id(3);
 
+/** Builds the stored test fixture. */
 function stored(operation: WorkspaceOperation, affectedIdentities: string[]): StoredOperation {
   let inverse: OperationInverse;
   switch (operation.kind) {
@@ -46,14 +51,17 @@ function stored(operation: WorkspaceOperation, affectedIdentities: string[]): St
   } as StoredOperation;
 }
 
+/** Builds the pull test fixture. */
 function pull(cursor = 0, headSequence = cursor, workspaceId = WORKSPACE): PullResult {
   return { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "operations", workspaceId, deviceId: DEVICE, fromCursor: cursor, cursor, headSequence, snapshotBarrier: 0, logFloor: 0, observedLogicalTime: 0, operations: [] };
 }
 
+/** Builds the accepted test fixture. */
 function accepted(operation: WorkspaceOperation): PushBatchResult {
   return { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, results: [{ schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL, kind: "accepted", workspaceId: operation.workspaceId, operationId: operation.operationId, sequence: 1, headSequence: 1, outcome: "applied" }] };
 }
 
+/** Creates the test setup. */
 function setup(pending: StoredOperation[], overrides: Partial<Web2SyncRuntimeOptions> = {}) {
   const calls = { pushes: [] as PushRequest[], pulls: [] as number[], pullWorkspaces: [] as string[], rejected: [] as unknown[], completed: [] as string[], hydrationTargets: [] as unknown[], appliedOperations: [] as string[], directoryRevisions: [] as number[], accountAppRevisions: [] as number[], applied: 0, bootstrap: 0, hydrated: 0, uploads: 0, order: [] as string[] };
   const cursors = new Map<string, number>([[WORKSPACE, 0]]);

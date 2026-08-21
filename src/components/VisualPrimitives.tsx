@@ -24,6 +24,7 @@ import type { DesktopEntry } from "../types";
 import { fileCapabilities } from "../ui/file-capabilities";
 import { offlineStatusLabel, type OfflineEntryAvailability } from "../lib/offline-availability";
 
+/** Renders the entry icon interface. */
 export function EntryIcon({ entry, size = 24 }: { entry: DesktopEntry; size?: number }) {
   if (entry.kind === "folder") return <Folder size={size} weight="duotone" aria-hidden="true" />;
   const { icon } = fileCapabilities(entry);
@@ -42,6 +43,7 @@ export function EntryIcon({ entry, size = 24 }: { entry: DesktopEntry; size?: nu
 
 export type EntryPreviewSource = Readonly<{ kind: "blob"; blob: Blob }> | Readonly<{ kind: "url"; url: string }>;
 
+/** Renders the media thumbnail interface. */
 function MediaThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEntry, { kind: "file" }>; size: number; loadPreview: (id: string) => Promise<EntryPreviewSource> }) {
   const triggerRef = useRef<HTMLSpanElement>(null);
   const [shouldLoad, setShouldLoad] = useState(false);
@@ -102,11 +104,13 @@ function MediaThumbnail({ entry, size, loadPreview }: { entry: Extract<DesktopEn
   </>;
 }
 
+/** Renders the entry artwork interface. */
 export function EntryArtwork({ entry, size = 24, loadPreview }: { entry: DesktopEntry; size?: number; loadPreview?: (id: string) => Promise<EntryPreviewSource> }) {
   if (entry.kind === "file" && ["image", "video"].includes(fileCapabilities(entry).preview) && loadPreview) return <MediaThumbnail entry={entry} size={size} loadPreview={loadPreview} />;
   return <EntryIcon entry={entry} size={size} />;
 }
 
+/** Renders the app icon interface. */
 export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" | "properties" | "settings" | "sandbox" | "store" | "merge"; entry?: DesktopEntry | null; size?: number }) {
   if (kind === "file" && entry) return <EntryIcon entry={entry} size={size} />;
   if (kind === "explorer") return <Folder size={size} weight="duotone" aria-hidden="true" />;
@@ -116,6 +120,7 @@ export function AppIcon({ kind, entry, size = 16 }: { kind: "file" | "explorer" 
   return <GearSix size={size} aria-hidden="true" />;
 }
 
+/** Renders the availability badge interface. */
 export function AvailabilityBadge({ availability }: { availability: OfflineEntryAvailability }) {
   return <span className="availability-badge" data-status={availability.status} title={offlineStatusLabel(availability)} aria-label={offlineStatusLabel(availability)}>
     {availability.status === "local" ? <HardDrive /> : availability.status === "updating" ? <SpinnerGap /> : availability.status === "online-only" ? <CloudSlash /> : availability.status === "partial" ? <CircleHalf /> : availability.status === "empty" ? <Folder /> : <CloudCheck />}
@@ -124,10 +129,12 @@ export function AvailabilityBadge({ availability }: { availability: OfflineEntry
 
 export type StatusTone = "neutral" | "success" | "danger" | "progress" | "readonly";
 
+/** Renders the status badge interface. */
 export function StatusBadge({ children, tone = "neutral", surface = "window" }: { children: ReactNode; tone?: StatusTone; surface?: "window" | "chrome" }) {
   return <span className="status-badge" data-tone={tone} data-surface={surface}>{children}</span>;
 }
 
+/** Renders the role badge interface. */
 export function RoleBadge({ children }: { children: ReactNode }) {
   return <span className="role-badge">{children}</span>;
 }

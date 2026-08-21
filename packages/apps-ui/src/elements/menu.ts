@@ -8,18 +8,22 @@ type MenuEntry = HTMLElement & {
   focus(options?: FocusOptions): void;
 };
 
+/** Reports whether an element is a supported menu entry. */
 function isMenuEntry(element: Element): element is MenuEntry {
   return element instanceof HTMLElement && (element.tagName === "HIRAYA-MENU-ITEM" || element.tagName === "HIRAYA-SUBMENU");
 }
 
+/** Returns the menu entries assigned to a slot. */
 function assignedEntries(slot: HTMLSlotElement): MenuEntry[] {
   return slot.assignedElements({ flatten: true }).filter(isMenuEntry);
 }
 
+/** Returns enabled, visible menu entries assigned to a slot. */
 function enabledEntries(slot: HTMLSlotElement): MenuEntry[] {
   return assignedEntries(slot).filter((entry) => !entry.disabled && !entry.hidden);
 }
 
+/** Moves focus. */
 function moveFocus(slot: HTMLSlotElement, current: Element | null, direction: 1 | -1 | "first" | "last"): void {
   const entries = enabledEntries(slot);
   if (!entries.length) return;
@@ -34,20 +38,24 @@ function moveFocus(slot: HTMLSlotElement, current: Element | null, direction: 1 
   entries[index]?.focus();
 }
 
+/** Synchronizes roving tab index. */
 function syncRovingTabIndex(slot: HTMLSlotElement): void {
   const entries = enabledEntries(slot);
   const selected = entries.find((entry) => entry.menuTabIndex === 0) ?? entries[0];
   assignedEntries(slot).forEach((entry) => { entry.menuTabIndex = entry === selected ? 0 : -1; });
 }
 
+/** Finds the menu entry that owns an event. */
 function owningEntry(event: Event): MenuEntry | null {
   return event.composedPath().find((target): target is MenuEntry => target instanceof Element && isMenuEntry(target)) ?? null;
 }
 
+/** Implements the Hiraya menu item. */
 export class HirayaMenuItem extends HTMLElementBase {
   static readonly observedAttributes = ["disabled", "value"];
   readonly #item: HTMLElement;
 
+  /** Creates a hiraya menu item instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -62,22 +70,33 @@ export class HirayaMenuItem extends HTMLElementBase {
     this.#item.addEventListener("click", () => this.activate());
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Returns the menu item's value. */
   get value(): string { return this.getAttribute("value") ?? ""; }
+  /** Sets the menu item's value. */
   set value(value: string) { this.setAttribute("value", value); }
+  /** Reports whether the menu item is disabled. */
   get disabled(): boolean { return hasBooleanAttribute(this, "disabled"); }
+  /** Sets whether the menu item is disabled. */
   set disabled(value: boolean) { setBooleanAttribute(this, "disabled", value); }
+  /** Returns the menu item's roving tab index. */
   get menuTabIndex(): number { return this.#item.tabIndex; }
+  /** Sets the menu item's roving tab index. */
   set menuTabIndex(value: number) { this.#item.tabIndex = value; }
 
+  /** Moves focus to this element. */
   focus(options?: FocusOptions): void { this.#item.focus(options); }
 
+  /** Activates this element. */
   activate(): void {
     if (!this.disabled) hirayaEvent(this, "hiraya-select", { value: this.value });
   }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#item) return;
     this.#item.setAttribute("aria-disabled", String(this.disabled));
@@ -85,9 +104,11 @@ export class HirayaMenuItem extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya menu. */
 export class HirayaMenu extends HTMLElementBase {
   readonly #slot: HTMLSlotElement;
 
+  /** Creates a hiraya menu instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -101,17 +122,22 @@ export class HirayaMenu extends HTMLElementBase {
     this.addEventListener("keydown", (event) => this.#onKeyDown(event));
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { syncRovingTabIndex(this.#slot); }
 
+  /** Moves focus to the first enabled menu entry. */
   focusFirst(): void { moveFocus(this.#slot, null, "first"); }
+  /** Moves focus to the last enabled menu entry. */
   focusLast(): void { moveFocus(this.#slot, null, "last"); }
 
+  /** Updates roving focus when focus enters the menu. */
   #onFocusIn(event: FocusEvent): void {
     const entry = owningEntry(event);
     if (!entry || !assignedEntries(this.#slot).includes(entry)) return;
     assignedEntries(this.#slot).forEach((candidate) => { candidate.menuTabIndex = candidate === entry ? 0 : -1; });
   }
 
+  /** Handles menu keyboard navigation and activation. */
   #onKeyDown(event: KeyboardEvent): void {
     const nearestMenu = event.composedPath().find((target) => target instanceof HirayaMenu);
     if (nearestMenu !== this || event.defaultPrevented) return;
@@ -132,11 +158,13 @@ export class HirayaMenu extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya submenu. */
 export class HirayaSubmenu extends HTMLElementBase {
   static readonly observedAttributes = ["open", "disabled"];
   readonly #trigger: HTMLElement;
   readonly #menuSlot: HTMLSlotElement;
 
+  /** Creates a hiraya submenu instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -157,19 +185,30 @@ export class HirayaSubmenu extends HTMLElementBase {
     this.addEventListener("hiraya-select", () => { this.open = false; });
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Reports whether the submenu is open. */
   get open(): boolean { return hasBooleanAttribute(this, "open"); }
+  /** Sets whether the submenu is open. */
   set open(value: boolean) { setBooleanAttribute(this, "open", value); }
+  /** Reports whether the submenu is disabled. */
   get disabled(): boolean { return hasBooleanAttribute(this, "disabled"); }
+  /** Sets whether the submenu is disabled. */
   set disabled(value: boolean) { setBooleanAttribute(this, "disabled", value); }
+  /** Returns the submenu's roving tab index. */
   get menuTabIndex(): number { return this.#trigger.tabIndex; }
+  /** Sets the submenu's roving tab index. */
   set menuTabIndex(value: number) { this.#trigger.tabIndex = value; }
 
+  /** Moves focus to this element. */
   focus(options?: FocusOptions): void { this.#trigger.focus(options); }
+  /** Activates this element. */
   activate(): void { if (!this.disabled) this.open = true; }
 
+  /** Handles keyboard navigation into and out of the submenu. */
   #onKeyDown(event: KeyboardEvent): void {
     const onTrigger = event.composedPath().includes(this.#trigger);
     if (onTrigger && (event.key === "ArrowRight" || event.key === "Enter" || event.key === " ")) {
@@ -188,10 +227,12 @@ export class HirayaSubmenu extends HTMLElementBase {
     }
   }
 
+  /** Returns the menu assigned to this submenu. */
   #nestedMenu(): HirayaMenu | null {
     return this.#menuSlot.assignedElements({ flatten: true }).find((element): element is HirayaMenu => element instanceof HirayaMenu) ?? null;
   }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#trigger) return;
     this.#trigger.setAttribute("aria-expanded", String(this.open));
@@ -202,6 +243,7 @@ export class HirayaSubmenu extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya action sheet. */
 export class HirayaActionSheet extends HTMLElementBase {
   static readonly observedAttributes = ["open", "label"];
   readonly #dialog: HTMLDialogElement;
@@ -211,6 +253,7 @@ export class HirayaActionSheet extends HTMLElementBase {
   #usingFallback = false;
   #closing = false;
 
+  /** Creates a hiraya action sheet instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -236,8 +279,11 @@ export class HirayaActionSheet extends HTMLElementBase {
     this.addEventListener("hiraya-select", () => this.requestClose("select"));
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Releases listeners when the element leaves the document. */
   disconnectedCallback(): void {
     this.#removeFallbackListeners();
     if (this.#dialog.open) this.#dialog.close();
@@ -245,10 +291,14 @@ export class HirayaActionSheet extends HTMLElementBase {
     this.#restoreFocus = null;
   }
 
+  /** Reports whether the action sheet is open. */
   get open(): boolean { return hasBooleanAttribute(this, "open"); }
+  /** Sets whether the action sheet is open. */
   set open(value: boolean) { setBooleanAttribute(this, "open", value); }
 
+  /** Opens the action sheet as a modal. */
   showModal(): void { this.open = true; }
+  /** Closes the action sheet and restores focus. */
   close(reason = "api"): void {
     if (!this.open && !this.#dialog.open && this.#dialog.hidden) return;
     this.#closing = true;
@@ -262,10 +312,12 @@ export class HirayaActionSheet extends HTMLElementBase {
     this.#closing = false;
     hirayaEvent(this, "hiraya-close", { reason });
   }
+  /** Requests cancellation before closing the action sheet. */
   requestClose(reason = "api"): void {
     if (hirayaEvent(this, "hiraya-request-close", { reason }, true)) this.close(reason);
   }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.isConnected || this.#closing) return;
     this.#dialog.setAttribute("aria-label", this.getAttribute("label") ?? "Actions");
@@ -274,6 +326,7 @@ export class HirayaActionSheet extends HTMLElementBase {
     else if (!this.open && (this.#dialog.open || !this.#dialog.hidden)) this.close("api");
   }
 
+  /** Shows the element. */
   #show(): void {
     const active = this.ownerDocument.activeElement;
     this.#restoreFocus = active instanceof HTMLElement ? active : null;
@@ -291,12 +344,14 @@ export class HirayaActionSheet extends HTMLElementBase {
     moveFocus(this.#slot, null, "first");
   }
 
+  /** Updates roving focus when focus enters the action sheet. */
   #onFocusIn(event: FocusEvent): void {
     const entry = owningEntry(event);
     if (!entry || !assignedEntries(this.#slot).includes(entry)) return;
     assignedEntries(this.#slot).forEach((candidate) => { candidate.menuTabIndex = candidate === entry ? 0 : -1; });
   }
 
+  /** Handles action-sheet keyboard navigation and dismissal. */
   #onKeyDown(event: KeyboardEvent): void {
     if (event.defaultPrevented) return;
     const entry = owningEntry(event);
@@ -328,6 +383,7 @@ export class HirayaActionSheet extends HTMLElementBase {
     }
   };
 
+  /** Removes fallback listeners. */
   #removeFallbackListeners(): void {
     this.ownerDocument.removeEventListener("keydown", this.#onFallbackKeyDown, true);
     this.#dialog.classList.remove("fallback");

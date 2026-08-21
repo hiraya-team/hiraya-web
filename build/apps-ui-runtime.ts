@@ -2,7 +2,9 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "vite";
 
+/** Identifies the public Apps UI runtime virtual module. */
 const PUBLIC_ID = "virtual:hiraya-apps-ui-runtime";
+/** Identifies the resolved Apps UI runtime virtual module. */
 const RESOLVED_ID = `\0${PUBLIC_ID}`;
 
 interface BunBuildOutput {
@@ -29,6 +31,7 @@ export interface CompiledAppsUiRuntime {
   styles: string;
 }
 
+/** Compiles apps ui runtime. */
 export async function compileAppsUiRuntime(projectRoot: string): Promise<CompiledAppsUiRuntime> {
   const runtimePath = path.join(projectRoot, "packages", "apps-ui", "src", "runtime.ts");
   const stylesPath = path.join(projectRoot, "packages", "apps-ui", "src", "styles.css");
@@ -41,6 +44,7 @@ export async function compileAppsUiRuntime(projectRoot: string): Promise<Compile
   return Object.freeze({ abi: 1, script: await result.outputs[0].text(), styles: await readFile(stylesPath, "utf8") });
 }
 
+/** Creates the apps UI runtime plugin. */
 export function appsUiRuntimePlugin(projectRoot: string): Plugin {
   let runtime: CompiledAppsUiRuntime | undefined;
   const runtimePath = path.join(projectRoot, "packages", "apps-ui", "src", "runtime.ts");

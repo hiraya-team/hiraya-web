@@ -4,7 +4,7 @@ import { HIRAYA_SCENE_MIME_TYPE } from "@hiraya-team/apps-contracts/scene";
 import { HirayaSdkError, type DirectoryEntry, type FileHandle, type FileMetadata, type FolderHandle, type FolderMetadata, type HirayaClient } from "@hiraya-team/apps-sdk";
 import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
 import { terminateSandboxNavigation } from "@hiraya/app-runtime/navigation";
-import { connectSystemApp, describeError, formatBytes, required, setAppLoading } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, formatBytes, ITEM_LIST_EVENTS, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { css } from "@codemirror/lang-css";
 import { html } from "@codemirror/lang-html";
 import { javascript } from "@codemirror/lang-javascript";
@@ -40,30 +40,54 @@ type DocumentTab = {
 
 type SceneWorkspace = { archive: SceneArchiveState; handle: FileHandle | null; metadata: FileMetadata | null };
 
+/** Identifies the Text Editor system app. */
 const APP_ID = "app.hiraya.text-editor";
+/** Identifies persisted Text Editor settings. */
 const SETTINGS_KEY = "editor-settings";
+/** References the status interface element. */
 const status = required<HTMLElement>("#status");
+/** References the content interface element. */
 const content = required<HTMLElement>("#content");
+/** References the workbench interface element. */
 const workbench = required<HTMLElement>("#workbench");
+/** References the editor element interface element. */
 const editorElement = required<HTMLElement>("#editor");
+/** References the preview element interface element. */
 const previewElement = required<HTMLElement>("#preview");
+/** References the stage content interface element. */
 const stageContent = required<HTMLElement>("#stage-content");
+/** References the scene preview interface element. */
 const scenePreview = required<HTMLElement>("#scene-preview");
+/** References the scene validation interface element. */
 const sceneValidation = required<HTMLElement>("#scene-validation");
+/** References the loading interface element. */
 const loading = required<HTMLElement>("#loading");
+/** References the tabs element interface element. */
 const tabsElement = required<HTMLElement>("#tabs");
+/** References the breadcrumbs interface element. */
 const breadcrumbs = required<HTMLElement>("#breadcrumbs");
+/** References the file tree interface element. */
 const fileTree = required<HTMLElement>("#file-tree");
+/** References the workspace heading interface element. */
 const workspaceHeading = required<HTMLElement>("#workspace-heading");
+/** References the search input interface element. */
 const searchInput = required<HTMLInputElement>("#workspace-search");
+/** References the search results interface element. */
 const searchResults = required<HTMLElement>("#search-results");
+/** References the sidebar interface element. */
 const sidebar = required<HTMLElement>("#sidebar");
+/** Coordinates foreground and background document operations. */
 const operations = new TextDocumentOperations();
+/** Stores the active editor language compartment. */
 const languageConfig = new Compartment();
+/** Stores the active editor font compartment. */
 const fontConfig = new Compartment();
+/** Stores the active editor line-wrapping compartment. */
 const lineWrapConfig = new Compartment();
+/** Stores the active editor write-access compartment. */
 const editableConfig = new Compartment();
 let switchingDocument = false;
+/** Defines the base CodeMirror extensions. */
 const editorExtensions: Extension = [
   minimalSetup,
   EditorState.tabSize.of(2),
@@ -93,6 +117,7 @@ const editorExtensions: Extension = [
     if (!activeTab.scenePath) scheduleAutoSave(activeTab);
   }),
 ];
+/** References the active CodeMirror editor. */
 const editor = new EditorView({ parent: editorElement, extensions: editorExtensions });
 
 let hiraya: HirayaClient;
@@ -117,9 +142,13 @@ let commandSignature = "";
 let scenePreviewResource: MaterializedApp | null = null;
 let stopScenePreview: (() => void) | null = null;
 let scenePreviewTimer = 0;
+/** Indexes workspace children by parent handle. */
 const children = new Map<FolderHandle, DirectoryEntry[]>();
+/** Indexes workspace entries by handle. */
 const entries = new Map<string, DirectoryEntry>();
+/** Indexes workspace parents by child handle. */
 const parents = new Map<string, FolderHandle | null>();
+/** Tracks expanded workspace folder handles. */
 const expanded = new Set<FolderHandle>();
 
 required("#close-sidebar").addEventListener("click", () => setSidebarOpen(false));
@@ -142,10 +171,11 @@ for (const [id, key] of [["line-wrap", "lineWrap"], ["auto-save", "autoSave"], [
 searchInput.addEventListener("input", () => void searchWorkspace(searchInput.value));
 fileTree.addEventListener("click", (event) => void activateTreeTarget(event.target));
 fileTree.addEventListener("keydown", (event) => void handleTreeKey(event));
-searchResults.addEventListener("hiraya-item-select", (event) => void activateSearchResult((event as CustomEvent<{ id: string }>).detail.id));
+searchResults.addEventListener(ITEM_LIST_EVENTS.select, (event) => void activateSearchResult((event as CustomEvent<{ id: string }>).detail.id));
 addEventListener("keydown", handleShortcut);
 void start();
 
+/** Starts the application. */
 async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
@@ -182,6 +212,7 @@ async function start() {
   }
 }
 
+/** Creates untitled. */
 function createUntitled() {
   const state = new TextDocumentState();
   state.load("", 0);
@@ -190,6 +221,7 @@ function createUntitled() {
   activateTab(tab, false);
 }
 
+/** Opens the file supplied in the launch context. */
 async function open() {
   if (!initialized || saving || opening) return;
   const generation = operations.beginForeground();
@@ -200,6 +232,7 @@ async function open() {
   finally { operations.finishForeground(generation); }
 }
 
+/** Loads the selected document into the editor. */
 async function load(next: FileHandle, generation: number) {
   const entry = await statFile(next);
   if (!operations.isForegroundCurrent(generation)) return;
@@ -237,12 +270,14 @@ async function load(next: FileHandle, generation: number) {
   }
 }
 
+/** Reads current metadata for a file handle. */
 async function statFile(next: FileHandle) {
   const entry = await hiraya.files.stat(next);
   if (entry.kind !== "file") throw new Error("The selected item is not a file.");
   return entry.metadata;
 }
 
+/** Leaves the active scene workspace. */
 async function leaveScene(title: string) {
   if (!scene) return true;
   if (scene.archive.dirty && !await hiraya.dialogs.confirm({ title, message: "The Scene has changes that have not been saved.", confirmLabel: "Discard changes", destructive: true })) return false;
@@ -250,6 +285,7 @@ async function leaveScene(title: string) {
   return true;
 }
 
+/** Clears the active scene workspace state. */
 function clearSceneWorkspace() {
   clearTimeout(scenePreviewTimer);
   stopScenePreview?.(); stopScenePreview = null;
@@ -265,6 +301,7 @@ function clearSceneWorkspace() {
   required<HTMLElement>("#scene-conflict").hidden = true;
 }
 
+/** Loads scene. */
 async function loadScene(handle: FileHandle, metadata: FileMetadata, generation: number) {
   if (scene && !await leaveScene("Open another Scene?")) return;
   if (!scene && tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Open Scene?", message: "Open tabs have unsaved changes. Opening a Scene will close them.", confirmLabel: "Open Scene", destructive: true })) return;
@@ -286,6 +323,7 @@ async function loadScene(handle: FileHandle, metadata: FileMetadata, generation:
   }
 }
 
+/** Opens scene workspace. */
 function openSceneWorkspace(archive: SceneArchiveState, handle: FileHandle | null, metadata: FileMetadata | null, initialPath: string) {
   for (const tab of tabs) { clearTimeout(tab.autoSaveTimer); releasePreview(tab); }
   tabs = [];
@@ -305,6 +343,7 @@ function openSceneWorkspace(archive: SceneArchiveState, handle: FileHandle | nul
   scheduleScenePreview();
 }
 
+/** Creates and opens a starter scene. */
 async function newScene() {
   if (!await leaveScene("Create a new Scene?")) return;
   if (tabs.some(tabDirty) && !await hiraya.dialogs.confirm({ title: "Create a new Scene?", message: "Open tabs have unsaved changes. Creating a Scene will close them.", confirmLabel: "Create Scene", destructive: true })) return;
@@ -313,6 +352,7 @@ async function newScene() {
   setStatus("Starter Scene ready. Use Save As to store it.");
 }
 
+/** Opens scene path. */
 function openScenePath(path: string) {
   if (!scene || !path) return;
   selectedPath = path;
@@ -328,14 +368,17 @@ function openScenePath(path: string) {
   renderWorkspace();
 }
 
+/** Reads text. */
 async function readText(next: FileHandle, entry?: FileMetadata) {
   entry ??= await statFile(next);
   const { data } = await hiraya.files.readAll(next);
   return { entry, text: new TextDecoder("utf-8", { fatal: true }).decode(data) };
 }
 
+/** Clears the scene preview. */
 function emptyPreview() { return { previewSource: null, previewObjectUrl: null, previewExpiresAt: 0, previewRefreshAttempted: false }; }
 
+/** Creates preview. */
 async function createPreview(handle: FileHandle, entry: FileMetadata, kind: EditorFileKind) {
   if (kind === "metadata") return emptyPreview();
   if (kind === "image" || kind === "pdf") {
@@ -351,6 +394,7 @@ async function createPreview(handle: FileHandle, entry: FileMetadata, kind: Edit
   return { previewSource: source.url, previewObjectUrl: null, previewExpiresAt: source.expiresAt, previewRefreshAttempted: false };
 }
 
+/** Activates an open editor tab. */
 function activateTab(tab: DocumentTab, focus = true) {
   activeTab = tab;
   editorElement.hidden = tab.kind !== "text";
@@ -370,6 +414,7 @@ function activateTab(tab: DocumentTab, focus = true) {
   }
 }
 
+/** Closes tab. */
 async function closeTab(tab: DocumentTab, confirm = true) {
   if (confirm && !tab.scenePath && tabDirty(tab) && !await hiraya.dialogs.confirm({ title: `Close ${tab.name}?`, message: "This tab has changes that have not been saved.", confirmLabel: "Close without saving", destructive: true })) return false;
   clearTimeout(tab.autoSaveTimer);
@@ -388,6 +433,7 @@ async function closeTab(tab: DocumentTab, confirm = true) {
   return true;
 }
 
+/** Saves the active document. */
 async function save(saveAs: boolean) {
   if (formatting) return;
   if (!saveAs && (scene?.handle && !scene.archive.dirty || activeTab?.handle && !activeTab.state?.dirty)) return;
@@ -395,6 +441,7 @@ async function save(saveAs: boolean) {
   else if (activeTab) await saveTab(activeTab, saveAs);
 }
 
+/** Saves tab. */
 async function saveTab(tab: DocumentTab, saveAs: boolean) {
   if (tab.scenePath) { await saveScene(saveAs); return; }
   if (!initialized || !tab.state || tab.saving || opening || !canWrite) return;
@@ -435,6 +482,7 @@ async function saveTab(tab: DocumentTab, saveAs: boolean) {
   }
 }
 
+/** Saves scene. */
 async function saveScene(saveAs: boolean) {
   if (!initialized || !scene || saving || opening || !canWrite) return;
   saving = true;
@@ -462,6 +510,7 @@ async function saveScene(saveAs: boolean) {
   }
 }
 
+/** Reconciles a remotely changed document. */
 async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
   const generation = operations.beginBackground();
   if (generation === null) return;
@@ -511,6 +560,7 @@ async function remoteChanged(handles: (FileHandle | FolderHandle)[]) {
   if (workspace && handles.some((handle) => entries.has(handle) || handle === workspace?.handle)) void refreshWorkspace();
 }
 
+/** Applies formatting. */
 async function applyFormatting() {
   if (!initialized || opening || saving || formatting || !canWrite || !activeTab?.state) return;
   const tab = activeTab;
@@ -530,11 +580,13 @@ async function applyFormatting() {
   finally { formatting = false; if (initialized) renderControlState(); }
 }
 
+/** Schedules auto save. */
 function scheduleAutoSave(tab: DocumentTab) {
   clearTimeout(tab.autoSaveTimer);
   if (initialized && canWrite && settings.autoSave && tab.handle && tab.state?.dirty && !tab.state.remoteConflict) tab.autoSaveTimer = setTimeout(() => void saveTab(tab, false), 750) as unknown as number;
 }
 
+/** Prompts for and opens a workspace folder. */
 async function chooseWorkspace() {
   if (!initialized || opening) return;
   if (dirtyDocuments() && !await hiraya.dialogs.confirm({ title: "Change workspace?", message: "Open tabs have unsaved changes. Changing workspace will close them.", confirmLabel: "Change workspace", destructive: true })) return;
@@ -571,6 +623,7 @@ async function chooseWorkspace() {
   } catch (error) { setStatus(describeError(error, "Could not open the workspace."), true); }
 }
 
+/** Lists a folder in the active workspace. */
 async function listFolder(folder: FolderHandle) {
   const listed = sortWorkspaceEntries(await hiraya.files.list(folder));
   for (const previous of children.get(folder) ?? []) {
@@ -585,6 +638,7 @@ async function listFolder(folder: FolderHandle) {
   return listed;
 }
 
+/** Refreshes workspace. */
 async function refreshWorkspace() {
   if (scene?.handle) {
     try {
@@ -609,6 +663,7 @@ async function refreshWorkspace() {
   } catch (error) { setStatus(describeError(error, "Could not refresh the workspace."), true); }
 }
 
+/** Renders workspace. */
 function renderWorkspace() {
   fileTree.replaceChildren();
   if (scene) { renderSceneWorkspace(); return; }
@@ -630,6 +685,7 @@ function renderWorkspace() {
   fileTree.append(list);
 }
 
+/** Renders scene workspace. */
 function renderSceneWorkspace() {
   if (!scene) return;
   workspaceHeading.hidden = false;
@@ -646,6 +702,7 @@ function renderSceneWorkspace() {
   fileTree.append(list);
 }
 
+/** Appends folder children to the workspace tree. */
 function appendChildren(list: HTMLUListElement, parent: FolderHandle, depth: number) {
   for (const entry of children.get(parent) ?? []) {
     const item = document.createElement("li");
@@ -676,6 +733,7 @@ function appendChildren(list: HTMLUListElement, parent: FolderHandle, depth: num
   }
 }
 
+/** Opens the workspace entry selected in the tree. */
 async function activateTreeTarget(target: EventTarget | null) {
   const button = target instanceof Element ? target.closest<HTMLButtonElement>(".tree-row") : null;
   if (!button) return;
@@ -700,6 +758,7 @@ async function activateTreeTarget(target: EventTarget | null) {
   renderControlState();
 }
 
+/** Opens workspace file. */
 async function openWorkspaceFile(entry: Extract<DirectoryEntry, { kind: "file" }>) {
   const generation = operations.beginForeground();
   try { await load(entry.metadata.handle, generation); }
@@ -708,6 +767,7 @@ async function openWorkspaceFile(entry: Extract<DirectoryEntry, { kind: "file" }
   if (matchMedia("(max-width: 700px)").matches) setSidebarOpen(false);
 }
 
+/** Searches indexed files in the active workspace. */
 async function searchWorkspace(query: string) {
   const generation = workspaceGeneration;
   searchResults.replaceChildren();
@@ -743,6 +803,7 @@ async function searchWorkspace(query: string) {
   } catch (error) { setStatus(describeError(error, "Could not search the workspace."), true); }
 }
 
+/** Adds a folder and its descendants to the search index. */
 async function indexFolder(folder: FolderHandle, seen: Set<FolderHandle>) {
   if (seen.has(folder)) return;
   seen.add(folder);
@@ -750,12 +811,14 @@ async function indexFolder(folder: FolderHandle, seen: Set<FolderHandle>) {
   for (const entry of listed) if (entry.kind === "folder") await indexFolder(entry.metadata.handle, seen);
 }
 
+/** Opens the selected workspace search result. */
 async function activateSearchResult(id: string) {
   if (scene?.archive.files.has(id)) { openScenePath(id); return; }
   const entry = entries.get(id);
   if (entry?.kind === "file") await openWorkspaceFile(entry);
 }
 
+/** Returns the parent path of a workspace entry. */
 function workspaceParentPath(entry: DirectoryEntry) {
   const parts: string[] = [];
   let parent = entry.metadata.parent;
@@ -770,17 +833,20 @@ function workspaceParentPath(entry: DirectoryEntry) {
   return parts.length ? parts.join(" / ") : workspace?.name ?? "Workspace";
 }
 
+/** Resolves a workspace entry's relative path. */
 function workspaceEntryPath(entry: DirectoryEntry) {
   const parent = workspaceParentPath(entry);
   return `${parent === workspace?.name ? "" : `${parent}/`}${entry.metadata.name}`;
 }
 
+/** Returns the parent folder of the selected workspace entry. */
 function selectedParent() {
   if (!workspace) return null;
   const selected = selectedHandle ? entries.get(selectedHandle) : null;
   return selected?.kind === "folder" ? selected.metadata.handle : selected?.metadata.parent ?? workspace.handle;
 }
 
+/** Creates entry. */
 async function createEntry(kind: "file" | "folder") {
   if (scene) {
     if (kind === "folder" || !canWrite) return;
@@ -804,6 +870,7 @@ async function createEntry(kind: "file" | "folder") {
   } catch (error) { setStatus(describeError(error, `Could not create ${name}.`), true); }
 }
 
+/** Renames the selected workspace entry. */
 async function renameEntry() {
   if (scene) {
     const path = selectedPath;
@@ -841,6 +908,7 @@ async function renameEntry() {
   } catch (error) { setStatus(describeError(error, `Could not rename ${entry.metadata.name}.`), true); }
 }
 
+/** Deletes entry. */
 async function deleteEntry() {
   if (scene) {
     const path = selectedPath;
@@ -872,6 +940,7 @@ async function deleteEntry() {
   } catch (error) { setStatus(describeError(error, `Could not delete ${entry.metadata.name}.`), true); }
 }
 
+/** Imports assets into the active scene. */
 async function importSceneAssets() {
   if (!scene || !canWrite) return;
   const selected = await hiraya.dialogs.openFile({ multiple: true });
@@ -888,6 +957,7 @@ async function importSceneAssets() {
   if (imported) setStatus(`Imported ${imported} ${imported === 1 ? "asset" : "assets"}.`);
 }
 
+/** Prompts for and validates an entry name. */
 function promptName(titleText: string, labelText: string, initial: string, submitText: string, allowPath = false) {
   const dialog = required<HTMLDialogElement>("#entry-dialog");
   const form = required<HTMLFormElement>("#entry-dialog form");
@@ -913,6 +983,7 @@ function promptName(titleText: string, labelText: string, initial: string, submi
   });
 }
 
+/** Renders document state. */
 function renderDocumentState() {
   renderTabs(); renderBreadcrumbs();
   const dirty = dirtyDocuments();
@@ -924,12 +995,14 @@ function renderDocumentState() {
   renderControlState();
 }
 
+/** Publishes window title. */
 function publishWindowTitle(title: string) {
   if (title === windowTitle) return;
   windowTitle = title;
   void hiraya?.window.setTitle(title);
 }
 
+/** Renders tabs. */
 function renderTabs() {
   tabsElement.replaceChildren();
   for (const tab of tabs) {
@@ -950,6 +1023,7 @@ function renderTabs() {
   }
 }
 
+/** Renders breadcrumbs. */
 function renderBreadcrumbs() {
   breadcrumbs.replaceChildren();
   if (!activeTab || scene) { breadcrumbs.hidden = true; return; }
@@ -978,6 +1052,7 @@ function renderBreadcrumbs() {
   }
 }
 
+/** Shows or hides the editor sidebar. */
 function showSidebar(mode: "explorer" | "search" | "settings") {
   required("#sidebar-title").textContent = mode === "explorer" ? "Explorer" : mode === "search" ? "Search" : "Settings";
   required<HTMLElement>("#explorer-panel").hidden = mode !== "explorer";
@@ -991,12 +1066,14 @@ function showSidebar(mode: "explorer" | "search" | "settings") {
   if (mode === "search") { searchInput.focus(); void searchWorkspace(searchInput.value); }
 }
 
+/** Toggles sidebar. */
 function toggleSidebar(mode: "explorer" | "search" | "settings") {
   const active = required(`#${mode}-view`).getAttribute("aria-pressed") === "true";
   if (active) setSidebarOpen(!sidebarOpen);
   else showSidebar(mode);
 }
 
+/** Sets sidebar open. */
 function setSidebarOpen(open: boolean) {
   sidebarOpen = open;
   workbench.classList.toggle("sidebar-closed", !open);
@@ -1009,6 +1086,7 @@ function setSidebarOpen(open: boolean) {
   }
 }
 
+/** Applies an editor keyboard shortcut. */
 function handleShortcut(event: KeyboardEvent) {
   const mod = event.ctrlKey || event.metaKey;
   if (mod && event.key.toLowerCase() === "s") { event.preventDefault(); if (initialized && canWrite) void save(event.shiftKey); return; }
@@ -1021,6 +1099,7 @@ function handleShortcut(event: KeyboardEvent) {
   if (event.key === "Delete" && document.activeElement?.closest("#file-tree")) { event.preventDefault(); void deleteEntry(); }
 }
 
+/** Applies keyboard navigation within the workspace tree. */
 async function handleTreeKey(event: KeyboardEvent) {
   const row = event.target instanceof Element ? event.target.closest<HTMLButtonElement>(".tree-row") : null;
   if (!row) return;
@@ -1053,6 +1132,7 @@ async function handleTreeKey(event: KeyboardEvent) {
   }
 }
 
+/** Selects tree row. */
 function selectTreeRow(row?: HTMLButtonElement | null) {
   if (!row) return;
   if (row.dataset.scenePath) {
@@ -1069,10 +1149,12 @@ function selectTreeRow(row?: HTMLButtonElement | null) {
   renderControlState();
 }
 
+/** Focuses the tree item for a file handle. */
 function focusTreeHandle(handle: string) {
   selectTreeRow(fileTree.querySelector<HTMLButtonElement>(`.tree-row[data-handle="${CSS.escape(handle)}"]`));
 }
 
+/** Applies and persists editor setting changes. */
 async function changeSettings(next: TextEditorSettings) {
   if (!initialized) return;
   settings = parseTextEditorSettings(next);
@@ -1082,6 +1164,7 @@ async function changeSettings(next: TextEditorSettings) {
   setStatus("Editor settings saved for this browser and account.");
 }
 
+/** Applies settings. */
 function applySettings() {
   editor.dispatch({ effects: [fontConfig.reconfigure(EditorView.theme({ "&": { fontSize: `${settings.fontSize}px` } })), lineWrapConfig.reconfigure(settings.lineWrap ? EditorView.lineWrapping : [])] });
   required<HTMLSelectElement>("#font-size").value = String(settings.fontSize);
@@ -1090,6 +1173,7 @@ function applySettings() {
   required<HTMLInputElement>("#auto-format").checked = settings.autoFormat;
 }
 
+/** Applies capabilities. */
 function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"]["getCapabilities"]>>) {
   const restored = !canWrite && capabilities.files.write;
   canWrite = capabilities.files.write;
@@ -1100,6 +1184,7 @@ function applyCapabilities(capabilities: Awaited<ReturnType<HirayaClient["app"][
   if (initialized && (!canWrite || restored)) setStatus(writeRestrictionMessage(writeReason, tabs.some(tabDirty)), !canWrite && tabs.some(tabDirty));
 }
 
+/** Renders control state. */
 function renderControlState() {
   const controls = textEditorControlState(initialized, saving || formatting || opening, canWrite);
   required<HTMLButtonElement>("#explorer-view").disabled = !controls.open;
@@ -1118,6 +1203,7 @@ function renderControlState() {
   publishCommands();
 }
 
+/** Publishes commands. */
 function publishCommands() {
   const savable = Boolean(activeTab?.state || scene);
   const documentCommands = canWrite && savable ? [
@@ -1138,6 +1224,7 @@ function publishCommands() {
   void hiraya?.commands.set(commands);
 }
 
+/** Renders preview. */
 function renderPreview(tab: DocumentTab) {
   previewElement.replaceChildren();
   const source = tab.previewSource;
@@ -1187,6 +1274,7 @@ function renderPreview(tab: DocumentTab) {
   previewElement.append(element);
 }
 
+/** Refreshes media preview. */
 async function refreshMediaPreview(tab: DocumentTab, media: HTMLMediaElement) {
   if (!tab.handle || activeTab !== tab || tab.previewRefreshAttempted || !tab.previewExpiresAt) {
     setStatus("The browser could not play this media.", true);
@@ -1205,11 +1293,13 @@ async function refreshMediaPreview(tab: DocumentTab, media: HTMLMediaElement) {
   } catch (error) { setStatus(describeError(error, "The media preview could not be refreshed."), true); }
 }
 
+/** Schedules scene preview. */
 function scheduleScenePreview() {
   clearTimeout(scenePreviewTimer);
   scenePreviewTimer = window.setTimeout(() => void updateScenePreview(), 180);
 }
 
+/** Updates scene preview. */
 async function updateScenePreview() {
   stopScenePreview?.(); stopScenePreview = null;
   scenePreviewResource?.revoke(); scenePreviewResource = null;
@@ -1237,24 +1327,30 @@ async function updateScenePreview() {
   }
 }
 
+/** Reports whether an editor tab has unsaved changes. */
 function tabDirty(tab: DocumentTab) { return tab.scenePath && scene ? scene.archive.pathDirty(tab.scenePath) : tab.state?.dirty ?? false; }
+/** Reports whether any open document has unsaved changes. */
 function dirtyDocuments() { return scene?.archive.dirty ?? tabs.some(tabDirty); }
 
+/** Releases preview. */
 function releasePreview(tab: DocumentTab) {
   releasePreviewValue(tab.previewObjectUrl);
   Object.assign(tab, emptyPreview());
 }
 
+/** Releases preview value. */
 function releasePreviewValue(objectUrl: string | null) {
   if (objectUrl) URL.revokeObjectURL(objectUrl);
 }
 
+/** Returns the preferred extension for an editor language. */
 function languageExtension(language: TextEditorLanguage): Extension {
   switch (language) {
     case "markdown": return markdown(); case "json": return json(); case "javascript": return javascript(); case "typescript": return javascript({ typescript: true }); case "jsx": return javascript({ jsx: true }); case "tsx": return javascript({ jsx: true, typescript: true }); case "css": return css(); case "html": return html(); case "xml": return xml(); case "yaml": return yaml(); default: return [];
   }
 }
 
+/** Creates icon. */
 function makeIcon(name: string, className = "") {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   if (className) svg.setAttribute("class", className);
@@ -1262,11 +1358,14 @@ function makeIcon(name: string, className = "") {
   const use = document.createElementNS("http://www.w3.org/2000/svg", "use"); use.setAttribute("href", `#icon-${name}`); svg.append(use); return svg;
 }
 
+/** Returns the current editor text. */
 function editorText() { return editor.state.doc.toString(); }
+/** Replaces the current editor text. */
 function replaceEditorText(text: string) {
   if (editorText() === text) return;
   editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: text } });
 }
+/** Sets status. */
 function setStatus(message: string, error = false) { status.textContent = message; status.closest("hiraya-status-bar")?.classList.toggle("error", error); }
 
 renderWorkspace();
