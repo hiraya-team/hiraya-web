@@ -333,6 +333,8 @@ export type FilesystemDatabase = {
   writeWindowSession(workspaceId: string, session: WindowSession): Promise<void>;
   readDevicePreferences(): Promise<DevicePreferences>;
   writeDevicePreferences(preferences: DevicePreferences): Promise<void>;
+  listLegacyStoreApps(): Promise<Array<{ appId: string; digest: string }>>;
+  removeLegacyStoreApp(appId: string): Promise<void>;
   listInstalledApps(): Promise<InstalledApp[]>;
   installApp(install: InstalledApp): Promise<InstalledApp>;
   uninstallApp(appId: string): Promise<void>;
@@ -2143,9 +2145,24 @@ export async function openFilesystemDatabase(accountId: string, environment: Fil
       return deviceId;
     }),
 
+    listLegacyStoreApps: () => transact(db, "installed-apps", "readonly", async (transaction) => {
+      const values = await request(transaction.objectStore("installed-apps").getAll());
+      return values.flatMap((value) => isRecord(value) && value.source === "store" ? [{ appId: parseAppId(value.appId), digest: parseSha256(value.digest, "Installed app digest is invalid.") }] : []);
+    }),
+
+    removeLegacyStoreApp: async (value) => {
+      const appId = parseAppId(value);
+      await transact(db, ["installed-apps", "app-storage", "file-associations"], "readwrite", async (transaction) => {
+        const store = transaction.objectStore("installed-apps");
+        const current = await request(store.get(appId));
+        if (!isRecord(current) || current.source !== "store") return;
+        await Promise.all([request(store.delete(appId)), clearAppDataRows(transaction, appId)]);
+      });
+    },
+
     listInstalledApps: () => transact(db, "installed-apps", "readonly", async (transaction) => {
       const values = await request(transaction.objectStore("installed-apps").getAll());
-      return values.map(parseInstalledApp).sort((left, right) => left.approvedAt - right.approvedAt || left.appId.localeCompare(right.appId));
+      return values.filter((value) => !isRecord(value) || value.source !== "store").map(parseInstalledApp).sort((left, right) => left.approvedAt - right.approvedAt || left.appId.localeCompare(right.appId));
     }),
 
     installApp: async (value) => {

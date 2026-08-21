@@ -46,7 +46,18 @@ export async function saveWindowSession(workspaceId: string, session: WindowSess
 
 /** Lists installed apps. */
 export async function listInstalledApps() {
-  return (await database()).listInstalledApps();
+  const db = await database();
+  const legacy = await db.listLegacyStoreApps();
+  if (legacy.length > 0) {
+    const { releaseApprovedPackageArchive } = await import("./package-archives");
+    await Promise.all(legacy.map(async ({ appId, digest }) => {
+      try {
+        await releaseApprovedPackageArchive(digest);
+        await db.removeLegacyStoreApp(appId);
+      } catch { /* Keep the hidden record as a durable cleanup retry. */ }
+    }));
+  }
+  return db.listInstalledApps();
 }
 
 /** Installs app. */

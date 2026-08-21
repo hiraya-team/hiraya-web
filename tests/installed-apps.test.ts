@@ -16,15 +16,6 @@ describe("installed apps", () => {
     expect(() => parseInstalledApp({ ...install(), manifest: { ...install().manifest, uiRuntime: 2 } })).toThrow("UI runtime");
   });
 
-  test("parses store provenance", () => {
-    const stored = parseInstalledApp({ ...install(), source: "store", sourceCatalogId: "catalog-a", sourceDesktopId: "desktop-a", sourceContentRevision: 7 });
-    expect(stored).toEqual({ ...install(), source: "store", sourceCatalogId: "catalog-a", sourceDesktopId: "desktop-a", sourceContentRevision: 7 });
-    expect(installedAppIsAvailable(stored, [])).toBe(true);
-    expect(() => parseInstalledApp({ ...stored, sourceContentRevision: -1 })).toThrow("source");
-    expect(() => parseInstalledApp({ ...stored, sourceDesktopId: null })).toThrow("source");
-    expect(() => parseInstalledApp({ ...install(), sourceCatalogId: "catalog-a" })).toThrow("source metadata");
-  });
-
   test("matches the complete approved package identity", () => {
     const first = install();
     expect(packageMatchesInstall(first, first.packageEntryId, first.digest, first.version)).toBe(true);

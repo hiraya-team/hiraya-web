@@ -159,7 +159,7 @@ describe("account app projection and ordered outbox", () => {
 describe("account app approval and package integrity", () => {
   test("shows an account-approved package as synchronizing until its verified archive is local", () => {
     const app = parseAccountAppsSnapshot(snapshot()).apps[0];
-    const html = renderToString(createElement(AppStoreWindow, { packages: [], installedApps: [], entries: [], loading: false, error: "", offline: false, onRetry() {}, onInstall() {}, onLaunch() {}, onReset() {}, onUninstall() {}, accountApps: [app], accountError: "", accountPending: 0, onSyncAccount() {}, onUninstallAccount() {} }));
+    const html = renderToString(createElement(AppStoreWindow, { installedApps: [], entries: [], offline: false, canAddToDesktop: true, onAddToDesktop() {}, onLaunch() {}, onReset() {}, onUninstall() {}, accountApps: [app], accountError: "", accountPending: 0, onSyncAccount() {}, onUninstallAccount() {} }));
     expect(html).toContain("Syncing to this device");
     expect(html).toContain("Retry sync");
     expect(html).toContain("Approved for this account");

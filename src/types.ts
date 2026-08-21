@@ -74,7 +74,6 @@ export type DesktopIdentity = {
   owner: { id: string; displayName: string; avatar: string | null };
   capabilities: DesktopCapabilities;
   authorityCatalogId: string | null;
-  purpose?: "app-store";
 };
 
 export type DesktopCapabilities = {

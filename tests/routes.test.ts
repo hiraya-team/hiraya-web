@@ -34,7 +34,7 @@ describe("canonical routes", () => {
       expect(denied(pathname)).toBeTrue();
     }
     expect(denied("/desktops/desk/areas/0/0/file/note")).toBeFalse();
-    expect(denied("/desktops/app-store/areas/0/0")).toBeFalse();
+    expect(denied("/desktops/example/areas/0/0")).toBeFalse();
   });
 
   test("round-trips explorer, properties, settings, and signed area coordinates", () => {

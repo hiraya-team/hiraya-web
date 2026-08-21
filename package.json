@@ -12,7 +12,6 @@
     "dev": "bunx --bun vite",
     "build": "bunx --bun tsc --noEmit && bunx --bun vite build && bun run bundle:check",
     "bundle:check": "bun build/bundle-budget.ts",
-    "apps:release": "bun build/release-app.ts",
     "apps:system:verify": "bun build/verify-system-apps.ts",
     "apps:system:build": "bun run --cwd apps/system/text-editor build && bun run --cwd apps/system/image-viewer build && bun run --cwd apps/system/media-viewer build && bun run --cwd apps/system/file-viewer build && bun run --cwd apps/system/terminal build && bun run --cwd apps/system/theme-editor build",
     "apps:system:test": "bun test apps/system",

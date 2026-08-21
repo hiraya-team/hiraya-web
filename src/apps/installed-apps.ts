@@ -13,7 +13,6 @@ type InstalledAppBase = Readonly<{
 export type InstalledApp = InstalledAppBase & Readonly<
   | { source: "desktop"; packageEntryId: string; archivePath: null }
   | { source: "system"; packageEntryId: null; archivePath: string }
-  | { source: "store"; packageEntryId: string; archivePath: null; sourceCatalogId: string; sourceDesktopId: string; sourceContentRevision: number }
   | { source: "account"; packageEntryId: null; archivePath: null; installationGeneration: number }
 >;
 
@@ -52,21 +51,15 @@ export function parseInstalledApp(value: unknown): InstalledApp {
   const item = value as Record<string, unknown>;
   const manifest = parseManifestV2(item.manifest);
   const source = item.source;
-  if (Object.keys(item).some((key) => !["appId", "source", "packageEntryId", "archivePath", "sourceCatalogId", "sourceDesktopId", "sourceContentRevision", "installationGeneration", "digest", "version", "manifest", "approvedAt"].includes(key))) throw new TypeError("Installed app has an unsupported shape.");
+  if (Object.keys(item).some((key) => !["appId", "source", "packageEntryId", "archivePath", "installationGeneration", "digest", "version", "manifest", "approvedAt"].includes(key))) throw new TypeError("Installed app has an unsupported shape.");
   if (item.appId !== manifest.id || item.version !== manifest.version) throw new TypeError("Installed app identity does not match its manifest.");
   if (typeof item.digest !== "string" || !DIGEST.test(item.digest)) throw new TypeError("Installed app digest is invalid.");
   if (typeof item.approvedAt !== "number" || !Number.isSafeInteger(item.approvedAt) || item.approvedAt < 0) throw new TypeError("Installed app approval time is invalid.");
   const base = { appId: manifest.id, digest: item.digest, version: manifest.version, manifest, approvedAt: item.approvedAt };
-  if (source !== "store" && (item.sourceCatalogId != null || item.sourceDesktopId != null || item.sourceContentRevision != null)) throw new TypeError("Installed app source metadata is invalid.");
   if (source !== "account" && item.installationGeneration != null) throw new TypeError("Installed app account metadata is invalid.");
   if (source === "system") {
     if (item.packageEntryId !== null || typeof item.archivePath !== "string" || !ARCHIVE_PATH.test(item.archivePath)) throw new TypeError("Installed system app archive is invalid.");
     return { ...base, source, packageEntryId: null, archivePath: item.archivePath };
-  }
-  if (source === "store") {
-    if (typeof item.packageEntryId !== "string" || item.packageEntryId.length === 0 || item.packageEntryId.length > 256 || item.archivePath !== null && item.archivePath !== undefined) throw new TypeError("Installed store app package entry ID is invalid.");
-    if (typeof item.sourceCatalogId !== "string" || item.sourceCatalogId.length === 0 || item.sourceCatalogId.length > 256 || typeof item.sourceDesktopId !== "string" || item.sourceDesktopId.length === 0 || item.sourceDesktopId.length > 256 || typeof item.sourceContentRevision !== "number" || !Number.isSafeInteger(item.sourceContentRevision) || item.sourceContentRevision < 0) throw new TypeError("Installed store app source is invalid.");
-    return { ...base, source, packageEntryId: item.packageEntryId, archivePath: null, sourceCatalogId: item.sourceCatalogId, sourceDesktopId: item.sourceDesktopId, sourceContentRevision: item.sourceContentRevision };
   }
   if (source === "account") {
     if (item.packageEntryId !== null || item.archivePath !== null || !Number.isSafeInteger(item.installationGeneration) || Number(item.installationGeneration) < 1) throw new TypeError("Installed account app metadata is invalid.");

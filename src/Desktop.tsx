@@ -103,7 +103,6 @@ import {
   restoreFileVersion,
   readFileVersion,
   keepBothFileVersion,
-  serializeRuntimeStorage,
   createFile as createAppFile,
   moveEntry as moveAppEntry,
 } from "./platform/storage/desktop-runtime";
@@ -149,7 +148,7 @@ import type { ThemePackageCache } from "./lib/theme-package";
 import { HostServiceError, grantPickedFiles, grantPickedFilesWithParentScope, grantPickedFolder, mapThemeTokens } from "./apps/host";
 import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatchesInstall, type InstalledApp } from "./apps/installed-apps";
 import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
-import { SYSTEM_APP_CATALOG, systemInstallFromCatalog } from "./apps/system-apps";
+import { SYSTEM_APP_CATALOG } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
 import { APP_PERMISSIONS } from "./apps/permissions";
 import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
@@ -175,7 +174,7 @@ import { arrangeDesktops, type DesktopPreference } from "./lib/desktop-preferenc
 import { useRunningWindows } from "./features/windows/controller";
 import { WindowLayer } from "./features/windows/WindowLayer";
 import { AreaSwitcher } from "./features/areas/AreaSwitcher";
-import { systemInstallMatchesCatalog, useAppPlatform } from "./features/app-management/controller";
+import { useAppPlatform } from "./features/app-management/controller";
 import { launchSandboxApp, type AppLaunchSource, type AppLaunchTarget } from "./features/app-management/launch";
 import { sandboxWindowOptions } from "./ui/app-window-sizing";
 import { useDesktopSelection } from "./features/selection/controller";
@@ -186,9 +185,7 @@ import { ShellNotifications, type ShellMessage } from "./features/notifications/
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
 import { nextQuitBack, type QuitBackState } from "./ui/back-navigation";
 import { desktopEntities, desktopEntityMovementPlan, desktopEntityParts, desktopSelectionCanDropIntoFolder, entryEntityId, groupEntityId, retainedDesktopEntityIds, widgetEntityId } from "./ui/desktop-entity";
-import type { StorePackageView } from "./components/AppStoreWindow";
-import { appStoreDescriptorIsCurrent, inspectStorePackage, loadStorePackages, storePackageKey, storePackageManifest, storePackageMatchesInstall, storePackageNeedsRefreshInspection, subscribeToAppStoreChanges, type AppStoreDescriptor, type InspectedStorePackage, type StorePackage } from "./lib/app-store";
-import { releaseApprovedPackageArchive, saveApprovedPackageArchive } from "./platform/storage/package-archives";
+import { releaseApprovedPackageArchive } from "./platform/storage/package-archives";
 import type { MergeFileVersion, MergeTextConflict, MergeTextResolution } from "./components/MergeWindow";
 import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE_MAX_LINES, type ThreeWayTextMergeRegion } from "./lib/three-way-text-merge";
 import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
@@ -230,13 +227,7 @@ const TrashWindow = lazy(() => import("./components/TrashWindow").then((module) 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
 type PendingDevicePaste = { parentId: string | null; position?: EntryPosition; error?: string };
 type AreaTransition = { id: number; source: SurfaceSegment; target: SurfaceSegment; destination?: SurfaceSegment; phase: "preparing" | "interactive" | "settling"; kind: "gesture" | "programmatic" };
-type StoreInspection = { status: "loading" } | { status: "ready"; value: InspectedStorePackage } | { status: "error"; message: string };
 type ProtectedLoadState = { status: "idle" | "loading" | "ready" | "error"; message?: string };
-/** Converts a published system package to its bundled catalog shape. */
-function publishedSystemApp(item: StorePackage) {
-  if (item.kind !== "system" || !item.release) return null;
-  return { slug: item.release.slug, archivePath: `system-apps/${item.release.slug}.hiraya.app`, digest: item.release.digest, manifest: item.release.manifest };
-}
 type MergeReview = {
   state: "loading" | "ready" | "resolving" | "error";
   error?: string;
@@ -267,11 +258,6 @@ const UPDATE_CHECK_ERROR = "Could not check for updates. Check your connection a
 /** Records background update-check failures without interrupting the desktop. */
 function reportUpdateCheckError(error: unknown) {
   console.warn("Hiraya could not check for app updates.", error);
-}
-
-/** Reports whether a desktop belongs in the interactive surface list. */
-function isDesktopSurface(desktop: DesktopIdentity) {
-  return desktop.purpose !== "app-store" || desktop.ownership === "owned";
 }
 
 /** Finds the rendered desktop entry used to restore dialog focus. */
@@ -367,7 +353,6 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     accountAppsError,
     accountAppsPending,
     blockedAccountAppOperations,
-    appsLoaded,
     fileAssociations,
     dialogRequests: appDialogRequests,
     notifications: appNotifications,
@@ -479,22 +464,8 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
   const [pwaInstalled, setPwaInstalled] = useState(false);
   const [publishEntryId, setPublishEntryId] = useState<string | null>(null);
-  const [storePackages, setStorePackages] = useState<StorePackage[]>([]);
-  const [storeInspections, setStoreInspections] = useState<Map<string, StoreInspection>>(new Map());
-  const [storeInstallKey, setStoreInstallKey] = useState<string | null>(null);
-  const [storeLoading, setStoreLoading] = useState(false);
-  const [storeError, setStoreError] = useState("");
   const [fileHistories, setFileHistories] = useState<Record<string, FileHistory | undefined>>({});
   const [historyBusyId, setHistoryBusyId] = useState<string | null>(null);
-  const storeInspectionCacheRef = useRef(new Map<string, InspectedStorePackage>());
-  const storeRefreshGenerationRef = useRef(0);
-  const storeManagedRef = useRef(false);
-  const storeDescriptorRef = useRef<AppStoreDescriptor | null>(null);
-  const activeSystemDigestsRef = useRef(new Set<string>());
-  const activeSystemAppIdsRef = useRef(new Set<string>());
-  const systemReconciliationQueueRef = useRef<Promise<void>>(Promise.resolve());
-  const systemPackageReconciliationRef = useRef(new Set<string>());
-  const refreshStoreRef = useRef<() => void>(() => undefined);
   const [mobileHeaderActionsElement, setMobileHeaderActionsElement] = useState<HTMLDivElement | null>(null);
   const fileDialogInvokerRef = useRef<HTMLElement | null>(null);
   const fileDialogResultIdRef = useRef<string | null>(null);
@@ -998,142 +969,6 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   useEffect(() => {
     if (!loading && preferencesLoaded && localPreferencesRef.current.onboardingVersion < ONBOARDING_VERSION) setShowGettingStarted(true);
   }, [loading, preferencesLoaded]);
-  function enqueueSystemReconciliation(work: () => Promise<void>) {
-    const result = systemReconciliationQueueRef.current.then(work, work);
-    systemReconciliationQueueRef.current = result.catch(() => undefined);
-    return result;
-  }
-  const reconcileSystemPackage = useStableHandler((item: StorePackage, value: InspectedStorePackage) => enqueueSystemReconciliation(async () => {
-    if (item.source !== "remote" || item.kind !== "system" || !activeSystemDigestsRef.current.has(value.inspection.digest) || systemPackageReconciliationRef.current.has(value.inspection.digest)) return;
-    const catalogItem = publishedSystemApp(item);
-    if (!catalogItem) throw new Error("Trusted system apps require a runtime catalog release.");
-    const current = installedApps.find((app) => app.appId === catalogItem.manifest.id);
-    if (current && systemInstallMatchesCatalog(current, catalogItem)) return;
-    const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === value.inspection.manifest.id).map((app) => app.id);
-    systemPackageReconciliationRef.current.add(value.inspection.digest);
-    try {
-      if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Update ${value.inspection.manifest.name}?`, message: "This trusted system app has unsaved changes. Close it and apply the administrator's update?", confirmLabel: "Close and update" })) return;
-      if (!activeSystemDigestsRef.current.has(value.inspection.digest)) return;
-      const expected = { schemaVersion: 2 as const, catalogId: item.catalogId, catalogRevision: item.catalogRevision, desktopId: item.desktopId };
-      await serializeRuntimeStorage(async () => {
-        if (!await appStoreDescriptorIsCurrent(expected)) return;
-        await saveApprovedPackageArchive(value.inspection.digest, value.archive);
-        if (!await appStoreDescriptorIsCurrent(expected) || !activeSystemDigestsRef.current.has(value.inspection.digest)) return;
-        forceCloseRunningAppInstances([...runningAppsRef.current], value.inspection.manifest.id, closeApp);
-        await approveInstall(systemInstallFromCatalog(catalogItem, current));
-      });
-    } catch (reason) {
-      setStoreError(reason instanceof Error ? reason.message : "A trusted system app could not be updated.");
-    } finally {
-      systemPackageReconciliationRef.current.delete(value.inspection.digest);
-    }
-  }));
-  const reconcileMissingSystemPackages = useStableHandler((packages: readonly StorePackage[], managed: boolean, descriptor: AppStoreDescriptor | null, generation: number) => enqueueSystemReconciliation(async () => {
-    if (!managed || !descriptor || generation !== storeRefreshGenerationRef.current) return;
-    const activeIds = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.manifest.id] : []));
-    for (const current of installedApps) {
-      if (current.source !== "system" || activeIds.has(current.appId)) continue;
-      const fallback = SYSTEM_APP_CATALOG.find((item) => item.manifest.id === current.appId);
-      if (!fallback || systemInstallMatchesCatalog(current, fallback)) continue;
-      const runningIds = runningAppsRef.current.filter((app) => app.kind === "sandbox" && app.package.manifest.id === current.appId).map((app) => app.id);
-      if (runningIds.some((id) => dirtyAppIds.has(id)) && !await requestConfirmation({ title: `Restore ${current.manifest.name}?`, message: "This trusted system release was withdrawn but has unsaved changes. Close it and restore Hiraya's bundled version?", confirmLabel: "Close and restore", danger: true })) continue;
-      if (generation !== storeRefreshGenerationRef.current || !storeManagedRef.current || activeSystemAppIdsRef.current.has(current.appId)) return;
-      await serializeRuntimeStorage(async () => {
-        if (!await appStoreDescriptorIsCurrent(descriptor) || activeSystemAppIdsRef.current.has(current.appId)) return;
-        forceCloseRunningAppInstances([...runningAppsRef.current], current.appId, closeApp);
-        await approveInstall(systemInstallFromCatalog(fallback, current));
-      });
-    }
-  }));
-  useEffect(() => {
-    if (!appsLoaded) return;
-    const store = session ? desktops.find((desktop) => desktop.purpose === "app-store") : undefined;
-    let active = true;
-    const refresh = async () => {
-      const generation = ++storeRefreshGenerationRef.current;
-      if (active) {
-        setStoreLoading(Boolean(store));
-        setStoreError(store ? "" : session ? "No administrator App Store is configured." : "The App Store requires a synchronized Hiraya account.");
-      }
-      try {
-        const packages: StorePackage[] = [];
-        let managed = false;
-        let storeDescriptor: AppStoreDescriptor | null = null;
-        if (store) {
-          try {
-            const loaded = await loadStorePackages(store, session!.directBlobOrigin);
-            packages.push(...loaded.packages);
-            managed = loaded.managed;
-            storeDescriptor = loaded.descriptor;
-          } catch (reason) {
-            if (active && generation === storeRefreshGenerationRef.current) setStoreError(reason instanceof Error ? reason.message : "The administrator app store could not be loaded.");
-          }
-        }
-        if (!active || generation !== storeRefreshGenerationRef.current) return;
-        storeManagedRef.current = managed;
-        storeDescriptorRef.current = storeDescriptor;
-        activeSystemDigestsRef.current = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.digest] : []));
-        activeSystemAppIdsRef.current = new Set(packages.flatMap((item) => item.kind === "system" && item.release ? [item.release.manifest.id] : []));
-        await reconcileMissingSystemPackages(packages, managed, storeDescriptor, generation);
-        if (!active || generation !== storeRefreshGenerationRef.current) return;
-        setStorePackages(packages);
-        const next = new Map<string, StoreInspection>();
-        for (const item of packages) {
-          const key = storePackageKey(item);
-          const cached = storeInspectionCacheRef.current.get(key);
-          if (cached) {
-            next.set(key, { status: "ready", value: cached });
-            void reconcileSystemPackage(item, cached);
-          }
-          else {
-            const systemApp = publishedSystemApp(item);
-            const current = systemApp && installedApps.find((app) => app.appId === systemApp.manifest.id);
-            if (!storePackageNeedsRefreshInspection(item, Boolean(current && systemInstallMatchesCatalog(current, systemApp)))) continue;
-            next.set(key, { status: "loading" });
-            void inspectStorePackage(item, session!.directBlobOrigin).then(async (value) => {
-              if (!active || generation !== storeRefreshGenerationRef.current) return;
-              storeInspectionCacheRef.current.set(key, value);
-              setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
-              await reconcileSystemPackage(item, value);
-            }).catch((reason) => {
-              if (active && generation === storeRefreshGenerationRef.current) setStoreInspections((current) => new Map(current).set(key, { status: "error", message: reason instanceof Error ? reason.message : "This app package is invalid." }));
-            });
-          }
-        }
-        setStoreInspections(next);
-      } catch (reason) {
-        if (active && generation === storeRefreshGenerationRef.current) setStoreError(reason instanceof Error ? reason.message : "The app store could not be loaded.");
-      } finally {
-        if (active && generation === storeRefreshGenerationRef.current) setStoreLoading(false);
-      }
-    };
-    refreshStoreRef.current = () => { void refresh(); };
-    void refresh();
-    const unsubscribe = store ? subscribeToAppStoreChanges((descriptor) => {
-      if (descriptor.desktopId === store.id) void refresh();
-    }) : () => undefined;
-    return () => {
-      active = false;
-      storeManagedRef.current = false;
-      storeDescriptorRef.current = null;
-      activeSystemDigestsRef.current.clear();
-      activeSystemAppIdsRef.current.clear();
-      unsubscribe();
-      if (refreshStoreRef.current) refreshStoreRef.current = () => undefined;
-    };
-  // The stable reconciliation callback always reads the latest package state.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [appsLoaded, desktops, session]);
-  useEffect(() => {
-    void reconcileMissingSystemPackages(storePackages, storeManagedRef.current, storeDescriptorRef.current, storeRefreshGenerationRef.current);
-    for (const item of storePackages) {
-      if (item.kind !== "system") continue;
-      const inspection = storeInspections.get(storePackageKey(item));
-      if (inspection?.status === "ready") void reconcileSystemPackage(item, inspection.value);
-    }
-  // Retry a deferred trusted update after its running app becomes clean or closes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirtyAppIds, runningApps, storeInspections, storePackages]);
   useEffect(() => {
     const approved = new Set(installedApps.filter((app) => app.source === "account").map((app) => `${app.appId}:${app.installationGeneration}:${app.digest}`));
     for (const running of runningAppsRef.current) if (running.kind === "sandbox" && running.install.source === "account" && !approved.has(`${running.install.appId}:${running.install.installationGeneration}:${running.install.digest}`)) void closeAppRef.current(running.id, false, false);
@@ -1712,7 +1547,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
         if (!active) throw new DOMException("Desktop loading was stopped.", "AbortError");
         catalogAuthoritativeRef.current = Boolean(registry.catalogId);
         const routeDesktopId = parseDesktopRoute(window.location.pathname)?.desktopId;
-        const surfaces = registry.desktops.filter(isDesktopSurface);
+        const surfaces = registry.desktops;
         const desktopId = routeDesktopId && surfaces.some((desktop) => desktop.id === routeDesktopId) ? routeDesktopId : registry.activeDesktopId && surfaces.some((desktop) => desktop.id === registry.activeDesktopId) ? registry.activeDesktopId : surfaces[0].id;
         setDesktops(registry.catalogId ? registry.desktops : arrangeDesktops(registry.desktops, localPreferencesRef.current.desktops));
         setCatalogQuota(registry.quota);
@@ -2031,7 +1866,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
       setMinimapExpanded(false);
       const requestedRoute = parseDesktopRoute(window.location.pathname);
       const requestedDesktopId = requestedRoute?.desktopId;
-      if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId && isDesktopSurface(desktop))) {
+      if (requestedDesktopId && requestedDesktopId !== activeDesktopIdRef.current && desktopsRef.current.some((desktop) => desktop.id === requestedDesktopId)) {
         void activateDesktopRef.current(requestedDesktopId).then((switched) => {
           if (switched && requestedRoute) navigateRouteRef.current(requestedRoute, "replace");
         });
@@ -3903,68 +3738,11 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
         } else install = { appId: appPackage.manifest.id, source: "desktop", packageEntryId: file.id, archivePath: null, digest: appPackage.digest, version: appPackage.manifest.version, manifest: appPackage.manifest, approvedAt: Date.now() };
         if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
         if (!session) await approveInstall(install);
-        if (approved?.source === "store" || approved?.source === "account") await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
+        if (approved?.source === "account") await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
       }
       await launchInstalledApp(install!, launchFile);
     } catch (openError) {
       setError(openError instanceof Error ? openError.message : "The app package could not be opened.");
-    }
-  }
-
-  async function installStorePackage(item: StorePackage) {
-    const key = storePackageKey(item);
-    setStoreInstallKey(key);
-    setError("");
-    try {
-      let inspected = storeInspectionCacheRef.current.get(key);
-      if (!inspected) {
-        setStoreInspections((current) => new Map(current).set(key, { status: "loading" }));
-        try {
-          const value = await inspectStorePackage(item, session!.directBlobOrigin);
-          inspected = value;
-          setStoreInspections((current) => new Map(current).set(key, { status: "ready", value }));
-        } catch (reason) {
-          setStoreInspections((current) => { const next = new Map(current); next.delete(key); return next; });
-          throw reason;
-        }
-      }
-      storeInspectionCacheRef.current.set(key, inspected);
-      const appPackage = inspected.inspection;
-      if (isReservedSystemAppId(appPackage.manifest.id)) throw new Error("That app ID is reserved for a trusted system app.");
-      const approved = installedApps.find((candidate) => candidate.appId === appPackage.manifest.id);
-      const permissions = appPackage.manifest.permissions.length ? appPackage.manifest.permissions.join(", ") : "None";
-      const confirmed = await requestConfirmation({
-        title: `${approved ? "Approve update for" : "Install"} ${appPackage.manifest.name}?`,
-        message: `Version ${appPackage.manifest.version}. Requested permissions: ${permissions}. Direct network APIs and app links are blocked; apps can access Hiraya only through approved host services.`,
-        confirmLabel: approved ? "Approve update" : "Install",
-      });
-      if (!confirmed) return;
-      const remoteStore = desktopsRef.current.find((desktop) => desktop.id === item.desktopId && desktop.purpose === "app-store");
-      const published = remoteStore ? (await loadStorePackages(remoteStore, session!.directBlobOrigin)).packages : [];
-      if (!published.some((candidate) => storePackageKey(candidate) === key)) throw new Error("This app release changed while you were reviewing it. Review the current release and try again.");
-      await saveApprovedPackageArchive(appPackage.digest, inspected.archive);
-      const install: InstalledApp | null = session ? await publishAccountInstall(inspected.archive, appPackage) : {
-        appId: appPackage.manifest.id,
-        source: "store",
-        packageEntryId: item.entry.id,
-        archivePath: null,
-        sourceCatalogId: item.catalogId,
-        sourceDesktopId: item.desktopId,
-        sourceContentRevision: item.contentRevision,
-        digest: appPackage.digest,
-        version: appPackage.manifest.version,
-        manifest: appPackage.manifest,
-        approvedAt: Date.now(),
-      };
-      if (!install) { setNotice(`${appPackage.manifest.name} queued for account synchronization`); return; }
-      if (approved) forceCloseRunningAppInstances([...runningAppsRef.current], install.appId, closeApp);
-      if (!session) await approveInstall(install);
-      if ((approved?.source === "store" || approved?.source === "account") && approved.digest !== install.digest) await releaseApprovedPackageArchive(approved.digest).catch(() => undefined);
-      setNotice(`${appPackage.manifest.name} ${approved ? "updated" : "installed"}`);
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "The app could not be installed.");
-    } finally {
-      setStoreInstallKey((current) => current === key ? null : current);
     }
   }
 
@@ -4021,7 +3799,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   }
 
   function launchApp(install: InstalledApp) {
-    if (install.source === "system" || install.source === "store" || install.source === "account") void launchInstalledApp(install);
+    if (install.source === "system" || install.source === "account") void launchInstalledApp(install);
     else {
       const entry = entriesRef.current.find((candidate): candidate is FileEntry => candidate.id === install.packageEntryId && candidate.kind === "file");
       if (entry) void openAppPackage(entry);
@@ -4057,7 +3835,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     if (!currentRoute) return;
     const previousApps = runningAppTargets();
     const target: SystemAppTarget = { kind: "system", appId: app.appId, targetKind: "file", entryId: file.id };
-    if (app.source === "system" || app.source === "store" || app.source === "account") await launchInstalledApp(app, file);
+    if (app.source === "system" || app.source === "account") await launchInstalledApp(app, file);
     else {
       const packageEntry = entriesRef.current.find((entry): entry is FileEntry => entry.kind === "file" && entry.id === app.packageEntryId);
       if (packageEntry) await openAppPackage(packageEntry, file);
@@ -4075,7 +3853,6 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     if (!(await requestConfirmation({ title: `Uninstall ${app.manifest.name}?`, message: "This removes its approval and device-local app data. The package and your files are not deleted.", confirmLabel: "Uninstall", danger: true }))) return;
     forceCloseRunningAppInstances([...runningAppsRef.current], app.appId, closeApp);
     await removeInstall(app.appId);
-    if (app.source === "store") await releaseApprovedPackageArchive(app.digest).catch(() => undefined);
     setNotice(`${app.manifest.name} uninstalled`);
   }
 
@@ -5160,7 +4937,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
 
   function runningAppLabel(app: RunningApp) {
     const entry = app.kind === "file" ? entryIndex.byId.get(app.fileId) : app.kind === "properties" ? entryIndex.byId.get(app.entryId) : app.kind === "explorer" && app.folderId ? entryIndex.byId.get(app.folderId) : null;
-    return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
+    return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "Applications" : app.kind === "settings" ? "Settings" : app.kind === "properties" ? `${entry?.name ?? "Item"} properties` : app.kind === "explorer" ? (entry?.name ?? activeDesktopName) : (entry?.name ?? app.file?.name ?? "File");
   }
 
   const windowSearchItems = runningApps.map((app) => {
@@ -5168,7 +4945,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     return { id: app.id, title: runningAppLabel(app), detail: `${areaDirectionalLabel(area, activeSegment)} · ${areaCoordinateLabel(area)}` };
   });
   const focusedApp = runningApps.find((app) => app.id === focusedAppId);
-  const desktopChoices = desktops.filter(isDesktopSurface);
+  const desktopChoices = desktops;
   const commandContext: AppCommandContext = {
     canMutate,
     canOpenTrash,
@@ -5497,7 +5274,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
             const available = installedAppIsAvailable(app, entries);
             return <button type="button" key={app.appId} disabled={!available} title={available ? app.manifest.name : `${app.manifest.name} is unavailable`} onClick={() => launchMobileDestination(dismiss, () => launchApp(app))}><Package /><span>{app.manifest.name}</span>{!available && <small>Unavailable</small>}</button>;
           })}
-          <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}><Package /><span>App Store</span>{storeUpdateCount > 0 && <small>{storeUpdateCount} update{storeUpdateCount === 1 ? "" : "s"}</small>}</button>
+          <button type="button" onClick={() => launchMobileDestination(dismiss, openStoreWindow)}><Package /><span>Applications</span></button>
         </div>
       </details>
       <span className="mobile-header-menu__separator" />
@@ -5522,24 +5299,10 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
   }
 
   function isReservedSystemAppId(appId: string) {
-    return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId) || storePackages.some((item) => item.kind === "system" && storePackageManifest(item, storeInspectionCacheRef.current.get(storePackageKey(item))?.inspection)?.id === appId);
+    return SYSTEM_APP_CATALOG.some((item) => item.manifest.id === appId);
   }
 
-  const storePackageViews: StorePackageView[] = storePackages.filter((item) => item.kind === "store").map((item) => {
-    const inspection = storeInspections.get(storePackageKey(item));
-    const inspected = inspection?.status === "ready" ? inspection.value.inspection : undefined;
-    const manifest = storePackageManifest(item, inspected);
-    const digest = item.release?.digest ?? inspected?.digest ?? null;
-    const fallbackName = item.entry.name.replace(/\.hiraya\.app$/i, "");
-    return manifest
-      ? { item, name: manifest.name, description: manifest.description ?? "No description provided.", version: manifest.version, appId: manifest.id, digest, loading: inspection?.status === "loading", error: inspection?.status === "error" ? inspection.message : "" }
-      : { item, name: fallbackName, description: "Administrator-published Hiraya app.", version: null, appId: null, digest: null, loading: inspection?.status === "loading" || !inspection, error: inspection?.status === "error" ? inspection.message : "" };
-  });
-  const storeUpdateCount = storePackageViews.filter((view) => {
-    const installed = view.appId ? installedApps.find((app) => app.appId === view.appId) : installedApps.find((app) => app.source === "store" && app.packageEntryId === view.item.entry.id);
-    return Boolean(installed && !storePackageMatchesInstall(view.item, installed, view.appId, view.digest));
-  }).length;
-  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? (storeUpdateCount > 0 ? `${storeUpdateCount} app ${storeUpdateCount === 1 ? "update is" : "updates are"} available.` : ""))));
+  const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
   const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes(APP_PERMISSIONS.filesWrite));
   const focusedIntegratedApp = focusedApp && (!windowed || appIsMaximized(focusedApp)) ? focusedApp : null;
@@ -5952,7 +5715,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
             const fileEntry = app.kind === "file" ? (app.file ?? entryIndex.byId.get(app.fileId)) : null;
             const file = fileEntry?.kind === "file" ? fileEntry : null;
             const propertiesEntry = app.kind === "properties" ? entryIndex.byId.get(app.entryId) : null;
-            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "App Store" : app.kind === "settings" ? (SETTINGS_PARENTS[settingsPage] ? SETTINGS_PAGE_TITLES[settingsPage] : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
+            return app.kind === "sandbox" ? app.title : app.kind === "merge" ? `Merge · ${mergeReviews[app.operationId]?.mine.name ?? "Changed file"}` : app.kind === "store" ? "Applications" : app.kind === "settings" ? (SETTINGS_PARENTS[settingsPage] ? SETTINGS_PAGE_TITLES[settingsPage] : "Settings") : app.kind === "properties" ? `${propertiesEntry?.name ?? "Item"} properties` : app.kind === "explorer" ? (folder?.name ?? activeDesktopName) : (file?.name ?? "Opening file");
           }}
           isMaximized={appIsMaximized}
           onExecuteCommand={(id) => { void commandService.execute(id, commandContext); }}
@@ -6233,7 +5996,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
                         canManageDesktop={(desktop) => desktop.ownership === "owned" || syncStatus === "online" || syncStatus === "blocked"}
                       />
                     )}
-                    {app.kind === "store" && <AppStoreWindow packages={storePackageViews} installedApps={installedApps} entries={entries} loading={storeLoading} error={storeError} offline={syncStatus === "offline"} installingPackageKey={storeInstallKey} canAddToDesktop={canMutate} onRetry={() => refreshStoreRef.current()} onInstall={(item) => void installStorePackage(item)} onAddToDesktop={(installed) => void addAppShortcut(installed).catch((reason) => setError(reason instanceof Error ? reason.message : "The application shortcut could not be created."))} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
+                    {app.kind === "store" && <AppStoreWindow installedApps={installedApps} entries={entries} offline={syncStatus === "offline"} canAddToDesktop={canMutate} onAddToDesktop={(installed) => void addAppShortcut(installed).catch((reason) => setError(reason instanceof Error ? reason.message : "The application shortcut could not be created."))} onLaunch={launchApp} onUninstall={(installed) => void removeInstalledApp(installed)} accountApps={availableAccountApps} accountError={accountAppsError} accountPending={accountAppsPending} accountBlocked={blockedAccountAppOperations} onRetryAccount={(operationId) => void retryAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be retried."))} onDiscardAccount={(operationId) => void discardAccountAppOperation?.(operationId).catch((reason) => setError(reason instanceof Error ? reason.message : "The account app change could not be discarded."))} onSyncAccount={(candidate) => void approveAccountInstall(candidate).then((approval) => setNotice(`${approval.manifest.name} synchronized to this device`)).catch((reason) => setError(reason instanceof Error ? reason.message : "The app could not be synchronized."))} onUninstallAccount={(appId) => void uninstallFromAccount(appId)} onReset={(installed) =>
                       void requestConfirmation({
                         title: `Reset ${installed.manifest.name}?`,
                         message: installed.source === "account" ? "This clears the app's synchronized data on every device. Your files and file-type preferences remain." : "This clears only the app's local data for this browser and account. Your files and file-type preferences remain.",

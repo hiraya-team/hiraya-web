@@ -10,6 +10,6 @@ export async function loadInstalledAppArchive(install: InstalledApp, readDesktop
     await saveApprovedPackageArchive(install.digest, archive);
     return archive;
   }));
-  if (install.source === "store" || install.source === "account") return readApprovedPackageArchive(install.digest);
+  if (install.source === "account") return readApprovedPackageArchive(install.digest);
   return readDesktopFile(install.packageEntryId);
 }

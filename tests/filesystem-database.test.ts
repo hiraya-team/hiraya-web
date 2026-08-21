@@ -327,6 +327,34 @@ describe("web2 filesystem database", () => {
     malformed.close();
   });
 
+  test("removes persisted legacy store installs without hiding retained apps", async () => {
+    const factory = new IDBFactory();
+    const database = await workspaceDatabase(factory);
+    const retained = installedApp();
+    await database.installApp(retained);
+    database.close();
+
+    const legacy = { ...installedApp("legacy.store-app"), source: "store", sourceCatalogId: "catalog", sourceDesktopId: "desktop", sourceContentRevision: 1 };
+    const name = await filesystemDatabaseName(ACCOUNT);
+    const raw = await openRaw(factory, name);
+    const transaction = raw.transaction(["installed-apps", "app-storage", "file-associations"], "readwrite");
+    await Promise.all([
+      idbRequest(transaction.objectStore("installed-apps").put(legacy)),
+      idbRequest(transaction.objectStore("app-storage").put({ appId: legacy.appId, key: "state", value: true, bytes: 11 })),
+      idbRequest(transaction.objectStore("file-associations").put({ matcher: ".legacy", appId: legacy.appId, createdAt: 1 })),
+    ]);
+    raw.close();
+
+    const reopened = await openFilesystemDatabase(ACCOUNT, environment(factory));
+    expect(await reopened.listInstalledApps()).toEqual([retained]);
+    expect(await reopened.listLegacyStoreApps()).toEqual([{ appId: legacy.appId, digest: legacy.digest }]);
+    await reopened.removeLegacyStoreApp(legacy.appId);
+    reopened.close();
+    expect(await readStored(factory, name, "installed-apps", legacy.appId)).toBeUndefined();
+    expect(await readStored(factory, name, "app-storage", [legacy.appId, "state"])).toBeUndefined();
+    expect(await readStored(factory, name, "file-associations", ".legacy")).toBeUndefined();
+  });
+
   test("protects bundled system app identities", async () => {
     const factory = new IDBFactory();
     const database = await workspaceDatabase(factory);

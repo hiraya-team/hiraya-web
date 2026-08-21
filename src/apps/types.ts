@@ -10,7 +10,7 @@ export type SystemAppTarget = {
   appId: string;
   targetKind: "file" | "folder" | "root";
   entryId: string | null;
-  source?: "system" | "desktop" | "store" | "account";
+  source?: "system" | "desktop" | "account";
   digest?: string;
   permissions?: string[];
 };
