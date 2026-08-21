@@ -15,6 +15,7 @@ type Props = {
 
 type State = { status: "loading" } | { status: "error"; message: string } | { status: "ready"; document: TodoDocument };
 
+/** Renders and persists the interactive Todo desktop widget. */
 export function TodoWidget({ file, contentRevision, readOnly, readContent, writeContent, onOpen }: Props) {
   const [state, setState] = useState<State>({ status: "loading" });
   const [savingId, setSavingId] = useState("");

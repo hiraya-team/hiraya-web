@@ -6,9 +6,12 @@ import { useNativeDialog } from "../ui/modal-dialog";
 import { dismissesSheetDrag } from "../ui/file-icon-gesture";
 import { openWithMenuItems, type OpenWithItem } from "../ui/open-with-menu";
 
+/** Keeps floating menus clear of the viewport edge. */
 const VIEWPORT_MARGIN = 8;
+/** Reserves space for desktop chrome when positioning menus. */
 const MENU_BAR_INSET = 48;
 
+/** Keeps a floating menu within the available viewport. */
 function useMenuPosition(x: number, y: number, enabled: boolean) {
   const ref = useRef<HTMLDivElement>(null);
   const [style, setStyle] = useState<CSSProperties>({ left: Math.max(VIEWPORT_MARGIN, x), top: Math.max(MENU_BAR_INSET, y) });
@@ -52,6 +55,7 @@ function useMenuPosition(x: number, y: number, enabled: boolean) {
   return { ref, style };
 }
 
+/** Manages roving keyboard focus across enabled menu items. */
 function useRovingMenu(ref: RefObject<HTMLDivElement>) {
   useLayoutEffect(() => {
     const menu = ref.current;
@@ -80,6 +84,7 @@ type SubmenuItem = {
   secondaryAction?: { label: string; accessibleLabel: string; onSelect: () => void };
 };
 
+/** Renders the menu submenu interface. */
 function MenuSubmenu({ icon, label, items }: { icon: ReactNode; label: string; items: readonly SubmenuItem[] }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -142,6 +147,7 @@ type Props = {
   onClose: () => void;
 };
 
+/** Renders the context menu interface. */
 export function ContextMenu({ menu, entry, onOpen, onEditFile, onRename, onDownload, onSetAsWallpaper, onCopy, onPasteInto, onUploadInto, onImportFolderInto, onGroup, onMove, onProperties, onDelete, onCopyLink, onPublish, publishDisabled = false, onMakeAvailableOffline, onRemoveOfflineCopy, onOpenOfflineStorage, offlineBusy = false, readOnly = false, selectionCount = 1, trashSupported = true, openWith = [], onClose }: Props) {
   const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
   const onFocus = useRovingMenu(position.ref);
@@ -203,6 +209,7 @@ type DesktopProps = {
   onClose: () => void;
 };
 
+/** Renders the desktop context menu interface. */
 export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUpload, onImportFolder, onSettings, onPaste, onAddWidget, onCreateIconGroup, readOnly = false, onClose }: DesktopProps) {
   const position = useMenuPosition(menu.x, menu.y, menu.presentation === "menu");
   const onFocus = useRovingMenu(position.ref);
@@ -235,6 +242,7 @@ export function DesktopContextMenu({ menu, onCreateFile, onCreateFolder, onUploa
   </ActionMenuFrame>;
 }
 
+/** Renders the widget context menu interface. */
 export function WidgetContextMenu({ menu, label, onOpen, onResize, onRemove, onClose }: {
   menu: Extract<Exclude<ContextMenuState, null>, { type: "widget" }>;
   label: string;
@@ -252,6 +260,7 @@ export function WidgetContextMenu({ menu, label, onOpen, onResize, onRemove, onC
   </ActionMenuFrame>;
 }
 
+/** Renders the action menu frame interface. */
 function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus, children }: {
   menuRef: RefObject<HTMLDivElement>;
   style: CSSProperties;
@@ -305,6 +314,7 @@ function ActionMenuFrame({ menuRef, style, presentation, label, onClose, onFocus
   </dialog>;
 }
 
+/** Applies keyboard navigation within the context menu. */
 function handleMenuKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
   if (!isLinearNavigationKey(event.key)) return;
   if (event.key === "ArrowLeft" || event.key === "ArrowRight") return;

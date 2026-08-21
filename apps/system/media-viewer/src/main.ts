@@ -5,13 +5,21 @@ import { renderParsedDocument } from "./document-preview";
 import { renderMarkdown } from "./markdown";
 import "./style.css";
 
+/** Identifies the Media Viewer system app. */
 const APP_ID = "app.hiraya.media-viewer";
+/** References the viewer interface element. */
 const viewer = required<HTMLElement>("#viewer");
+/** References the status interface element. */
 const status = required<HTMLElement>("#status");
+/** References the content interface element. */
 const content = required<HTMLElement>("#content");
+/** References the loading interface element. */
 const loading = required<HTMLElement>("#loading");
+/** Coordinates the latest media loading operation. */
 const operations = new LatestOperation();
+/** Coordinates the latest preview render. */
 const renderOperations = new LatestOperation();
+/** Coordinates the latest link navigation. */
 const linkOperations = new LatestOperation();
 let hiraya: HirayaClient;
 let objectUrls: string[] = [];
@@ -30,6 +38,7 @@ let currentMarkdown: { source: string; relativeHandle: FileHandle | FolderHandle
 addEventListener("pagehide", () => { operations.invalidate(); clear(); }, { once: true });
 void start();
 
+/** Starts the application. */
 async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
@@ -53,6 +62,7 @@ async function start() {
   }
 }
 
+/** Opens the media supplied in the launch context. */
 async function open() {
   const generation = operations.begin();
   try {
@@ -63,6 +73,7 @@ async function open() {
   }
 }
 
+/** Loads the selected media document. */
 async function load(handle: FileHandle, generation = operations.begin(), relativeHandle: FileHandle | FolderHandle = handle) {
   opening = true;
   publishCommands();
@@ -148,6 +159,7 @@ async function load(handle: FileHandle, generation = operations.begin(), relativ
   }
 }
 
+/** Toggles fullscreen. */
 async function toggleFullscreen() {
   try {
     const state = await hiraya.window.setFullscreen(!fullscreen);
@@ -158,6 +170,7 @@ async function toggleFullscreen() {
   }
 }
 
+/** Clears the current content. */
 function clear() {
   renderOperations.invalidate();
   linkOperations.invalidate();
@@ -176,6 +189,7 @@ function clear() {
   });
 }
 
+/** Reloads a preview after its source URL expires. */
 async function recoverExpiredPreview(media: HTMLMediaElement) {
   if (!previewHandle || refreshingPreview || !operations.isLatest(previewGeneration)) return;
   if (!previewExpiresAt || previewRefreshAttempted) {
@@ -208,6 +222,7 @@ async function recoverExpiredPreview(media: HTMLMediaElement) {
   }
 }
 
+/** Renders markdown document. */
 async function renderMarkdownDocument(generation: number) {
   if (!currentMarkdown || !renderOperations.isLatest(generation)) return;
   revokeObjectUrls();
@@ -217,6 +232,7 @@ async function renderMarkdownDocument(generation: number) {
   if (renderOperations.isLatest(generation)) renderExternalContent(article);
 }
 
+/** Loads relative content. */
 async function loadRelativeContent(article: HTMLElement, handle: FileHandle | FolderHandle, generation: number) {
   const readRelative = relativeReader(hiraya);
   await Promise.all(Array.from(article.querySelectorAll<HTMLImageElement>("img[data-relative-src]")).map(async (image) => {
@@ -242,6 +258,7 @@ async function loadRelativeContent(article: HTMLElement, handle: FileHandle | Fo
   });
 }
 
+/** Renders external content. */
 function renderExternalContent(article: HTMLElement) {
   for (const image of Array.from(article.querySelectorAll<HTMLImageElement>("img[data-external-src]"))) {
     const source = image.dataset.externalSrc ?? "";
@@ -269,16 +286,19 @@ function renderExternalContent(article: HTMLElement) {
   }
 }
 
+/** Revokes all object URLs owned by the current preview. */
 function revokeObjectUrls() {
   for (const url of objectUrls) URL.revokeObjectURL(url);
   objectUrls = [];
 }
 
+/** Sets status error. */
 function setStatusError(error: unknown, fallback: string) {
   status.textContent = describeError(error, fallback);
   status.classList.add("error");
 }
 
+/** Displays a preview loading failure. */
 function showPreviewError(error: unknown, fallback: string) {
   opening = false;
   setAppLoading(content, viewer, loading);
@@ -294,6 +314,7 @@ function showPreviewError(error: unknown, fallback: string) {
   publishCommands();
 }
 
+/** Publishes commands. */
 function publishCommands() {
   void hiraya?.commands.set([
     { id: "open", title: "Open", enabled: ready && !opening, promoted: true },

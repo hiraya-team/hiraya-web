@@ -32,6 +32,7 @@ type Props = {
   onLinkError?: (message: string) => void;
 };
 
+/** Selects the CodeMirror language extension for an editor mode. */
 function languageExtension(language: EditorLanguage): Extension {
   switch (language) {
     case "markdown": return markdown();
@@ -48,6 +49,7 @@ function languageExtension(language: EditorLanguage): Extension {
   }
 }
 
+/** Maps the active desktop theme into CodeMirror styling. */
 function editorTheme(theme: ThemeDefinition): Extension {
   const { colors } = theme;
   return [
@@ -70,10 +72,12 @@ function editorTheme(theme: ThemeDefinition): Extension {
   ];
 }
 
+/** Renders revocable local and remote media previews inside CodeMirror. */
 class MediaPreviewWidget extends WidgetType {
   private destroyed = false;
   private urls: string[] = [];
 
+  /** Creates a preview widget for the supplied Markdown media targets. */
   constructor(
     readonly targets: EmbeddedPreviewTarget[],
     readonly resolveLink: (path: string) => Promise<LinkedFile>,
@@ -82,10 +86,12 @@ class MediaPreviewWidget extends WidgetType {
     super();
   }
 
+  /** Compares preview targets for CodeMirror widget reuse. */
   eq(other: MediaPreviewWidget) {
     return JSON.stringify(this.targets) === JSON.stringify(other.targets);
   }
 
+  /** Creates a sandboxed preview element for an external media target. */
   private externalPreview(target: ExternalPreviewTarget, view: EditorView) {
     const preview = document.createElement("div");
     preview.className = `inline-media-preview inline-media-preview--external inline-media-preview--${target.kind}`;
@@ -157,6 +163,7 @@ class MediaPreviewWidget extends WidgetType {
     return preview;
   }
 
+  /** Builds the DOM row used to display embedded preview targets. */
   toDOM(view: EditorView) {
     const row = document.createElement("div");
     row.className = "inline-media-row";
@@ -247,10 +254,12 @@ class MediaPreviewWidget extends WidgetType {
     return row;
   }
 
+  /** Keeps preview interactions from being handled as editor input. */
   ignoreEvent() {
     return true;
   }
 
+  /** Releases resources owned by the editor preview widget. */
   destroy() {
     this.destroyed = true;
     for (const url of this.urls) URL.revokeObjectURL(url);
@@ -258,6 +267,7 @@ class MediaPreviewWidget extends WidgetType {
   }
 }
 
+/** Creates CodeMirror decorations for Markdown media previews. */
 function inlinePreviews(
   resolveLink: (path: string) => Promise<LinkedFile>,
   openFile: (file: FileEntry) => void,
@@ -280,6 +290,7 @@ function inlinePreviews(
   });
 }
 
+/** Creates accessible, activatable Markdown link decorations. */
 function inlineMarkdownLinks(
   resolveLink: (path: string) => Promise<LinkedFile>,
   openFile: (file: FileEntry) => void,
@@ -351,6 +362,7 @@ function inlineMarkdownLinks(
   ];
 }
 
+/** Provides a themed text editor with save and preview support. */
 export function TextEditor({ file, value, settings, theme, externalEmbeddedPreviews, readOnly = false, onChange, onSave, onResolveLink, onOpenLinkedFile, onLinkError }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);

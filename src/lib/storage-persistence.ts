@@ -2,8 +2,10 @@ export type StoragePersistenceStatus = "checking" | "granted" | "denied" | "unsu
 
 type PersistenceStorage = Pick<StorageManager, "persist" | "persisted">;
 type PersistenceResult = Exclude<StoragePersistenceStatus, "checking">;
+/** Requests persistent browser storage when available. */
 const requests = new WeakMap<object, Promise<PersistenceResult>>();
 
+/** Requests storage persistence. */
 export function requestStoragePersistence(storage?: Partial<PersistenceStorage>): Promise<PersistenceResult> {
   const target = storage ?? (typeof navigator === "undefined" ? undefined : navigator.storage);
   if (!target) return Promise.resolve("unsupported");

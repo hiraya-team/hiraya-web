@@ -5,13 +5,17 @@ import { SyncEngine, TrashUnavailableError, type SyncEngineOptions } from "../sr
 import { sha256Blob } from "../src/lib/blob-transfer";
 import { desktopStateSnapshot, remoteDesktopState } from "./fixtures";
 
+/** Provides a fake event source test double. */
 class FakeEventSource {
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  /** Registers a listener on the test event source. */
   addEventListener() {}
+  /** Closes the test event source. */
   close() {}
 }
 
+/** Provides the folder test fixture. */
 const folder = {
   kind: "folder" as const,
   id: "folder-1",
@@ -24,6 +28,7 @@ const folder = {
   contentRevision: 0,
 };
 
+/** Provides the file test fixture. */
 const file = {
   kind: "file" as const,
   id: "file-1",

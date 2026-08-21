@@ -8,6 +8,7 @@ type Props = {
   onSwitch: (id: string) => void;
 };
 
+/** Renders the desktop switcher interface. */
 export function DesktopSwitcher({ desktops, activeDesktopId, onSwitch }: Props) {
   return <aside id="desktop-switcher" className="desktop-switcher__picker" aria-label="Desktops" popover="auto">
       <header className="desktop-switcher__rail-header">Desktops</header>

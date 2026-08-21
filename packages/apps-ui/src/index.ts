@@ -17,6 +17,7 @@ export interface ThemeSource {
   on(event: "theme.changed", listener: (theme: ThemeTokens) => void): () => void;
 }
 
+/** Lists theme tokens exposed as CSS custom properties. */
 const TOKEN_NAMES = [
   "background",
   "surface",
@@ -30,6 +31,7 @@ const TOKEN_NAMES = [
   "focus",
 ] as const;
 
+/** Applies Hiraya theme tokens to a target element. */
 export function applyThemeTokens(theme: ThemeTokens, options: ApplyThemeOptions = {}): void {
   const target = options.target ?? defaultTarget();
   target.dataset.theme = theme.mode;
@@ -38,6 +40,7 @@ export function applyThemeTokens(theme: ThemeTokens, options: ApplyThemeOptions 
   }
 }
 
+/** Applies a theme and subscribes the target to later changes. */
 export function bindTheme(source: ThemeSource, initialTheme: ThemeTokens, options: BindThemeOptions = {}): () => void {
   const update = (theme: ThemeTokens) => {
     applyThemeTokens(theme, options);
@@ -47,6 +50,7 @@ export function bindTheme(source: ThemeSource, initialTheme: ThemeTokens, option
   return source.on("theme.changed", update);
 }
 
+/** Returns the document root as the default theme target. */
 function defaultTarget(): ThemeTarget {
   if (typeof document === "undefined") throw new Error("applyThemeTokens requires a target outside the browser.");
   return document.documentElement;

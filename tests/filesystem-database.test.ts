@@ -19,22 +19,32 @@ import { DEFAULT_DEVICE_PREFERENCES } from "../src/domain/preferences";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { SYSTEM_APP_IDS } from "../src/apps/system-app-ids";
 
+/** Provides the account test fixture. */
 const ACCOUNT = stableId(1);
+/** Provides the storage ID test fixture. */
 const STORAGE_ID = stableId(9);
+/** Provides the workspace test fixture. */
 const WORKSPACE = stableId(2);
+/** Provides the device test fixture. */
 const DEVICE = stableId(3);
+/** Provides the destination test fixture. */
 const DESTINATION = stableId(4);
+/** Provides the account hash test fixture. */
 const ACCOUNT_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
+/** Defines the storage hash. */
 const STORAGE_HASH = "f3e028aaa6530055f01a5e1e849f67658d0daaf9bc64c2f95b6c5efd3595181e";
 
+/** Builds the stable ID test fixture. */
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
+/** Builds the environment test fixture. */
 function environment(factory: IDBFactory, now?: () => number) {
   return { storageId: ACCOUNT, indexedDB: factory, IDBKeyRange, now };
 }
 
+/** Builds the IDB request test fixture. */
 function idbRequest<T>(value: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
     value.onsuccess = () => resolve(value.result);
@@ -42,6 +52,7 @@ function idbRequest<T>(value: IDBRequest<T>) {
   });
 }
 
+/** Opens a raw IndexedDB test database. */
 function openRaw(factory: IDBFactory, name: string, version?: number, upgrade?: (database: IDBDatabase) => void) {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const open = version === undefined ? factory.open(name) : factory.open(name, version);
@@ -51,6 +62,7 @@ function openRaw(factory: IDBFactory, name: string, version?: number, upgrade?: 
   });
 }
 
+/** Reads a value directly from an IndexedDB test store. */
 async function readStored(factory: IDBFactory, name: string, storeName: string, key?: IDBValidKey) {
   const database = await openRaw(factory, name);
   try {
@@ -61,6 +73,7 @@ async function readStored(factory: IDBFactory, name: string, storeName: string, 
   }
 }
 
+/** Builds the verified manifest test fixture. */
 async function verifiedManifest(size: number, digit: number) {
   const manifest: Manifest = {
     schemaVersion: 1,
@@ -71,54 +84,66 @@ async function verifiedManifest(size: number, digit: number) {
   return { hash: await canonicalManifestSha256(manifest), manifest };
 }
 
+/** Creates a folder test fixture. */
 function folder(id: string, name: string, parentId: string | null = null) {
   return { id, kind: "folder" as const, name, parentId, position: { x: 1, y: 2 }, createdAt: 10, modifiedAt: 10 };
 }
 
+/** Creates a file test fixture. */
 function file(id: string, name: string, manifest: Awaited<ReturnType<typeof verifiedManifest>>, parentId: string | null = null, modifiedAt = 10) {
   return { id, kind: "file" as const, name, parentId, position: { x: 3, y: 4 }, createdAt: 10, modifiedAt, mimeType: "text/plain", size: manifest.manifest.size, manifestHash: manifest.hash };
 }
 
+/** Builds a create-operation draft test fixture. */
 function createDraft(operationId: string, nodes: ReturnType<typeof folder | typeof file>[], workspaceId = WORKSPACE): WorkspaceOperationDraft {
   return { schemaVersion: 1, kind: "create", operationId, workspaceId, deviceId: DEVICE, nodes };
 }
 
+/** Builds a copy-operation draft test fixture. */
 function copyDraft(operationId: string, sourceNodeIds: string[], nodes: ReturnType<typeof folder | typeof file>[]): Extract<WorkspaceOperationDraft, { kind: "copy" }> {
   return { schemaVersion: 1, kind: "copy", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, sourceNodeIds, nodes };
 }
 
+/** Builds a write-operation draft test fixture. */
 function writeDraft(operationId: string, nodeId: string, manifest: Awaited<ReturnType<typeof verifiedManifest>>, modifiedAt: number): Extract<WorkspaceOperationDraft, { kind: "write" }> {
   return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, mimeType: "text/markdown", size: manifest.manifest.size, manifestHash: manifest.hash, modifiedAt };
 }
 
+/** Builds the version draft test fixture. */
 function versionDraft(operationId: string, nodeId: string, version: { mimeType: string; size: number; manifestHash: string; modifiedAt: number }): WorkspaceOperationDraft {
   return { schemaVersion: 1, kind: "write", operationId, workspaceId: WORKSPACE, deviceId: DEVICE, nodeId, ...version };
 }
 
+/** Builds the operation base test fixture. */
 function operationBase(operationId: string) {
   return { schemaVersion: 1 as const, operationId, workspaceId: WORKSPACE, deviceId: DEVICE };
 }
 
+/** Builds the installed app test fixture. */
 function installedApp(appId = "test.editor"): InstalledApp {
   return { appId, source: "desktop", packageEntryId: "package-one", archivePath: null, digest: "a".repeat(64), version: "1.0.0", approvedAt: 10, manifest: { schemaVersion: 2, uiRuntime: 1, id: appId, name: "Editor", version: "1.0.0", entrypoint: "index.html", permissions: ["files:read"], fileTypes: [".txt"] } };
 }
 
+/** Builds the transfer draft test fixture. */
 function transferDraft(operationId: string, nodeIds: string[], destinationWorkspaceId = DESTINATION, parentId: string | null = null, deviceId = DEVICE): Extract<WorkspaceOperationDraft, { kind: "transfer" }> {
   return { schemaVersion: 1, kind: "transfer", operationId, workspaceId: WORKSPACE, deviceId, nodeIds, destinationWorkspaceId, parentId, modifiedAt: 77 };
 }
 
+/** Builds the workspace database test fixture. */
 async function workspaceDatabase(factory: IDBFactory, now?: () => number, id = WORKSPACE) {
   const database = await openFilesystemDatabase(ACCOUNT, environment(factory, now));
   await database.createWorkspace({ id, name: "Workspace", pinned: true, deviceId: DEVICE });
   return database;
 }
 
+/** Builds the commit write test fixture. */
 async function commitWrite(database: FilesystemDatabase, operation: Extract<WorkspaceOperationDraft, { kind: "write" }>, manifests: Array<Awaited<ReturnType<typeof verifiedManifest>>>) {
   const node = await database.getNode(operation.nodeId);
   if (!node || node.kind !== "file") throw new Error("The test file does not exist.");
   return database.commitOperation({ operation, manifests, expectedContentTuple: node.fieldTuples.content! });
 }
 
+/** Asserts empty commit. */
 async function expectEmptyCommit(database: FilesystemDatabase, factory: IDBFactory, expectedRevision = 0) {
   expect(await database.listOperations(WORKSPACE)).toEqual([]);
   expect((await database.listWorkspaces())[0]!.localRevision).toBe(expectedRevision);

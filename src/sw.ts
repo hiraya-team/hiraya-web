@@ -1,17 +1,25 @@
 /// <reference lib="webworker" />
 
+/** References the service worker global scope. */
 const worker = self as unknown as ServiceWorkerGlobalScope;
+/** Names caches owned by the Hiraya application shell. */
 const CACHE_PREFIX = "hiraya-shell-";
+/** Identifies the shell cache for the current build. */
 const CACHE_NAME = `${CACHE_PREFIX}__HIRAYA_CACHE_VERSION__`;
+/** Lists shell resources injected into the build-time precache. */
 const PRECACHE = ["/__HIRAYA_PRECACHE__"];
+/** Identifies the cached shell response used for offline navigation. */
 const NAVIGATION_FALLBACK = import.meta.env.BASE_URL;
+/** Matches immutable, content-hashed build assets. */
 const HASHED_ASSET = /\/assets\/[^/]+-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9]+$/;
 let offlineForTest = false;
 
+/** Broadcasts a service-worker message to open window clients. */
 async function notifyClients(message: unknown) {
   for (const client of await worker.clients.matchAll({ type: "window", includeUncontrolled: true })) client.postMessage(message);
 }
 
+/** Retires stale shell caches and claims open clients. */
 async function activateShell() {
   for (const key of await caches.keys()) {
     if (key === CACHE_NAME) continue;

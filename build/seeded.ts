@@ -3,14 +3,18 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import { parsePortableSeededManifest, type PortableSeededFileEntry } from "../src/lib/seeded-manifest";
 
+/** Identifies the public seeded-manifest virtual module. */
 const PUBLIC_ID = "virtual:hiraya-seeded";
+/** Identifies the resolved seeded-manifest virtual module. */
 const RESOLVED_ID = `\0${PUBLIC_ID}`;
 
+/** Reports whether a path is contained by its parent directory. */
 function isInside(parent: string, candidate: string) {
   const relative = path.relative(parent, candidate);
   return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
 }
 
+/** Creates the seeded desktop plugin. */
 export function seededDesktopPlugin(projectRoot: string, configuredDirectory?: string): Plugin {
   let sourceDirectory: string | null = null;
 

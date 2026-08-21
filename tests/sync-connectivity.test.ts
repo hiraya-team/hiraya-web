@@ -1,12 +1,16 @@
 import { expect, test } from "bun:test";
 import { SyncConnectivity } from "../src/platform/sync/connectivity";
 
+/** Implements an EventSource test double. */
 class TestEventSource {
   static latest: TestEventSource | null = null;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
+  /** Creates a test event source instance. */
   constructor(readonly url: string) { TestEventSource.latest = this; }
+  /** Registers a listener on the test event source. */
   addEventListener() {}
+  /** Marks the test event source as closed. */
   close() {}
 }
 

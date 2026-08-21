@@ -1,3 +1,4 @@
+/** Computes unread notification IDs from panel and item state. */
 export function nextUnreadNotificationIds(current: ReadonlySet<string>, known: ReadonlySet<string>, active: ReadonlySet<string>, open: boolean) {
   if (open) return new Set<string>();
   const next = new Set([...current].filter((id) => active.has(id)));
@@ -5,6 +6,7 @@ export function nextUnreadNotificationIds(current: ReadonlySet<string>, known: R
   return next;
 }
 
+/** Preserves notification order while appending newly active IDs. */
 export function nextNotificationOrder(current: readonly string[], active: readonly string[]) {
   const activeIds = new Set(active);
   const retained = current.filter((id) => activeIds.has(id));

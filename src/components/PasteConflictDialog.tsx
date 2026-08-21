@@ -11,6 +11,7 @@ type Props = {
   onPaste: (names: Map<string, string>) => Promise<void>;
 };
 
+/** Renders the paste conflict dialog interface. */
 export function PasteConflictDialog({ roots, existingNames, onClose, onPaste }: Props) {
   const [names, setNames] = useState(() => new Map(roots.map((entry) => [entry.id, entry.name])));
   const [error, setError] = useState("");

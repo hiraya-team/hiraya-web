@@ -4,15 +4,25 @@ import { HirayaShell, type OutputTone, type ShellState } from "./shell";
 import { HirayaFileSystem } from "./vfs";
 import "./style.css";
 
+/** Identifies the Terminal system app. */
 const APP_ID = "app.hiraya.terminal";
+/** Identifies persisted Terminal state. */
 const STATE_KEY = "shell-state";
+/** References the surface interface element. */
 const surface = required<HTMLElement>("#surface");
+/** References the terminal interface element. */
 const terminal = required<HTMLElement>("#terminal");
+/** References the transcript interface element. */
 const transcript = required<HTMLElement>("#transcript");
+/** References the prompt interface element. */
 const prompt = required<HTMLFormElement>("#prompt");
+/** References the command interface element. */
 const command = required<HTMLTextAreaElement>("#command");
+/** References the prompt label interface element. */
 const promptLabel = required<HTMLLabelElement>("#prompt-label");
+/** References the status interface element. */
 const status = required<HTMLElement>("#status");
+/** References the loading interface element. */
 const loading = required<HTMLElement>("#loading");
 let shell: HirayaShell | null = null;
 let hiraya: HirayaClient | null = null;
@@ -34,6 +44,7 @@ command.addEventListener("keydown", (event) => {
 });
 void start();
 
+/** Starts the application. */
 async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
@@ -71,6 +82,7 @@ async function start() {
   }
 }
 
+/** Executes the current command. */
 async function execute() {
   const source = command.value.trim();
   if (!shell || !source || active) return;
@@ -98,6 +110,7 @@ async function execute() {
   }
 }
 
+/** Completes the current command input. */
 async function complete() {
   if (!shell || active) return;
   try {
@@ -109,11 +122,13 @@ async function complete() {
   } catch (error) { append(describeError(error, "Completion failed."), "error"); }
 }
 
+/** Emits an event to the connected client. */
 function emit(text: string, tone: OutputTone = "output") {
   if (text === "\u000c") { clear(); return; }
   append(text, tone);
 }
 
+/** Appends text to the terminal output. */
 function append(text: string, tone: OutputTone | "command" | "accent") {
   if (!text) return;
   const output = document.createElement("pre");
@@ -124,41 +139,49 @@ function append(text: string, tone: OutputTone | "command" | "accent") {
   transcript.scrollTop = transcript.scrollHeight;
 }
 
+/** Clears the current content. */
 function clear() {
   transcript.replaceChildren();
   status.textContent = "Terminal cleared.";
   command.focus();
 }
 
+/** Cancels the active terminal command. */
 function cancel() {
   active?.abort();
 }
 
+/** Updates prompt. */
 function updatePrompt() {
   if (!shell) return;
   promptLabel.textContent = `${shell.cwd} $`;
 }
 
+/** Resizes the command input to fit its contents. */
 function resizeInput() {
   command.style.height = "auto";
   command.style.height = `${Math.min(command.scrollHeight, 112)}px`;
 }
 
+/** Applies capabilities. */
 function applyCapabilities(capabilities: AppCapabilities) {
   required("#write-state").toggleAttribute("hidden", capabilities.files.write);
 }
 
+/** Schedules save. */
 function scheduleSave() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => { if (shell) void saveState(shell.state()); }, 250) as unknown as number;
 }
 
+/** Saves state. */
 async function saveState(state: ShellState) {
   if (!hiraya) return;
   try { await hiraya.storage.set(STATE_KEY, state); }
   catch (error) { status.textContent = describeError(error, "Could not save Terminal settings."); }
 }
 
+/** Publishes commands. */
 function publishCommands() {
   return hiraya?.commands.set([
     { id: "help", title: "Help", enabled: Boolean(shell) && !active, promoted: true },
@@ -167,6 +190,7 @@ function publishCommands() {
   ]) ?? Promise.resolve();
 }
 
+/** Parses state. */
 function parseState(value: JsonValue | undefined): Partial<ShellState> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const record = value as Record<string, JsonValue>;
@@ -176,11 +200,13 @@ function parseState(value: JsonValue | undefined): Partial<ShellState> | undefin
   return { history, aliases, env };
 }
 
+/** Converts an unknown object to a string record. */
 function stringRecord(value: JsonValue | undefined) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
 }
 
+/** Quotes a shell argument when necessary. */
 function quote(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }

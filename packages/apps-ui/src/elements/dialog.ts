@@ -2,6 +2,7 @@ import { elementStyles, hasBooleanAttribute, hirayaEvent, HTMLElementBase, setBo
 
 let dialogSequence = 0;
 
+/** Implements the Hiraya dialog. */
 export class HirayaDialog extends HTMLElementBase {
   static readonly observedAttributes = ["open", "dismiss-disabled", "close-label"];
   readonly #dialog: HTMLDialogElement;
@@ -9,6 +10,7 @@ export class HirayaDialog extends HTMLElementBase {
   readonly #titleId = `hiraya-dialog-title-${++dialogSequence}`;
   #restoreFocus: HTMLElement | null = null;
 
+  /** Creates a hiraya dialog instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -29,23 +31,32 @@ export class HirayaDialog extends HTMLElementBase {
     this.#dialog.addEventListener("close", () => this.#closed());
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Releases listeners when the element leaves the document. */
   disconnectedCallback(): void { if (this.#dialog.open) this.#dialog.close(); }
 
+  /** Reports whether the dialog is open. */
   get open(): boolean { return hasBooleanAttribute(this, "open"); }
+  /** Sets whether the dialog is open. */
   set open(value: boolean) { setBooleanAttribute(this, "open", value); }
 
+  /** Opens the dialog as a modal. */
   showModal(): void { this.open = true; }
+  /** Closes the dialog with an optional return value. */
   close(returnValue = ""): void {
     this.removeAttribute("open");
     if (this.#dialog.open) this.#dialog.close(returnValue);
   }
+  /** Requests cancellation before closing the dialog. */
   requestClose(reason = "api"): void {
     if (hasBooleanAttribute(this, "dismiss-disabled")) return;
     if (hirayaEvent(this, "hiraya-request-close", { reason }, true)) this.close(reason);
   }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.isConnected || !this.#dialog) return;
     this.#closeButton.hidden = hasBooleanAttribute(this, "dismiss-disabled");
@@ -55,6 +66,7 @@ export class HirayaDialog extends HTMLElementBase {
       this.#dialog.showModal();
     } else if (!this.open && this.#dialog.open) this.#dialog.close();
   }
+  /** Restores focus and publishes the dialog result after closing. */
   #closed(): void {
     this.removeAttribute("open");
     this.#restoreFocus?.focus();
@@ -63,6 +75,7 @@ export class HirayaDialog extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya confirm dialog. */
 export class HirayaConfirmDialog extends HTMLElementBase {
   static readonly observedAttributes = ["open", "title", "message", "confirm-label", "cancel-label", "destructive", "busy"];
   readonly #dialog: HirayaDialog;
@@ -72,6 +85,7 @@ export class HirayaConfirmDialog extends HTMLElementBase {
   readonly #confirm: HTMLElement;
   #settled = false;
 
+  /** Creates a hiraya confirm dialog instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -93,13 +107,18 @@ export class HirayaConfirmDialog extends HTMLElementBase {
       this.#settled = false;
     });
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Reports whether the confirmation dialog is open. */
   get open(): boolean { return hasBooleanAttribute(this, "open"); }
+  /** Sets whether the confirmation dialog is open. */
   set open(value: boolean) {
     if (value && !this.open) this.#settled = false;
     setBooleanAttribute(this, "open", value);
   }
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#dialog) return;
     this.#title.textContent = this.getAttribute("title") ?? "Confirm";

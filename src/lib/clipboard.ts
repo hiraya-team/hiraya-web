@@ -4,8 +4,11 @@ import { isRecord, isValidId, parseEntries } from "./contracts";
 import { fileFromEntry, readAllDirectoryEntries } from "./file-system-entry";
 import { importedFileMimeType } from "../domain/scene";
 
+/** Defines the clipboard archive version. */
 export const CLIPBOARD_ARCHIVE_VERSION = 1 as const;
+/** Matches the expected clipboard archive MIME type. */
 export const CLIPBOARD_ARCHIVE_MIME_TYPE = "application/vnd.hiraya.entry-archive-v1+zip";
+/** Matches the expected clipboard archive web MIME type. */
 export const CLIPBOARD_ARCHIVE_WEB_MIME_TYPE = `web ${CLIPBOARD_ARCHIVE_MIME_TYPE}`;
 
 export type ClipboardEntrySnapshot = {
@@ -20,15 +23,19 @@ type ClipboardManifest = {
   entries: DesktopEntry[];
 };
 
+/** Defines the manifest path. */
 const MANIFEST_PATH = "manifest.json";
+/** Decodes clipboard text as strict UTF-8. */
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
+/** Reports whether a record contains exactly the expected keys. */
 function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
+/** Validates exact entry shape. */
 function assertExactEntryShape(value: unknown) {
   if (!isRecord(value) || !isRecord(value.position) || !hasExactKeys(value.position, ["x", "y"])) {
     throw new Error("A clipboard entry has an unsupported format.");
@@ -39,6 +46,7 @@ function assertExactEntryShape(value: unknown) {
   if (!hasExactKeys(value, keys)) throw new Error("A clipboard entry has an unsupported format.");
 }
 
+/** Parses and validates manifest. */
 function parseManifest(value: unknown): ClipboardManifest {
   if (!isRecord(value) || !hasExactKeys(value, ["schemaVersion", "selectedRootIds", "entries"]) || value.schemaVersion !== CLIPBOARD_ARCHIVE_VERSION || !Array.isArray(value.selectedRootIds) || !Array.isArray(value.entries)) {
     throw new Error("The clipboard archive has an unsupported manifest.");
@@ -58,16 +66,19 @@ function parseManifest(value: unknown): ClipboardManifest {
   return { schemaVersion: CLIPBOARD_ARCHIVE_VERSION, selectedRootIds: [...selectedRootIds], entries };
 }
 
+/** Computes content path. */
 function contentPath(id: string) {
   return `files/${encodeURIComponent(id)}`;
 }
 
+/** Validates safe archive path. */
 function assertSafeArchivePath(path: string) {
   if (path.startsWith("/") || path.includes("\\") || path.split("/").some((segment) => !segment || segment === "." || segment === "..")) {
     throw new Error("The clipboard archive contains an unsafe path.");
   }
 }
 
+/** Parses and validates a clipboard snapshot. */
 function validateSnapshot(snapshot: ClipboardEntrySnapshot) {
   if (!isRecord(snapshot) || !(snapshot.contents instanceof Map)) throw new Error("The clipboard snapshot has an unsupported format.");
   const manifest = parseManifest({
@@ -85,6 +96,7 @@ function validateSnapshot(snapshot: ClipboardEntrySnapshot) {
   return manifest;
 }
 
+/** Creates zip. */
 async function createZip(files: Zippable) {
   const { zip } = await import("fflate");
   return new Promise<Uint8Array>((resolve, reject) => {
@@ -92,6 +104,7 @@ async function createZip(files: Zippable) {
   });
 }
 
+/** Opens zip. */
 async function openZip(bytes: Uint8Array) {
   const { unzip } = await import("fflate");
   return new Promise<Record<string, Uint8Array>>((resolve, reject) => {
@@ -99,6 +112,7 @@ async function openZip(bytes: Uint8Array) {
   });
 }
 
+/** Encodes clipboard archive. */
 export async function encodeClipboardArchive(snapshot: ClipboardEntrySnapshot): Promise<Blob> {
   const manifest = validateSnapshot(snapshot);
   const files: Zippable = { [MANIFEST_PATH]: new TextEncoder().encode(JSON.stringify(manifest)) };
@@ -109,6 +123,7 @@ export async function encodeClipboardArchive(snapshot: ClipboardEntrySnapshot): 
   return new Blob([archive.slice().buffer as ArrayBuffer], { type: CLIPBOARD_ARCHIVE_MIME_TYPE });
 }
 
+/** Decodes clipboard archive. */
 export async function decodeClipboardArchive(archive: Blob): Promise<ClipboardEntrySnapshot> {
   const files = await openZip(new Uint8Array(await archive.arrayBuffer()));
   const paths = Object.keys(files);
@@ -136,10 +151,12 @@ export async function decodeClipboardArchive(archive: Blob): Promise<ClipboardEn
   return { selectedRootIds: manifest.selectedRootIds, entries: manifest.entries, contents };
 }
 
+/** Reports whether a MIME type is a supported clipboard archive. */
 export function isClipboardArchiveType(type: string) {
   return type === CLIPBOARD_ARCHIVE_WEB_MIME_TYPE || type === CLIPBOARD_ARCHIVE_MIME_TYPE;
 }
 
+/** Returns clipboard snapshot identity. */
 export function clipboardSnapshotIdentity(snapshot: ClipboardEntrySnapshot) {
   return JSON.stringify({
     selectedRootIds: snapshot.selectedRootIds,
@@ -149,12 +166,14 @@ export function clipboardSnapshotIdentity(snapshot: ClipboardEntrySnapshot) {
   });
 }
 
+/** Decodes clipboard archive item. */
 export async function decodeClipboardArchiveItem(item: Pick<ClipboardItem, "types" | "getType">) {
   const type = item.types.find(isClipboardArchiveType);
   if (!type) throw new Error("The clipboard does not contain a Hiraya entry archive.");
   return decodeClipboardArchive(await item.getType(type));
 }
 
+/** Returns snapshot from clipboard items. */
 export async function snapshotFromClipboardItems(items: DataTransferItemList): Promise<ClipboardEntrySnapshot | null> {
   const roots = Array.from(items).map((item) => item.webkitGetAsEntry()).filter((entry): entry is FileSystemEntry => entry !== null);
   if (!roots.length) return null;

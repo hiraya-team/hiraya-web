@@ -3,6 +3,7 @@ import { waitForAnimations } from "../src/ui/animation-completion";
 import { EDGE_DWELL_MS, resetEdgeDwell, updateEdgeDwell, type EdgeDwellState } from "../src/ui/edge-entry";
 import { writeClipboardText } from "../src/ui/clipboard-copy";
 
+/** Builds the deferred test fixture. */
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => {
@@ -11,6 +12,7 @@ function deferred() {
   return { promise, resolve };
 }
 
+/** Builds the rejectable test fixture. */
 function rejectable() {
   let reject!: (reason?: unknown) => void;
   const promise = new Promise<void>((_, fail) => {

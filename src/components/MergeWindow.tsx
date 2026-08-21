@@ -53,9 +53,12 @@ export type MergeWindowProps = MergeWindowCommonProps & (
 type Source = "base" | "mine" | "server";
 type VersionSource = Exclude<Source, "base">;
 
+/** Formats dates and times using the current locale. */
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
+/** Formats numeric values using the current locale. */
 const numberFormatter = new Intl.NumberFormat();
 
+/** Formats size for display. */
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${numberFormatter.format(bytes)} ${bytes === 1 ? "byte" : "bytes"}`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -68,6 +71,7 @@ function formatSize(bytes: number) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]}`;
 }
 
+/** Maintains a revocable object URL for preview content. */
 function useObjectUrl(content?: Blob) {
   const [url, setUrl] = useState("");
   useEffect(() => {
@@ -82,6 +86,7 @@ function useObjectUrl(content?: Blob) {
   return url;
 }
 
+/** Applies keyboard navigation between merge tabs. */
 function handleTabKeys<T extends string>(event: KeyboardEvent<HTMLButtonElement>, tabs: readonly T[], selected: T, select: (tab: T) => void) {
   const keyIndex = event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : event.key === "ArrowLeft" ? tabs.indexOf(selected) - 1 : event.key === "ArrowRight" ? tabs.indexOf(selected) + 1 : -1;
   if (keyIndex === -1) return;
@@ -91,12 +96,14 @@ function handleTabKeys<T extends string>(event: KeyboardEvent<HTMLButtonElement>
   event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>("[role=tab]")[tabs.indexOf(next)]?.focus();
 }
 
+/** Renders the source tabs interface. */
 function SourceTabs<T extends string>({ tabs, selected, onSelect, label }: { tabs: readonly T[]; selected: T; onSelect: (tab: T) => void; label: string }) {
   return <div className="merge-window__source-tabs" role="tablist" aria-label={label}>
     {tabs.map((tab) => <button key={tab} type="button" role="tab" aria-selected={selected === tab} tabIndex={selected === tab ? 0 : -1} onClick={() => onSelect(tab)} onKeyDown={(event) => handleTabKeys(event, tabs, selected, onSelect)}>{tab[0].toUpperCase() + tab.slice(1)}</button>)}
   </div>;
 }
 
+/** Renders the version details interface. */
 function VersionDetails({ version, label }: { version: MergeFileVersion; label: VersionSource }) {
   return <section className="merge-window__version-details" aria-label={`${label} file details`}>
     <div className="merge-window__file-mark" aria-hidden="true"><File size={28} weight="duotone" /></div>
@@ -109,6 +116,7 @@ function VersionDetails({ version, label }: { version: MergeFileVersion; label: 
   </section>;
 }
 
+/** Renders the media preview interface. */
 function MediaPreview({ version, label, kind, active }: { version: MergeFileVersion; label: VersionSource; kind: "image" | "audio" | "video" | "pdf"; active: boolean }) {
   const url = useObjectUrl(version.content);
   const mediaRef = useRef<HTMLMediaElement>(null);
@@ -134,6 +142,7 @@ function MediaPreview({ version, label, kind, active }: { version: MergeFileVers
   </section>;
 }
 
+/** Renders the text merge interface. */
 function TextMerge(props: Extract<MergeWindowProps, { mode: "text" }>) {
   const firstConflict = props.conflicts[0]?.id ?? "";
   const [activeConflictId, setActiveConflictId] = useState(firstConflict);
@@ -171,6 +180,7 @@ function TextMerge(props: Extract<MergeWindowProps, { mode: "text" }>) {
   </div>;
 }
 
+/** Renders the merge window interface. */
 export function MergeWindow(props: MergeWindowProps) {
   const [versionSource, setVersionSource] = useState<VersionSource>("mine");
   const resolving = props.state === "resolving";

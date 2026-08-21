@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+/** Renders the mobile selection toolbar interface. */
 export function MobileSelectionToolbar({ count, contentKey, selectionMode = false, onBeginSelectionMode, children }: {
   count: number;
   contentKey: string;

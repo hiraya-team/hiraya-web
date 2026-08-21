@@ -21,6 +21,7 @@ type OutboxTransportDependencies = {
 type Upload = { id: string; name: string; size: number; content: Blob; sha256: string; md5: string };
 type PreparedTransaction = { state: "committed"; catalogRevision: number } | { state: "prepared"; transactionId: string; items: Array<{ entryId: string; access: ReturnType<typeof parseDirectBlobAccess> }> };
 
+/** Builds idempotent synchronization request headers. */
 function headers(record: OutboxRecord, value?: HeadersInit) {
   const result = authenticatedHeaders(value);
   result.set("X-Hiraya-Client-ID", record.clientId);
@@ -28,11 +29,14 @@ function headers(record: OutboxRecord, value?: HeadersInit) {
   return result;
 }
 
+/** Computes system entry ID. */
 function systemEntryId(desktopId: string, role: "layout" | "editor-settings" | "theme-selection" | "theme-definition", key?: string) {
   return `${desktopId}:system:${role}${key ? `:${key}` : ""}`;
 }
 
+/** Builds the base transaction operation fields. */
 function base(value: number | undefined) { return value === undefined ? {} : { baseRevision: value }; }
+/** Converts an outbox record to entry transaction operations. */
 function transactionOperations(record: OutboxRecord, uploads: readonly Upload[]) {
   const operation = record.operation;
   const desktopId = record.desktopId;
@@ -79,6 +83,7 @@ function transactionOperations(record: OutboxRecord, uploads: readonly Upload[])
   }
 }
 
+/** Parses and validates preparation. */
 function parsePreparation(value: unknown, expectedIds: readonly string[], directBlobOrigin?: string): PreparedTransaction {
   if (!isRecord(value) || value.state !== "prepared" && value.state !== "committed") throw new Error("The entry transaction response is invalid.");
   if (value.state === "committed") {
@@ -96,6 +101,7 @@ function parsePreparation(value: unknown, expectedIds: readonly string[], direct
   return { state: "prepared", transactionId: value.transactionId, items };
 }
 
+/** Best-effort cancels a prepared entry transaction. */
 async function cancel(record: OutboxRecord, transactionId: string, dependencies: OutboxTransportDependencies) {
   try {
     const response = await dependencies.fetch(API_ROUTES.desktopEntryTransaction(record.desktopId, transactionId), { method: "DELETE", headers: headers(record), credentials: "same-origin", cache: "no-store", signal: dependencies.signal });
@@ -103,6 +109,7 @@ async function cancel(record: OutboxRecord, transactionId: string, dependencies:
   } catch { /* A later replay starts with a fresh prepare; cancellation is best effort. */ }
 }
 
+/** Loads and hashes content required by an outbox operation. */
 async function pendingUploads(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
   const operation = record.operation;
   const files = operation.kind === "create" ? operation.entries.filter((entry) => entry.kind === "file").map(({ id, name, size }) => ({ id, name, size, key: undefined }))
@@ -118,6 +125,7 @@ async function pendingUploads(record: OutboxRecord, dependencies: OutboxTranspor
   });
 }
 
+/** Prepares, uploads, and commits an entry transaction. */
 async function sendTransaction(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
   const uploads = await pendingUploads(record, dependencies);
   const prepared = parsePreparation(await dependencies.requestJson(API_ROUTES.desktopEntryTransactions(record.desktopId), {
@@ -156,6 +164,7 @@ async function sendTransaction(record: OutboxRecord, dependencies: OutboxTranspo
   }
 }
 
+/** Sends an outbox operation to the synchronization API. */
 export async function sendOutboxOperation(record: OutboxRecord, dependencies: OutboxTransportDependencies) {
   const operation = record.operation;
   const result = async (response: Promise<unknown>) => ({ response: await response, verifiedUploads: new Map<string, string>() });

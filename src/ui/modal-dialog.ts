@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { registerTransientDismiss } from "./transient-dismiss";
 
+/** Synchronizes a native dialog element with React lifecycle and dismissal. */
 export function useNativeDialog(
   dialogRef: RefObject<HTMLDialogElement | null>,
   onClose: () => void,

@@ -78,4 +78,5 @@ export interface SyncStorage {
   listActivity(query?: ActivityQuery): Promise<ActivityPage>;
 }
 
+/** Provides browser storage for the synchronization engine. */
 export const browserSyncStorage: SyncStorage = browserStorage;

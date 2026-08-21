@@ -3,18 +3,22 @@ import { filesystemDatabaseName } from "../src/filesystem/database";
 import { openAccountSyncClient } from "../src/sync/engine";
 import { filesystemRevisionChannelName, type FilesystemBroadcastChannel } from "../src/platform/storage/workspace-filesystem";
 
+/** Provides the account test fixture. */
 const ACCOUNT = stableId(1);
 
+/** Builds the stable ID test fixture. */
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
+/** Builds the deferred test fixture. */
 function deferred() {
   let resolve!: () => void;
   const promise = new Promise<void>((done) => { resolve = done; });
   return { promise, resolve };
 }
 
+/** Builds the wait for test fixture. */
 async function waitFor(predicate: () => boolean) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (predicate()) return;
@@ -23,6 +27,7 @@ async function waitFor(predicate: () => boolean) {
   throw new Error("Timed out waiting for synchronization state.");
 }
 
+/** Implements an in-memory BroadcastChannel test double. */
 class TestBroadcastChannels {
   private readonly channels = new Map<string, Set<Set<(event: MessageEvent<unknown>) => void>>>();
 
@@ -50,6 +55,7 @@ class TestBroadcastChannels {
     };
   };
 
+  /** Broadcasts a value to test channel peers. */
   broadcast(name: string, value: unknown) {
     const peers = this.channels.get(name);
     if (peers) for (const listeners of peers) setTimeout(() => {
@@ -67,12 +73,14 @@ type LockEntry = {
   onAbort: () => void;
 };
 
+/** Implements an in-memory leader-lock test double. */
 class TestLeaderLocks {
   readonly acquisitions: string[] = [];
   activeCount = 0;
   maxActiveCount = 0;
   private readonly states = new Map<string, { active: boolean; queue: LockEntry[] }>();
 
+  /** Queues a test lock request. */
   request<T>(name: string, options: LockOptions, callback: (lock: Lock) => Promise<T> | T): Promise<T> {
     const state = this.states.get(name) ?? { active: false, queue: [] };
     this.states.set(name, state);
@@ -97,6 +105,7 @@ class TestLeaderLocks {
     });
   }
 
+  /** Starts the next queued test lock request. */
   private drain(name: string) {
     const state = this.states.get(name)!;
     if (state.active || state.queue.length === 0) return;
@@ -115,6 +124,7 @@ class TestLeaderLocks {
   }
 }
 
+/** Builds the event stream test fixture. */
 function eventStream(onActive: (delta: number) => void) {
   return (signal: AbortSignal) => {
     onActive(1);

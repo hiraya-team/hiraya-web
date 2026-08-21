@@ -7,6 +7,7 @@ import { strToU8, zipSync } from "fflate";
 import { SYSTEM_APP_SLUGS } from "../build/system-apps";
 import { parseSystemAppDeploymentCatalog, verifyDeployedSystemApps } from "../build/verify-system-apps";
 
+/** Builds the deployment fixture test fixture. */
 async function deploymentFixture() {
   const archives = new Map<string, Uint8Array>();
   const apps = await Promise.all(SYSTEM_APP_SLUGS.map(async (slug) => {

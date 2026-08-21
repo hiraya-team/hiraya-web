@@ -3,6 +3,7 @@ import { fetchPublicThumbnail, publicAuthorityFromPath } from "../src/features/p
 import { resolvePublicLinkedEntry } from "../src/features/public-desktop/controller";
 import { remoteDesktopSnapshot } from "../src/lib/desktop-state";
 
+/** Provides the file test fixture. */
 const file = {
   kind: "file" as const,
   id: "file",

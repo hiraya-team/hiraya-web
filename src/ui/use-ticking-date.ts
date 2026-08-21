@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+/** Returns a date value refreshed at the requested interval. */
 export function useTickingDate(interval = 30_000) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {

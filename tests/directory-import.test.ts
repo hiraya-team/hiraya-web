@@ -2,12 +2,14 @@ import { describe, expect, test } from "bun:test";
 import type { DesktopEntry } from "../src/types";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryPicker, type ImportSource } from "../src/lib/directory-import";
 
+/** Creates a file test fixture. */
 function file(name: string, contents = name, relativePath = "") {
   const value = new File([contents], name, { type: "text/plain", lastModified: 20 });
   Object.defineProperty(value, "webkitRelativePath", { value: relativePath });
   return value;
 }
 
+/** Builds the plan test fixture. */
 function plan(sources: ImportSource[], existingEntries: DesktopEntry[] = [], destinationParentId: string | null = null) {
   let id = 0;
   return buildImportPlan(sources, {
@@ -19,6 +21,7 @@ function plan(sources: ImportSource[], existingEntries: DesktopEntry[] = [], des
   });
 }
 
+/** Builds the paths test fixture. */
 function paths(imported: ReturnType<typeof plan>) {
   const byId = new Map(imported.entries.map((entry) => [entry.id, entry]));
   return imported.entries.map((entry) => {

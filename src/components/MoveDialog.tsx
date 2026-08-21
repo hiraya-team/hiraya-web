@@ -14,6 +14,7 @@ export interface MoveDialogProps {
   loading?: boolean;
 }
 
+/** Flattens the folder hierarchy into destination choices. */
 function flattenFolders(folders: readonly FolderEntry[], invalidIds: Set<string>) {
   const valid = folders.filter((folder) => !invalidIds.has(folder.id));
   const validIds = new Set(valid.map((folder) => folder.id));
@@ -39,6 +40,7 @@ function flattenFolders(folders: readonly FolderEntry[], invalidIds: Set<string>
   return flattened;
 }
 
+/** Renders the move dialog interface. */
 export function MoveDialog({ desktops, activeDesktopId, entries, invalidIds, onClose, onMove, onSubmittingChange, loading = false }: MoveDialogProps) {
   const first = entries[0];
   const initialParent = first?.parentId && !invalidIds.has(first.parentId) ? first.parentId : null;

@@ -2,7 +2,9 @@ import { describe, expect, test } from "bun:test";
 import type { DirectoryEntry, FileHandle, FolderHandle } from "@hiraya-team/apps-sdk";
 import { editorFileKind, fileMimeTypeForSave, filterWorkspaceEntries, isEditableFile, isWithinFolder, sortWorkspaceEntries } from "./workspace";
 
+/** Creates a folder test fixture. */
 const folder = (name: string, handle = name as FolderHandle, parent: FolderHandle | null = null): DirectoryEntry => ({ kind: "folder", metadata: { handle, name, modifiedAt: 0, parent } });
+/** Creates a file test fixture. */
 const file = (name: string, mimeType = "application/octet-stream", handle = name as FileHandle, parent: FolderHandle | null = null): DirectoryEntry => ({ kind: "file", metadata: { handle, name, mimeType, size: 0, modifiedAt: 0, parent, contentRevision: 1 } });
 
 describe("Integrated Editor workspace", () => {

@@ -2,6 +2,7 @@ import { md5 } from "@noble/hashes/legacy.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 import { bytesToHex } from "@noble/hashes/utils.js";
 
+/** Uploads blob digests. */
 export async function uploadBlobDigests(blob: Blob, onProgress?: (hashedBytes: number) => void, signal?: AbortSignal) {
   const sha256Digest = sha256.create();
   const md5Digest = md5.create();
@@ -23,6 +24,7 @@ export async function uploadBlobDigests(blob: Blob, onProgress?: (hashedBytes: n
   return { sha256: bytesToHex(sha256Digest.digest()), md5: bytesToHex(md5Digest.digest()) };
 }
 
+/** Reads a response body as a blob while reporting progress. */
 export async function responseBlobWithProgress(response: Response, expectedSize: number, onProgress: (transferredBytes: number) => void) {
   if (!response.body) {
     const blob = await response.blob();
@@ -50,6 +52,7 @@ export async function responseBlobWithProgress(response: Response, expectedSize:
   return { blob: new Blob(chunks, { type: response.headers.get("Content-Type") ?? "" }), sha256: bytesToHex(digest.digest()) };
 }
 
+/** Returns the SHA-256 digest of a blob. */
 export async function sha256Blob(blob: Blob) {
   const digest = sha256.create();
   const reader = blob.stream().getReader();
@@ -65,6 +68,7 @@ export async function sha256Blob(blob: Blob) {
   return bytesToHex(digest.digest());
 }
 
+/** Maps with concurrency. */
 export async function mapWithConcurrency<T, R>(values: readonly T[], concurrency: number, operation: (value: T) => Promise<R>): Promise<R[]> {
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) throw new Error("Blob transfer concurrency must be positive.");
   const results = new Array<R>(values.length);

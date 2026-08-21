@@ -3,15 +3,24 @@ import { getAccountOpfsRoot, readChunk, reconstructBlob, removeOrphanChunks, sta
 import { WEB2_CHUNK_SIZE, WEB2_OPFS_PREFIX, type ChunkRef, type Manifest } from "../src/filesystem/model";
 import { MemoryDirectory, memoryChunk, memoryOpfsHandle } from "./support/memory-opfs";
 
+/** Provides the first storage namespace test fixture. */
 const STORAGE_A = "00000000-0000-4000-8000-000000000001";
+/** Provides the second storage namespace test fixture. */
 const STORAGE_B = "00000000-0000-4000-8000-000000000002";
+/** Provides the first storage namespace hash fixture. */
 const STORAGE_A_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
+/** Provides the second storage namespace hash fixture. */
 const STORAGE_B_HASH = "e79acd97ac88086665d85a762f43d533a45195b6bac5961a993e6ed362471439";
+/** Provides the full hash test fixture. */
 const FULL_HASH = "9bc1b2a288b26af7257a36277ae3816a7d4f16e89c1e7e77d0a5c48bad62b360";
+/** Provides the tail hash test fixture. */
 const TAIL_HASH = "ae4b3280e56e2faf83f414a6e3dabe9d5fbe18976544c05fed121accb85b53fc";
+/** Provides the multi manifest hash test fixture. */
 const MULTI_MANIFEST_HASH = "2c2304e63694f4365904a54a2fa9f883c45dd0e3c3080f8f53ba0329e28f0dd6";
+/** Provides the stable hash test fixture. */
 const STABLE_HASH = "f379ccb92b9116442dc65bdc35648a85d3786b34779db7f704a901fa07b00cb6";
 
+/** Builds the chunk path test fixture. */
 function chunkPath(root: MemoryDirectory, ref: ChunkRef) {
   return memoryChunk(root, ref.hash);
 }

@@ -29,12 +29,15 @@ import { parseJsonValue, parseManifestV2, type HirayaAppManifestV2, type JsonVal
 import { parseAccountAppDataKey, parseAccountAppId } from "../lib/account-app-contract";
 import { RESERVED_SYSTEM_APP_IDS } from "../apps/system-app-ids";
 import type { Web2Session } from "./session";
+import { WEB2_HEADERS, WEB2_SYNC_PROTOCOL } from "./constants";
 export { parseWeb2Session } from "./session";
 export type { AccountQuota, QuotaMeasure, Web2Session } from "./session";
+export { WEB2_SYNC_PROTOCOL } from "./constants";
 
-export const WEB2_SYNC_PROTOCOL = "web2-sync-v1" as const;
-export const WEB2_PROTOCOL_HEADER = "X-Hiraya-Protocol" as const;
-export const WEB2_OPERATION_HEADER = "X-Hiraya-Operation-ID" as const;
+/** Defines the Web2 protocol header. */
+export const WEB2_PROTOCOL_HEADER = WEB2_HEADERS.protocol;
+/** Defines the Web2 operation header. */
+export const WEB2_OPERATION_HEADER = WEB2_HEADERS.operationId;
 
 export type HydrationPage = HydrationPageData & {
   schemaVersion: typeof WEB2_SCHEMA_VERSION;
@@ -231,11 +234,13 @@ export type Web2ThumbnailDescriptor = {
 export type PublicWeb2ThumbnailDescriptor = Web2ThumbnailDescriptor & { workspaceAlias: string; itemAlias: string | null; asOf: number };
 export type Web2ThumbnailPending = { schemaVersion: typeof WEB2_SCHEMA_VERSION; protocol: typeof WEB2_SYNC_PROTOCOL; kind: "thumbnail"; workspaceId: string; nodeId: string; state: "pending" | "running" | "publishing" | "failed" | "deleting" };
 
+/** Parses and validates wire base. */
 function parseWireBase(value: Record<string, unknown>) {
   if (value.schemaVersion !== WEB2_SCHEMA_VERSION || value.protocol !== WEB2_SYNC_PROTOCOL) throw new Error("A synchronization message has unsupported protocol metadata.");
   return { schemaVersion: WEB2_SCHEMA_VERSION, protocol: WEB2_SYNC_PROTOCOL } as const;
 }
 
+/** Parses and validates bootstrap request. */
 export function parseBootstrapRequest(value: unknown): BootstrapRequest {
   if (!isRecord(value)) throw new Error("A bootstrap request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "rootLimit"], "A bootstrap request has an unsupported shape.");
@@ -244,18 +249,21 @@ export function parseBootstrapRequest(value: unknown): BootstrapRequest {
   return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), generationId: parseStableId(value.generationId), rootLimit };
 }
 
+/** Parses and validates workspace create request. */
 export function parseWorkspaceCreateRequest(value: unknown): WorkspaceCreateRequest {
   if (!isRecord(value)) throw new Error("A workspace creation request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "id", "name"], "A workspace creation request has an unsupported shape.");
   return { ...parseWireBase(value), id: parseStableId(value.id, "A workspace ID is invalid."), name: parseCanonicalName(value.name, "A workspace name is invalid.") };
 }
 
+/** Parses and validates workspace rename request. */
 export function parseWorkspaceRenameRequest(value: unknown): WorkspaceRenameRequest {
   if (!isRecord(value)) throw new Error("A workspace rename request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "name"], "A workspace rename request has an unsupported shape.");
   return { ...parseWireBase(value), name: parseCanonicalName(value.name, "A workspace name is invalid.") };
 }
 
+/** Parses and validates workspace preferences request. */
 export function parseWorkspacePreferencesRequest(value: unknown): WorkspacePreferencesRequest {
   if (!isRecord(value)) throw new Error("A workspace preferences request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaces"], "A workspace preferences request has an unsupported shape.");
@@ -270,16 +278,19 @@ export function parseWorkspacePreferencesRequest(value: unknown): WorkspacePrefe
   return { ...parseWireBase(value), workspaces };
 }
 
+/** Parses and validates sharing role. */
 function parseSharingRole(value: unknown): SharingRole {
   if (value !== "manager" && value !== "writer" && value !== "reader") throw new Error("A sharing role is invalid.");
   return value;
 }
 
+/** Parses and validates display name. */
 function parseDisplayName(value: unknown, message = "A display name is invalid.") {
   if (typeof value !== "string" || [...value].length < 1 || [...value].length > 100) throw new Error(message);
   return value;
 }
 
+/** Parses and validates sharing member request. */
 export function parseSharingMemberRequest(value: unknown): SharingMemberRequest {
   if (!isRecord(value)) throw new Error("A sharing member request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "email", "role"], "A sharing member request has an unsupported shape.");
@@ -287,12 +298,14 @@ export function parseSharingMemberRequest(value: unknown): SharingMemberRequest 
   return { ...parseWireBase(value), email: value.email.trim().toLowerCase(), role: parseSharingRole(value.role) };
 }
 
+/** Parses and validates sharing role request. */
 export function parseSharingRoleRequest(value: unknown): SharingRoleRequest {
   if (!isRecord(value)) throw new Error("A sharing role request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "role"], "A sharing role request has an unsupported shape.");
   return { ...parseWireBase(value), role: parseSharingRole(value.role) };
 }
 
+/** Parses and validates sharing state. */
 export function parseSharingState(value: unknown): SharingState {
   if (!isRecord(value)) throw new Error("A sharing response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "members", "audience"], "A sharing response has an unsupported shape.");
@@ -316,6 +329,7 @@ export function parseSharingState(value: unknown): SharingState {
   return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId, "A sharing workspace ID is invalid."), members, audience };
 }
 
+/** Parses and validates a Web2 search response. */
 export function parseWeb2SearchResponse(value: unknown, expectedQuery?: string): Web2SearchResponse {
   if (!isRecord(value)) throw new Error("A search response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "query", "limit", "truncated", "results"], "A search response has an unsupported shape.");
@@ -349,8 +363,10 @@ export function parseWeb2SearchResponse(value: unknown, expectedQuery?: string):
   return { ...parseWireBase(value), query, limit, truncated: value.truncated, results };
 }
 
+/** Lists supported Web2 activity kinds. */
 const activityKinds = new Set<WorkspaceOperation["kind"]>(["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"]);
 
+/** Parses and validates a Web2 activity response. */
 export function parseWeb2ActivityResponse(value: unknown): Web2ActivityResponse {
   if (!isRecord(value)) throw new Error("An activity response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "activities", "nextBefore"], "An activity response has an unsupported shape.");
@@ -386,13 +402,16 @@ export function parseWeb2ActivityResponse(value: unknown): Web2ActivityResponse 
   return { ...parseWireBase(value), activities, nextBefore };
 }
 
+/** Matches valid Web2 publication aliases. */
 const publicationAliasPattern = /^(?=.{3,48}$)[a-z0-9](?:[a-z0-9-]*[a-z0-9])$/;
 
+/** Parses and validates publication alias. */
 function parsePublicationAlias(value: unknown) {
   if (typeof value !== "string" || !publicationAliasPattern.test(value)) throw new Error("A publication alias is invalid.");
   return value;
 }
 
+/** Parses and validates publication request. */
 export function parsePublicationRequest(value: unknown): PublicationRequest {
   if (!isRecord(value)) throw new Error("A publication request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "alias", "shareEntire"], "A publication request has an unsupported shape.");
@@ -400,12 +419,14 @@ export function parsePublicationRequest(value: unknown): PublicationRequest {
   return { ...parseWireBase(value), alias: parsePublicationAlias(value.alias), shareEntire: value.shareEntire };
 }
 
+/** Parses and validates node publication request. */
 export function parseNodePublicationRequest(value: unknown): NodePublicationRequest {
   if (!isRecord(value)) throw new Error("A node publication request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "alias"], "A node publication request has an unsupported shape.");
   return { ...parseWireBase(value), alias: parsePublicationAlias(value.alias) };
 }
 
+/** Parses and validates publication state. */
 export function parsePublicationState(value: unknown): PublicationState {
   if (!isRecord(value)) throw new Error("A publication response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "alias", "url", "shareEntire", "items"], "A publication response has an unsupported shape.");
@@ -434,6 +455,7 @@ export function parsePublicationState(value: unknown): PublicationState {
   return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId, "A publication workspace ID is invalid."), alias, url, shareEntire: value.shareEntire, items };
 }
 
+/** Parses and validates public workspace page. */
 export function parsePublicWorkspacePage(value: unknown): PublicWorkspacePage {
   if (!isRecord(value)) throw new Error("A public workspace response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceAlias", "itemAlias", "workspaceId", "workspaceName", "publishedRootId", "asOf", "owner", "nodes", "settings", "nextAfter"], "A public workspace response has an unsupported shape.");
@@ -483,6 +505,7 @@ export function parsePublicWorkspacePage(value: unknown): PublicWorkspacePage {
   };
 }
 
+/** Parses and validates short link destination. */
 function parseShortLinkDestination(value: unknown) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A short-link destination is invalid.");
   let destination: URL;
@@ -491,6 +514,7 @@ function parseShortLinkDestination(value: unknown) {
   return value;
 }
 
+/** Parses and validates short link request. */
 export function parseShortLinkRequest(value: unknown): ShortLinkRequest {
   if (!isRecord(value)) throw new Error("A short-link request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "slug", "destinationUrl", "enabled"], "A short-link request has an unsupported shape.");
@@ -498,6 +522,7 @@ export function parseShortLinkRequest(value: unknown): ShortLinkRequest {
   return { ...parseWireBase(value), slug: parsePublicationAlias(value.slug), destinationUrl: parseShortLinkDestination(value.destinationUrl), enabled: value.enabled };
 }
 
+/** Parses and validates short link. */
 function parseShortLink(value: unknown): ShortLink {
   if (!isRecord(value)) throw new Error("A short link has an unsupported shape.");
   assertExactKeys(value, ["slug", "url", "destinationUrl", "enabled", "createdAt", "updatedAt"], "A short link has an unsupported shape.");
@@ -508,6 +533,7 @@ function parseShortLink(value: unknown): ShortLink {
   return { slug, url: value.url, destinationUrl: parseShortLinkDestination(value.destinationUrl), enabled: value.enabled, createdAt, updatedAt };
 }
 
+/** Parses and validates short link list. */
 export function parseShortLinkList(value: unknown): ShortLinkList {
   if (!isRecord(value)) throw new Error("A short-link response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "shortLinks"], "A short-link response has an unsupported shape.");
@@ -517,6 +543,7 @@ export function parseShortLinkList(value: unknown): ShortLinkList {
   return { ...parseWireBase(value), accountId: parseStableId(value.accountId, "A short-link account ID is invalid."), shortLinks };
 }
 
+/** Parses and validates invitation email. */
 function parseInvitationEmail(value: unknown, canonical = false) {
   if (value === null) return null;
   if (typeof value !== "string") throw new Error("An invitation email is invalid.");
@@ -525,17 +552,20 @@ function parseInvitationEmail(value: unknown, canonical = false) {
   return email;
 }
 
+/** Parses and validates invitation token. */
 function parseInvitationToken(value: unknown) {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]{43}$/.test(value)) throw new Error("An invitation token is invalid.");
   return value;
 }
 
+/** Parses and validates invitation request. */
 export function parseInvitationRequest(value: unknown): InvitationRequest {
   if (!isRecord(value)) throw new Error("An invitation request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "id", "token", "email", "expiresAt"], "An invitation request has an unsupported shape.");
   return { ...parseWireBase(value), id: parseStableId(value.id, "An invitation ID is invalid."), token: parseInvitationToken(value.token), email: parseInvitationEmail(value.email), expiresAt: parsePositiveSafeInteger(value.expiresAt, "An invitation expiration is invalid.") };
 }
 
+/** Parses and validates invitation list. */
 export function parseInvitationList(value: unknown): InvitationList {
   if (!isRecord(value)) throw new Error("An invitation response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "invitations"], "An invitation response has an unsupported shape.");
@@ -552,6 +582,7 @@ export function parseInvitationList(value: unknown): InvitationList {
   return { ...parseWireBase(value), invitations };
 }
 
+/** Parses and validates workspace invitation request. */
 export function parseWorkspaceInvitationRequest(value: unknown): WorkspaceInvitationRequest {
   if (!isRecord(value)) throw new Error("A workspace invitation request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "id", "token", "email", "role"], "A workspace invitation request has an unsupported shape.");
@@ -560,6 +591,7 @@ export function parseWorkspaceInvitationRequest(value: unknown): WorkspaceInvita
   return { ...parseWireBase(value), id: parseStableId(value.id, "A workspace invitation ID is invalid."), token: parseInvitationToken(value.token), email, role: parseSharingRole(value.role) };
 }
 
+/** Parses and validates workspace invitation list. */
 export function parseWorkspaceInvitationList(value: unknown): WorkspaceInvitationList {
   if (!isRecord(value)) throw new Error("A workspace invitation response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "invitations"], "A workspace invitation response has an unsupported shape.");
@@ -576,6 +608,7 @@ export function parseWorkspaceInvitationList(value: unknown): WorkspaceInvitatio
   return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId, "A workspace invitation workspace ID is invalid."), invitations };
 }
 
+/** Parses and validates Web2 account-app generations. */
 function parseWeb2AccountAppGenerations(value: unknown): Web2AccountAppGenerations {
   if (!isRecord(value)) throw new Error("Account app generations have an unsupported shape.");
   assertExactKeys(value, ["installationGeneration", "dataGeneration", "itemRevision"], "Account app generations have an unsupported shape.");
@@ -586,6 +619,7 @@ function parseWeb2AccountAppGenerations(value: unknown): Web2AccountAppGeneratio
   };
 }
 
+/** Parses and validates a Web2 account-app data item. */
 function parseWeb2AccountAppDataItem(value: unknown): Web2AccountAppDataItem {
   if (!isRecord(value)) throw new Error("Account app data metadata has an unsupported shape.");
   assertExactKeys(value, ["key", "dataGeneration", "revision", "size", "sha256"], "Account app data metadata has an unsupported shape.");
@@ -594,6 +628,7 @@ function parseWeb2AccountAppDataItem(value: unknown): Web2AccountAppDataItem {
   return { key: parseAccountAppDataKey(value.key), dataGeneration: parseNonNegativeSafeInteger(value.dataGeneration), revision: parsePositiveSafeInteger(value.revision), size, sha256: parseSha256(value.sha256) };
 }
 
+/** Parses and validates a Web2 account-app snapshot. */
 export function parseWeb2AccountAppsSnapshot(value: unknown): Web2AccountAppsSnapshot {
   if (!isRecord(value)) throw new Error("The Web2 account app inventory has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "appsRevision", "handlerHints", "apps", "tombstones"], "The Web2 account app inventory has an unsupported shape.");
@@ -634,6 +669,7 @@ export function parseWeb2AccountAppsSnapshot(value: unknown): Web2AccountAppsSna
   return { ...parseWireBase(value), accountId: parseStableId(value.accountId), appsRevision, handlerHints, apps, tombstones };
 }
 
+/** Parses and validates a Web2 account-app install request. */
 export function parseWeb2AccountAppInstallRequest(value: unknown): Web2AccountAppInstallRequest {
   if (!isRecord(value)) throw new Error("An account app installation request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "manifest", "packageManifestHash", "packageSize", "packageSha256", "installationGeneration", "itemRevision"], "An account app installation request has an unsupported shape.");
@@ -643,6 +679,7 @@ export function parseWeb2AccountAppInstallRequest(value: unknown): Web2AccountAp
   return { ...parseWireBase(value), manifest, packageManifestHash: parseSha256(value.packageManifestHash), packageSize, packageSha256: parseSha256(value.packageSha256), installationGeneration: parseNonNegativeSafeInteger(value.installationGeneration), itemRevision: parseNonNegativeSafeInteger(value.itemRevision) };
 }
 
+/** Parses and validates a Web2 account-app data request. */
 export function parseWeb2AccountAppDataRequest(value: unknown): Web2AccountAppDataRequest {
   if (!isRecord(value)) throw new Error("An account app data request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "dataGeneration", "value"], "An account app data request has an unsupported shape.");
@@ -651,12 +688,14 @@ export function parseWeb2AccountAppDataRequest(value: unknown): Web2AccountAppDa
   return parsed;
 }
 
+/** Parses and validates a Web2 account-app generation request. */
 export function parseWeb2AccountAppGenerationRequest(value: unknown, field: "installationGeneration" | "dataGeneration") {
   if (!isRecord(value)) throw new Error("An account app generation request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", field], "An account app generation request has an unsupported shape.");
   return { ...parseWireBase(value), [field]: parseNonNegativeSafeInteger(value[field]) };
 }
 
+/** Parses and validates a Web2 account-app handlers request. */
 export function parseWeb2AccountAppHandlersRequest(value: unknown) {
   if (!isRecord(value) || !isRecord(value.hints) || Object.keys(value.hints).length > 128) throw new Error("An account app handlers request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "hints"], "An account app handlers request has an unsupported shape.");
@@ -667,6 +706,7 @@ export function parseWeb2AccountAppHandlersRequest(value: unknown) {
   return { ...parseWireBase(value), hints };
 }
 
+/** Parses and validates a Web2 account-app package. */
 export async function parseWeb2AccountAppPackage(value: unknown, expectedOrigin: string): Promise<Web2AccountAppPackage> {
   if (!isRecord(value)) throw new Error("A Web2 account app package has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "appId", "appManifest", "manifestHash", "size", "sha256", "manifest", "chunks"], "A Web2 account app package has an unsupported shape.");
@@ -683,6 +723,7 @@ export async function parseWeb2AccountAppPackage(value: unknown, expectedOrigin:
   return { ...parseWireBase(value), accountId: parseStableId(value.accountId), appId, appManifest, manifestHash, size, sha256: parseSha256(value.sha256), manifest, chunks };
 }
 
+/** Parses and validates Web2 account-app data. */
 export async function parseWeb2AccountAppData(value: unknown): Promise<Web2AccountAppData> {
   if (!isRecord(value)) throw new Error("A Web2 account app data response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "appId", "key", "dataGeneration", "revision", "size", "sha256", "valueJson"], "A Web2 account app data response has an unsupported shape.");
@@ -696,12 +737,14 @@ export async function parseWeb2AccountAppData(value: unknown): Promise<Web2Accou
   return { ...parseWireBase(value), accountId: parseStableId(value.accountId), appId: parseAccountAppId(value.appId), key: parseAccountAppDataKey(value.key), dataGeneration: parseNonNegativeSafeInteger(value.dataGeneration), revision: parsePositiveSafeInteger(value.revision), size, sha256, value: parsedValue };
 }
 
+/** Parses and validates account event hint. */
 export function parseAccountEventHint(value: unknown): AccountEventHint {
   if (!isRecord(value) || value.kind !== "workspace-head") throw new Error("An account event hint has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "accountId", "workspaceId", "headSequence"], "An account event hint has an unsupported shape.");
   return { ...parseWireBase(value), kind: "workspace-head", accountId: parseStableId(value.accountId), workspaceId: parseStableId(value.workspaceId), headSequence: parseNonNegativeSafeInteger(value.headSequence) };
 }
 
+/** Parses and validates a Web2 event hint. */
 export function parseWeb2EventHint(value: unknown): Web2EventHint {
   if (isRecord(value) && value.kind === "workspace-head") return parseAccountEventHint(value);
   if (isRecord(value) && value.kind === "account-apps") {
@@ -713,6 +756,7 @@ export function parseWeb2EventHint(value: unknown): Web2EventHint {
   return { ...parseWireBase(value), kind: "directory", revision: parseNonNegativeSafeInteger(value.revision, "A directory revision is invalid.") };
 }
 
+/** Parses and validates hydration request. */
 export function parseHydrationRequest(value: unknown): HydrationRequest {
   if (!isRecord(value)) throw new Error("A hydration request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "pageIndex", "target", "pageToken"], "A hydration request has an unsupported shape.");
@@ -728,11 +772,13 @@ export function parseHydrationRequest(value: unknown): HydrationRequest {
   return { ...wire, workspaceId, deviceId, generationId, pageIndex, target, pageToken };
 }
 
+/** Parses and validates bounded records. */
 function parseBoundedRecords<T>(value: unknown, parse: (candidate: unknown) => T, message: string) {
   if (!Array.isArray(value) || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error(message);
   return value.map(parse);
 }
 
+/** Parses and validates hydration page. */
 export function parseHydrationPage(value: unknown): HydrationPage {
   if (!isRecord(value)) throw new Error("A hydration page has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "generationId", "pageIndex", "observedLogicalTime", "target", "nodes", "settings", "nextPageToken"], "A hydration page has an unsupported shape.");
@@ -740,6 +786,7 @@ export function parseHydrationPage(value: unknown): HydrationPage {
   return { ...wire, ...parseHydrationPageData(Object.fromEntries(Object.entries(value).filter(([key]) => key !== "schemaVersion" && key !== "protocol"))) };
 }
 
+/** Parses and validates workspace summary. */
 function parseWorkspaceSummary(value: unknown): WorkspaceSummary {
   if (!isRecord(value)) throw new Error("A workspace summary has an unsupported shape.");
   assertExactKeys(value, ["id", "name", "pinned"], "A workspace summary has an unsupported shape.");
@@ -747,6 +794,7 @@ function parseWorkspaceSummary(value: unknown): WorkspaceSummary {
   return { id: parseStableId(value.id, "A workspace ID is invalid."), name: parseCanonicalName(value.name, "A workspace name is invalid."), pinned: value.pinned };
 }
 
+/** Parses and validates workspace state. */
 function parseWorkspaceState(value: unknown): WorkspaceBootstrapState {
   if (!isRecord(value)) throw new Error("A workspace bootstrap state has an unsupported shape.");
   assertExactKeys(value, ["id", "name", "pinned", "headSequence", "snapshotBarrier", "logFloor"], "A workspace bootstrap state has an unsupported shape.");
@@ -758,6 +806,7 @@ function parseWorkspaceState(value: unknown): WorkspaceBootstrapState {
   return { ...summary, headSequence, snapshotBarrier, logFloor };
 }
 
+/** Parses and validates bootstrap. */
 export function parseBootstrap(value: unknown): Bootstrap {
   if (!isRecord(value)) throw new Error("A bootstrap response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "accountId", "deviceId", "cursor", "workspaces", "workspace", "rootPage", "workspaceSettings"], "A bootstrap response has an unsupported shape.");
@@ -777,6 +826,7 @@ export function parseBootstrap(value: unknown): Bootstrap {
   return { ...wire, accountId, deviceId, cursor, workspaces, workspace, rootPage, workspaceSettings };
 }
 
+/** Parses and validates pull base. */
 function parsePullBase(value: Record<string, unknown>): PullBase {
   const wire = parseWireBase(value);
   const fromCursor = parseNonNegativeSafeInteger(value.fromCursor, "A pull cursor is invalid.");
@@ -789,12 +839,14 @@ function parsePullBase(value: Record<string, unknown>): PullBase {
   return { ...wire, workspaceId: parseStableId(value.workspaceId, "A pull workspace ID is invalid."), deviceId: parseStableId(value.deviceId, "A pull device ID is invalid."), fromCursor, cursor, headSequence, snapshotBarrier, logFloor, observedLogicalTime };
 }
 
+/** Parses and validates pull request. */
 export function parsePullRequest(value: unknown): PullRequest {
   if (!isRecord(value)) throw new Error("A pull request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", "cursor"], "A pull request has an unsupported shape.");
   return { ...parseWireBase(value), workspaceId: parseStableId(value.workspaceId, "A pull request workspace ID is invalid."), deviceId: parseStableId(value.deviceId, "A pull request device ID is invalid."), cursor: parseNonNegativeSafeInteger(value.cursor, "A pull request cursor is invalid.") };
 }
 
+/** Parses and validates pull result. */
 export function parsePullResult(value: unknown): PullResult {
   if (!isRecord(value) || value.kind !== "operations" && value.kind !== "reset") throw new Error("A pull result has an unsupported shape.");
   const baseKeys = ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "fromCursor", "cursor", "headSequence", "snapshotBarrier", "logFloor", "observedLogicalTime"];
@@ -830,8 +882,10 @@ export function parsePullResult(value: unknown): PullResult {
   return { ...base, kind: "reset", resetBarrier };
 }
 
+/** Defines the push rejection codes. */
 const PUSH_REJECTION_CODES = new Set(["invalid", "forbidden", "quota", "missing-chunks", "not-found", "operation-id-reuse"]);
 
+/** Parses and validates push result. */
 export function parsePushResult(value: unknown): PushResult {
   if (!isRecord(value) || value.kind !== "accepted" && value.kind !== "rejected") throw new Error("A push result has an unsupported shape.");
   const baseKeys = ["schemaVersion", "protocol", "kind", "workspaceId", "operationId"];
@@ -850,6 +904,7 @@ export function parsePushResult(value: unknown): PushResult {
   return { ...wire, kind: "rejected", workspaceId, operationId, code: value.code as Extract<PushResult, { kind: "rejected" }>["code"], message: value.message };
 }
 
+/** Parses and validates push batch result. */
 export function parsePushBatchResult(value: unknown): PushBatchResult {
   if (!isRecord(value)) throw new Error("A push batch result has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "results"], "A push batch result has an unsupported shape.");
@@ -860,6 +915,7 @@ export function parsePushBatchResult(value: unknown): PushBatchResult {
   return { ...wire, results };
 }
 
+/** Parses and validates push request. */
 export function parsePushRequest(value: unknown): PushRequest {
   if (!isRecord(value)) throw new Error("A push request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceId", "deviceId", ...(value.baseCursor === undefined ? [] : ["baseCursor"]), "operations"], "A push request has an unsupported shape.");
@@ -873,6 +929,7 @@ export function parsePushRequest(value: unknown): PushRequest {
   return { ...wire, workspaceId, deviceId, ...(baseCursor === undefined ? {} : { baseCursor }), operations };
 }
 
+/** Parses and validates operation receipt. */
 export function parseOperationReceipt(value: unknown): OperationReceipt {
   if (!isRecord(value)) throw new Error("An operation receipt has an unsupported shape.");
   assertExactKeys(value, ["operationId", "inputHash", "result"], "An operation receipt has an unsupported shape.");
@@ -882,6 +939,7 @@ export function parseOperationReceipt(value: unknown): OperationReceipt {
   return { operationId, inputHash: parseSha256(value.inputHash, "A receipt input hash is invalid."), result };
 }
 
+/** Replays operation receipt. */
 export function replayOperationReceipt(receipt: OperationReceipt, operationIdValue: unknown, inputHashValue: unknown): PushResult | null {
   const operationId = parseStableId(operationIdValue, "A replayed operation ID is invalid.");
   const inputHash = parseSha256(inputHashValue, "A replayed input hash is invalid.");
@@ -898,9 +956,12 @@ export function replayOperationReceipt(receipt: OperationReceipt, operationIdVal
   };
 }
 
+/** Matches valid HTTP header names. */
 const HEADER_NAME = /^[!#$%&'*+.^_`|~\w-]+$/;
+/** Lists HTTP headers forbidden in transfer descriptors. */
 const FORBIDDEN_HEADERS = new Set(["authorization", "connection", "content-length", "cookie", "host", "origin", "referer", "transfer-encoding", "upgrade"]);
 
+/** Parses and validates transfer URL. */
 function parseTransferUrl(value: unknown, expectedOrigin?: string) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A chunk transfer URL is invalid.");
   let url: URL;
@@ -913,6 +974,7 @@ function parseTransferUrl(value: unknown, expectedOrigin?: string) {
   return url.href;
 }
 
+/** Parses and validates transfer headers. */
 function parseTransferHeaders(value: unknown) {
   if (!isRecord(value) || Object.keys(value).length > 16) throw new Error("Chunk transfer headers are invalid.");
   const seen = new Set<string>();
@@ -924,6 +986,7 @@ function parseTransferHeaders(value: unknown) {
   }));
 }
 
+/** Parses and validates transfer descriptors. */
 function parseTransferDescriptors<Method extends "PUT" | "GET">(value: unknown, expectedMethod: Method, expectedOrigin?: string) {
   if (!Array.isArray(value) || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A chunk transfer batch is invalid.");
   const descriptors = value.map((candidate): ChunkTransferDescriptor<Method> => {
@@ -937,11 +1000,13 @@ function parseTransferDescriptors<Method extends "PUT" | "GET">(value: unknown, 
   return descriptors;
 }
 
+/** Returns chunk checksum. */
 function chunkChecksum(hash: string) {
   const bytes = Uint8Array.from(hash.match(/../g)!, (pair) => Number.parseInt(pair, 16));
   return btoa(String.fromCharCode(...bytes));
 }
 
+/** Parses and validates chunk upload request. */
 export async function parseChunkUploadRequest(value: unknown): Promise<ChunkUploadRequest> {
   if (!isRecord(value) || value.kind !== "chunk-upload-request") throw new Error("A chunk upload request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "operationId", "manifestHash", "manifest"], "A chunk upload request has an unsupported shape.");
@@ -952,6 +1017,7 @@ export async function parseChunkUploadRequest(value: unknown): Promise<ChunkUplo
   return { ...wire, kind: "chunk-upload-request", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), operationId: parseStableId(value.operationId), manifestHash, manifest };
 }
 
+/** Parses and validates chunk upload result. */
 export async function parseChunkUploadResult(value: unknown, expectedManifestValue: unknown, expectedOrigin: string): Promise<ChunkUploadResult> {
   if (!isRecord(value) || value.kind !== "chunk-upload-result") throw new Error("A chunk upload result has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "operationId", "manifestHash", "transferId", "expiresAt", "missingChunks"], "A chunk upload result has an unsupported shape.");
@@ -965,6 +1031,7 @@ export async function parseChunkUploadResult(value: unknown, expectedManifestVal
   return { ...wire, kind: "chunk-upload-result", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), operationId: parseStableId(value.operationId), manifestHash, transferId: parseStableId(value.transferId, "A chunk transfer ID is invalid."), expiresAt: parseNonNegativeSafeInteger(value.expiresAt, "A chunk transfer expiration is invalid."), missingChunks };
 }
 
+/** Parses and validates chunk download request. */
 export function parseChunkDownloadRequest(value: unknown): ChunkDownloadRequest {
   if (!isRecord(value) || value.kind !== "chunk-download-request") throw new Error("A chunk download request has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "manifestHash", "haveChunks"], "A chunk download request has an unsupported shape.");
@@ -975,6 +1042,7 @@ export function parseChunkDownloadRequest(value: unknown): ChunkDownloadRequest 
   return { ...wire, kind: "chunk-download-request", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), manifestHash: parseSha256(value.manifestHash), haveChunks };
 }
 
+/** Parses and validates chunk download result. */
 export async function parseChunkDownloadResult(value: unknown, expectedOrigin: string, haveChunks?: readonly string[]): Promise<ChunkDownloadResult> {
   if (!isRecord(value) || value.kind !== "chunk-download-result") throw new Error("A chunk download result has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "deviceId", "manifestHash", "manifest", "chunks"], "A chunk download result has an unsupported shape.");
@@ -992,6 +1060,7 @@ export async function parseChunkDownloadResult(value: unknown, expectedOrigin: s
   return { ...wire, kind: "chunk-download-result", workspaceId: parseStableId(value.workspaceId), deviceId: parseStableId(value.deviceId), manifestHash, manifest, chunks };
 }
 
+/** Parses and validates Web2 thumbnail access. */
 function parseWeb2ThumbnailAccess(value: unknown, expectedOrigin?: string): Web2ThumbnailDescriptor["access"] {
   if (!isRecord(value)) throw new Error("A thumbnail access descriptor has an unsupported shape.");
   assertExactKeys(value, ["url", "method", "headers", "expiresAt"], "A thumbnail access descriptor has an unsupported shape.");
@@ -999,6 +1068,7 @@ function parseWeb2ThumbnailAccess(value: unknown, expectedOrigin?: string): Web2
   return { url: parseTransferUrl(value.url, expectedOrigin), method: "GET", headers: parseTransferHeaders(value.headers), expiresAt: parseNonNegativeSafeInteger(value.expiresAt, "A thumbnail access expiration is invalid.") };
 }
 
+/** Parses and validates shared Web2 thumbnail fields. */
 function parseWeb2ThumbnailBase(value: Record<string, unknown>, expected: { workspaceId: string; nodeId: string; contentOperationId: string; manifestHash: string }, expectedOrigin?: string): Web2ThumbnailDescriptor {
   const wire = parseWireBase(value);
   const workspaceId = parseStableId(value.workspaceId, "A thumbnail workspace ID is invalid.");
@@ -1012,12 +1082,14 @@ function parseWeb2ThumbnailBase(value: Record<string, unknown>, expected: { work
   return { ...wire, kind: "thumbnail", workspaceId, nodeId, contentOperationId, manifestHash, profile: "thumbnail-v1", mimeType: "image/webp", width, height, size, sha256: parseSha256(value.sha256, "A thumbnail digest is invalid."), access: parseWeb2ThumbnailAccess(value.access, expectedOrigin) };
 }
 
+/** Parses and validates a Web2 thumbnail descriptor. */
 export function parseWeb2ThumbnailDescriptor(value: unknown, expected: { workspaceId: string; nodeId: string; contentOperationId: string; manifestHash: string }, expectedOrigin: string): Web2ThumbnailDescriptor {
   if (!isRecord(value)) throw new Error("A thumbnail descriptor has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "nodeId", "contentOperationId", "manifestHash", "profile", "mimeType", "width", "height", "size", "sha256", "access"], "A thumbnail descriptor has an unsupported shape.");
   return parseWeb2ThumbnailBase(value, expected, expectedOrigin);
 }
 
+/** Parses and validates a pending Web2 thumbnail response. */
 export function parseWeb2ThumbnailPending(value: unknown, expected: { workspaceId: string; nodeId: string }): Web2ThumbnailPending {
   if (!isRecord(value)) throw new Error("A pending thumbnail response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "nodeId", "state"], "A pending thumbnail response has an unsupported shape.");
@@ -1029,6 +1101,7 @@ export function parseWeb2ThumbnailPending(value: unknown, expected: { workspaceI
   return { ...wire, kind: "thumbnail", workspaceId, nodeId, state: value.state as Web2ThumbnailPending["state"] };
 }
 
+/** Parses and validates a public Web2 thumbnail descriptor. */
 export function parsePublicWeb2ThumbnailDescriptor(value: unknown, expected: { workspaceAlias: string; itemAlias: string | null; workspaceId: string; nodeId: string; contentOperationId: string; manifestHash: string; asOf: number }): PublicWeb2ThumbnailDescriptor {
   if (!isRecord(value)) throw new Error("A public thumbnail descriptor has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "kind", "workspaceId", "nodeId", "contentOperationId", "manifestHash", "profile", "mimeType", "width", "height", "size", "sha256", "access", "workspaceAlias", "itemAlias", "asOf"], "A public thumbnail descriptor has an unsupported shape.");
@@ -1036,6 +1109,7 @@ export function parsePublicWeb2ThumbnailDescriptor(value: unknown, expected: { w
   return { ...parseWeb2ThumbnailBase(value, expected), workspaceAlias: expected.workspaceAlias, itemAlias: expected.itemAlias, asOf: parseNonNegativeSafeInteger(value.asOf, "A public thumbnail snapshot is invalid.") };
 }
 
+/** Parses and validates public node content. */
 export async function parsePublicNodeContent(value: unknown): Promise<PublicNodeContent> {
   if (!isRecord(value)) throw new Error("A public file response has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "protocol", "workspaceAlias", "itemAlias", "nodeId", "asOf", "manifestHash", "manifest", "chunks"], "A public file response has an unsupported shape.");

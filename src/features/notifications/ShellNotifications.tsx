@@ -60,6 +60,7 @@ type Props = {
   onViewActivity: () => void;
 };
 
+/** Formats a byte count for transfer notifications. */
 function formatBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
@@ -67,6 +68,7 @@ function formatBytes(value: number) {
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
 }
 
+/** Returns the user-facing phase label for a file transfer. */
 function transferLabel(transfer: FileTransferState) {
   if (transfer.phase === "failed") return `${transfer.direction === "upload" ? "Upload" : "Download"} failed`;
   if (transfer.phase === "complete") return `${transfer.direction === "upload" ? "Upload" : "Download"} complete`;
@@ -76,6 +78,7 @@ function transferLabel(transfer: FileTransferState) {
   return transfer.direction === "upload" ? "Uploading" : "Downloading";
 }
 
+/** Renders the unified shell notification trigger and panel. */
 export function ShellNotifications(props: Props) {
   const panelId = useId();
   const rootRef = useRef<HTMLDivElement>(null);

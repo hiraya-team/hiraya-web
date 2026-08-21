@@ -19,6 +19,7 @@ type Props = {
   canManageDesktop: (desktop: DesktopIdentity) => boolean;
 };
 
+/** Formats bytes for display. */
 function formatBytes(value: number) {
   if (value >= 1_000_000_000) return `${(value / 1_000_000_000).toFixed(2)} GB`;
   if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)} MB`;
@@ -26,8 +27,10 @@ function formatBytes(value: number) {
   return `${value} bytes`;
 }
 
+/** Calculates the bounded percentage of storage quota in use. */
 function quotaPercent(used: number, limit: number) { return Math.min(100, used / limit * 100); }
 
+/** Renders the desktop settings interface. */
 export function DesktopSettings({ desktops, activeDesktopId, quota, quotaStale, arrangementDisabled, onCreate, onRename, onDelete, onArrange, canManageDesktop }: Props) {
   const [draft, setDraft] = useState(() => desktopPreferences(desktops));
   const [editing, setEditing] = useState<{ mode: "create" | "rename"; id?: string; value: string } | null>(null);

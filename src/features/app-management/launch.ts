@@ -1,4 +1,5 @@
 import type { AppCapabilities, FileHandle, FolderHandle, OfflineEntryStatus, ServiceMethods, ThemeEditorState, WallpaperEditorState } from "@hiraya-team/apps-contracts";
+import { APP_PERMISSIONS } from "../../apps/permissions";
 import { RpcDispatcher } from "@hiraya/app-runtime";
 import type { DesktopStateSnapshot } from "../../domain/desktop-state";
 import { isSceneFile } from "../../domain/scene";
@@ -70,6 +71,7 @@ export type SandboxLaunchResult =
   | { kind: "existing"; id: string; shouldFocus: boolean }
   | { kind: "created"; app: SandboxApp; shouldFocus: boolean; systemTarget?: SystemAppTarget };
 
+/** Launches or focuses a sandboxed app for the requested target. */
 export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promise<SandboxLaunchResult> {
   const { install, target } = options;
   let pendingInstanceId: string | null = null;
@@ -107,7 +109,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
       base = { ...base, bounds: { ...local, ...restoreLogicalPosition(local, options.activeSegment, options.desktopSize) } };
     }
 
-    const effectivePermissions = () => appPackage.manifest.permissions.filter((permission) => permission !== "files:write" || options.canMutate());
+    const effectivePermissions = () => appPackage.manifest.permissions.filter((permission) => permission !== APP_PERMISSIONS.filesWrite || options.canMutate());
     options.capabilities.setInstanceMutationAllowed(id, options.canMutate());
     const entries = options.getEntries();
     const markdownTarget = target && target !== "root" && target.kind === "file" && install.appId === SYSTEM_APP_IDS.mediaViewer && isMarkdownFile(target) ? target : null;
@@ -244,6 +246,7 @@ export async function launchSandboxApp(options: LaunchSandboxAppOptions): Promis
   }
 }
 
+/** Requires the trusted bundled Theme Editor installation. */
 function requireThemeEditor(install: InstalledApp) {
   if (install.source !== "system" || install.appId !== SYSTEM_APP_IDS.themeEditor) throw new HostServiceError("Only the bundled Theme Editor can manage desktop themes.", "PERMISSION_DENIED");
 }

@@ -22,13 +22,17 @@ type Props = {
   onKeepBothFileVersion?: (operationId: string) => void;
 };
 
+/** Formats dates and times using the current locale. */
 const dateFormatter = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+/** Formats numeric values using the current locale. */
 const numberFormatter = new Intl.NumberFormat();
 
+/** Formats date for display. */
 function formatDate(value: number | null) {
   return value === null ? "Unknown" : dateFormatter.format(value);
 }
 
+/** Formats size for display. */
 function formatSize(bytes: number) {
   if (bytes < 1024) return `${numberFormatter.format(bytes)} ${bytes === 1 ? "byte" : "bytes"}`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -41,6 +45,7 @@ function formatSize(bytes: number) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]} (${numberFormatter.format(bytes)} bytes)`;
 }
 
+/** Renders the properties window interface. */
 export function PropertiesWindow({ entry, rootLabel, ancestors, descendants, offlineAvailability, offlineBusy = false, onMakeAvailableOffline, onRemoveOfflineCopy, fileVersions, historyBusy = false, onUndoLatestChange, onRedoLatestChange, onRestoreFileVersion, onCompareFileVersion, onKeepBothFileVersion }: Props) {
   const [comparison, setComparison] = useState<{ operationId: string; current: string; retained: string } | null>(null);
   const [comparisonMessage, setComparisonMessage] = useState("");

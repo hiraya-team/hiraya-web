@@ -22,10 +22,14 @@ export type MarkdownLinkTarget = {
   to: number;
 };
 
+/** Lists the supported video extensions. */
 const VIDEO_EXTENSIONS = /\.(?:mp4|webm|ogv|mov|m4v)$/i;
+/** Lists the supported audio extensions. */
 const AUDIO_EXTENSIONS = /\.(?:mp3|wav|ogg|oga|m4a|aac|flac)$/i;
+/** Lists the supported image extensions. */
 const IMAGE_EXTENSIONS = /\.(?:avif|bmp|gif|ico|jpe?g|png|svg|webp)$/i;
 
+/** Returns youtube video ID. */
 function youtubeVideoId(url: URL) {
   const host = url.hostname.toLowerCase().replace(/^www\./, "").replace(/^m\./, "");
   if (host === "youtu.be") return url.pathname.split("/").filter(Boolean)[0] ?? null;
@@ -35,6 +39,7 @@ function youtubeVideoId(url: URL) {
   return ["embed", "shorts", "live"].includes(section) ? id ?? null : null;
 }
 
+/** Returns vimeo video ID. */
 function vimeoVideoId(url: URL) {
   const host = url.hostname.toLowerCase().replace(/^www\./, "");
   if (host !== "vimeo.com" && host !== "player.vimeo.com") return null;
@@ -43,6 +48,7 @@ function vimeoVideoId(url: URL) {
   return id && /^\d+$/.test(id) ? id : null;
 }
 
+/** Returns safe external URL. */
 function safeExternalUrl(destination: string) {
   let url: URL;
   try {
@@ -54,6 +60,7 @@ function safeExternalUrl(destination: string) {
   return url;
 }
 
+/** Returns external target. */
 function externalTarget(destination: string, label: string): ExternalPreviewTarget | null {
   const url = safeExternalUrl(destination);
   if (!url) return null;
@@ -71,6 +78,7 @@ function externalTarget(destination: string, label: string): ExternalPreviewTarg
   return { ...common, kind: "site", previewUrl: sourceUrl };
 }
 
+/** Returns markdown preview targets. */
 export function markdownPreviewTargets(text: string, externalEnabled: boolean): EmbeddedPreviewTarget[] {
   const targets: EmbeddedPreviewTarget[] = [];
   const pattern = /(!?)\[([^\]\n]*)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;
@@ -89,6 +97,7 @@ export function markdownPreviewTargets(text: string, externalEnabled: boolean): 
   return targets;
 }
 
+/** Returns markdown link targets. */
 export function markdownLinkTargets(text: string): MarkdownLinkTarget[] {
   const targets: MarkdownLinkTarget[] = [];
   const pattern = /(!?)\[([^\]\n]+)\]\(\s*(?:<([^>\n]+)>|([^\s)]+))(?:\s+["'][^"']*["'])?\s*\)/g;

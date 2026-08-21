@@ -3,11 +3,14 @@ import { WEB2_SCHEMA_VERSION, canonicalManifestSha256, sha256Hex } from "../src/
 import { WEB2_SYNC_PROTOCOL, parseAccountEventHint, parseInvitationList, parsePublicationState, parsePublicNodeContent, parsePublicWeb2ThumbnailDescriptor, parsePublicWorkspacePage, parseSharingState, parseShortLinkList, parseWeb2AccountAppData, parseWeb2AccountAppPackage, parseWeb2AccountAppsSnapshot, parseWeb2ActivityResponse, parseWeb2EventHint, parseWeb2SearchResponse, parseWeb2Session, parseWeb2ThumbnailDescriptor, parseWorkspaceInvitationList, parseWorkspaceInvitationRequest, type ChunkTransferDescriptor, type PushRequest } from "../src/sync/protocol";
 import { clearWeb2AccountAppData, createWeb2InvitationToken, createWeb2Workspace, deleteWeb2AccountApp, deleteWeb2AccountAppData, deleteWeb2Invitation, deleteWeb2NodePublication, deleteWeb2Publication, deleteWeb2SharingAudience, deleteWeb2SharingMember, deleteWeb2ShortLink, deleteWeb2Workspace, deleteWeb2WorkspaceInvitation, downloadWeb2Chunk, fetchPublicNodeContent, fetchPublicWeb2Thumbnail, fetchPublicWorkspacePage, fetchWeb2AccountApps, fetchWeb2Activity, fetchWeb2Invitations, fetchWeb2Publication, fetchWeb2Session, fetchWeb2Sharing, fetchWeb2ShortLinks, fetchWeb2Thumbnail, fetchWeb2WorkspaceInvitations, listenForWeb2Events, pushWeb2, putWeb2AccountApp, putWeb2AccountAppData, putWeb2AccountAppHandlers, putWeb2Invitation, putWeb2NodePublication, putWeb2Publication, putWeb2SharingAudience, putWeb2SharingMember, putWeb2ShortLink, putWeb2WorkspaceInvitation, renameWeb2Workspace, searchWeb2, setWeb2WorkspacePreferences, updateWeb2SharingMember, uploadWeb2Chunk, web2ProtocolMetadata } from "../src/sync/transport";
 
+/** Provides the original fetch test fixture. */
 const originalFetch = globalThis.fetch;
 afterEach(() => { globalThis.fetch = originalFetch; });
 
+/** Builds the ID test fixture. */
 const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 
+/** Provides the session value test fixture. */
 const sessionValue = {
   schemaVersion: WEB2_SCHEMA_VERSION,
   protocol: WEB2_SYNC_PROTOCOL,

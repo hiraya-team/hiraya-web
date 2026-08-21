@@ -1,10 +1,14 @@
 export type EntryPosition = { x: number; y: number };
 
+/** Lists the built-in wallpaper presets. */
 export const WALLPAPERS = ["dusk", "grove", "ember"] as const;
 export type WallpaperPreset = typeof WALLPAPERS[number];
+/** Lists supported desktop grid increments in pixels. */
 export const GRID_SIZES = [12, 24, 36, 48] as const;
 export type GridSize = typeof GRID_SIZES[number];
+/** Sets the initial desktop grid increment in pixels. */
 export const DEFAULT_GRID_SIZE: GridSize = 24;
+/** Caps persisted widget and icon-group dimensions. */
 export const MAX_LAYOUT_DIMENSION = 4096;
 export type Wallpaper = {
   source: WallpaperPreset | `file:${string}` | `theme:${string}`;
@@ -16,6 +20,7 @@ export type Wallpaper = {
   overlayColor: string;
   overlayOpacity: number;
 };
+/** Provides the initial wallpaper configuration for new layouts. */
 export const DEFAULT_WALLPAPER: Wallpaper = {
   source: "dusk",
   fit: "cover",

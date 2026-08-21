@@ -1,5 +1,5 @@
 import { createElement, useEffect, useRef, type HTMLAttributes, type ReactNode } from "react";
-import { HirayaItemList, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "@hiraya/apps-ui/elements";
+import { HirayaItemList, ITEM_LIST_EVENTS, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "@hiraya/apps-ui/elements";
 
 if (typeof customElements !== "undefined" && !customElements.get("hiraya-item-list")) customElements.define("hiraya-item-list", HirayaItemList);
 
@@ -39,6 +39,7 @@ type Props<T> = Readonly<{
   onContextMenu?: (item: T, detail: ItemListEventDetail) => void;
 }>;
 
+/** Renders the item list interface. */
 export function ItemList<T>({ items, getId, renderItem, label, className, role = "list", orientation = "vertical", layout, multiselectable = false, leading, sort, reorder, onSelect, onActivate, onContextMenu }: Props<T>) {
   const ref = useRef<HTMLElement>(null);
   const ordered = sort ? sortItemList(items, sort.compare, sort.direction) : [...items];
@@ -71,15 +72,15 @@ export function ItemList<T>({ items, getId, renderItem, label, className, role =
       const candidate = current[fromIndex];
       if (candidate && (currentReorder.canMove?.(candidate, fromIndex, toIndex, current) ?? true)) currentReorder.onChange(moveItemListItem(current, fromIndex, toIndex));
     };
-    list.addEventListener("hiraya-item-select", select);
-    list.addEventListener("hiraya-item-activate", activate);
-    list.addEventListener("hiraya-item-context", context);
-    list.addEventListener("hiraya-item-reorder", reorderItem);
+    list.addEventListener(ITEM_LIST_EVENTS.select, select);
+    list.addEventListener(ITEM_LIST_EVENTS.activate, activate);
+    list.addEventListener(ITEM_LIST_EVENTS.context, context);
+    list.addEventListener(ITEM_LIST_EVENTS.reorder, reorderItem);
     return () => {
-      list.removeEventListener("hiraya-item-select", select);
-      list.removeEventListener("hiraya-item-activate", activate);
-      list.removeEventListener("hiraya-item-context", context);
-      list.removeEventListener("hiraya-item-reorder", reorderItem);
+      list.removeEventListener(ITEM_LIST_EVENTS.select, select);
+      list.removeEventListener(ITEM_LIST_EVENTS.activate, activate);
+      list.removeEventListener(ITEM_LIST_EVENTS.context, context);
+      list.removeEventListener(ITEM_LIST_EVENTS.reorder, reorderItem);
     };
   }, []);
 

@@ -22,12 +22,18 @@ type Job = { id: number; command: string; controller: AbortController; promise: 
 type CommandResult = { status: number; stdout: string };
 type SequenceOperator = ";" | "&&" | "||" | "&";
 
+/** Lists built-in terminal commands. */
 const COMMANDS = ["alias", "cat", "cd", "clear", "cp", "echo", "edit", "env", "export", "false", "fg", "find", "grep", "head", "help", "history", "import", "jobs", "kill", "ls", "mkdir", "mv", "open", "pwd", "rm", "sleep", "sort", "source", "stat", "tail", "touch", "tree", "true", "unalias", "uniq", "unset", "wc"] as const;
+/** Lists supported shell operators. */
 const OPERATORS = new Set([";", "&&", "||", "&", "|", ">", ">>", "<"]);
+/** Defines the maximum captured command output. */
 const MAX_CAPTURE = 1024 * 1024;
+/** Defines the maximum nested script depth. */
 const MAX_SCRIPT_DEPTH = 12;
+/** Defines the maximum entries visited by a directory walk. */
 const MAX_WALK_ENTRIES = 10_000;
 
+/** Implements the Hiraya shell. */
 export class HirayaShell {
   cwd = "/";
   readonly history: string[];
@@ -37,6 +43,7 @@ export class HirayaShell {
   private nextJob = 1;
   private lastStatus = 0;
 
+  /** Creates a hiraya shell instance. */
   constructor(private readonly host: ShellHost, state?: Partial<ShellState>) {
     this.history = state?.history?.filter((item) => typeof item === "string").slice(-200) ?? [];
     this.aliases = { ...(state?.aliases ?? {}) };
@@ -44,10 +51,12 @@ export class HirayaShell {
     this.env.PWD = "/";
   }
 
+  /** Returns the current state. */
   state(): ShellState {
     return { history: this.history.slice(-200), aliases: { ...this.aliases }, env: { ...this.env } };
   }
 
+  /** Runs a shell command line. */
   async run(source: string, emit: ShellEmitter, signal?: AbortSignal): Promise<number> {
     const command = source.trim();
     if (!command) return 0;
@@ -58,6 +67,7 @@ export class HirayaShell {
     return result;
   }
 
+  /** Completes the current command input. */
   async complete(source: string, signal?: AbortSignal): Promise<string[]> {
     const match = /(?:^|\s)([^\s|;&<>]*)$/.exec(source);
     const partial = match?.[1] ?? "";
@@ -70,11 +80,13 @@ export class HirayaShell {
     return entries.filter((entry) => entry.name.startsWith(needle)).map((entry) => `${directory}${entry.name}${entry.kind === "folder" ? "/" : ""}`).sort();
   }
 
+  /** Releases resources owned by this instance. */
   dispose() {
     for (const job of this.jobs.values()) job.controller.abort();
     this.jobs.clear();
   }
 
+  /** Parses and executes shell input. */
   private async executeText(source: string, emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<number> {
     if (depth > MAX_SCRIPT_DEPTH) throw new Error("Shell nesting limit reached.");
     let status = 0;
@@ -120,6 +132,7 @@ export class HirayaShell {
     return status;
   }
 
+  /** Executes a shell pipeline. */
   private async runPipeline(tokens: string[], emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<CommandResult> {
     const commands: string[][] = [[]];
     for (const token of tokens) {
@@ -138,6 +151,7 @@ export class HirayaShell {
     return { status, stdout: stdin };
   }
 
+  /** Executes one parsed shell command. */
   private async runCommand(raw: string[], stdin: string, emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<CommandResult> {
     let tokens = [...raw];
     for (let count = 0; count < 8 && this.aliases[tokens[0]]; count += 1) {
@@ -164,6 +178,7 @@ export class HirayaShell {
     return result;
   }
 
+  /** Executes a built-in shell command. */
   private async builtin(args: string[], stdin: string, emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<CommandResult> {
     const [name, ...rest] = args;
     if (!name) return { status: 0, stdout: stdin };
@@ -283,6 +298,7 @@ export class HirayaShell {
     }
   }
 
+  /** Executes commands from a shell script. */
   private async runScript(script: string, emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<number> {
     const lines = script.replaceAll("\r\n", "\n").split("\n");
     let status = 0;
@@ -315,6 +331,7 @@ export class HirayaShell {
     return status;
   }
 
+  /** Walks a directory tree in lexical order. */
   private async walk(path: string, signal: AbortSignal | undefined): Promise<Array<{ item: ShellEntry; depth: number }>> {
     const result: Array<{ item: ShellEntry; depth: number }> = [];
     const visit = async (folder: string, depth: number) => {
@@ -329,6 +346,7 @@ export class HirayaShell {
     return result;
   }
 
+  /** Creates a directory entry. */
   private async mkdir(path: string, parents: boolean, signal: AbortSignal | undefined) {
     if (!parents) { await this.host.mkdir(path, signal); return; }
     let current = "";
@@ -338,6 +356,7 @@ export class HirayaShell {
     }
   }
 
+  /** Runs a foreground shell job. */
   private job(value: string | undefined) {
     const id = Number(value?.replace(/^%/, "") ?? Math.max(0, ...this.jobs.keys()));
     const job = this.jobs.get(id);
@@ -345,6 +364,7 @@ export class HirayaShell {
     return job;
   }
 
+  /** Tokenizes shell input. */
   private async tokenize(source: string, emit: ShellEmitter, signal: AbortSignal | undefined, depth: number): Promise<string[]> {
     const tokens: string[] = [];
     let word = "";
@@ -399,6 +419,7 @@ export class HirayaShell {
     return tokens;
   }
 
+  /** Resolves an absolute shell path. */
   private absolute(path: string): string {
     const parts = (path.startsWith("/") ? path : `${this.cwd}/${path}`).split("/");
     const normalized: string[] = [];
@@ -410,26 +431,31 @@ export class HirayaShell {
     return `/${normalized.join("/")}`;
   }
 
+  /** Limits captured command output. */
   private cap(value: string) {
     if (new TextEncoder().encode(value).byteLength > MAX_CAPTURE) throw new Error("Pipeline output exceeded 1 MB.");
     return value;
   }
 
+  /** Throws when the active command has been aborted. */
   private throwIfAborted(signal?: AbortSignal) {
     if (signal?.aborted) throw new DOMException("Command stopped.", "AbortError");
   }
 
+  /** Formats a shell error for display. */
   private errorMessage(error: unknown) {
     return error instanceof DOMException && error.name === "AbortError" ? "^C" : error instanceof Error ? error.message : "Command failed.";
   }
 }
 
+/** Splits an assignment into its name and value. */
 function splitAssignment(value: string, command: string): [string, string] {
   const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(value);
   if (!match) throw new Error(`${command}: expected NAME=value`);
   return [match[1], match[2]];
 }
 
+/** Splits shell input on an unquoted separator. */
 function splitSequence(source: string): Array<{ source: string; operator: SequenceOperator }> {
   const parts: Array<{ source: string; operator: SequenceOperator }> = [];
   let start = 0;
@@ -459,16 +485,19 @@ function splitSequence(source: string): Array<{ source: string; operator: Sequen
   return parts;
 }
 
+/** Parses a positive integer argument. */
 function positiveInteger(value: string | undefined, message: string) {
   const number = Number(value);
   if (!Number.isInteger(number) || number < 0) throw new Error(message);
   return number;
 }
 
+/** Escapes text for use in a regular expression. */
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+/** Waits for a delay that can be aborted. */
 function abortableDelay(milliseconds: number, signal?: AbortSignal) {
   if (!Number.isFinite(milliseconds) || milliseconds < 0) throw new Error("sleep: invalid duration");
   return new Promise<void>((resolve, reject) => {

@@ -1,8 +1,10 @@
 import { elementStyles, HTMLElementBase } from "./shared";
 
+/** Implements the Hiraya toolbar. */
 export class HirayaToolbar extends HTMLElementBase {
   static readonly observedAttributes = ["label", "wrap"];
   readonly #toolbar: HTMLElement;
+  /** Creates a hiraya toolbar instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -15,14 +17,19 @@ export class HirayaToolbar extends HTMLElementBase {
     </style><header part="toolbar" role="toolbar"><slot name="leading"></slot><slot></slot><span class="actions" part="actions"><slot name="actions"></slot></span></header>`;
     this.#toolbar = root.querySelector("header")!;
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void { this.#toolbar?.setAttribute("aria-label", this.getAttribute("label") ?? "App toolbar"); }
 }
 
+/** Implements the Hiraya panel. */
 export class HirayaPanel extends HTMLElementBase {
   readonly #header: HTMLElement;
   readonly #footer: HTMLElement;
+  /** Creates a hiraya panel instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -37,20 +44,25 @@ export class HirayaPanel extends HTMLElementBase {
     root.querySelector<HTMLSlotElement>('slot[name="header"]')!.addEventListener("slotchange", () => this.#syncRegions());
     root.querySelector<HTMLSlotElement>('slot[name="footer"]')!.addEventListener("slotchange", () => this.#syncRegions());
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#syncRegions(); }
+  /** Synchronizes regions. */
   #syncRegions(): void {
     this.#header.hidden = !this.#hasAssignedContent("header");
     this.#footer.hidden = !this.#hasAssignedContent("footer");
   }
+  /** Reports whether assigned content is present. */
   #hasAssignedContent(name: string): boolean {
     const slot = this.shadowRoot?.querySelector<HTMLSlotElement>(`slot[name="${name}"]`);
     return slot?.assignedNodes({ flatten: true }).some((node) => node.nodeType !== Node.TEXT_NODE || Boolean(node.textContent?.trim())) ?? false;
   }
 }
 
+/** Implements the Hiraya status bar. */
 export class HirayaStatusBar extends HTMLElementBase {
   static readonly observedAttributes = ["tone", "live"];
   readonly #status: HTMLElement;
+  /** Creates a hiraya status bar instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -63,8 +75,11 @@ export class HirayaStatusBar extends HTMLElementBase {
     </style><div part="status"><slot></slot></div>`;
     this.#status = root.querySelector("div")!;
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#status) return;
     this.#status.className = this.getAttribute("tone") ?? "neutral";
@@ -74,7 +89,9 @@ export class HirayaStatusBar extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya empty state. */
 export class HirayaEmptyState extends HTMLElementBase {
+  /** Creates a hiraya empty state instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -87,7 +104,9 @@ export class HirayaEmptyState extends HTMLElementBase {
   }
 }
 
+/** Implements the Hiraya loading state. */
 export class HirayaLoadingState extends HTMLElementBase {
+  /** Creates a hiraya loading state instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -103,6 +122,7 @@ export class HirayaLoadingState extends HTMLElementBase {
       @media (prefers-reduced-motion: reduce) { .indicator span { animation: none; opacity: .72; transform: none; } }
     </style><section class="content" part="content"><span class="indicator" part="indicator" aria-hidden="true"><span></span><span></span><span></span></span><div class="title" part="title"><slot name="title">Opening file...</slot></div><div part="description"><slot></slot></div></section>`;
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void {
     this.setAttribute("role", "status");
     this.setAttribute("aria-live", "polite");

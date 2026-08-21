@@ -3,26 +3,32 @@ import type { ShellEntry, ShellHost } from "./shell";
 
 type Resolved = { path: string; entry: DirectoryEntry | null; handle: FolderHandle | FileHandle; parent: FolderHandle | null };
 
+/** Implements the Hiraya file system. */
 export class HirayaFileSystem implements ShellHost {
+  /** Creates a hiraya file system instance. */
   constructor(private readonly hiraya: HirayaClient, private readonly root: FolderHandle) {}
 
+  /** Lists the available entries. */
   async list(path: string, signal?: AbortSignal): Promise<ShellEntry[]> {
     const folder = await this.resolve(path, "folder", signal);
     return Promise.all((await this.hiraya.files.list(folder.handle as FolderHandle, { signal })).map((entry) => this.shellEntry(entry, join(folder.path, entry.metadata.name))));
   }
 
+  /** Returns metadata for an entry. */
   async stat(path: string, signal?: AbortSignal): Promise<ShellEntry> {
     if (clean(path) === "/") return { path: "/", name: "/", kind: "folder", size: 0, modifiedAt: 0 };
     const resolved = await this.resolve(path, undefined, signal);
     return this.shellEntry(resolved.entry!, resolved.path);
   }
 
+  /** Reads an entry's contents. */
   async read(path: string, signal?: AbortSignal): Promise<string> {
     const resolved = await this.resolve(path, "file", signal);
     const { data } = await this.hiraya.files.readAll(resolved.handle as FileHandle, { signal });
     return new TextDecoder().decode(data);
   }
 
+  /** Writes an entry's contents. */
   async write(path: string, text: string, append: boolean, signal?: AbortSignal): Promise<void> {
     const normalized = clean(path);
     const bytes = new TextEncoder().encode(text);
@@ -38,6 +44,7 @@ export class HirayaFileSystem implements ShellHost {
     }
   }
 
+  /** Creates or updates a file entry. */
   async touch(path: string, signal?: AbortSignal): Promise<void> {
     try {
       await this.resolve(path, "file", signal);
@@ -48,11 +55,13 @@ export class HirayaFileSystem implements ShellHost {
     }
   }
 
+  /** Creates a directory entry. */
   async mkdir(path: string, signal?: AbortSignal): Promise<void> {
     const { parent, name } = await this.parent(path, signal);
     await this.hiraya.files.createFolder(parent, name, { signal });
   }
 
+  /** Copies an entry. */
   async copy(source: string, destination: string, recursive: boolean, signal?: AbortSignal): Promise<void> {
     const from = await this.resolve(source, undefined, signal);
     let target = clean(destination);
@@ -84,6 +93,7 @@ export class HirayaFileSystem implements ShellHost {
     }
   }
 
+  /** Moves an entry. */
   async move(source: string, destination: string, signal?: AbortSignal): Promise<void> {
     const from = await this.resolve(source, undefined, signal);
     let target = clean(destination);
@@ -103,6 +113,7 @@ export class HirayaFileSystem implements ShellHost {
     } else if (from.entry!.metadata.name !== name) await this.hiraya.files.rename(from.handle, name, { signal });
   }
 
+  /** Removes an entry. */
   async remove(path: string, recursive: boolean, force: boolean, signal?: AbortSignal): Promise<void> {
     try {
       const resolved = await this.resolve(path, undefined, signal);
@@ -113,17 +124,20 @@ export class HirayaFileSystem implements ShellHost {
     }
   }
 
+  /** Opens the entry at a shell path. */
   async open(path: string, signal?: AbortSignal): Promise<void> {
     const resolved = await this.resolve(path, undefined, signal);
     await this.hiraya.host.openEntry(resolved.handle, { signal });
   }
 
+  /** Imports an entry. */
   async import(path: string, folder: boolean, signal?: AbortSignal): Promise<void> {
     const resolved = await this.resolve(path, "folder", signal);
     if (folder) await this.hiraya.host.importFolder(resolved.handle as FolderHandle, { signal });
     else await this.hiraya.host.importFiles(resolved.handle as FolderHandle, { signal });
   }
 
+  /** Resolves an entry handle to its absolute shell path. */
   async pathFor(handle: FileHandle | FolderHandle, signal?: AbortSignal): Promise<string> {
     const names: string[] = [];
     let current: FileHandle | FolderHandle | null = handle;
@@ -135,6 +149,7 @@ export class HirayaFileSystem implements ShellHost {
     return `/${names.join("/")}`;
   }
 
+  /** Resolves a shell path to its filesystem entry. */
   private async resolve(path: string, kind?: "file" | "folder", signal?: AbortSignal): Promise<Resolved> {
     const normalized = clean(path);
     if (normalized === "/") return { path: "/", entry: null, handle: this.root, parent: null };
@@ -155,6 +170,7 @@ export class HirayaFileSystem implements ShellHost {
     return { path: normalized, entry: entry!, handle: entry!.metadata.handle, parent };
   }
 
+  /** Returns the parent path. */
   private async parent(path: string, signal?: AbortSignal) {
     const normalized = clean(path);
     const index = normalized.lastIndexOf("/");
@@ -165,11 +181,13 @@ export class HirayaFileSystem implements ShellHost {
     return { parent: resolved.handle as FolderHandle, name };
   }
 
+  /** Converts a filesystem entry to shell metadata. */
   private shellEntry(entry: DirectoryEntry, path: string): ShellEntry {
     return { path, name: entry.metadata.name, kind: entry.kind, size: entry.kind === "file" ? entry.metadata.size : 0, modifiedAt: entry.metadata.modifiedAt, ...(entry.kind === "file" ? { mimeType: entry.metadata.mimeType } : {}) };
   }
 }
 
+/** Normalizes a path. */
 function clean(path: string) {
   const parts: string[] = [];
   for (const part of path.split("/")) {
@@ -179,10 +197,12 @@ function clean(path: string) {
   return `/${parts.join("/")}`;
 }
 
+/** Joins path segments. */
 function join(parent: string, name: string) {
   return clean(`${parent}/${name}`);
 }
 
+/** Concatenates byte arrays. */
 function concat(left: Uint8Array, right: Uint8Array) {
   const result = new Uint8Array(left.byteLength + right.byteLength);
   result.set(left);

@@ -75,6 +75,7 @@ type DragState = {
 };
 
 
+/** Renders the file icon interface. */
 export function FileIcon({ entry, selected, onSelect, onTouchSelect, onOpen, onMove, onDragMove, dragEdgeAt, onDragAtEdge, onEdgeDwellChange, onDragEnd, getSnapPreview, gridSize, onContextMenu, onContextMenuAt, onExternalDrop, allowFolderDrop = true, offlineAvailability, allowBrowserPinchZoom = false, interactive = true, loadPreview, readOnly = false }: Props) {
   const iconRef = useRef<HTMLButtonElement>(null);
   const snapPreviewRef = useRef<HTMLSpanElement>(null);

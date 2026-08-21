@@ -1,5 +1,6 @@
 import type { DesktopEntry } from "../types";
 
+/** Indexes entry ancestry as searchable breadcrumb text. */
 export function indexSearchBreadcrumbs(entries: readonly DesktopEntry[]) {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const breadcrumbs = new Map<string, string[]>();

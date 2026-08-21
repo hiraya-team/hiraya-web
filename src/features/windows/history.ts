@@ -5,6 +5,7 @@ import type { RunningApp } from "./model";
 
 export type RouteHistoryState = { hiraya: true; schemaVersion: 1; parentPath?: string; rootBackGuard?: true; apps: WindowTarget[]; instances: string[]; settingsPage: SettingsPage };
 
+/** Parses Hiraya running-app state from browser history. */
 export function parseRunningAppHistory(state: unknown) {
   if (!state || typeof state !== "object" || !(state as Partial<RouteHistoryState>).hiraya || !("apps" in state)) return null;
   try {
@@ -14,10 +15,12 @@ export function parseRunningAppHistory(state: unknown) {
   }
 }
 
+/** Creates browser history state for the current app stack. */
 export function createRouteHistoryState(apps: WindowTarget[], instances: string[], settingsPage: SettingsPage, parentPath?: string): RouteHistoryState {
   return { hiraya: true, schemaVersion: 1, ...(parentPath ? { parentPath } : {}), apps, instances, settingsPage };
 }
 
+/** Derives the address-bar route represented by the focused app. */
 export function routeForRunningApp(app: RunningApp | null, current: DesktopRoute, activeDesktopId: string): DesktopRoute {
   const base = { desktopId: activeDesktopId, column: current.column, row: current.row };
   if (!app) return base;

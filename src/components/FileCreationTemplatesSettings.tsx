@@ -5,6 +5,7 @@ import { DEFAULT_FILE_CREATION_TEMPLATES, parseFileCreationTemplates } from "../
 
 type Props = { drafts: FileCreationTemplate[]; disabled: boolean; dirty: boolean; onDraftsChange: (drafts: FileCreationTemplate[]) => void; onChange: (templates: FileCreationTemplate[]) => Promise<void> };
 
+/** Renders the file creation templates settings interface. */
 export function FileCreationTemplatesSettings({ drafts, disabled, dirty, onDraftsChange, onChange }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");

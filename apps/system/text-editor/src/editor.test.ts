@@ -78,7 +78,7 @@ describe("Integrated Editor document behavior", () => {
     expect(manifest.window).toMatchObject({ renderWidth: 818, renderHeight: 572 });
     expect(html).toContain('<hiraya-item-list id="search-results" class="search-results" list-role="listbox" label="Matching workspace files">');
     expect(source).toContain('button.dataset.itemId = entry.metadata.handle; button.dataset.itemSelect = "";');
-    expect(source).toContain('searchResults.addEventListener("hiraya-item-select"');
+    expect(source).toContain("searchResults.addEventListener(ITEM_LIST_EVENTS.select");
     expect(source).not.toContain("handleSearchKey");
   });
 

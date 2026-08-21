@@ -18,12 +18,16 @@ export type CommandItem<Id extends CommandId = CommandId> = Pick<CommandDescript
   enabled: boolean;
 };
 
+/** Validates globally namespaced command identifiers. */
 const COMMAND_ID_PATTERN = /^[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+$/;
+/** Encodes arbitrary identifier text into a command-safe segment. */
 const encodeCommandSegment = (value: string) => Array.from(new TextEncoder().encode(value), (byte) => byte.toString(16).padStart(2, "0")).join("");
 
+/** Registers, lists, and executes commands against a caller-provided context. */
 export class CommandService<Context, Id extends CommandId = CommandId> {
   readonly #commands = new Map<Id, CommandDescriptor<Context, Id>>();
 
+  /** Registers one command and returns its conditional disposer. */
   register(command: CommandDescriptor<Context, Id>): () => void {
     if (!COMMAND_ID_PATTERN.test(command.id)) throw new Error(`Command ID must be namespaced: ${command.id}`);
     if (this.#commands.has(command.id)) throw new Error(`Command already registered: ${command.id}`);
@@ -34,6 +38,7 @@ export class CommandService<Context, Id extends CommandId = CommandId> {
     };
   }
 
+  /** Lists visible commands with their current enabled state. */
   list(context: Context): CommandItem<Id>[] {
     return [...this.#commands.values()]
       .filter((command) => command.visible?.(context) ?? true)
@@ -48,6 +53,7 @@ export class CommandService<Context, Id extends CommandId = CommandId> {
       }));
   }
 
+  /** Executes an available command and reports whether it ran. */
   async execute(id: Id, context: Context): Promise<boolean> {
     const command = this.#commands.get(id);
     if (!command || !(command.visible?.(context) ?? true) || !(command.enabled?.(context) ?? true)) return false;
@@ -56,6 +62,7 @@ export class CommandService<Context, Id extends CommandId = CommandId> {
   }
 }
 
+/** Defines command identifiers owned by the desktop shell. */
 export const APP_COMMAND_IDS = {
   newFile: "desktop.new-file",
   newFolder: "desktop.new-folder",
@@ -90,18 +97,21 @@ export type AppCommandContext = {
 export type RuntimeCommandDefinition = CommandDefinition;
 export type RuntimeChromeCommand = { id: CommandId; title: string; shortcut?: string; enabled: boolean };
 
+/** Bridges runtime-contributed app commands into the shell command service. */
 export class RuntimeCommandContributions<Context> {
   readonly #disposals: Array<() => void> = [];
   readonly #listeners = new Set<() => void>();
   readonly #localIds = new Map<CommandId, string>();
   #promoted: readonly RuntimeChromeCommand[] = [];
 
+  /** Creates a contribution set for one hosted app owner. */
   constructor(
     private readonly service: CommandService<Context>,
     private readonly ownerId: string,
     private readonly invoke: (id: string) => void,
   ) {}
 
+  /** Replaces the runtime commands registered for this owner. */
   set(commands: readonly RuntimeCommandDefinition[]): void {
     this.#clearRegistrations();
     const localIds = new Set<string>();
@@ -123,6 +133,7 @@ export class RuntimeCommandContributions<Context> {
     this.#emit();
   }
 
+  /** Removes every runtime command registered for this owner. */
   clear(): void {
     this.#clearRegistrations();
     if (this.#promoted.length === 0) return;
@@ -130,8 +141,11 @@ export class RuntimeCommandContributions<Context> {
     this.#emit();
   }
 
+  /** Returns the commands promoted into app window chrome. */
   readonly getPromoted = () => this.#promoted;
+  /** Subscribes to promoted-command changes. */
   readonly subscribe = (listener: () => void) => { this.#listeners.add(listener); return () => this.#listeners.delete(listener); };
+  /** Executes a promoted command by its global identifier. */
   readonly execute = (id: CommandId) => {
     const command = this.#promoted.find((candidate) => candidate.id === id);
     const localId = this.#localIds.get(id);
@@ -140,31 +154,38 @@ export class RuntimeCommandContributions<Context> {
     return true;
   };
 
+  /** Executes the first enabled promoted command matching a shortcut. */
   readonly executeShortcut = (shortcut: string) => {
     const command = this.#promoted.find((candidate) => candidate.shortcut === shortcut && candidate.enabled);
     return command ? this.execute(command.id) : false;
   };
 
+  /** Disposes current command registrations and local ID mappings. */
   #clearRegistrations(): void {
     for (const dispose of this.#disposals.splice(0)) dispose();
     this.#localIds.clear();
   }
 
+  /** Notifies contribution subscribers. */
   #emit(): void { for (const listener of this.#listeners) listener(); }
 
+  /** Releases all command contributions owned by this instance. */
   close(): void { this.clear(); }
 }
 
+/** Builds a globally unique command ID for a runtime app command. */
 export function runtimeCommandId(appId: string, commandId: string): CommandId {
   if (!appId || !commandId) throw new TypeError("App command ID is invalid.");
   return `app.a-${encodeCommandSegment(appId)}.c-${encodeCommandSegment(commandId)}`;
 }
 
+/** Builds the command ID used to switch to a desktop. */
 export function desktopSwitchCommandId(desktopId: string): CommandId {
   if (!desktopId) throw new TypeError("Desktop command ID is invalid.");
   return `desktop.switch-${encodeCommandSegment(desktopId)}`;
 }
 
+/** Creates switch commands for every inactive desktop. */
 export function createDesktopSwitchCommands(desktops: readonly { id: string; name: string }[], activeDesktopId: string): CommandItem[] {
   return desktops.filter(({ id }) => id !== activeDesktopId).map((desktop) => ({
     id: desktopSwitchCommandId(desktop.id),
@@ -174,6 +195,7 @@ export function createDesktopSwitchCommands(desktops: readonly { id: string; nam
   }));
 }
 
+/** Creates the desktop command service with its built-in commands. */
 export function createAppCommandService(): CommandService<AppCommandContext> {
   const service = new CommandService<AppCommandContext>();
   const commands: CommandDescriptor<AppCommandContext, AppCommandId>[] = [

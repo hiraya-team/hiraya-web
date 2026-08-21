@@ -2,8 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MergeWindow, type MergeFileVersion } from "../src/components/MergeWindow";
 
+/** Provides the mine test fixture. */
 const mine: MergeFileVersion = { name: "notes.txt", mimeType: "text/plain", size: 18, modifiedAt: Date.UTC(2026, 6, 1) };
+/** Provides the server test fixture. */
 const server: MergeFileVersion = { ...mine, size: 21, modifiedAt: Date.UTC(2026, 6, 2) };
+/** Provides the actions test fixture. */
 const actions = { onKeepMine: () => undefined, onKeepServer: () => undefined, onKeepBoth: () => undefined };
 
 describe("MergeWindow", () => {

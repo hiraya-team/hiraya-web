@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { areaCameraDragPosition, areaCameraPosition, areaTransferDelta, areaWorldOrigin } from "../src/ui/area-camera";
 
+/** Provides the viewport test fixture. */
 const viewport = { width: 390, height: 600 };
 
 describe("area camera", () => {

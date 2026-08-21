@@ -1,6 +1,5 @@
 import type { DesktopEntry, DesktopIdentity } from "../types";
 import { assertValidId, isRecord, normalizeDesktopName, normalizeEntryName, parseRemoteEntry } from "./contracts";
-import { searchWeb2 } from "../sync/transport";
 
 export type DesktopSearchResult = {
   authorityCatalogId: string | null;
@@ -19,16 +18,19 @@ export type DesktopSearchResponse = {
   results: DesktopSearchResult[];
 };
 
+/** Parses and validates query. */
 function parseQuery(value: unknown) {
   if (typeof value !== "string" || [...value].length < 1 || [...value].length > 200 || !value.trim()) throw new Error("The search response contains an invalid query.");
   return value;
 }
 
+/** Parses and validates revision. */
 function parseRevision(value: unknown, label: string) {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`The search response contains an invalid ${label}.`);
   return value as number;
 }
 
+/** Parses and validates breadcrumbs. */
 function parseBreadcrumbs(value: unknown, entry: DesktopEntry) {
   if (!Array.isArray(value)) throw new Error("The search response contains invalid breadcrumbs.");
   const seen = new Set<string>();
@@ -47,6 +49,7 @@ function parseBreadcrumbs(value: unknown, entry: DesktopEntry) {
   return breadcrumbs;
 }
 
+/** Parses and validates search response. */
 export function parseSearchResponse(value: unknown, expectedQuery?: string): DesktopSearchResponse {
   if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.results)) throw new Error("The search response has an unsupported format.");
   const query = parseQuery(value.query);
@@ -86,6 +89,7 @@ export function parseSearchResponse(value: unknown, expectedQuery?: string): Des
   return { query, limit, truncated: value.truncated, results };
 }
 
+/** Builds the ancestor breadcrumb for an entry. */
 export function breadcrumbForEntry(entries: readonly DesktopEntry[], entry: DesktopEntry) {
   const byId = new Map(entries.map((candidate) => [candidate.id, candidate]));
   const parts: string[] = [];
@@ -102,12 +106,15 @@ export function breadcrumbForEntry(entries: readonly DesktopEntry[], entry: Desk
   return parts;
 }
 
+/** Projects local entries into desktop search results. */
 export function localSearchResults(desktop: DesktopIdentity, entries: readonly DesktopEntry[], stale: boolean): DesktopSearchResult[] {
   return entries.map((entry) => ({ authorityCatalogId: desktop.authorityCatalogId, catalogRevision: null, desktopId: desktop.id, desktopName: desktop.name, entry, breadcrumb: breadcrumbForEntry(entries, entry), stale }));
 }
 
+/** Searches desktops accessible to the current account. */
 export async function searchAccessibleDesktops(query: string, signal: AbortSignal, _fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)): Promise<DesktopSearchResponse> {
   void _fetchImpl;
+  const { searchWeb2 } = await import("../sync/transport");
   const response = await searchWeb2(query, 50, signal);
   return {
     query: response.query,

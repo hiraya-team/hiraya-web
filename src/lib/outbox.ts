@@ -49,8 +49,10 @@ export type OutboxRecord = {
   lastAttemptAt: number | null;
 };
 
+/** Defines the access revoked error. */
 export const ACCESS_REVOKED_ERROR = "Access to this desktop was revoked. Local changes have not been uploaded.";
 
+/** Returns desktop IDs referenced by an outbox operation. */
 export function outboxOperationDesktopIds(record: Pick<OutboxRecord, "desktopId" | "operation">) {
   const ids = new Set([record.desktopId]);
   const operation = record.operation;
@@ -60,10 +62,12 @@ export function outboxOperationDesktopIds(record: Pick<OutboxRecord, "desktopId"
   return ids;
 }
 
+/** Reports whether a record represents revoked access. */
 export function isAccessRevocationRecord(record: Pick<OutboxRecord, "status" | "error">) {
   return record.status === "blocked" && record.error === ACCESS_REVOKED_ERROR;
 }
 
+/** Parses and validates revision conflict details. */
 export function parseRevisionConflictDetails(value: unknown): RevisionConflictDetails | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const item = value as Record<string, unknown>;
@@ -75,14 +79,17 @@ export function parseRevisionConflictDetails(value: unknown): RevisionConflictDe
   return item as RevisionConflictDetails;
 }
 
+/** Reports whether a record represents a revision conflict. */
 export function isRevisionConflictRecord(record: Pick<OutboxRecord, "status" | "errorCode" | "conflictDetails">) {
   return record.status === "blocked" && record.errorCode === "revision_conflict" && record.conflictDetails != null;
 }
 
+/** Returns outbox records depending on desktop. */
 export function outboxRecordsDependingOnDesktop(records: readonly OutboxRecord[], desktopId: string) {
   return records.filter((record) => outboxOperationDesktopIds(record).has(desktopId));
 }
 
+/** Returns outbox causal keys. */
 export function outboxCausalKeys(record: Pick<OutboxRecord, "desktopId" | "operation">) {
   const operation = record.operation;
   const desktop = (id = record.desktopId) => `desktop:${id}`;
@@ -108,21 +115,25 @@ export function outboxCausalKeys(record: Pick<OutboxRecord, "desktopId" | "opera
   }
 }
 
+/** Returns outbox blocking record. */
 export function outboxBlockingRecord(records: readonly OutboxRecord[], record: OutboxRecord) {
   const keys = outboxCausalKeys(record);
   return records.find((candidate) => candidate.sequence < record.sequence && candidate.status === "blocked" && [...outboxCausalKeys(candidate)].some((key) => keys.has(key))) ?? null;
 }
 
+/** Computes wallpaper after entry removal. */
 export function wallpaperAfterEntryRemoval(entries: readonly DesktopEntry[], wallpaper: Wallpaper) {
   return wallpaper.source.startsWith("file:") && !entries.some((entry) => entry.id === wallpaper.source.slice(5))
     ? { ...DEFAULT_WALLPAPER }
     : wallpaper;
 }
 
+/** Returns icon groups after entry change. */
 export function iconGroupsAfterEntryChange(entries: readonly DesktopEntry[], iconGroups: readonly DesktopIconGroup[]) {
   return iconGroups.filter((group) => entries.some((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null));
 }
 
+/** Resets wallpaper after entry removal. */
 function resetWallpaperAfterEntryRemoval(state: PersistedDesktopState, entries: DesktopEntry[]): PersistedDesktopState {
   const wallpaper = wallpaperAfterEntryRemoval(entries, state.wallpaper);
   const iconGroups = iconGroupsAfterEntryChange(entries, state.iconGroups ?? []);
@@ -138,6 +149,7 @@ function resetWallpaperAfterEntryRemoval(state: PersistedDesktopState, entries: 
   };
 }
 
+/** Returns desktop IDs that must be retained for the outbox. */
 export function outboxDesktopRetentionIds(records: readonly OutboxRecord[], catalogId: string | null) {
   const retained = new Set<string>();
   for (const record of records) {
@@ -147,6 +159,7 @@ export function outboxDesktopRetentionIds(records: readonly OutboxRecord[], cata
   return retained;
 }
 
+/** Computes desktop pending operation protection. */
 export function desktopPendingOperationProtection(records: readonly OutboxRecord[], desktopId: string) {
   const hasPendingOperation = records.some((record) => record.desktopId === desktopId
     || (record.operation.kind === "create-desktop" || record.operation.kind === "rename-desktop") && record.operation.desktop.id === desktopId
@@ -155,6 +168,7 @@ export function desktopPendingOperationProtection(records: readonly OutboxRecord
   return hasPendingOperation ? "This desktop has pending or blocked changes. Reconnect or resolve them before deleting it." : "";
 }
 
+/** Transfers entries between desktop states. */
 export function transferEntriesBetweenDesktopStates(
   source: PersistedDesktopState,
   destination: PersistedDesktopState,
@@ -203,6 +217,7 @@ export function transferEntriesBetweenDesktopStates(
   };
 }
 
+/** Normalizes outbox operation. */
 export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOperation {
   if (operation.schemaVersion !== 1) throw new Error("The queued operation uses an unsupported schema version.");
   if (operation.kind === "create") {
@@ -263,14 +278,17 @@ export function normalizeOutboxOperation(operation: OutboxOperation): OutboxOper
   }
 }
 
+/** Returns valid base revision. */
 function validBaseRevision(value: unknown): value is number {
   return Number.isSafeInteger(value) && Number(value) >= 0;
 }
 
+/** Returns valid optional base revision. */
 function validOptionalBaseRevision(value: unknown): value is number | undefined {
   return value === undefined || validBaseRevision(value);
 }
 
+/** Parses and validates entry conflict base. */
 function parseEntryConflictBase(value: unknown): EntryConflictBase {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("A queued entry conflict base has an unsupported format.");
   const base = value as Record<string, unknown>;
@@ -278,6 +296,7 @@ function parseEntryConflictBase(value: unknown): EntryConflictBase {
   return { name: base.name, parentId: base.parentId as string | null, position: parsePosition(base.position) };
 }
 
+/** Parses and validates entry conflict bases. */
 function parseEntryConflictBases(value: unknown, entryIds: readonly string[]) {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Queued entry conflict bases have an unsupported format.");
   const bases = value as Record<string, unknown>;
@@ -285,6 +304,7 @@ function parseEntryConflictBases(value: unknown, entryIds: readonly string[]) {
   return Object.fromEntries(entryIds.map((id) => [id, parseEntryConflictBase(bases[id])]));
 }
 
+/** Applies outbox operation. */
 export function applyOutboxOperation(state: PersistedDesktopState, operation: OutboxOperation): PersistedDesktopState {
   operation = normalizeOutboxOperation(operation);
   let entries = state.entries;
@@ -398,6 +418,7 @@ export function applyOutboxOperation(state: PersistedDesktopState, operation: Ou
   return resetWallpaperAfterEntryRemoval(state, entries);
 }
 
+/** Rebases outbox operation after acknowledgement. */
 export function rebaseOutboxOperationAfterAcknowledgement(state: PersistedDesktopState, operation: OutboxOperation, acknowledgedRevision: number): OutboxOperation {
   const entryRevision = (id: string, base?: number) => state.sync.entryRevisions[id] === acknowledgedRevision ? acknowledgedRevision : base;
   switch (operation.kind) {
@@ -455,6 +476,7 @@ export function rebaseOutboxOperationAfterAcknowledgement(state: PersistedDeskto
   }
 }
 
+/** Rebases outbox operation for conflict. */
 export function rebaseOutboxOperationForConflict(operation: OutboxOperation, conflict: RevisionConflictDetails): OutboxOperation | null {
   const revision = conflict.actualRevision;
   switch (operation.kind) {
@@ -501,15 +523,19 @@ export type OutboxConflictResolution =
   | { kind: "rebase"; operation: OutboxOperation }
   | { kind: "blocked"; fields: string[] };
 
+/** Compares values for structural equality. */
 const same = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right);
+/** Builds conflict metadata for an entry. */
 const entryBase = (entry: DesktopEntry): EntryConflictBase => ({ name: entry.name, parentId: entry.parentId, position: entry.position });
 
+/** Returns item IDs changed by an outbox operation. */
 function changedItemIds<T>(base: readonly T[], value: readonly T[], id: (item: T) => string) {
   const before = new Map(base.map((item) => [id(item), item]));
   const after = new Map(value.map((item) => [id(item), item]));
   return new Set([...new Set([...before.keys(), ...after.keys()])].filter((key) => !same(before.get(key), after.get(key))));
 }
 
+/** Merges items. */
 function mergeItems<T>(base: readonly T[], local: readonly T[], remote: readonly T[], id: (item: T) => string) {
   const changed = changedItemIds(base, local, id);
   const localById = new Map(local.map((item) => [id(item), item]));
@@ -523,6 +549,7 @@ function mergeItems<T>(base: readonly T[], local: readonly T[], remote: readonly
   return merged;
 }
 
+/** Merges desktop layout. */
 export function mergeDesktopLayout(base: DesktopLayout, local: DesktopLayout, remote: DesktopLayout) {
   const merged = parseLayout({
     autoArrangeIcons: same(local.autoArrangeIcons, base.autoArrangeIcons) ? remote.autoArrangeIcons : local.autoArrangeIcons,
@@ -535,10 +562,12 @@ export function mergeDesktopLayout(base: DesktopLayout, local: DesktopLayout, re
   return same(merged, local) ? local : merged;
 }
 
+/** Merges layout. */
 function mergeLayout(operation: Extract<OutboxOperation, { kind: "layout" }>, remote: DesktopLayout) {
   return operation.conflictBase ? mergeDesktopLayout(operation.conflictBase, operation.layout, remote) : operation.layout;
 }
 
+/** Merges editor settings. */
 function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor-settings" }>, remote: EditorSettings) {
   const base = operation.conflictBase;
   if (!base) return operation.settings;
@@ -546,6 +575,7 @@ function mergeEditorSettings(operation: Extract<OutboxOperation, { kind: "editor
   return parseEditorSettings({ ...Object.fromEntries((Object.keys(base) as Array<keyof EditorSettings>).filter((key) => key !== "fileCreationTemplates").map((key) => [key, same(operation.settings[key], base[key]) ? remote[key] : operation.settings[key]])), fileCreationTemplates: templates });
 }
 
+/** Reports whether an operation's intent is already satisfied. */
 function operationIntentIsSatisfied(operation: OutboxOperation, remote: DesktopStateSnapshot) {
   switch (operation.kind) {
     case "patch-entry": {
@@ -577,6 +607,7 @@ function operationIntentIsSatisfied(operation: OutboxOperation, remote: DesktopS
   }
 }
 
+/** Resolves outbox revision conflict. */
 export function resolveOutboxRevisionConflict(operation: OutboxOperation, conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): OutboxConflictResolution {
   const rebased = rebaseOutboxOperationForConflict(operation, conflict);
   if (!rebased) return { kind: "blocked", fields: [conflict.resourceKind] };
@@ -623,6 +654,7 @@ export function resolveOutboxRevisionConflict(operation: OutboxOperation, confli
   return { kind: "blocked", fields: [conflict.resourceKind] };
 }
 
+/** Returns force rebase outbox operation. */
 export function forceRebaseOutboxOperation(operation: OutboxOperation, conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): OutboxOperation | null {
   if (!rebaseOutboxOperationForConflict(operation, conflict)) return null;
   switch (operation.kind) {

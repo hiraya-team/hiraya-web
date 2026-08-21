@@ -2,10 +2,12 @@ import type { DesktopIdentity } from "../types";
 import type { DesktopPreference } from "../domain/preferences";
 export type { DesktopPreference } from "../domain/preferences";
 
+/** Computes desktop preferences. */
 export function desktopPreferences(desktops: readonly DesktopIdentity[]): DesktopPreference[] {
   return desktops.map(({ id, pinned }) => ({ id, pinned }));
 }
 
+/** Returns arrange desktops. */
 export function arrangeDesktops(desktops: readonly DesktopIdentity[], preferences: readonly DesktopPreference[] = []) {
   const byId = new Map(desktops.map((desktop) => [desktop.id, desktop]));
   const arranged = preferences.flatMap(({ id, pinned }) => {
@@ -18,6 +20,7 @@ export function arrangeDesktops(desktops: readonly DesktopIdentity[], preference
   return [...arranged.filter((desktop) => desktop.pinned), ...arranged.filter((desktop) => !desktop.pinned)];
 }
 
+/** Moves desktop preference. */
 export function moveDesktopPreference(preferences: readonly DesktopPreference[], id: string, direction: -1 | 1) {
   const index = preferences.findIndex((desktop) => desktop.id === id);
   if (index < 0) return [...preferences];
@@ -28,6 +31,7 @@ export function moveDesktopPreference(preferences: readonly DesktopPreference[],
   return next;
 }
 
+/** Returns pin desktop preference. */
 export function pinDesktopPreference(preferences: readonly DesktopPreference[], id: string, pinned: boolean) {
   const current = preferences.find((desktop) => desktop.id === id);
   if (!current || current.pinned === pinned) return [...preferences];

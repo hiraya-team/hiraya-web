@@ -7,10 +7,12 @@ type ShellState = { kind: "loading" } | ShellStartup | { kind: "authentication-r
 type RichDesktop = ComponentType<DesktopStart>;
 type PublicDesktop = ComponentType<{ authority: PublicAuthority }>;
 
+/** Renders the startup interface. */
 function Startup() {
   return <main className="startup-state" role="status"><img src={`${import.meta.env.BASE_URL}hiraya-icon.svg`} alt="" /><div><strong>Hiraya</strong><span>Opening desktop...</span></div></main>;
 }
 
+/** Renders the shell interface. */
 export default function Shell() {
   const [state, setState] = useState<ShellState>({ kind: "loading" });
   const [richDesktop, setRichDesktop] = useState<RichDesktop | null>(null);

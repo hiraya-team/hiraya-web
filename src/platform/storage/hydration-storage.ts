@@ -34,6 +34,7 @@ export type HydrationStorageEnvironment = FilesystemDatabaseEnvironment & {
   createBroadcastChannel?: (name: string) => FilesystemBroadcastChannel;
 };
 
+/** Opens hydration storage. */
 export async function openHydrationStorage(accountId: string, environment: HydrationStorageEnvironment): Promise<HydrationStorage> {
   const database = await openFilesystemDatabase(accountId, environment);
   try {

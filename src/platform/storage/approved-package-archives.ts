@@ -2,7 +2,9 @@ import { filesystemDatabaseName, openFilesystemDatabase, type FilesystemDatabase
 import { getAccountOpfsRoot } from "../../filesystem/chunks";
 import { parseSha256, sha256Hex } from "../../filesystem/model";
 
+/** Identifies the approved-package archive directory. */
 const DIRECTORY = "approved-package-archives";
+/** Serializes approved-package archive operations. */
 const work = new Map<string, Promise<void>>();
 
 export type ApprovedPackageArchiveEnvironment = FilesystemDatabaseEnvironment & {
@@ -17,14 +19,17 @@ export type ApprovedPackageArchives = {
   close(): void;
 };
 
+/** Reports whether an error represents a missing OPFS entry. */
 function isNotFound(error: unknown) {
   return error instanceof DOMException && error.name === "NotFoundError";
 }
 
+/** Verifies an archive against its expected size and digest. */
 async function verify(digest: string, archive: Blob) {
   if (archive.size === 0 || await sha256Hex(await archive.arrayBuffer()) !== digest) throw new Error("Approved package archive does not match its digest.");
 }
 
+/** Opens approved package archives. */
 export async function openApprovedPackageArchives(accountId: string, environment: ApprovedPackageArchiveEnvironment): Promise<ApprovedPackageArchives> {
   const database = await openFilesystemDatabase(accountId, environment);
   const directory = await (await getAccountOpfsRoot(environment.storageId, environment.originRoot)).getDirectoryHandle(DIRECTORY, { create: true });

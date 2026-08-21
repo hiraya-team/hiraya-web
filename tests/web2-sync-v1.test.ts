@@ -85,15 +85,19 @@ type Corpus = {
   };
 };
 
+/** Provides the corpus bytes test fixture. */
 const corpusBytes = new Uint8Array(await Bun.file(new URL("../testdata/web2-sync-v1/corpus.json", import.meta.url)).arrayBuffer());
+/** Provides the raw test fixture. */
 const raw = JSON.parse(new TextDecoder().decode(corpusBytes)) as unknown;
 
+/** Builds the exact test fixture. */
 function exact(value: unknown, keys: readonly string[], label: string): asserts value is Record<string, unknown> {
   expect(isRecord(value), `${label} must be an object`).toBe(true);
   if (!isRecord(value)) throw new Error(`${label} must be an object`);
   expect(Object.keys(value).sort(), `${label} keys`).toEqual([...keys].sort());
 }
 
+/** Builds the cases test fixture. */
 function cases(value: unknown, keys: readonly string[], label: string) {
   expect(Array.isArray(value), `${label} must be an array`).toBe(true);
   if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
@@ -107,12 +111,14 @@ function cases(value: unknown, keys: readonly string[], label: string) {
   expect(new Set(names).size, `${label} names must be unique`).toBe(names.length);
 }
 
+/** Builds the valid and invalid test fixture. */
 function validAndInvalid(value: unknown, validKeys: readonly string[], invalidKeys: readonly string[], label: string) {
   exact(value, ["valid", "invalid"], label);
   cases(value.valid, validKeys, `${label}.valid`);
   cases(value.invalid, invalidKeys, `${label}.invalid`);
 }
 
+/** Parses corpus. */
 function parseCorpus(value: unknown): Corpus {
   exact(value, ["schemaVersion", "protocol", "constants", "primitives", "manifests", "operations", "hydrationTargets", "hydrationRequests", "bootstrapRequests", "bootstrap", "hydrationPages", "pullRequests", "pullResults", "continuationResetPairs", "pushResults", "pushBatchResults", "pushRequests", "conflictMatrix", "receipts", "tupleOrdering", "manifestAccess", "chunkNegotiation"], "corpus");
   exact(value.constants, ["indexedDbPrefix", "opfsPrefix", "chunkSize"], "constants");
@@ -148,13 +154,16 @@ function parseCorpus(value: unknown): Corpus {
   return value as unknown as Corpus;
 }
 
+/** Provides the corpus test fixture. */
 const corpus = parseCorpus(raw);
 
+/** Builds the accepts test fixture. */
 function accepts(parse: (value: unknown) => unknown, item: PrimitiveCase) {
   const accepted = (() => { try { parse(item.value); return true; } catch { return false; } })();
   expect(accepted, item.name).toBe(item.valid);
 }
 
+/** Builds the accepts continuation reset pair test fixture. */
 function acceptsContinuationResetPair(item: PairCase) {
   try {
     if (item.kind === "continuation") {
@@ -170,8 +179,11 @@ function acceptsContinuationResetPair(item: PairCase) {
   }
 }
 
+/** Defines the operation kinds. */
 const OPERATION_KINDS = ["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"];
+/** Defines the hydration kinds. */
 const HYDRATION_KINDS = ["folder-page", "exact-nodes", "ancestry", "exact-settings", "setting-namespace"];
+/** Provides the conflict categories test fixture. */
 const CONFLICT_CATEGORIES = ["name", "parent", "lifecycle", "position", "content", "setting", "delete-restore-purge"];
 
 describe("web2-sync-v1 corpus", () => {

@@ -3,6 +3,7 @@ import type { DesktopEntry } from "../types";
 export type FolderSortKey = "name" | "date" | "type" | "size";
 export type SortDirection = "asc" | "desc";
 
+/** Maps folder sorting rules to user-facing labels. */
 const SORT_LABELS: Record<FolderSortKey, string> = {
   name: "Name",
   date: "Date modified",
@@ -10,17 +11,21 @@ const SORT_LABELS: Record<FolderSortKey, string> = {
   size: "Size",
 };
 
+/** Formats the active folder sorting rule for display. */
 export function sortSummary(key: FolderSortKey, direction: SortDirection) {
   return `Sorted by ${SORT_LABELS[key]}, ${direction === "asc" ? "ascending" : "descending"}.`;
 }
 
+/** Formats the action that changes a folder sorting rule. */
 export function sortActionLabel(key: FolderSortKey, activeKey: FolderSortKey, direction: SortDirection) {
   const nextDirection = key === activeKey && direction === "asc" ? "descending" : "ascending";
   return `Sort by ${SORT_LABELS[key]}, ${nextDirection}`;
 }
 
+/** Returns the sortable type rank for a desktop entry. */
 const entryType = (entry: DesktopEntry) => (entry.kind === "folder" ? "folder" : entry.mimeType || "file");
 
+/** Filters folder entries and applies the requested ordering. */
 export function filterAndSortEntries(entries: readonly DesktopEntry[], query: string, sortKey: FolderSortKey, direction: SortDirection) {
   const needle = query.trim().toLocaleLowerCase();
   const filtered = needle ? entries.filter((entry) => entry.name.toLocaleLowerCase().includes(needle)) : entries;
@@ -52,6 +57,7 @@ export function filterAndSortEntries(entries: readonly DesktopEntry[], query: st
   });
 }
 
+/** Formats entry size for display. */
 export function formatEntrySize(entry: DesktopEntry) {
   if (entry.kind === "folder") return "";
   if (entry.size < 1024) return `${entry.size} ${entry.size === 1 ? "byte" : "bytes"}`;

@@ -3,7 +3,9 @@ import { assertIconGroupFolders, assertSceneFiles, assertWallpaperSource, isReco
 import { parseThemeState } from "./themes";
 import type { ThemeState } from "../domain/theme";
 
+/** Matches portable seeded-content URLs. */
 declare const portableContentUrl: unique symbol;
+/** Matches bundled seeded-content URLs. */
 declare const bundledContentUrl: unique symbol;
 export type PortableContentUrl = string & { readonly [portableContentUrl]: true };
 export type BundledContentUrl = string & { readonly [bundledContentUrl]: true };
@@ -25,6 +27,7 @@ export type BundledSeededManifest = Omit<PortableSeededManifest, "entries"> & {
 
 export type SeededManifest = BundledSeededManifest;
 
+/** Parses and validates a seeded desktop manifest. */
 function readSeeded(value: unknown, portable: boolean): PortableSeededManifest {
   if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.entries)) {
     throw new Error("The seeded desktop manifest has an unsupported format.");
@@ -62,6 +65,7 @@ function readSeeded(value: unknown, portable: boolean): PortableSeededManifest {
   return { schemaVersion: 1, layout, editorSettings, appearance, entries };
 }
 
+/** Validates portable content URL. */
 export function assertPortableContentUrl(contentUrl: string) {
   if (contentUrl.startsWith("/") || contentUrl.includes("\\") || /[?#]/.test(contentUrl) || /^[a-z][a-z\d+.-]*:/i.test(contentUrl)) {
     throw new Error("Seeded files must use relative contentUrl values without a query or fragment.");
@@ -72,14 +76,17 @@ export function assertPortableContentUrl(contentUrl: string) {
   }
 }
 
+/** Parses and validates portable seeded manifest. */
 export function parsePortableSeededManifest(value: unknown): PortableSeededManifest {
   return readSeeded(value, true);
 }
 
+/** Parses and validates bundled seeded manifest. */
 export function parseBundledSeededManifest(value: unknown): BundledSeededManifest {
   return readSeeded(value, false) as unknown as BundledSeededManifest;
 }
 
+/** Returns to portable seeded manifest. */
 export function toPortableSeededManifest(
   desktop: { layout: DesktopLayout; editorSettings: EditorSettings; appearance: ThemeState; entries: DesktopEntry[] },
   contentUrlFor: (file: FileEntry) => string,

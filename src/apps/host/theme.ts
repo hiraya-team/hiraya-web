@@ -1,6 +1,7 @@
 import type { ThemeTokens } from "@hiraya-team/apps-contracts";
 import type { ThemeDefinition } from "../../domain/theme";
 
+/** Maps a desktop theme definition to sandbox-safe theme tokens. */
 export function mapThemeTokens(theme: ThemeDefinition): ThemeTokens {
   const { colors } = theme;
   return {
@@ -18,29 +19,35 @@ export function mapThemeTokens(theme: ThemeDefinition): ThemeTokens {
   };
 }
 
+/** Publishes the active desktop theme to hosted app instances. */
 export class AppThemeService {
   readonly #listeners = new Set<(theme: ThemeTokens) => void>();
   #theme: ThemeTokens;
 
+  /** Creates a theme service from desktop or already-mapped tokens. */
   constructor(theme: ThemeDefinition | ThemeTokens) {
     this.#theme = "colors" in theme ? mapThemeTokens(theme) : { ...theme };
   }
 
+  /** Returns a defensive copy of the current theme tokens. */
   async get(): Promise<ThemeTokens> {
     return { ...this.#theme };
   }
 
+  /** Replaces the active theme and notifies subscribers. */
   set(theme: ThemeDefinition | ThemeTokens): void {
     this.#theme = "colors" in theme ? mapThemeTokens(theme) : { ...theme };
     for (const listener of this.#listeners) listener({ ...this.#theme });
   }
 
+  /** Subscribes to subsequent hosted-app theme changes. */
   subscribe(listener: (theme: ThemeTokens) => void): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
 }
 
+/** Determines whether a hexadecimal color has dark relative luminance. */
 function isDark(color: string): boolean {
   const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255)
     .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);

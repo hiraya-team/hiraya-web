@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { guideSectionMarkdown, HELP_SECTIONS, guideMarkdown, validateGuideLinks } from "../src/lib/help";
 
+/** Provides the heading IDs test fixture. */
 const headingIds = new Set(Array.from(guideMarkdown.matchAll(/^#{1,6}\s+.+?\s+\{#([a-z][a-z0-9-]*)\}\s*$/gm), (match) => match[1]));
 
 describe("bundled user guide", () => {

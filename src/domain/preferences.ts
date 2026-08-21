@@ -16,6 +16,7 @@ export type LocalPreferences = {
 
 export type DevicePreferences = Omit<LocalPreferences, "showDesktopMinimap" | "desktops">;
 
+/** Provides immutable defaults for device-local preferences. */
 export const DEFAULT_DEVICE_PREFERENCES: DevicePreferences = {
   autoUpdate: true,
   externalEmbeddedPreviews: false,
@@ -26,6 +27,7 @@ export const DEFAULT_DEVICE_PREFERENCES: DevicePreferences = {
   showHiddenFiles: false,
 };
 
+/** Parses and validates device preferences. */
 export function parseDevicePreferences(value: unknown): DevicePreferences {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Device preferences have an unsupported format.");
   const item = value as Record<string, unknown>;

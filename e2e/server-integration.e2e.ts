@@ -1,14 +1,23 @@
 import { expect, test, chromium, type BrowserContext, type Page } from "@playwright/test";
 import { gzipSync } from "node:zlib";
 
+/** Provides the phase test fixture. */
 const phase = process.env.HIRAYA_SERVER_E2E_PHASE ?? "primary";
+/** Provides the base URL test fixture. */
 const baseURL = process.env.HIRAYA_SERVER_E2E_BASE_URL ?? "http://127.0.0.1:18080";
+/** Provides the profile root test fixture. */
 const profileRoot = process.env.HIRAYA_SERVER_E2E_PROFILE_ROOT;
+/** Provides the owner email test fixture. */
 const ownerEmail = process.env.HIRAYA_SERVER_E2E_EMAIL ?? "e2e-admin@example.test";
+/** Provides the owner password test fixture. */
 const ownerPassword = process.env.HIRAYA_SERVER_E2E_PASSWORD ?? "release-gate-e2e-password";
+/** Provides the member email test fixture. */
 const memberEmail = "e2e-member@example.test";
+/** Provides the member password test fixture. */
 const memberPassword = "member-release-gate-password";
+/** Provides the file name test fixture. */
 const fileName = "web2-architecture-proof.txt";
+/** Provides the folder name test fixture. */
 const folderName = "Web2 hydrated folder";
 
 type Session = { accounts: Array<{ id: string; storageId: string; workspaces: Array<{ id: string }> }> };
@@ -16,26 +25,31 @@ type Tuple = { logicalTime: number; operationId: string };
 type StoredNode = { id: string; workspaceId: string; name: string; kind: string; parentKey: string; lifecycleKey: string; fieldTuples?: { content?: Tuple } };
 type PushedOperation = { kind: string; nodeIds?: string[]; namespace?: string; key?: string };
 
+/** Returns the browser profile path. */
 function profile(name: "a" | "b") {
   if (!profileRoot) throw new Error("HIRAYA_SERVER_E2E_PROFILE_ROOT is required.");
   return `${profileRoot}/${name}`;
 }
 
+/** Launches a browser session. */
 async function launch(name: "a" | "b") {
   return chromium.launchPersistentContext(profile(name), { baseURL, headless: true, viewport: { width: 1280, height: 800 } });
 }
 
+/** Dismisses onboarding when it is visible. */
 async function dismissOnboarding(page: Page) {
   const openDesktop = page.getByRole("button", { name: "Open desktop", exact: true });
   await openDesktop.waitFor({ state: "visible", timeout: 2_000 }).catch(() => undefined);
   if (await openDesktop.isVisible().catch(() => false)) await openDesktop.click();
 }
 
+/** Asserts service worker. */
 async function expectServiceWorker(page: Page) {
   await page.waitForFunction(async () => Boolean((await navigator.serviceWorker?.getRegistration())?.active), undefined, { timeout: 30_000 });
   await page.waitForFunction(() => navigator.serviceWorker?.controller !== null, undefined, { timeout: 30_000 });
 }
 
+/** Asserts desktop. */
 async function expectDesktop(page: Page) {
   await expect(page.locator(".desktop-shell, .startup-error")).toBeVisible({ timeout: 30_000 });
   const startupError = page.locator(".startup-error");
@@ -43,6 +57,7 @@ async function expectDesktop(page: Page) {
   await expect(page.locator(".desktop-shell")).toBeVisible({ timeout: 30_000 });
 }
 
+/** Signs in through the server-owned login page. */
 async function signIn(context: BrowserContext) {
   const page = context.pages()[0] ?? await context.newPage();
   await page.goto("/login");
@@ -56,6 +71,7 @@ async function signIn(context: BrowserContext) {
   return page;
 }
 
+/** Returns the authenticated session. */
 async function session(page: Page): Promise<Session> {
   return page.evaluate(async () => {
     const response = await fetch("/api/auth/session", { cache: "no-store" });
@@ -64,10 +80,12 @@ async function session(page: Page): Promise<Session> {
   });
 }
 
+/** Creates a unique test token. */
 function token() {
   return Buffer.from(crypto.getRandomValues(new Uint8Array(32))).toString("base64url");
 }
 
+/** Invites a workspace member through sharing settings. */
 async function inviteMember(page: Page, workspaceId: string) {
   const invitation = { id: crypto.randomUUID(), token: token() };
   const status = await page.evaluate(async ({ workspaceId, invitation, email }) => (await fetch(`/api/workspaces/${workspaceId}/sharing/invitations/${invitation.id}`, {
@@ -79,6 +97,7 @@ async function inviteMember(page: Page, workspaceId: string) {
   return invitation;
 }
 
+/** Registers a new account. */
 async function register(context: BrowserContext, invitation: { token: string }, accountId: string, bootstrapRequests: unknown[]) {
   const page = context.pages()[0] ?? await context.newPage();
   page.on("request", (request) => { if (request.url().endsWith("/sync/bootstrap")) bootstrapRequests.push(request.postDataJSON()); });
@@ -94,6 +113,7 @@ async function register(context: BrowserContext, invitation: { token: string }, 
   return page;
 }
 
+/** Creates folder. */
 async function createFolder(page: Page, name: string) {
   await page.locator(".desktop").click({ position: { x: 560, y: 340 } });
   await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New folder" }).click();
@@ -102,6 +122,7 @@ async function createFolder(page: Page, name: string) {
   await expect(page.getByRole("button", { name: `${name}, folder` })).toBeVisible();
 }
 
+/** Creates text file. */
 async function createTextFile(page: Page, name: string) {
   await page.getByRole("toolbar", { name: "File actions" }).getByRole("button", { name: "New text file" }).click();
   await page.getByLabel("File name").fill(name);
@@ -109,6 +130,7 @@ async function createTextFile(page: Page, name: string) {
   await expect(page.locator(".file-icon").filter({ hasText: name })).toBeVisible();
 }
 
+/** Verifies that the editor retains its draft while offline. */
 async function retainEditorOffline(page: Page) {
   await page.getByRole("button", { name: "Search apps, files, windows, and commands" }).click();
   const search = page.getByRole("dialog", { name: /Search/ });
@@ -119,6 +141,7 @@ async function retainEditorOffline(page: Page) {
   await page.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
 }
 
+/** Edits and saves text through the desktop editor. */
 async function editText(page: Page, name: string, text: string) {
   await page.locator(".file-icon").filter({ hasText: name }).focus();
   await page.keyboard.press("Enter");
@@ -132,6 +155,7 @@ async function editText(page: Page, name: string, text: string) {
   await page.getByRole("button", { name: /Close .*Integrated Editor/ }).click();
 }
 
+/** Reads text. */
 async function readText(page: Page, name: string) {
   await page.locator(".file-icon").filter({ hasText: name }).focus();
   await page.keyboard.press("Enter");
@@ -143,6 +167,7 @@ async function readText(page: Page, name: string) {
   return text;
 }
 
+/** Reads the current file metadata tuple. */
 async function fileTuple(page: Page, name: string): Promise<Tuple> {
   return page.evaluate(async (fileName) => {
     const databases = await indexedDB.databases();
@@ -161,10 +186,12 @@ async function fileTuple(page: Page, name: string): Promise<Tuple> {
   }, name);
 }
 
+/** Compares synchronization tuples. */
 function greater(left: Tuple, right: Tuple) {
   return left.logicalTime === right.logicalTime ? (left.operationId > right.operationId ? left : right) : left.logicalTime > right.logicalTime ? left : right;
 }
 
+/** Runs one round of concurrent editing. */
 async function concurrentRound(a: Page, b: Page, aContext: BrowserContext, bContext: BrowserContext, aText: string, bText: string, order: "ab" | "ba") {
   const [aCurrent, bCurrent] = await Promise.all([readText(a, fileName), readText(b, fileName)]);
   expect(aCurrent).toBe(bCurrent);
@@ -185,6 +212,7 @@ async function concurrentRound(a: Page, b: Page, aContext: BrowserContext, bCont
   return { winning, expected, losing };
 }
 
+/** Restores retained version. */
 async function restoreRetainedVersion(page: Page, text: string) {
   const icon = page.locator(".file-icon").filter({ hasText: fileName });
   await icon.click({ button: "right" });
@@ -202,6 +230,7 @@ async function restoreRetainedVersion(page: Page, text: string) {
   return fileTuple(page, fileName);
 }
 
+/** Verifies rejection of the retired synchronization protocol. */
 async function rejectRetiredProtocol(page: Page, workspaceId: string) {
   const result = await page.evaluate(async (workspaceId) => {
     const oldRoute = await fetch("/api/desktops", { headers: { "X-Hiraya-Protocol": "entry-transactions-v2" } });
@@ -212,6 +241,7 @@ async function rejectRetiredProtocol(page: Page, workspaceId: string) {
   expect(result.oldHeader).toBeGreaterThanOrEqual(400);
 }
 
+/** Revokes access and verifies authorization is enforced. */
 async function revokeAndProveAuthorization(a: Page, b: Page, bContext: BrowserContext, workspaceId: string) {
   await bContext.setOffline(true);
   await createFolder(b, "B pending before revocation");

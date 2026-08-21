@@ -1,16 +1,23 @@
+/** Computes desktop base. */
 const desktopBase = (desktopId: string) => `/api/desktops/${encodeURIComponent(desktopId)}`;
+/** Computes public desktop base. */
 const publicDesktopBase = (desktopAlias: string, itemAlias?: string) => `/api/public/desktops/${encodeURIComponent(desktopAlias)}${itemAlias ? `/${encodeURIComponent(itemAlias)}` : ""}`;
+/** Returns app base. */
 const appBase = (appId: string) => `/api/apps/${encodeURIComponent(appId)}`;
+/** Returns app resource base. */
 const appResourceBase = (kind: "installation" | "handlers" | "manifests", appId?: string) => `/api/apps/resources/${kind}${appId ? `/${encodeURIComponent(appId)}` : ""}`;
 
+/** Defines the Hiraya API protocol. */
 export const HIRAYA_API_PROTOCOL = "entry-transactions-v2";
 
+/** Returns authenticated headers. */
 export function authenticatedHeaders(headers?: HeadersInit) {
   const result = new Headers(headers);
   result.set("X-Hiraya-Protocol", HIRAYA_API_PROTOCOL);
   return result;
 }
 
+/** Defines the API routes. */
 export const API_ROUTES = {
   authSession: "/api/auth/session",
   desktops: "/api/desktops",
@@ -71,6 +78,7 @@ export const API_ROUTES = {
   appResourceContent: (kind: "installation" | "handlers" | "manifests", appId?: string) => `${appResourceBase(kind, appId)}/content`,
 } as const;
 
+/** Defines the server routes. */
 export const SERVER_ROUTES = {
   login: "/login",
   profile: "/profile",

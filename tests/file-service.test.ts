@@ -8,6 +8,7 @@ import { grantLaunchCapabilities, grantPickedFiles, grantPickedFilesWithParentSc
 import type { DesktopEntry, FileEntry, FolderEntry } from "../src/types";
 import { desktopStateSnapshot } from "./fixtures";
 
+/** Creates the test fixture. */
 function fixture() {
   const folder: FolderEntry = { kind: "folder", id: "folder-id", name: "Folder", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 1, y: 2 } };
   const nested: FileEntry = { kind: "file", id: "nested-id", name: "nested.bin", parentId: folder.id, createdAt: 1, modifiedAt: 2, position: { x: 3, y: 4 }, mimeType: "application/octet-stream", size: 3 };
@@ -48,6 +49,7 @@ function fixture() {
   return { capabilities, service, sync, calls, folder, nested, unrelated, contents, snapshot: () => snapshot };
 }
 
+/** Asserts that a file-service request fails with the expected code. */
 async function expectCode(promise: Promise<unknown>, code: string) {
   try { await promise; } catch (error) { expect(error).toBeInstanceOf(FileServiceError); expect((error as FileServiceError).code).toBe(code); return; }
   throw new Error(`Expected ${code}.`);

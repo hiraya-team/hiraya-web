@@ -1,4 +1,6 @@
+/** Identifies Hiraya Todo JSON documents. */
 export const TODO_MIME_TYPE = "application/vnd.hiraya.todo+json";
+/** Defines the canonical extension for Hiraya Todo documents. */
 export const TODO_EXTENSION = ".hiraya.todo";
 
 export type TodoItem = {
@@ -13,8 +15,10 @@ export type TodoItem = {
 export type TodoTask = TodoItem & { subitems: TodoItem[] };
 export type TodoDocument = { schemaVersion: 2; tasks: TodoTask[] };
 
+/** Caps the total number of tasks and subitems in one Todo document. */
 const MAX_TASKS = 10_000;
 
+/** Parses and validates a version 2 Todo document. */
 export function parseTodoText(text: string): TodoDocument {
   let value: unknown;
   try { value = JSON.parse(text); } catch { throw new Error("This Todo file is not valid JSON."); }
@@ -29,16 +33,19 @@ export function parseTodoText(text: string): TodoDocument {
   return { schemaVersion: 2, tasks };
 }
 
+/** Serializes a Todo document as stable human-readable JSON. */
 export function serializeTodo(document: TodoDocument): string {
   return `${JSON.stringify(document, null, 2)}\n`;
 }
 
+/** Immutably updates completion for a task or subitem. */
 export function setTodoCompleted(document: TodoDocument, id: string, completed: boolean): TodoDocument {
   return { ...document, tasks: document.tasks.map((task) => task.id === id
     ? { ...task, completed }
     : { ...task, subitems: task.subitems.map((item) => item.id === id ? { ...item, completed } : item) }) };
 }
 
+/** Flattens incomplete tasks and subitems for widget display. */
 export function activeTodoItems(document: TodoDocument): { item: TodoItem; nested: boolean }[] {
   return document.tasks.flatMap((task) => {
     const subitems = task.subitems.filter((item) => !item.completed);
@@ -46,6 +53,7 @@ export function activeTodoItems(document: TodoDocument): { item: TodoItem; neste
   });
 }
 
+/** Parses and validates one top-level Todo task. */
 function parseTask(value: unknown): TodoTask {
   const object = record(value, "Task");
   exact(object, ["id", "title", "completed", "priority", "subitems"], "Task", ["dueDate", "description"]);
@@ -53,6 +61,7 @@ function parseTask(value: unknown): TodoTask {
   return { ...parseItem(object, "Task", true), subitems: object.subitems.map((item) => parseItem(item, "Subitem", false)) };
 }
 
+/** Parses the fields shared by tasks and subitems. */
 function parseItem(value: unknown, label: string, hasSubitems: boolean): TodoItem {
   const object = record(value, label);
   if (!hasSubitems) exact(object, ["id", "title", "completed", "priority"], label, ["dueDate", "description"]);
@@ -66,16 +75,19 @@ function parseItem(value: unknown, label: string, hasSubitems: boolean): TodoIte
   return { id, title, completed: object.completed, priority: object.priority, ...(dueDate ? { dueDate } : {}), ...(description ? { description } : {}) };
 }
 
+/** Requires an unknown value to be a JSON object. */
 function record(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error(`${label} must be an object.`);
   return value as Record<string, unknown>;
 }
 
+/** Requires exactly the supported keys for a Todo object. */
 function exact(object: Record<string, unknown>, required: string[], label: string, optional: string[] = []) {
   const keys = Object.keys(object);
   if (required.some((key) => !Object.hasOwn(object, key)) || keys.some((key) => !required.includes(key) && !optional.includes(key))) throw new Error(`${label} has missing or unsupported fields.`);
 }
 
+/** Parses trimmed, bounded plain text. */
 function text(value: unknown, label: string, maximum: number) {
   if (typeof value !== "string") throw new Error(`${label} must be text.`);
   const result = value.trim();
@@ -83,11 +95,13 @@ function text(value: unknown, label: string, maximum: number) {
   return result;
 }
 
+/** Parses bounded Markdown while preserving authored whitespace. */
 function markdown(value: unknown, label: string, maximum: number) {
   if (typeof value !== "string" || !value.trim() || value.length > maximum) throw new Error(`${label} must contain between 1 and ${maximum} characters.`);
   return value;
 }
 
+/** Parses a real calendar date in canonical ISO date form. */
 function date(value: unknown) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) throw new Error("Task due date must use YYYY-MM-DD.");
   const [year, month, day] = value.split("-").map(Number);

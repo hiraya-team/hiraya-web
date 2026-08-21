@@ -33,28 +33,35 @@ type DesktopState = import("../domain/desktop-state").PersistedDesktopState;
 
 // Local aliases keep mutation code focused on state transitions rather than persistence mechanics.
 type Manifest = DesktopState;
+/** Parses and validates manifest v13. */
 const parseManifestV13 = parseDesktopState;
+/** Defines the persisted manifest layout. */
 const manifestLayout = desktopStateLayout;
 
+/** Writes desktop state. */
 async function writeDesktopState(state: DesktopState, activity?: NewActivityRecord) {
   await callDatabase("replaceDesktopState", { state, activity });
   desktopLoad = Promise.resolve(state);
 }
 
+/** Returns activity details. */
 function activityDetails(entries: DesktopEntry[]) {
   const names = entries.slice(0, 18).map((entry) => `${entry.kind === "file" ? "File" : "Folder"}: ${entry.name}`);
   if (entries.length > names.length) names.push(`Additional items: ${entries.length - names.length}`);
   return names;
 }
 
+/** Returns location detail. */
 function locationDetail(entries: DesktopEntry[], parentId: string | null) {
   return `Location: ${parentId === null ? "Desktop" : entries.find((entry) => entry.id === parentId)?.name ?? "Unknown folder"}`;
 }
 
+/** Validates valid desktop state. */
 function assertValidDesktopState(state: DesktopState) {
   parseDesktopState(state);
 }
 
+/** Creates desktop state from seeded. */
 async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<DesktopState> {
   const parsedSeeded = parseBundledSeededManifest(seeded);
   const files = parsedSeeded.entries.filter((entry) => entry.kind === "file");
@@ -95,6 +102,7 @@ async function createDesktopStateFromSeeded(seeded: SeededManifest): Promise<Des
   return created;
 }
 
+/** Reads active desktop state. */
 async function readActiveDesktopState(seeded: SeededManifest | null = null): Promise<DesktopState> {
   await ensureLocalDatabase();
   const desktopId = getActiveDesktopContext();
@@ -111,6 +119,7 @@ async function readActiveDesktopState(seeded: SeededManifest | null = null): Pro
   }
 }
 
+/** Recovers interrupted local file transactions. */
 async function recoverLocalFileTransactions() {
   await recoverLocalContentReplacements(async (journal) => {
     try {
@@ -121,6 +130,7 @@ async function recoverLocalFileTransactions() {
   });
 }
 
+/** Ensures local database. */
 async function ensureLocalDatabase() {
   databaseInitialization ??= initializeDatabase().then(recoverLocalFileTransactions).catch((error) => {
     databaseInitialization = null;
@@ -129,10 +139,14 @@ async function ensureLocalDatabase() {
   await databaseInitialization;
 }
 
+/** Reads manifest. */
 const readManifest = readActiveDesktopState;
+/** Writes manifest. */
 const writeManifest = writeDesktopState;
+/** Validates valid manifest. */
 const assertValidManifest = assertValidDesktopState;
 
+/** Returns globally protected file IDs without acquiring a lock. */
 async function globallyProtectedFileIdsUnsafe(records: readonly OutboxRecord[]) {
   const registry = await callDatabase("listDesktops", undefined, null);
   const states: Manifest[] = [];
@@ -140,6 +154,7 @@ async function globallyProtectedFileIdsUnsafe(records: readonly OutboxRecord[]) 
   return outboxProtectedFileIds(records, states);
 }
 
+/** Returns content IDs referenced by desktop state. */
 function stateContentIds(state: Pick<DesktopState, "entries" | "appearance">) {
   return [
     ...state.entries.filter((entry) => entry.kind === "file").map((entry) => entry.id),
@@ -148,6 +163,7 @@ function stateContentIds(state: Pick<DesktopState, "entries" | "appearance">) {
 }
 
 
+/** Returns find parent. */
 function findParent(entries: DesktopEntry[], parentId: string | null) {
   if (parentId === null) return;
   const parent = entries.find((entry) => entry.id === parentId);
@@ -156,12 +172,14 @@ function findParent(entries: DesktopEntry[], parentId: string | null) {
   return parent;
 }
 
+/** Returns a required desktop entry by ID. */
 function getEntry(entries: DesktopEntry[], id: string) {
   const entry = entries.find((candidate) => candidate.id === id);
   if (!entry) throw new Error("That entry no longer exists.");
   return entry;
 }
 
+/** Returns a required file entry by ID. */
 function getFileEntry(entries: DesktopEntry[], id: string): FileEntry {
   const entry = getEntry(entries, id);
   if (entry.kind !== "file") throw new Error("Folders do not have file content.");
@@ -171,10 +189,12 @@ function getFileEntry(entries: DesktopEntry[], id: string): FileEntry {
 let desktopLoad: Promise<DesktopState> | null = null;
 let databaseInitialization: Promise<void> | null = null;
 
+/** Returns empty desktop state. */
 function emptyDesktopState(): DesktopState {
   return { entries: [], autoArrangeIcons: true, snapToGrid: false, gridSize: DEFAULT_GRID_SIZE, wallpaper: DEFAULT_WALLPAPER, widgets: [], iconGroups: [], editorSettings: DEFAULT_EDITOR_SETTINGS, appearance: DEFAULT_THEME_STATE, sync: emptySyncState() };
 }
 
+/** Lists desktops without acquiring serialization locks. */
 async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
   await ensureLocalDatabase();
   const result = await callDatabase("listDesktops", undefined, null);
@@ -189,6 +209,7 @@ async function listDesktopsUnsafe(seeded: SeededManifest | null = null) {
   return { desktops, activeDesktopId };
 }
 
+/** Creates desktop without acquiring serialization locks. */
 async function createDesktopUnsafe(nameValue: string) {
   await ensureLocalDatabase();
   const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
@@ -204,6 +225,7 @@ async function createDesktopUnsafe(nameValue: string) {
   return parseDesktopIdentity(await callDatabase("createDesktop", { desktop, state }), true);
 }
 
+/** Creates offline desktop without acquiring serialization locks. */
 async function createOfflineDesktopUnsafe(nameValue: string) {
   await ensureLocalDatabase();
   const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
@@ -215,6 +237,7 @@ async function createOfflineDesktopUnsafe(nameValue: string) {
   return { ...result, desktop: parseDesktopIdentity(result.desktop, true) };
 }
 
+/** Ensures desktop without acquiring serialization locks. */
 async function ensureDesktopUnsafe(value: DesktopIdentity) {
   await ensureLocalDatabase();
   const desktop = parseDesktopIdentity(value, true);
@@ -229,6 +252,7 @@ async function ensureDesktopUnsafe(value: DesktopIdentity) {
   return parseDesktopIdentity(await callDatabase("createDesktop", { desktop, state: emptyDesktopState() }), true);
 }
 
+/** Renames desktop without acquiring serialization locks. */
 async function renameDesktopUnsafe(desktopId: string, nameValue: string) {
   const name = normalizeDesktopName(nameValue);
   const registry = await callDatabase("listDesktops", undefined);
@@ -236,6 +260,7 @@ async function renameDesktopUnsafe(desktopId: string, nameValue: string) {
   return parseDesktopIdentity(await callDatabase("renameDesktop", { desktopId, name }), true);
 }
 
+/** Switches desktop without acquiring serialization locks. */
 async function switchDesktopUnsafe(desktopId: string) {
   const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId }, desktopId));
   setDesktopContext(desktopId);
@@ -244,6 +269,7 @@ async function switchDesktopUnsafe(desktopId: string) {
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
+/** Removes desktop without acquiring serialization locks. */
 async function deleteDesktopUnsafe(desktopId: string) {
   const deleted = parseDesktopState(await callDatabase("readDesktop", { desktopId }));
   const registry = await callDatabase("listDesktops", undefined);
@@ -263,6 +289,7 @@ async function deleteDesktopUnsafe(desktopId: string) {
   } catch (error) { console.warn("Hiraya could not clean up deleted desktop content.", error); }
 }
 
+/** Queues desktop create unsafe. */
 async function enqueueDesktopCreateUnsafe(nameValue: string) {
   await ensureLocalDatabase();
   const desktop = localDesktopIdentity(crypto.randomUUID(), normalizeDesktopName(nameValue));
@@ -279,6 +306,7 @@ async function enqueueDesktopCreateUnsafe(nameValue: string) {
   return callDatabase("enqueueDesktopCreate", { operationId: reservation.operationId, catalogId: state.sync.catalogId, desktop, state });
 }
 
+/** Queues desktop rename unsafe. */
 async function enqueueDesktopRenameUnsafe(desktopId: string, nameValue: string, baseRevision: number) {
   const name = normalizeDesktopName(nameValue);
   const registry = await callDatabase("listDesktops", undefined);
@@ -290,6 +318,7 @@ async function enqueueDesktopRenameUnsafe(desktopId: string, nameValue: string, 
   return callDatabase("enqueueDesktopRename", { operationId: reservation.operationId, catalogId: owner.sync.catalogId, desktop: { ...existing, name }, baseRevision });
 }
 
+/** Queues desktop delete unsafe. */
 async function enqueueDesktopDeleteUnsafe(ownerDesktopId: string, desktopId: string, baseRevision: number) {
   const deleted = parseDesktopState(await callDatabase("readDesktop", { desktopId }, null));
   const owner = parseDesktopState(await callDatabase("readDesktop", { desktopId: ownerDesktopId }, null));
@@ -306,6 +335,7 @@ async function enqueueDesktopDeleteUnsafe(ownerDesktopId: string, desktopId: str
   return result;
 }
 
+/** Retains selected content IDs without acquiring serialization locks. */
 async function retainedContentIdsUnsafe() {
   const registry = await callDatabase("listDesktops", undefined, null);
   const retained = new Set<string>();
@@ -316,6 +346,7 @@ async function retainedContentIdsUnsafe() {
   return retained;
 }
 
+/** Removes local desktops without acquiring serialization locks. */
 async function pruneLocalDesktopsUnsafe(retainedDesktopIds: string[]) {
   const registry = await callDatabase("listDesktops", undefined, null);
   const retainedDesktops = new Set(retainedDesktopIds);
@@ -336,11 +367,13 @@ async function pruneLocalDesktopsUnsafe(retainedDesktopIds: string[]) {
   } catch (error) { console.warn("Hiraya could not clean up stale desktop content.", error); }
 }
 
+/** Reads desktop entries without acquiring serialization locks. */
 async function readDesktopEntriesUnsafe(desktopId: string) {
   const manifest = parseDesktopState(await callDatabase("readDesktop", { desktopId }));
   return manifest.entries;
 }
 
+/** Transfers entries without acquiring serialization locks. */
 async function transferEntriesUnsafe(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) {
   const result = await callDatabase("transferEntries", { sourceDesktopId, destinationDesktopId, entryIds, parentId });
   const source = parseDesktopState(result.source);
@@ -348,6 +381,7 @@ async function transferEntriesUnsafe(sourceDesktopId: string, destinationDesktop
   return { entries: source.entries, layout: desktopStateLayout(source), editorSettings: source.editorSettings, appearance: source.appearance, sync: source.sync };
 }
 
+/** Loads desktop without acquiring serialization locks. */
 async function loadDesktopUnsafe(_viewport: EntryPosition, seeded: SeededManifest | null = null): Promise<DesktopStateSnapshot> {
   desktopLoad ??= readActiveDesktopState(seeded).catch((error) => {
     desktopLoad = null;
@@ -358,6 +392,7 @@ async function loadDesktopUnsafe(_viewport: EntryPosition, seeded: SeededManifes
   return { entries: manifest.entries, layout: desktopStateLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
+/** Applies remote desktop without acquiring serialization locks. */
 async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId = getActiveDesktopContext(), force = false, useAcknowledgedContent = true, acknowledgedRevision?: number, removeAcknowledged = false) {
   if (!desktopId) throw new Error("No desktop is active.");
   const current = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
@@ -429,12 +464,14 @@ async function applyRemoteDesktopUnsafe(snapshot: DesktopStateSnapshot, contents
   return { entries: projected.entries, layout: manifestLayout(projected), editorSettings: projected.editorSettings, appearance: projected.appearance, sync: projected.sync };
 }
 
+/** Resolves satisfied mutation without acquiring serialization locks. */
 async function resolveSatisfiedMutationUnsafe(snapshot: DesktopStateSnapshot, operationId: string, acknowledgedRevision: number, desktopId = getActiveDesktopContext()) {
   const resolved = await applyRemoteDesktopUnsafe(snapshot, new Map(), operationId, desktopId, true, false, acknowledgedRevision, true);
   await removeStagedOperation(operationId);
   return resolved;
 }
 
+/** Queues mutation unsafe. */
 async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<string, Blob> = new Map()) {
   const reservation = await callDatabase("reserveOperation", undefined);
   const required = operationContentIds(operation);
@@ -477,6 +514,7 @@ async function enqueueMutationUnsafe(operation: OutboxOperation, contents: Map<s
   }
 }
 
+/** Resolves content conflict keep both without acquiring serialization locks. */
 async function resolveContentConflictKeepBothUnsafe(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) {
   const selected = (await callDatabase("readOutbox", undefined, null)).find((record) => record.operationId === operationId);
   if (!selected || selected.operation.kind !== "save-content") throw new Error("That blocked content conflict no longer exists.");
@@ -499,6 +537,7 @@ async function resolveContentConflictKeepBothUnsafe(operationId: string, remote:
   }
 }
 
+/** Queues transfer unsafe. */
 async function enqueueTransferUnsafe(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) {
   const reservation = await callDatabase("reserveOperation", undefined);
   const result = await callDatabase("enqueueTransfer", {
@@ -517,11 +556,13 @@ async function enqueueTransferUnsafe(sourceDesktopId: string, destinationDesktop
   };
 }
 
+/** Returns acknowledge mutation unsafe. */
 async function acknowledgeMutationUnsafe(operationId: string) {
   await callDatabase("acknowledgeMutation", { operationId });
   await removeStagedOperation(operationId);
 }
 
+/** Removes desktop projection without acquiring serialization locks. */
 async function discardDesktopProjectionUnsafe(desktopId: string, operationId: string) {
   const result = await callDatabase("discardDesktopProjection", { desktopId, operationId }, null);
   for (const id of result.operationIds) await removeStagedOperation(id);
@@ -535,6 +576,7 @@ async function discardDesktopProjectionUnsafe(desktopId: string, operationId: st
   return result;
 }
 
+/** Saves editor settings without acquiring serialization locks. */
 async function saveEditorSettingsUnsafe(settings: EditorSettings) {
   const manifest = { ...await readManifest(), editorSettings: settings };
   assertValidManifest(manifest);
@@ -545,6 +587,7 @@ async function saveEditorSettingsUnsafe(settings: EditorSettings) {
   ]));
 }
 
+/** Saves desktop layout without acquiring serialization locks. */
 async function saveDesktopLayoutUnsafe(layout: DesktopLayout) {
   const manifest = await readManifest();
   const parsed = parseLayout(layout);
@@ -558,6 +601,7 @@ async function saveDesktopLayoutUnsafe(layout: DesktopLayout) {
   ]));
 }
 
+/** Selects theme without acquiring serialization locks. */
 async function selectThemeUnsafe(themeId: string) {
   const manifest = await readManifest();
   const appearance = parseThemeState({ ...manifest.appearance, selectedThemeId: themeId });
@@ -565,6 +609,7 @@ async function selectThemeUnsafe(themeId: string) {
   return appearance;
 }
 
+/** Saves custom theme without acquiring serialization locks. */
 async function saveCustomThemeUnsafe(value: CustomTheme) {
   const manifest = await readManifest();
   const theme = parseCustomTheme(value);
@@ -577,6 +622,7 @@ async function saveCustomThemeUnsafe(value: CustomTheme) {
   return theme;
 }
 
+/** Removes custom theme without acquiring serialization locks. */
 async function deleteCustomThemeUnsafe(themeId: string) {
   const manifest = await readManifest();
   const next = applyThemeDelete(manifest, themeId);
@@ -585,6 +631,7 @@ async function deleteCustomThemeUnsafe(themeId: string) {
   return next.appearance;
 }
 
+/** Applies theme delete. */
 function applyThemeDelete(manifest: Manifest, themeId: string) {
   // Keep local and queued mutation semantics identical.
   return parseManifestV13((() => {
@@ -595,6 +642,7 @@ function applyThemeDelete(manifest: Manifest, themeId: string) {
   })());
 }
 
+/** Creates text file without acquiring serialization locks. */
 async function createTextFileUnsafe(nameValue: string, parentId: string | null, position: EntryPosition) {
   const name = validateEntryName(nameValue);
   const manifest = await readManifest();
@@ -623,6 +671,7 @@ async function createTextFileUnsafe(nameValue: string, parentId: string | null, 
   return file;
 }
 
+/** Creates file without acquiring serialization locks. */
 async function createFileUnsafe(nameValue: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string) {
   const name = validateEntryName(nameValue);
   const manifest = await readManifest();
@@ -652,6 +701,7 @@ async function createFileUnsafe(nameValue: string, parentId: string | null, posi
   return file;
 }
 
+/** Creates folder without acquiring serialization locks. */
 async function createFolderUnsafe(nameValue: string, parentId: string | null, position: EntryPosition) {
   const name = validateEntryName(nameValue);
   const manifest = await readManifest();
@@ -672,6 +722,7 @@ async function createFolderUnsafe(nameValue: string, parentId: string | null, po
   return folder;
 }
 
+/** Imports files without acquiring serialization locks. */
 async function importFilesUnsafe(
   files: File[],
   parentId: string | null,
@@ -716,6 +767,7 @@ async function importFilesUnsafe(
   return imported;
 }
 
+/** Creates entries without acquiring serialization locks. */
 async function createEntriesUnsafe(entries: DesktopEntry[], contents: Map<string, Blob>) {
   const manifest = await readManifest();
   const next = { ...manifest, entries: [...manifest.entries, ...entries] };
@@ -739,6 +791,7 @@ async function createEntriesUnsafe(entries: DesktopEntry[], contents: Map<string
   return entries;
 }
 
+/** Renames entry without acquiring serialization locks. */
 async function renameEntryUnsafe(id: string, nameValue: string) {
   const name = validateEntryName(nameValue);
   const manifest = await readManifest();
@@ -752,6 +805,7 @@ async function renameEntryUnsafe(id: string, nameValue: string) {
   return renamed;
 }
 
+/** Removes entry without acquiring serialization locks. */
 async function deleteEntryUnsafe(id: string): Promise<DesktopEntry[]> {
   const manifest = await readManifest();
   getEntry(manifest.entries, id);
@@ -793,6 +847,7 @@ async function deleteEntryUnsafe(id: string): Promise<DesktopEntry[]> {
   return deleted;
 }
 
+/** Removes entries without acquiring serialization locks. */
 async function deleteEntriesUnsafe(ids: string[]): Promise<DesktopEntry[]> {
   if (!ids.length) return [];
   const manifest = await readManifest();
@@ -824,6 +879,7 @@ async function deleteEntriesUnsafe(ids: string[]): Promise<DesktopEntry[]> {
   return deleted;
 }
 
+/** Moves entry without acquiring serialization locks. */
 async function moveEntryUnsafe(id: string, parentId: string | null, position: EntryPosition) {
   const manifest = await readManifest();
   const existing = getEntry(manifest.entries, id);
@@ -847,6 +903,7 @@ async function moveEntryUnsafe(id: string, parentId: string | null, position: En
   return moved;
 }
 
+/** Moves entries without acquiring serialization locks. */
 async function moveEntriesUnsafe(ids: string[], parentId: string | null) {
   const manifest = await readManifest();
   findParent(manifest.entries, parentId);
@@ -861,6 +918,7 @@ async function moveEntriesUnsafe(ids: string[], parentId: string | null) {
   return moved;
 }
 
+/** Updates root entry positions without acquiring serialization locks. */
 async function updateRootEntryPositionsUnsafe(positionValues: RootEntryPositionUpdate[]) {
   const manifest = await readManifest();
   const positions = parseRootEntryPositionUpdates(positionValues, manifest.entries);
@@ -875,6 +933,7 @@ async function updateRootEntryPositionsUnsafe(positionValues: RootEntryPositionU
   return moved;
 }
 
+/** Updates entry position without acquiring serialization locks. */
 async function updateEntryPositionUnsafe(id: string, position: EntryPosition) {
   const manifest = await readManifest();
   const existing = getEntry(manifest.entries, id);
@@ -886,6 +945,7 @@ async function updateEntryPositionUnsafe(id: string, position: EntryPosition) {
   return updated;
 }
 
+/** Reads file without acquiring serialization locks. */
 async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
   const manifest = await readManifest();
   const entry = getFileEntry(manifest.entries, id);
@@ -900,6 +960,7 @@ async function readFileUnsafe(id: FileEntry["id"]): Promise<File> {
   return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
 }
 
+/** Reads cached file without acquiring serialization locks. */
 async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision?: number): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = getFileEntry(manifest.entries, id);
@@ -933,6 +994,7 @@ async function readCachedFileUnsafe(desktopId: string, catalogId: string, id: Fi
   }
 }
 
+/** Reports whether a file is a theme package. */
 function matchesThemePackage(state: Manifest, themeId: string, expected: ThemeWallpaperPackage) {
   const wallpaper = state.appearance.customThemes.find((theme) => theme.id === themeId)?.wallpaper;
   return wallpaper?.assetId === expected.assetId
@@ -942,6 +1004,7 @@ function matchesThemePackage(state: Manifest, themeId: string, expected: ThemeWa
     && wallpaper.revision === expected.revision;
 }
 
+/** Reads cached theme package without acquiring serialization locks. */
 async function readCachedThemePackageUnsafe(desktopId: string, themeId: string, expected: ThemeWallpaperPackage): Promise<Blob | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   if (!manifest.sync.catalogId || !matchesThemePackage(manifest, themeId, expected)) return null;
@@ -963,6 +1026,7 @@ async function readCachedThemePackageUnsafe(desktopId: string, themeId: string, 
   }
 }
 
+/** Caches theme package without acquiring serialization locks. */
 async function cacheThemePackageUnsafe(desktopId: string, themeId: string, expected: ThemeWallpaperPackage, content: Blob) {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   if (!manifest.sync.catalogId || !matchesThemePackage(manifest, themeId, expected)) return false;
@@ -973,6 +1037,7 @@ async function cacheThemePackageUnsafe(desktopId: string, themeId: string, expec
   return true;
 }
 
+/** Caches remote file without acquiring serialization locks. */
 async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob, acknowledgedOperationId?: string): Promise<File | null> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = manifest.entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
@@ -988,6 +1053,7 @@ async function cacheRemoteFileUnsafe(desktopId: string, catalogId: string, id: F
   return new File([stored], entry.name, { type: entry.mimeType, lastModified: entry.modifiedAt });
 }
 
+/** Removes cached file without acquiring serialization locks. */
 async function removeCachedFileUnsafe(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const entry = getFileEntry(manifest.entries, id);
@@ -1007,6 +1073,7 @@ async function removeCachedFileUnsafe(desktopId: string, catalogId: string, id: 
   return true;
 }
 
+/** Loads offline inventory without acquiring serialization locks. */
 async function loadOfflineInventoryUnsafe(desktopId: string): Promise<OfflineStorageInventory> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const outbox = await callDatabase("readOutbox", undefined, null);
@@ -1047,6 +1114,7 @@ async function loadOfflineInventoryUnsafe(desktopId: string): Promise<OfflineSto
   return { desktopId, authoritativeLocal, files, cachedBytes, protectedBytes, releasableBytes, browserStorage };
 }
 
+/** Removes offline copies without acquiring serialization locks. */
 async function releaseOfflineCopiesUnsafe(desktopId: string, rootIds?: string[]) {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   const inventory = await loadOfflineInventoryUnsafe(desktopId);
@@ -1067,11 +1135,13 @@ async function releaseOfflineCopiesUnsafe(desktopId: string, rootIds?: string[])
   return { releasedBytes, releasedFiles, skippedFiles };
 }
 
+/** Reads desktop state without acquiring serialization locks. */
 async function readDesktopStateUnsafe(desktopId: string): Promise<DesktopStateSnapshot> {
   const manifest = parseManifestV13(await callDatabase("readDesktop", { desktopId }, null));
   return { entries: manifest.entries, layout: manifestLayout(manifest), editorSettings: manifest.editorSettings, appearance: manifest.appearance, sync: manifest.sync };
 }
 
+/** Resolves file by relative path without acquiring serialization locks. */
 async function resolveFileByRelativePathUnsafe(
   fromFileId: FileEntry["id"],
   relativePath: string,
@@ -1118,6 +1188,7 @@ async function resolveFileByRelativePathUnsafe(
   return resolved;
 }
 
+/** Saves file without acquiring serialization locks. */
 async function saveFileUnsafe(id: FileEntry["id"], content: Blob, options: SaveFileOptions = {}): Promise<FileEntry> {
   const manifest = await readManifest();
   const existing = getFileEntry(manifest.entries, id);
@@ -1142,14 +1213,17 @@ async function saveFileUnsafe(id: FileEntry["id"], content: Blob, options: SaveF
   return saved;
 }
 
+/** Saves text file without acquiring serialization locks. */
 async function saveTextFileUnsafe(id: FileEntry["id"], content: string): Promise<FileEntry> {
   return saveFileUnsafe(id, new Blob([content]));
 }
 
+/** Loads desktop. */
 export function loadDesktop(viewport: EntryPosition, seeded: SeededManifest | null = null) {
   return serializeStorage(() => loadDesktopUnsafe(viewport, seeded));
 }
 
+/** Reads current desktop. */
 export function readCurrentDesktop(): Promise<DesktopStateSnapshot> {
   return serializeStorage(async () => {
     const manifest = await readManifest();
@@ -1157,53 +1231,98 @@ export function readCurrentDesktop(): Promise<DesktopStateSnapshot> {
   });
 }
 
+/** Applies remote desktop. */
 export function applyRemoteDesktop(snapshot: DesktopStateSnapshot, contents: Map<string, Blob>, acknowledgedOperationId?: string, desktopId?: string, force = false, useAcknowledgedContent = true, acknowledgedRevision?: number) {
   return serializeStorage(() => applyRemoteDesktopUnsafe(snapshot, contents, acknowledgedOperationId, desktopId, force, useAcknowledgedContent, acknowledgedRevision));
 }
 
+/** Saves editor settings. */
 export function saveEditorSettings(settings: EditorSettings) { return serializeStorage(() => saveEditorSettingsUnsafe(settings)); }
+/** Saves desktop layout. */
 export function saveDesktopLayout(layout: DesktopLayout) { return serializeStorage(() => saveDesktopLayoutUnsafe(layout)); }
+/** Selects theme. */
 export function selectTheme(themeId: string) { return serializeStorage(() => selectThemeUnsafe(themeId)); }
+/** Saves custom theme. */
 export function saveCustomTheme(theme: CustomTheme) { return serializeStorage(() => saveCustomThemeUnsafe(theme)); }
+/** Removes custom theme. */
 export function deleteCustomTheme(themeId: string) { return serializeStorage(() => deleteCustomThemeUnsafe(themeId)); }
+/** Creates text file. */
 export function createTextFile(name: string, parentId: string | null, position: EntryPosition) { return serializeStorage(() => createTextFileUnsafe(name, parentId, position)); }
+/** Creates file. */
 export function createFile(name: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string) { return serializeStorage(() => createFileUnsafe(name, parentId, position, content, mimeType)); }
+/** Creates folder. */
 export function createFolder(name: string, parentId: string | null, position: EntryPosition) { return serializeStorage(() => createFolderUnsafe(name, parentId, position)); }
+/** Imports files into the selected destination. */
 export function importFiles(files: File[], parentId: string | null, positions: EntryPosition[]) { return serializeStorage(() => importFilesUnsafe(files, parentId, positions)); }
+/** Creates entries. */
 export function createEntries(entries: DesktopEntry[], contents: Map<string, Blob>) { return serializeStorage(() => createEntriesUnsafe(entries, contents)); }
+/** Renames entry. */
 export function renameEntry(id: string, name: string) { return serializeStorage(() => renameEntryUnsafe(id, name)); }
+/** Removes entry. */
 export function deleteEntry(id: string) { return serializeStorage(() => deleteEntryUnsafe(id)); }
+/** Removes entries. */
 export function deleteEntries(ids: string[]) { return serializeStorage(() => deleteEntriesUnsafe(ids)); }
+/** Moves entry. */
 export function moveEntry(id: string, parentId: string | null, position: EntryPosition) { return serializeStorage(() => moveEntryUnsafe(id, parentId, position)); }
+/** Moves entries. */
 export function moveEntries(ids: string[], parentId: string | null) { return serializeStorage(() => moveEntriesUnsafe(ids, parentId)); }
+/** Updates root entry positions. */
 export function updateRootEntryPositions(positions: RootEntryPositionUpdate[]) { return serializeStorage(() => updateRootEntryPositionsUnsafe(positions)); }
+/** Updates entry position. */
 export function updateEntryPosition(id: string, position: EntryPosition) { return serializeStorage(() => updateEntryPositionUnsafe(id, position)); }
+/** Reads file. */
 export function readFile(id: FileEntry["id"]) { return serializeStorage(() => readFileUnsafe(id)); }
+/** Reads cached file. */
 export function readCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => readCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
+/** Caches remote file. */
 export function cacheRemoteFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number, sha256: string, content: Blob, acknowledgedOperationId?: string) { return serializeStorage(() => cacheRemoteFileUnsafe(desktopId, catalogId, id, contentRevision, sha256, content, acknowledgedOperationId)); }
+/** Removes cached file. */
 export function removeCachedFile(desktopId: string, catalogId: string, id: FileEntry["id"], contentRevision: number) { return serializeStorage(() => removeCachedFileUnsafe(desktopId, catalogId, id, contentRevision)); }
+/** Reads cached theme package. */
 export function readCachedThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage) { return serializeStorage(() => readCachedThemePackageUnsafe(desktopId, themeId, expected)); }
+/** Caches theme package. */
 export function cacheThemePackage(desktopId: string, themeId: string, expected: ThemeWallpaperPackage, content: Blob) { return serializeStorage(() => cacheThemePackageUnsafe(desktopId, themeId, expected, content)); }
+/** Loads offline inventory. */
 export function loadOfflineInventory(desktopId: string) { return serializeStorage(() => loadOfflineInventoryUnsafe(desktopId)); }
+/** Removes offline copies. */
 export function releaseOfflineCopies(desktopId: string, rootIds?: string[]) { return serializeStorage(() => releaseOfflineCopiesUnsafe(desktopId, rootIds)); }
+/** Reads desktop state. */
 export function readDesktopState(desktopId: string) { return serializeStorage(() => readDesktopStateUnsafe(desktopId)); }
+/** Resolves file by relative path. */
 export function resolveFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string) { return serializeStorage(() => resolveFileByRelativePathUnsafe(fromFileId, relativePath)); }
+/** Saves text file. */
 export function saveTextFile(id: FileEntry["id"], content: string) { return serializeStorage(() => saveTextFileUnsafe(id, content)); }
+/** Saves file. */
 export function saveFile(id: FileEntry["id"], content: Blob, options?: SaveFileOptions) { return serializeStorage(() => saveFileUnsafe(id, content, options)); }
+/** Reads local preferences. */
 export function readLocalPreferences() { return serializeStorage(() => repositories.readPreferences()); }
+/** Saves local preferences. */
 export function saveLocalPreferences(preferences: LocalPreferences) { return serializeStorage(() => repositories.savePreferences(preferences)); }
+/** Lists desktops. */
 export function listDesktops(seeded: SeededManifest | null = null) { return serializeStorage(() => listDesktopsUnsafe(seeded)); }
+/** Creates desktop. */
 export function createDesktop(name: string) { return serializeStorage(() => createDesktopUnsafe(name)); }
+/** Creates offline desktop. */
 export function createOfflineDesktop(name: string) { return serializeStorage(() => createOfflineDesktopUnsafe(name)); }
+/** Ensures desktop. */
 export function ensureDesktop(desktop: DesktopIdentity) { return serializeStorage(() => ensureDesktopUnsafe(desktop)); }
+/** Renames desktop. */
 export function renameDesktop(desktopId: string, name: string) { return serializeStorage(() => renameDesktopUnsafe(desktopId, name)); }
+/** Removes desktop. */
 export function deleteDesktop(desktopId: string) { return serializeStorage(() => deleteDesktopUnsafe(desktopId)); }
+/** Switches desktop. */
 export function switchDesktop(desktopId: string) { return serializeStorage(() => switchDesktopUnsafe(desktopId)); }
+/** Removes local desktops. */
 export function pruneLocalDesktops(retainedDesktopIds: string[]) { return serializeStorage(() => pruneLocalDesktopsUnsafe(retainedDesktopIds)); }
+/** Reads desktop entries. */
 export function readDesktopEntries(desktopId: string) { return serializeStorage(() => readDesktopEntriesUnsafe(desktopId)); }
+/** Transfers entries. */
 export function transferEntries(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => transferEntriesUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
+/** Reads window session. */
 export function readWindowSession(desktopId: string) { return serializeStorage(() => repositories.readWindowSession(desktopId)); }
+/** Saves window session. */
 export function saveWindowSession(desktopId: string, session: WindowSession) { return serializeStorage(() => repositories.saveWindowSession(desktopId, session)); }
+/** Queues mutation. */
 export function enqueueMutation(operation: OutboxOperation | ((current: DesktopStateSnapshot) => OutboxOperation), contents?: Map<string, Blob>) {
   return serializeStorage(async () => {
     if (typeof operation !== "function") return enqueueMutationUnsafe(operation, contents);
@@ -1212,33 +1331,63 @@ export function enqueueMutation(operation: OutboxOperation | ((current: DesktopS
     return enqueueMutationUnsafe(operation(await readDesktopStateUnsafe(desktopId)), contents);
   });
 }
+/** Queues desktop create. */
 export function enqueueDesktopCreate(name: string) { return serializeStorage(() => enqueueDesktopCreateUnsafe(name)); }
+/** Queues desktop rename. */
 export function enqueueDesktopRename(desktopId: string, name: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopRenameUnsafe(desktopId, name, baseRevision)); }
+/** Queues desktop delete. */
 export function enqueueDesktopDelete(ownerDesktopId: string, desktopId: string, baseRevision: number) { return serializeStorage(() => enqueueDesktopDeleteUnsafe(ownerDesktopId, desktopId, baseRevision)); }
+/** Queues transfer. */
 export function enqueueTransfer(sourceDesktopId: string, destinationDesktopId: string, entryIds: string[], parentId: string | null) { return serializeStorage(() => enqueueTransferUnsafe(sourceDesktopId, destinationDesktopId, entryIds, parentId)); }
+/** Reads outbox. */
 export function readOutbox() { return serializeStorage(() => callDatabase("readOutbox", undefined)); }
+/** Binds outbox catalog. */
 export function bindOutboxCatalog(catalogId: string) { return serializeStorage(() => callDatabase("bindOutboxCatalog", { catalogId }, null)); }
+/** Returns acknowledge mutation. */
 export function acknowledgeMutation(operationId: string) { return serializeStorage(() => acknowledgeMutationUnsafe(operationId)); }
+/** Resolves satisfied mutation. */
 export function resolveSatisfiedMutation(snapshot: DesktopStateSnapshot, operationId: string, acknowledgedRevision: number, desktopId?: string) { return serializeStorage(() => resolveSatisfiedMutationUnsafe(snapshot, operationId, acknowledgedRevision, desktopId)); }
+/** Blocks mutation. */
 export function blockMutation(operationId: string, error: string, errorCode: string | null = null, conflictDetails: import("./outbox").RevisionConflictDetails | null = null) { return serializeStorage(() => callDatabase("blockMutation", { operationId, error, errorCode, conflictDetails })); }
+/** Rebases blocked mutation. */
 export function rebaseBlockedMutation(operationId: string, operation: OutboxOperation) { return serializeStorage(() => callDatabase("rebaseBlockedMutation", { operationId, operation })); }
+/** Records mutation attempt. */
 export function recordMutationAttempt(operationId: string, attemptedAt: number) { return serializeStorage(() => callDatabase("recordMutationAttempt", { operationId, attemptedAt })); }
+/** Removes desktop projection. */
 export function discardDesktopProjection(desktopId: string, operationId: string) { return serializeStorage(() => discardDesktopProjectionUnsafe(desktopId, operationId)); }
+/** Reads pending content. */
 export function readPendingContent(operationId: string, entryId: string, stagedContentKey?: string) { return serializeStorage(() => readStagedContent(operationId, entryId, stagedContentKey)); }
+/** Reads content conflict. */
 export function readContentConflict(operationId: string, entryId: string, baseRevision: number, stagedContentKey?: string) { return serializeStorage(async () => ({ mine: await readStagedContent(operationId, entryId, stagedContentKey), base: await readContentConflictBase(operationId, baseRevision), server: await readContentConflictServer(operationId) })); }
+/** Retains content conflict base. */
 export function retainContentConflictBase(operationId: string, revision: number, content: Blob) { return serializeStorage(() => writeContentConflictBase(operationId, revision, content)); }
+/** Retains content conflict server. */
 export function retainContentConflictServer(operationId: string, content: Blob) { return serializeStorage(() => writeContentConflictServer(operationId, content)); }
+/** Stages pending content variant. */
 export function stagePendingContentVariant(operationId: string, content: Blob) { return serializeStorage(() => stageStagedContentVariant(operationId, content)); }
+/** Resolves content conflict keep both. */
 export function resolveContentConflictKeepBoth(operationId: string, remote: DesktopStateSnapshot, sibling: FileEntry) { return serializeStorage(() => resolveContentConflictKeepBothUnsafe(operationId, remote, sibling)); }
+/** Lists activity. */
 export function listActivity(query: ActivityQuery = {}) { return serializeStorage(() => callDatabase("listActivity", query)); }
+/** Lists installed apps. */
 export function listInstalledApps() { return serializeStorage(() => repositories.listInstalledApps()); }
+/** Installs app. */
 export function installApp(install: InstalledApp) { return serializeStorage(() => repositories.installApp(install)); }
+/** Uninstalls app. */
 export function uninstallApp(appId: string) { return serializeStorage(() => repositories.uninstallApp(appId)); }
+/** Lists file associations. */
 export function listFileAssociations() { return serializeStorage(() => repositories.listFileAssociations()); }
+/** Sets file association. */
 export function setFileAssociation(association: FileAssociation) { return serializeStorage(() => repositories.setFileAssociation(association)); }
+/** Removes file association. */
 export function removeFileAssociation(matcher: string) { return serializeStorage(() => repositories.removeFileAssociation(matcher)); }
+/** Resets file associations. */
 export function resetFileAssociations() { return serializeStorage(() => repositories.resetFileAssociations()); }
+/** Reads app storage. */
 export function readAppStorage(appId: string, key: string) { return serializeStorage(() => repositories.readAppStorage(appId, key)); }
+/** Writes app storage. */
 export function writeAppStorage(appId: string, key: string, value: JsonValue, maxBytes: number, maxEntries: number) { return serializeStorage(() => repositories.writeAppStorage(appId, key, value, maxBytes, maxEntries)); }
+/** Removes app storage. */
 export function removeAppStorage(appId: string, key: string) { return serializeStorage(() => repositories.removeAppStorage(appId, key)); }
+/** Removes app storage. */
 export function clearAppStorage(appId: string) { return serializeStorage(() => repositories.clearAppStorage(appId)); }

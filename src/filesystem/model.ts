@@ -1,19 +1,31 @@
 import { parseStableId, sha256Hex } from "./ids";
 export { parseStableId, sha256Hex, storageNamespaceHash } from "./ids";
 
+/** Defines the Web2 schema version. */
 export const WEB2_SCHEMA_VERSION = 1 as const;
+/** Defines the Web2 IndexedDB prefix. */
 export const WEB2_INDEXED_DB_PREFIX = "hiraya-web2-v1-" as const;
+/** Defines the Web2 OPFS prefix. */
 export const WEB2_OPFS_PREFIX = ".hiraya-web2-" as const;
+/** Defines the Web2 chunk size. */
 export const WEB2_CHUNK_SIZE = 1024 * 1024;
+/** Defines the maximum Web2 batch size. */
 export const WEB2_MAX_BATCH_ITEMS = 256;
+/** Defines the maximum Web2 ancestry depth. */
 export const WEB2_MAX_ANCESTRY_DEPTH = 64;
 
+/** Matches a lowercase SHA-256 digest. */
 const SHA256 = /^[0-9a-f]{64}$/;
+/** Matches the expected MIME token. */
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
+/** Matches the expected MIME type. */
 const MIME_TYPE = new RegExp(`^${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`);
+/** Defines the MIME parameter name. */
 const MIME_PARAMETER_NAME = new RegExp(`;\\s*(${MIME_TOKEN})\\s*=`, "g");
+/** Defines the setting key. */
 const SETTING_KEY = /^[a-z0-9](?:[a-z0-9._-]{0,127})$/;
 
+/** Defines the setting namespaces. */
 export const SETTING_NAMESPACES = [
   "desktop-grid",
   "wallpaper",
@@ -24,10 +36,12 @@ export const SETTING_NAMESPACES = [
   "theme-selection",
   "custom-themes",
 ] as const;
+/** Lists supported Web2 bootstrap setting keys. */
 export const WEB2_BOOTSTRAP_SETTING_KEYS = ["auto-arrange-icons", "grid-size", "snap-to-grid"] as const;
 
 export type SettingNamespace = typeof SETTING_NAMESPACES[number];
 export type DesktopGridSettings = { autoArrangeIcons: boolean; snapToGrid: boolean; gridSize: 12 | 24 | 36 | 48 };
+/** Defines the default desktop grid settings. */
 export const DEFAULT_DESKTOP_GRID_SETTINGS: DesktopGridSettings = { autoArrangeIcons: true, snapToGrid: false, gridSize: 24 };
 export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
 export type Position = { x: number; y: number };
@@ -87,14 +101,17 @@ type SettingBase = {
 export type Setting = SettingBase & ({ deleted: false; value: JsonValue } | { deleted: true });
 export type ActiveSetting = Extract<Setting, { deleted: false }>;
 
+/** Reports whether a value is a plain record. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Validates exact keys. */
 export function assertExactKeys(value: Record<string, unknown>, keys: readonly string[], message = "A value has an unsupported shape.") {
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((key) => !keys.includes(key))) throw new Error(message);
 }
 
+/** Parses and validates a canonical entry name. */
 export function parseCanonicalName(value: unknown, message = "A name is invalid.") {
   if (typeof value !== "string" || !value || value !== value.trim() || value === "." || value === ".." || value.includes("/") || value.includes("\\") || [...value].length > 180 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
@@ -103,10 +120,12 @@ export function parseCanonicalName(value: unknown, message = "A name is invalid.
   return value;
 }
 
+/** Reports whether a key stores a canonical entry name. */
 export function canonicalNameKey(name: string) {
   return name.replace(/[A-Z]/g, (character) => character.toLowerCase());
 }
 
+/** Parses and validates MIME type. */
 export function parseMimeType(value: unknown, message = "A MIME type is invalid.") {
   if (typeof value !== "string" || !value || value.length > 255 || value !== value.trim() || !MIME_TYPE.test(value) || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
@@ -122,43 +141,51 @@ export function parseMimeType(value: unknown, message = "A MIME type is invalid.
   return value;
 }
 
+/** Parses and validates a non-negative safe integer. */
 export function parseNonNegativeSafeInteger(value: unknown, message = "A number must be a nonnegative safe integer.") {
   if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error(message);
   return Number(value);
 }
 
+/** Parses and validates positive safe integer. */
 export function parsePositiveSafeInteger(value: unknown, message = "A number must be a positive safe integer.") {
   const result = parseNonNegativeSafeInteger(value, message);
   if (result === 0) throw new Error(message);
   return result;
 }
 
+/** Parses and validates finite number. */
 export function parseFiniteNumber(value: unknown, message = "A number must be finite.") {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(message);
   return value;
 }
 
+/** Parses and validates position. */
 export function parsePosition(value: unknown): Position {
   if (!isRecord(value)) throw new Error("A position has an unsupported shape.");
   assertExactKeys(value, ["x", "y"], "A position has an unsupported shape.");
   return { x: parseFiniteNumber(value.x, "A position is invalid."), y: parseFiniteNumber(value.y, "A position is invalid.") };
 }
 
+/** Parses and validates a SHA-256 digest. */
 export function parseSha256(value: unknown, message = "A SHA-256 digest is invalid.") {
   if (typeof value !== "string" || !SHA256.test(value)) throw new Error(message);
   return value;
 }
 
+/** Parses and validates setting namespace. */
 export function parseSettingNamespace(value: unknown): SettingNamespace {
   if (!SETTING_NAMESPACES.includes(value as SettingNamespace)) throw new Error("A setting namespace is invalid.");
   return value as SettingNamespace;
 }
 
+/** Parses and validates setting key. */
 export function parseSettingKey(value: unknown) {
   if (typeof value !== "string" || !SETTING_KEY.test(value)) throw new Error("A setting key is invalid.");
   return value;
 }
 
+/** Parses and validates setting key for namespace. */
 export function parseSettingKeyForNamespace(namespaceValue: unknown, keyValue: unknown) {
   const namespace = parseSettingNamespace(namespaceValue);
   const key = parseSettingKey(keyValue);
@@ -166,6 +193,7 @@ export function parseSettingKeyForNamespace(namespaceValue: unknown, keyValue: u
   return { namespace, key };
 }
 
+/** Parses and validates a JSON value at a labeled path. */
 function parseJsonValueAt(value: unknown, depth: number): JsonValue {
   if (depth > 32) throw new Error("A setting value is too deeply nested.");
   if (value === null || typeof value === "boolean" || typeof value === "string") return value;
@@ -178,12 +206,14 @@ function parseJsonValueAt(value: unknown, depth: number): JsonValue {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, parseJsonValueAt(item, depth + 1)]));
 }
 
+/** Parses and validates setting value. */
 export function parseSettingValue(value: unknown): JsonValue {
   const result = parseJsonValueAt(value, 0);
   if (new TextEncoder().encode(JSON.stringify(result)).byteLength > 64 * 1024) throw new Error("A setting value is too large.");
   return result;
 }
 
+/** Parses and validates workspace setting. */
 export function parseWorkspaceSetting(namespaceValue: unknown, keyValue: unknown, value: unknown) {
   const { namespace, key } = parseSettingKeyForNamespace(namespaceValue, keyValue);
   const parsed = parseSettingValue(value);
@@ -194,6 +224,7 @@ export function parseWorkspaceSetting(namespaceValue: unknown, keyValue: unknown
   return { namespace, key, value: parsed };
 }
 
+/** Parses and validates desktop grid settings. */
 export function parseDesktopGridSettings(value: unknown): DesktopGridSettings {
   if (!isRecord(value)) throw new Error("Desktop grid settings have an unsupported shape.");
   assertExactKeys(value, ["autoArrangeIcons", "snapToGrid", "gridSize"], "Desktop grid settings have an unsupported shape.");
@@ -203,6 +234,7 @@ export function parseDesktopGridSettings(value: unknown): DesktopGridSettings {
   return { autoArrangeIcons: autoArrangeIcons as boolean, snapToGrid: snapToGrid as boolean, gridSize: gridSize as DesktopGridSettings["gridSize"] };
 }
 
+/** Parses and validates node lifecycle. */
 export function parseNodeLifecycle(value: unknown): NodeLifecycle {
   if (!isRecord(value)) throw new Error("A node lifecycle has an unsupported shape.");
   if (value.kind === "active") {
@@ -218,6 +250,7 @@ export function parseNodeLifecycle(value: unknown): NodeLifecycle {
   };
 }
 
+/** Parses and validates node field tuples. */
 function parseNodeFieldTuples(value: unknown): NodeFieldTuples {
   if (!isRecord(value)) throw new Error("Node field tuples have an unsupported shape.");
   assertExactKeys(value, ["name", "parent", "lifecycle", "position", "content"], "Node field tuples have an unsupported shape.");
@@ -230,6 +263,7 @@ function parseNodeFieldTuples(value: unknown): NodeFieldTuples {
   };
 }
 
+/** Parses and validates node. */
 export function parseNode(value: unknown): Node {
   if (!isRecord(value) || value.kind !== "folder" && value.kind !== "file") throw new Error("A node has an unsupported shape.");
   const baseKeys = ["workspaceId", "id", "kind", "name", "parentId", "lifecycle", "position", "createdAt", "modifiedAt", "fieldTuples"];
@@ -260,6 +294,7 @@ export function parseNode(value: unknown): Node {
   };
 }
 
+/** Parses and validates purge tombstone. */
 export function parsePurgeTombstone(value: unknown): PurgeTombstone {
   if (!isRecord(value)) throw new Error("A purge tombstone has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "id", "purged", "logicalTime", "operationId"], "A purge tombstone has an unsupported shape.");
@@ -273,10 +308,12 @@ export function parsePurgeTombstone(value: unknown): PurgeTombstone {
   };
 }
 
+/** Parses and validates node record. */
 export function parseNodeRecord(value: unknown): NodeRecord {
   return isRecord(value) && "purged" in value ? parsePurgeTombstone(value) : parseNode(value);
 }
 
+/** Parses and validates setting. */
 export function parseSetting(value: unknown): Setting {
   if (!isRecord(value)) throw new Error("A setting has an unsupported shape.");
   if (typeof value.deleted !== "boolean") throw new Error("A setting has an unsupported shape.");
@@ -292,6 +329,7 @@ export function parseSetting(value: unknown): Setting {
   return { ...base, deleted: false, value: parseWorkspaceSetting(identity.namespace, identity.key, value.value).value };
 }
 
+/** Parses and validates operation tuple. */
 export function parseOperationTuple(value: unknown): OperationTuple {
   if (!isRecord(value)) throw new Error("An operation tuple has an unsupported shape.");
   assertExactKeys(value, ["logicalTime", "operationId"], "An operation tuple has an unsupported shape.");
@@ -301,6 +339,7 @@ export function parseOperationTuple(value: unknown): OperationTuple {
   };
 }
 
+/** Compares operation tuples. */
 export function compareOperationTuples(leftValue: unknown, rightValue: unknown) {
   const left = parseOperationTuple(leftValue);
   const right = parseOperationTuple(rightValue);
@@ -308,33 +347,39 @@ export function compareOperationTuples(leftValue: unknown, rightValue: unknown) 
   return left.operationId === right.operationId ? 0 : left.operationId < right.operationId ? -1 : 1;
 }
 
+/** Returns winning operation tuple. */
 export function winningOperationTuple<T extends OperationTuple>(left: T, right: T): T {
   return compareOperationTuples(left, right) >= 0 ? left : right;
 }
 
+/** Parses and validates conflict write. */
 function parseConflictWrite<T>(value: unknown, parseValue: (candidate: unknown) => T): ConflictWrite<T> {
   if (!isRecord(value)) throw new Error("A conflict write has an unsupported shape.");
   assertExactKeys(value, ["value", "tuple"], "A conflict write has an unsupported shape.");
   return { value: parseValue(value.value), tuple: parseOperationTuple(value.tuple) };
 }
 
+/** Parses and validates lifecycle state. */
 function parseLifecycleState(value: unknown): LifecycleState {
   if (value !== "active" && value !== "trashed" && value !== "purged") throw new Error("A lifecycle state is invalid.");
   return value;
 }
 
+/** Parses and validates content conflict value. */
 function parseContentConflictValue(value: unknown): ContentConflictValue {
   if (!isRecord(value)) throw new Error("A content conflict value has an unsupported shape.");
   assertExactKeys(value, ["mimeType", "size", "manifestHash"], "A content conflict value has an unsupported shape.");
   return { mimeType: parseMimeType(value.mimeType), size: parseNonNegativeSafeInteger(value.size), manifestHash: parseSha256(value.manifestHash) };
 }
 
+/** Parses and validates setting conflict value. */
 function parseSettingConflictValue(value: unknown): SettingConflictValue {
   if (!isRecord(value) || typeof value.deleted !== "boolean") throw new Error("A setting conflict value has an unsupported shape.");
   assertExactKeys(value, value.deleted ? ["deleted"] : ["deleted", "value"], "A setting conflict value has an unsupported shape.");
   return value.deleted ? { deleted: true } : { deleted: false, value: parseSettingValue(value.value) };
 }
 
+/** Parses and validates field conflict. */
 function parseFieldConflict(value: unknown): FieldConflict {
   if (!isRecord(value) || typeof value.category !== "string") throw new Error("A field conflict has an unsupported shape.");
   const standardKeys = ["category", "current", "incoming"];
@@ -367,17 +412,20 @@ function parseFieldConflict(value: unknown): FieldConflict {
   }
 }
 
+/** Resolves tuple write. */
 function resolveTupleWrite<T>(current: ConflictWrite<T>, incoming: ConflictWrite<T>) {
   const winner = compareOperationTuples(incoming.tuple, current.tuple) > 0 ? "incoming" : "current";
   return { winner, ...(winner === "incoming" ? incoming : current) } as const;
 }
 
+/** Resolves lifecycle write. */
 function resolveLifecycleWrite(current: ConflictWrite<LifecycleState>, incoming: ConflictWrite<LifecycleState>) {
   if (current.value === "purged" && incoming.value !== "purged") return { winner: "current", ...current } as const;
   if (incoming.value === "purged" && current.value !== "purged") return { winner: "incoming", ...incoming } as const;
   return resolveTupleWrite(current, incoming);
 }
 
+/** Resolves field conflict. */
 export function resolveFieldConflict(value: unknown) {
   const conflict = parseFieldConflict(value);
   switch (conflict.category) {
@@ -391,6 +439,7 @@ export function resolveFieldConflict(value: unknown) {
   }
 }
 
+/** Parses and validates manifest. */
 export function parseManifest(value: unknown): Manifest {
   if (!isRecord(value)) throw new Error("A manifest has an unsupported shape.");
   assertExactKeys(value, ["schemaVersion", "size", "chunkSize", "chunks"], "A manifest has an unsupported shape.");
@@ -417,10 +466,12 @@ export function parseManifest(value: unknown): Manifest {
   return { schemaVersion: WEB2_SCHEMA_VERSION, size, chunkSize: WEB2_CHUNK_SIZE, chunks };
 }
 
+/** Reports whether bytes use the canonical manifest encoding. */
 export function canonicalManifestBytes(value: unknown) {
   return new TextEncoder().encode(JSON.stringify(parseManifest(value)));
 }
 
+/** Reports whether a digest matches the canonical manifest bytes. */
 export function canonicalManifestSha256(value: unknown) {
   return sha256Hex(canonicalManifestBytes(value));
 }

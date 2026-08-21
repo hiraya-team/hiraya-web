@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { X } from "@phosphor-icons/react";
 import { useNativeDialog } from "../ui/modal-dialog";
 
+/** Renders the paste from device dialog interface. */
 export function PasteFromDeviceDialog({ error, onClose }: { error?: string; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useNativeDialog(dialogRef, onClose);

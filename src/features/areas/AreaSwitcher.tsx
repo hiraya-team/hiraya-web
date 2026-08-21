@@ -39,6 +39,7 @@ type AreaSwitcherProps = {
   onCloseApp: (id: string) => void;
 };
 
+/** Renders area navigation, open-app controls, and the desktop minimap. */
 export function AreaSwitcher({
   activeSegment,
   activeSegmentKey,

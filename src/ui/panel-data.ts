@@ -1,5 +1,6 @@
 import type { OutboxOperation, OutboxRecord } from "../lib/outbox";
 
+/** Defines the display order of search result categories. */
 export const SEARCH_CATEGORIES = ["apps", "files", "folders", "windows", "commands"] as const;
 export type SearchCategory = typeof SEARCH_CATEGORIES[number];
 
@@ -16,6 +17,7 @@ export type SearchGroup<T extends SearchItem = SearchItem> = {
   items: T[];
 };
 
+/** Filters search results and groups them by category. */
 export function filterAndGroupSearchItems<T extends SearchItem>(items: readonly T[], query: string): SearchGroup<T>[] {
   const normalized = query.trim().toLocaleLowerCase();
   const terms = normalized.split(/\s+/).filter(Boolean);
@@ -37,6 +39,7 @@ export function filterAndGroupSearchItems<T extends SearchItem>(items: readonly 
   });
 }
 
+/** Finds the selected item among rendered search groups. */
 export function selectedRenderedItem<T>(items: readonly T[], activeIndex: number) {
   return items.length ? items[Math.min(Math.max(0, activeIndex), items.length - 1)] : undefined;
 }
@@ -51,6 +54,7 @@ export type KeyboardShortcut = {
 
 export type ShortcutGroup = { label: string; shortcuts: KeyboardShortcut[] };
 
+/** Filters keyboard shortcuts and groups them by section. */
 export function filterAndGroupShortcuts(shortcuts: readonly KeyboardShortcut[], query: string): ShortcutGroup[] {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean);
   const groups = new Map<string, KeyboardShortcut[]>();
@@ -64,6 +68,7 @@ export function filterAndGroupShortcuts(shortcuts: readonly KeyboardShortcut[], 
   return Array.from(groups, ([label, groupedShortcuts]) => ({ label, shortcuts: groupedShortcuts }));
 }
 
+/** Maps synchronization operations to user-facing labels. */
 const OPERATION_LABELS: Record<OutboxOperation["kind"], string> = {
   "create-desktop": "Create desktop",
   "rename-desktop": "Rename desktop",
@@ -84,10 +89,12 @@ const OPERATION_LABELS: Record<OutboxOperation["kind"], string> = {
   "delete-theme": "Delete theme",
 };
 
+/** Formats a synchronization record as a user-facing operation label. */
 export function outboxRecordLabel(record: Pick<OutboxRecord, "operation">) {
   return OPERATION_LABELS[record.operation.kind];
 }
 
+/** Partitions synchronization records by actionable status. */
 export function partitionSyncRecords(records: readonly OutboxRecord[]) {
   return {
     blocked: records.filter((record) => record.status === "blocked"),

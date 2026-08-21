@@ -18,6 +18,7 @@ type Inventory = {
   }>;
 };
 
+/** Provides the product contract capability IDs test fixture. */
 const PRODUCT_CONTRACT_CAPABILITY_IDS = [
   "workspace.lifecycle",
   "filesystem.import-copy-trash",
@@ -51,8 +52,10 @@ const PRODUCT_CONTRACT_CAPABILITY_IDS = [
   "accessibility.high-contrast",
 ] as const;
 
+/** Provides the inventory test fixture. */
 const inventory = await Bun.file(new URL("../docs/feature-parity.json", import.meta.url)).json() as Inventory;
 
+/** Builds the unique test fixture. */
 function unique(values: string[], label: string) {
   expect(new Set(values).size, `${label} must be unique`).toBe(values.length);
 }

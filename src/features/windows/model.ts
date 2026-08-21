@@ -21,8 +21,10 @@ export type MergeApp = BaseRunningApp & { kind: "merge"; operationId: string };
 export type SandboxApp = BaseRunningApp & { kind: "sandbox"; packageEntryId: string | null; title: string; dirty: boolean; install: InstalledApp; package: AppPackageInspection; dispatcher: RpcDispatcher; files: FileService; commands: RuntimeCommandContributions<AppCommandContext>; systemTarget?: SystemAppTarget };
 export type RunningApp = FileApp | ExplorerApp | PropertiesApp | SettingsApp | StoreApp | MergeApp | SandboxApp;
 
+/** Defines the default geometry for the conflict merge window. */
 export const MERGE_APP_WINDOW: BuiltinAppWindow = { width: 960, height: 700, minWidth: 420, minHeight: 360 };
 
+/** Converts running apps to route-persistable window targets. */
 export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
   return apps.flatMap((app): WindowTarget[] => {
     if (app.transient) return [];
@@ -32,23 +34,28 @@ export function runningAppTargets(apps: readonly RunningApp[]): WindowTarget[] {
   });
 }
 
+/** Returns running app instance IDs in window order. */
 export function runningAppIds(apps: readonly RunningApp[]) {
   return apps.filter((app) => !app.transient).map((app) => app.id);
 }
 
+/** Updates explorer windows after the hidden-file preference changes. */
 export function windowsForHiddenFilePreference(apps: readonly RunningApp[], showHiddenFiles: boolean) {
   return showHiddenFiles ? [...apps] : apps.filter((app) => !app.transient);
 }
 
+/** Returns the desktop segment containing a running app. */
 export function runningAppSegment(app: RunningApp, size: { width: number; height: number }) {
   return projectLogicalPosition(app.bounds, size).segment;
 }
 
+/** Reports whether a running app belongs to a desktop segment. */
 export function runningAppIsInSegment(app: RunningApp, segment: SurfaceSegment, size: { width: number; height: number }) {
   const projected = runningAppSegment(app, size);
   return projected.column === segment.column && projected.row === segment.row;
 }
 
+/** Finds the frontmost eligible app in a desktop segment. */
 export function topRunningAppInSegment(apps: readonly RunningApp[], segment: SurfaceSegment, size: { width: number; height: number }, excludedId?: string) {
   return [...apps]
     .filter((app) => app.id !== excludedId && !app.minimized && runningAppIsInSegment(app, segment, size))

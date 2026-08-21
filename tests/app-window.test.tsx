@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AppWindow } from "../src/components/AppWindow";
 
+/** Provides the base test fixture. */
 const base = {
   id: "window",
   title: "Document",

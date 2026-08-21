@@ -5,6 +5,7 @@ export type PointerDragPreview = {
   offsetY: number;
 };
 
+/** Creates a drag preview at the current pointer position. */
 export function createPointerDragPreview(source: HTMLElement, clientX: number, clientY: number): PointerDragPreview | null {
   const root = source.closest<HTMLElement>(".desktop");
   if (!root) return null;
@@ -33,11 +34,13 @@ export function createPointerDragPreview(source: HTMLElement, clientX: number, c
   return preview;
 }
 
+/** Moves a drag preview to the latest pointer coordinates. */
 export function movePointerDragPreview(preview: PointerDragPreview, clientX: number, clientY: number) {
   const bounds = preview.root.getBoundingClientRect();
   preview.element.style.transform = `translate3d(${clientX - bounds.left - preview.offsetX}px, ${clientY - bounds.top - preview.offsetY}px, 0)`;
 }
 
+/** Removes pointer drag preview. */
 export function removePointerDragPreview(preview?: PointerDragPreview | null) {
   preview?.element.remove();
 }

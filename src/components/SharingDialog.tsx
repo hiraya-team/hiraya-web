@@ -32,14 +32,17 @@ import { useStableHandler } from "../ui/use-stable-handler";
 import { RoleBadge } from "./VisualPrimitives";
 import { ItemList } from "./ItemList";
 
+/** Lists roles assignable to desktop collaborators. */
 const ROLES: SharingRole[] = ["reader", "writer", "manager"];
 
+/** Builds the public URL for a published desktop alias. */
 function publicUrl(publication: SharingState["publication"]) {
   return publication.url
     ? new URL(publication.url, window.location.href).href
     : "";
 }
 
+/** Renders the sharing dialog interface. */
 export function SharingDialog({
   desktop,
   onClose,

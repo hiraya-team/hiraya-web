@@ -1,6 +1,7 @@
 import type { FileHandle, FolderHandle, ServiceMethods } from "@hiraya-team/apps-contracts";
 import { hasControlCharacters, HostServiceError, instanceKey, unavailable, type AppInstanceOwner } from "./types";
 
+/** Caps queued dialogs owned by one hosted app instance. */
 export const MAX_QUEUED_DIALOGS_PER_INSTANCE = 8;
 
 type DialogParams = {
@@ -35,11 +36,13 @@ export interface AppDialogApi {
   confirm(params: DialogParams["confirm"]): Promise<DialogResults["confirm"]>;
 }
 
+/** Queues hosted app dialogs for the shell to render and resolve. */
 export class AppDialogService {
   readonly #pending: PendingDialog[] = [];
   readonly #listeners = new Set<(requests: readonly DialogRequest[]) => void>();
   #nextId = 0;
 
+  /** Creates the dialog API scoped to one app instance. */
   forInstance(owner: AppInstanceOwner): AppDialogApi {
     return {
       openFile: (params = {}) => this.#enqueue(owner, "openFile", params),
@@ -49,16 +52,19 @@ export class AppDialogService {
     };
   }
 
+  /** Lists pending dialog requests in queue order. */
   requests(): readonly DialogRequest[] {
     return this.#pending.map(({ request }) => request);
   }
 
+  /** Subscribes to the complete pending dialog queue. */
   subscribe(listener: (requests: readonly DialogRequest[]) => void): () => void {
     this.#listeners.add(listener);
     listener(this.requests());
     return () => this.#listeners.delete(listener);
   }
 
+  /** Resolves and removes a pending dialog request. */
   respond<K extends DialogKind>(id: string, result: DialogResults[K]): void {
     const index = this.#pending.findIndex(({ request }) => request.id === id);
     if (index < 0) throw new HostServiceError("Dialog request was not found.", "NOT_FOUND");
@@ -67,6 +73,7 @@ export class AppDialogService {
     this.#publish();
   }
 
+  /** Rejects and removes a pending dialog request. */
   reject(id: string, reason: unknown = new HostServiceError("Dialog was cancelled.", "CANCELLED")): void {
     const index = this.#pending.findIndex(({ request }) => request.id === id);
     if (index < 0) return;
@@ -75,6 +82,7 @@ export class AppDialogService {
     this.#publish();
   }
 
+  /** Rejects every pending dialog owned by a closing app instance. */
   closeInstance(owner: AppInstanceOwner): void {
     const key = instanceKey(owner);
     const error = unavailable(owner);
@@ -87,6 +95,7 @@ export class AppDialogService {
     if (changed) this.#publish();
   }
 
+  /** Validates and queues one hosted app dialog. */
   #enqueue<K extends DialogKind>(owner: AppInstanceOwner, kind: K, params: DialogParams[K]): Promise<DialogResults[K]> {
     const ownedCount = this.#pending.filter(({ request }) => instanceKey(request.owner) === instanceKey(owner)).length;
     if (ownedCount >= MAX_QUEUED_DIALOGS_PER_INSTANCE) return Promise.reject(new HostServiceError("Too many dialogs are queued.", "QUOTA_EXCEEDED"));
@@ -98,12 +107,14 @@ export class AppDialogService {
     });
   }
 
+  /** Publishes the current dialog queue to subscribers. */
   #publish(): void {
     const requests = this.requests();
     for (const listener of this.#listeners) listener(requests);
   }
 }
 
+/** Validates dialog parameters supplied by a hosted app. */
 function validateDialog(kind: DialogKind, params: DialogParams[DialogKind]): void {
   if (kind === "confirm") {
     const value = params as DialogParams["confirm"];
@@ -119,6 +130,7 @@ function validateDialog(kind: DialogKind, params: DialogParams[DialogKind]): voi
   }
 }
 
+/** Validates bounded printable dialog text. */
 function boundedText(value: string, label: string, max: number): void {
   if (typeof value !== "string" || value.length === 0 || value.length > max || hasControlCharacters(value)) throw new TypeError(`${label} is invalid.`);
 }

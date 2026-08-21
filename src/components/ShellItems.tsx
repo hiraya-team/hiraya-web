@@ -57,6 +57,7 @@ type Props = {
 
 type Interaction = { pointerId: number; pointerType: string; startX: number; startY: number; width: number; height: number; moved: boolean };
 
+/** Renders the shell item interface. */
 function ShellItem({ entityId, label, position, width, height, areaSize, readOnly, areaInteractive = true, widget = false, widgetId, widgetKind, interactive = false, selected = false, busy = false, gridSize, onSelect, onActivate, onContextMenu, onMove, onResize, onPreview, onRemove, removeLabel, dropParentId, children, onDrop }: {
   entityId: string;
   label: string;
@@ -294,16 +295,19 @@ function ShellItem({ entityId, label, position, width, height, areaSize, readOnl
   </>;
 }
 
+/** Renders the clock widget interface. */
 function ClockWidget() {
   const now = useTickingDate();
   return <div className="shell-widget shell-widget--clock"><Clock weight="duotone" /><strong>{now.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</strong><span>{now.toLocaleDateString([], { weekday: "long", month: "short", day: "numeric" })}</span></div>;
 }
 
+/** Renders the calendar widget interface. */
 function CalendarWidget() {
   const now = useTickingDate();
   return <div className="shell-widget shell-widget--calendar"><CalendarBlank weight="duotone" /><span>{now.toLocaleDateString([], { month: "long" })}</span><strong>{now.getDate()}</strong><small>{now.toLocaleDateString([], { weekday: "long" })}</small></div>;
 }
 
+/** Renders the status widget interface. */
 function StatusWidget({ status }: { status?: StatusModel }) {
   if (!status) return <div className="shell-widget shell-widget--status"><CloudCheck weight="duotone" /><strong>Shared desktop</strong><span>Read only</span></div>;
   const syncLabel = status.syncStatus === "local" ? "Saved in this browser" : status.syncStatus === "offline" ? "Working offline" : ["blocked", "error", "upgrade-required"].includes(status.syncStatus) ? "Sync needs attention" : status.isSyncing ? "Synchronizing" : status.syncStatus === "connecting" ? "Connecting" : "Up to date";
@@ -311,6 +315,7 @@ function StatusWidget({ status }: { status?: StatusModel }) {
   return <div className="shell-widget shell-widget--status"><Gauge weight="duotone" /><strong>{syncLabel}</strong><span>{status.outboxCount ? `${status.outboxCount} queued ${status.outboxCount === 1 ? "change" : "changes"}` : "No queued changes"}</span>{entryQuota && <small>{entryQuota.used.toLocaleString()} of {entryQuota.limit.toLocaleString()} items</small>}</div>;
 }
 
+/** Renders the icon group contents interface. */
 function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds, onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, gridSize, isEntryReadOnly, onDrop }: {
   folder: FolderEntry;
   entries: readonly DesktopEntry[];
@@ -367,6 +372,7 @@ function IconGroupContents({ folder, entries, readOnly, loadPreview, selectedIds
   </div>;
 }
 
+/** Renders the shell item layer interface. */
 export function ShellItemLayer({ widgets, groups, entries, activeSegment, ownerSegment = activeSegment, areaSize, readOnly = false, status, renderWidget, loadPreview, selectedIds = new Set(), onOpen, onSelectEntry, onEntryContextMenu, onMoveEntry, getDesktopDropPreview, isEntryReadOnly = () => false, onDrop, onMoveWidget, onResizeWidget, onPreviewWidget, onRemoveWidget, onSelectWidget, onActivateWidget, onWidgetContextMenu, onSelectGroup, selectedEntityIds = new Set(), widgetBusy, gridSize, onMoveGroup, onResizeGroup, onPreviewGroup, onUngroup }: Props) {
   const index = new Map(entries.map((entry) => [entry.id, entry]));
   const ownerKey = segmentKey(ownerSegment);

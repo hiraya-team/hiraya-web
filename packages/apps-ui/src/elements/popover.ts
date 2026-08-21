@@ -12,6 +12,7 @@ type TriggerState = {
   augmented: boolean;
 };
 
+/** Implements the Hiraya popover. */
 export class HirayaPopover extends HTMLElementBase {
   static readonly observedAttributes = ["open", "label"];
 
@@ -24,6 +25,7 @@ export class HirayaPopover extends HTMLElementBase {
   #animationFrame = 0;
   #closeReason = "api";
 
+  /** Creates a hiraya popover instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -42,13 +44,16 @@ export class HirayaPopover extends HTMLElementBase {
     root.addEventListener("keydown", (event) => this.#onKeyDown(event));
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void {
     this.#syncTrigger();
     this.#sync();
   }
 
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Releases listeners when the element leaves the document. */
   disconnectedCallback(): void {
     this.#removeDocumentListeners();
     this.#cancelPosition();
@@ -57,17 +62,23 @@ export class HirayaPopover extends HTMLElementBase {
     this.#restoreFocus = null;
   }
 
+  /** Reports whether the popover is open. */
   get open(): boolean { return hasBooleanAttribute(this, "open"); }
+  /** Sets whether the popover is open. */
   set open(value: boolean) { setBooleanAttribute(this, "open", value); }
 
+  /** Shows the element. */
   show(): void { this.open = true; }
+  /** Hides the element. */
   hide(reason = "api"): void {
     if (!this.open) return;
     this.#closeReason = reason;
     this.open = false;
   }
+  /** Toggles the current state. */
   toggle(force?: boolean): void { this.open = force ?? !this.open; }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.isConnected) return;
     this.#panel.setAttribute("aria-label", this.getAttribute("label") ?? "Popover");
@@ -76,6 +87,7 @@ export class HirayaPopover extends HTMLElementBase {
     else this.#closePanel();
   }
 
+  /** Shows and positions the popover panel. */
   #showPanel(): void {
     if (!this.#panel.hidden) {
       this.#schedulePosition();
@@ -95,6 +107,7 @@ export class HirayaPopover extends HTMLElementBase {
     hirayaEvent(this, "hiraya-open-change", { open: true, reason: "api" });
   }
 
+  /** Closes panel. */
   #closePanel(): void {
     if (this.#panel.hidden) return;
     this.#removeDocumentListeners();
@@ -108,6 +121,7 @@ export class HirayaPopover extends HTMLElementBase {
     this.#closeReason = "api";
   }
 
+  /** Hides the popover panel and its native top layer. */
   #hidePanel(): void {
     const hidePopover = (this.#panel as HTMLElement & { hidePopover?: () => void }).hidePopover;
     if (typeof hidePopover === "function" && this.#panel.matches(":popover-open")) {
@@ -116,11 +130,13 @@ export class HirayaPopover extends HTMLElementBase {
     this.#panel.hidden = true;
   }
 
+  /** Toggles the popover when its trigger is clicked. */
   #onClick(event: Event): void {
     const trigger = this.#triggerState?.element;
     if (trigger && event.composedPath().includes(trigger)) this.toggle();
   }
 
+  /** Toggles or opens the popover from its trigger keyboard controls. */
   #onKeyDown(event: Event): void {
     if (!(event instanceof KeyboardEvent)) return;
     const trigger = this.#triggerState?.element;
@@ -147,6 +163,7 @@ export class HirayaPopover extends HTMLElementBase {
 
   readonly #onViewportChange = (): void => this.#schedulePosition();
 
+  /** Adds listeners for outside dismissal and viewport changes. */
   #addDocumentListeners(): void {
     this.ownerDocument.addEventListener("pointerdown", this.#onDocumentPointerDown, true);
     this.ownerDocument.addEventListener("keydown", this.#onDocumentKeyDown, true);
@@ -157,6 +174,7 @@ export class HirayaPopover extends HTMLElementBase {
     view?.visualViewport?.addEventListener("scroll", this.#onViewportChange);
   }
 
+  /** Removes document listeners. */
   #removeDocumentListeners(): void {
     this.ownerDocument.removeEventListener("pointerdown", this.#onDocumentPointerDown, true);
     this.ownerDocument.removeEventListener("keydown", this.#onDocumentKeyDown, true);
@@ -167,6 +185,7 @@ export class HirayaPopover extends HTMLElementBase {
     view?.visualViewport?.removeEventListener("scroll", this.#onViewportChange);
   }
 
+  /** Schedules position. */
   #schedulePosition(): void {
     this.#cancelPosition();
     const view = this.ownerDocument.defaultView;
@@ -177,12 +196,14 @@ export class HirayaPopover extends HTMLElementBase {
     });
   }
 
+  /** Cancels position. */
   #cancelPosition(): void {
     if (!this.#animationFrame) return;
     this.ownerDocument.defaultView?.cancelAnimationFrame(this.#animationFrame);
     this.#animationFrame = 0;
   }
 
+  /** Positions the floating element. */
   #position(): void {
     const trigger = this.#triggerState?.element;
     const view = this.ownerDocument.defaultView;
@@ -209,6 +230,7 @@ export class HirayaPopover extends HTMLElementBase {
     this.#panel.style.maxHeight = `${Math.max(80, viewportHeight - margin * 2)}px`;
   }
 
+  /** Moves focus into the popover content. */
   #focusContent(): void {
     if (!this.open) return;
     const content = this.#contentSlot.assignedElements({ flatten: true })[0] as (HTMLElement & { focusFirst?: () => void }) | undefined;
@@ -216,6 +238,7 @@ export class HirayaPopover extends HTMLElementBase {
     else content?.focus({ preventScroll: true });
   }
 
+  /** Synchronizes trigger. */
   #syncTrigger(): void {
     const trigger = this.#triggerSlot.assignedElements({ flatten: true }).find((element): element is HTMLElement => element instanceof HTMLElement) ?? null;
     if (trigger === this.#triggerState?.element) {
@@ -243,10 +266,12 @@ export class HirayaPopover extends HTMLElementBase {
     this.#setTriggerExpanded(this.open);
   }
 
+  /** Sets trigger expanded. */
   #setTriggerExpanded(expanded: boolean): void {
     this.#triggerState?.element.setAttribute("aria-expanded", String(expanded));
   }
 
+  /** Restores trigger. */
   #restoreTrigger(): void {
     const state = this.#triggerState;
     if (!state) return;
@@ -260,6 +285,7 @@ export class HirayaPopover extends HTMLElementBase {
     this.#triggerState = null;
   }
 
+  /** Restores attribute. */
   #restoreAttribute(element: HTMLElement, name: string, value: string | null): void {
     if (value === null) element.removeAttribute(name);
     else element.setAttribute(name, value);

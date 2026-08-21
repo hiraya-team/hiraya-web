@@ -30,9 +30,12 @@ import { isSceneFile } from "./domain/scene";
 import { postSandboxPointer, type SandboxPointerObservation } from "@hiraya/app-runtime/navigation";
 import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
+/** Lazily loads the sandboxed app frame used by public file previews. */
 const PublicAppFrame = lazy(() => import("./features/public-desktop/AppFrame"));
+/** Lazily loads executable wallpaper and widget scenes. */
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
 
+/** Renders the large download gate interface. */
 function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileName: string }; onClose: () => void }) {
   const dialogRef = useRef<HTMLDialogElement>(null);
   useNativeDialog(dialogRef, onClose);
@@ -59,6 +62,7 @@ function LargeDownloadGate({ gate, onClose }: { gate: { loginUrl: string; fileNa
   );
 }
 
+/** Renders the public icon interface. */
 function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onOpen }: { entry: DesktopEntry; selected: boolean; interactive: boolean; loadThumbnail?: (id: string) => Promise<EntryPreviewSource>; onSelect: () => void; onOpen: () => void }) {
   const press = useRef<{
     pointerId: number;
@@ -148,6 +152,7 @@ function PublicIcon({ entry, selected, interactive, loadThumbnail, onSelect, onO
   );
 }
 
+/** Renders the public desktop interface. */
 export default function PublicDesktop({ authority }: { authority: PublicAuthority }) {
   const [explorerView, setExplorerView] = useState<ExplorerView>("list");
 	const { desktop, error, open, setOpen, downloadGate, dismissDownloadGate, wallpaperUrl, wallpaperFailed, loadFile, loadThumbnail, openInternetShortcut } = usePublicDesktop(authority);

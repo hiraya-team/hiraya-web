@@ -1,4 +1,5 @@
 import { MAX_FILE_CHUNK_BYTES } from "@hiraya-team/apps-contracts";
+import { APP_PERMISSIONS } from "../permissions";
 import type {
   AppPermission,
   DirectoryEntry,
@@ -39,32 +40,38 @@ export type FileServiceOptions = {
   createPosition?: () => EntryPosition;
 };
 
+/** Represents a file-service failure using the sandbox error contract. */
 export class FileServiceError extends Error {
+  /** Creates a file error with its public code and safe message. */
   constructor(readonly code: HirayaErrorCode, message: string) {
     super(message);
     this.name = "FileServiceError";
   }
 }
 
+/** Enforces app permissions and capabilities around desktop file operations. */
 export class FileService {
   private readonly createPosition: () => EntryPosition;
   private readonly writes = new Map<string, { handle: FileHandle; size: number; mimeType?: string; expectedRevision?: number; offset: number; chunks: ArrayBuffer[]; touchedAt: number }>();
 
+  /** Creates a file service for one hosted app instance. */
   constructor(private readonly options: FileServiceOptions) {
     this.createPosition = options.createPosition ?? (() => ({ x: 0, y: 0 }));
   }
 
+  /** Returns metadata for a granted file or folder. */
   async stat(params: Params<"files.stat">): Promise<Result<"files.stat">> {
     return this.protect(async () => {
-      this.requirePermission("files:read");
+      this.requirePermission(APP_PERMISSIONS.filesRead);
       const capability = this.requireHandle(params.handle, "stat");
       return this.publicEntry(this.requireEntry(capability), capability);
     });
   }
 
+  /** Reads the complete contents of a granted file. */
   async read(params: Params<"files.read">): Promise<Result<"files.read">> {
     return this.protect(async () => {
-      this.requirePermission("files:read");
+      this.requirePermission(APP_PERMISSIONS.filesRead);
       const capability = this.requireHandle(params.handle, "read", "file");
       const entry = this.requireEntry(capability, "file") as FileEntry;
       const blob = await this.options.sync.readFile(entry.id);
@@ -72,9 +79,10 @@ export class FileService {
     });
   }
 
+  /** Reads a bounded byte range from a granted file. */
   async readChunk(params: Params<"files.readChunk">): Promise<Result<"files.readChunk">> {
     return this.protect(async () => {
-      this.requirePermission("files:read");
+      this.requirePermission(APP_PERMISSIONS.filesRead);
       if (params.length > MAX_FILE_CHUNK_BYTES) throw new FileServiceError("INVALID_REQUEST", "The requested file chunk is too large.");
       const capability = this.requireHandle(params.handle, "read", "file");
       const entry = this.requireEntry(capability, "file") as FileEntry;
@@ -85,9 +93,10 @@ export class FileService {
     });
   }
 
+  /** Replaces a granted file in one write operation. */
   async write(params: Params<"files.write">): Promise<Result<"files.write">> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const capability = this.requireHandle(params.handle, "write", "file");
       const entry = this.requireEntry(capability, "file") as FileEntry;
       const saved = await this.options.sync.saveFile(entry.id, new Blob([params.data], { type: params.mimeType ?? entry.mimeType }), {
@@ -99,9 +108,10 @@ export class FileService {
     });
   }
 
+  /** Starts a bounded in-memory staged write session. */
   async beginWrite(params: Params<"files.beginWrite">): Promise<Result<"files.beginWrite">> {
     return this.protect(() => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       this.cleanupWrites();
       const capability = this.requireHandle(params.handle, "write", "file");
       const entry = this.requireEntry(capability, "file") as FileEntry;
@@ -114,9 +124,10 @@ export class FileService {
     });
   }
 
+  /** Appends the next ordered chunk to a staged write. */
   async writeChunk(params: Params<"files.writeChunk">): Promise<void> {
     return this.protect(() => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const write = this.requireWrite(params.uploadId);
       if (params.data.byteLength > MAX_FILE_CHUNK_BYTES || params.offset !== write.offset || params.data.byteLength === 0 || write.offset + params.data.byteLength > write.size) {
         throw new FileServiceError("INVALID_REQUEST", "File chunks must be complete and written in order.");
@@ -127,9 +138,10 @@ export class FileService {
     });
   }
 
+  /** Commits a complete staged write to desktop storage. */
   async commitWrite(params: Params<"files.commitWrite">): Promise<Result<"files.commitWrite">> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const write = this.requireWrite(params.uploadId);
       if (write.offset !== write.size) throw new FileServiceError("INVALID_REQUEST", "The staged file is incomplete.");
       const capability = this.requireHandle(write.handle, "write", "file");
@@ -147,17 +159,19 @@ export class FileService {
     });
   }
 
+  /** Aborts and discards a staged write session. */
   async abortWrite(params: Params<"files.abortWrite">): Promise<void> {
     return this.protect(() => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       this.cleanupWrites();
       if (!this.writes.delete(params.uploadId)) throw new FileServiceError("NOT_FOUND", "The file write session is unavailable.");
     });
   }
 
+  /** Resolves a relative path without escaping its capability scope. */
   async resolve(params: Params<"files.resolve">): Promise<Result<"files.resolve">> {
     return this.protect(() => {
-      this.requirePermission("files:read");
+      this.requirePermission(APP_PERMISSIONS.filesRead);
       const source = this.requireHandle(params.handle, "read");
       const sourceEntry = source.entryId === null ? null : this.requireEntry(source, source.kind);
       if (source.kind === "file" && source.scopeEntryId === source.entryId) throw new FileServiceError("PERMISSION_DENIED", "Relative paths require access to a folder.");
@@ -189,31 +203,37 @@ export class FileService {
     });
   }
 
+  /** Returns app handles affected by changed desktop entries. */
   changedHandles(entryIds: Iterable<string>): (FileHandle | FolderHandle)[] {
     return this.options.capabilities.findAll(this.options.appInstanceId, new Set(entryIds));
   }
 
+  /** Builds the host change payload for affected handles. */
   changedPayload(entryIds: Iterable<string>): { handles: (FileHandle | FolderHandle)[] } {
     return { handles: this.changedHandles(entryIds) };
   }
 
+  /** Releases all staged writes owned by this service. */
   close(): void {
     this.writes.clear();
   }
 
+  /** Resolves a handle to its current desktop entry for host use. */
   entryForHost(handle: FileCapabilityHandle, operation: FileCapabilityOperation = "stat"): DesktopEntry {
     return this.requireEntry(this.requireHandle(handle, operation));
   }
 
+  /** Resolves a folder handle or granted root for host use. */
   folderIdForHost(handle: FolderHandle | null, operation: FileCapabilityOperation): string | null {
     const capability = handle === null ? this.requireRoot(operation) : this.requireHandle(handle, operation, "folder");
     if (capability.entryId !== null) this.requireEntry(capability, "folder");
     return capability.entryId;
   }
 
+  /** Lists entries in a granted folder and derives child handles. */
   async list(params: Params<"files.list">): Promise<Result<"files.list">> {
     return this.protect(async () => {
-      this.requirePermission("files:read");
+      this.requirePermission(APP_PERMISSIONS.filesRead);
       const capability = params.folder === null
         ? this.requireRoot("list")
         : this.requireHandle(params.folder, "list", "folder");
@@ -225,9 +245,10 @@ export class FileService {
     });
   }
 
+  /** Creates a file beneath a granted folder. */
   async createFile(params: Params<"files.createFile">): Promise<Result<"files.createFile">> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const parent = this.parentCapability(params.parent, "create");
       const blob = new Blob([params.data ?? new ArrayBuffer(0)], { type: params.mimeType ?? "application/octet-stream" });
       const entry = await this.options.sync.createFile(params.name, parent.entryId, this.createPosition(), blob, params.mimeType);
@@ -236,9 +257,10 @@ export class FileService {
     });
   }
 
+  /** Creates a folder beneath a granted folder. */
   async createFolder(params: Params<"files.createFolder">): Promise<Result<"files.createFolder">> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const parent = this.parentCapability(params.parent, "create");
       const entry = await this.options.sync.createFolder(params.name, parent.entryId, this.createPosition());
       const handle = this.options.capabilities.derive(this.options.appInstanceId, parent.handle, "folder", entry.id) as FolderHandle;
@@ -246,13 +268,15 @@ export class FileService {
     });
   }
 
+  /** Renames a granted desktop entry. */
   async rename(params: Params<"files.rename">): Promise<Result<"files.rename">> {
     return this.mutateEntry(params.handle, "rename", (entry) => this.options.sync.renameEntry(entry.id, params.name));
   }
 
+  /** Moves a granted entry beneath another granted folder. */
   async move(params: Params<"files.move">): Promise<Result<"files.move">> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const capability = this.requireHandle(params.handle, "move");
       const entry = this.requireEntry(capability);
       const parent = this.parentCapability(params.parent, "create");
@@ -261,9 +285,10 @@ export class FileService {
     });
   }
 
+  /** Deletes one granted entry after recursive checks. */
   async delete(params: Params<"files.delete">): Promise<void> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const capability = this.requireHandle(params.handle, "delete");
       const entry = this.requireEntry(capability);
       if (entry.kind === "folder" && this.snapshot().entries.some((candidate) => candidate.parentId === entry.id) && !params.recursive) {
@@ -274,9 +299,10 @@ export class FileService {
     });
   }
 
+  /** Atomically validates and deletes multiple granted entries. */
   async deleteMany(params: Params<"files.deleteMany">): Promise<void> {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       // Resolve every capability and recursive constraint before the single host mutation.
       const selected = params.handles.map((handle) => ({ handle, entry: this.requireEntry(this.requireHandle(handle, "delete")) }));
       const snapshot = this.snapshot();
@@ -288,14 +314,16 @@ export class FileService {
     });
   }
 
+  /** Applies a desktop-entry mutation through shared permission checks. */
   private async mutateEntry(handle: FileCapabilityHandle, operation: FileCapabilityOperation, mutation: (entry: DesktopEntry) => Promise<DesktopEntry>) {
     return this.protect(async () => {
-      this.requirePermission("files:write");
+      this.requirePermission(APP_PERMISSIONS.filesWrite);
       const capability = this.requireHandle(handle, operation);
       return this.publicEntry(await mutation(this.requireEntry(capability)), capability);
     });
   }
 
+  /** Returns a live staged write after expiring stale sessions. */
   private requireWrite(uploadId: string) {
     this.cleanupWrites();
     const write = this.writes.get(uploadId);
@@ -303,28 +331,33 @@ export class FileService {
     return write;
   }
 
+  /** Returns the total bytes reserved by staged writes. */
   private stagedBytes() {
     let bytes = 0;
     for (const write of this.writes.values()) bytes += write.size;
     return bytes;
   }
 
+  /** Removes staged writes that exceeded the inactivity deadline. */
   private cleanupWrites(now = Date.now()) {
     for (const [id, write] of this.writes) if (now - write.touchedAt >= STAGED_WRITE_EXPIRY_MS) this.writes.delete(id);
   }
 
+  /** Resolves a writable parent folder capability. */
   private parentCapability(handle: FolderHandle | null, operation: FileCapabilityOperation) {
     const capability = handle === null ? this.requireRoot(operation) : this.requireHandle(handle, operation, "folder");
     if (capability.entryId !== null) this.requireEntry(capability, "folder");
     return capability;
   }
 
+  /** Resolves the granted desktop-root capability for an operation. */
   private requireRoot(operation: FileCapabilityOperation) {
     const handle = this.options.capabilities.find(this.options.appInstanceId, null, "folder", operation);
     if (!handle) throw new FileServiceError("PERMISSION_DENIED", "Access to that location was not granted.");
     return this.requireHandle(handle, operation, "folder");
   }
 
+  /** Requires a valid handle authorized for an operation. */
   private requireHandle(handle: FileCapabilityHandle, operation: FileCapabilityOperation, kind?: "file" | "folder") {
     const granted = this.options.capabilities.inspect(this.options.appInstanceId, handle, kind);
     if (!granted) throw new FileServiceError("NOT_FOUND", "The file handle is unavailable.");
@@ -333,6 +366,7 @@ export class FileService {
     return capability;
   }
 
+  /** Resolves the current entry represented by a capability. */
   private requireEntry(capability: ResolvedFileCapability, kind?: "file" | "folder") {
     const entry = capability.entryId === null ? undefined : this.snapshot().entries.find((candidate) => candidate.id === capability.entryId);
     if (!entry || entry.kind !== capability.kind || kind && entry.kind !== kind || !this.inScope(entry.id, capability.scopeEntryId)) {
@@ -341,6 +375,7 @@ export class FileService {
     return entry;
   }
 
+  /** Reports whether an entry remains within a capability scope. */
   private inScope(entryId: string, scopeEntryId: string | null) {
     if (scopeEntryId === null) return true;
     const entries = this.snapshot().entries;
@@ -354,12 +389,14 @@ export class FileService {
     return false;
   }
 
+  /** Converts a desktop entry to the hosted-app directory contract. */
   private publicEntry(entry: DesktopEntry, capability: ResolvedFileCapability): DirectoryEntry {
     return entry.kind === "file"
       ? { kind: "file", metadata: this.fileMetadata(entry, capability) }
       : { kind: "folder", metadata: this.folderMetadata(entry, capability) };
   }
 
+  /** Converts a file entry to hosted-app metadata. */
   private fileMetadata(entry: FileEntry, capability: ResolvedFileCapability): FileMetadata {
     return {
       handle: capability.handle as FileHandle,
@@ -372,10 +409,12 @@ export class FileService {
     };
   }
 
+  /** Converts a folder entry to hosted-app metadata. */
   private folderMetadata(entry: FolderEntry, capability: ResolvedFileCapability): FolderMetadata {
     return { handle: capability.handle as FolderHandle, name: entry.name, modifiedAt: entry.modifiedAt, parent: this.parentHandle(entry.parentId, capability) };
   }
 
+  /** Returns an accessible handle for an entry's parent folder. */
   private parentHandle(parentId: string | null, capability: ResolvedFileCapability) {
     if (parentId === null) return null;
     const existing = this.options.capabilities.find(this.options.appInstanceId, parentId, "folder", "stat");
@@ -384,15 +423,18 @@ export class FileService {
     return this.options.capabilities.derive(this.options.appInstanceId, capability.handle, "folder", parentId) as FolderHandle;
   }
 
+  /** Requires a declared app permission for an operation. */
   private requirePermission(permission: AppPermission) {
     const permissions = typeof this.options.permissions === "function" ? this.options.permissions() : this.options.permissions;
     if (!new Set(permissions).has(permission)) throw new FileServiceError("PERMISSION_DENIED", "The app does not have permission for this operation.");
   }
 
+  /** Returns the latest desktop state snapshot. */
   private snapshot() {
     return this.options.getSnapshot();
   }
 
+  /** Maps internal storage failures to stable hosted-app errors. */
   private async protect<T>(operation: () => Promise<T> | T): Promise<T> {
     try {
       return await operation();
@@ -410,6 +452,9 @@ export class FileService {
   }
 }
 
+/** Caps concurrent staged writes owned by one file service. */
 export const MAX_STAGED_WRITE_SESSIONS = 4;
+/** Caps bytes held across staged writes. */
 export const MAX_STAGED_WRITE_BYTES = 32 * 1024 * 1024;
+/** Expires inactive staged writes after two minutes. */
 export const STAGED_WRITE_EXPIRY_MS = 2 * 60 * 1000;

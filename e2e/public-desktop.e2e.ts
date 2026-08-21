@@ -3,8 +3,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { createHash } from "node:crypto";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 
+/** Provides the scene file test fixture. */
 const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAHP6KseYAAABXAQAACgAAAGluZGV4Lmh0bWxVUMFOxSAQ/JXaU0l8POPRFi7GizGa2KPxQGG1G3mAsFSJ8d/F18b4brszOzOZHc6M11QCNDMdrBymTOSdfMyuGTU4GPYbMiQdMZDU3iVqVlBUbT6AI/6eIZYRLGjysWtXumX9OnDvtEX9Jjom5AYRfNK1d1TVoj1GNRE04AKmQRcytf0a5acEcVGEdRNPz70y5mapqjtMVQw1bcaoirr6UNYGFSDugsdqHNtz+D0U8uu/Bw85zd2R4QZIoWX9X4/Jm8KNIpWA+GaTxO34cM8TRXSv+FK6E7dUi0G3u7xg7JsN++1LP1BLAQIUABQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAAAAAAAAAAAAAAAAAAABoaXJheWEuc2NlbmUuanNvblBLAQIUABQAAAAIAAAAIQAc/oqx5gAAAFcBAAAKAAAAAAAAAAAAAAAAAF4AAABpbmRleC5odG1sUEsFBgAAAAACAAIAdwAAAGwBAAAAAA==", "base64");
 
+/** Provides the public desktop test fixture. */
 const publicDesktop = {
   schemaVersion: 2,
   id: "public-desk",
@@ -37,11 +39,13 @@ type PublicFixture = {
   appearance?: { selectedThemeId: string; customThemes: Array<{ id: string; revision?: number; [key: string]: unknown }> };
 };
 
+/** Builds the stable ID test fixture. */
 function stableId(value: string) {
   const hex = createHash("sha256").update(value).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 
+/** Mocks a public desktop and its file responses. */
 async function mockPublicDesktop(page: Page, desktop: PublicFixture = publicDesktop, contents: ReadonlyMap<string, Uint8Array> = new Map()) {
   const workspaceId = stableId("public-workspace");
   const chunks = new Map<string, Uint8Array>();
@@ -131,6 +135,7 @@ async function mockPublicDesktop(page: Page, desktop: PublicFixture = publicDesk
   });
 }
 
+/** Measures viewport overflow in the test page. */
 async function overflow(page: Page) {
   return page.evaluate(() => ({ width: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
 }

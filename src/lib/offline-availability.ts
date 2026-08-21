@@ -37,10 +37,12 @@ export type OfflineAvailabilityModel = {
   entries: Record<string, OfflineEntryAvailability>;
 };
 
+/** Returns entry map. */
 function entryMap(entries: readonly DesktopEntry[]) {
   return new Map(entries.map((entry) => [entry.id, entry]));
 }
 
+/** Returns file IDs referenced by an offline operation. */
 function operationReferenceIds(operation: OutboxOperation) {
   if (operation.kind === "create") return operation.entries.map((entry) => entry.id);
   if (operation.kind === "patch-entry" || operation.kind === "save-content") return [operation.entryId];
@@ -51,6 +53,7 @@ function operationReferenceIds(operation: OutboxOperation) {
   return [];
 }
 
+/** Returns file IDs protected by pending outbox operations. */
 export function outboxProtectedFileIds(records: readonly OutboxRecord[], states: readonly Pick<PersistedDesktopState, "entries">[]) {
   const protectedIds = new Set<string>();
   const referencedIds = new Set<string>();
@@ -70,6 +73,7 @@ export function outboxProtectedFileIds(records: readonly OutboxRecord[], states:
   return protectedIds;
 }
 
+/** Returns dedupe offline roots. */
 export function dedupeOfflineRoots(entries: readonly DesktopEntry[], ids: readonly string[]) {
   const byId = entryMap(entries);
   const selected = new Set(ids);
@@ -84,6 +88,7 @@ export function dedupeOfflineRoots(entries: readonly DesktopEntry[], ids: readon
   });
 }
 
+/** Returns offline files under roots. */
 export function offlineFilesUnderRoots(entries: readonly DesktopEntry[], rootIds: readonly string[]) {
   const roots = new Set(dedupeOfflineRoots(entries, rootIds));
   const included = new Set(roots);
@@ -97,6 +102,7 @@ export function offlineFilesUnderRoots(entries: readonly DesktopEntry[], rootIds
   return entries.filter((entry): entry is FileEntry => entry.kind === "file" && included.has(entry.id));
 }
 
+/** Builds offline availability. */
 export function buildOfflineAvailability(
   entries: readonly DesktopEntry[],
   inventory: OfflineStorageInventory,
@@ -141,6 +147,7 @@ export function buildOfflineAvailability(
   return { entries: result };
 }
 
+/** Returns offline status label. */
 export function offlineStatusLabel(value: OfflineEntryAvailability) {
   if (value.status === "local") return "Stored in this browser";
   if (value.status === "available") return "Available offline";
@@ -150,6 +157,7 @@ export function offlineStatusLabel(value: OfflineEntryAvailability) {
   return "Empty folder";
 }
 
+/** Returns offline status description. */
 export function offlineStatusDescription(value: OfflineEntryAvailability) {
   if (value.status === "local") return "This browser stores the authoritative local content.";
   if (value.status === "available") return value.fileCount === 1 ? "This file can be opened without a connection." : `All ${value.fileCount} files can be opened without a connection.`;

@@ -6,13 +6,17 @@ import { filesystemRevisionChannelName, openWorkspaceFilesystem, type Filesystem
 import { MemoryDirectory, memoryOpfsHandle } from "./support/memory-opfs";
 import { initializeLocalWeb2Storage, LOCAL_WEB2_ACCOUNT_ID } from "../src/platform/storage/local-startup";
 
+/** Provides the account test fixture. */
 const ACCOUNT = stableId(1);
+/** Provides the device test fixture. */
 const DEVICE = stableId(2);
 
+/** Builds the stable ID test fixture. */
 function stableId(value: number) {
   return `00000000-0000-4000-8000-${value.toString().padStart(12, "0")}`;
 }
 
+/** Builds the IDB request test fixture. */
 function idbRequest<T>(value: IDBRequest<T>) {
   return new Promise<T>((resolve, reject) => {
     value.onsuccess = () => resolve(value.result);
@@ -20,6 +24,7 @@ function idbRequest<T>(value: IDBRequest<T>) {
   });
 }
 
+/** Opens a raw IndexedDB test database. */
 function openRaw(factory: IDBFactory, name: string) {
   return new Promise<IDBDatabase>((resolve, reject) => {
     const request = factory.open(name);
@@ -28,13 +33,18 @@ function openRaw(factory: IDBFactory, name: string) {
   });
 }
 
+/** Implements an in-memory sessionStorage test double. */
 class TestSessionStorage {
   private readonly values = new Map<string, string>();
+  /** Returns a stored session value. */
   getItem(key: string) { return this.values.get(key) ?? null; }
+  /** Stores a session value. */
   setItem(key: string, value: string) { this.values.set(key, value); }
+  /** Removes a stored session value. */
   removeItem(key: string) { this.values.delete(key); }
 }
 
+/** Implements an in-memory BroadcastChannel test double. */
 class TestBroadcastChannels {
   private readonly channels = new Map<string, Set<Set<(event: MessageEvent<unknown>) => void>>>();
 
@@ -58,6 +68,7 @@ class TestBroadcastChannels {
     };
   };
 
+  /** Broadcasts a value to test channel peers. */
   broadcast(name: string, value: unknown) {
     const peers = this.channels.get(name);
     if (peers) for (const listeners of peers) setTimeout(() => {
@@ -66,10 +77,12 @@ class TestBroadcastChannels {
   }
 }
 
+/** Implements an in-memory Web Locks test double. */
 class TestLocks {
   readonly calls: Array<{ name: string; mode: LockMode }> = [];
   private readonly states = new Map<string, { readers: number; writer: boolean; queue: Array<{ mode: LockMode; operation: () => Promise<unknown>; resolve: (value: unknown) => void; reject: (error: unknown) => void }> }>();
 
+  /** Queues a test lock request. */
   request<T>(name: string, options: LockOptions, operation: () => Promise<T>) {
     const mode = options.mode ?? "exclusive";
     this.calls.push({ name, mode });
@@ -80,6 +93,7 @@ class TestLocks {
     return result;
   }
 
+  /** Starts queued test lock requests when compatible. */
   private drain(name: string) {
     const state = this.states.get(name)!;
     if (state.writer || state.queue.length === 0 || state.readers > 0 && state.queue[0]!.mode === "exclusive") return;
@@ -97,8 +111,10 @@ class TestLocks {
   }
 }
 
+/** Builds the flush broadcasts test fixture. */
 const flushBroadcasts = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** Builds the test environment test fixture. */
 function testEnvironment(indexedDB = new IDBFactory()) {
   const locks = new TestLocks();
   const broadcasts = new TestBroadcastChannels();

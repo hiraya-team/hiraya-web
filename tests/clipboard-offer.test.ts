@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { dismissClipboardOffer, observeClipboardOffer, persistClipboardOffer, restoreClipboardOffer } from "../src/ui/clipboard-offer";
 
+/** Builds the memory storage test fixture. */
 function memoryStorage() {
   const values = new Map<string, string>();
   return {

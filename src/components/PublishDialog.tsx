@@ -15,6 +15,7 @@ import { writeClipboardText } from "../ui/clipboard-copy";
 import { useNativeDialog } from "../ui/modal-dialog";
 import { useStableHandler } from "../ui/use-stable-handler";
 
+/** Renders the publish dialog interface. */
 export function PublishDialog({
   desktop,
   entry,

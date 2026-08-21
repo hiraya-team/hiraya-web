@@ -2,7 +2,9 @@ import { AuthenticationRequiredError, requireAuthenticatedResponse } from "../..
 import { parseRevisionConflictDetails } from "../../lib/outbox";
 import { authenticatedHeaders } from "../../lib/api-routes";
 
+/** Reports sync request failures. */
 export class SyncRequestError extends Error {
+  /** Creates a SyncRequestError instance. */
   constructor(message: string, readonly status: number | null, readonly permanent: boolean, readonly code: string | null = null, readonly details: unknown = null) {
     super(message);
   }
@@ -16,14 +18,18 @@ type SyncHttpClientOptions = {
   onUnavailable: () => void;
 };
 
+/** Coordinates sync HTTP client behavior. */
 export class SyncHttpClient {
+  /** Creates a SyncHttpClient instance. */
   constructor(private readonly options: SyncHttpClientOptions) {}
 
+  /** Requires an authenticated response. */
   requireAuthentication(response: Response) {
     if (response.status === 401) this.options.onAuthenticationRequired();
     return requireAuthenticatedResponse(response, this.options.onUnauthorized);
   }
 
+  /** Sends a request and parses its JSON response. */
   async requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
     if (this.options.authenticationPaused()) throw new AuthenticationRequiredError();
     let response: Response;

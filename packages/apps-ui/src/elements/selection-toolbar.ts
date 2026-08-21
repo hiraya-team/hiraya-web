@@ -1,5 +1,6 @@
 import { elementStyles, hasBooleanAttribute, hirayaEvent, HTMLElementBase, setBooleanAttribute } from "./shared";
 
+/** Implements the Hiraya selection toolbar. */
 export class HirayaSelectionToolbar extends HTMLElementBase {
   static readonly observedAttributes = ["count", "mode", "label"];
 
@@ -10,6 +11,7 @@ export class HirayaSelectionToolbar extends HTMLElementBase {
   readonly #selectingCount: HTMLElement;
   readonly #status: HTMLElement;
 
+  /** Creates a hiraya selection toolbar instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -38,19 +40,28 @@ export class HirayaSelectionToolbar extends HTMLElementBase {
     });
   }
 
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
 
+  /** Returns the non-negative selection count. */
   get count(): number {
     const value = Number(this.getAttribute("count"));
     return Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
   }
+  /** Sets the non-negative selection count. */
   set count(value: number) { this.setAttribute("count", String(Math.max(0, Math.trunc(value)) || 0)); }
+  /** Reports whether multi-selection mode is active. */
   get mode(): boolean { return hasBooleanAttribute(this, "mode"); }
+  /** Sets whether multi-selection mode is active. */
   set mode(value: boolean) { setBooleanAttribute(this, "mode", value); }
+  /** Returns the toolbar's accessible label. */
   get label(): string { return this.getAttribute("label") ?? "Selection actions"; }
+  /** Sets the toolbar's accessible label. */
   set label(value: string) { this.setAttribute("label", value); }
 
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#toolbar) return;
     const count = this.count;

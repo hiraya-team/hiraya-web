@@ -117,13 +117,19 @@ type StorageDbResponses = {
 
 type StorageDbMethod = keyof StorageDbRequests;
 type DesktopRecord = { id: string; ordinal: number; identity: DesktopIdentity; state: PersistedDesktopState };
-type ClientState = { id: "singleton"; clientId: string; nextSequence: number };
+/** Identifies records stored once per browser database. */
+const SINGLETON_RECORD_ID = "singleton" as const;
+type ClientState = { id: typeof SINGLETON_RECORD_ID; clientId: string; nextSequence: number };
 type AppStorageRecord = { appId: string; key: string; value: JsonValue; bytes: number };
-type AccountAppClientState = { id: "singleton"; clientId: string; nextSequence: number };
+type AccountAppClientState = { id: typeof SINGLETON_RECORD_ID; clientId: string; nextSequence: number };
 
+/** Defines the database version. */
 export const DATABASE_VERSION = 3;
+/** Defines the history limit. */
 const HISTORY_LIMIT = Number(import.meta.env.HIRAYA_HISTORY_LIMIT);
+/** Defines the default preferences. */
 const DEFAULT_PREFERENCES: LocalPreferences = { autoUpdate: true, externalEmbeddedPreviews: false, allowBrowserPinchZoom: false, searchAllDesktops: false, onboardingVersion: 0, showDesktopMinimap: true, explorerView: "list", showHiddenFiles: false, desktops: [] };
+/** Defines the stores. */
 const STORES = {
   desktops: "desktops",
   outbox: "outbox",
@@ -138,10 +144,12 @@ const STORES = {
   accountAppOutbox: "account-app-outbox",
   accountAppClientState: "account-app-client-state",
 } as const;
+/** Defines the account app atomic stores. */
 export const ACCOUNT_APP_ATOMIC_STORES = [STORES.accountApps, STORES.accountAppOutbox, STORES.accountAppClientState, STORES.appStorage] as const;
 
 let database: Promise<IDBDatabase> | null = null;
 
+/** Resolves an IndexedDB request as a promise. */
 function request<T>(value: IDBRequest<T>): Promise<T> {
   return new Promise((resolve, reject) => {
     value.onsuccess = () => resolve(value.result);
@@ -149,6 +157,7 @@ function request<T>(value: IDBRequest<T>): Promise<T> {
   });
 }
 
+/** Resolves when an IndexedDB transaction completes. */
 function transactionDone(transaction: IDBTransaction) {
   return new Promise<void>((resolve, reject) => {
     transaction.oncomplete = () => resolve();
@@ -157,6 +166,7 @@ function transactionDone(transaction: IDBTransaction) {
   });
 }
 
+/** Resets database schema. */
 export function resetDatabaseSchema(db: IDBDatabase) {
   for (const name of [...db.objectStoreNames]) db.deleteObjectStore(name);
   const desktops = db.createObjectStore(STORES.desktops, { keyPath: "id" });
@@ -179,6 +189,7 @@ export function resetDatabaseSchema(db: IDBDatabase) {
   db.createObjectStore(STORES.accountAppClientState, { keyPath: "id" });
 }
 
+/** Runs work in an IndexedDB transaction. */
 async function transact<T>(storeNames: string | string[], mode: IDBTransactionMode, operation: (transaction: IDBTransaction) => Promise<T>): Promise<T> {
   const transaction = (await openDatabase()).transaction(storeNames, mode, { durability: mode === "readwrite" ? "strict" : "default" });
   const done = transactionDone(transaction);
@@ -193,6 +204,7 @@ async function transact<T>(storeNames: string | string[], mode: IDBTransactionMo
   }
 }
 
+/** Opens database. */
 function openDatabase() {
   if (database) return database;
   database = new Promise<IDBDatabase>((resolve, reject) => {
@@ -218,6 +230,7 @@ function openDatabase() {
   return database;
 }
 
+/** Parses and validates desktop record. */
 function parseDesktopRecord(value: DesktopRecord): DesktopRecord {
   if (!value || typeof value !== "object" || !Number.isSafeInteger(value.ordinal) || value.ordinal < 0) throw new Error("The desktop database contains invalid metadata.");
   const identity = parseDesktopIdentity(value.identity, true);
@@ -225,16 +238,19 @@ function parseDesktopRecord(value: DesktopRecord): DesktopRecord {
   return { id: identity.id, ordinal: value.ordinal, identity, state: parseDesktopState(value.state) };
 }
 
+/** Reads desktop. */
 async function readDesktop(store: IDBObjectStore, desktopId: string) {
   const record = await request(store.get(desktopId)) as DesktopRecord | undefined;
   if (!record) throw new Error("That desktop no longer exists.");
   return parseDesktopRecord(record);
 }
 
+/** Reads desktops. */
 async function readDesktops(store: IDBObjectStore) {
   return ((await request(store.index("ordinal").getAll())) as DesktopRecord[]).map(parseDesktopRecord);
 }
 
+/** Validates that desktop entry IDs are unique. */
 export function assertUniqueDesktopEntryIds(records: readonly Pick<DesktopRecord, "id" | "state">[]) {
   const owners = new Map<string, string>();
   for (const record of records) for (const entry of parseDesktopState(record.state).entries) {
@@ -244,6 +260,7 @@ export function assertUniqueDesktopEntryIds(records: readonly Pick<DesktopRecord
   }
 }
 
+/** Writes desktop states. */
 async function writeDesktopStates(store: IDBObjectStore, updates: ReadonlyMap<string, PersistedDesktopState>) {
   const records = await readDesktops(store);
   const next = records.map((record) => updates.has(record.id) ? { ...record, state: parseDesktopState(updates.get(record.id)) } : record);
@@ -252,6 +269,7 @@ async function writeDesktopStates(store: IDBObjectStore, updates: ReadonlyMap<st
   for (const record of next) if (updates.has(record.id)) await request(store.put(record));
 }
 
+/** Creates desktop. */
 async function createDesktop(store: IDBObjectStore, desktopValue: DesktopIdentity, stateValue: PersistedDesktopState) {
   const desktop = parseDesktopIdentity(desktopValue, true);
   const state = parseDesktopState(stateValue);
@@ -263,18 +281,21 @@ async function createDesktop(store: IDBObjectStore, desktopValue: DesktopIdentit
   return desktop;
 }
 
+/** Parses and validates outbox record. */
 function parseOutboxRecord(value: OutboxRecord): OutboxRecord {
   if (!value || typeof value !== "object" || !Number.isSafeInteger(value.sequence) || value.sequence <= 0 || value.operationId !== value.sequence.toString().padStart(16, "0") || typeof value.clientId !== "string" || typeof value.desktopId !== "string" || !["pending", "blocked"].includes(value.status) || !Number.isSafeInteger(value.attemptCount) || value.attemptCount < 0 || value.lastAttemptAt !== null && (!Number.isSafeInteger(value.lastAttemptAt) || value.lastAttemptAt < 0)) throw new Error("The local outbox contains invalid metadata.");
   return { ...value, operation: normalizeOutboxOperation(value.operation), errorCode: value.errorCode ?? null, conflictDetails: value.conflictDetails == null ? null : parseRevisionConflictDetails(value.conflictDetails) };
 }
 
+/** Reads outbox. */
 async function readOutbox(store: IDBObjectStore, desktopId?: string) {
   const values = desktopId === undefined ? await request(store.getAll()) : await request(store.index("desktopId").getAll(desktopId));
   return (values as OutboxRecord[]).map(parseOutboxRecord).sort((left, right) => left.sequence - right.sequence);
 }
 
+/** Inserts an outbox record in the current transaction. */
 async function insertOutbox(store: IDBObjectStore, clientStore: IDBObjectStore, operationId: string, catalogId: string | null, desktopId: string, operationValue: OutboxOperation) {
-  const identity = await request(clientStore.get("singleton")) as ClientState | undefined;
+  const identity = await request(clientStore.get(SINGLETON_RECORD_ID)) as ClientState | undefined;
   if (!identity) throw new Error("The local operation identity is unavailable.");
   const sequence = Number.parseInt(operationId, 10);
   const record = parseOutboxRecord({ operationId, sequence, clientId: identity.clientId, catalogId, desktopId, operation: normalizeOutboxOperation(operationValue), status: "pending", error: null, errorCode: null, conflictDetails: null, attemptCount: 0, lastAttemptAt: null });
@@ -282,36 +303,41 @@ async function insertOutbox(store: IDBObjectStore, clientStore: IDBObjectStore, 
   return record;
 }
 
+/** Reserves operation. */
 async function reserveOperation(store: IDBObjectStore) {
-  let state = await request(store.get("singleton")) as ClientState | undefined;
-  if (!state) state = { id: "singleton", clientId: crypto.randomUUID(), nextSequence: 1 };
-  if (state.id !== "singleton" || typeof state.clientId !== "string" || !state.clientId || !Number.isSafeInteger(state.nextSequence) || state.nextSequence <= 0) throw new Error("The local operation identity is invalid.");
+  let state = await request(store.get(SINGLETON_RECORD_ID)) as ClientState | undefined;
+  if (!state) state = { id: SINGLETON_RECORD_ID, clientId: crypto.randomUUID(), nextSequence: 1 };
+  if (state.id !== SINGLETON_RECORD_ID || typeof state.clientId !== "string" || !state.clientId || !Number.isSafeInteger(state.nextSequence) || state.nextSequence <= 0) throw new Error("The local operation identity is invalid.");
   const sequence = state.nextSequence;
   await request(store.put({ ...state, nextSequence: sequence + 1 }));
   return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
 }
 
+/** Reads account app outbox. */
 async function readAccountAppOutbox(store: IDBObjectStore) {
   return (await request(store.getAll()) as AccountAppOutboxRecord[]).map(parseAccountAppOutboxRecord).sort((left, right) => left.sequence - right.sequence);
 }
 
+/** Reads account-app state from the current transaction. */
 async function accountAppState(store: IDBObjectStore, outbox: readonly AccountAppOutboxRecord[]): Promise<PersistedAccountApps> {
-  const stored = await request(store.get("singleton")) as PersistedAccountApps | undefined;
+  const stored = await request(store.get(SINGLETON_RECORD_ID)) as PersistedAccountApps | undefined;
   const baseline = stored?.baseline == null ? null : parseAccountAppsSnapshot(stored.baseline);
   const projection = projectAccountApps(baseline, outbox);
   if (stored && JSON.stringify(stored.projection) !== JSON.stringify(projection)) throw new Error("The account app projection does not match its baseline and outbox.");
-  return { id: "singleton", baseline, projection };
+  return { id: SINGLETON_RECORD_ID, baseline, projection };
 }
 
+/** Reserves account app operation. */
 async function reserveAccountAppOperation(store: IDBObjectStore) {
-  let state = await request(store.get("singleton")) as AccountAppClientState | undefined;
-  if (!state) state = { id: "singleton", clientId: crypto.randomUUID(), nextSequence: 1 };
-  if (state.id !== "singleton" || !state.clientId || !Number.isSafeInteger(state.nextSequence) || state.nextSequence < 1) throw new Error("The account app operation identity is invalid.");
+  let state = await request(store.get(SINGLETON_RECORD_ID)) as AccountAppClientState | undefined;
+  if (!state) state = { id: SINGLETON_RECORD_ID, clientId: crypto.randomUUID(), nextSequence: 1 };
+  if (state.id !== SINGLETON_RECORD_ID || !state.clientId || !Number.isSafeInteger(state.nextSequence) || state.nextSequence < 1) throw new Error("The account app operation identity is invalid.");
   const sequence = state.nextSequence;
   await request(store.put({ ...state, nextSequence: sequence + 1 }));
   return { clientId: state.clientId, sequence, operationId: sequence.toString().padStart(16, "0") };
 }
 
+/** Writes local account app data. */
 async function writeLocalAccountAppData(transaction: IDBTransaction, action: NonNullable<StorageDbRequests["enqueueAccountAppOperation"]["localData"]>) {
   const store = transaction.objectStore(STORES.appStorage);
   if (action.kind === "delete") return request(store.delete([action.appId, action.key])).then(() => undefined);
@@ -328,6 +354,7 @@ async function writeLocalAccountAppData(transaction: IDBTransaction, action: Non
   await request(store.put({ appId: action.appId, key: action.key, value, bytes } satisfies AppStorageRecord));
 }
 
+/** Restores local account app data. */
 async function restoreLocalAccountAppData(transaction: IDBTransaction, operation: AccountAppOperation, restoration?: AccountAppDataRestoration) {
   if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") {
     if (restoration) throw new Error("That account app change does not restore local data.");
@@ -349,6 +376,7 @@ async function restoreLocalAccountAppData(transaction: IDBTransaction, operation
   for (const item of values) await request(store.put({ appId: operation.appId, key: item.key, value: item.value, bytes: new TextEncoder().encode(JSON.stringify(item.value)).byteLength } satisfies AppStorageRecord));
 }
 
+/** Parses and validates preferences. */
 function parsePreferences(value: unknown): LocalPreferences {
   if (!value || typeof value !== "object") throw new Error("The local preferences have an unsupported format.");
   const item = value as LocalPreferences;
@@ -358,6 +386,7 @@ function parsePreferences(value: unknown): LocalPreferences {
   return { ...item, showHiddenFiles: item.showHiddenFiles ?? false, desktops };
 }
 
+/** Appends an activity record in the current transaction. */
 async function appendActivity(store: IDBObjectStore, value: NewActivityRecord) {
   const record = activityRecord(value.summary, value.details, value.timestamp, value.action);
   await request(store.add(record));
@@ -365,6 +394,7 @@ async function appendActivity(store: IDBObjectStore, value: NewActivityRecord) {
   for (const key of keys.slice(0, Math.max(0, keys.length - HISTORY_LIMIT))) await request(store.delete(key));
 }
 
+/** Lists activity. */
 async function listActivity(store: IDBObjectStore, value: ActivityQuery) {
   const query = parseActivityQuery(value);
   const records = (await request(store.getAll()) as Array<ValidActivityRecord & { catalogRevision: number }>).reverse().filter((record) => {
@@ -375,6 +405,7 @@ async function listActivity(store: IDBObjectStore, value: ActivityQuery) {
   return parseActivityPage({ activities, nextBefore: records.length > query.limit ? activities.at(-1)!.catalogRevision : null });
 }
 
+/** Removes app data. */
 async function deleteAppData(transaction: IDBTransaction, appId: string) {
   const storage = transaction.objectStore(STORES.appStorage);
   for (const record of await request(storage.index("appId").getAll(appId)) as AppStorageRecord[]) await request(storage.delete([record.appId, record.key]));
@@ -382,6 +413,7 @@ async function deleteAppData(transaction: IDBTransaction, appId: string) {
   for (const association of await request(associations.index("appId").getAll(appId)) as FileAssociation[]) await request(associations.delete(association.matcher));
 }
 
+/** Dispatches a database request to its operation handler. */
 async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbRequests[M], desktopId: string | null): Promise<StorageDbResponses[M]> {
   switch (method) {
     case "listDesktops": return transact(STORES.desktops, "readonly", async (tx) => ({ desktops: (await readDesktops(tx.objectStore(STORES.desktops))).map((record) => record.identity) })) as Promise<StorageDbResponses[M]>;
@@ -437,8 +469,8 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         return { source: nextSource, destination: nextDestination };
       }) as Promise<StorageDbResponses[M]>;
     }
-    case "readPreferences": return transact(STORES.preferences, "readonly", async (tx) => { const value = await request(tx.objectStore(STORES.preferences).get("singleton")); return value === undefined ? { ...DEFAULT_PREFERENCES } : parsePreferences(value); }) as Promise<StorageDbResponses[M]>;
-    case "writePreferences": return transact(STORES.preferences, "readwrite", async (tx) => { await request(tx.objectStore(STORES.preferences).put(parsePreferences((params as StorageDbRequests["writePreferences"]).preferences), "singleton")); }) as Promise<StorageDbResponses[M]>;
+    case "readPreferences": return transact(STORES.preferences, "readonly", async (tx) => { const value = await request(tx.objectStore(STORES.preferences).get(SINGLETON_RECORD_ID)); return value === undefined ? { ...DEFAULT_PREFERENCES } : parsePreferences(value); }) as Promise<StorageDbResponses[M]>;
+    case "writePreferences": return transact(STORES.preferences, "readwrite", async (tx) => { await request(tx.objectStore(STORES.preferences).put(parsePreferences((params as StorageDbRequests["writePreferences"]).preferences), SINGLETON_RECORD_ID)); }) as Promise<StorageDbResponses[M]>;
     case "readWindowSession": return transact(STORES.sessions, "readonly", async (tx) => { const value = await request(tx.objectStore(STORES.sessions).get((params as StorageDbRequests["readWindowSession"]).desktopId)); return value === undefined ? EMPTY_WINDOW_SESSION : parseWindowSession(value); }) as Promise<StorageDbResponses[M]>;
     case "writeWindowSession": { const input = params as StorageDbRequests["writeWindowSession"]; return transact([STORES.desktops, STORES.sessions], "readwrite", async (tx) => { await readDesktop(tx.objectStore(STORES.desktops), input.desktopId); await request(tx.objectStore(STORES.sessions).put(parseWindowSession(input.session), input.desktopId)); }) as Promise<StorageDbResponses[M]>; }
     case "reserveOperation": return transact(STORES.clientState, "readwrite", (tx) => reserveOperation(tx.objectStore(STORES.clientState))) as Promise<StorageDbResponses[M]>;
@@ -592,7 +624,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         const record = parseAccountAppOutboxRecord({ ...reserved, operation, status: "pending", error: null, errorCode: null, attemptCount: 0, lastAttemptAt: null });
         if (input.localData) await writeLocalAccountAppData(tx, input.localData);
         await request(outboxStore.add(record));
-        const state = { id: "singleton" as const, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
+        const state = { id: SINGLETON_RECORD_ID, baseline: current.baseline, projection: projectAccountApps(current.baseline, [...outbox, record]) };
         await request(tx.objectStore(STORES.accountApps).put(state));
         return { state, record };
       }) as Promise<StorageDbResponses[M]>;
@@ -607,7 +639,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
           if (selected) await request(outboxStore.delete(selected.sequence));
         }
         const outbox = await readAccountAppOutbox(outboxStore);
-        const state = { id: "singleton" as const, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
+        const state = { id: SINGLETON_RECORD_ID, baseline: snapshot, projection: projectAccountApps(snapshot, outbox) };
         await request(tx.objectStore(STORES.accountApps).put(state));
         return state;
       }) as Promise<StorageDbResponses[M]>;
@@ -621,7 +653,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         await request(store.put({ ...parseAccountAppOutboxRecord(record), status: "blocked", error: input.error, errorCode: input.errorCode }));
         const outbox = await readAccountAppOutbox(store);
         const current = await accountAppState(tx.objectStore(STORES.accountApps), outbox.map((candidate) => candidate.operationId === input.operationId ? { ...candidate, status: "pending" as const } : candidate));
-        await request(tx.objectStore(STORES.accountApps).put({ id: "singleton", baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
+        await request(tx.objectStore(STORES.accountApps).put({ id: SINGLETON_RECORD_ID, baseline: current.baseline, projection: projectAccountApps(current.baseline, outbox) }));
       }) as Promise<StorageDbResponses[M]>;
     }
     case "retryAccountAppOperation": {
@@ -636,7 +668,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         const changed = parseAccountAppOutboxRecord({ ...selected, operation: rebaseAccountAppOperation(selected.operation, stored.baseline), status: "pending", error: null, errorCode: null });
         await request(outboxStore.put(changed));
         const outbox = await readAccountAppOutbox(outboxStore);
-        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        await request(accountStore.put({ id: SINGLETON_RECORD_ID, baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
         return changed;
       }) as Promise<StorageDbResponses[M]>;
     }
@@ -651,7 +683,7 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
         const accountStore = tx.objectStore(STORES.accountApps);
         const outbox = await readAccountAppOutbox(outboxStore);
         const stored = await accountAppState(accountStore, [...outbox, selected]);
-        await request(accountStore.put({ id: "singleton", baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
+        await request(accountStore.put({ id: SINGLETON_RECORD_ID, baseline: stored.baseline, projection: projectAccountApps(stored.baseline, outbox) }));
       }) as Promise<StorageDbResponses[M]>;
     }
     case "recordAccountAppAttempt": {
@@ -665,11 +697,13 @@ async function dispatch<M extends StorageDbMethod>(method: M, params: StorageDbR
   }
 }
 
+/** Dispatches an operation to the active database client. */
 export async function callDatabase<M extends StorageDbMethod>(method: M, params: StorageDbRequests[M], desktopId: string | null = getActiveDesktopContext()): Promise<StorageDbResponses[M]> {
   await getRoot();
   return dispatch(method, params, desktopId);
 }
 
+/** Initializes database. */
 export async function initializeDatabase() {
   await getRoot();
   await openDatabase();

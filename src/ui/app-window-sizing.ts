@@ -1,6 +1,7 @@
 import type { AppManifestWindow } from "@hiraya-team/apps-contracts";
 import type { ThemeDefinition } from "../domain/theme";
 
+/** Constrains sandbox window preferences to the desktop viewport. */
 export function sandboxWindowOptions(window: AppManifestWindow, theme: ThemeDefinition) {
   if ("width" in window) return window;
   const borders = theme.shape.borderWidth * 2;

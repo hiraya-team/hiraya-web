@@ -5,18 +5,26 @@ import { sha256Hex } from "../src/filesystem/model";
 import { openApprovedPackageArchives } from "../src/platform/storage/approved-package-archives";
 import { MemoryDirectory, memoryOpfsHandle } from "./support/memory-opfs";
 
+/** Provides the account test fixture. */
 const ACCOUNT = "00000000-0000-4000-8000-000000000001";
+/** Provides the client test fixture. */
 const CLIENT = "00000000-0000-4000-8000-000000000002";
+/** Provides the account hash test fixture. */
 const ACCOUNT_HASH = "11e594f481958c10e3015d0bf0447a22f068a8a647f475df15ce2c7ab4b8f3f1";
+/** Provides the manifest test fixture. */
 const manifest = { schemaVersion: 2 as const, uiRuntime: 1 as const, id: "dev.hiraya.notes", name: "Notes", version: "1.0.0", entrypoint: "index.html", permissions: ["storage" as const], fileTypes: [] };
+/** Builds the blob ref test fixture. */
 const blobRef = (id: string, sha256: string, size: number) => ({ blobId: id, revision: 1, size, sha256 });
+/** Builds the resource test fixture. */
 const resource = (kind: "installation" | "handlers" | "manifest", id: string, appId = "") => ({ ...blobRef(id, "a".repeat(64), 2), resourceId: id, path: kind === "manifest" ? `.hiraya/account/apps/${appId}/manifest.json` : `.hiraya/account/${kind}.json`, name: `${kind}.json`, mimeType: "application/json" as const });
 
+/** Builds the account snapshot test fixture. */
 function accountSnapshot(digest?: string, size = 1) {
   const app = digest ? { appId: manifest.id, manifest, generations: { installationGeneration: 1, dataGeneration: 0, itemRevision: 1 }, manifestResource: resource("manifest", "manifest", manifest.id), package: blobRef("package", digest, size) } : undefined;
   return { appsRevision: 1, apps: app ? [{ ...app, data: [] }] : [], handlerHints: {}, resources: { installation: resource("installation", "installation"), handlers: resource("handlers", "handlers") }, installation: { apps: app ? [app] : [] } };
 }
 
+/** Creates an archive test fixture. */
 async function archive(value: string) {
   const blob = new Blob([value], { type: "application/vnd.hiraya.app" });
   return { blob, digest: await sha256Hex(await blob.arrayBuffer()) };

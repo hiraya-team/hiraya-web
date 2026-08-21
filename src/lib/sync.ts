@@ -55,8 +55,10 @@ export type ContentConflictBundle = {
   mineMetadata: Pick<FileEntry, "name" | "mimeType" | "size" | "modifiedAt">;
   serverMetadata: Pick<FileEntry, "name" | "mimeType" | "size" | "modifiedAt">;
 };
+/** Defines the health request timeout in milliseconds. */
 const HEALTH_TIMEOUT_MS = 10_000;
 
+/** Fetches server build timestamp. */
 export async function fetchServerBuildTimestamp(fetchImpl: typeof fetch = globalThis.fetch.bind(globalThis)) {
   const controller = new AbortController();
   const deadline = globalThis.setTimeout(() => controller.abort(), HEALTH_TIMEOUT_MS);
@@ -99,32 +101,42 @@ export type SyncEngineOptions = {
   createXMLHttpRequest?: () => XMLHttpRequest;
 };
 
+/** Defines the minimum replay retry delay in milliseconds. */
 const REPLAY_RETRY_MIN_MS = 1_000;
+/** Defines the maximum replay retry delay in milliseconds. */
 const REPLAY_RETRY_MAX_MS = 30_000;
 
+/** Reports virtual file unavailable failures. */
 export class VirtualFileUnavailableError extends Error {
+  /** Creates a VirtualFileUnavailableError instance. */
   constructor(message = "This file is not available offline yet. Reconnect and try again.") {
     super(message);
     this.name = "VirtualFileUnavailableError";
   }
 }
 
+/** Reports virtual file changed failures. */
 export class VirtualFileChangedError extends Error {
+  /** Creates a VirtualFileChangedError instance. */
   constructor() {
     super("This file changed while it was loading. Try opening it again.");
     this.name = "VirtualFileChangedError";
   }
 }
 
+/** Reports trash unavailable failures. */
 export class TrashUnavailableError extends Error {
+  /** Creates a TrashUnavailableError instance. */
   constructor(message = "Trash is only available when connected to a Hiraya server.") {
     super(message);
     this.name = "TrashUnavailableError";
   }
 }
 
+/** Converts remote desktop state to a local snapshot. */
 const toSnapshot = remoteDesktopSnapshot;
 
+/** Computes local system content. */
 function localSystemContent(snapshot: DesktopStateSnapshot, role: SystemRole, key?: string) {
   if (role === "layout") return snapshot.layout;
   if (role === "editor-settings") return snapshot.editorSettings;
@@ -136,6 +148,7 @@ function localSystemContent(snapshot: DesktopStateSnapshot, role: SystemRole, ke
   throw new Error("That protected system resource is unavailable in this browser.");
 }
 
+/** Computes local system entries. */
 async function localSystemEntries(snapshot: DesktopStateSnapshot, desktopId: string): Promise<SystemEntriesDocument> {
   const resources: Array<{ role: SystemRole; key?: string; revision: number }> = [
     { role: "layout", revision: snapshot.sync.layoutRevision },
@@ -162,10 +175,12 @@ async function localSystemEntries(snapshot: DesktopStateSnapshot, desktopId: str
   return { schemaVersion: 2, catalogId: snapshot.sync.catalogId ?? desktopId, catalogRevision: Math.max(0, ...resources.map(({ revision }) => revision)), desktopId, entries };
 }
 
+/** Computes conflict base. */
 function conflictBase(entry: DesktopEntry): EntryConflictBase {
   return { name: entry.name, parentId: entry.parentId, position: entry.position };
 }
 
+/** Returns current conflict. */
 function currentConflict(conflict: RevisionConflictDetails, remote: DesktopStateSnapshot): RevisionConflictDetails {
   let actualRevision = conflict.actualRevision;
   if (conflict.resourceKind === "entry") actualRevision = remote.sync.entryRevisions[conflict.resourceId] ?? actualRevision;
@@ -177,6 +192,7 @@ function currentConflict(conflict: RevisionConflictDetails, remote: DesktopState
   return { ...conflict, actualRevision: Math.max(actualRevision, conflict.actualRevision) };
 }
 
+/** Coordinates sync engine behavior. */
 export class SyncEngine {
   private readonly frontendOnly: boolean;
   private readonly fetchImpl: typeof fetch;
@@ -227,6 +243,7 @@ export class SyncEngine {
   private offlineInventoryLoad: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
   private offlineDownload: { desktopId: string; generation: number; promise: Promise<OfflineStorageInventory> } | null = null;
 
+  /** Creates a SyncEngine instance. */
   constructor(options: SyncEngineOptions = {}) {
     this.frontendOnly = options.frontendOnly ?? false;
     this.fetchImpl = options.fetch ?? globalThis.fetch.bind(globalThis);
@@ -253,6 +270,7 @@ export class SyncEngine {
     );
   }
 
+  /** Starts synchronization. */
   start(desktopId: string, viewport: EntryPosition, seeded: SeededManifest | null = null, options: { backgroundServer?: boolean } = {}) {
     if (this.startPromise) return this.startPromise;
     this.running = true;
@@ -268,6 +286,7 @@ export class SyncEngine {
     return this.startPromise;
   }
 
+  /** Starts the internal synchronization lifecycle. */
   private async startInternal(viewport: EntryPosition, seeded: SeededManifest | null, generation: number, backgroundServer: boolean) {
     this.desktop = await this.storage.loadDesktop(viewport, seeded);
     if (!this.running || this.generation !== generation) throw new DOMException("Desktop synchronization was stopped.", "AbortError");
@@ -311,6 +330,7 @@ export class SyncEngine {
     return { desktop: this.current(), status: this.status };
   }
 
+  /** Stops synchronization. */
   async stop() {
     this.running = false;
     this.generation += 1;
@@ -337,6 +357,7 @@ export class SyncEngine {
     this.publishTransfers();
   }
 
+  /** Subscribes to synchronization state changes. */
   subscribe(onDesktop: (next: DesktopStateSnapshot) => void, onStatus: (next: SyncStatus) => void, onSyncWork?: (syncing: boolean) => void) {
     this.desktopListeners.add(onDesktop);
     this.statusListeners.add(onStatus);
@@ -350,6 +371,7 @@ export class SyncEngine {
     };
   }
 
+  /** Subscribes to activity changes. */
   subscribeActivityChanges(listener: () => void) {
     this.activityChangeListeners.add(listener);
     return () => {
@@ -357,6 +379,7 @@ export class SyncEngine {
     };
   }
 
+  /** Subscribes to outbox. */
   subscribeOutbox(listener: (records: readonly OutboxRecord[]) => void) {
     this.outboxListeners.add(listener);
     void this.storage.readOutbox().then((records) => {
@@ -365,6 +388,7 @@ export class SyncEngine {
     return () => { this.outboxListeners.delete(listener); };
   }
 
+  /** Notifies an outbox listener without disrupting synchronization. */
   private notifyOutboxListener(listener: (records: readonly OutboxRecord[]) => void, records: readonly OutboxRecord[]) {
     try {
       listener(records);
@@ -373,64 +397,76 @@ export class SyncEngine {
     }
   }
 
+  /** Publishes outbox. */
   private async publishOutbox() {
     if (this.outboxListeners.size === 0) return;
     const records = await this.storage.readOutbox();
     for (const listener of this.outboxListeners) this.notifyOutboxListener(listener, records);
   }
 
+  /** Subscribes to desktop catalog. */
   subscribeDesktopCatalog(listener: (catalog: DesktopRegistry) => void) {
     this.catalogListeners.add(listener);
     return () => { this.catalogListeners.delete(listener); };
   }
 
+  /** Subscribes to offline storage. */
   subscribeOfflineStorage(onInventory: (inventory: OfflineStorageInventory) => void, onProgress?: (progress: OfflineOperationProgress | null) => void) {
     this.offlineInventoryListeners.add(onInventory);
     if (onProgress) this.offlineProgressListeners.add(onProgress);
     return () => { this.offlineInventoryListeners.delete(onInventory); if (onProgress) this.offlineProgressListeners.delete(onProgress); };
   }
 
+  /** Subscribes to entry downloads. */
   subscribeEntryDownloads(listener: (entryIds: ReadonlySet<string>) => void) {
     this.entryDownloadListeners.add(listener);
     listener(new Set(this.activeEntryDownloadIds));
     return () => this.entryDownloadListeners.delete(listener);
   }
 
+  /** Returns the current file-transfer snapshot. */
   getTransferSnapshot() {
     return this.transferSnapshot;
   }
 
+  /** Subscribes to transfers. */
   subscribeTransfers(listener: (transfers: readonly FileTransferState[]) => void) {
     this.transferListeners.add(listener);
     listener(this.transferSnapshot);
     return () => this.transferListeners.delete(listener);
   }
 
+  /** Dismisses transfer. */
   dismissTransfer(id: string) {
     if (!this.transfers.delete(id)) return;
     this.publishTransfers();
   }
 
+  /** Dismisses completed transfer. */
   dismissCompletedTransfer(id: string) {
     if (this.transfers.get(id)?.phase !== "complete") return;
     this.dismissTransfer(id);
   }
 
+  /** Publishes transfers. */
   private publishTransfers() {
     this.transferSnapshot = [...this.transfers.values()];
     for (const listener of this.transferListeners) listener(this.transferSnapshot);
   }
 
+  /** Updates transfer. */
   private updateTransfer(transfer: FileTransferState) {
     this.transfers.set(transfer.id, transfer);
     this.publishTransfers();
   }
 
+  /** Updates download transfer. */
   private updateDownloadTransfer(generation: number, desktopId: string, transfer: FileTransferState) {
     if (!this.sessionIsActive(generation, desktopId)) return;
     this.updateTransfer(transfer);
   }
 
+  /** Uploads files. */
   private uploadFiles(record: OutboxRecord): Array<{ id: string; name: string; size: number }> {
     if (record.operation.kind === "create") return record.operation.entries.filter((entry): entry is FileEntry => entry.kind === "file");
     if (record.operation.kind === "install-theme-package") return [{ id: record.operation.assetId, name: `${record.operation.theme.name}.hiraya.app`, size: record.operation.size }];
@@ -440,10 +476,12 @@ export class SyncEngine {
     return [{ id: entryId, name: entry?.name ?? entryId, size: record.operation.size }];
   }
 
+  /** Uploads transfer ID. */
   private uploadTransferId(operationId: string, entryId: string) {
     return `upload:${operationId}:${entryId}`;
   }
 
+  /** Updates upload transfer. */
   private updateUploadTransfer(record: OutboxRecord, generation: number, entryId: string, phase: BlobUploadPhase, transferredBytes: number, totalBytes: number) {
     if (!this.running || this.generation !== generation) return;
     const file = this.uploadFiles(record).find((entry) => entry.id === entryId);
@@ -451,6 +489,7 @@ export class SyncEngine {
     this.updateTransfer({ id: this.uploadTransferId(record.operationId, entryId), entryId, fileName: file.name, direction: "upload", phase, transferredBytes, totalBytes, error: null });
   }
 
+  /** Marks an operation's upload transfers as finished. */
   private finishUploadTransfers(record: OutboxRecord, generation: number, error?: unknown) {
     if (!this.running || this.generation !== generation) return;
     const prefix = `upload:${record.operationId}:`;
@@ -462,15 +501,18 @@ export class SyncEngine {
     }
   }
 
+  /** Publishes entry downloads. */
   private publishEntryDownloads() {
     const entryIds = new Set(this.activeEntryDownloadIds);
     for (const listener of this.entryDownloadListeners) listener(entryIds);
   }
 
+  /** Publishes offline progress. */
   private publishOfflineProgress(progress: OfflineOperationProgress | null) {
     for (const listener of this.offlineProgressListeners) listener(progress);
   }
 
+  /** Loads offline inventory. */
   async loadOfflineInventory() {
     const desktopId = this.desktopId;
     const generation = this.generation;
@@ -484,27 +526,32 @@ export class SyncEngine {
     return promise;
   }
 
+  /** Refreshes offline inventory. */
   private async refreshOfflineInventory() {
     const existing = this.offlineInventoryLoad;
     if (existing?.desktopId === this.desktopId && existing.generation === this.generation) await existing.promise.catch(() => undefined);
     return this.loadOfflineInventory();
   }
 
+  /** Publishes catalog. */
   private publishCatalog(catalog: DesktopRegistry) {
     for (const listener of this.catalogListeners) listener(catalog);
     return catalog;
   }
 
+  /** Publishes activity change. */
   private publishActivityChange() {
     for (const listener of this.activityChangeListeners) listener();
   }
 
+  /** Sets status. */
   private setStatus(next: SyncStatus) {
     if (this.status === next) return;
     this.status = next;
     for (const listener of this.statusListeners) listener(next);
   }
 
+  /** Sets expected authority. */
   setExpectedAuthority(catalogId: string | null, directBlobOrigin?: string, thumbnails = false) {
     if (this.running) throw new Error("The synchronization authority cannot change while running.");
     this.expectedCatalogId = catalogId;
@@ -512,6 +559,7 @@ export class SyncEngine {
     this.thumbnails = thumbnails;
   }
 
+  /** Stops synchronization after an authority failure. */
   private failAuthority(error: unknown) {
     this.replayRequested = false;
     if (this.replayRetryTimer !== null) this.clearTimeoutImpl(this.replayRetryTimer);
@@ -520,16 +568,19 @@ export class SyncEngine {
     this.setStatus(error instanceof UpgradeRequiredError ? "upgrade-required" : "error");
   }
 
+  /** Validates and returns a synchronization authority identity. */
   private assertAuthority(value: unknown, source: string) {
     const identity = parseAuthorityIdentity(value, source, this.expectedCatalogId);
     if (this.catalogId && identity.catalogId !== this.catalogId) throw new AuthorityValidationError(`${source} belongs to a different catalog.`);
     return identity;
   }
 
+  /** Reports whether the active desktop has blocked operations. */
   private activeDesktopIsBlocked(records: readonly OutboxRecord[]) {
     return records.some((record) => record.catalogId === this.catalogId && record.status === "blocked" && outboxOperationDesktopIds(record).has(this.desktopId));
   }
 
+  /** Updates status from outbox. */
   private async updateStatusFromOutbox(generation?: number, desktopId?: string) {
     const records = await this.storage.readOutbox();
     if (generation !== undefined && desktopId !== undefined) this.assertActiveSession(generation, desktopId);
@@ -537,37 +588,44 @@ export class SyncEngine {
     return records;
   }
 
+  /** Publishes a new desktop snapshot. */
   private publish(next: DesktopStateSnapshot) {
     this.desktop = next;
     for (const listener of this.desktopListeners) listener(next);
   }
 
+  /** Returns the current runtime state. */
   private current() {
     if (!this.desktop) throw new Error("The desktop is still loading.");
     return this.desktop;
   }
 
+  /** Asserts that the synchronization generation is still active. */
   private assertActive(generation: number) {
     if (!this.running || this.generation !== generation) {
       throw new DOMException("Desktop synchronization was stopped.", "AbortError");
     }
   }
 
+  /** Reports whether a desktop session is still active. */
   private sessionIsActive(generation: number, desktopId: string) {
     return this.running && this.generation === generation && this.desktopId === desktopId;
   }
 
+  /** Validates active session. */
   private assertActiveSession(generation: number, desktopId: string) {
     this.assertActive(generation);
     if (this.desktopId !== desktopId) throw new DOMException("The active desktop changed.", "AbortError");
   }
 
+  /** Serializes local desktop work. */
   private queue<T>(operation: () => Promise<T>) {
     const next = this.work.then(operation, operation);
     this.work = next.then(() => undefined, () => undefined);
     return next;
   }
 
+  /** Serializes synchronization work and publishes its busy state. */
   private queueSync<T>(operation: () => Promise<T>) {
     const generation = this.generation;
     if (!this.frontendOnly) {
@@ -588,6 +646,7 @@ export class SyncEngine {
     });
   }
 
+  /** Schedules an outbox replay retry with exponential backoff. */
   private scheduleReplayRetry() {
     if (this.replayRetryTimer !== null || !this.running || this.authenticationPaused) return;
     const delay = this.replayRetryMs;
@@ -598,6 +657,7 @@ export class SyncEngine {
     }, delay);
   }
 
+  /** Requests serialized replay of pending outbox operations. */
   private requestReplay() {
     if (this.frontendOnly || !this.running || this.authenticationPaused) return;
     this.replayRequested = true;
@@ -631,10 +691,12 @@ export class SyncEngine {
     });
   }
 
+  /** Sends an authenticated request and parses its JSON response. */
   private async requestJson(input: RequestInfo | URL, init?: RequestInit): Promise<unknown> {
     return this.http.requestJson(input, { ...init, signal: init?.signal ?? this.syncAbort?.signal });
   }
 
+  /** Pauses for authentication. */
   private pauseForAuthentication() {
     if (this.authenticationPaused) return;
     this.authenticationPaused = true;
@@ -644,14 +706,17 @@ export class SyncEngine {
     this.setStatus("connecting");
   }
 
+  /** Requires an authenticated response. */
   private requireAuthentication(response: Response) {
     return this.http.requireAuthentication(response);
   }
 
+  /** Requests and validates a remote desktop snapshot. */
   private async requestDesktop(input: RequestInfo | URL, init?: RequestInit) {
     return parseRemoteDesktopState(await this.requestJson(input, init));
   }
 
+  /** Fetches desktop. */
   private async fetchDesktop(desktopId = this.desktopId) {
     try {
       return await this.requestDesktop(API_ROUTES.desktopProjection(desktopId), { cache: "no-store" });
@@ -661,6 +726,7 @@ export class SyncEngine {
     }
   }
 
+  /** Fetches verified remote content. */
   private async fetchVerifiedRemoteContent(desktopId: string, remote: RemoteDesktopState, entryId: string) {
     const entry = remote.entries.find((candidate): candidate is Extract<RemoteEntry, { kind: "file" }> => candidate.id === entryId && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists on the server.");
@@ -674,6 +740,7 @@ export class SyncEngine {
     return downloaded.blob.slice(0, downloaded.blob.size, entry.mimeType);
   }
 
+  /** Fetches current verified content. */
   private async fetchCurrentVerifiedContent(desktopId: string, entryId: string, initial?: RemoteDesktopState) {
     let remote = initial ?? await this.fetchDesktop(desktopId);
     for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -689,10 +756,12 @@ export class SyncEngine {
     throw new VirtualFileChangedError();
   }
 
+  /** Returns health route. */
   private healthRoute() {
     return API_ROUTES.syncHealth;
   }
 
+  /** Applies remote state. */
   private async applyRemoteState(remote: RemoteDesktopState, generation = this.generation, acknowledgedOperationId?: string, desktopId = this.desktopId, force = false, useAcknowledgedContent = true, acknowledgedRevision?: number) {
     this.assertActive(generation);
     this.assertAuthority(remote, "The server desktop");
@@ -712,10 +781,12 @@ export class SyncEngine {
     return applied;
   }
 
+  /** Ensures the active desktop exists on the server. */
   private async ensureServer(generation = this.generation) {
     return this.reconcileActiveWithCreateRecovery(undefined, generation);
   }
 
+  /** Reconciles a desktop with its remote state. */
   private async reconcile(acknowledgedOperationId?: string, desktopId = this.desktopId, generation = this.generation, acknowledgedRevision?: number) {
     const remote = await this.fetchDesktop(desktopId);
     this.assertActive(generation);
@@ -723,6 +794,7 @@ export class SyncEngine {
     return this.applyRemoteState(remote, generation, acknowledgedOperationId, desktopId, false, true, acknowledgedRevision);
   }
 
+  /** Binds outbox catalog. */
   private async bindOutboxCatalog(catalogId: string) {
     this.assertAuthority({ schemaVersion: 2, catalogId }, "The server catalog");
     await this.storage.bindOutboxCatalog(catalogId);
@@ -730,6 +802,7 @@ export class SyncEngine {
     await this.publishOutbox();
   }
 
+  /** Sends one outbox operation through the configured transport. */
   private async sendOutboxOperation(record: OutboxRecord, generation: number) {
     return sendOutboxOperation(record, {
       fetch: this.fetchImpl,
@@ -743,6 +816,7 @@ export class SyncEngine {
     });
   }
 
+  /** Replays record. */
   private async replayRecord(record: OutboxRecord, generation: number, retryBlocked = false, autoResolveConflict = true) {
     this.assertActive(generation);
     const durable = (await this.storage.readOutbox()).find((candidate) => candidate.operationId === record.operationId);
@@ -830,6 +904,7 @@ export class SyncEngine {
     }
   }
 
+  /** Replays through active desktop creation. */
   private async replayThroughActiveDesktopCreation(generation: number, desktopId = this.desktopId) {
     const records = await this.storage.readOutbox();
     this.assertActiveSession(generation, desktopId);
@@ -849,6 +924,7 @@ export class SyncEngine {
     return true;
   }
 
+  /** Reconciles active with create recovery. */
   private async reconcileActiveWithCreateRecovery(acknowledgedOperationId?: string, generation = this.generation, desktopId = this.desktopId) {
     try {
       return await this.reconcile(acknowledgedOperationId, desktopId, generation);
@@ -858,6 +934,7 @@ export class SyncEngine {
     }
   }
 
+  /** Replays outbox. */
   private async replayOutbox(generation = this.generation, activeDesktopId?: string) {
     if (this.status === "upgrade-required" || this.status === "error") return;
     if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
@@ -889,6 +966,7 @@ export class SyncEngine {
     if (activeDesktopId !== undefined) this.assertActiveSession(generation, activeDesktopId);
   }
 
+  /** Starts events. */
   private startEvents() {
     const generation = this.generation;
     const desktopId = this.desktopId;
@@ -952,6 +1030,7 @@ export class SyncEngine {
     });
   }
 
+  /** Checks synchronization health and updates connection status. */
   private async checkHealth(generation: number, desktopId: string) {
     if (!this.sessionIsActive(generation, desktopId) || this.authenticationPaused) return;
     const controller = new AbortController();
@@ -995,6 +1074,7 @@ export class SyncEngine {
     }
   }
 
+  /** Applies a mutation and publishes the resulting state. */
   private async mutate<T>(operation: (current: DesktopStateSnapshot) => OutboxOperationInput, select: (next: DesktopStateSnapshot) => T, contents?: Map<string, Blob>, replay = true) {
     return this.queue(async () => {
       const queued = await this.storage.enqueueMutation((current) => ({ ...operation(current), schemaVersion: 1 } as OutboxOperation), contents);
@@ -1005,6 +1085,7 @@ export class SyncEngine {
     });
   }
 
+  /** Computes local mutation. */
   private localMutation<T>(operation: () => Promise<T>, publish = true) {
     return this.queue(async () => {
       const result = await operation();
@@ -1016,12 +1097,14 @@ export class SyncEngine {
     });
   }
 
+  /** Asserts that an entry parent is an existing folder. */
   private assertParent(parentId: string | null) {
     if (parentId === null) return;
     const parent = this.current().entries.find((entry) => entry.id === parentId);
     if (!parent || parent.kind !== "folder") throw new Error("That parent folder no longer exists.");
   }
 
+  /** Creates text file. */
   createTextFile(nameValue: string, parentId: string | null, position: EntryPosition) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.createTextFile(nameValue, parentId, position));
     const parsedPosition = parsePosition(position);
@@ -1033,6 +1116,7 @@ export class SyncEngine {
     return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, new Blob([], { type: entry.mimeType })]]));
   }
 
+  /** Creates file. */
   createFile(nameValue: string, parentId: string | null, position: EntryPosition, content: Blob, mimeType?: string, deferReplay = false) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.createFile(nameValue, parentId, position, content, mimeType));
     const parsedPosition = parsePosition(position);
@@ -1048,6 +1132,7 @@ export class SyncEngine {
     return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FileEntry, new Map([[entry.id, content.slice(0, content.size, entry.mimeType)]]), !deferReplay);
   }
 
+  /** Creates folder. */
   createFolder(nameValue: string, parentId: string | null, position: EntryPosition) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.createFolder(nameValue, parentId, position));
     const parsedPosition = parsePosition(position);
@@ -1059,6 +1144,7 @@ export class SyncEngine {
     return this.mutate(() => ({ kind: "create", entries: [entry] }), (next) => next.entries.find((item) => item.id === entry.id) as FolderEntry);
   }
 
+  /** Imports files into the selected destination. */
   importFiles(files: File[], parentId: string | null, positions: EntryPosition[]) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.importFiles(files, parentId, positions));
     if (files.length !== positions.length) throw new Error("Each imported file needs a desktop position.");
@@ -1074,6 +1160,7 @@ export class SyncEngine {
     return this.mutate(() => ({ kind: "create", entries }), (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id) as FileEntry), new Map(entries.map((entry, index) => [entry.id, files[index]])));
   }
 
+  /** Creates entries. */
   createEntries(entriesValue: DesktopEntry[], contentsValue: Map<string, Blob>) {
     const entries = parseEntries([...this.current().entries, ...entriesValue]).slice(this.current().entries.length) as DesktopEntry[];
     const files = entries.filter((entry): entry is FileEntry => entry.kind === "file");
@@ -1085,6 +1172,7 @@ export class SyncEngine {
     return this.mutate(() => ({ kind: "create", entries }), (next) => entries.map((entry) => next.entries.find((item) => item.id === entry.id)!), contents);
   }
 
+  /** Renames entry. */
   renameEntry(id: string, nameValue: string) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.renameEntry(id, nameValue));
     const existing = this.current().entries.find((entry) => entry.id === id);
@@ -1100,6 +1188,7 @@ export class SyncEngine {
     }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
+  /** Removes entry. */
   deleteEntry(id: string) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.deleteEntry(id));
     const before = this.current().entries;
@@ -1110,6 +1199,7 @@ export class SyncEngine {
     }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
   }
 
+  /** Removes entries. */
   deleteEntries(ids: string[]) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.deleteEntries(ids));
     const unique = [...new Set(ids)];
@@ -1121,6 +1211,7 @@ export class SyncEngine {
     }, (next) => before.filter((entry) => !next.entries.some((item) => item.id === entry.id)));
   }
 
+  /** Moves entry. */
   moveEntry(id: string, parentId: string | null, position: EntryPosition) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.moveEntry(id, parentId, position));
     const parsedPosition = parsePosition(position);
@@ -1136,6 +1227,7 @@ export class SyncEngine {
     }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
+  /** Moves entries. */
   moveEntries(ids: string[], parentId: string | null) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.moveEntries(ids, parentId));
     const unique = [...new Set(ids)];
@@ -1150,6 +1242,7 @@ export class SyncEngine {
     }, (next) => unique.map((id) => next.entries.find((entry) => entry.id === id) as DesktopEntry));
   }
 
+  /** Transfers entries. */
   transferEntries(destinationDesktopId: string, ids: string[], parentId: string | null) {
     const unique = [...new Set(ids)];
     if (!unique.length || unique.length !== ids.length || unique.some((id) => !this.current().entries.some((entry) => entry.id === id))) throw new Error("An entry no longer exists.");
@@ -1164,6 +1257,7 @@ export class SyncEngine {
     });
   }
 
+  /** Creates desktop. */
   async createDesktop(name: string) {
     if (this.frontendOnly) return this.storage.createDesktop(name);
     const queued = await this.storage.enqueueDesktopCreate(name);
@@ -1172,6 +1266,7 @@ export class SyncEngine {
     return queued.desktop;
   }
 
+  /** Lists desktops. */
   async listDesktops(seeded: SeededManifest | null = null, options: { cacheFirst?: boolean } = {}) {
     let local = await this.storage.listDesktops(seeded);
     if (this.frontendOnly) {
@@ -1233,12 +1328,14 @@ export class SyncEngine {
     }
   }
 
+  /** Refreshes catalog. */
   async refreshCatalog(generation?: number, desktopId?: string) {
     const catalog = await this.listDesktops();
     if (generation !== undefined && desktopId !== undefined) this.assertActiveSession(generation, desktopId);
     return this.publishCatalog(catalog);
   }
 
+  /** Updates desktop preferences. */
   async updateDesktopPreferences(desktops: DesktopPreference[]) {
     if (this.frontendOnly) throw new Error("Local desktop preferences do not use the server.");
     if (!desktops.length || desktops.some((desktop) => typeof desktop.pinned !== "boolean") || new Set(desktops.map((desktop) => desktop.id)).size !== desktops.length) throw new Error("The desktop preferences are invalid.");
@@ -1252,6 +1349,7 @@ export class SyncEngine {
     return this.refreshCatalog();
   }
 
+  /** Renames desktop. */
   async renameDesktop(desktopId: string, name: string) {
     if (this.frontendOnly) return this.storage.renameDesktop(desktopId, name);
     const queued = await this.storage.enqueueDesktopRename(desktopId, name, this.catalogRevision);
@@ -1260,6 +1358,7 @@ export class SyncEngine {
     return queued.desktop;
   }
 
+  /** Removes desktop. */
   async deleteDesktop(desktopId: string) {
     if (desktopId === this.desktopId) throw new Error("Switch desktops before deleting the active desktop.");
     const protection = desktopPendingOperationProtection(await this.storage.readOutbox(), desktopId);
@@ -1272,6 +1371,7 @@ export class SyncEngine {
     }
   }
 
+  /** Captures entries. */
   async captureEntries(rootIds: string[]): Promise<ClipboardEntrySnapshot> {
     const generation = this.generation;
     const desktopId = this.desktopId;
@@ -1300,6 +1400,7 @@ export class SyncEngine {
     });
   }
 
+  /** Pastes entries. */
   pasteEntries(snapshot: ClipboardEntrySnapshot, parentId: string | null, rootNames: Map<string, string>, rootPositions: Map<string, EntryPosition>) {
     this.assertParent(parentId);
     const idMap = new Map(snapshot.entries.map((entry) => [entry.id, crypto.randomUUID()]));
@@ -1325,6 +1426,7 @@ export class SyncEngine {
     return this.createEntries(entries, contents);
   }
 
+  /** Updates entry position. */
   updateEntryPosition(id: string, position: EntryPosition) {
     const parsedPosition = parsePosition(position);
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateEntryPosition(id, position));
@@ -1336,6 +1438,7 @@ export class SyncEngine {
     }, (next) => next.entries.find((item) => item.id === id) as DesktopEntry);
   }
 
+  /** Updates root entry positions. */
   updateRootEntryPositions(positionValues: RootEntryPositionUpdate[]) {
     const positions = parseRootEntryPositionUpdates(positionValues, this.current().entries);
     if (this.frontendOnly) return this.localMutation(() => this.storage.updateRootEntryPositions(positions));
@@ -1346,6 +1449,7 @@ export class SyncEngine {
     }, (next) => positions.map(({ entryId }) => next.entries.find((entry) => entry.id === entryId) as DesktopEntry));
   }
 
+  /** Saves file. */
   saveFile(id: string, content: Blob, options: SaveFileOptions = {}) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveFile(id, content, options));
     const existing = this.current().entries.find((entry): entry is FileEntry => entry.id === id && entry.kind === "file");
@@ -1364,6 +1468,7 @@ export class SyncEngine {
     );
   }
 
+  /** Saves text file. */
   saveTextFile(id: string, content: string) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveTextFile(id, content));
     const existing = this.current().entries.find((entry): entry is FileEntry => entry.id === id && entry.kind === "file");
@@ -1371,17 +1476,20 @@ export class SyncEngine {
     return this.saveFile(id, new Blob([content], { type: existing.mimeType }));
   }
 
+  /** Saves desktop layout. */
   saveDesktopLayout(layout: DesktopLayout, base?: { revision: number; layout: DesktopLayout }) {
     const parsed = parseLayout(layout);
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveDesktopLayout(parsed), false);
     return this.mutate((current) => ({ kind: "layout", layout: base ? mergeDesktopLayout(base.layout, parsed, current.layout) : parsed, baseRevision: current.sync.layoutRevision, conflictBase: current.layout }), () => undefined);
   }
 
+  /** Saves editor settings. */
   saveEditorSettings(settings: EditorSettings) {
     if (this.frontendOnly) return this.localMutation(() => this.storage.saveEditorSettings(settings), false);
     return this.mutate((current) => ({ kind: "editor-settings", settings, baseRevision: current.sync.settingsRevision, conflictBase: current.editorSettings }), () => undefined);
   }
 
+  /** Selects theme. */
   selectTheme(themeId: string) {
     parseThemeState({ ...this.current().appearance, selectedThemeId: themeId });
     if (this.frontendOnly) return this.localMutation(() => this.storage.selectTheme(themeId));
@@ -1391,6 +1499,7 @@ export class SyncEngine {
     }, (next) => next.appearance);
   }
 
+  /** Saves custom theme. */
   saveCustomTheme(value: CustomTheme) {
     const parsed = parseCustomTheme(value);
     if (this.frontendOnly) {
@@ -1405,6 +1514,7 @@ export class SyncEngine {
     }, (next) => next.appearance.customThemes.find((item) => item.id === parsed.id)!);
   }
 
+  /** Installs theme package. */
   installThemePackage(value: CustomTheme, wallpaperKind: "static" | "animated" | "scene" | null, archive: Blob, layout: DesktopLayout) {
     if (this.frontendOnly) return Promise.reject(new Error("Packaged wallpaper themes require a synchronized Hiraya server."));
     const theme = parseCustomTheme(value);
@@ -1423,6 +1533,7 @@ export class SyncEngine {
     }), (next) => next.appearance.customThemes.find((item) => item.id === theme.id)!, wallpaperKind === null ? new Map() : new Map([[assetId, archive]]));
   }
 
+  /** Removes custom theme. */
   deleteCustomTheme(themeId: string) {
     if (!this.current().appearance.customThemes.some((theme) => theme.id === themeId)) throw new Error("That custom theme no longer exists.");
     if (this.frontendOnly) return this.localMutation(() => this.storage.deleteCustomTheme(themeId));
@@ -1432,6 +1543,7 @@ export class SyncEngine {
     }, (next) => next.appearance);
   }
 
+  /** Reads file. */
   async readFile(id: FileEntry["id"]): Promise<File> {
     const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists.");
@@ -1519,6 +1631,7 @@ export class SyncEngine {
     }
   }
 
+  /** Previews file. */
   async previewFile(id: FileEntry["id"]): Promise<FilePreviewSource> {
     const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists.");
@@ -1550,6 +1663,7 @@ export class SyncEngine {
     return { kind: "url", url: descriptor.access.url, expiresAt: descriptor.access.expiresAt };
   }
 
+  /** Generates a thumbnail for a file. */
   async thumbnailFile(id: FileEntry["id"]): Promise<FilePreviewSource> {
     const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists.");
@@ -1593,6 +1707,7 @@ export class SyncEngine {
     }
   }
 
+  /** Estimates offline operation. */
   async estimateOfflineOperation(rootIds: readonly string[]) {
     const roots = dedupeOfflineRoots(this.current().entries, rootIds);
     const inventory = await this.storage.loadOfflineInventory(this.desktopId);
@@ -1601,6 +1716,7 @@ export class SyncEngine {
     return { roots, fileCount: files.length, downloadBytes: files.reduce((total, file) => total + (model.entries[file.id]?.downloadBytes ?? file.size), 0) };
   }
 
+  /** Reports whether a file is available offline. */
   async isFileAvailableOffline(id: FileEntry["id"]) {
     const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
     if (!entry) throw new Error("That file no longer exists.");
@@ -1614,8 +1730,10 @@ export class SyncEngine {
     return await this.storage.readCachedFile(this.desktopId, catalogId, id, contentRevision) !== null;
   }
 
+  /** Makes file available offline. */
   makeFileAvailableOffline(id: FileEntry["id"]) { return this.readFile(id); }
 
+  /** Removes file from offline cache. */
   removeFileFromOfflineCache(id: FileEntry["id"]) {
     return this.queue(async () => {
       const entry = this.current().entries.find((candidate): candidate is FileEntry => candidate.id === id && candidate.kind === "file");
@@ -1628,6 +1746,7 @@ export class SyncEngine {
     });
   }
 
+  /** Downloads offline copies. */
   downloadOfflineCopies(rootIds: readonly string[]) {
     const desktopId = this.desktopId;
     const generation = this.generation;
@@ -1639,6 +1758,7 @@ export class SyncEngine {
     return promise;
   }
 
+  /** Downloads offline copies internal. */
   private async downloadOfflineCopiesInternal(desktopId: string, generation: number, rootIds: readonly string[]) {
     if (this.frontendOnly) return this.loadOfflineInventory();
     if (this.status === "offline") throw new VirtualFileUnavailableError("Reconnect before downloading offline copies.");
@@ -1670,6 +1790,7 @@ export class SyncEngine {
     return refreshed;
   }
 
+  /** Removes offline copies. */
   async releaseOfflineCopies(rootIds?: readonly string[]) {
     const roots = rootIds ? dedupeOfflineRoots(this.current().entries, rootIds) : undefined;
     const released = await this.storage.releaseOfflineCopies(this.desktopId, roots);
@@ -1677,10 +1798,12 @@ export class SyncEngine {
     return released;
   }
 
+  /** Reads file by relative path. */
   async readFileByRelativePath(fromFileId: FileEntry["id"], relativePath: string) {
     const file = await this.storage.resolveFileByRelativePath(fromFileId, relativePath);
     return { file, blob: await this.readFile(file.id) };
   }
+  /** Returns pending and blocked outbox status. */
   async getOutboxStatus() {
     const records = await this.storage.readOutbox();
     return {
@@ -1690,10 +1813,12 @@ export class SyncEngine {
     };
   }
 
+  /** Lists outbox records. */
   listOutboxRecords() {
     return this.storage.readOutbox().then((records) => [...records]);
   }
 
+  /** Loads content conflict. */
   async loadContentConflict(operationId: string): Promise<ContentConflictBundle> {
     const record = (await this.storage.readOutbox()).find((candidate) => candidate.operationId === operationId);
     if (!record || !isRevisionConflictRecord(record) || record.operation.kind !== "save-content" || record.conflictDetails?.resourceKind !== "content") throw new Error("That content conflict no longer exists.");
@@ -1730,6 +1855,7 @@ export class SyncEngine {
     };
   }
 
+  /** Replays content resolution. */
   private async replayContentResolution(record: OutboxRecord, operation: Extract<OutboxOperation, { kind: "save-content" }>, generation: number) {
     this.assertActiveSession(generation, record.desktopId);
     const records = await this.storage.readOutbox();
@@ -1751,12 +1877,14 @@ export class SyncEngine {
     return this.storage.readOutbox();
   }
 
+  /** Computes content conflict record. */
   private contentConflictRecord(records: readonly OutboxRecord[], operationId: string) {
     const record = records.find((candidate) => candidate.operationId === operationId);
     if (!record || !isRevisionConflictRecord(record) || record.operation.kind !== "save-content" || record.conflictDetails?.resourceKind !== "content") throw new Error("That content conflict no longer exists.");
     return record as OutboxRecord & { operation: Extract<OutboxOperation, { kind: "save-content" }>; conflictDetails: RevisionConflictDetails };
   }
 
+  /** Resolves content conflict keep local. */
   resolveContentConflictKeepLocal(operationId: string, reviewedServerRevision: number) {
     const generation = this.generation;
     return this.queueSync(async () => {
@@ -1771,6 +1899,7 @@ export class SyncEngine {
     });
   }
 
+  /** Resolves content conflict merged. */
   resolveContentConflictMerged(operationId: string, content: Blob, reviewedServerRevision: number) {
     const generation = this.generation;
     return this.queueSync(async () => {
@@ -1788,6 +1917,7 @@ export class SyncEngine {
     });
   }
 
+  /** Resolves content conflict keep server. */
   resolveContentConflictKeepServer(operationId: string) {
     const generation = this.generation;
     return this.queueSync(async () => {
@@ -1806,6 +1936,7 @@ export class SyncEngine {
     });
   }
 
+  /** Resolves content conflict keep both. */
   resolveContentConflictKeepBoth(operationId: string) {
     const generation = this.generation;
     return this.queueSync(async () => {
@@ -1835,6 +1966,7 @@ export class SyncEngine {
     });
   }
 
+  /** Retries blocked outbox record. */
   retryBlockedOutboxRecord(operationId: string) {
     if (this.frontendOnly) throw new Error("Local-only desktops do not have a synchronization queue.");
     const generation = this.generation;
@@ -1875,6 +2007,7 @@ export class SyncEngine {
     });
   }
 
+  /** Removes blocked outbox record. */
   discardBlockedOutboxRecord(operationId: string) {
     if (this.frontendOnly) throw new Error("Local-only desktops do not have a synchronization queue.");
     const generation = this.generation;
@@ -1927,6 +2060,7 @@ export class SyncEngine {
     });
   }
 
+  /** Lists activity. */
   async listActivity(query: ActivityQuery = {}) {
     const parsed = parseActivityQuery(query);
     if (this.frontendOnly) return parseActivityPage(await this.storage.listActivity(parsed));
@@ -1945,6 +2079,7 @@ export class SyncEngine {
     return parseActivityPage(await response.json());
   }
 
+  /** Reads a protected virtual file. */
   private async protectedRead(input: RequestInfo | URL) {
     let response: Response;
     try {
@@ -1957,6 +2092,7 @@ export class SyncEngine {
     return response;
   }
 
+  /** Lists system entries. */
   async listSystemEntries(desktopId: string): Promise<SystemEntriesDocument> {
     assertValidId(desktopId, "System files require a valid desktop ID.");
     if (this.frontendOnly) {
@@ -1968,6 +2104,7 @@ export class SyncEngine {
     return parseSystemEntriesDocument(value, desktopId, authority.catalogId);
   }
 
+  /** Downloads protected file. */
   private async downloadProtectedFile(entry: Pick<SystemEntry, "id" | "name" | "mimeType" | "size" | "contentRevision">, endpoint: string, expected: ContentAccessExpectations) {
     const descriptor = parseContentAccessDescriptor(await (await this.protectedRead(endpoint)).json(), entry.id, entry.contentRevision, entry.size, this.directBlobOrigin, expected);
     let response: Response;
@@ -1982,6 +2119,7 @@ export class SyncEngine {
     return new File([downloaded.blob], entry.name, { type: entry.mimeType });
   }
 
+  /** Reads system file. */
   async readSystemFile(desktopId: string, catalogId: string, entry: SystemEntry) {
     assertValidId(desktopId, "System files require a valid desktop ID.");
     if (this.frontendOnly) {
@@ -1998,6 +2136,7 @@ export class SyncEngine {
     return this.downloadProtectedFile(current, API_ROUTES.desktopContent(desktopId, current.id, current.contentRevision), { catalogId, desktopId, sha256: current.sha256, systemRole: current.systemRole, systemKey: current.systemKey });
   }
 
+  /** Reads trash file. */
   async readTrashFile(desktopId: string, catalogId: string, trashRootId: string, entry: TrashEntry) {
     assertValidId(desktopId, "Trash files require a valid desktop ID.");
     assertValidId(trashRootId, "Trash files require a valid Trash root ID.");
@@ -2007,6 +2146,7 @@ export class SyncEngine {
     return this.downloadProtectedFile(entry, API_ROUTES.desktopTrashContent(desktopId, entry.id, entry.contentRevision, trashRootId), { catalogId, desktopId, trashRootId, sha256: entry.sha256 });
   }
 
+  /** Builds a trash operation for selected entries. */
   private async trashRequest(input: RequestInfo | URL, init?: RequestInit) {
     if (this.frontendOnly) throw new TrashUnavailableError();
     let response: Response;
@@ -2024,6 +2164,7 @@ export class SyncEngine {
     return response.json() as Promise<unknown>;
   }
 
+  /** Lists trash. */
   async listTrash(desktopId: string): Promise<TrashDocument> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
     const value = await this.trashRequest(API_ROUTES.desktopTrash(desktopId));
@@ -2031,6 +2172,7 @@ export class SyncEngine {
     return parseTrashDocument(value, desktopId, authority.catalogId);
   }
 
+  /** Restores trash. */
   async restoreTrash(desktopId: string, entryId: string, destination: "original" | "root", baseRevision: number): Promise<TrashRestoreResult> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
     assertValidId(entryId, "Trash restore requires a valid entry ID.");
@@ -2070,6 +2212,7 @@ export class SyncEngine {
     return result;
   }
 
+  /** Permanently deletes trash. */
   async permanentlyDeleteTrash(desktopId: string, entryId: string, baseRevision: number): Promise<TrashDeleteResult> {
     assertValidId(desktopId, "Trash requires a valid desktop ID.");
     assertValidId(entryId, "Permanent deletion requires a valid entry ID.");
@@ -2089,69 +2232,133 @@ export class SyncEngine {
   }
 }
 
+/** Provides the shared synchronization engine. */
 const defaultEngine = new SyncEngine({ frontendOnly: import.meta.env.HIRAYA_FRONTEND_ONLY === "true" });
 
+/** Configures sync authority. */
 export function configureSyncAuthority(catalogId: string | null, directBlobOrigin?: string, thumbnails = false) { defaultEngine.setExpectedAuthority(catalogId, directBlobOrigin, thumbnails); }
 
+/** Initializes desktop. */
 export const initializeDesktop = defaultEngine.start.bind(defaultEngine);
+/** Stops desktop sync. */
 export const stopDesktopSync = defaultEngine.stop.bind(defaultEngine);
+/** Subscribes to sync. */
 export const subscribeToSync = defaultEngine.subscribe.bind(defaultEngine);
+/** Creates text file. */
 export const createTextFile = defaultEngine.createTextFile.bind(defaultEngine);
+/** Creates file. */
 export const createFile = defaultEngine.createFile.bind(defaultEngine);
+/** Creates folder. */
 export const createFolder = defaultEngine.createFolder.bind(defaultEngine);
+/** Imports files into the selected destination. */
 export const importFiles = defaultEngine.importFiles.bind(defaultEngine);
+/** Creates entries. */
 export const createEntries = defaultEngine.createEntries.bind(defaultEngine);
+/** Renames entry. */
 export const renameEntry = defaultEngine.renameEntry.bind(defaultEngine);
+/** Removes entry. */
 export const deleteEntry = defaultEngine.deleteEntry.bind(defaultEngine);
+/** Removes entries. */
 export const deleteEntries = defaultEngine.deleteEntries.bind(defaultEngine);
+/** Moves entry. */
 export const moveEntry = defaultEngine.moveEntry.bind(defaultEngine);
+/** Moves entries. */
 export const moveEntries = defaultEngine.moveEntries.bind(defaultEngine);
+/** Transfers entries. */
 export const transferEntries = defaultEngine.transferEntries.bind(defaultEngine);
+/** Creates desktop. */
 export const createDesktop = defaultEngine.createDesktop.bind(defaultEngine);
+/** Lists desktops. */
 export const listDesktops = defaultEngine.listDesktops.bind(defaultEngine);
+/** Refreshes desktop catalog. */
 export const refreshDesktopCatalog = defaultEngine.refreshCatalog.bind(defaultEngine);
+/** Subscribes to desktop catalog. */
 export const subscribeToDesktopCatalog = defaultEngine.subscribeDesktopCatalog.bind(defaultEngine);
+/** Updates desktop preferences. */
 export const updateDesktopPreferences = defaultEngine.updateDesktopPreferences.bind(defaultEngine);
+/** Renames desktop. */
 export const renameDesktop = defaultEngine.renameDesktop.bind(defaultEngine);
+/** Removes desktop. */
 export const deleteDesktop = defaultEngine.deleteDesktop.bind(defaultEngine);
+/** Captures entries. */
 export const captureEntries = defaultEngine.captureEntries.bind(defaultEngine);
+/** Pastes entries. */
 export const pasteEntries = defaultEngine.pasteEntries.bind(defaultEngine);
+/** Updates root entry positions. */
 export const updateRootEntryPositions = defaultEngine.updateRootEntryPositions.bind(defaultEngine);
+/** Updates entry position. */
 export const updateEntryPosition = defaultEngine.updateEntryPosition.bind(defaultEngine);
+/** Saves file. */
 export const saveFile = defaultEngine.saveFile.bind(defaultEngine);
+/** Saves desktop layout. */
 export const saveDesktopLayout = defaultEngine.saveDesktopLayout.bind(defaultEngine);
+/** Saves editor settings. */
 export const saveEditorSettings = defaultEngine.saveEditorSettings.bind(defaultEngine);
+/** Selects theme. */
 export const selectTheme = defaultEngine.selectTheme.bind(defaultEngine);
+/** Saves custom theme. */
 export const saveCustomTheme = defaultEngine.saveCustomTheme.bind(defaultEngine);
+/** Installs theme package. */
 export const installThemePackage = defaultEngine.installThemePackage.bind(defaultEngine);
+/** Removes custom theme. */
 export const deleteCustomTheme = defaultEngine.deleteCustomTheme.bind(defaultEngine);
+/** Reads file. */
 export const readFile = defaultEngine.readFile.bind(defaultEngine);
+/** Previews file. */
 export const previewFile = defaultEngine.previewFile.bind(defaultEngine);
+/** Generates a thumbnail for a file. */
 export const thumbnailFile = defaultEngine.thumbnailFile.bind(defaultEngine);
+/** Loads offline inventory. */
 export const loadOfflineInventory = defaultEngine.loadOfflineInventory.bind(defaultEngine);
+/** Subscribes to offline storage. */
 export const subscribeToOfflineStorage = defaultEngine.subscribeOfflineStorage.bind(defaultEngine);
+/** Subscribes to entry downloads. */
 export const subscribeToEntryDownloads = defaultEngine.subscribeEntryDownloads.bind(defaultEngine);
+/** Subscribes to transfers. */
 export const subscribeToTransfers = defaultEngine.subscribeTransfers.bind(defaultEngine);
+/** Dismisses file transfer. */
 export const dismissFileTransfer = defaultEngine.dismissTransfer.bind(defaultEngine);
+/** Dismisses completed file transfer. */
 export const dismissCompletedFileTransfer = defaultEngine.dismissCompletedTransfer.bind(defaultEngine);
+/** Estimates offline operation. */
 export const estimateOfflineOperation = defaultEngine.estimateOfflineOperation.bind(defaultEngine);
+/** Downloads offline copies. */
 export const downloadOfflineCopies = defaultEngine.downloadOfflineCopies.bind(defaultEngine);
+/** Removes offline copies. */
 export const releaseOfflineCopies = defaultEngine.releaseOfflineCopies.bind(defaultEngine);
+/** Returns pending and blocked outbox status. */
 export const getOutboxStatus = defaultEngine.getOutboxStatus.bind(defaultEngine);
+/** Lists outbox records. */
 export const listOutboxRecords = defaultEngine.listOutboxRecords.bind(defaultEngine);
+/** Retries blocked outbox record. */
 export const retryBlockedOutboxRecord = defaultEngine.retryBlockedOutboxRecord.bind(defaultEngine);
+/** Removes blocked outbox record. */
 export const discardBlockedOutboxRecord = defaultEngine.discardBlockedOutboxRecord.bind(defaultEngine);
+/** Loads content conflict. */
 export const loadContentConflict = defaultEngine.loadContentConflict.bind(defaultEngine);
+/** Resolves content conflict keep local. */
 export const resolveContentConflictKeepLocal = defaultEngine.resolveContentConflictKeepLocal.bind(defaultEngine);
+/** Resolves content conflict keep server. */
 export const resolveContentConflictKeepServer = defaultEngine.resolveContentConflictKeepServer.bind(defaultEngine);
+/** Resolves content conflict merged. */
 export const resolveContentConflictMerged = defaultEngine.resolveContentConflictMerged.bind(defaultEngine);
+/** Resolves content conflict keep both. */
 export const resolveContentConflictKeepBoth = defaultEngine.resolveContentConflictKeepBoth.bind(defaultEngine);
+/** Subscribes to outbox. */
 export const subscribeToOutbox = defaultEngine.subscribeOutbox.bind(defaultEngine);
+/** Lists activity. */
 export const listActivity = defaultEngine.listActivity.bind(defaultEngine);
+/** Subscribes to activity changes. */
 export const subscribeToActivityChanges = defaultEngine.subscribeActivityChanges.bind(defaultEngine);
+/** Lists system entries. */
 export const listSystemEntries = defaultEngine.listSystemEntries.bind(defaultEngine);
+/** Reads system file. */
 export const readSystemFile = defaultEngine.readSystemFile.bind(defaultEngine);
+/** Reads trash file. */
 export const readTrashFile = defaultEngine.readTrashFile.bind(defaultEngine);
+/** Lists trash. */
 export const listTrash = defaultEngine.listTrash.bind(defaultEngine);
+/** Restores trash. */
 export const restoreTrash = defaultEngine.restoreTrash.bind(defaultEngine);
+/** Permanently deletes trash. */
 export const permanentlyDeleteTrash = defaultEngine.permanentlyDeleteTrash.bind(defaultEngine);

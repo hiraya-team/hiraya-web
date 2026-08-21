@@ -5,19 +5,17 @@ import { openFilesystemDatabase } from "../../filesystem/database";
 import {
   accountAppsRequestIsPermanent,
   accountAppsRequestIsTransient,
-  downloadAccountAppData,
-  downloadAccountAppPackage,
-  fetchAccountApps,
-  verifyLocalAccountPackage,
   AccountAppsRequestError,
   type AccountApp,
   type AccountAppsSnapshot,
 } from "../../lib/account-apps";
+import { downloadAccountAppData, downloadAccountAppPackage, fetchAccountApps, verifyLocalAccountPackage } from "../../lib/account-apps-remote";
 import { projectAccountAppData, type AccountAppDataRestoration, type AccountAppOperation, type AccountAppOutboxRecord, type PersistedAccountApps } from "../../lib/account-app-outbox";
 import { uploadBlobDigests } from "../../lib/blob-transfer";
 import { accountStorage } from "../../platform/storage/account-storage";
 import { subscribeSynchronizedAccountAppsRevision, synchronizedSession } from "../../platform/storage/synchronized-session";
 import { Web2HTTPError, clearWeb2AccountAppData, deleteWeb2AccountApp, deleteWeb2AccountAppData, negotiateWeb2ChunkUpload, putWeb2AccountApp, putWeb2AccountAppData, putWeb2AccountAppHandlers, uploadWeb2Chunk } from "../../sync/transport";
+import { WEB2_SYNC_PROTOCOL } from "../../sync/constants";
 import { readApprovedPackageArchive, releaseApprovedPackageArchive, saveApprovedPackageArchive } from "../../platform/storage/package-archives";
 import {
   blockAccountAppOperation,
@@ -35,8 +33,12 @@ import {
 
 export type AccountAppsClientState = Readonly<{ state: PersistedAccountApps; outbox: AccountAppOutboxRecord[]; error: string }>;
 
-const emptyState: PersistedAccountApps = { id: "singleton", baseline: null, projection: { appsRevision: 0, apps: [], handlerHints: {} } };
+/** Identifies the single persisted account-app projection. */
+const ACCOUNT_APPS_STATE_ID = "singleton" as const;
+/** Provides the initial account-app projection before local state loads. */
+const emptyState: PersistedAccountApps = { id: ACCOUNT_APPS_STATE_ID, baseline: null, projection: { appsRevision: 0, apps: [], handlerHints: {} } };
 
+/** Synchronizes account-owned apps, handlers, and app data through an outbox. */
 export class AccountAppsClient {
   private current: AccountAppsClientState = { state: emptyState, outbox: [], error: "" };
   private listener: (state: AccountAppsClientState) => void = () => undefined;
@@ -48,10 +50,13 @@ export class AccountAppsClient {
   private replaying: Promise<void> | null = null;
   private readonly online = () => { this.clearRetry(); this.accountAppsChanged(Number.MAX_SAFE_INTEGER); };
 
+  /** Creates a client bound to the authenticated direct-blob origin. */
   constructor(private readonly directBlobOrigin: string) {}
 
+  /** Returns the last server-confirmed account-app snapshot. */
   snapshot() { return this.current.state.baseline; }
 
+  /** Starts local projection publication, polling, and outbox replay. */
   async start(listener: (state: AccountAppsClientState) => void) {
     this.active = true;
     window.addEventListener("online", this.online);
@@ -65,6 +70,7 @@ export class AccountAppsClient {
     void this.replay();
   }
 
+  /** Stops polling, subscriptions, and retry scheduling. */
   stop() {
     this.active = false;
     if (this.timer) clearTimeout(this.timer);
@@ -75,16 +81,19 @@ export class AccountAppsClient {
     this.unsubscribeAccountApps = () => undefined;
   }
 
+  /** Stores and publishes the current client state. */
   private publish(value: AccountAppsClientState) {
     this.current = value;
     this.listener(value);
   }
 
+  /** Publishes a synchronization error while retaining projected state. */
   private fail(error: unknown) {
     if (!this.active) return;
     this.publish({ ...this.current, error: error instanceof Error ? error.message : "Account apps could not be synchronized." });
   }
 
+  /** Schedules the next account-app refresh when the client is idle. */
   private schedulePoll(delay = 5 * 60_000) {
     if (!this.active || this.timer) return;
     this.timer = setTimeout(() => {
@@ -93,6 +102,7 @@ export class AccountAppsClient {
     }, delay);
   }
 
+  /** Reacts to a server revision hint by replaying and refreshing. */
   private accountAppsChanged(revision: number) {
     if (!this.active || (this.current.state.baseline?.appsRevision ?? -1) >= revision) return;
     if (this.timer) clearTimeout(this.timer);
@@ -102,11 +112,13 @@ export class AccountAppsClient {
     }).catch((error) => this.fail(error)).finally(() => this.schedulePoll());
   }
 
+  /** Cancels any pending transient-failure retry. */
   private clearRetry() {
     if (this.retryTimer) clearTimeout(this.retryTimer);
     this.retryTimer = null;
   }
 
+  /** Schedules bounded exponential retry for pending outbox work. */
   private scheduleRetry(attemptCount: number) {
     if (!this.active || this.retryTimer) return;
     this.retryTimer = setTimeout(() => {
@@ -115,6 +127,7 @@ export class AccountAppsClient {
     }, Math.min(60_000, 1_000 * 2 ** Math.min(attemptCount, 6)));
   }
 
+  /** Coalesces concurrent server refresh requests. */
   refresh() {
     if (this.refreshing) return this.refreshing;
     const refresh = this.refreshOnce().finally(() => { if (this.refreshing === refresh) this.refreshing = null; });
@@ -122,6 +135,7 @@ export class AccountAppsClient {
     return refresh;
   }
 
+  /** Fetches and reconciles one account-app snapshot. */
   private async refreshOnce() {
     const snapshot = await fetchAccountApps();
     await reconcileAccountApps(snapshot);
@@ -134,6 +148,7 @@ export class AccountAppsClient {
     return snapshot;
   }
 
+  /** Persists an operation, publishes its projection, and starts replay. */
   private async queued(operation: AccountAppOperation, localData?: Parameters<typeof enqueueAccountAppOperation>[1]) {
     const result = await enqueueAccountAppOperation(operation, localData);
     this.publish({ state: result.state, outbox: [...this.current.outbox, result.record].sort((left, right) => left.sequence - right.sequence), error: "" });
@@ -141,6 +156,7 @@ export class AccountAppsClient {
     return result.state.projection;
   }
 
+  /** Verifies and queues an account app installation. */
   async install(archive: Blob, inspection: AppPackageInspection) {
     const hashes = await uploadBlobDigests(archive);
     if (hashes.sha256 !== inspection.digest) throw new Error("The app package digest changed before it could be queued.");
@@ -150,28 +166,34 @@ export class AccountAppsClient {
     return this.current.state.baseline?.apps.find((app) => app.appId === inspection.manifest.id && app.package.sha256 === inspection.digest) ?? null;
   }
 
+  /** Downloads and approves an account app for local execution. */
   async approve(app: AccountApp): Promise<InstalledApp> {
     const { archive, inspection } = await downloadAccountAppPackage(app, this.directBlobOrigin);
     await saveApprovedPackageArchive(inspection.digest, archive);
     return { appId: app.appId, source: "account", packageEntryId: null, archivePath: null, installationGeneration: app.generations.installationGeneration, digest: app.package.sha256, version: app.manifest.version, manifest: app.manifest, approvedAt: Date.now() };
   }
 
+  /** Queues removal of an account-owned app. */
   async uninstall(app: AccountApp) {
     return this.queued({ schemaVersion: 1, kind: "uninstall", appId: app.appId, installationGeneration: app.generations.installationGeneration });
   }
 
+  /** Queues account-level file-handler preferences. */
   async setHandlers(hints: Readonly<Record<string, string>>) {
     return this.queued({ schemaVersion: 1, kind: "handlers", hints });
   }
 
+  /** Returns the desired projected account app or throws when absent. */
   private desired(appId: string) {
     const desired = this.current.state.projection.apps.find((app) => app.appId === appId);
     if (!desired) throw new Error("That app is not installed for this account.");
     return desired;
   }
 
+  /** Reports whether an app exists in the confirmed account baseline. */
   owns(appId: string) { return Boolean(this.current.state.baseline?.apps.some((app) => app.appId === appId)); }
 
+  /** Reads projected, remote, or cached account app data in that order. */
   async getData(appId: string, key: string): Promise<JsonValue | undefined> {
     const projected = projectAccountAppData(this.current.outbox, appId, key);
     if (projected.resolved) return projected.value;
@@ -189,21 +211,25 @@ export class AccountAppsClient {
     return readAppStorage(appId, key);
   }
 
+  /** Queues an account app data value. */
   setData(appId: string, key: string, value: JsonValue) {
     const app = this.desired(appId);
     return this.queued({ schemaVersion: 1, kind: "put-data", appId, key, dataGeneration: app.dataGeneration, value }, { kind: "put", appId, key, value });
   }
 
+  /** Queues deletion of an account app data key. */
   removeData(appId: string, key: string) {
     const app = this.desired(appId);
     return this.queued({ schemaVersion: 1, kind: "delete-data", appId, key, dataGeneration: app.dataGeneration }, { kind: "delete", appId, key });
   }
 
+  /** Queues clearing all data owned by an account app. */
   clearData(appId: string) {
     const app = this.desired(appId);
     return this.queued({ schemaVersion: 1, kind: "clear-data", appId, dataGeneration: app.dataGeneration }, { kind: "clear", appId });
   }
 
+  /** Coalesces concurrent outbox replay requests. */
   replay() {
     if (this.replaying) return this.replaying;
     const replay = this.replayPending().finally(() => { if (this.replaying === replay) this.replaying = null; });
@@ -211,6 +237,7 @@ export class AccountAppsClient {
     return replay;
   }
 
+  /** Replays pending account-app operations in sequence. */
   private async replayPending() {
     for (;;) {
       const stored = await readAccountApps();
@@ -252,6 +279,7 @@ export class AccountAppsClient {
     }
   }
 
+  /** Requeues a blocked account-app operation for replay. */
   async retry(operationId: string) {
     await retryAccountAppOperation(operationId);
     const stored = await readAccountApps();
@@ -260,6 +288,7 @@ export class AccountAppsClient {
     void this.replay();
   }
 
+  /** Discards an operation and restores its projected app data. */
   async discard(operationId: string) {
     const stored = await readAccountApps();
     const record = stored.outbox.find((candidate) => candidate.operationId === operationId);
@@ -274,6 +303,7 @@ export class AccountAppsClient {
     }
   }
 
+  /** Computes replacement data after discarding a projected mutation. */
   private async dataRestoration(operation: AccountAppOperation, snapshot: AccountAppsSnapshot | null, remaining: readonly AccountAppOutboxRecord[]): Promise<AccountAppDataRestoration | undefined> {
     if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") return undefined;
     if (!snapshot) throw new Error("Reconnect and refresh account apps before discarding this change.");
@@ -292,6 +322,7 @@ export class AccountAppsClient {
     return { kind: "replace", appId: operation.appId, values: [...values] };
   }
 
+  /** Reports whether the server state already satisfies an operation. */
   private async satisfied(operation: AccountAppOperation, snapshot: AccountAppsSnapshot) {
     if (operation.kind === "handlers") return JSON.stringify(operation.hints) === JSON.stringify(snapshot.handlerHints);
     const app = snapshot.apps.find((candidate) => candidate.appId === operation.appId);
@@ -305,6 +336,7 @@ export class AccountAppsClient {
     return JSON.stringify(await downloadAccountAppData(app, operation.key, this.directBlobOrigin)) === JSON.stringify(operation.value);
   }
 
+  /** Restores cached app data from a confirmed server snapshot. */
   private async restoreData(operation: AccountAppOperation, snapshot: AccountAppsSnapshot) {
     if (operation.kind === "install" || operation.kind === "uninstall" || operation.kind === "handlers") return;
     const app = snapshot.apps.find((candidate) => candidate.appId === operation.appId);
@@ -321,10 +353,11 @@ export class AccountAppsClient {
     else await writeAppStorage(operation.appId, operation.key, value, 64 * 1024, 128);
   }
 
+  /** Sends one account-app outbox record to the server. */
   private async send(record: AccountAppOutboxRecord) {
     const operation = record.operation;
     const { accountId, storageId } = accountStorage();
-    const wire = { schemaVersion: 1 as const, protocol: "web2-sync-v1" as const };
+    const wire = { schemaVersion: 1 as const, protocol: WEB2_SYNC_PROTOCOL };
     try {
       if (operation.kind === "install") {
         const archive = await readApprovedPackageArchive(operation.digest);

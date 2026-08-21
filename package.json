@@ -16,9 +16,11 @@
     "apps:system:build": "bun run --cwd apps/system/text-editor build && bun run --cwd apps/system/image-viewer build && bun run --cwd apps/system/media-viewer build && bun run --cwd apps/system/file-viewer build && bun run --cwd apps/system/terminal build && bun run --cwd apps/system/theme-editor build",
     "apps:system:test": "bun test apps/system",
     "apps:system": "bun run apps:system:build && bun run app package apps/system/text-editor/dist dist/system-apps/text-editor.hiraya.app && bun run app package apps/system/image-viewer/dist dist/system-apps/image-viewer.hiraya.app && bun run app package apps/system/media-viewer/dist dist/system-apps/media-viewer.hiraya.app && bun run app package apps/system/file-viewer/dist dist/system-apps/file-viewer.hiraya.app && bun run app package apps/system/terminal/dist dist/system-apps/terminal.hiraya.app && bun run app package apps/system/theme-editor/dist dist/system-apps/theme-editor.hiraya.app",
-    "lint": "eslint .",
+    "lint": "eslint . && bun run readability",
+    "readability": "bun build/readability.ts",
     "test": "bun test",
     "test:e2e": "HIRAYA_FRONTEND_ONLY=true bun run build && playwright test",
+    "test:e2e:public": "bun run build && HIRAYA_PUBLIC_E2E=true playwright test",
     "test:e2e:apps-ui": "playwright test --config playwright.apps-ui.config.ts",
     "preview": "bunx --bun vite preview"
   },

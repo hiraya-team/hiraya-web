@@ -26,19 +26,23 @@ type Props = {
   onUninstallAccount?: (appId: string) => void;
 };
 
+/** Matches every search term against application metadata. */
 function searchMatches(query: string, ...values: Array<string | null | undefined>) {
   const searchable = values.filter(Boolean).join(" ").toLocaleLowerCase();
   return query.trim().toLocaleLowerCase().split(/\s+/).filter(Boolean).every((term) => searchable.includes(term));
 }
 
+/** Describes where an installed app package originated. */
 function installedSource(app: InstalledApp) {
   return app.source === "system" ? "Trusted system app" : app.source === "account" ? "Synchronized account app" : "Desktop package";
 }
 
+/** Describes the trust level of an installed app package. */
 function installedTrust(app: InstalledApp) {
   return app.source === "system" ? "Trusted by Hiraya" : app.source === "account" ? "Approved for this account" : "Approved in this browser";
 }
 
+/** Renders the app store window interface. */
 export function AppStoreWindow({ installedApps, entries, offline, canAddToDesktop, onAddToDesktop, onLaunch, onReset, onUninstall, accountApps = [], accountError = "", accountPending = 0, accountBlocked = [], onRetryAccount = () => undefined, onDiscardAccount = () => undefined, onSyncAccount = () => undefined, onUninstallAccount = () => undefined }: Props) {
   const [query, setQuery] = useState("");
   const deferredQuery = useDeferredValue(query);

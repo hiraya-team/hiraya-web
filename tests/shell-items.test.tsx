@@ -3,7 +3,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { ShellItemLayer } from "../src/components/ShellItems";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the folder test fixture. */
 const folder: DesktopEntry = { id: "folder", kind: "folder", name: "Projects", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 20, y: 30 } };
+/** Provides the child test fixture. */
 const child: DesktopEntry = { id: "notes", kind: "file", name: "notes.txt", parentId: folder.id, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "text/plain", size: 4 };
 
 test("renders built-in widgets and folder-backed groups with accessible actions", () => {

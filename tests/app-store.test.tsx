@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { InstalledApp } from "../src/apps/installed-apps";
 import { AppStoreWindow } from "../src/components/AppStoreWindow";
 
+/** Defines the system app. */
 const systemApp: InstalledApp = {
   appId: "app.hiraya.text-editor",
   source: "system",
@@ -22,6 +23,7 @@ const systemApp: InstalledApp = {
   },
 };
 
+/** Provides the base test fixture. */
 const base = {
   installedApps: [systemApp],
   entries: [],

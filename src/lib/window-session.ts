@@ -15,8 +15,10 @@ export type WindowSessionApp = WindowSessionBase & BuiltinAppTarget;
 export type WindowSession = { schemaVersion: 1; apps: WindowSessionApp[] };
 export type WindowTarget = BuiltinAppTarget;
 
+/** Defines the empty window session. */
 export const EMPTY_WINDOW_SESSION: WindowSession = { schemaVersion: 1, apps: [] };
 
+/** Creates window session. */
 export function createWindowSession(apps: readonly (WindowSessionBase & Record<string, unknown>)[]): WindowSession {
   return {
     schemaVersion: 1,
@@ -28,10 +30,12 @@ export function createWindowSession(apps: readonly (WindowSessionBase & Record<s
   };
 }
 
+/** Reports whether a value is a plain record. */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+/** Parses and validates window targets. */
 export function parseWindowTargets(value: unknown): WindowTarget[] {
   if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.apps) || value.apps.length > 100) throw new Error("The browser history has an unsupported format.");
   const ids = new Set<string>();
@@ -46,6 +50,7 @@ export function parseWindowTargets(value: unknown): WindowTarget[] {
   });
 }
 
+/** Parses and validates bounds. */
 function parseBounds(value: unknown): WindowBounds {
   if (!isRecord(value) || ![value.x, value.y, value.width, value.height].every((part) => typeof part === "number" && Number.isFinite(part))) {
     throw new Error("The saved window session has invalid bounds.");
@@ -53,6 +58,7 @@ function parseBounds(value: unknown): WindowBounds {
   return { x: value.x as number, y: value.y as number, width: value.width as number, height: value.height as number };
 }
 
+/** Parses and validates window session. */
 export function parseWindowSession(value: unknown): WindowSession {
   if (!isRecord(value) || value.schemaVersion !== 1 || !Array.isArray(value.apps) || value.apps.length > 100) {
     throw new Error("The saved window session has an unsupported format.");
@@ -74,6 +80,7 @@ export function parseWindowSession(value: unknown): WindowSession {
   return { schemaVersion: 1, apps };
 }
 
+/** Restores window session. */
 export function restoreWindowSession(session: WindowSession, entries: DesktopEntry[], _activeSegment: SurfaceSegment, viewport: WindowViewport) {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return session.apps

@@ -23,6 +23,7 @@ export type HydrationCoordinator = {
   close(): Promise<void>;
 };
 
+/** Converts a hydration page to persisted node data. */
 function pageData(page: HydrationPage) {
   return {
     workspaceId: page.workspaceId,
@@ -37,6 +38,7 @@ function pageData(page: HydrationPage) {
   };
 }
 
+/** Converts bootstrap data to hydration pages. */
 function bootstrapData(value: Bootstrap): FilesystemBootstrap {
   return {
     accountId: value.accountId,
@@ -49,6 +51,7 @@ function bootstrapData(value: Bootstrap): FilesystemBootstrap {
   };
 }
 
+/** Converts pulled operations to hydration pages. */
 function pullData(value: Extract<PullResult, { kind: "operations" }>): FilesystemPullOperations {
   return {
     workspaceId: value.workspaceId,
@@ -63,6 +66,7 @@ function pullData(value: Extract<PullResult, { kind: "operations" }>): Filesyste
   };
 }
 
+/** Resets data. */
 function resetData(value: Extract<PullResult, { kind: "reset" }>): FilesystemReset {
   return {
     workspaceId: value.workspaceId,
@@ -77,6 +81,7 @@ function resetData(value: Extract<PullResult, { kind: "reset" }>): FilesystemRes
   };
 }
 
+/** Creates hydration coordinator. */
 export function createHydrationCoordinator(storage: HydrationStorage, randomUUID: () => string = () => crypto.randomUUID()): HydrationCoordinator {
   if (!storage || typeof storage.bootstrap !== "function" || typeof storage.applyPull !== "function" || typeof storage.prepareReset !== "function" || typeof storage.restartResetHydration !== "function" || typeof storage.publishReset !== "function" || typeof storage.start !== "function" || typeof randomUUID !== "function") throw new TypeError("Hydration coordinator dependencies are invalid.");
   const closeController = new AbortController();

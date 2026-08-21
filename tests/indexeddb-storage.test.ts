@@ -3,11 +3,13 @@ import { indexedDB } from "fake-indexeddb";
 import { assertUniqueDesktopEntryIds, DATABASE_VERSION, resetDatabaseSchema } from "../src/platform/storage/database-client";
 import { desktopStateSnapshot } from "./fixtures";
 
+/** Returns the current state. */
 function state(entries: ReturnType<typeof desktopStateSnapshot>["entries"]) {
   const snapshot = desktopStateSnapshot();
   return { entries, autoArrangeIcons: snapshot.layout.autoArrangeIcons, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };
 }
 
+/** Provides the file test fixture. */
 const file = { kind: "file" as const, id: "shared-id", name: "notes.txt", parentId: null, createdAt: 1, modifiedAt: 1, position: { x: 0, y: 0 }, mimeType: "text/plain", size: 0 };
 
 describe("IndexedDB desktop aggregates", () => {

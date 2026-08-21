@@ -7,27 +7,33 @@ export type ThemeDraft = {
   baseline: string | null;
 };
 
+/** Selects the destination for a back action. */
 export function backAction(editingDraft: boolean, wallpaperActive: boolean) {
   return editingDraft ? "draft" : wallpaperActive ? "theme" : "home";
 }
 
+/** Serializes the editable fields of a theme. */
 function snapshot(name: string, definition: ThemeDefinition) {
   return JSON.stringify({ name, definition });
 }
 
+/** Copies draft. */
 export function copyDraft(theme: ThemeEditorTheme, id = theme.id, name = theme.name, unsaved = false): ThemeDraft {
   const definition = structuredClone(theme.definition);
   return { id, name, definition, baseline: unsaved ? null : snapshot(name, definition) };
 }
 
+/** Creates an editable draft, copying built-in themes when needed. */
 export function editDraft(theme: ThemeEditorTheme, names: readonly string[], newID = crypto.randomUUID()) {
   return theme.builtIn ? copyDraft(theme, newID, nextCopyName(names, theme.name), true) : copyDraft(theme);
 }
 
+/** Reports whether a draft differs from its baseline. */
 export function draftChanged(draft: ThemeDraft) {
   return draft.baseline === null || draft.baseline !== snapshot(draft.name, draft.definition);
 }
 
+/** Chooses an unused name for a copied theme. */
 export function nextCopyName(names: readonly string[], sourceName: string) {
   const used = new Set(names.map((name) => name.toLocaleLowerCase()));
   for (let number = 1; ; number += 1) {
@@ -37,22 +43,26 @@ export function nextCopyName(names: readonly string[], sourceName: string) {
   }
 }
 
+/** Replaces theme state while retaining the active draft. */
 export function mergeThemeState(incoming: ThemeEditorState, draft: ThemeDraft | null) {
   return { state: structuredClone(incoming), draft };
 }
 
+/** Calculates relative color luminance. */
 function luminance(color: string) {
   const channels = [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16) / 255)
     .map((channel) => channel <= 0.04045 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4);
   return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
 }
 
+/** Calculates the contrast ratio between two colors. */
 export function contrastRatio(foreground: string, background: string) {
   const first = luminance(foreground);
   const second = luminance(background);
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
+/** Mixes two colors by the requested ratio. */
 function mix(foreground: string, background: string, ratio: number) {
   const channels = (color: string) => [1, 3, 5].map((offset) => Number.parseInt(color.slice(offset, offset + 2), 16));
   const first = channels(foreground);
@@ -60,15 +70,18 @@ function mix(foreground: string, background: string, ratio: number) {
   return `#${first.map((channel, index) => Math.round(channel * ratio + second[index] * (1 - ratio)).toString(16).padStart(2, "0")).join("")}`;
 }
 
+/** Selects the highest-contrast candidate. */
 function strongest(background: string, candidates: readonly string[]) {
   return candidates.reduce((best, candidate) => contrastRatio(candidate, background) > contrastRatio(best, background) ? candidate : best);
 }
 
+/** Selects the candidate with the strongest minimum contrast. */
 function strongestMinimum(backgrounds: readonly string[], candidates: readonly string[]) {
   const minimum = (candidate: string) => Math.min(...backgrounds.map((background) => contrastRatio(candidate, background)));
   return candidates.reduce((best, candidate) => minimum(candidate) > minimum(best) ? candidate : best);
 }
 
+/** Lists theme color pairs that fail contrast requirements. */
 export function contrastIssues(definition: ThemeDefinition) {
   const c = definition.colors;
   const minimumWindow = mix(c.window, c.shell, 0.65);

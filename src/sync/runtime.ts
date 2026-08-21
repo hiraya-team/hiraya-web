@@ -26,7 +26,9 @@ import {
   uploadWeb2Chunk,
 } from "./transport";
 
+/** Lists operation kinds supported for synchronization push. */
 const supportedPushKinds = new Set<WorkspaceOperation["kind"]>(["create", "write", "copy", "rename", "move", "position", "transfer", "trash", "restore", "purge", "set", "set-many", "unset", "unset-many"]);
+/** Lists push operations that change filesystem structure. */
 const structuralPushKinds = new Set<WorkspaceOperation["kind"]>(["create", "copy", "move", "transfer", "trash", "restore", "purge"]);
 
 export type Web2SyncRuntimeTransport = {
@@ -40,6 +42,7 @@ export type Web2SyncRuntimeTransport = {
   listen(signal: AbortSignal, receive: Parameters<typeof listenForWeb2Events>[1], directoryRevision?: number, activity?: () => void): ReturnType<typeof listenForWeb2Events>;
 };
 
+/** Provides the browser's native synchronization transport. */
 const nativeTransport: Web2SyncRuntimeTransport = {
   bootstrap: bootstrapWeb2,
   hydrate: hydrateWeb2,
@@ -71,10 +74,12 @@ export type Web2SyncRuntimeOptions = {
   onAccountAppsChange?: (revision: number) => void;
 };
 
+/** Determines whether a synchronization failure can be retried. */
 function retryable(error: unknown) {
   return error instanceof Web2NetworkError || error instanceof Web2HTTPError && (error.code === "upload-incomplete" || error.status === 408 || error.status === 429 || error.status >= 500);
 }
 
+/** Waits for an abortable delay. */
 function wait(ms: number, signal: AbortSignal) {
   if (signal.aborted) return Promise.resolve();
   return new Promise<void>((resolve) => {
@@ -88,6 +93,7 @@ function wait(ms: number, signal: AbortSignal) {
   });
 }
 
+/** Returns node IDs covered by an operation's tree. */
 function operationTreeNodeIds(stored: StoredOperation) {
   const { operation, inverse } = stored;
   if (operation.kind === "transfer" && inverse.kind === "transfer") return inverse.nodes.map(({ nodeId }) => nodeId);
@@ -98,6 +104,7 @@ function operationTreeNodeIds(stored: StoredOperation) {
   return "nodeIds" in operation ? operation.nodeIds : [];
 }
 
+/** Returns dependency keys blocked by an operation. */
 function operationBlockKeys(stored: StoredOperation) {
   const { operation } = stored;
   const field = (workspaceId: string, nodeId: string, name: string) => `node:${workspaceId}:${nodeId}:${name}`;
@@ -120,6 +127,7 @@ function operationBlockKeys(stored: StoredOperation) {
   }
 }
 
+/** Returns dependency keys required by an operation. */
 function operationRequiredKeys(stored: StoredOperation) {
   const { operation } = stored;
   const existence = (workspaceId: string, nodeId: string) => `node:${workspaceId}:${nodeId}:existence`;
@@ -148,6 +156,7 @@ function operationRequiredKeys(stored: StoredOperation) {
   }
 }
 
+/** Selects replayable operations. */
 function selectReplayableOperations(unsettled: StoredOperation[], externalBlockers: Iterable<string> = []) {
   const blockers = new Map<string, Set<string>>();
   for (const key of externalBlockers) blockers.set(key, new Set(["cross-workspace-transfer"]));
@@ -182,6 +191,7 @@ function selectReplayableOperations(unsettled: StoredOperation[], externalBlocke
   return operations;
 }
 
+/** Creates the Web2 synchronization runtime. */
 export function createWeb2SyncRuntime(options: Web2SyncRuntimeOptions): Web2SyncRuntime {
   const accountId = parseStableId(options.accountId, "The synchronization account ID is invalid.");
   if (!options.directBlobOrigin) throw new Error("Web2 synchronization requires direct chunk storage.");

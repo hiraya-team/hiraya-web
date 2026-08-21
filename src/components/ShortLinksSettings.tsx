@@ -15,6 +15,7 @@ type Props = {
   onConfirmDelete: (link: ShortLink) => Promise<boolean>;
 };
 
+/** Renders the short links settings interface. */
 export function ShortLinksSettings({ headingRef, embedded = false, baseUrl, onBack, onList, onCreate, onUpdate, onDelete, onConfirmDelete }: Props) {
   const [links, setLinks] = useState<ShortLink[] | null>(null);
   const [error, setError] = useState("");

@@ -15,6 +15,7 @@ export type SyncIssuesPanelProps = {
   onOpenHelp?: () => void;
 };
 
+/** Selects explanatory copy for an outbox record state. */
 function statusCopy(status: SyncStatus, recordCount: number, lastSyncedAt?: number | null) {
   if (status === "local") return "Changes stay in this browser.";
   if (status === "offline") return lastSyncedAt ? `Offline. Last synced ${new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(lastSyncedAt)}.` : "Offline. This desktop has not synced yet.";
@@ -25,6 +26,7 @@ function statusCopy(status: SyncStatus, recordCount: number, lastSyncedAt?: numb
   return recordCount > 0 ? "Connected. Pending changes will sync automatically." : "Connected. Everything is up to date.";
 }
 
+/** Renders the sync issues panel interface. */
 export function SyncIssuesPanel({ status, records, lastSyncedAt, affectedLabels, onRetry, onDiscard, onOpenHelp }: SyncIssuesPanelProps) {
   const groups = partitionSyncRecords(records);
   const titleId = useId();

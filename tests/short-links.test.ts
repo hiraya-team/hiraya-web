@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseShortLink, parseShortLinks, resolveShortLinkUrl } from "../src/lib/short-links";
 
+/** Provides the link test fixture. */
 const link = { slug: "launch-notes", destinationUrl: "https://example.test/notes", url: "/r/launch-notes", enabled: true, createdAt: "2026-08-02T12:00:00Z", updatedAt: "2026-08-02T12:00:00Z" };
 
 describe("short links", () => {

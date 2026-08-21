@@ -7,6 +7,7 @@ import type { WallpaperSceneTarget } from "../ui/wallpaper-pointer";
 type Props = { theme: CustomTheme; accessUrl: string; cache?: ThemePackageCache; directBlobOrigin?: string; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void };
 type Loaded = { kind: "image" | "video"; url: string; revoke(): void } | { kind: "scene"; html: string; csp: string; navigationToken: string; revoke(): void };
 
+/** Renders the scene wallpaper interface. */
 function SceneWallpaper({ loaded, ready, onReady, onError, onWallpaperTarget }: { loaded: Extract<Loaded, { kind: "scene" }>; ready: boolean; onReady(): void; onError(): void; onWallpaperTarget?: (target: WallpaperSceneTarget | null) => void }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   useEffect(() => {
@@ -31,6 +32,7 @@ function SceneWallpaper({ loaded, ready, onReady, onError, onWallpaperTarget }: 
   return <iframe ref={frameRef} className="wallpaper-scene" data-ready={ready || undefined} title="" aria-hidden="true" inert="" tabIndex={-1} sandbox="allow-scripts" referrerPolicy="no-referrer" allow="" onError={onError} />;
 }
 
+/** Renders the theme wallpaper interface. */
 export function ThemeWallpaper({ theme, accessUrl, cache, directBlobOrigin, onWallpaperTarget }: Props) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [ready, setReady] = useState(false);

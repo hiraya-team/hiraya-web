@@ -3,6 +3,7 @@ import type { RunningApp } from "./model";
 
 export type RunningAppUpdate = RunningApp[] | ((current: RunningApp[]) => RunningApp[]);
 
+/** Owns running-window state, focus order, and immutable updates. */
 export function useRunningWindows() {
   const [runningApps, setRunningApps] = useState<RunningApp[]>([]);
   const runningAppsRef = useRef<RunningApp[]>([]);

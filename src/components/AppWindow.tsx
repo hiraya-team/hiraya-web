@@ -53,9 +53,12 @@ type Interaction = {
   direction?: ResizeDirection;
 };
 
+/** Lists the resize handles exposed around a desktop window. */
 const RESIZE_DIRECTIONS: ResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"];
+/** Matches interactive header descendants that must not begin dragging. */
 const NO_DRAG_SELECTOR = "button, a, input, select, textarea, [contenteditable='true'], [data-window-no-drag]";
 
+/** Renders the app window interface. */
 export function AppWindow({
   id, title, titleId, bounds, minWidth, minHeight, zIndex, focused, minimized, segmentActive,
   segmentVisible = segmentActive, windowed, onFocus, onBoundsChange, dragEdgeAt, onDragAtEdge, onEdgeDwellChange,

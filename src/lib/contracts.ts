@@ -22,18 +22,28 @@ import { HIRAYA_SCENE_MIME_TYPE, isSceneFile, MAX_SCENE_BYTES } from "../domain/
 import { parseAuthorityIdentity } from "./wire-authority";
 import { DEFAULT_FILE_CREATION_TEMPLATES, parseFileCreationTemplates } from "./file-creation-templates";
 
+/** Defines the editor languages. */
 const EDITOR_LANGUAGES = new Set<EditorLanguage>(["auto", "plain", "markdown", "json", "javascript", "typescript", "jsx", "tsx", "css", "html", "xml", "yaml"]);
+/** Lists the supported wallpaper IDs. */
 const WALLPAPER_IDS = new Set<string>(WALLPAPERS);
+/** Defines the wallpaper color. */
 const WALLPAPER_COLOR = /^#[0-9A-F]{6}$/;
+/** Lists the supported wallpaper image types. */
 const WALLPAPER_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+/** Defines the maximum wallpaper file size. */
 const MAX_WALLPAPER_BYTES = 20 * 1024 * 1024;
+/** Lists the supported wallpaper keys. */
 const WALLPAPER_KEYS = new Set(["source", "fit", "positionX", "positionY", "blur", "dim", "overlayColor", "overlayOpacity"]);
 
+/** Reports whether a file is a supported wallpaper image. */
 export function isWallpaperFile(entry: DesktopEntry) {
   return entry.kind === "file" && (isSceneFile(entry) || WALLPAPER_IMAGE_TYPES.has(entry.mimeType.split(";", 1)[0].trim().toLowerCase()) && entry.size <= MAX_WALLPAPER_BYTES);
 }
+/** Matches the expected MIME token. */
 const MIME_TOKEN = "[!#$%&'*+.^_`|~\\w-]+";
+/** Matches the expected MIME type. */
 const MIME_TYPE = new RegExp(`^${MIME_TOKEN}/${MIME_TOKEN}(?:\\s*;\\s*${MIME_TOKEN}\\s*=\\s*(?:${MIME_TOKEN}|"(?:[^"\\\\]|\\\\.)*"))*\\s*$`);
+/** Defines the MIME parameter name. */
 const MIME_PARAMETER_NAME = new RegExp(`;\\s*(${MIME_TOKEN})\\s*=`, "g");
 
 export type RemoteEntry = DesktopEntry & { revision: number; contentRevision: number };
@@ -73,6 +83,7 @@ export type TrashRestoreResult = { catalogRevision: number; entries: RemoteEntry
 export type TrashDeleteResult = { catalogRevision: number; deletedIds: string[] };
 export type TrashEntry = RemoteEntry & { sha256?: string };
 
+/** Defines the system roles. */
 export const SYSTEM_ROLES = ["layout", "editor-settings", "theme-selection", "theme-definition", "theme-package"] as const;
 export type SystemRole = typeof SYSTEM_ROLES[number];
 export type SystemEntry = {
@@ -101,10 +112,14 @@ export type ContentAccessExpectations = {
   catalogId?: string;
 };
 
+/** Matches a lowercase SHA-256 digest. */
 const SHA256_HEX = /^[a-f0-9]{64}$/;
+/** Defines the header name. */
 const HEADER_NAME = /^[!#$%&'*+.^_`|~\w-]+$/;
+/** Defines the forbidden direct headers. */
 const FORBIDDEN_DIRECT_HEADERS = new Set(["authorization", "connection", "content-length", "cookie", "cookie2", "host", "origin", "referer", "transfer-encoding", "upgrade"]);
 
+/** Parses and validates direct URL. */
 function parseDirectUrl(value: unknown, expectedOrigin?: string) {
   if (typeof value !== "string" || value.length > 8192) throw new Error("A direct blob target has an invalid URL.");
   let url: URL;
@@ -119,6 +134,7 @@ function parseDirectUrl(value: unknown, expectedOrigin?: string) {
   return url.href;
 }
 
+/** Parses and validates direct headers. */
 function parseDirectHeaders(value: unknown) {
   if (!isRecord(value)) throw new Error("A direct blob target has invalid headers.");
   const headers: Record<string, string> = {};
@@ -134,17 +150,20 @@ function parseDirectHeaders(value: unknown) {
   return headers;
 }
 
+/** Parses and validates a SHA-256 digest. */
 function parseSha256(value: unknown) {
   if (typeof value !== "string" || !SHA256_HEX.test(value)) throw new Error("A blob has an invalid SHA-256 digest.");
   return value;
 }
 
+/** Parses and validates direct blob access. */
 export function parseDirectBlobAccess(value: unknown, method: "GET" | "PUT", expectedOrigin?: string): DirectBlobAccess {
   if (!isRecord(value) || value.method !== method) throw new Error(`A direct blob target must use ${method}.`);
   const expiresAt = readNonNegativeInteger(value.expiresAt, "A direct blob target has an invalid expiration.");
   return { url: parseDirectUrl(value.url, expectedOrigin), method, headers: parseDirectHeaders(value.headers), expiresAt };
 }
 
+/** Parses and validates content access descriptor. */
 export function parseContentAccessDescriptor(value: unknown, expectedEntryId: string, expectedRevision: number, expectedSize: number, expectedOrigin?: string, expected: ContentAccessExpectations = {}): ContentAccessDescriptor {
   if (!isRecord(value) || value.entryId !== expectedEntryId) throw new Error("The content access response is for a different entry.");
   if (expected.desktopId !== undefined && value.desktopId !== expected.desktopId) throw new Error("The content access response is for a different desktop.");
@@ -160,15 +179,18 @@ export function parseContentAccessDescriptor(value: unknown, expectedEntryId: st
   return { entryId: expectedEntryId, contentRevision, size, sha256, access: parseDirectBlobAccess(value.access, "GET", expectedOrigin) };
 }
 
+/** Reports whether a value is a plain record. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** Reads string. */
 function readString(value: unknown, message: string): string {
   if (typeof value !== "string") throw new Error(message);
   return value;
 }
 
+/** Reports whether a value is a valid ID. */
 export function isValidId(value: unknown): value is string {
   if (typeof value !== "string" || !value || value === "." || value === ".." || value.includes("/") || value.includes("\\")) return false;
   if (new TextEncoder().encode(value).byteLength > 180) return false;
@@ -178,16 +200,19 @@ export function isValidId(value: unknown): value is string {
   });
 }
 
+/** Parses and validates an ID. */
 export function assertValidId(value: unknown, message = "An entry has an invalid ID."): asserts value is string {
   if (!isValidId(value)) throw new Error(message);
 }
 
+/** Normalizes entry name. */
 export function normalizeEntryName(value: string) {
   const name = value.trim();
   assertCanonicalEntryName(name);
   return name;
 }
 
+/** Normalizes desktop name. */
 export function normalizeDesktopName(value: string) {
   const name = value.trim();
   if (!name || name === "." || name === ".." || [...name].length > 180 || name.includes("/") || name.includes("\\") || [...name].some((character) => {
@@ -197,6 +222,7 @@ export function normalizeDesktopName(value: string) {
   return name;
 }
 
+/** Parses and validates desktop identity. */
 export function parseDesktopIdentity(value: unknown, localDefaults = false): DesktopIdentity {
   if (!isRecord(value)) throw new Error("A desktop has an unsupported format.");
   assertValidId(value.id, "A desktop has an invalid ID.");
@@ -231,6 +257,7 @@ export function parseDesktopIdentity(value: unknown, localDefaults = false): Des
   };
 }
 
+/** Asserts that a value is a canonical entry name. */
 export function assertCanonicalEntryName(value: unknown): asserts value is string {
   if (typeof value !== "string" || !value || value.trim() !== value || value === "." || value === "..") {
     throw new Error("An entry has an invalid name.");
@@ -243,30 +270,36 @@ export function assertCanonicalEntryName(value: unknown): asserts value is strin
   }
 }
 
+/** Computes fold entry name. */
 export function foldEntryName(value: string) {
   return value.toLowerCase();
 }
 
+/** Reads finite number. */
 function readFiniteNumber(value: unknown, message: string): number {
   if (typeof value !== "number" || !Number.isFinite(value)) throw new Error(message);
   return value;
 }
 
+/** Reads a non-negative integer. */
 function readNonNegativeInteger(value: unknown, message: string): number {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(message);
   return value as number;
 }
 
+/** Reads a required nullable non-negative integer. */
 function readRequiredNullableNonNegativeInteger(value: unknown, message: string): number | null {
   if (value === undefined) throw new Error(message);
   return value === null ? null : readNonNegativeInteger(value, message);
 }
 
+/** Reads revision. */
 export function readRevision(value: unknown, message = "A revision has an unsupported format.") {
   if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(message);
   return value as number;
 }
 
+/** Reports whether a value is a valid MIME type. */
 export function isValidMimeType(value: unknown): value is string {
   if (typeof value !== "string" || !value || value.length > 255 || value.trim() !== value || [...value].some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
@@ -282,6 +315,7 @@ export function isValidMimeType(value: unknown): value is string {
   return true;
 }
 
+/** Parses and validates position. */
 export function parsePosition(value: unknown): EntryPosition {
   if (!isRecord(value)) throw new Error("An entry has an invalid position.");
   return {
@@ -290,6 +324,7 @@ export function parsePosition(value: unknown): EntryPosition {
   };
 }
 
+/** Parses and validates wallpaper. */
 export function parseWallpaper(value: unknown, allowLegacyPreset = false): Wallpaper {
   if (allowLegacyPreset && typeof value === "string" && WALLPAPER_IDS.has(value)) {
     return { source: value as Wallpaper["source"], fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#000000", overlayOpacity: 0 };
@@ -311,6 +346,7 @@ export function parseWallpaper(value: unknown, allowLegacyPreset = false): Wallp
   return value as Wallpaper;
 }
 
+/** Validates wallpaper source. */
 export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpaper: Wallpaper, appearance?: ThemeState) {
   if (wallpaper.source.startsWith("theme:")) {
     if (appearance && !appearance.customThemes.some((theme) => theme.id === wallpaper.source.slice(6) && theme.wallpaper)) {
@@ -325,6 +361,7 @@ export function assertWallpaperSource(entries: readonly DesktopEntry[], wallpape
   }
 }
 
+/** Parses and validates layout. */
 export function parseLayout(value: unknown, allowLegacyWallpaper = false): DesktopLayout {
   if (!isRecord(value) || typeof value.snapToGrid !== "boolean") {
     throw new Error("The desktop layout has an unsupported format.");
@@ -338,6 +375,7 @@ export function parseLayout(value: unknown, allowLegacyWallpaper = false): Deskt
   return { autoArrangeIcons, snapToGrid: value.snapToGrid, gridSize: gridSize as GridSize, wallpaper: parseWallpaper(value.wallpaper, allowLegacyWallpaper), widgets, iconGroups };
 }
 
+/** Parses and validates widgets. */
 function parseWidgets(value: unknown): DesktopWidget[] {
   if (!Array.isArray(value)) throw new Error("The desktop widgets have an unsupported format.");
   const ids = new Set<string>();
@@ -360,6 +398,7 @@ function parseWidgets(value: unknown): DesktopWidget[] {
   });
 }
 
+/** Parses and validates icon groups. */
 function parseIconGroups(value: unknown): DesktopIconGroup[] {
   if (!Array.isArray(value)) throw new Error("The desktop icon groups have an unsupported format.");
   const ids = new Set<string>();
@@ -375,12 +414,14 @@ function parseIconGroups(value: unknown): DesktopIconGroup[] {
   });
 }
 
+/** Validates icon group folders. */
 export function assertIconGroupFolders(entries: readonly DesktopEntry[], layout: DesktopLayout) {
   if (layout.iconGroups.some((group) => !entries.some((entry) => entry.id === group.folderId && entry.kind === "folder" && entry.parentId === null))) {
     throw new Error("A desktop icon group must reference a root folder on the same desktop.");
   }
 }
 
+/** Validates scene files. */
 export function assertSceneFiles(entries: readonly DesktopEntry[], layout: DesktopLayout) {
   for (const widget of layout.widgets) {
     if (widget.kind !== "scene") continue;
@@ -389,6 +430,7 @@ export function assertSceneFiles(entries: readonly DesktopEntry[], layout: Deskt
   }
 }
 
+/** Parses and validates root entry positions. */
 export function parseRootEntryPositions(value: unknown): RootEntryPositionUpdate[] {
   if (!Array.isArray(value)) throw new Error("Root entry positions have an unsupported format.");
   const ids = new Set<string>();
@@ -401,6 +443,7 @@ export function parseRootEntryPositions(value: unknown): RootEntryPositionUpdate
   });
 }
 
+/** Parses and validates root entry position updates. */
 export function parseRootEntryPositionUpdates(value: unknown, entries: DesktopEntry[]): RootEntryPositionUpdate[] {
   const positions = parseRootEntryPositions(value);
   if (positions.length === 0) throw new Error("At least one root entry position is required.");
@@ -409,6 +452,7 @@ export function parseRootEntryPositionUpdates(value: unknown, entries: DesktopEn
   return positions;
 }
 
+/** Parses and validates editor settings. */
 export function parseEditorSettings(value: unknown): EditorSettings {
   if (!isRecord(value) || typeof value.autoSave !== "boolean" || !Number.isInteger(value.fontSize) || (value.fontSize as number) < 11 || (value.fontSize as number) > 22 || typeof value.language !== "string" || !EDITOR_LANGUAGES.has(value.language as EditorLanguage)) {
     throw new Error("The editor settings have an unsupported format.");
@@ -428,6 +472,7 @@ export function parseEditorSettings(value: unknown): EditorSettings {
 
 type ParsedEntry = DesktopEntry & { revision?: number; contentRevision?: number };
 
+/** Parses and validates entry. */
 function parseEntry(value: unknown, remote: boolean): ParsedEntry {
   if (!isRecord(value) || (value.kind !== "file" && value.kind !== "folder")) throw new Error("An entry has an unsupported format.");
   if (remote && (value.systemRole !== undefined || value.systemKey !== undefined)) throw new Error("A visible entry contains protected system metadata.");
@@ -458,14 +503,17 @@ function parseEntry(value: unknown, remote: boolean): ParsedEntry {
   return { ...base, kind: "file", mimeType, size: value.size as number, ...revisions };
 }
 
+/** Parses and validates remote entry. */
 export function parseRemoteEntry(value: unknown): RemoteEntry {
   return parseEntry(value, true) as RemoteEntry;
 }
 
+/** Parses and validates local entry. */
 export function parseLocalEntry(value: unknown): DesktopEntry {
   return parseEntry(value, false);
 }
 
+/** Parses and validates entries. */
 export function parseEntries(value: unknown, remote = false): ParsedEntry[] {
   if (!Array.isArray(value)) throw new Error("The desktop entries have an unsupported format.");
   const entries = value.map((candidate) => parseEntry(candidate, remote));
@@ -498,6 +546,7 @@ export function parseEntries(value: unknown, remote = false): ParsedEntry[] {
   return entries;
 }
 
+/** Parses and validates trash entry. */
 function parseTrashEntry(value: unknown): TrashEntry {
   const entry = parseRemoteEntry(value) as TrashEntry;
   if (isRecord(value) && value.sha256 !== undefined) {
@@ -507,6 +556,7 @@ function parseTrashEntry(value: unknown): TrashEntry {
   return entry;
 }
 
+/** Parses and validates trash document. */
 export function parseTrashDocument(value: unknown, expectedDesktopId?: string, expectedCatalogId?: string | null): TrashDocument {
   if (!isRecord(value)) throw new Error("The server Trash response has an unsupported format.");
   const authority = parseAuthorityIdentity(value, "The server Trash response", expectedCatalogId);
@@ -554,6 +604,7 @@ export function parseTrashDocument(value: unknown, expectedDesktopId?: string, e
   };
 }
 
+/** Computes system entry path. */
 export function systemEntryPath(role: SystemRole, key?: string) {
   if (role === "layout") return ".hiraya/desktop/settings/layout.json";
   if (role === "editor-settings") return ".hiraya/desktop/settings/editor.json";
@@ -562,6 +613,7 @@ export function systemEntryPath(role: SystemRole, key?: string) {
   return role === "theme-definition" ? `.hiraya/desktop/appearance/themes/${key}.theme.json` : `.hiraya/desktop/appearance/packages/${key}.hiraya.app`;
 }
 
+/** Parses and validates system entry. */
 export function parseSystemEntry(value: unknown): SystemEntry {
   if (!isRecord(value) || value.kind !== "file") throw new Error("A system entry has an unsupported format.");
   assertValidId(value.id, "A system entry has an invalid ID.");
@@ -597,6 +649,7 @@ export function parseSystemEntry(value: unknown): SystemEntry {
   };
 }
 
+/** Parses and validates system entries document. */
 export function parseSystemEntriesDocument(value: unknown, expectedDesktopId?: string, expectedCatalogId?: string | null): SystemEntriesDocument {
   if (!isRecord(value) || !Array.isArray(value.entries)) throw new Error("The server system entries response has an unsupported format.");
   const authority = parseAuthorityIdentity(value, "The server system entries response", expectedCatalogId);
@@ -614,6 +667,7 @@ export function parseSystemEntriesDocument(value: unknown, expectedDesktopId?: s
   return { schemaVersion: 2, catalogId: authority.catalogId, catalogRevision, desktopId: value.desktopId, entries };
 }
 
+/** Parses and validates system entry document. */
 export function parseSystemEntryDocument(value: unknown, expectedDesktopId: string, expectedEntryId: string, expectedCatalogId?: string | null) {
   if (!isRecord(value) || value.schemaVersion !== 2 || value.desktopId !== expectedDesktopId || !isRecord(value.entry)) throw new Error("The server system entry response has an unsupported identity.");
   parseAuthorityIdentity(value, "The server system entry response", expectedCatalogId);
@@ -623,6 +677,7 @@ export function parseSystemEntryDocument(value: unknown, expectedDesktopId: stri
   return entry;
 }
 
+/** Parses and validates trash restore result. */
 export function parseTrashRestoreResult(value: unknown, rootEntryId: string, destination?: "original" | "root"): TrashRestoreResult {
   if (!isRecord(value) || !Array.isArray(value.entries) || value.entries.length === 0) throw new Error("The Trash restore response has an unsupported format.");
   const catalogRevision = readRevision(value.catalogRevision);
@@ -636,6 +691,7 @@ export function parseTrashRestoreResult(value: unknown, rootEntryId: string, des
   return { catalogRevision, entries };
 }
 
+/** Parses and validates trash delete result. */
 export function parseTrashDeleteResult(value: unknown): TrashDeleteResult {
   if (!isRecord(value) || !Array.isArray(value.deletedIds) || value.deletedIds.length === 0) throw new Error("The permanent-delete response has an unsupported format.");
   const deletedIds = value.deletedIds.map((id) => {
@@ -646,6 +702,7 @@ export function parseTrashDeleteResult(value: unknown): TrashDeleteResult {
   return { catalogRevision: readRevision(value.catalogRevision), deletedIds };
 }
 
+/** Parses and validates remote desktop state. */
 export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   if (!isRecord(value)) throw new Error("The server desktop has an unsupported format.");
   const authority = parseAuthorityIdentity(value, "The server desktop");
@@ -681,6 +738,7 @@ export function parseRemoteDesktopState(value: unknown): RemoteDesktopState {
   };
 }
 
+/** Parses and validates public desktop state. */
 export function parsePublicDesktopState(value: unknown): RemoteDesktopState {
   if (!isRecord(value)) throw new Error("The public desktop has an unsupported format.");
   const owner = isRecord(value.owner) ? value.owner : null;

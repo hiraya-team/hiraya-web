@@ -1,5 +1,6 @@
 import type { DesktopEntry } from "../types";
 
+/** Filters hidden dot-prefixed entries from a collection. */
 export function withoutDotEntries(entries: readonly DesktopEntry[]) {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   return entries.filter((entry) => {

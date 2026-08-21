@@ -9,6 +9,7 @@ export type EntryIndex = {
   descendants: (entryId: string) => DesktopEntry[];
 };
 
+/** Indexes desktop entries by ID and parent folder. */
 export function createEntryIndex(entries: readonly DesktopEntry[]): EntryIndex {
   const byId = new Map(entries.map((entry) => [entry.id, entry]));
   const children = new Map<string | null, DesktopEntry[]>();

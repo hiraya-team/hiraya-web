@@ -9,6 +9,7 @@ export type OpenWithMenuItem = {
   secondaryAction?: { label: string; accessibleLabel: string; onSelect: () => void };
 };
 
+/** Builds available application choices for opening a file. */
 export function openWithMenuItems(apps: readonly OpenWithItem[]): OpenWithMenuItem[] {
   return apps.map((app) => ({
     id: app.id,

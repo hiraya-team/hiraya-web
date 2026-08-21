@@ -1,9 +1,11 @@
 import { elementStyles, hasBooleanAttribute, hirayaEvent, HTMLElementBase } from "./shared";
 
+/** Implements the Hiraya notice. */
 export class HirayaNotice extends HTMLElementBase {
   static readonly observedAttributes = ["tone", "dismissible", "live"];
   readonly #notice: HTMLElement;
   readonly #dismiss: HTMLButtonElement;
+  /** Creates a hiraya notice instance. */
   constructor() {
     super();
     const root = this.attachShadow({ mode: "open" });
@@ -20,8 +22,11 @@ export class HirayaNotice extends HTMLElementBase {
     this.#dismiss = root.querySelector("button")!;
     this.#dismiss.addEventListener("click", () => hirayaEvent(this, "hiraya-dismiss", undefined, true));
   }
+  /** Initializes the element when it joins the document. */
   connectedCallback(): void { this.#sync(); }
+  /** Synchronizes state after an observed attribute changes. */
   attributeChangedCallback(): void { this.#sync(); }
+  /** Synchronizes the rendered state with current properties. */
   #sync(): void {
     if (!this.#notice) return;
     this.#notice.className = this.getAttribute("tone") ?? "neutral";

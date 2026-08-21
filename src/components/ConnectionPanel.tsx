@@ -24,6 +24,7 @@ type Props = {
   onOpenHelp: () => void;
 };
 
+/** Renders the connection panel interface. */
 export function ConnectionPanel(props: Props) {
   return <section className="connection-panel">
     {!props.embedded && <header className="connection-panel__heading"><h2>Connection &amp; Offline</h2><p>Connection state, queued work, downloaded copies, and browser storage in one place.</p></header>}

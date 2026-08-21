@@ -1,13 +1,16 @@
 import type { EditorSettings, FileCreationTemplate } from "../types";
 
+/** Matches the expected MIME type. */
 const MIME_TYPE = /^[!#$%&'*+.^_`|~\w-]+\/[!#$%&'*+.^_`|~\w-]+(?:\s*;\s*[!#$%&'*+.^_`|~\w-]+\s*=\s*(?:[!#$%&'*+.^_`|~\w-]+|"(?:[^"\\]|\\.)*"))*\s*$/;
 
+/** Defines the default file creation templates. */
 export const DEFAULT_FILE_CREATION_TEMPLATES: FileCreationTemplate[] = [
   { extension: ".json", mimeType: "application/json", content: "{}" },
   { extension: ".hiraya.todo", mimeType: "application/vnd.hiraya.todo+json", content: '{\n  "schemaVersion": 2,\n  "tasks": []\n}\n' },
   { extension: ".url", mimeType: "application/internet-shortcut", content: "[InternetShortcut]\r\nURL=https://example.com\r\n" },
 ];
 
+/** Parses and validates file creation templates. */
 export function parseFileCreationTemplates(value: unknown): FileCreationTemplate[] {
   if (!Array.isArray(value) || value.length > 32) throw new Error("File creation templates have an unsupported format.");
   const extensions = new Set<string>();
@@ -23,11 +26,13 @@ export function parseFileCreationTemplates(value: unknown): FileCreationTemplate
   });
 }
 
+/** Returns file creation template. */
 export function fileCreationTemplate(name: string, templates: readonly FileCreationTemplate[]) {
   const lowerName = name.toLowerCase();
   return [...templates].sort((a, b) => b.extension.length - a.extension.length).find(({ extension }) => lowerName.endsWith(extension));
 }
 
+/** Returns text editor launch argument. */
 export function textEditorLaunchArgument({ autoSave, autoFormat, fontSize, language, lineWrap }: EditorSettings) {
   return JSON.stringify({ autoSave, autoFormat, fontSize, language, lineWrap });
 }

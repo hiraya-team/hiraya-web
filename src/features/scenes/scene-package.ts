@@ -3,12 +3,15 @@ import type { AppPackageInspection } from "@hiraya-team/apps-contracts";
 import { materializeAppPackage, SANDBOX_CSP, type MaterializedApp } from "@hiraya/app-runtime";
 import { HIRAYA_SCENE_MIME_TYPE, MAX_SCENE_BYTES } from "../../domain/scene";
 
+/** Defines the restrictive content policy applied to untrusted Scenes. */
 export const SCENE_CSP = `${SANDBOX_CSP.replace("frame-src data: blob:;", "frame-src 'none';")}; worker-src 'none'`;
 
+/** Reports whether reduced-motion preferences should block a Scene. */
 export function sceneMotionBlocked(reducedMotion: boolean, mode: "widget" | "wallpaper", allowed: boolean) {
   return reducedMotion && (mode === "wallpaper" || !allowed);
 }
 
+/** Validates and inspects a Scene archive selected by the user. */
 export async function inspectSceneFile(file: { name: string; type: string; size: number; arrayBuffer(): Promise<ArrayBuffer> }): Promise<ScenePackageInspection> {
   if (file.type.split(";", 1)[0].trim().toLowerCase() !== HIRAYA_SCENE_MIME_TYPE) throw new Error("The file does not have the Scene file type.");
   if (file.size > MAX_SCENE_BYTES) throw new Error("Scene files must be no larger than 32 MiB.");
@@ -17,6 +20,7 @@ export async function inspectSceneFile(file: { name: string; type: string; size:
   return inspectSceneArchive(bytes);
 }
 
+/** Materializes an inspected Scene as a tightly sandboxed app package. */
 export function materializeScene(inspection: ScenePackageInspection): MaterializedApp {
   const appPackage = {
     ...inspection,

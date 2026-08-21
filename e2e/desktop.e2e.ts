@@ -3,19 +3,29 @@ import { devices, expect, test, type Locator, type Page } from "@playwright/test
 
 test("root opens the full desktop automatically", async ({ page }) => {
   const richScripts: string[] = [];
+  const serverScripts: string[] = [];
+  const apiRequests: string[] = [];
+  page.on("request", (request) => {
+    if (/\/api(?:\/|$)/.test(new URL(request.url()).pathname)) apiRequests.push(request.url());
+  });
   page.on("response", (response) => {
     if (/\/assets\/(?:Desktop|PublicDesktop|TextEditor|ImagePreview|MarkdownRenderer|SettingsWindow|SharingDialog|PropertiesWindow|MergeWindow|SandboxFrame|AppStoreWindow)-/.test(response.url())) richScripts.push(response.url());
+    if (/\/assets\/(?:transport|PublicDesktop)-/.test(response.url())) serverScripts.push(response.url());
   });
   await page.goto("/");
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect(page.locator(".shell-desktop")).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Open full desktop" })).toHaveCount(0);
   await expect.poll(() => richScripts.some((url) => /\/assets\/Desktop-/.test(url))).toBe(true);
+  await page.evaluate(() => navigator.serviceWorker.ready);
+  expect(serverScripts).toEqual([]);
+  expect(apiRequests).toEqual([]);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".desktop-shell")).toBeVisible();
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
 
+/** Opens local desktop. */
 async function openLocalDesktop(page: Page, timeout = 5_000) {
   await page.goto("/");
   await expect(page.locator(".desktop-shell")).toBeVisible({ timeout });
@@ -27,6 +37,7 @@ async function openLocalDesktop(page: Page, timeout = 5_000) {
   await expect(onboarding).toBeHidden();
 }
 
+/** Resizes a desktop window to the requested width. */
 async function resizeWindowWidth(page: Page, appWindow: Locator, width: number) {
   for (let step = 0; step < 30 && ((await appWindow.boundingBox())?.width ?? 0) > width + 2; step += 1) {
     await page.keyboard.press("Alt+Control+ArrowLeft");
@@ -34,6 +45,7 @@ async function resizeWindowWidth(page: Page, appWindow: Locator, width: number) 
   await expect.poll(async () => Math.round((await appWindow.boundingBox())?.width ?? 0)).toBeLessThanOrEqual(width + 2);
 }
 
+/** Begins a pointer drag toward the requested coordinates. */
 async function beginDragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
   const bounds = await source.boundingBox();
   if (!bounds) throw new Error("The drag source is not visible.");
@@ -42,11 +54,13 @@ async function beginDragPointerTo(page: Page, source: Locator, clientX: number, 
   await page.mouse.move(clientX, clientY, { steps: 12 });
 }
 
+/** Completes a pointer drag at the requested coordinates. */
 async function dragPointerTo(page: Page, source: Locator, clientX: number, clientY: number) {
   await beginDragPointerTo(page, source, clientX, clientY);
   await page.mouse.up();
 }
 
+/** Performs a touch drag between two points. */
 async function dragTouch(page: Page, source: Locator, deltaX: number, deltaY: number) {
   const bounds = await source.boundingBox();
   if (!bounds) throw new Error("The touch source is not visible.");
@@ -63,7 +77,9 @@ async function dragTouch(page: Page, source: Locator, deltaX: number, deltaY: nu
   await session.detach();
 }
 
+/** Provides the png file test fixture. */
 const pngFile = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+/** Provides the scene file test fixture. */
 const sceneFile = Buffer.from("UEsDBBQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAaGlyYXlhLnNjZW5lLmpzb26rVipOzkjNTQxLLSrOzM9TsjLUUUrNKymqLMjPzCtRslLKzEtJrdDLKMnNUaoFAFBLAwQUAAAACAAAACEAHP6KseYAAABXAQAACgAAAGluZGV4Lmh0bWxVUMFOxSAQ/JXaU0l8POPRFi7GizGa2KPxQGG1G3mAsFSJ8d/F18b4brszOzOZHc6M11QCNDMdrBymTOSdfMyuGTU4GPYbMiQdMZDU3iVqVlBUbT6AI/6eIZYRLGjysWtXumX9OnDvtEX9Jjom5AYRfNK1d1TVoj1GNRE04AKmQRcytf0a5acEcVGEdRNPz70y5mapqjtMVQw1bcaoirr6UNYGFSDugsdqHNtz+D0U8uu/Bw85zd2R4QZIoWX9X4/Jm8KNIpWA+GaTxO34cM8TRXSv+FK6E7dUi0G3u7xg7JsN++1LP1BLAQIUABQAAAAIAAAAIQAwgXF/LwAAAC0AAAARAAAAAAAAAAAAAAAAAAAAAABoaXJheWEuc2NlbmUuanNvblBLAQIUABQAAAAIAAAAIQAc/oqx5gAAAFcBAAAKAAAAAAAAAAAAAAAAAF4AAABpbmRleC5odG1sUEsFBgAAAAACAAIAdwAAAGwBAAAAAA==", "base64");
 
 test("keyboard modal traps focus, closes with Escape, and restores its invoker", async ({ page }) => {

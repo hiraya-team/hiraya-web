@@ -37,6 +37,7 @@ export type HydrationPageData = {
   nextPageToken: string | null;
 };
 
+/** Compares strings in canonical lexical order. */
 export function compareCanonicalStrings(left: string, right: string) {
   const leftPoints = [...left];
   const rightPoints = [...right];
@@ -47,10 +48,12 @@ export function compareCanonicalStrings(left: string, right: string) {
   return leftPoints.length - rightPoints.length;
 }
 
+/** Returns values in canonical string order. */
 function ordered(values: string[]) {
   return values.every((value, index) => index === 0 || compareCanonicalStrings(values[index - 1]!, value) < 0);
 }
 
+/** Returns a bounded list of IDs. */
 function boundedIds(value: unknown, message: string) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error(message);
   const ids = value.map((id) => parseStableId(id, message));
@@ -58,6 +61,7 @@ function boundedIds(value: unknown, message: string) {
   return ids;
 }
 
+/** Returns bounded keys. */
 function boundedKeys(value: unknown, namespace: SettingNamespace) {
   if (!Array.isArray(value) || value.length === 0 || value.length > WEB2_MAX_BATCH_ITEMS) throw new Error("A hydration setting-key batch is invalid.");
   const keys = value.map((key) => parseSettingKeyForNamespace(namespace, key).key);
@@ -66,12 +70,14 @@ function boundedKeys(value: unknown, namespace: SettingNamespace) {
   return keys;
 }
 
+/** Calculates the effective hydration page limit. */
 function pageLimit(value: unknown) {
   const limit = parsePositiveSafeInteger(value, "A hydration page limit is invalid.");
   if (limit > WEB2_MAX_BATCH_ITEMS) throw new Error("A hydration page limit is invalid.");
   return limit;
 }
 
+/** Parses and validates hydration target. */
 export function parseHydrationTarget(value: unknown): HydrationTarget {
   if (!isRecord(value) || typeof value.kind !== "string") throw new Error("A hydration target has an unsupported shape.");
   const workspaceId = parseStableId(value.workspaceId, "A hydration workspace ID is invalid.");
@@ -102,6 +108,7 @@ export function parseHydrationTarget(value: unknown): HydrationTarget {
   }
 }
 
+/** Parses and validates hydration page token. */
 export function parseHydrationPageToken(value: unknown) {
   if (typeof value !== "string" || !value || value.length > 4096 || [...value].some((character) => {
     const point = character.codePointAt(0) ?? 0;
@@ -110,6 +117,7 @@ export function parseHydrationPageToken(value: unknown) {
   return value;
 }
 
+/** Parses and validates hydration page data. */
 export function parseHydrationPageData(value: unknown): HydrationPageData {
   if (!isRecord(value)) throw new Error("A hydration page has an unsupported shape.");
   assertExactKeys(value, ["workspaceId", "deviceId", "generationId", "pageIndex", "observedLogicalTime", "target", "nodes", "settings", "nextPageToken"], "A hydration page has an unsupported shape.");
@@ -156,6 +164,7 @@ export function parseHydrationPageData(value: unknown): HydrationPageData {
   return { workspaceId, deviceId, generationId, pageIndex, observedLogicalTime, target, nodes, settings, nextPageToken };
 }
 
+/** Computes hydration target ID. */
 export function hydrationTargetId(target: HydrationTarget) {
   const selector = target.kind === "folder-page" ? { kind: target.kind, parentId: target.parentId }
     : target.kind === "exact-nodes" ? { kind: target.kind, nodeIds: target.nodeIds }

@@ -13,15 +13,18 @@ type CatalogApp = Readonly<{
 
 type DeploymentCatalog = Readonly<{ schemaVersion: 1; apps: readonly CatalogApp[] }>;
 
+/** Converts an unknown value to a plain record. */
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("The system app catalog has an unsupported shape.");
   return value as Record<string, unknown>;
 }
 
+/** Validates that a record contains exactly the expected keys. */
 function exactKeys(value: Record<string, unknown>, expected: readonly string[]) {
   if (Object.keys(value).toSorted().join("\0") !== [...expected].toSorted().join("\0")) throw new Error("The system app catalog has an unsupported shape.");
 }
 
+/** Parses system app deployment catalog. */
 export function parseSystemAppDeploymentCatalog(value: unknown): DeploymentCatalog {
   const root = record(value);
   exactKeys(root, ["schemaVersion", "apps"]);
@@ -43,12 +46,14 @@ export function parseSystemAppDeploymentCatalog(value: unknown): DeploymentCatal
   return { schemaVersion: 1, apps };
 }
 
+/** Reads and validates a response body of the expected size. */
 async function responseBytes(url: URL) {
   const response = await fetch(url, { redirect: "error" });
   if (!response.ok) throw new Error(`${url.pathname} returned HTTP ${response.status}.`);
   return new Uint8Array(await response.arrayBuffer());
 }
 
+/** Verifies deployed system apps. */
 export async function verifyDeployedSystemApps(server: string) {
   const base = new URL(server.endsWith("/") ? server : `${server}/`);
   if (!/^https?:$/.test(base.protocol) || base.username || base.password || base.search || base.hash) throw new Error("Server must be an HTTP(S) origin or base path without credentials, query, or fragment.");

@@ -1,25 +1,40 @@
 import type { FileHandle, HirayaClient, ThemeDefinition, ThemeEditorState, WallpaperEditorState, WallpaperEditorWallpaper } from "@hiraya-team/apps-sdk";
-import { connectSystemApp, describeError, required, setAppLoading } from "@hiraya/system-apps-shared";
+import { connectSystemApp, describeError, ITEM_LIST_EVENTS, required, setAppLoading } from "@hiraya/system-apps-shared";
 import { backAction, contrastIssues, copyDraft, draftChanged, editDraft, mergeThemeState, nextCopyName, type ThemeDraft } from "./editor";
 import "./style.css";
 
 type HirayaButton = HTMLElement & { disabled: boolean };
 type ColorKey = keyof ThemeDefinition["colors"];
 
+/** Identifies the Theme Editor system app. */
 const APP_ID = "app.hiraya.theme-editor";
+/** Matches a six-digit hexadecimal color. */
 const HEX = /^#[\da-f]{6}$/i;
+/** References the content interface element. */
 const content = required<HTMLElement>("#content");
+/** References the workspace interface element. */
 const workspace = required<HTMLElement>("#workspace");
+/** References the loading interface element. */
 const loading = required<HTMLElement>("#loading");
+/** References the theme list interface element. */
 const themeList = required<HTMLElement>("#theme-list");
+/** References the specimen interface element. */
 const specimen = required<HTMLElement>("#specimen");
+/** References the form interface element. */
 const form = required<HTMLFormElement>("#theme-form");
+/** References the name input interface element. */
 const nameInput = required<HTMLInputElement>("#theme-name");
+/** References the status interface element. */
 const status = required<HTMLElement>("#status");
+/** References the delete button interface element. */
 const deleteButton = required<HirayaButton>("#delete");
+/** References the wallpaper panel interface element. */
 const wallpaperPanel = required<HTMLElement>("#wallpaper-panel");
+/** References the theme panel interface element. */
 const themePanel = required<HTMLElement>("#theme-panel");
+/** References the wallpaper fields interface element. */
 const wallpaperFields = required<HTMLElement>("#wallpaper-fields");
+/** References the wallpaper upload interface element. */
 const wallpaperUpload = required<HTMLInputElement>("#wallpaper-upload");
 let hiraya: HirayaClient;
 let state: ThemeEditorState | null = null;
@@ -36,14 +51,17 @@ let wallpaperImageGeneration = 0;
 let wallpaperSaveGeneration = 0;
 let saveEnabled = false;
 
+/** Defines the default wallpaper. */
 const DEFAULT_WALLPAPER: WallpaperEditorWallpaper = { source: "dusk", fit: "cover", positionX: 50, positionY: 50, blur: 0, dim: 0, overlayColor: "#000000", overlayOpacity: 0 };
 
+/** Lists colors exposed in the basic theme editor. */
 const simpleColors: Array<[string, ColorKey, string, ColorKey]> = [
   ["Desktop", "shell", "Shell", "desktopText"],
   ["Chrome", "chromeText", "Surface", "chrome"],
   ["Window", "window", "Surface", "text"],
   ["Accent", "accent", "Fill", "accentText"],
 ];
+/** Lists colors exposed in the advanced theme editor. */
 const advancedColors: Array<[ColorKey, string]> = [
   ["windowMuted", "Muted window"], ["textMuted", "Muted text"], ["danger", "Danger fill"], ["dangerSurface", "Danger surface"],
   ["selection", "Selection"],
@@ -54,7 +72,7 @@ required("#advanced-fields").innerHTML = `${advancedColors.map(([key, label]) =>
 
 required("#delete").addEventListener("click", () => void deleteTheme());
 required("#cancel").addEventListener("click", () => void cancelEdit());
-themeList.addEventListener("hiraya-item-select", (event) => void focusTheme((event as CustomEvent<{ id: string }>).detail.id));
+themeList.addEventListener(ITEM_LIST_EVENTS.select, (event) => void focusTheme((event as CustomEvent<{ id: string }>).detail.id));
 themeList.addEventListener("keydown", (event) => {
   if (!["ArrowUp", "ArrowDown", "Home", "End"].includes(event.key)) return;
   const items = Array.from(themeList.querySelectorAll<HTMLElement>("[data-item-id]"));
@@ -92,18 +110,22 @@ addEventListener("keydown", (event) => {
 });
 void start();
 
+/** Renders a color input for a theme field. */
 function colorField(key: ColorKey, label: string) {
   return `<label class="color-field"><span>${label}</span><span class="color-pair"><input type="color" data-color="${key}" aria-label="${label} color picker"><input class="hex-input" data-color="${key}" aria-label="${label} hex color" maxlength="7" pattern="#[0-9A-Fa-f]{6}" spellcheck="false"></span></label>`;
 }
 
+/** Renders a numeric input for a theme field. */
 function numberField(path: string, label: string, min: number, max: number, step: number) {
   return `<label class="number-field"><span>${label}</span><input type="number" data-path="${path}" min="${min}" max="${max}" step="${step}"></label>`;
 }
 
+/** Returns a named field from the theme definition. */
 function selectField(path: string, label: string, options: string[][]) {
   return `<label class="number-field"><span>${label}</span><select data-path="${path}">${options.map(([value, text]) => `<option value="${value}">${text}</option>`).join("")}</select></label>`;
 }
 
+/** Starts the application. */
 async function start() {
   try {
     const app = await connectSystemApp(APP_ID);
@@ -156,14 +178,17 @@ async function start() {
   }
 }
 
+/** Returns the currently selected theme. */
 function selectedTheme() {
   return state?.themes.find((theme) => theme.id === focusedThemeId) ?? null;
 }
 
+/** Returns the theme definition shown in the preview. */
 function previewDefinition() {
   return draft?.definition ?? selectedTheme()?.definition ?? null;
 }
 
+/** Renders the current theme editor state. */
 function render() {
   if (!state) return;
     renderLibrary();
@@ -173,6 +198,7 @@ function render() {
     renderControls();
 }
 
+/** Renders the theme library. */
 function renderLibrary() {
   if (!state) return;
   const current = state;
@@ -200,6 +226,7 @@ function renderLibrary() {
   restriction.textContent = current.restrictionReason || "Theme management is unavailable in this desktop.";
 }
 
+/** Renders the selected theme preview. */
 function renderPreview() {
   const definition = previewDefinition();
   const empty = required<HTMLElement>("#preview-empty");
@@ -234,6 +261,7 @@ function renderPreview() {
   required("#preview-kind").textContent = draft ? "Draft preview" : selectedTheme()?.builtIn ? "Built-in" : "Custom";
 }
 
+/** Renders the theme property inspector. */
 function renderInspector() {
   const empty = required<HTMLElement>("#inspector-empty");
   empty.hidden = Boolean(draft);
@@ -252,6 +280,7 @@ function renderInspector() {
   validateDraft();
 }
 
+/** Renders the wallpaper controls. */
 function renderWallpaper() {
   if (!wallpaperState) return;
   const current = wallpaperState;
@@ -272,6 +301,7 @@ function renderWallpaper() {
   restriction.textContent = current.restrictionReason;
 }
 
+/** Renders controls for the active inspector section. */
 function renderControls() {
   const theme = selectedTheme();
   const canManage = Boolean(state?.canManage) && !busy;
@@ -288,6 +318,7 @@ function renderControls() {
   ]);
 }
 
+/** Sets inspector mode. */
 function setInspectorMode(mode: "theme" | "wallpaper") {
   const wallpaper = mode === "wallpaper";
   themePanel.hidden = wallpaper;
@@ -299,10 +330,12 @@ function setInspectorMode(mode: "theme" | "wallpaper") {
   if (wallpaper) void refreshWallpaperImage();
 }
 
+/** Confirms before discarding unsaved theme changes. */
 async function confirmDiscard() {
   return !draft || !draftNeedsDiscard || !draftChanged(draft) || hiraya.dialogs.confirm({ title: "Discard theme changes?", message: "This draft has changes that have not been saved.", confirmLabel: "Discard", destructive: true });
 }
 
+/** Focuses a theme in the library. */
 async function focusTheme(id: string) {
   if (id === focusedThemeId && !draft) return;
   if (!await confirmDiscard()) return;
@@ -328,6 +361,7 @@ async function focusTheme(id: string) {
   render();
 }
 
+/** Opens the selected theme for editing. */
 async function beginEdit() {
   const theme = selectedTheme();
   if (!theme || !state?.canManage || !await confirmDiscard()) return;
@@ -338,6 +372,7 @@ async function beginEdit() {
   nameInput.focus();
 }
 
+/** Creates an editable copy of the selected theme. */
 async function duplicateTheme() {
   const theme = selectedTheme();
   if (!theme || !state?.canManage || !await confirmDiscard()) return;
@@ -349,6 +384,7 @@ async function duplicateTheme() {
   nameInput.select();
 }
 
+/** Cancels edit. */
 async function cancelEdit() {
   if (!await confirmDiscard()) return;
   draft = null;
@@ -358,6 +394,7 @@ async function cancelEdit() {
   setStatus("Draft discarded.");
 }
 
+/** Saves theme. */
 async function saveTheme() {
   if (!draft || !state?.canManage || !saveEnabled || busy) return;
   const saving = draft;
@@ -372,6 +409,7 @@ async function saveTheme() {
   }, "The theme could not be saved.");
 }
 
+/** Deletes theme. */
 async function deleteTheme() {
   const theme = selectedTheme();
   if (!theme || theme.builtIn || !state?.canManage || busy) return;
@@ -384,6 +422,7 @@ async function deleteTheme() {
   }, "The theme could not be deleted.");
 }
 
+/** Runs an editor operation and reports failures. */
 async function run(message: string, operation: () => Promise<void>, fallback: string) {
   busy = true;
   setStatus(message);
@@ -393,6 +432,7 @@ async function run(message: string, operation: () => Promise<void>, fallback: st
   finally { busy = false; render(); }
 }
 
+/** Applies a theme field input value to the draft. */
 function handleFieldInput(event: Event) {
   if (!draft || !(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) return;
   const input = event.target;
@@ -409,6 +449,7 @@ function handleFieldInput(event: Event) {
   draftUpdated();
 }
 
+/** Toggles treatment. */
 function toggleTreatment(event: Event) {
   if (!draft || !(event.target instanceof HTMLInputElement)) return;
   draft.definition.treatment = event.target.checked ? { gradientStrength: 0, gradientAngle: 0, texture: "none", textureStrength: 0, textureScale: 4, pixelated: false } : undefined;
@@ -416,6 +457,7 @@ function toggleTreatment(event: Event) {
   draftUpdated();
 }
 
+/** Validates and renders the updated theme draft. */
 function draftUpdated() {
   draftNeedsDiscard = true;
   renderPreview();
@@ -424,6 +466,7 @@ function draftUpdated() {
   void setDirty(Boolean(draft && draftChanged(draft)));
 }
 
+/** Validates draft. */
 function validateDraft() {
   if (!draft) return;
   const invalidHex = [...form.querySelectorAll<HTMLInputElement>(".hex-input")].some((input) => !HEX.test(input.value));
@@ -434,6 +477,7 @@ function validateDraft() {
   saveEnabled = !busy && Boolean(state?.canManage) && form.checkValidity() && Boolean(draft.name.trim()) && draft.name.trim() === draft.name && issues.length === 0;
 }
 
+/** Applies a wallpaper field change to the draft. */
 function wallpaperFieldChanged(event: Event) {
   if (!wallpaperState || !(event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement)) return;
   const input = event.target;
@@ -456,6 +500,7 @@ function wallpaperFieldChanged(event: Event) {
   wallpaperSaveTimer = window.setTimeout(() => { wallpaperSaveTimer = null; void commitWallpaper(); }, 400);
 }
 
+/** Commits the wallpaper controls to the theme draft. */
 async function commitWallpaper() {
   if (!wallpaperState || !wallpaperState.canManage || wallpaperBusy) return;
   if (wallpaperSaveTimer !== null) clearTimeout(wallpaperSaveTimer);
@@ -479,6 +524,7 @@ async function commitWallpaper() {
   }
 }
 
+/** Saves wallpaper. */
 async function saveWallpaper(change: Partial<WallpaperEditorWallpaper>, reset = false) {
   if (!wallpaperState || !wallpaperState.canManage || wallpaperBusy) return;
   wallpaperSaveGeneration += 1;
@@ -492,6 +538,7 @@ async function saveWallpaper(change: Partial<WallpaperEditorWallpaper>, reset = 
   }, "The wallpaper could not be saved.");
 }
 
+/** Imports a wallpaper image into the theme draft. */
 async function uploadWallpaper() {
   const file = wallpaperUpload.files?.[0];
   wallpaperUpload.value = "";
@@ -506,6 +553,7 @@ async function uploadWallpaper() {
   }, "The wallpaper image could not be added.");
 }
 
+/** Prompts for a wallpaper image. */
 async function chooseWallpaper() {
   const handles = await hiraya.dialogs.openFile({ mimeTypes: ["image/jpeg", "image/png", "image/webp", ".hiraya.scene", "application/vnd.hiraya.scene+zip"] }).catch((error) => {
     setStatus(describeError(error, "The Hiraya file picker could not be opened."), true);
@@ -514,6 +562,7 @@ async function chooseWallpaper() {
   if (handles?.[0]) await selectWallpaper(handles[0]);
 }
 
+/** Selects wallpaper. */
 async function selectWallpaper(handle: FileHandle) {
   if (!wallpaperState?.canManage || wallpaperBusy) return;
   wallpaperSaveGeneration += 1;
@@ -526,6 +575,7 @@ async function selectWallpaper(handle: FileHandle) {
   }, "The wallpaper file could not be applied.");
 }
 
+/** Refreshes wallpaper image. */
 async function refreshWallpaperImage() {
   const source = wallpaperState?.wallpaper.source ?? "";
   if (source === wallpaperImageSource) return;
@@ -538,6 +588,7 @@ async function refreshWallpaperImage() {
   renderPreview();
 }
 
+/** Runs the active wallpaper scene. */
 async function runWallpaper(message: string, operation: () => Promise<void>, fallback: string) {
   wallpaperBusy = true;
   setStatus(message);
@@ -547,10 +598,12 @@ async function runWallpaper(message: string, operation: () => Promise<void>, fal
   finally { wallpaperBusy = false; renderWallpaper(); }
 }
 
+/** Returns a nested value from the active draft. */
 function getPath(target: ThemeDefinition, path: string): unknown {
   return path.split(".").reduce<unknown>((value, key) => (value as Record<string, unknown> | undefined)?.[key], target);
 }
 
+/** Sets path. */
 function setPath(target: ThemeDefinition, path: string, value: unknown) {
   const keys = path.split(".");
   let owner = target as unknown as Record<string, unknown>;
@@ -558,10 +611,12 @@ function setPath(target: ThemeDefinition, path: string, value: unknown) {
   owner[keys.at(-1)!] = value;
 }
 
+/** Marks the current draft as changed. */
 async function setDirty(dirty: boolean) {
   await hiraya?.window.setDirty(dirty);
 }
 
+/** Updates the editor status message. */
 function setStatus(message: string, error = false) {
   status.textContent = message;
   status.classList.toggle("error", error);

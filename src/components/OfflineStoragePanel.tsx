@@ -15,8 +15,10 @@ type Props = {
   onOpenHelp: () => void;
 };
 
+/** Formats storage values using the current locale. */
 const number = new Intl.NumberFormat();
 
+/** Formats offline bytes for display. */
 function formatOfflineBytes(bytes: number) {
   if (bytes < 1024) return `${number.format(bytes)} B`;
   const units = ["KB", "MB", "GB", "TB"];
@@ -26,6 +28,7 @@ function formatOfflineBytes(bytes: number) {
   return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: value < 10 ? 2 : 1 }).format(value)} ${units[unit]}`;
 }
 
+/** Renders the offline storage panel interface. */
 export function OfflineStoragePanel({ entries, inventory, progress, online, onRetry, onReleaseAll, onOpenHelp }: Props) {
   const storage = inventory?.browserStorage;
   const busy = progress?.phase === "downloading";

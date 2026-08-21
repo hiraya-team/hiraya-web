@@ -1,5 +1,6 @@
 export type RunningPackageInstance = Readonly<{ id: string; kind: string; package?: { manifest: { id: string } } }>;
 
+/** Closes an app after confirming any unsaved changes may be discarded. */
 export async function closeWithDirtyCheck(options: {
   dirty: boolean;
   confirmDiscard(): boolean | Promise<boolean>;
@@ -10,6 +11,7 @@ export async function closeWithDirtyCheck(options: {
   return true;
 }
 
+/** Force-closes every running sandbox instance owned by an app. */
 export function forceCloseRunningAppInstances(
   instances: readonly RunningPackageInstance[],
   appId: string,

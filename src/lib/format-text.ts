@@ -1,5 +1,6 @@
 import type { EditorLanguage } from "../types";
 
+/** Lists the supported parsers. */
 const PARSERS: Partial<Record<EditorLanguage, string>> = {
   markdown: "markdown",
   json: "json",
@@ -12,6 +13,7 @@ const PARSERS: Partial<Record<EditorLanguage, string>> = {
   yaml: "yaml",
 };
 
+/** Formats editor text. */
 export async function formatEditorText(content: string, language: EditorLanguage) {
   const parser = PARSERS[language];
   if (!parser) return content;

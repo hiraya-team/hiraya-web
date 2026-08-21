@@ -137,7 +137,7 @@ import type { ConfirmationRequest } from "./components/ConfirmationDialog";
 import { canOpenActivity } from "./ui/activity-navigation";
 import { iconGroupsAfterEntryChange, isRevisionConflictRecord, mergeDesktopLayout, outboxOperationDesktopIds, type OutboxRecord } from "./lib/outbox";
 import type { SystemEntriesDocument, TrashDocument, TrashItem } from "./lib/contracts";
-import { accountResources, downloadAccountResource } from "./lib/account-apps";
+import { accountResources, createAccountAppsClient, createShortLink, deleteShortLink, downloadAccountResource, listShortLinks, lockAuthBootstrap, searchAccessibleDesktops, updateShortLink } from "@hiraya/deployment";
 import { canMutateDesktop, canViewDesktopActivity, fileWriteCapability, settingsRestrictionReason } from "./lib/permissions";
 import { builtinAppEntryDependency, builtinAppTargetId, builtinAppTargetOpensFile, builtinAppWindow, extractBuiltinAppTarget } from "./apps/registry";
 import { createAppCommandService, createDesktopSwitchCommands, desktopSwitchCommandId, type AppCommandContext, type CommandId } from "./apps/commands";
@@ -150,17 +150,17 @@ import { installedAppIsAvailable, installedAppMatchesSavedIdentity, packageMatch
 import { associationCandidates, matchingInstalledApps, reservedFileHandler, resolveFileApp, resolveRestoredFileApp, systemDefaultAppId } from "./apps/file-associations";
 import { SYSTEM_APP_CATALOG } from "./apps/system-apps";
 import { SYSTEM_APP_IDS } from "./apps/system-app-ids";
+import { APP_PERMISSIONS } from "./apps/permissions";
 import { APPS_UI_RUNTIME } from "./apps/ui-runtime";
 import type { SystemAppTarget } from "./apps/types";
 import { closeWithDirtyCheck, forceCloseRunningAppInstances } from "./apps/app-close";
-import { localSearchResults, searchAccessibleDesktops, type DesktopSearchResult } from "./lib/search";
+import { localSearchResults, type DesktopSearchResult } from "./lib/search";
 import { createTrashNotification, dismissTrashNotification, updateTrashNotification, type TrashNotification } from "./lib/trash-notifications";
 import { isStandalone, pwaInstallState, updateActivationBlocked, type InstallPromptEvent } from "./lib/pwa-install";
 import { adjacentArea, areaCoordinateLabel, areaMapSegments } from "./ui/desktop-areas";
 import { assertImportOperationCurrent, buildImportPlan, sourcesFromDirectoryHandle, sourcesFromDirectoryPicker, sourcesFromDrop, supportsDirectoryHandlePicker, supportsDirectoryPicker, type ImportOperationContext, type ImportSource } from "./lib/directory-import";
 import { buildOfflineAvailability, offlineFilesUnderRoots, type OfflineStorageInventory } from "./lib/offline-availability";
 import type { HelpSectionId } from "./lib/help";
-import { lockAuthBootstrap } from "./lib/auth";
 import { requestStoragePersistence, type StoragePersistenceStatus } from "./lib/storage-persistence";
 import { adjacentSwipeArea, areaDirectionalLabel, areaTransitionDepth, committedSwipeTarget, homeRelativeAreaLabel, isAreaSwitcherDoubleTap, minimapWindowCapacity, swipeAxis, swipePreviewReady, type AreaSwitcherTap } from "./ui/shell";
 import { SERVER_ROUTES } from "./lib/server-routes";
@@ -180,7 +180,6 @@ import { sandboxWindowOptions } from "./ui/app-window-sizing";
 import { useDesktopSelection } from "./features/selection/controller";
 import { waitForAnimations } from "./ui/animation-completion";
 import { EDGE_DWELL_MS, type EdgeDirection } from "./ui/edge-entry";
-import { createShortLink, deleteShortLink, listShortLinks, updateShortLink } from "./lib/short-links";
 import { DesktopClock } from "./features/shell/DesktopClock";
 import { ShellNotifications, type ShellMessage } from "./features/notifications/ShellNotifications";
 import { useMediaQuery, WINDOWED_DESKTOP_QUERY } from "./ui/input-capabilities";
@@ -192,21 +191,37 @@ import { mergeThreeWayText, THREE_WAY_TEXT_MERGE_MAX_BYTES, THREE_WAY_TEXT_MERGE
 import { assertWallpaperSource, isWallpaperFile, parseLayout } from "./lib/contracts";
 import { desktopPointerObservation, projectSandboxPointer, type WallpaperSceneTarget } from "./ui/wallpaper-pointer";
 
+/** Lazily loads themed wallpaper rendering. */
 const ThemeWallpaper = lazy(() => import("./components/ThemeWallpaper").then((module) => ({ default: module.ThemeWallpaper })));
+/** Lazily loads sandboxed Scene rendering. */
 const SceneFrame = lazy(() => import("./features/scenes/SceneFrame").then((module) => ({ default: module.SceneFrame })));
+/** Lazily loads the hosted app sandbox frame. */
 const SandboxAppFrame = lazy(() => import("./features/app-management/SandboxFrame"));
+/** Lazily loads the app store window. */
 const AppStoreWindow = lazy(() => import("./components/AppStoreWindow").then((module) => ({ default: module.AppStoreWindow })));
+/** Lazily loads confirmation dialogs. */
 const ConfirmationDialog = lazy(() => import("./components/ConfirmationDialog").then((module) => ({ default: module.ConfirmationDialog })));
+/** Lazily loads the connection and offline panel. */
 const ConnectionPanel = lazy(() => import("./components/ConnectionPanel").then((module) => ({ default: module.ConnectionPanel })));
+/** Lazily loads the built-in file window. */
 const FileWindow = lazy(() => import("./components/FileWindow").then((module) => ({ default: module.FileWindow })));
+/** Lazily loads the bundled help panel. */
 const HelpPanel = lazy(() => import("./components/HelpPanel").then((module) => ({ default: module.HelpPanel })));
+/** Lazily loads the keyboard shortcuts panel. */
 const KeyboardShortcutsPanel = lazy(() => import("./components/KeyboardShortcutsPanel").then((module) => ({ default: module.KeyboardShortcutsPanel })));
+/** Lazily loads the conflict merge window. */
 const MergeWindow = lazy(() => import("./components/MergeWindow").then((module) => ({ default: module.MergeWindow })));
+/** Lazily loads entry properties. */
 const PropertiesWindow = lazy(() => import("./components/PropertiesWindow").then((module) => ({ default: module.PropertiesWindow })));
+/** Lazily loads desktop publication controls. */
 const PublishDialog = lazy(() => import("./components/PublishDialog").then((module) => ({ default: module.PublishDialog })));
+/** Lazily loads the desktop command palette. */
 const SearchCommandPalette = lazy(() => import("./components/SearchCommandPalette").then((module) => ({ default: module.SearchCommandPalette })));
+/** Lazily loads desktop settings. */
 const SettingsWindow = lazy(() => import("./components/SettingsWindow").then((module) => ({ default: module.SettingsWindow })));
+/** Lazily loads desktop sharing controls. */
 const SharingDialog = lazy(() => import("./components/SharingDialog").then((module) => ({ default: module.SharingDialog })));
+/** Lazily loads the Trash window. */
 const TrashWindow = lazy(() => import("./components/TrashWindow").then((module) => ({ default: module.TrashWindow })));
 
 type PendingPaste = { snapshot: ClipboardEntrySnapshot; parentId: string | null; position?: EntryPosition };
@@ -225,26 +240,37 @@ type MergeReview = {
   mergedText: string;
   serverRevision: number;
 };
+/** Defines the press duration that opens desktop context actions. */
 const DESKTOP_LONG_PRESS_MS = 500;
+/** Bounds an area transition before recovery resets it. */
 const AREA_TRANSITION_WATCHDOG_MS = 10_000;
+/** Defines idle time before a wheel swipe gesture settles. */
 const WHEEL_SWIPE_END_MS = 160;
+/** Excludes interactive controls from desktop-level gesture capture. */
 const DESKTOP_GESTURE_EXCLUSION_SELECTOR = ".file-icon, .shell-item, .empty-state__actions, .app-window, button, a[href], input, select, textarea, [contenteditable='true']";
+/** Identifies the current persisted onboarding state. */
 const ONBOARDING_VERSION = 1;
+/** Prevents automatic app update checks from running too frequently. */
 const AUTOMATIC_UPDATE_CHECK_COOLDOWN_MS = 60_000;
+/** Provides the user-facing automatic update failure message. */
 const UPDATE_CHECK_ERROR = "Could not check for updates. Check your connection and try again.";
 
+/** Records background update-check failures without interrupting the desktop. */
 function reportUpdateCheckError(error: unknown) {
   console.warn("Hiraya could not check for app updates.", error);
 }
 
+/** Finds the rendered desktop entry used to restore dialog focus. */
 function fileDialogEntryElement(id: string) {
   return Array.from(document.querySelectorAll<HTMLElement>("[data-entry-id]")).find((element) => element.dataset.entryId === id) ?? null;
 }
 
+/** Builds the selection scope key for an icon group folder. */
 function iconGroupSelectionScope(folderId: string) {
   return `icon-group:${folderId}`;
 }
 
+/** Formats imported byte counts for desktop progress UI. */
 function formatImportBytes(value: number) {
   if (value < 1024) return `${value} B`;
   if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KB`;
@@ -252,10 +278,12 @@ function formatImportBytes(value: number) {
   return `${(value / 1024 ** 3).toFixed(1)} GB`;
 }
 
+/** Builds the running-app identifier for a merge operation. */
 function mergeAppId(operationId: string) {
   return `merge:${operationId}`;
 }
 
+/** Applies chosen conflict resolutions to three-way merge regions. */
 function mergeTextForRegions(regions: readonly ThreeWayTextMergeRegion[], resolutions: Record<string, MergeTextResolution>) {
   return regions.map((region, index) => {
     if (region.kind === "resolved") return region.text;
@@ -264,6 +292,7 @@ function mergeTextForRegions(regions: readonly ThreeWayTextMergeRegion[], resolu
   }).join("");
 }
 
+/** Decodes bounded legacy conflict content when it is valid UTF-8 text. */
 async function decodeLegacyConflictText(content: Blob) {
   if (content.size > THREE_WAY_TEXT_MERGE_MAX_BYTES) return null;
   try {
@@ -275,10 +304,12 @@ async function decodeLegacyConflictText(content: Blob) {
   }
 }
 
+/** Reports whether a transient shell menu currently owns interaction. */
 function transientMenuOpen() {
   return Boolean(document.querySelector(".mobile-header-menu__panel, .notification-center__panel"));
 }
 
+/** Projects desktop appearance into the Theme Editor host contract. */
 function themeEditorState(appearance: ThemeState, canManage: boolean, restrictionReason: string): ThemeEditorState {
   return {
     selectedThemeId: appearance.selectedThemeId,
@@ -291,8 +322,10 @@ function themeEditorState(appearance: ThemeState, canManage: boolean, restrictio
   };
 }
 
+/** Maps bundled wallpaper identifiers to display names. */
 const WALLPAPER_NAMES = { dusk: "Dusk", grove: "Grove", ember: "Ember" } as const;
 
+/** Projects desktop wallpaper state into the Theme Editor host contract. */
 function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEntry[], appearance: ThemeState, canManage: boolean, restrictionReason: string): WallpaperEditorState {
   const source = layout.wallpaper.source;
   const file = source.startsWith("file:") ? entries.find((entry): entry is FileEntry => entry.id === source.slice(5) && entry.kind === "file") : null;
@@ -305,6 +338,7 @@ function wallpaperEditorState(layout: DesktopLayout, entries: readonly DesktopEn
   };
 }
 
+/** Composes the authenticated or browser-local interactive desktop. */
 function FullDesktop({ session, warmStart = false }: { session: AuthSession | null; warmStart?: boolean }) {
   const commandService = useMemo(createAppCommandService, []);
   const [loading, setLoading] = useState(true);
@@ -339,6 +373,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
     onCloseRequest: ({ instanceId }) => closeAppRef.current(instanceId, false),
     onError: (loadError) => setError(loadError.message),
     accountSyncOrigin: session?.directBlobOrigin ?? null,
+    createAccountAppsClient,
   });
   const [entries, setEntries] = useState<DesktopEntry[]>([]);
   const [desktops, setDesktops] = useState<DesktopIdentity[]>([]);
@@ -5269,7 +5304,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
 
   const shellAnnouncement = notificationAnnouncement || shellMessages.at(-1)?.message || (importProgress ? `Import in progress. ${importProgress.folderCount} folders and ${importProgress.fileCount} files.` : (trashNotifications.at(-1) ? `${trashNotifications.at(-1)!.label} moved to Trash` : (appNotifications.at(-1)?.title ?? "")));
   const pickerOwner = appDialogRequests[0] && runningApps.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === appDialogRequests[0].owner.instanceId);
-  const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes("files:write"));
+  const canCreatePickerFolder = Boolean(canMutate && pickerOwner?.package.manifest.permissions.includes(APP_PERMISSIONS.filesWrite));
   const focusedIntegratedApp = focusedApp && (!windowed || appIsMaximized(focusedApp)) ? focusedApp : null;
   const shellNotifications = <ShellNotifications
     syncIssue={syncIssue}
@@ -6369,7 +6404,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
               appHostServices.dialogs.reject(request.id);
               return;
             }
-            if (!running.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create files on this desktop right now.", "PERMISSION_DENIED");
+            if (!running.package.manifest.permissions.includes(APP_PERMISSIONS.filesWrite) || !canMutateRef.current) throw new HostServiceError("The app cannot create files on this desktop right now.", "PERMISSION_DENIED");
             const file = await createAppFile(
               name,
               folder?.id ?? null,
@@ -6385,7 +6420,7 @@ function FullDesktop({ session, warmStart = false }: { session: AuthSession | nu
           onCreateFolder={canCreatePickerFolder ? async (name, parentId) => {
             const request = appDialogRequests[0];
             const running = runningAppsRef.current.find((app): app is SandboxApp => app.kind === "sandbox" && app.id === request.owner.instanceId);
-            if (!running?.package.manifest.permissions.includes("files:write") || !canMutateRef.current) throw new HostServiceError("The app cannot create folders on this desktop right now.", "PERMISSION_DENIED");
+            if (!running?.package.manifest.permissions.includes(APP_PERMISSIONS.filesWrite) || !canMutateRef.current) throw new HostServiceError("The app cannot create folders on this desktop right now.", "PERMISSION_DENIED");
             const folder = await createFolder(name, parentId, positionFor(parentId));
             setEntries((current) => current.some((entry) => entry.id === folder.id) ? current : [...current, folder]);
             return folder;

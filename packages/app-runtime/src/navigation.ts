@@ -19,8 +19,10 @@ export type SandboxPointerObservation = {
   pointerType: string;
 };
 
+/** Lists pointer phases forwarded to sandboxed scenes. */
 const POINTER_PHASES = new Set<SandboxPointerObservation["phase"]>(["pointerdown", "pointermove", "pointerup", "pointercancel", "contextmenu"]);
 
+/** Parses pointer observation. */
 function parsePointerObservation(value: unknown): SandboxPointerObservation | null {
   if (!value || typeof value !== "object") return null;
   const observation = value as Record<string, unknown>;
@@ -29,10 +31,12 @@ function parsePointerObservation(value: unknown): SandboxPointerObservation | nu
   return observation as SandboxPointerObservation;
 }
 
+/** Posts a normalized pointer event to a sandbox. */
 export function postSandboxPointer(frame: HTMLIFrameElement, token: string, observation: SandboxPointerObservation): void {
   frame.contentWindow?.postMessage({ type: "hiraya:wallpaper-pointer", token, observation }, "*");
 }
 
+/** Terminates active navigation for a sandbox. */
 export function terminateSandboxNavigation(frame: HTMLIFrameElement, token: string, options: SandboxNavigationOptions = {}): () => void {
   let initialDocumentLoaded = false;
   let ready = false;

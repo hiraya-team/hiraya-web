@@ -33,11 +33,13 @@ export type OpenAppInstance = {
   getCapabilities?: () => AppCapabilities;
 };
 
+/** Composes host services and opens isolated contexts for app instances. */
 export class AppHostServices {
   readonly dialogs = new AppDialogService();
   readonly notifications = new AppNotificationService();
   readonly storage: { forInstance(owner: AppInstanceOwner): AppStorageApi };
 
+  /** Creates the host service composition used by sandbox dispatchers. */
   constructor(
     readonly lifecycle: AppLifecycleService,
     readonly theme: AppThemeService,
@@ -46,6 +48,7 @@ export class AppHostServices {
     this.storage = storage;
   }
 
+  /** Opens a guarded host context for one app instance. */
   openInstance(input: OpenAppInstance): AppHostContext {
     const owner = Object.freeze({ appId: input.launch.appId, instanceId: input.instanceId });
     const launch = structuredClone(input.launch);

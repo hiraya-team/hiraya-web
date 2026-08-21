@@ -4,6 +4,7 @@ import { desktopStateSnapshot, remoteDesktopIdentity } from "./fixtures";
 import { BUILTIN_THEMES, DEFAULT_THEME_ID } from "../src/lib/themes";
 import { DEFAULT_WALLPAPER } from "../src/types";
 
+/** Returns the current state. */
 function state() {
   const snapshot = desktopStateSnapshot();
   return { entries: snapshot.entries, autoArrangeIcons: snapshot.layout.autoArrangeIcons, snapToGrid: snapshot.layout.snapToGrid, gridSize: snapshot.layout.gridSize, wallpaper: snapshot.layout.wallpaper, widgets: snapshot.layout.widgets, iconGroups: snapshot.layout.iconGroups, editorSettings: snapshot.editorSettings, appearance: snapshot.appearance, sync: snapshot.sync };

@@ -15,11 +15,15 @@ import {
   type Manifest,
 } from "./model";
 
+/** Defines the chunks directory. */
 const CHUNKS_DIRECTORY = "chunks";
+/** Defines the shard. */
 const SHARD = /^[0-9a-f]{2}$/;
 
+/** Reports chunk integrity failures. */
 class ChunkIntegrityError extends Error {}
 
+/** Parses and validates chunk ref. */
 function parseChunkRef(value: unknown): ChunkRef {
   if (!isRecord(value)) throw new Error("A chunk reference has an unsupported shape.");
   assertExactKeys(value, ["hash", "size"], "A chunk reference has an unsupported shape.");
@@ -28,21 +32,25 @@ function parseChunkRef(value: unknown): ChunkRef {
   return { hash: parseSha256(value.hash, "A chunk hash is invalid."), size };
 }
 
+/** Reports whether an error represents a missing OPFS entry. */
 function isNotFound(error: unknown): error is DOMException {
   return error instanceof DOMException && error.name === "NotFoundError";
 }
 
+/** Validates chunk content. */
 async function verifyChunkContent(content: Blob, ref: ChunkRef, message: string) {
   const hash = await sha256Hex(await content.arrayBuffer());
   if (content.size !== ref.size || hash !== ref.hash) throw new ChunkIntegrityError(message);
 }
 
+/** Returns the OPFS file handle for a chunk. */
 async function chunkFile(root: FileSystemDirectoryHandle, ref: ChunkRef, create: boolean) {
   const chunks = await root.getDirectoryHandle(CHUNKS_DIRECTORY, create ? { create: true } : undefined);
   const shard = await chunks.getDirectoryHandle(ref.hash.slice(0, 2), create ? { create: true } : undefined);
   return shard.getFileHandle(ref.hash, create ? { create: true } : undefined);
 }
 
+/** Returns the OPFS root for an account. */
 export async function getAccountOpfsRoot(storageId: string, originRoot?: FileSystemDirectoryHandle) {
   const storageHash = await storageNamespaceHash(storageId);
   if (!originRoot) {
@@ -52,6 +60,7 @@ export async function getAccountOpfsRoot(storageId: string, originRoot?: FileSys
   return originRoot.getDirectoryHandle(`${WEB2_OPFS_PREFIX}${storageHash}`, { create: true });
 }
 
+/** Reads chunk. */
 export async function readChunk(root: FileSystemDirectoryHandle, value: ChunkRef) {
   const ref = parseChunkRef(value);
   const content = await (await chunkFile(root, ref, false)).getFile();
@@ -59,6 +68,7 @@ export async function readChunk(root: FileSystemDirectoryHandle, value: ChunkRef
   return content;
 }
 
+/** Writes chunk. */
 export async function writeChunk(root: FileSystemDirectoryHandle, value: ChunkRef, content: Blob) {
   const ref = parseChunkRef(value);
   if (!(content instanceof Blob)) throw new TypeError("Chunk content must be a Blob.");
@@ -77,6 +87,7 @@ export async function writeChunk(root: FileSystemDirectoryHandle, value: ChunkRe
   await readChunk(root, ref);
 }
 
+/** Stages blob. */
 export async function stageBlob(root: FileSystemDirectoryHandle, content: Blob) {
   const chunks: ChunkRef[] = [];
   for (let offset = 0; offset < content.size; offset += WEB2_CHUNK_SIZE) {
@@ -89,6 +100,7 @@ export async function stageBlob(root: FileSystemDirectoryHandle, content: Blob) 
   return { manifest, manifestHash: await canonicalManifestSha256(manifest) };
 }
 
+/** Reconstructs a blob from its stored chunks. */
 export async function reconstructBlob(root: FileSystemDirectoryHandle, value: unknown, mimeType?: string) {
   const manifest = parseManifest(value);
   const type = mimeType === undefined ? undefined : parseMimeType(mimeType);
@@ -97,6 +109,7 @@ export async function reconstructBlob(root: FileSystemDirectoryHandle, value: un
   return new Blob(chunks, type === undefined ? undefined : { type });
 }
 
+/** Removes entry. */
 async function removeEntry(directory: FileSystemDirectoryHandle, name: string) {
   try {
     await directory.removeEntry(name, { recursive: true });
@@ -105,6 +118,7 @@ async function removeEntry(directory: FileSystemDirectoryHandle, name: string) {
   }
 }
 
+/** Removes orphan chunks. */
 export async function removeOrphanChunks(root: FileSystemDirectoryHandle, retainedHashes: Iterable<string>) {
   const retained = new Set([...retainedHashes].map((hash) => parseSha256(hash, "A retained chunk hash is invalid.")));
   let chunks: FileSystemDirectoryHandle;

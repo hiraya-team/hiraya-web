@@ -4,7 +4,9 @@ import { HIRAYA_SCENE_MANIFEST_PATH, HIRAYA_SCENE_MIME_TYPE, importedFileMimeTyp
 import { inspectSceneFile, sceneMotionBlocked, SCENE_CSP } from "../src/features/scenes/scene-package";
 import { fileCapabilities } from "../src/ui/file-capabilities";
 
+/** Provides the encoder test fixture. */
 const encoder = new TextEncoder();
+/** Creates a scene test fixture. */
 function scene() { return createSceneArchive(new Map([[HIRAYA_SCENE_MANIFEST_PATH, encoder.encode('{"schemaVersion":1,"entrypoint":"index.html"}')], ["index.html", encoder.encode("<!doctype html><button>Scene</button>")]])); }
 
 describe("Scene packages", () => {

@@ -2,9 +2,12 @@ import { parseJsonValue, parseManifestV2, type HirayaAppManifestV2, type JsonVal
 import { isRecord } from "./contracts";
 import { parseAccountAppDataKey, parseAccountAppId, type AccountAppsSnapshot } from "./account-apps";
 
+/** Matches a lowercase SHA-256 digest. */
 const SHA256 = /^[a-f0-9]{64}$/;
+/** Matches the expected MD5. */
 const MD5 = /^[a-f0-9]{32}$/;
 
+/** Validates that a record contains exactly the expected keys. */
 function exactKeys(value: Record<string, unknown>, keys: readonly string[], message: string) {
   if (Object.keys(value).length !== keys.length || Object.keys(value).some((candidate) => !keys.includes(candidate))) throw new Error(message);
 }
@@ -57,11 +60,13 @@ export type AccountAppDataRestoration = Readonly<
   | { kind: "replace"; appId: string; values: ReadonlyArray<readonly [string, JsonValue]> }
 >;
 
+/** Returns an app resource's generation number. */
 function generation(value: unknown, message: string) {
   if (!Number.isSafeInteger(value) || Number(value) < 0) throw new Error(message);
   return Number(value);
 }
 
+/** Parses and validates account app operation. */
 export function parseAccountAppOperation(value: unknown): AccountAppOperation {
   if (!isRecord(value) || value.schemaVersion !== 1 || typeof value.kind !== "string") throw new Error("A queued account app operation has an unsupported format.");
   const id = value.kind === "handlers" ? "" : parseAccountAppId(value.appId);
@@ -87,12 +92,14 @@ export function parseAccountAppOperation(value: unknown): AccountAppOperation {
   throw new Error("A queued account app operation has an unsupported kind.");
 }
 
+/** Parses and validates account app outbox record. */
 export function parseAccountAppOutboxRecord(value: unknown): AccountAppOutboxRecord {
   if (!isRecord(value) || typeof value.operationId !== "string" || !value.operationId || typeof value.clientId !== "string" || !value.clientId || !Number.isSafeInteger(value.sequence) || Number(value.sequence) < 1 || value.status !== "pending" && value.status !== "blocked" || value.error !== null && typeof value.error !== "string" || value.errorCode !== null && typeof value.errorCode !== "string" || !Number.isSafeInteger(value.attemptCount) || Number(value.attemptCount) < 0 || value.lastAttemptAt !== null && (!Number.isSafeInteger(value.lastAttemptAt) || Number(value.lastAttemptAt) < 0)) throw new Error("The account app outbox contains invalid metadata.");
   exactKeys(value, ["operationId", "clientId", "sequence", "operation", "status", "error", "errorCode", "attemptCount", "lastAttemptAt"], "The account app outbox contains unsupported metadata.");
   return { operationId: value.operationId, clientId: value.clientId, sequence: Number(value.sequence), operation: parseAccountAppOperation(value.operation), status: value.status, error: value.error, errorCode: value.errorCode, attemptCount: Number(value.attemptCount), lastAttemptAt: value.lastAttemptAt as number | null };
 }
 
+/** Projects account apps. */
 export function projectAccountApps(baseline: AccountAppsSnapshot | null, records: readonly Pick<AccountAppOutboxRecord, "operation" | "status">[]): AccountAppsProjection {
   const apps = new Map<string, DesiredAccountApp>((baseline?.apps ?? []).map((app) => [app.appId, { appId: app.appId, manifest: app.manifest, digest: app.package.sha256, installationGeneration: app.generations.installationGeneration, dataGeneration: app.generations.dataGeneration }]));
   let handlerHints: Readonly<Record<string, string>> = baseline?.handlerHints ?? {};
@@ -112,6 +119,7 @@ export function projectAccountApps(baseline: AccountAppsSnapshot | null, records
   return { appsRevision: baseline?.appsRevision ?? 0, apps: [...apps.values()].sort((left, right) => left.appId.localeCompare(right.appId)), handlerHints };
 }
 
+/** Projects account app data. */
 export function projectAccountAppData(records: readonly Pick<AccountAppOutboxRecord, "operation" | "status">[], appId: string, key: string): ProjectedAccountAppData {
   let result: ProjectedAccountAppData = { resolved: false };
   for (const { operation, status } of records) {
@@ -121,6 +129,7 @@ export function projectAccountAppData(records: readonly Pick<AccountAppOutboxRec
   return result;
 }
 
+/** Rebases account app operation. */
 export function rebaseAccountAppOperation(operation: AccountAppOperation, snapshot: AccountAppsSnapshot): AccountAppOperation {
   if (operation.kind === "install" || operation.kind === "handlers") return operation;
   const app = snapshot.apps.find((candidate) => candidate.appId === operation.appId);

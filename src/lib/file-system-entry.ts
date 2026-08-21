@@ -1,7 +1,9 @@
+/** Returns file from entry. */
 export function fileFromEntry(entry: FileSystemFileEntry) {
   return new Promise<File>((resolve, reject) => entry.file(resolve, reject));
 }
 
+/** Reads all directory entries. */
 export async function readAllDirectoryEntries(entry: FileSystemDirectoryEntry) {
   const reader = entry.createReader();
   const result: FileSystemEntry[] = [];

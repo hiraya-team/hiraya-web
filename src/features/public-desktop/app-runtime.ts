@@ -37,6 +37,7 @@ type LaunchPublicFileAppOptions = {
   onLargeDownload: (error: LargeDownloadAuthRequiredError, file: FileEntry) => void;
 };
 
+/** Launches the bundled read-only app appropriate for a public file. */
 export async function launchPublicFileApp(options: LaunchPublicFileAppOptions): Promise<PublicAppRuntime> {
   const catalog = SYSTEM_APP_CATALOG.find((item) => item.manifest.id === systemDefaultAppId(options.file));
   if (!catalog) throw new Error("The default system app is unavailable.");
@@ -131,6 +132,7 @@ export async function launchPublicFileApp(options: LaunchPublicFileAppOptions): 
   };
 }
 
+/** Creates quota-aware ephemeral storage for a public app runtime. */
 function memoryStorage() {
   const values = new Map<string, Map<string, JsonValue>>();
   return {

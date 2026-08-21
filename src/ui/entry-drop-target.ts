@@ -7,6 +7,7 @@ type EntryDropTarget = EntryDropDestination & {
   element: HTMLElement;
 };
 
+/** Finds the eligible entry beneath a pointer coordinate. */
 export function entryDropTargetAt(clientX: number, clientY: number, draggedEntryId: string): EntryDropTarget | null {
   const elements = document.elementsFromPoint(clientX, clientY);
   for (const element of elements) {
@@ -24,6 +25,7 @@ export function entryDropTargetAt(clientX: number, clientY: number, draggedEntry
   return desktop ? { parentId: null, desktop: true, element: desktop } : null;
 }
 
+/** Updates the visual entry target beneath a drag preview. */
 export function highlightEntryDropTarget(target: HTMLElement | null) {
   document.querySelectorAll<HTMLElement>("[data-internal-drop-target]").forEach((element) => delete element.dataset.internalDropTarget);
   if (target) target.dataset.internalDropTarget = "true";

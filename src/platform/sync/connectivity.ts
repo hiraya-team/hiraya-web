@@ -5,14 +5,17 @@ export type SyncConnectivityHandlers = {
   onPoll: () => Promise<void> | void;
 };
 
+/** Defines the health polling interval in milliseconds. */
 const HEALTH_POLL_MS = 5_000;
 
+/** Coordinates sync connectivity behavior. */
 export class SyncConnectivity {
   private events: EventSource | null = null;
   private healthTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
   private healthCheck: Promise<void> | null = null;
   private generation = 0;
 
+  /** Creates a SyncConnectivity instance. */
   constructor(
     private readonly EventSourceImpl: typeof EventSource | undefined,
     private readonly setTimeoutImpl: typeof globalThis.setTimeout,
@@ -20,6 +23,7 @@ export class SyncConnectivity {
     private readonly eventsUrl: string,
   ) {}
 
+  /** Starts synchronization. */
   start(handlers: SyncConnectivityHandlers) {
     this.stop();
     const generation = this.generation;
@@ -70,6 +74,7 @@ export class SyncConnectivity {
     events.addEventListener("catalog", (event) => { if (this.generation === generation) handlers.onCatalog(event as MessageEvent<string>); });
   }
 
+  /** Stops synchronization. */
   stop() {
     this.generation += 1;
     this.events?.close();

@@ -14,13 +14,14 @@ export { HirayaBadge } from "./badge";
 export { HirayaButton, type HirayaButtonVariant } from "./button";
 export { HirayaConfirmDialog, HirayaDialog } from "./dialog";
 export { calculateImageFitZoom, clampImageZoom, HirayaImageViewer, type HirayaImageZoom } from "./image-viewer";
-export { HirayaItemList, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "./item-list";
+export { HirayaItemList, ITEM_LIST_EVENTS, moveItemListItem, sortItemList, type ItemListDirection, type ItemListEventDetail, type ItemListReorderDetail } from "./item-list";
 export { HirayaEmptyState, HirayaLoadingState, HirayaPanel, HirayaStatusBar, HirayaToolbar } from "./layout";
 export { HirayaActionSheet, HirayaMenu, HirayaMenuItem, HirayaSubmenu } from "./menu";
 export { HirayaNotice } from "./notice";
 export { HirayaPopover } from "./popover";
 export { HirayaSelectionToolbar } from "./selection-toolbar";
 
+/** Registers the Hiraya custom elements. */
 export function defineHirayaElements(): void {
   defineElement("hiraya-button", HirayaButton);
   defineElement("hiraya-badge", HirayaBadge);

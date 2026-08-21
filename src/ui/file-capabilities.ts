@@ -4,6 +4,7 @@ import { APP_SHORTCUT_MIME_TYPE } from "../lib/app-shortcut";
 export type FilePreviewKind = "text" | "markdown" | "url" | "image" | "pdf" | "video" | "audio" | "none";
 export type FileIconKind = "app" | "code" | "text" | "url" | "image" | "pdf" | "video" | "audio" | "archive" | "file";
 
+/** Maps file extensions to editor language modes. */
 const EXTENSION_LANGUAGES: Readonly<Record<string, EditorLanguage>> = {
   css: "css",
   htm: "html",
@@ -20,17 +21,22 @@ const EXTENSION_LANGUAGES: Readonly<Record<string, EditorLanguage>> = {
   yml: "yaml",
 };
 
+/** Lists extensions treated as editable plain text. */
 const TEXT_EXTENSIONS = new Set(["txt", "md", "markdown", "json", "js", "jsx", "ts", "tsx", "css", "html", "xml", "csv", "yaml", "yml"]);
+/** Lists extensions treated as source code. */
 const CODE_EXTENSIONS = new Set(["js", "jsx", "ts", "tsx", "css", "html", "json", "md"]);
 
+/** Extracts a normalized extension from a file name. */
 export function fileExtension(fileName: string) {
   return fileName.split(".").pop()?.toLowerCase() ?? "";
 }
 
+/** Selects an editor language from a file name and preference. */
 export function editorLanguageFor(fileName: string, language: EditorLanguage) {
   return language === "auto" ? EXTENSION_LANGUAGES[fileExtension(fileName)] ?? "plain" : language;
 }
 
+/** Derives editing and preview capabilities from a file. */
 export function fileCapabilities(file: FileEntry) {
   const extension = fileExtension(file.name);
   const mimeType = file.mimeType.toLowerCase();

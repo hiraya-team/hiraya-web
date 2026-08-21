@@ -5,7 +5,9 @@ import {
   mergeThreeWayText,
 } from "../src/lib/three-way-text-merge";
 
+/** Builds the bytes test fixture. */
 const bytes = (text: string) => new TextEncoder().encode(text);
+/** Builds the merge test fixture. */
 const merge = (base: string, mine: string, server: string) => mergeThreeWayText(bytes(base), bytes(mine), bytes(server));
 
 describe("three-way text merge", () => {

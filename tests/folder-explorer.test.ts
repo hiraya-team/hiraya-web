@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { filterAndSortEntries, formatEntrySize, sortActionLabel, sortSummary } from "../src/ui/folder-explorer";
 import type { DesktopEntry } from "../src/types";
 
+/** Provides the entries test fixture. */
 const entries: DesktopEntry[] = [
   {
     id: "large",

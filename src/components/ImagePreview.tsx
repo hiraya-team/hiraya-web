@@ -25,6 +25,7 @@ type Pinch = {
   midpoint: Point;
 };
 
+/** Describes the active image gesture for assistive feedback. */
 function gestureDetails(points: Point[], viewport: HTMLDivElement) {
   const [first, second] = points;
   const bounds = viewport.getBoundingClientRect();
@@ -37,6 +38,7 @@ function gestureDetails(points: Point[], viewport: HTMLDivElement) {
   };
 }
 
+/** Lazily loads the image preview surface. */
 export function ImagePreview({ src, alt, zoom, onZoomChange, onFit }: Props) {
   const viewportRef = useRef<HTMLDivElement>(null);
   const panRef = useRef<Pan | null>(null);
